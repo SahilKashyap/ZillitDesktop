@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.permissions.gatedClick
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
@@ -56,6 +58,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.formatBytes
 import com.zillit.desktop.feature.documentdistribution.domain.isValidEmail
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistUiState
+import com.zillit.desktop.feature.documentdistribution.ui.plural
 
 /**
  * The address book — the web's `AddressBookModal`: every recipient the
@@ -77,7 +80,7 @@ fun AddressBookPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
             ) {
                 val selected = state.selectedContact
                 if (selected == null) {
-                    ZillitEmptyState(title = "Select a contact", icon = ZillitIcons.User)
+                    ZillitEmptyState(title = str(S.desktop_docdist_select_a_contact), icon = ZillitIcons.User)
                 } else {
                     ContactDetail(selected, state, onEvent)
                 }
@@ -95,10 +98,17 @@ private fun Sidebar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, modi
     val canPost = state.viewer.canPost
     Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Column {
-            ZillitText(text = "Address book", style = ZillitTheme.typography.titleMedium)
+            ZillitText(text = str(S.desktop_docdist_address_book_title), style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "${state.contacts.size} contact" + (if (state.contacts.size == 1) "" else "s") +
-                    " across ${state.lists.size} distribution list" + if (state.lists.size == 1) "" else "s",
+                text = str(
+                    S.desktop_docdist_x_across_y,
+                    plural(state.contacts.size, S.desktop_contact_count_one, S.desktop_contact_count_other),
+                    plural(
+                        state.lists.size,
+                        S.desktop_docdist_one_distribution_list,
+                        S.desktop_docdist_distribution_lists_count,
+                    ),
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textSecondary,
             )
@@ -106,20 +116,27 @@ private fun Sidebar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, modi
         ZillitSearchField(
             value = state.contactsSearch,
             onValueChange = { onEvent(DocDistEvent.SearchContacts(it)) },
-            placeholder = "Search name, email, or list",
+            placeholder = str(S.dd_search_contacts),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitButton(
-                text = "Add contact",
+                text = str(S.dd_add_contact),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.OpenAddContact) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.UserPlus,
                 modifier = Modifier.weight(1f),
             )
-            ZillitTooltip(if (state.contacts.isEmpty()) "No contacts to export" else "Export all contacts as CSV") {
+            val exportHint = str(
+                if (state.contacts.isEmpty()) {
+                    S.dd_address_export_no_contacts
+                } else {
+                    S.dd_address_export_csv_a11y
+                },
+            )
+            ZillitTooltip(exportHint) {
                 ZillitButton(
-                    text = "Export CSV",
+                    text = str(S.dd_address_export_csv),
                     onClick = { onEvent(DocDistEvent.ExportContactsCsv) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -139,11 +156,11 @@ private fun Sidebar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, modi
                 state.loading && state.contacts.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
                 state.visibleContacts.isEmpty() -> ZillitEmptyState(
-                    title = if (state.contactsSearch.isNotBlank()) "No matches" else "No contacts yet",
+                    title = str(if (state.contactsSearch.isNotBlank()) S.dm_picker_empty else S.no_contacts_yet),
                     message = if (state.contactsSearch.isNotBlank()) {
                         null
                     } else {
-                        "Addresses used in a distribution are remembered here."
+                        str(S.desktop_docdist_addresses_remembered_here)
                     },
                     icon = ZillitIcons.Users,
                 )
@@ -173,19 +190,26 @@ private fun Sidebar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, modi
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                                     if (contact.lists.isNotEmpty()) ZillitStatusPill(
-                                        label = "${contact.lists.size} list" + if (contact.lists.size == 1) "" else "s",
+                                        label = plural(contact.lists.size, S.desktop_docdist_one_list, S.dd_n_lists),
                                         tone = StatusTone.Pending,
                                     )
                                     if (contact.usageCount > 0) ZillitStatusPill(
-                                        label = "${contact.usageCount} use" + if (contact.usageCount == 1) "" else "s",
+                                        label = plural(
+                                            contact.usageCount,
+                                            S.desktop_docdist_one_use,
+                                            S.desktop_docdist_uses_count,
+                                        ),
                                         tone = StatusTone.Neutral,
                                     )
                                 }
                             }
-                            ZillitTooltip(if (canPost) "Email ${contact.displayName}" else "No posting rights") {
+                            ZillitTooltip(
+                                if (canPost) str(S.desktop_docdist_email_named, contact.displayName)
+                                else str(S.desktop_no_posting_rights),
+                            ) {
                                 ZillitIconButton(
                                     ZillitIcons.Send,
-                                    "Email ${contact.displayName}",
+                                    str(S.desktop_docdist_email_named, contact.displayName),
                                     gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                                         DocDistEvent.ComposeTo(contact.email),
                                     ) },
@@ -232,9 +256,8 @@ private fun ContactDetail(contact: Contact, state: DocDistUiState, onEvent: (Doc
                         ZillitText(text = contact.jobTitle, color = c.textSecondary)
                     }
                 }
-                val plural = if (contact.usageCount == 1) "" else "s"
                 ZillitText(
-                    text = "Used in ${contact.usageCount} email$plural / list$plural",
+                    text = plural(contact.usageCount, S.desktop_docdist_used_in_one, S.dd_used_in),
                     style = ZillitTheme.typography.bodySmall,
                     color = c.textMuted,
                 )
@@ -243,22 +266,22 @@ private fun ContactDetail(contact: Contact, state: DocDistUiState, onEvent: (Doc
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ZillitTooltip(if (canPost) "Edit contact" else "No posting rights") {
+                ZillitTooltip(if (canPost) str(S.dd_edit_contact) else str(S.desktop_no_posting_rights)) {
                     ZillitIconButton(
                         ZillitIcons.Edit,
-                        "Edit contact",
+                        str(S.dd_edit_contact),
                         gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.OpenEditContact) },
                     )
                 }
-                ZillitTooltip("Copy email") { ZillitIconButton(
+                ZillitTooltip(str(S.dd_copy_email)) { ZillitIconButton(
                     ZillitIcons.Link,
-                    "Copy email",
+                    str(S.dd_copy_email),
                     { onEvent(DocDistEvent.CopyContactEmail) },
                 ) }
-                ZillitTooltip(if (canPost) "Delete contact" else "No posting rights") {
+                ZillitTooltip(if (canPost) str(S.dd_delete_contact) else str(S.desktop_no_posting_rights)) {
                     ZillitIconButton(
                         ZillitIcons.Trash,
-                        "Delete contact",
+                        str(S.dd_delete_contact),
                         gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                             DocDistEvent.ConfirmDeleteContact(contact.email),
                         ) },
@@ -266,7 +289,7 @@ private fun ContactDetail(contact: Contact, state: DocDistUiState, onEvent: (Doc
                     )
                 }
                 ZillitButton(
-                    text = "Send email",
+                    text = str(S.dd_send_email),
                     onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                         DocDistEvent.ComposeTo(contact.email),
                     ) },
@@ -277,10 +300,10 @@ private fun ContactDetail(contact: Contact, state: DocDistUiState, onEvent: (Doc
         }
         ZillitDivider()
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            FieldLabel("Distribution lists · ${contact.lists.size}")
+            FieldLabel(str(S.desktop_docdist_lists_with_count, contact.lists.size))
             if (contact.lists.isEmpty()) {
                 ZillitText(
-                    text = "Not part of any distribution list yet.",
+                    text = str(S.desktop_docdist_not_in_any_list),
                     style = ZillitTheme.typography.bodySmall,
                     color = c.textMuted,
                 )
@@ -306,7 +329,7 @@ private fun ContactDetail(contact: Contact, state: DocDistUiState, onEvent: (Doc
             if (otherLists.isNotEmpty()) {
                 Box {
                     ZillitButton(
-                        text = "Add to list…",
+                        text = str(S.desktop_docdist_add_to_list),
                         onClick = gatedClick(canPost, { onEvent(askPost) }) { addMenu = true },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -329,11 +352,11 @@ private fun ContactDetail(contact: Contact, state: DocDistUiState, onEvent: (Doc
         }
         val sent = remember(contact.email, state.contactDistributions) { sentTo(contact, state.contactDistributions) }
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            FieldLabel("Sent emails · ${sent.size}")
+            FieldLabel(str(S.desktop_docdist_sent_emails_with_count, sent.size))
             when {
                 state.loadingContactEmails && sent.isEmpty() -> ZillitSpinner(size = 16.dp)
                 sent.isEmpty() -> ZillitText(
-                    text = "No emails sent to this contact yet.",
+                    text = str(S.dd_sent_emails_empty),
                     style = ZillitTheme.typography.bodySmall,
                     color = c.textMuted,
                 )
@@ -407,19 +430,19 @@ private fun ContactEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -
     val editor = state.contactEditor
     val c = ZillitTheme.colors
     ZillitDialogShell(
-        title = if (editor?.isNew == false) "Edit contact" else "Add contact",
+        title = str(if (editor?.isNew == false) S.dd_edit_contact else S.dd_add_contact),
         visible = editor != null,
         onDismiss = { onEvent(DocDistEvent.CloseContactEditor) },
         icon = ZillitIcons.UserPlus,
         width = 480.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DocDistEvent.CloseContactEditor) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (editor?.isNew == false) "Save changes" else "Add contact",
+                text = str(if (editor?.isNew == false) S.dd_action_save_changes else S.dd_add_contact),
                 onClick = { onEvent(DocDistEvent.SaveContactEditor) },
                 enabled = editor != null && isValidEmail(editor.email) && !editor.saving,
                 loading = editor?.saving == true,
@@ -427,44 +450,43 @@ private fun ContactEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -
         },
     ) {
         if (editor == null) return@ZillitDialogShell
-        FieldLabel("Email *")
+        FieldLabel(str(S.docusign_add_contact_email_label))
         ZillitTextField(
             value = editor.email,
             onValueChange = { onEvent(DocDistEvent.EditContact(email = it)) },
-            placeholder = "name@example.com",
+            placeholder = str(S.docusign_add_contact_email_hint),
             onImeAction = { onEvent(DocDistEvent.SaveContactEditor) },
         )
         if (editor.emailChanged) {
             ZillitText(
-                text = "Changing the email moves this contact across your distribution lists. " +
-                    "Past sent emails keep the old address.",
+                text = str(S.desktop_docdist_email_change_hint),
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textMuted,
             )
         }
-        FieldLabel("Name")
+        FieldLabel(str(S.name))
         ZillitTextField(
             value = editor.name,
             onValueChange = { onEvent(DocDistEvent.EditContact(name = it)) },
-            placeholder = "Full name",
+            placeholder = str(S.docusign_add_contact_name_hint),
             onImeAction = { onEvent(DocDistEvent.SaveContactEditor) },
         )
-        FieldLabel("Job")
+        FieldLabel(str(S.dd_field_job))
         ZillitTextField(
             value = editor.job,
             onValueChange = { onEvent(DocDistEvent.EditContact(job = it)) },
-            placeholder = "Role / title",
+            placeholder = str(S.docusign_add_contact_job_hint),
             onImeAction = { onEvent(DocDistEvent.SaveContactEditor) },
         )
-        FieldLabel("Distribution lists (optional)")
+        FieldLabel(str(S.desktop_docdist_lists_optional))
         val byId = state.lists.associateBy { it.id }
         ZillitMultiSelect(
             selected = editor.listIds.mapNotNull { byId[it] },
             options = state.lists,
             label = DistributionList::name,
             onChange = { chosen -> onEvent(DocDistEvent.EditContact(listIds = chosen.map { it.id })) },
-            placeholder = "Assign to one or more lists",
-            emptyText = "No distribution lists yet",
+            placeholder = str(S.desktop_docdist_assign_to_lists),
+            emptyText = str(S.dd_no_lists),
         )
     }
 }
@@ -488,12 +510,12 @@ private fun EmailViewDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Un
         width = 680.dp,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DocDistEvent.ViewEmail(null)) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Duplicate",
+                text = str(S.dd_action_duplicate),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) {
                     d?.let { onEvent(DocDistEvent.DuplicateDistribution(it.id)) }
                 },
@@ -525,12 +547,12 @@ private fun EmailViewDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Un
         }
         ZillitDivider()
         val body = HtmlText.toPlainText(d.bodyHtml)
-        if (body.isBlank()) ZillitText(text = "This email has no body", color = c.textMuted) else ZillitText(
+        if (body.isBlank()) ZillitText(text = str(S.dd_sent_emails_empty_body), color = c.textMuted) else ZillitText(
             text = body,
         )
         if (d.attachments.isNotEmpty()) {
             ZillitDivider()
-            FieldLabel("${d.attachments.size} attachment" + if (d.attachments.size == 1) "" else "s")
+            FieldLabel(plural(d.attachments.size, S.desktop_docdist_one_attachment, S.dd_attachments_line))
             d.attachments.forEach { a ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

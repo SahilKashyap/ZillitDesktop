@@ -58,6 +58,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.LedgerMoney
 import com.zillit.desktop.feature.accounthub.domain.PeriodMode
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
@@ -122,7 +124,7 @@ private fun Header(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit,
         }
         if (state.trialBalanceDirty) {
             ZillitButton(
-                text = "Refresh",
+                text = str(S.refresh_text),
                 onClick = { onEvent(AccountHubEvent.RefreshTrialBalance) },
                 leadingIcon = ZillitIcons.Reload,
                 enabled = state.trialBalanceDraft.hasValidPeriod,
@@ -187,7 +189,7 @@ private fun Crumbs(onRoot: () -> Unit) {
         )
         ZillitText(text = "/", style = ZillitTheme.typography.bodySmall, color = colors.textDisabled)
         ZillitText(
-            text = "Trial Balance",
+            text = str(S.desktop_trial_balance),
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
         )
@@ -211,25 +213,25 @@ private fun FilterBar(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Un
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        FilterField("Period") { PeriodControls(state, onEvent) }
-        FilterField("Account") {
+        FilterField(str(S.cr_meta_period)) { PeriodControls(state, onEvent) }
+        FilterField(str(S.ah_account_label)) {
             ZillitTextField(
                 value = trial.accountFromText,
                 onValueChange = { onEvent(AccountHubEvent.EditTrialBalanceAccounts(it, trial.accountToText)) },
-                placeholder = "From",
+                placeholder = str(S.fromText),
                 modifier = Modifier.width(CODE_INPUT_WIDTH),
             )
             RangeArrow()
             ZillitTextField(
                 value = trial.accountToText,
                 onValueChange = { onEvent(AccountHubEvent.EditTrialBalanceAccounts(trial.accountFromText, it)) },
-                placeholder = "To",
+                placeholder = str(S.toText),
                 modifier = Modifier.width(CODE_INPUT_WIDTH),
             )
         }
-        FilterField("Company") { CompanySelect(state, onEvent) }
-        FilterField("Currency") { CurrencySelect(state, onEvent) }
-        FilterField("Zero accounts") {
+        FilterField(str(S.company)) { CompanySelect(state, onEvent) }
+        FilterField(str(S.asset_currency)) { CurrencySelect(state, onEvent) }
+        FilterField(str(S.desktop_zero_accounts)) {
             ZillitCheckbox(
                 checked = trial.includeZeroAccounts,
                 onCheckedChange = { onEvent(AccountHubEvent.SetTrialBalanceZeroAccounts(it)) },
@@ -375,7 +377,7 @@ private fun CurrencySelect(state: AccountHubUiState, onEvent: (AccountHubEvent) 
         options = options,
         label = ::currencyLabel,
         onSelect = { picked -> picked?.let { onEvent(AccountHubEvent.PickTrialBalanceCurrency(it.code)) } },
-        placeholder = "Base currency",
+        placeholder = str(S.desktop_base_currency),
         enabled = options.isNotEmpty(),
         searchable = options.size > SEARCHABLE_FROM,
         modifier = Modifier.width(CURRENCY_WIDTH),
@@ -394,14 +396,14 @@ private fun Ledger(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit,
             when {
                 trial.loading -> SkeletonRows(columns)
                 trial.failed -> LedgerMessage(
-                    title = "Couldn't load trial balance",
-                    detail = "Adjust the filters and Refresh.",
+                    title = str(S.desktop_hub_couldnt_load_trial_balance),
+                    detail = str(S.desktop_hub_adjust_the_filters_and_refresh),
                     note = trial.errorMessage,
                     onRetry = { onEvent(AccountHubEvent.RefreshTrialBalance) },
                 )
                 trial.report.rows.isEmpty() -> LedgerMessage(
-                    title = "No account balances",
-                    detail = "No data for these filters.",
+                    title = str(S.desktop_no_account_balances),
+                    detail = str(S.desktop_hub_no_data_for_these_filters),
                 )
                 else -> {
                     val symbol = currencySymbol(state)
@@ -424,11 +426,11 @@ private fun HeadRow(columns: Columns) {
             .padding(horizontal = PAD, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeadText("Code", Modifier.width(columns.code))
-        HeadText("Account name", Modifier.weight(1f))
-        HeadText("Debit", Modifier.width(columns.money), TextAlign.End)
-        HeadText("Credit", Modifier.width(columns.money), TextAlign.End)
-        HeadText("Balance", Modifier.width(columns.money), TextAlign.End)
+        HeadText(str(S.code), Modifier.width(columns.code))
+        HeadText(str(S.desktop_account_name), Modifier.weight(1f))
+        HeadText(str(S.desktop_debit), Modifier.width(columns.money), TextAlign.End)
+        HeadText(str(S.desktop_credit), Modifier.width(columns.money), TextAlign.End)
+        HeadText(str(S.ah_balance_label), Modifier.width(columns.money), TextAlign.End)
     }
 }
 
@@ -578,7 +580,7 @@ private fun TotalRow(report: TrialBalance, columns: Columns, symbol: String) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ZillitText(
-                text = "TRIAL BALANCE TOTAL",
+                text = str(S.desktop_trial_balance_total),
                 style = ZillitTheme.typography.bodyMedium.copy(
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.ExtraBold,
@@ -740,7 +742,7 @@ private fun LedgerMessage(title: String, detail: String, note: String? = null, o
         }
         if (onRetry != null) {
             ZillitButton(
-                text = "Try again",
+                text = str(S.docusign_token_gateway_retry),
                 onClick = onRetry,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -802,9 +804,9 @@ private fun rangeProblem(from: String, to: String): String? {
     val start = TrialBalancePeriod.parse(from)
     val end = TrialBalancePeriod.parse(to)
     return when {
-        start == null -> "Pick a start date"
-        end == null -> "Pick an end date"
-        start > end -> "Start is after end"
+        start == null -> str(S.desktop_hub_pick_a_start_date)
+        end == null -> str(S.ce_repeat_end_date_hint)
+        start > end -> str(S.desktop_hub_start_is_after_end)
         else -> null
     }
 }

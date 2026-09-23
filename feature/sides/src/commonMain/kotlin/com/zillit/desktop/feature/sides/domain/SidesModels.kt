@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.sides.domain
 
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A generated sides run's state.
@@ -9,14 +11,16 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
  * both exist on the wire and both are modelled, because a row showing a raw
  * status string is how the web renders the mismatch today.
  */
-enum class SidesStatus(val wire: String, val label: String) {
-    Ready("ready", "Ready"),
-    Generating("generating", "Generating"),
-    Error("error", "Error"),
-    Failed("failed", "Failed"),
-    Archived("archived", "Archived"),
-    Unknown("", "Unknown"),
+enum class SidesStatus(val wire: String, private val labelKey: String) {
+    Ready("ready", S.dd_csv_status_ready),
+    Generating("generating", S.desktop_generating),
+    Error("error", S.docusign_error_title),
+    Failed("failed", S.dd_legend_failed),
+    Archived("archived", S.desktop_archived),
+    Unknown("", S.desktop_unknown),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Whether polling stops here — the web's `isTerminal`. */
     val terminal: Boolean get() = this == Ready || this == Error

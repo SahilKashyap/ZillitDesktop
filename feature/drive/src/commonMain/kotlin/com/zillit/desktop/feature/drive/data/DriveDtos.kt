@@ -36,6 +36,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The wire shapes of `/api/v2/drive`.
@@ -151,7 +153,7 @@ internal data class DriveItemDto(
         val itemId = identifier(resolved) ?: return null
         val displayName = listOf(name, fileName, folderName)
             .firstOrNull { !it.isNullOrBlank() }
-            ?: if (resolved == DriveItemKind.Folder) "Untitled folder" else "Untitled"
+            ?: if (resolved == DriveItemKind.Folder) str(S.drive_untitled_folder) else str(S.untitled)
 
         return DriveItem(
             id = itemId,
@@ -305,7 +307,7 @@ internal data class TagDto(
     @SerialName("color") val color: String? = null,
 ) {
     fun toDomain(): DriveTag? = id?.takeIf { it.isNotBlank() }?.let {
-        DriveTag(id = it, name = name.orEmpty().ifBlank { "Tag" }, color = color.orEmpty())
+        DriveTag(id = it, name = name.orEmpty().ifBlank { str(S.desktop_drive_tag) }, color = color.orEmpty())
     }
 }
 
@@ -691,7 +693,7 @@ internal data class FileRequestDto(
         val identifier = id?.takeIf { it.isNotBlank() } ?: altId?.takeIf { it.isNotBlank() } ?: return null
         return DriveFileRequest(
             id = identifier,
-            title = title.orEmpty().ifBlank { "File request" },
+            title = title.orEmpty().ifBlank { str(S.desktop_drive_file_request) },
             destinationFolderId = folderId.orEmpty(),
             link = listOfNotNull(url, link, publicUrl).firstOrNull { it.isNotBlank() }.orEmpty(),
             expiresAtMillis = expiresAt.stamp(),

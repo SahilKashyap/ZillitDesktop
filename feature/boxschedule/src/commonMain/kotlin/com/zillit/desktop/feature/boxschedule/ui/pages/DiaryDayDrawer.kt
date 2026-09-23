@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
@@ -140,7 +142,7 @@ private fun LooseEntries(
 ) {
     if (!content.focusActive && content.looseEvents.isNotEmpty()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
-            DetailSection("Standalone Events", ZillitIcons.Clock, content.looseEvents.size, null, {}, "") {
+            DetailSection(str(S.dd_standalone_events), ZillitIcons.Clock, content.looseEvents.size, null, {}, "") {
                 content.looseEvents.forEach {
                     EntryRow(it, state, readOnly = readOnly, onEvent = onEvent, mayCall = mayCall)
                 }
@@ -149,7 +151,7 @@ private fun LooseEntries(
     }
     if (content.focused == null && content.looseNotes.isNotEmpty()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
-            DetailSection("Notes", ZillitIcons.Edit, content.looseNotes.size, null, {}, "") {
+            DetailSection(str(S.notes), ZillitIcons.Edit, content.looseNotes.size, null, {}, "") {
                 NoteGroups(content.looseNotes) {
                     EntryRow(it, state, readOnly = readOnly, onEvent = onEvent, mayCall = false)
                 }
@@ -162,7 +164,7 @@ private fun LooseEntries(
 private fun EmptyDay(date: String) {
     Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         ZillitText(
-            "No schedule on this day",
+            str(S.desktop_bs_no_schedule_on_this_day),
             style = ZillitTheme.typography.titleSmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -179,13 +181,14 @@ private fun FocusBar(focusedName: String?, onEvent: (BoxScheduleEvent) -> Unit) 
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ZillitText(
-            text = focusedName?.let { "Showing only $it on this day" } ?: "Showing only notes on this day",
+            text = focusedName?.let { str(S.desktop_bs_showing_only_on_day, it) }
+                ?: str(S.desktop_bs_showing_only_notes),
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
             color = colors.textMuted,
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            "Show full day",
+            str(S.desktop_bs_show_full_day),
             onClick = { onEvent(DayEvent.ShowFullDay) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -208,10 +211,10 @@ private fun AddToDayBar(dayKey: Long, content: DrawerContent, onEvent: (BoxSched
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Caption("Add to this day", modifier = Modifier.weight(1f))
+            Caption(str(S.dd_add_to_day), modifier = Modifier.weight(1f))
             if (!focusActive && content.onDay.size > 1) {
                 ZillitButton(
-                    text = "Delete all schedules",
+                    text = str(S.desktop_bs_delete_all_schedules),
                     onClick = { onEvent(ScheduleEvent.AskDeleteAllOn(dayKey)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -221,15 +224,21 @@ private fun AddToDayBar(dayKey: Long, content: DrawerContent, onEvent: (BoxSched
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!focusActive || content.focused != null) {
-                CreateButton("Create Schedule", ZillitIcons.Calendar) { onEvent(ScheduleEvent.NewSchedule(dayKey)) }
+                CreateButton(
+                    str(S.create_schedule),
+                    ZillitIcons.Calendar,
+                ) { onEvent(ScheduleEvent.NewSchedule(dayKey)) }
             }
             if (!focusActive) {
-                CreateButton("Create Event", ZillitIcons.Clock) {
+                CreateButton(str(S.create_event), ZillitIcons.Clock) {
                     onEvent(EntryEvent.NewEntry(DiaryKind.Event, dayKey))
                 }
             }
             if (!focusActive || content.notesFocus) {
-                CreateButton("Create Note", ZillitIcons.Edit) { onEvent(EntryEvent.NewEntry(DiaryKind.Note, dayKey)) }
+                CreateButton(
+                    str(S.bs_create_note),
+                    ZillitIcons.Edit,
+                ) { onEvent(EntryEvent.NewEntry(DiaryKind.Note, dayKey)) }
             }
         }
     }
@@ -269,17 +278,17 @@ internal fun QuickActionDialog(state: BoxScheduleUiState, dayKey: Long, onEvent:
         width = 400.dp,
     ) {
         ZillitText(
-            "This date has no schedule or events. What would you like to create?",
+            str(S.desktop_bs_no_schedule_what_to_create),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
         )
-        QuickChoice(ZillitIcons.Calendar, "Create Schedule", "Add a Prep, Shoot, Wrap, Day Off, or Travel day") {
+        QuickChoice(ZillitIcons.Calendar, str(S.create_schedule), str(S.qa_schedule_desc)) {
             onEvent(ScheduleEvent.NewSchedule(dayKey))
         }
-        QuickChoice(ZillitIcons.Clock, "Create Event", "Add a meeting, call, or activity with time and location") {
+        QuickChoice(ZillitIcons.Clock, str(S.create_event), str(S.qa_event_desc)) {
             onEvent(EntryEvent.NewEntry(DiaryKind.Event, dayKey))
         }
-        QuickChoice(ZillitIcons.Edit, "Create Note", "Add a quick note or reminder for this day") {
+        QuickChoice(ZillitIcons.Edit, str(S.bs_create_note), str(S.qa_note_desc)) {
             onEvent(EntryEvent.NewEntry(DiaryKind.Note, dayKey))
         }
     }

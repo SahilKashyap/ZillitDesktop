@@ -58,6 +58,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.rememberAvatar
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealStatus
 import kotlin.math.absoluteValue
 import kotlin.math.max
@@ -122,7 +124,12 @@ fun DmStatusBadge(status: DealStatus, modifier: Modifier = Modifier) = DmBadge(s
 @Composable
 fun DmUnreadPill(count: Int, modifier: Modifier = Modifier) {
     if (count <= 0) return
-    ZillitTooltip(text = "$count unread notification${if (count == 1) "" else "s"} for this deal") {
+    ZillitTooltip(
+        text = if (count == 1) str(S.desktop_dm_one_unread_notification) else str(
+            S.desktop_dm_n_unread_notifications,
+            count,
+        ),
+    ) {
         Box(
             modifier = modifier
                 .defaultMinSize(minWidth = 16.dp)
@@ -479,7 +486,7 @@ fun DmSearchPill(
         if (value.isNotEmpty()) {
             DmRoundIcon(
                 ZillitIcons.Close,
-                tooltip = "Clear search",
+                tooltip = str(S.ah_cd_clear_search),
                 onClick = { onValueChange("") },
                 size = 20.dp,
                 iconSize = 12.dp,

@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.maps.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Where a pin lands relative to the city and the active studio zone —
  * `utils/boundaryGeometry.js`, MAP_PIN_BOUNDARY_CONFIRMATION_SPEC §2.
@@ -34,8 +37,8 @@ data class BoundaryVerdict(
  */
 fun evaluatePinBoundary(point: LatLng?, city: MapCity?, activeZone: MapLocation?): BoundaryVerdict {
     if (point == null || city == null) return BoundaryVerdict(BoundaryStatus.Inside)
-    val cityName = city.name.ifBlank { "the city" }
-    val zoneName = activeZone?.name?.takeIf { it.isNotBlank() } ?: "the studio zone"
+    val cityName = city.name.ifBlank { str(S.desktop_map_the_city) }
+    val zoneName = activeZone?.name?.takeIf { it.isNotBlank() } ?: str(S.desktop_map_the_studio_zone)
 
     // Zone first, and it short-circuits: a zone drawn at a city's edge
     // legitimately covers ground the city circle does not.
@@ -106,20 +109,22 @@ fun buildBoundaryPrompt(
     address: String? = null,
     name: String? = null,
 ): BoundaryPrompt? {
-    val city = cityName?.takeIf { it.isNotBlank() } ?: "the selected city"
-    val zone = zoneName?.takeIf { it.isNotBlank() } ?: "studio zone"
-    val verb = if (mode == BoundaryMode.Move) "move" else "pin"
+    val city = cityName?.takeIf { it.isNotBlank() } ?: str(S.desktop_map_the_selected_city)
+    val zone = zoneName?.takeIf { it.isNotBlank() } ?: str(S.desktop_map_studio_zone_lower)
     val where = address?.takeIf { it.isNotBlank() }
-    val cancel = BoundaryAction(BoundaryChoice.Cancel, "Cancel", BoundaryActionKind.Cancel)
-    val move = BoundaryAction(BoundaryChoice.Confirm, "Move", BoundaryActionKind.Primary)
+    val cancel = BoundaryAction(BoundaryChoice.Cancel, str(S.cancel), BoundaryActionKind.Cancel)
+    val move = BoundaryAction(BoundaryChoice.Confirm, str(S.move), BoundaryActionKind.Primary)
 
     return when (status) {
         // Adding inside every boundary is silent; a move always confirms,
         // because a drag can be an accident.
         BoundaryStatus.Inside -> if (mode == BoundaryMode.Move) {
             BoundaryPrompt(
-                title = "Move Location",
-                message = "Move '${name?.takeIf { it.isNotBlank() } ?: "this location"}' to the new position?",
+                title = str(S.desktop_map_move_location_title),
+                message = str(
+                    S.desktop_map_move_location_question,
+                    name?.takeIf { it.isNotBlank() } ?: str(S.desktop_map_this_location),
+                ),
                 address = where,
                 actions = listOf(cancel, move),
             )
@@ -128,38 +133,53 @@ fun buildBoundaryPrompt(
         }
 
         BoundaryStatus.OutsideZone -> BoundaryPrompt(
-            title = "Outside Studio Zone",
-            message = "Location is outside the $zone. Do you want to $verb the location?",
+            title = str(S.desktop_map_outside_studio_zone),
+            message = if (mode == BoundaryMode.Move) {
+                str(S.desktop_map_outside_zone_move, zone)
+            } else {
+                str(S.desktop_map_outside_zone_pin, zone)
+            },
             address = where,
             actions = listOf(
-                BoundaryAction(BoundaryChoice.Cancel, "No", BoundaryActionKind.Cancel),
-                BoundaryAction(BoundaryChoice.Confirm, "Yes", BoundaryActionKind.Primary),
+                BoundaryAction(BoundaryChoice.Cancel, str(S.no), BoundaryActionKind.Cancel),
+                BoundaryAction(BoundaryChoice.Confirm, str(S.yes), BoundaryActionKind.Primary),
             ),
         )
 
         // Spec §5.5: a moved pin keeps its city, so no "Create Another City".
         BoundaryStatus.OutsideCity -> if (mode == BoundaryMode.Move) {
             BoundaryPrompt(
-                title = "Outside $city",
-                message = "The new position is outside $city and any studio zone. Move the pin anyway?",
+                title = str(S.desktop_map_outside_area, city),
+                message = str(S.desktop_map_outside_city_move, city),
                 address = where,
                 actions = listOf(cancel, move),
             )
         } else {
-            BoundaryPrompt(
-                title = "Outside $city",
-                message = "This location is outside the selected city and studio zone. What would you like to do?",
-                address = where,
-                actions = listOf(
-                    BoundaryAction(
-                        BoundaryChoice.CreateCity,
-                        "Create Another City & Pin Location",
-                        BoundaryActionKind.Primary,
-                    ),
-                    BoundaryAction(BoundaryChoice.Confirm, "Pin Location in the Same City", BoundaryActionKind.Neutral),
-                    cancel,
-                ),
-            )
+            outsideCityPinPrompt(city = city, where = where, cancel = cancel)
         }
     }
 }
+
+/**
+ * Pinning outside the city: the three-way choice, whose labels are the client
+ * email's wording the web ships.
+ */
+private fun outsideCityPinPrompt(city: String, where: String?, cancel: BoundaryAction): BoundaryPrompt =
+    BoundaryPrompt(
+        title = str(S.desktop_map_outside_area, city),
+        message = str(S.desktop_map_outside_city_choose),
+        address = where,
+        actions = listOf(
+            BoundaryAction(
+                BoundaryChoice.CreateCity,
+                str(S.desktop_map_create_another_city),
+                BoundaryActionKind.Primary,
+            ),
+            BoundaryAction(
+                BoundaryChoice.Confirm,
+                str(S.desktop_map_pin_in_same_city),
+                BoundaryActionKind.Neutral,
+            ),
+            cancel,
+        ),
+    )

@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
@@ -52,9 +54,16 @@ internal fun PoQueuePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             QueueStats(state, onEvent)
             if (state.showsFilters) PoFilterRow(state, onEvent)
             ZillitSectionCard(
-                title = if (state.queueScope == PoQueueScope.Mine) "My Queue" else "All Queue",
+                title = if (state.queueScope == PoQueueScope.Mine) {
+                    str(S.desktop_my_queue)
+                } else {
+                    str(S.desktop_all_queue)
+                },
                 icon = ZillitIcons.Clock,
-                meta = "${rows.size} order${if (rows.size == 1) "" else "s"}",
+                meta = str(
+                    if (rows.size == 1) S.desktop_po_order_count_one else S.desktop_po_order_count_other,
+                    rows.size,
+                ),
                 padded = false,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -81,34 +90,34 @@ private fun QueueStats(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val departments = rows.mapNotNull { it.departmentId }.distinct().size
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         ZillitStatTile(
-            label = "Pending",
+            label = str(S.pending),
             value = pending.toString(),
-            sub = "Waiting on an approval",
+            sub = str(S.desktop_po_waiting_on_an_approval),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Clock,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Ready to process",
+            label = str(S.ah_ready_to_process),
             value = ready.toString(),
-            sub = "Approved and yours to code",
+            sub = str(S.desktop_po_approved_and_yours_to_code),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Ledger,
             onClick = { onEvent(PoEvent.Open(com.zillit.desktop.feature.purchaseorder.ui.PoDestination.Entry)) },
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "My Committed",
+            label = str(S.desktop_po_my_committed),
             value = mine.totalValue(),
-            sub = mine.currencyNote() ?: "Assigned to you",
+            sub = mine.currencyNote() ?: str(S.desktop_po_assigned_to_you),
             tone = StatusTone.Done,
             icon = ZillitIcons.Wallet,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Assigned Depts",
+            label = str(S.desktop_po_assigned_depts),
             value = departments.toString(),
-            sub = "Departments in this queue",
+            sub = str(S.desktop_po_departments_in_this_queue),
             icon = ZillitIcons.Users,
             modifier = Modifier.weight(1f),
         )

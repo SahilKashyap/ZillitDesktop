@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadges
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistUnread
 import com.zillit.desktop.core.common.ZillitError
@@ -536,8 +538,8 @@ class DocDistViewModel(
         if (asked) rights.ask(MODULE_LABEL, kind)
         sendEffect(
             DocDistEffect.Failed(
-                if (asked) "You do not have ${kind.verb} rights on $MODULE_LABEL — asking an administrator."
-                else "You do not have ${kind.verb} rights on $MODULE_LABEL.",
+                if (asked) str(S.desktop_no_rights_on_module_asking_admin, kind.verb, MODULE_LABEL)
+                else str(S.desktop_no_rights_on_module, kind.verb, MODULE_LABEL),
             ),
         )
     }
@@ -581,6 +583,6 @@ class DocDistViewModel(
         const val SEARCH_DEBOUNCE_MS = 300L
 
         /** What the reader calls this tool; it reaches an admin's chat verbatim. */
-        const val MODULE_LABEL = "Document Distribution"
+        val MODULE_LABEL: String get() = str(S.dd_title)
     }
 }

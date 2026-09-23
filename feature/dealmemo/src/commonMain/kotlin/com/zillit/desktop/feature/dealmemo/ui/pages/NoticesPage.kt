@@ -37,6 +37,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealDates
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
@@ -80,11 +82,11 @@ fun NoticesPage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) {
             DmSearchPill(
                 value = notices.search,
                 onValueChange = { onEvent(NoticesEvent.Search(it)) },
-                placeholder = "Search notices — by crew, reference, department…",
+                placeholder = str(S.desktop_dm_search_notices_by_crew_reference_department),
                 modifier = Modifier.weight(1f),
             )
             DmButton(
-                text = "Notice Template",
+                text = str(S.dm_notice_template_title),
                 onClick = { onEvent(DealMemoEvent.Navigate(DealMemoRoute.NoticeTemplate)) },
                 style = DmButtonStyle.Ghost,
                 icon = ZillitIcons.Edit,
@@ -92,12 +94,16 @@ fun NoticesPage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) {
         }
         Spacer(Modifier.height(12.dp))
         when {
-            !notices.loaded -> DmCard(Modifier.fillMaxWidth()) { TableMessage(loading = true, text = "Loading…") }
+            !notices.loaded -> DmCard(Modifier.fillMaxWidth()) {
+                TableMessage(loading = true, text = str(S.dm_loading))
+            }
             groups.isEmpty() -> DmCard(Modifier.fillMaxWidth()) {
                 val query = notices.search.trim()
                 TableMessage(
                     loading = false,
-                    text = if (query.isNotEmpty()) "No notices match “$query”." else "No deal memos yet.",
+                    text = if (query.isNotEmpty()) str(S.desktop_dm_no_notices_match_query, query) else str(
+                        S.dm_notices_empty,
+                    ),
                 )
             }
             else -> NoticesTable(state, groups, labels, onEvent, Modifier.weight(1f))
@@ -138,22 +144,21 @@ private fun InfoBanner() {
             modifier = Modifier.padding(top = 2.dp),
         )
         ZillitText(
-            text = "All Crew Deal Memos will show up here with end date and notice period, so you can send them " +
-                "notices.",
+            text = str(S.desktop_dm_all_crew_deal_memos_will_show_up),
             style = DmType.sans(12.5.sp).copy(lineHeight = 19.sp),
             color = if (dark) Color(0xFFBFDBFE) else Color(0xFF284B8F),
         )
     }
 }
 
-private val COLUMNS = listOf(
-    DmColumn("Reference", width = 150.dp),
-    DmColumn("Crew Member", weight = 1.4f),
-    DmColumn("Department / Designation", weight = 1.3f),
-    DmColumn("Status", width = 150.dp),
-    DmColumn("Contract End Date", width = 150.dp),
-    DmColumn("Notice Period", width = 150.dp),
-    DmColumn("Notice", weight = 1.2f, alignEnd = true),
+private val COLUMNS get() = listOf(
+    DmColumn(str(S.desktop_reference), width = 150.dp),
+    DmColumn(str(S.crew_member), weight = 1.4f),
+    DmColumn(str(S.desktop_dm_department_designation), weight = 1.3f),
+    DmColumn(str(S.dm_label_status), width = 150.dp),
+    DmColumn(str(S.dm_ph_contract_end_date), width = 150.dp),
+    DmColumn(str(S.dm_ds_card_notice), width = 150.dp),
+    DmColumn(str(S.desktop_dm_notice), weight = 1.2f, alignEnd = true),
 )
 
 @Composable
@@ -211,15 +216,15 @@ private fun GroupHeader(group: NoticeGroup, onEvent: (DealMemoEvent) -> Unit) {
         if (group.kind != NoticeGroupKind.Deactivated) {
             val unsent = group.unsent.size
             DmButton(
-                text = if (unsent > 0) "Send all ($unsent)" else "Send all",
+                text = if (unsent > 0) str(S.desktop_dm_send_all_count, unsent) else str(S.desktop_dm_send_all),
                 onClick = { onEvent(NoticesEvent.OpenSendAll(group.kind)) },
                 style = DmButtonStyle.SendAll,
                 icon = ZillitIcons.Send,
                 enabled = unsent > 0,
                 tooltip = if (unsent > 0) {
-                    "Send a notice to all $unsent unsent crew in ${group.kind.title}"
+                    str(S.desktop_dm_send_notice_to_all_unsent, unsent, group.kind.title)
                 } else {
-                    "All notices already sent"
+                    str(S.desktop_dm_all_notices_already_sent)
                 },
             )
         }
@@ -294,12 +299,12 @@ private fun NoticeCell(state: DealMemoUiState, kind: NoticeGroupKind, deal: Deal
             when {
                 NoticeRules.canDeactivate(deal, state.notices.deactivatedHere) ->
                     DmButton(
-                        "Deactivate",
+                        str(S.dm_notices_deactivate),
                         onClick = { onEvent(NoticesEvent.OpenDeactivate(deal)) },
                         style = DmButtonStyle.Danger,
                     )
                 deal.rawStatus == "deactivated" -> ZillitText(
-                    text = "Deactivated · ${DealDates.shortUtc(deal.lastPayDate ?: deal.lastPayDay)}",
+                    text = str(S.desktop_dm_deactivated_on, DealDates.shortUtc(deal.lastPayDate ?: deal.lastPayDay)),
                     style = DmType.mono(11.sp, FontWeight.SemiBold),
                     color = if (ZillitTheme.colors.isDark) Color(0xFFFCA5A5) else Color(0xFFC0392B),
                 )
@@ -309,7 +314,7 @@ private fun NoticeCell(state: DealMemoUiState, kind: NoticeGroupKind, deal: Deal
             deal.noticeSent -> SentStamp(state, deal)
             kind != NoticeGroupKind.Deactivated ->
                 DmButton(
-                    "Send",
+                    str(S.dm_nda_send),
                     onClick = { onEvent(NoticesEvent.OpenSend(deal)) },
                     style = DmButtonStyle.Notice,
                     icon = ZillitIcons.Send,
@@ -323,7 +328,7 @@ private fun SentStamp(state: DealMemoUiState, deal: DealDoc) {
     val sender = deal.noticeSentBy?.let(state.people::get)
     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         ZillitText(
-            text = "Notice Sent by: ${sender?.fullName ?: deal.noticeSentByName ?: "—"}",
+            text = str(S.desktop_dm_notice_sent_by, sender?.fullName ?: deal.noticeSentByName ?: "—"),
             style = DmType.sans(12.sp, FontWeight.SemiBold),
             color = dm.ink,
             maxLines = 1,
@@ -347,22 +352,22 @@ private fun SendNoticeModal(state: DealMemoUiState, labels: DealCrewLabels, onEv
     val sending = draft?.sending == true
     DmModal(
         visible = draft != null,
-        title = "Send Notice",
+        title = str(S.desktop_dm_send_notice),
         onDismiss = { onEvent(NoticesEvent.CancelSend) },
         maxWidth = 680.dp,
         dismissible = !sending,
     ) {
         if (current == null) return@DmModal
         Column(modifier = Modifier.padding(20.dp)) {
-            AmberStrip("You can edit this notice below before sending it.")
+            AmberStrip(str(S.desktop_dm_you_can_edit_this_notice_below_before))
             Spacer(Modifier.height(16.dp))
             val role = labels.labels(current.deal).role
             ZillitText(
                 text = buildAnnotatedString {
-                    append("Send the end-of-contract notice for ")
+                    append(str(S.desktop_dm_send_the_end_of_contract_notice_for) + " ")
                     withStyle(
                         SpanStyle(fontWeight = FontWeight.SemiBold, color = dm.ink),
-                    ) { append(current.deal.crewName ?: "this crew member") }
+                    ) { append(current.deal.crewName ?: str(S.desktop_this_crew_member)) }
                     if (role != DealCrewLabels.DASH) withStyle(SpanStyle(color = dm.ink3)) { append(" · $role") }
                     append(".")
                 },
@@ -370,11 +375,11 @@ private fun SendNoticeModal(state: DealMemoUiState, labels: DealCrewLabels, onEv
                 color = dm.ink2,
             )
             Spacer(Modifier.height(16.dp))
-            DmEyebrow("Notice", tracking = 0.06f)
+            DmEyebrow(str(S.desktop_dm_notice), tracking = 0.06f)
             Spacer(Modifier.height(6.dp))
             LetterField(value = current.body, onValueChange = { onEvent(NoticesEvent.EditSendBody(it)) })
             Spacer(Modifier.height(16.dp))
-            DmEyebrow("Last pay day", tracking = 0.06f)
+            DmEyebrow(str(S.dm_ph_last_pay_day), tracking = 0.06f)
             Spacer(Modifier.height(6.dp))
             ZillitDateField(
                 value = current.date,
@@ -384,13 +389,13 @@ private fun SendNoticeModal(state: DealMemoUiState, labels: DealCrewLabels, onEv
             Spacer(Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 DmButton(
-                    "Cancel",
+                    str(S.dm_cancel),
                     onClick = { onEvent(NoticesEvent.CancelSend) },
                     style = DmButtonStyle.ModalNeutral,
                     enabled = !sending,
                 )
                 DmButton(
-                    text = if (sending) "Sending…" else "Send Notice",
+                    text = if (sending) str(S.dm_nda_sending) else str(S.desktop_dm_send_notice),
                     onClick = { onEvent(NoticesEvent.ConfirmSend) },
                     style = DmButtonStyle.Notice,
                     loading = sending,
@@ -443,6 +448,7 @@ private fun AmberStrip(text: String) {
 }
 
 @Composable
+@Suppress("LongMethod") // One modal, laid out in one place.
 private fun SendAllModal(state: DealMemoUiState, groups: List<NoticeGroup>, onEvent: (DealMemoEvent) -> Unit) {
     val kind = state.notices.sendAll
     val shown = remember { mutableStateOf<NoticeGroupKind?>(null) }
@@ -452,7 +458,7 @@ private fun SendAllModal(state: DealMemoUiState, groups: List<NoticeGroup>, onEv
     val sending = state.notices.sendingAll
     DmModal(
         visible = kind != null,
-        title = "Send all — ${current?.title.orEmpty()}",
+        title = str(S.desktop_dm_send_all_group, current?.title.orEmpty()),
         onDismiss = { onEvent(NoticesEvent.CancelSendAll) },
         maxWidth = 520.dp,
         dismissible = !sending,
@@ -460,10 +466,18 @@ private fun SendAllModal(state: DealMemoUiState, groups: List<NoticeGroup>, onEv
         Column(modifier = Modifier.padding(20.dp)) {
             ZillitText(
                 text = buildAnnotatedString {
-                    append("Send an end-of-contract notice to ")
+                    append(str(S.desktop_dm_send_an_end_of_contract_notice_to) + " ")
                     withStyle(
                         SpanStyle(fontWeight = FontWeight.SemiBold, color = dm.ink),
-                    ) { append("$count crew member${if (count == 1) "" else "s"}") }
+                    ) {
+                        append(
+                            if (count == 1) {
+                                str(S.desktop_sos_crew_member_one)
+                            } else {
+                                str(S.desktop_dm_n_crew_members, count)
+                            },
+                        )
+                    }
                     append(" in ")
                     withStyle(
                         SpanStyle(fontWeight = FontWeight.SemiBold, color = dm.ink),
@@ -475,21 +489,24 @@ private fun SendAllModal(state: DealMemoUiState, groups: List<NoticeGroup>, onEv
             )
             Spacer(Modifier.height(8.dp))
             ZillitText(
-                text = "Each person receives their own notice, using their contract end date as the last pay day and " +
-                    "the project notice template. Crew already sent are skipped.",
+                text = str(S.desktop_dm_each_person_receives_their_own_notice_using),
                 style = DmType.sans(12.sp).copy(lineHeight = 18.sp),
                 color = dm.ink3,
             )
             Spacer(Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 DmButton(
-                    "Cancel",
+                    str(S.dm_cancel),
                     onClick = { onEvent(NoticesEvent.CancelSendAll) },
                     style = DmButtonStyle.ModalNeutral,
                     enabled = !sending,
                 )
                 DmButton(
-                    text = if (sending) "Sending…" else "Send $count notice${if (count == 1) "" else "s"}",
+                    text = when {
+                        sending -> str(S.dm_nda_sending)
+                        count == 1 -> str(S.desktop_dm_send_one_notice)
+                        else -> str(S.desktop_dm_send_n_notices, count)
+                    },
                     onClick = { onEvent(NoticesEvent.ConfirmSendAll) },
                     style = DmButtonStyle.Notice,
                     loading = sending,
@@ -510,18 +527,18 @@ internal fun DeactivateModal(draft: DeactivateDraft?, onEvent: (DealMemoEvent) -
     val busy = draft?.busy == true
     DmModal(
         visible = draft != null,
-        title = "Deactivate deal memo",
+        title = str(S.desktop_dm_deactivate_deal_memo),
         onDismiss = { onEvent(NoticesEvent.CancelDeactivate) },
         dismissible = !busy,
         footer = {
             DmButton(
-                "Cancel",
+                str(S.dm_cancel),
                 onClick = { onEvent(NoticesEvent.CancelDeactivate) },
                 style = DmButtonStyle.ModalNeutral,
                 enabled = !busy,
             )
             DmButton(
-                text = if (busy) "Deactivating..." else "Deactivate",
+                text = if (busy) str(S.desktop_deactivating) else str(S.dm_notices_deactivate),
                 onClick = { onEvent(NoticesEvent.ConfirmDeactivate) },
                 style = DmButtonStyle.ModalDanger,
                 loading = busy,
@@ -532,8 +549,7 @@ internal fun DeactivateModal(draft: DeactivateDraft?, onEvent: (DealMemoEvent) -
         if (current == null) return@DmModal
         Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
             ZillitText(
-                text = "For a crew member who is no longer employed on this production. Payroll stops paying " +
-                    "on/after the last pay date.",
+                text = str(S.desktop_dm_for_a_crew_member_who_is_no),
                 style = DmType.sans(12.sp).copy(lineHeight = 18.sp),
                 color = dm.ink3,
             )
@@ -559,7 +575,7 @@ internal fun DeactivateModal(draft: DeactivateDraft?, onEvent: (DealMemoEvent) -
                 Spacer(Modifier.height(12.dp))
             }
             Row {
-                DmEyebrow("Last Pay Date", color = dm.ink3, tracking = 0.05f)
+                DmEyebrow(str(S.dm_notices_last_pay_date), color = dm.ink3, tracking = 0.05f)
                 ZillitText(text = " *", style = DmType.sans(12.sp, FontWeight.SemiBold), color = dm.brandText)
             }
             Spacer(Modifier.height(4.dp))

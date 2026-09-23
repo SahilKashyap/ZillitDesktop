@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.callsheet.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.ComposeSheet
@@ -13,6 +15,7 @@ import com.zillit.desktop.feature.callsheet.domain.missingDefaultTitles
 import com.zillit.desktop.feature.callsheet.domain.restoreCell
 import com.zillit.desktop.feature.callsheet.domain.restoreCellFromRemovedRow
 import com.zillit.desktop.feature.callsheet.domain.restoreRow
+import com.zillit.desktop.feature.callsheet.domain.shouldWriteApproverMeta
 import com.zillit.desktop.feature.callsheet.domain.updateCell
 import com.zillit.desktop.feature.callsheet.domain.withColumnRestored
 import com.zillit.desktop.feature.callsheet.domain.withLineRestored
@@ -141,7 +144,7 @@ internal class EditorController(private val ctx: SheetContext) {
                     }
                 }
                 is ZillitResult.Failure -> ctx.toast(
-                    "Failed to load call sheet: ${result.error.localised()}",
+                    str(S.desktop_cs_failed_to_load, result.error.localised()),
                     isError = true,
                 )
             }
@@ -172,12 +175,11 @@ internal class EditorController(private val ctx: SheetContext) {
                 copy(
                     dialog = SheetDialog.Confirm(
                         action = ConfirmAction.LeaveEditor,
-                        title = "Unsaved Changes",
-                        message = "You have unsaved changes that will be lost if you leave. " +
-                            "Would you like to save before leaving?",
-                        confirmLabel = "Leave Without Saving",
+                        title = str(S.cs_exit_title),
+                        message = str(S.desktop_unsaved_changes_lost_prompt),
+                        confirmLabel = str(S.dm_quick_exit_leave),
                         danger = true,
-                        secondaryLabel = "Save & Leave",
+                        secondaryLabel = str(S.cs_exit_save_and_leave),
                     ),
                 )
             }
@@ -208,10 +210,9 @@ internal class EditorController(private val ctx: SheetContext) {
                 copy(
                     dialog = SheetDialog.Confirm(
                         action = ConfirmAction.RestartReview(intent),
-                        title = "Restart review?",
-                        message = "This file is already shared for review. Saving will move it back to Draft and " +
-                            "restart the review process. Are you sure you want to continue?",
-                        confirmLabel = "Yes, save",
+                        title = str(S.desktop_restart_review_title),
+                        message = str(S.cs_msg_save_shared_confirm),
+                        confirmLabel = str(S.desktop_yes_save),
                         danger = true,
                     ),
                 )
@@ -257,7 +258,7 @@ internal class EditorController(private val ctx: SheetContext) {
         val dialog = ctx.state.dialog as? SheetDialog.DraftName ?: return
         val name = dialog.name.trim()
         if (name.isEmpty()) {
-            ctx.toast("Please enter a draft name.", isError = true)
+            ctx.toast(str(S.desktop_please_enter_a_draft_name), isError = true)
             return
         }
         val editor = ctx.state.editor ?: return
@@ -307,7 +308,7 @@ internal class EditorController(private val ctx: SheetContext) {
                                 ),
                             )
                         }
-                        ctx.toast("Revision saved!")
+                        ctx.toast(str(S.desktop_revision_saved))
                         onSaved(sheetId)
                     }
                     is ZillitResult.Failure -> failed(revision.error.localised())
@@ -316,7 +317,7 @@ internal class EditorController(private val ctx: SheetContext) {
                 val created = ctx.repository.create(project, name, editor.document, viewer.displayName, viewer.userId)
                 when (created) {
                     is ZillitResult.Success -> {
-                        ctx.toast("Draft created!")
+                        ctx.toast(str(S.desktop_draft_created))
                         closeOntoDrafts()
                         onSaved(created.data.id)
                     }
@@ -328,7 +329,7 @@ internal class EditorController(private val ctx: SheetContext) {
 
     private fun failed(message: String) {
         edit { copy(saving = false) }
-        ctx.toast("Save failed: $message", isError = true)
+        ctx.toast(str(S.ah_err_save_failed_msg, message), isError = true)
     }
 
     /**
@@ -367,7 +368,7 @@ internal class EditorController(private val ctx: SheetContext) {
                             ),
                         )
                     }
-                    ctx.toast("Saved as new draft!")
+                    ctx.toast(str(S.desktop_saved_as_new_draft))
                 }
                 is ZillitResult.Failure -> failed(created.error.localised())
             }
@@ -377,7 +378,10 @@ internal class EditorController(private val ctx: SheetContext) {
     /**
      * Total days as typed; the shoot-day counter only when a NEW sheet still
      * shows the number it was handed; the approvers, which become the project
-     * default — and never an empty list.
+     * default. ZL-21468: an EMPTIED list is written too — the PUT merges, so
+     * omitting the key left the removed approver in the default and reopening
+     * seeded them straight back — but only when the editor opened with
+     * approvers (`shouldWriteApproverMeta`).
      */
     private suspend fun writeCounters(project: String, editor: EditorState) {
         val shared = editor.document.shared
@@ -385,7 +389,8 @@ internal class EditorController(private val ctx: SheetContext) {
             totalDays = shared.totalDays.ifBlank { null },
             currentShootDay = editor.currentShootDay
                 .takeIf { it > 0 && shared.shootDayNumber.trim().toIntOrNull() == it },
-            finalApproverIds = shared.approverIds.ifEmpty { null },
+            finalApproverIds = shared.approverIds
+                .takeIf { shouldWriteApproverMeta(it, editor.initialApproverIds) },
         )
         if (update.isEmpty) return
         if (ctx.repository.saveMetadata(project, update) is ZillitResult.Success) {

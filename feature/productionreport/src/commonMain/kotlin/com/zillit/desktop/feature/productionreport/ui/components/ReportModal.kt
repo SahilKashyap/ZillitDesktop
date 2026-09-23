@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.ui.theme.ReportTheme
 
 /**
@@ -129,7 +131,12 @@ internal fun CloseDisc(onClose: () -> Unit) {
             .plainClick(source = source, onClick = onClose),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(ZillitIcons.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(12.dp))
+        Icon(
+            ZillitIcons.Close,
+            contentDescription = str(S.close),
+            tint = Color.White,
+            modifier = Modifier.size(12.dp),
+        )
     }
 }
 
@@ -192,9 +199,11 @@ internal fun ConfirmModal(
     onCancel: () -> Unit,
     secondaryLabel: String? = null,
     onSecondary: () -> Unit = {},
+    /** The request is in flight: the buttons disable and the confirm reads "Working…" until it settles. */
+    busy: Boolean = false,
 ) {
     val colors = ReportTheme.colors
-    ModalScrim(onDismiss = null, onEscape = onCancel) {
+    ModalScrim(onDismiss = null, onEscape = { if (!busy) onCancel() }) {
         Column(
             modifier = Modifier
                 .widthIn(max = 480.dp)
@@ -241,14 +250,22 @@ internal fun ConfirmModal(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                ReportButton("Cancel", onCancel, kind = ButtonKind.Outline, fontSize = 12.sp)
+                ReportButton(str(S.cancel), onCancel, kind = ButtonKind.Outline, fontSize = 12.sp, enabled = !busy)
                 val confirmKind = when {
                     secondaryLabel != null -> ButtonKind.DangerOutline
                     danger -> ButtonKind.Danger
                     else -> ButtonKind.Accent
                 }
-                ReportButton(confirmLabel, onConfirm, kind = confirmKind, fontSize = 12.sp)
-                secondaryLabel?.let { ReportButton(it, onSecondary, kind = ButtonKind.Accent, fontSize = 12.sp) }
+                ReportButton(
+                    if (busy) str(S.desktop_working_ellipsis) else confirmLabel,
+                    onConfirm,
+                    kind = confirmKind,
+                    fontSize = 12.sp,
+                    enabled = !busy,
+                )
+                secondaryLabel?.let {
+                    ReportButton(it, onSecondary, kind = ButtonKind.Accent, fontSize = 12.sp, enabled = !busy)
+                }
             }
         }
     }

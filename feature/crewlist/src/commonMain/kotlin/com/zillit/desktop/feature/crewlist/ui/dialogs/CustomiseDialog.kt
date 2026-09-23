@@ -72,6 +72,8 @@ import com.zillit.desktop.feature.crewlist.ui.components.CrewSlider
 import com.zillit.desktop.feature.crewlist.ui.components.crewPalette
 import com.zillit.desktop.feature.crewlist.ui.components.onBackdropTap
 import com.zillit.desktop.feature.crewlist.ui.components.swallowPresses
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The host's browser pane for a canvas document. [obscured] is true while
@@ -167,7 +169,7 @@ private fun DialogBar(model: CustomiseModel, copy: CrewCopy, onEvent: (CrewListE
                 ZillitIcon(icon = ZillitIcons.Eye, tint = ZillitTheme.colors.accentText, size = 16.dp)
             }
             ZillitText(
-                text = copy.t("CustomisePreview", "Customise & Preview"),
+                text = copy.t("CustomisePreview", str(S.desktop_cl_customise_and_preview)),
                 style = ZillitTheme.typography.titleSmall,
                 maxLines = 1,
             )
@@ -187,7 +189,7 @@ private fun DialogBar(model: CustomiseModel, copy: CrewCopy, onEvent: (CrewListE
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ZillitButton(
-                text = copy.t("generate_pdf", "Generate PDF"),
+                text = copy.t("generate_pdf", str(S.generate_pdf)),
                 size = ButtonSize.Small,
                 leadingIcon = CrewIcons.Document,
                 loading = model.generating,
@@ -195,7 +197,7 @@ private fun DialogBar(model: CustomiseModel, copy: CrewCopy, onEvent: (CrewListE
             )
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = copy.t("Close", "Close"),
+                contentDescription = copy.t("Close", str(S.close)),
                 onClick = { onEvent(CrewListEvent.Design.Close) },
             )
         }
@@ -218,10 +220,10 @@ private fun CanvasSwitch(
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Segment(copy.t("Design", "Design"), ZillitIcons.Edit, mode == CanvasMode.Design, dot = false) {
+        Segment(copy.t("Design", str(S.desktop_design)), ZillitIcons.Edit, mode == CanvasMode.Design, dot = false) {
             onSwitch(CanvasMode.Design)
         }
-        Segment(copy.t("Preview", "Preview"), ZillitIcons.Eye, mode == CanvasMode.Preview, dot = previewDirty) {
+        Segment(copy.t("Preview", str(S.preview)), ZillitIcons.Eye, mode == CanvasMode.Preview, dot = previewDirty) {
             onSwitch(CanvasMode.Preview)
         }
     }
@@ -273,34 +275,34 @@ private fun Sidebar(model: CustomiseModel, copy: CrewCopy, onEvent: (CrewListEve
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         ZillitText(
-            text = copy.t("Customise", "Customise").uppercase(),
+            text = copy.t("Customise", str(S.desktop_customise)).uppercase(),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.em),
             color = colors.textMuted,
         )
-        SidebarGroup(copy.t("HeaderLayout", "Header layout")) {
+        SidebarGroup(copy.t("HeaderLayout", str(S.desktop_cl_header_layout))) {
             HistoryButtons(model.layout, copy, onEvent)
         }
         if (model.isAdmin) {
-            SidebarGroup(copy.t("CompanyDetails", "Company details")) {
+            SidebarGroup(copy.t("CompanyDetails", str(S.company_details))) {
                 CompanyCard(copy) { onEvent(CrewListEvent.Admin.OpenCompany) }
             }
         }
         if (model.layout.current.logoHasOwnCell) {
-            SidebarGroup(copy.t("LogoPosition", "Logo position")) {
+            SidebarGroup(copy.t("LogoPosition", str(S.desktop_cl_logo_position))) {
                 LogoAlignment(model.layout.current.logo, copy) { onEvent(CrewListEvent.Design.AlignLogo(it)) }
             }
         }
-        SidebarGroup("${copy.t("LogoSize", "Logo size")}: ${model.customise.logoSizeDraft}px") {
+        SidebarGroup("${copy.t("LogoSize", str(S.desktop_cl_logo_size))}: ${model.customise.logoSizeDraft}px") {
             LogoSizeSlider(model.customise.logoSizeDraft, onEvent)
         }
-        SidebarGroup(copy.t("TableLines", "Table lines")) {
+        SidebarGroup(copy.t("TableLines", str(S.desktop_cl_table_lines))) {
             ZillitSwitch(
                 checked = !model.hideInternalLines,
                 onCheckedChange = { onEvent(CrewListEvent.Design.ShowInternalLines(it)) },
-                label = copy.t("ShowInternalLines", "Show internal lines"),
+                label = copy.t("ShowInternalLines", str(S.desktop_cl_show_internal_lines)),
             )
         }
-        SidebarGroup(copy.t("SectionOrder", "Section order")) {
+        SidebarGroup(copy.t("SectionOrder", str(S.desktop_cl_section_order))) {
             SectionSteps(copy)
         }
     }
@@ -310,25 +312,25 @@ private fun Sidebar(model: CustomiseModel, copy: CrewCopy, onEvent: (CrewListEve
 @Composable
 private fun HistoryButtons(layout: LayoutHistory, copy: CrewCopy, onEvent: (CrewListEvent) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        ZillitTooltip(copy.t("Undo", "Undo")) {
+        ZillitTooltip(copy.t("Undo", str(S.dd_rt_undo))) {
             ZillitIconButton(
                 icon = CrewIcons.Undo,
-                contentDescription = copy.t("Undo", "Undo"),
+                contentDescription = copy.t("Undo", str(S.dd_rt_undo)),
                 enabled = layout.canUndo,
                 onClick = { onEvent(CrewListEvent.Design.Undo) },
             )
         }
-        ZillitTooltip(copy.t("Redo", "Redo")) {
+        ZillitTooltip(copy.t("Redo", str(S.dd_rt_redo))) {
             ZillitIconButton(
                 icon = CrewIcons.Redo,
-                contentDescription = copy.t("Redo", "Redo"),
+                contentDescription = copy.t("Redo", str(S.dd_rt_redo)),
                 enabled = layout.canRedo,
                 onClick = { onEvent(CrewListEvent.Design.Redo) },
             )
         }
-        ZillitTooltip(copy.t("ResetLayout", "Reset to default")) {
+        ZillitTooltip(copy.t("ResetLayout", str(S.desktop_reset_to_default))) {
             ZillitButton(
-                text = copy.t("Reset", "Reset"),
+                text = copy.t("Reset", str(S.reset)),
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Reload,
@@ -379,12 +381,12 @@ private fun CompanyCard(copy: CrewCopy, onClick: () -> Unit) {
         }
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = copy.t("EditCompanyDetails", "Edit details"),
+                text = copy.t("EditCompanyDetails", str(S.txt_edit_details)),
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
             )
             ZillitText(
-                text = copy.t("CompanyDetailsHint", "Logo, name, address & contact"),
+                text = copy.t("CompanyDetailsHint", str(S.desktop_cl_company_details_hint)),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
                 maxLines = 1,
@@ -403,7 +405,7 @@ private fun LogoAlignment(selected: LogoAlign, copy: CrewCopy, onPick: (LogoAlig
         LogoAlign.entries.forEach { align ->
             val picked = align == selected
             ZillitText(
-                text = copy.t(align.label, align.label),
+                text = copy.t(align.label, str(align.labelKey)),
                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = if (picked) ZillitTheme.colors.textOnAccent else ZillitTheme.colors.textSecondary,
                 maxLines = 1,
@@ -434,13 +436,13 @@ private fun LogoSizeSlider(draft: Int, onEvent: (CrewListEvent) -> Unit) {
 private fun SectionSteps(copy: CrewCopy) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ZillitText(
-            text = copy.t("SectionDragIntro", "Rearrange Title, Logo and Company details however you like:"),
+            text = copy.t("SectionDragIntro", str(S.desktop_cl_section_drag_intro)),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
         Step(
             chip = { Chip(crewPalette().grip) { ZillitIcon(CrewIcons.Grip, tint = Color.White, size = 13.dp) } },
-            text = copy.t("SectionDragStepGrab", "Grab a section by this orange grip handle in the preview."),
+            text = copy.t("SectionDragStepGrab", str(S.desktop_cl_section_drag_step_grab)),
         )
         Step(
             chip = {
@@ -450,7 +452,7 @@ private fun SectionSteps(copy: CrewCopy) {
             },
             text = copy.t(
                 "SectionDragStepSwap",
-                "Drop it ONTO another section to swap their places (or sit side-by-side).",
+                str(S.desktop_cl_section_drag_step_swap),
             ),
         )
         Step(
@@ -465,7 +467,7 @@ private fun SectionSteps(copy: CrewCopy) {
                     )
                 }
             },
-            text = copy.t("SectionDragStepRow", "Drop it in the gap between rows to give it its own full-width row."),
+            text = copy.t("SectionDragStepRow", str(S.desktop_cl_section_drag_step_row)),
         )
     }
 }
@@ -499,12 +501,12 @@ private fun CanvasPane(
     Box(modifier.background(ZillitTheme.colors.surfaceSunken)) {
         when {
             canvas == null -> CanvasNotice(
-                "The preview needs the embedded browser, which is not available here.",
+                str(S.desktop_preview_needs_embedded_browser),
                 action = null,
             )
             customise.failure != null && document == null -> CanvasNotice(customise.failure) {
                 ZillitButton(
-                    text = "Try again",
+                    text = str(S.docusign_token_gateway_retry),
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Reload,

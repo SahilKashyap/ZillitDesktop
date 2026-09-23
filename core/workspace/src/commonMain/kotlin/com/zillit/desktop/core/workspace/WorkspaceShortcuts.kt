@@ -9,6 +9,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import com.zillit.desktop.core.common.OperatingSystem
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Maps key presses to workspace actions.
@@ -125,16 +127,16 @@ object WorkspaceShortcuts {
     fun describe(os: OperatingSystem): List<Pair<String, String>> {
         val mod = if (os == OperatingSystem.MacOs) "⌘" else "Ctrl"
         return listOf(
-            "$mod W" to "Close current tool",
-            "$mod ⇧ T" to "Reopen last closed",
-            "$mod 1–8" to "Jump to tool by position",
-            "$mod 9" to "Jump to last tool",
-            "Ctrl ⇥" to "Next tool",
-            "Ctrl ⇧ ⇥" to "Previous tool",
-            "$mod ⏎" to "Maximize / restore",
-            "$mod M" to "Minimize",
-            "$mod P" to "Pin / unpin",
-            "$mod \\" to "Switch tabs / floating windows",
+            "$mod W" to str(S.desktop_shortcut_close_current_tool),
+            "$mod ⇧ T" to str(S.desktop_shortcut_reopen_last_closed),
+            "$mod 1–8" to str(S.desktop_shortcut_jump_to_tool_by_position),
+            "$mod 9" to str(S.desktop_shortcut_jump_to_last_tool),
+            "Ctrl ⇥" to str(S.desktop_shortcut_next_tool),
+            "Ctrl ⇧ ⇥" to str(S.desktop_shortcut_previous_tool),
+            "$mod ⏎" to str(S.desktop_shortcut_maximize_restore),
+            "$mod M" to str(S.desktop_shortcut_minimize),
+            "$mod P" to str(S.desktop_shortcut_pin_unpin),
+            "$mod \\" to str(S.desktop_shortcut_switch_tabs_floating),
         )
     }
 }

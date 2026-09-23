@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A saved, unsent message.
  *
@@ -51,8 +54,8 @@ data class EmailDraft(
 fun EmailDraft.toSummary(): EmailSummary = EmailSummary(
     id = id,
     threadId = id,
-    subject = subject.ifBlank { "(no subject)" },
-    from = to.joinToString(", ").ifBlank { "(no recipient)" },
+    subject = subject.ifBlank { str(S.no_subject_parenthesis) },
+    from = to.joinToString(", ").ifBlank { str(S.desktop_email_no_recipient) },
     to = to,
     cc = cc,
     bcc = bcc,

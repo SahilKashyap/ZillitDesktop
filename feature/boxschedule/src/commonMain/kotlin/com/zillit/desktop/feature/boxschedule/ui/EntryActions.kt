@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.boxschedule.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
@@ -288,8 +290,13 @@ internal class EntryActions(private val vm: BoxScheduleViewModel) {
             when (result) {
                 is ZillitResult.Success -> {
                     vm.updateOverlays { copy(entryForm = null) }
-                    val noun = if (form.isNote) "Note" else "Event"
-                    vm.notice(if (form.isEdit) "$noun updated" else "$noun created", success = true)
+                    val message = when {
+                        form.isNote && form.isEdit -> S.desktop_bs_note_updated
+                        form.isNote -> S.desktop_bs_note_created
+                        form.isEdit -> S.desktop_bs_event_updated
+                        else -> S.desktop_bs_event_created
+                    }
+                    vm.notice(str(message), success = true)
                     vm.refresh()
                     // Follow the saved item, so a create in another month is seen.
                     vm.focusOn(dateOf(draft.date))
@@ -304,7 +311,7 @@ internal class EntryActions(private val vm: BoxScheduleViewModel) {
 
     private fun saveFailure(error: ZillitError): String {
         val key = (error as? ZillitError.Http)?.serverMessage
-        return EntryRules.editErrorCopy(key) ?: error.localised().ifBlank { "Failed to save" }
+        return EntryRules.editErrorCopy(key) ?: error.localised().ifBlank { str(S.desktop_failed_to_save) }
     }
 
     // Deleting -----------------------------------------------------------------
@@ -339,12 +346,14 @@ internal class EntryActions(private val vm: BoxScheduleViewModel) {
             when (val result = vm.repo.deleteEvent(entry.masterId, scope, occurrence)) {
                 is ZillitResult.Success -> {
                     vm.updateOverlays { copy(deleteEntry = null) }
-                    vm.notice(if (entry.kind == DiaryKind.Note) "Note deleted" else "Event deleted", success = true)
+                    val deleted =
+                        if (entry.kind == DiaryKind.Note) S.desktop_bs_note_deleted else S.desktop_bs_event_deleted
+                    vm.notice(str(deleted), success = true)
                     vm.refresh()
                 }
                 is ZillitResult.Failure -> {
                     vm.updateOverlays { copy(deleteEntry = deleteEntry?.copy(working = false)) }
-                    vm.notice(result.error.localised().ifBlank { "Failed to delete event" })
+                    vm.notice(result.error.localised().ifBlank { str(S.desktop_bs_failed_to_delete_event) })
                 }
             }
         }

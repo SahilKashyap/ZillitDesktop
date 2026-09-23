@@ -33,6 +33,8 @@ import com.zillit.desktop.feature.drive.domain.DrivePerson
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.FileAccessLevel
 import com.zillit.desktop.feature.drive.ui.AccessDraft
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The permissions picker every drawer shares — `FilePermissionsPanel`,
@@ -67,14 +69,14 @@ internal fun AccessPicker(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             ZillitChoiceChip(
-                label = "Project users",
+                label = str(S.drive_permissions_mode_project),
                 selected = draft.projectWide,
                 onClick = {
                     if (enabled) onChange(AccessDraft(projectWide = true, inheritToChildren = draft.inheritToChildren))
                 },
             )
             ZillitChoiceChip(
-                label = "Specific users",
+                label = str(S.drive_permissions_mode_specific),
                 selected = !draft.projectWide,
                 onClick = {
                     if (enabled) onChange(AccessDraft(projectWide = false, inheritToChildren = draft.inheritToChildren))
@@ -98,7 +100,7 @@ internal fun AccessPicker(
             ZillitCheckbox(
                 checked = draft.inheritToChildren,
                 onCheckedChange = { onChange(draft.copy(inheritToChildren = it)) },
-                label = "Apply access to all subfolders",
+                label = str(S.desktop_drive_apply_access_subfolders),
                 enabled = enabled,
             )
         }
@@ -148,12 +150,16 @@ private fun ProjectWide(
     enabled: Boolean,
 ) {
     ZillitText(
-        text = "Applies to all ${people.size} project user${if (people.size == 1) "" else "s"} with Drive view access.",
+        text = if (people.size == 1) {
+            str(S.desktop_drive_applies_to_one_user)
+        } else {
+            str(S.drive_permissions_project_applies_format, people.size)
+        },
         style = ZillitTheme.typography.bodySmall,
         color = ZillitTheme.colors.textSecondary,
     )
     if (forFolder) {
-        val none = "Select permission"
+        val none = str(S.drive_permission_select_hint)
         ZillitSelect(
             value = draft.projectRole?.label ?: none,
             options = listOf(none) + DriveRole.entries.map { it.label },
@@ -165,7 +171,7 @@ private fun ProjectWide(
             modifier = Modifier.fillMaxWidth(),
         )
     } else {
-        val none = "Select permission"
+        val none = str(S.drive_permission_select_hint)
         ZillitSelect(
             value = draft.projectLevel?.label ?: none,
             options = listOf(none) + FileAccessLevel.entries.map { it.label },
@@ -200,14 +206,18 @@ private fun SpecificPeople(
     ZillitSearchField(
         value = draft.search,
         onValueChange = { onChange(draft.copy(search = it)) },
-        placeholder = "Search team members…",
+        placeholder = str(S.drive_search_team_members),
         enabled = enabled,
     )
     ZillitText(
         text = if (draft.selectedCount > 0) {
-            "${draft.selectedCount} user${if (draft.selectedCount == 1) "" else "s"} selected"
+            if (draft.selectedCount == 1) {
+                str(S.desktop_drive_user_selected_one)
+            } else {
+                str(S.drive_users_selected, draft.selectedCount)
+            }
         } else {
-            "No users selected"
+            str(S.desktop_drive_no_users_selected)
         },
         style = ZillitTheme.typography.labelSmall,
         color = colors.textSecondary,
@@ -222,7 +232,7 @@ private fun SpecificPeople(
         if (visible.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg), contentAlignment = Alignment.Center) {
                 ZillitText(
-                    text = "No team members found",
+                    text = str(S.desktop_drive_no_team_members_found),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )

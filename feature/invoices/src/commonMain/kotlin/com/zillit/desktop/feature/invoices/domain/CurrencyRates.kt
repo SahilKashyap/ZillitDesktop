@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The production's currencies and what they are worth against its default.
@@ -64,7 +66,7 @@ data class MoneyTotal(
     val caveat: String?
         get() = when {
             unrated -> "converted; some amounts had no rate"
-            mixed -> "converted to $currency"
+            mixed -> str(S.desktop_converted_to_currency, currency)
             else -> null
         }
 }

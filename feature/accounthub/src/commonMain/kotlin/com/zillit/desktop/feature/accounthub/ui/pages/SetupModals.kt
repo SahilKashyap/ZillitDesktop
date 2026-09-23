@@ -36,6 +36,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRules
@@ -74,6 +76,12 @@ import com.zillit.desktop.feature.accounthub.ui.components.SetupModalShell
 import com.zillit.desktop.feature.accounthub.ui.components.SubCard
 import com.zillit.desktop.feature.accounthub.ui.components.ToggleRow
 import com.zillit.desktop.feature.accounthub.ui.components.UserPickerDialog
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.text.input.KeyboardType
+import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
+import com.zillit.desktop.feature.accounthub.domain.AssetExpenditureType
+import com.zillit.desktop.feature.accounthub.domain.AssetFilters
 
 /**
  * The three drill-down modals — the web's `POSetupDetail`, `InvoicesSetupDetail`
@@ -117,33 +125,40 @@ internal fun SetupModals(
 }
 
 private fun sectionsFor(modal: SetupModal, state: AccountHubUiState): List<SetupModalSection> = when (modal) {
-    // The web's three (`POSetupDetail`), with its chips. Assignment rules and
-    // Form Configuration left that modal in the web's 8c4f2b0cc; the rules are
-    // the PO module's own settings page's, the forms editor has its own area.
+    // The web's five (`POSetupDetail`), with its chips. Form Configuration
+    // left that modal in the web's 8c4f2b0cc (the forms editor has its own
+    // area); the asset register rule and the assignment rules came back with
+    // 03f047d47, mirroring the PO module's own Settings page.
     SetupModal.PurchaseOrders -> state.setup.poSetup.edited.let { po ->
         listOf(
-            SetupModalSection("format", "Description Format", 1),
-            SetupModalSection("rental", "Rental & Split", po.rentalCount),
-            SetupModalSection("issuance", "Issuance", po.issuanceCount),
+            SetupModalSection("format", str(S.desktop_description_format), 1),
+            SetupModalSection("rental", str(S.desktop_rental_split), po.rentalCount),
+            SetupModalSection("issuance", str(S.desktop_issuance), po.issuanceCount),
+            SetupModalSection("assets", str(S.desktop_asset_register_rules), po.assetCount),
+            SetupModalSection("rules", str(S.desktop_auto_assignment_rules), state.setup.poRules.edited.size),
         )
     }
     SetupModal.Invoices -> listOf(
-        SetupModalSection("team", "Team & Posting Rights", state.setup.invoicesSetup.edited.teamMembers.size),
-        SetupModalSection("alerts", "Alert Preferences", state.setup.invoicesSetup.edited.alerts.size),
-        SetupModalSection("runauth", "Run Authorization", state.setup.invoicesSetup.edited.runAuthorisation.size),
-        SetupModalSection("rules", "Auto-Assignment Rules", state.setup.invoiceRules.edited.size),
+        SetupModalSection("team", str(S.ah_settings_team_posting), state.setup.invoicesSetup.edited.teamMembers.size),
+        SetupModalSection("alerts", str(S.desktop_alert_preferences), state.setup.invoicesSetup.edited.alerts.size),
+        SetupModalSection(
+            "runauth",
+            str(S.desktop_run_authorization),
+            state.setup.invoicesSetup.edited.runAuthorisation.size,
+        ),
+        SetupModalSection("rules", str(S.desktop_auto_assignment_rules), state.setup.invoiceRules.edited.size),
     )
     SetupModal.Payroll -> listOf(
-        SetupModalSection("approvers", "Approvers", state.setup.payrollSettings.edited.approverIds.size),
-        SetupModalSection("pay_period", "Pay Period"),
-        SetupModalSection("journal_description", "Description Format"),
-        SetupModalSection("journal_grouping", "Journal Grouping"),
+        SetupModalSection("approvers", str(S.approvers_empty), state.setup.payrollSettings.edited.approverIds.size),
+        // One pane since the web's 03f047d47: the pay period, then the two
+        // journal choices under dashed dividers.
+        SetupModalSection("pay_period", str(S.desktop_pay_period_journal)),
         SetupModalSection(
             "payroll_accounts",
-            "Payroll Accounts",
+            str(S.desktop_payroll_accounts),
             state.setup.payrollSettings.edited.payrollAccounts.size,
         ),
-        SetupModalSection("payroll_groups", "Payroll Groups", state.setup.payrollGroups.size),
+        SetupModalSection("payroll_groups", str(S.desktop_payroll_groups), state.setup.payrollGroups.size),
     )
 }
 
@@ -163,7 +178,7 @@ private fun ColumnScope.PoModalBody(
     fun update(next: PurchaseOrderSetup) = onEvent(AccountHubEvent.EditPoSetup(next))
     when (sectionId) {
         "format" -> SubCard(
-            hint = "Controls how ledger entry descriptions are auto-formatted from the PO line + posting date.",
+            hint = str(S.desktop_hub_controls_how_ledger_entry_descriptions_are_auto_formatted_from_the),
         ) {
             // The three the web offers. A stored CUSTOM still decodes; it
             // simply lights none of them, as on the web.
@@ -177,10 +192,10 @@ private fun ColumnScope.PoModalBody(
                 )
             }
         }
-        "rental" -> SubCard(hint = "How rental POs are handled when posting to the ledger.") {
+        "rental" -> SubCard(hint = str(S.desktop_hub_how_rental_pos_are_handled_when_posting_to_the_ledger)) {
             ToggleRow(
                 label = "Auto-split rental POs",
-                hint = "Automatically detect and split rental / hire POs by period.",
+                hint = str(S.desktop_hub_automatically_detect_and_split_rental_hire_pos_by_period),
                 checked = value.autoSplitRentals,
                 onCheckedChange = { update(value.copy(autoSplitRentals = it)) },
                 enabled = editable,
@@ -188,7 +203,7 @@ private fun ColumnScope.PoModalBody(
             HairLine()
             // Offered whether or not auto-split is on, as the web does: the
             // cadence is remembered across the switch.
-            FieldLabel("Default split type")
+            FieldLabel(str(S.desktop_default_split_type))
             ZillitSegmented(
                 options = PoSplitType.entries.map { ZillitTab(it.wire, it.label) },
                 activeId = value.splitType.wire,
@@ -197,16 +212,22 @@ private fun ColumnScope.PoModalBody(
             HairLine()
             // Always-on: the service forces both whatever is stored, so the web
             // shows a static "Always" where a switch would lie.
-            AlwaysRow("Require effective date", "Block PO posting without a confirmed effective date.")
+            AlwaysRow(
+                str(S.desktop_require_effective_date),
+                str(S.desktop_hub_block_po_posting_without_a_confirmed_effective_date),
+            )
             HairLine()
-            AlwaysRow("Enforce period close", "Prevent back-dating entries to closed accounting periods.")
+            AlwaysRow(
+                str(S.desktop_enforce_period_close),
+                str(S.desktop_hub_prevent_back_dating_entries_to_closed_accounting_periods),
+            )
         }
-        "issuance" -> SubCard(hint = "The document issued with a purchase order and the prefix on its number.") {
-            FieldLabel("PO number prefix")
+        "issuance" -> SubCard(hint = str(S.desktop_hub_the_document_issued_with_a_purchase_order_and_the_prefix)) {
+            FieldLabel(str(S.desktop_po_number_prefix))
             ZillitTextField(
                 value = value.numberPrefix,
                 onValueChange = { update(value.copy(numberPrefix = PurchaseOrderSetup.normalisePrefix(it))) },
-                placeholder = "e.g. QW",
+                placeholder = str(S.desktop_e_g_qw),
                 // Capped by normalisePrefix rather than maxLength: the field's
                 // counter is not on the web's input.
                 enabled = editable,
@@ -214,18 +235,117 @@ private fun ColumnScope.PoModalBody(
             )
             FieldHint(PurchaseOrderSetup.PREFIX_HINT)
             HairLine()
-            FieldLabel("Terms and Conditions document")
-            FieldHint("Issued with every purchase order. Replaces the old Terms of Engagement clause list.")
+            FieldLabel(str(S.desktop_hub_terms_and_conditions_document))
+            FieldHint(str(S.desktop_hub_issued_with_every_purchase_order_replaces_the_old_terms_of))
             TermsDocumentBlock(state, canChange = editable && canAttach, canOpen = canOpen, onEvent = onEvent)
             if (editable && !canAttach) {
                 ZillitNotice(
-                    text = "Attaching is unavailable — this window has no file storage wired.",
+                    text = str(S.desktop_hub_attaching_is_unavailable_this_window_has_no_file_storage_wired),
                     tone = StatusTone.Neutral,
                     icon = ZillitIcons.Info,
                 )
             }
             // Amendments are built but paused behind the web's `AMENDMENTS_ENABLED = false`;
             // the stored flag round-trips untouched and no row is shown.
+        }
+        "assets" -> AssetRegisterRulesSection(state, value, editable, ::update)
+        "rules" -> AssignmentRulesSection(
+            rules = state.setup.poRules.edited,
+            module = "purchase_orders",
+            showVendors = true,
+            state = state,
+            editable = editable,
+            onChange = { onEvent(AccountHubEvent.EditPoRules(it)) },
+        )
+    }
+}
+
+/**
+ * The asset register rule — the web's "Asset Register Rules" pane, the same
+ * `asset_filters` the PO module's Settings page edits: one expenditure type
+ * (or all), an inclusive price range on the line total, and tags.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Suppress("LongMethod") // A form, read top to bottom; the order is the reading order.
+@Composable
+private fun ColumnScope.AssetRegisterRulesSection(
+    state: AccountHubUiState,
+    value: PurchaseOrderSetup,
+    editable: Boolean,
+    update: (PurchaseOrderSetup) -> Unit,
+) {
+    val filters = value.assetFilters
+    val symbol = state.setup.currencies.saved.default?.symbol.orEmpty()
+    fun patch(next: AssetFilters) = update(value.copy(assetFilters = next))
+    SubCard(
+        hint = str(S.desktop_hub_which_line_items_on_posted_closed_pos_qualify_as_assets),
+    ) {
+        FieldLabel(str(S.expenditure_type))
+        // Single choice: All (every type) · Purchase · Consumables.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitChoiceChip(
+                label = "All",
+                selected = filters.expTypes.isEmpty(),
+                onClick = { if (editable) patch(filters.copy(expTypes = emptyList())) },
+            )
+            AssetExpenditureType.entries.forEach { type ->
+                ZillitChoiceChip(
+                    label = type.label,
+                    selected = filters.expTypes.firstOrNull() == type.wire,
+                    onClick = { if (editable) patch(filters.copy(expTypes = listOf(type.wire))) },
+                )
+            }
+        }
+        FieldHint(str(S.desktop_hub_all_every_expenditure_type_qualifies))
+        HairLine()
+        FieldLabel(str(S.desktop_price_range))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitTextField(
+                value = filters.priceLow,
+                onValueChange = { patch(filters.copy(priceLow = it)) },
+                placeholder = "${symbol}0",
+                keyboardType = KeyboardType.Number,
+                enabled = editable,
+                modifier = Modifier.weight(1f),
+            )
+            FieldHint("to")
+            ZillitTextField(
+                value = filters.priceHigh,
+                onValueChange = { patch(filters.copy(priceHigh = it)) },
+                placeholder = str(S.desktop_no_max),
+                keyboardType = KeyboardType.Number,
+                enabled = editable,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        FieldHint(str(S.desktop_hub_inclusive_on_the_line_total_either_bound_can_be_left))
+        HairLine()
+        // The catalogue is the Asset Tags section's; a stored tag the catalogue
+        // no longer lists stays offered so a save cannot silently drop it.
+        HubMultiSelect(
+            selected = filters.tags,
+            options = (state.setup.assetTags.saved + filters.tags).distinct(),
+            label = { it },
+            onChange = { patch(filters.copy(tags = it)) },
+            placeholder = str(S.desktop_any_tag),
+            fieldLabel = str(S.drive_tags),
+            enabled = editable,
+        )
+        FieldHint(str(S.desktop_hub_matches_a_line_carrying_any_of_these_select_none_for))
+        val error = filters.error
+        if (error != null) {
+            ZillitNotice(text = error, tone = StatusTone.Rejected, icon = ZillitIcons.Warning)
+        } else {
+            // Spelled out, so "no constraint" cannot be mistaken for "nothing saved yet".
+            ZillitNotice(
+                text = "Qualifies: ${filters.summary(symbol)}",
+                tone = StatusTone.Neutral,
+                icon = ZillitIcons.Info,
+            )
         }
     }
 }
@@ -258,7 +378,7 @@ private fun TermsDocumentBlock(
         )
     } else {
         ZillitButton(
-            text = if (uploading) "Uploading…" else "Add attachment",
+            text = if (uploading) str(S.ah_uploading) else str(S.desktop_add_attachment),
             onClick = { onEvent(AccountHubEvent.PickPoTerms) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -270,7 +390,7 @@ private fun TermsDocumentBlock(
     state.setup.poTermsError?.let { error ->
         ZillitText(text = error, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger)
     }
-    FieldHint("PDF, DOC or DOCX · max 10MB")
+    FieldHint(str(S.desktop_hub_pdf_doc_or_docx_max_10mb))
 }
 
 /** The attached file: icon, name, "Attached", then View and Change. */
@@ -302,10 +422,10 @@ private fun TermsAttachedRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            FieldHint("Attached")
+            FieldHint(str(S.dm_docs_attached))
         }
         ZillitButton(
-            text = if (opening) "Opening…" else "View",
+            text = if (opening) str(S.dm_nda_opening) else str(S.view),
             onClick = { onEvent(AccountHubEvent.OpenPoTerms) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -314,7 +434,7 @@ private fun TermsAttachedRow(
             enabled = canOpen && !opening && !uploading,
         )
         ZillitButton(
-            text = if (uploading) "Uploading…" else "Change",
+            text = if (uploading) str(S.ah_uploading) else str(S.change),
             onClick = { onEvent(AccountHubEvent.PickPoTerms) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -339,17 +459,17 @@ private fun ColumnScope.InvoicesModalBody(
     fun update(next: InvoicesSetup) = onEvent(AccountHubEvent.EditInvoicesSetup(next))
     when (sectionId) {
         "team" -> SubCard(
-            hint = "Who may post invoices, and up to what value.",
+            hint = str(S.desktop_hub_who_may_post_invoices_and_up_to_what_value),
             action = { if (editable) GhostAddButton(
-                "Add member",
+                str(S.cs_add_member),
                 onClick = { onEvent(AccountHubEvent.ComposeInvoiceMember(null)) },
             ) },
             padded = false,
         ) {
             if (value.teamMembers.isEmpty()) {
                 ZillitEmptyState(
-                    title = "No team members configured",
-                    message = "Add the accounts-payable team so invoices can be posted.",
+                    title = str(S.desktop_hub_no_team_members_configured),
+                    message = str(S.desktop_hub_add_the_accounts_payable_team_so_invoices_can_be_posted),
                     icon = ZillitIcons.Users,
                 )
             }
@@ -361,12 +481,12 @@ private fun ColumnScope.InvoicesModalBody(
                         if (editable && hovered) {
                             ZillitIconButton(
                                 icon = ZillitIcons.Edit,
-                                contentDescription = "Edit",
+                                contentDescription = str(S.edit),
                                 onClick = { onEvent(AccountHubEvent.ComposeInvoiceMember(index)) },
                             )
                             ZillitIconButton(
                                 icon = ZillitIcons.Trash,
-                                contentDescription = "Remove",
+                                contentDescription = str(S.remove),
                                 onClick = {
                                     update(
                                         value.copy(
@@ -381,19 +501,19 @@ private fun ColumnScope.InvoicesModalBody(
                 ) {
                     val user = state.user(member.userId)
                     PersonChip(
-                        name = user?.name ?: "Unknown user",
+                        name = user?.name ?: str(S.unkone_user),
                         userId = member.userId,
                         role = user?.roleLabel,
                         modifier = Modifier.weight(1f),
                     )
                     FieldHint(postingLimitLabel(member, state))
-                    if (member.runAccess) Pill("Runs", tone = StatusTone.Done)
-                    if (member.overrideAccess) Pill("Override", tone = StatusTone.Pending)
-                    if (member.isSenior) Pill("Senior", tone = StatusTone.Progress)
+                    if (member.runAccess) Pill(str(S.desktop_runs), tone = StatusTone.Done)
+                    if (member.overrideAccess) Pill(str(S.dm_nom_table_override), tone = StatusTone.Pending)
+                    if (member.isSenior) Pill(str(S.desktop_senior), tone = StatusTone.Progress)
                 }
             }
         }
-        "alerts" -> SubCard(hint = "Which events accounts payable is told about.") {
+        "alerts" -> SubCard(hint = str(S.desktop_hub_which_events_accounts_payable_is_told_about)) {
             InvoiceAlert.entries.forEach { alert ->
                 ToggleRow(
                     label = alert.label,
@@ -407,10 +527,10 @@ private fun ColumnScope.InvoicesModalBody(
             }
         }
         "runauth" -> SubCard(
-            hint = "The sign-off chain that gates payment runs, level by level.",
+            hint = str(S.desktop_hub_the_sign_off_chain_that_gates_payment_runs_level_by),
             action = {
                 if (editable) {
-                    GhostAddButton("Add level", onClick = {
+                    GhostAddButton(str(S.desktop_add_level), onClick = {
                         update(
                             value.copy(runAuthorisation = value.runAuthorisation + RunAuthorisationTier()).renumbered(),
                         )
@@ -420,8 +540,8 @@ private fun ColumnScope.InvoicesModalBody(
         ) {
             if (value.runAuthorisation.isEmpty()) {
                 ZillitEmptyState(
-                    title = "No authorization levels yet",
-                    message = "Add a level and pick who signs it off.",
+                    title = str(S.desktop_hub_no_authorization_levels_yet),
+                    message = str(S.desktop_hub_add_a_level_and_pick_who_signs_it_off),
                     icon = ZillitIcons.Shield,
                 )
             }
@@ -436,14 +556,14 @@ private fun ColumnScope.InvoicesModalBody(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
                     ) {
-                        if (tier.userIds.isEmpty()) FieldHint("Nobody yet")
+                        if (tier.userIds.isEmpty()) FieldHint(str(S.desktop_email_nobody_yet))
                         tier.userIds.forEach {
                             id -> PersonChip(name = state.userName(id), userId = id, role = state.user(id)?.roleLabel)
                         }
                     }
                     if (editable) {
                         ZillitButton(
-                            text = "Add Users",
+                            text = str(S.add_members),
                             onClick = { onEvent(AccountHubEvent.OpenUserPicker(
                                 UserPickerPurpose.RunAuthorisation,
                                 index,
@@ -454,7 +574,7 @@ private fun ColumnScope.InvoicesModalBody(
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Remove level",
+                            contentDescription = str(S.desktop_remove_level),
                             onClick = {
                                 update(
                                     value
@@ -486,7 +606,7 @@ private fun ColumnScope.InvoicesModalBody(
 private fun postingLimitLabel(member: InvoiceTeamMember, state: AccountHubUiState): String {
     val symbol = state.setup.currencies.saved.default?.symbol.orEmpty()
     return when {
-        member.postingLimit.isBlank() -> "No limit set"
+        member.postingLimit.isBlank() -> str(S.desktop_no_limit_set)
         member.postingLimit == "0" -> "Unlimited"
         else -> "Posting limit " +
             "$symbol${com.zillit.desktop.feature.accounthub.ui.components.groupAmount(member.postingLimit)}"
@@ -501,36 +621,36 @@ private fun InvoiceMemberDialog(state: AccountHubUiState, onEvent: (AccountHubEv
     val member = draft?.member
     fun update(next: InvoiceTeamMember) = onEvent(AccountHubEvent.EditInvoiceMember(next))
     ZillitDialogShell(
-        title = if (draft?.index == null) "Add team member" else "Edit team member",
+        title = if (draft?.index == null) str(S.desktop_add_team_member) else str(S.desktop_edit_team_member),
         icon = ZillitIcons.Users,
         visible = draft != null,
         onDismiss = { onEvent(AccountHubEvent.DismissInvoiceMember) },
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AccountHubEvent.DismissInvoiceMember) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (draft?.index == null) "Add" else "Save",
+                text = if (draft?.index == null) str(S.add) else str(S.save),
                 onClick = { onEvent(AccountHubEvent.CommitInvoiceMember) },
                 enabled = !member?.userId.isNullOrBlank(),
             )
         },
     ) {
         if (member == null) return@ZillitDialogShell
-        FieldLabel("Team member", required = true)
+        FieldLabel(str(S.desktop_team_member), required = true)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            if (member.userId.isBlank()) FieldHint("Nobody picked yet") else PersonChip(
+            if (member.userId.isBlank()) FieldHint(str(S.desktop_nobody_picked_yet)) else PersonChip(
                 name = state.userName(member.userId),
                 userId = member.userId,
                 role = state.user(member.userId)?.roleLabel,
             )
             ZillitButton(
-                text = if (member.userId.isBlank()) "Pick" else "Change",
+                text = if (member.userId.isBlank()) str(S.desktop_pick) else str(S.change),
                 onClick = { onEvent(AccountHubEvent.OpenUserPicker(UserPickerPurpose.InvoiceTeamMember)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -541,25 +661,72 @@ private fun InvoiceMemberDialog(state: AccountHubUiState, onEvent: (AccountHubEv
             onValueChange = { update(member.copy(postingLimit = it)) },
             label = "Posting limit",
             placeholder = "0.00",
-            helperText = "0 means unlimited; blank means not set.",
+            helperText = str(S.desktop_hub_0_means_unlimited_blank_means_not_set),
         )
         ToggleRow(
             label = "Run access",
-            hint = "May start a payment run.",
+            hint = str(S.desktop_hub_may_start_a_payment_run),
             checked = member.runAccess,
             onCheckedChange = { update(member.copy(runAccess = it)) },
         )
         ToggleRow(
             label = "Override access",
-            hint = "May post over the limit.",
+            hint = str(S.desktop_hub_may_post_over_the_limit),
             checked = member.overrideAccess,
             onCheckedChange = { update(member.copy(overrideAccess = it)) },
         )
         ToggleRow(
             label = "Senior",
-            hint = "Counts as a senior sign-off.",
+            hint = str(S.desktop_hub_counts_as_a_senior_sign_off),
             checked = member.isSenior,
             onCheckedChange = { update(member.copy(isSenior = it)) },
+        )
+    }
+}
+
+/** The pay-period pair: picking either end moves the other, and a locked period disables both. */
+@Composable
+private fun ColumnScope.PayPeriodFields(
+    value: PayrollSettings,
+    editable: Boolean,
+    update: (PayrollSettings) -> Unit,
+) {
+    val days = (PayrollSettings.MONDAY..PayrollSettings.SUNDAY).toList()
+    val enabled = editable && !value.payPeriodLocked
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSelect(
+            value = value.payPeriodStartDay,
+            options = days,
+            onSelect = { day -> update(value.copy(
+                payPeriodStartDay = day,
+                payPeriodEndDay = PayrollSettings.endFor(day),
+            )) },
+            label = { PayrollSettings.dayName(it) },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitText(text = "→", style = ZillitTheme.typography.bodyMedium)
+        ZillitSelect(
+            value = value.payPeriodEndDay,
+            options = days,
+            onSelect = { day -> update(value.copy(
+                payPeriodEndDay = day,
+                payPeriodStartDay = PayrollSettings.startFor(day),
+            )) },
+            label = { PayrollSettings.dayName(it) },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    if (value.payPeriodLocked) {
+        ZillitNotice(
+            text = str(S.desktop_hub_the_pay_period_is_fixed_this_production_already_has_timecards),
+            tone = StatusTone.Neutral,
+            icon = ZillitIcons.Info,
         )
     }
 }
@@ -585,10 +752,10 @@ private fun ColumnScope.AssignmentRulesSection(
     val departments = state.departmentList
     val leaves = ChartOfAccounts.leaves(state.chart.accounts)
     SubCard(
-        hint = "If any condition matches, the document is assigned to the chosen person.",
+        hint = str(S.desktop_hub_if_any_condition_matches_the_document_is_assigned_to_the),
         action = {
             if (editable) {
-                GhostAddButton("Add rule", onClick = {
+                GhostAddButton(str(S.desktop_add_rule), onClick = {
                     onChange(rules + AssignmentRules.newRule(
                         "rule-new-${rules.size}-${rules.hashCode()}",
                         module,
@@ -599,8 +766,9 @@ private fun ColumnScope.AssignmentRulesSection(
         },
     ) {
         if (state.setup.rulesLoading) ZillitSpinner()
-        if (rules.isEmpty() && !state.setup.rulesLoading) FieldHint("No rules yet — every document lands with its " +
-            "raiser's department.")
+        if (rules.isEmpty() && !state.setup.rulesLoading) {
+            FieldHint(str(S.desktop_hub_no_rules_yet_every_document_lands_with_its_raisers_department))
+        }
         rules.forEachIndexed { index, rule ->
             fun patch(next: AssignmentRule) = onChange(rules.mapIndexed { i, r -> if (i == index) next else r })
             SubCard {
@@ -623,7 +791,7 @@ private fun ColumnScope.AssignmentRulesSection(
                     if (editable) {
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Remove rule",
+                            contentDescription = str(S.desktop_remove_rule),
                             onClick = { onChange(rules.filterIndexed { i, _ -> i != index }) },
                             tint = ZillitTheme.colors.danger,
                         )
@@ -634,18 +802,18 @@ private fun ColumnScope.AssignmentRulesSection(
                     options = team,
                     label = { "${it.name} (${it.roleLabel.ifBlank { "—" }})" },
                     onSelect = { patch(rule.copy(assignTo = it?.id.orEmpty())) },
-                    placeholder = "Pick assignee…",
+                    placeholder = str(S.desktop_pick_assignee),
                     enabled = editable,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                FieldLabel("If any condition matches")
+                FieldLabel(str(S.desktop_hub_if_any_condition_matches))
                 HubMultiSelect(
                     selected = departments.filter { it.id in rule.departments },
                     options = departments,
                     label = { it.name },
                     onChange = { picked -> patch(rule.copy(departments = picked.map { it.id })) },
-                    placeholder = "Any department",
-                    fieldLabel = "Departments",
+                    placeholder = str(S.desktop_any_department),
+                    fieldLabel = str(S.departments),
                     enabled = editable,
                 )
                 if (showVendors) {
@@ -655,9 +823,12 @@ private fun ColumnScope.AssignmentRulesSection(
                         options = vendors,
                         label = { it.display },
                         onChange = { picked -> patch(rule.copy(vendors = picked.map { it.id })) },
-                        placeholder = if (vendors.isEmpty()) "Any vendor (open Vendors once to load the " +
-                            "list)" else "Any vendor",
-                        fieldLabel = "Vendors",
+                        placeholder = if (vendors.isEmpty()) {
+                            str(S.desktop_hub_any_vendor_open_vendors_once_to_load_the_list_paren)
+                        } else {
+                            str(S.desktop_any_vendor)
+                        },
+                        fieldLabel = str(S.ah_vendors),
                         enabled = editable,
                     )
                 }
@@ -666,15 +837,15 @@ private fun ColumnScope.AssignmentRulesSection(
                     options = leaves,
                     label = { it.display },
                     onChange = { picked -> patch(rule.copy(nominalCodes = picked.map { it.code })) },
-                    placeholder = "Any nominal",
-                    fieldLabel = "Nominal codes",
+                    placeholder = str(S.desktop_any_nominal),
+                    fieldLabel = str(S.dm_step7_title),
                     enabled = editable,
                 )
                 CalcField(
                     value = rule.amountMin,
                     onValueChange = { patch(rule.copy(amountMin = it)) },
                     label = "Amount at or above",
-                    placeholder = "Any amount",
+                    placeholder = str(S.desktop_any_amount),
                     enabled = editable,
                 )
             }
@@ -696,11 +867,11 @@ private fun ColumnScope.PayrollModalBody(
     fun update(next: PayrollSettings) = onEvent(AccountHubEvent.EditPayrollSettings(next))
     when (sectionId) {
         "approvers" -> SubCard(
-            hint = "Who may sign off a payroll run. Reaches the timecard and payroll-run surfaces directly.",
+            hint = str(S.desktop_hub_who_may_sign_off_a_payroll_run_reaches_the_timecard),
             action = {
                 if (editable) {
                     ZillitButton(
-                        text = "Add Users",
+                        text = str(S.add_members),
                         onClick = { onEvent(AccountHubEvent.OpenUserPicker(UserPickerPurpose.PayrollApprovers)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -709,7 +880,7 @@ private fun ColumnScope.PayrollModalBody(
                 }
             },
         ) {
-            if (value.approverIds.isEmpty()) FieldHint("No approvers yet.")
+            if (value.approverIds.isEmpty()) FieldHint(str(S.desktop_no_approvers_yet))
             value.approverIds.forEach { id ->
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     PersonChip(
@@ -721,84 +892,53 @@ private fun ColumnScope.PayrollModalBody(
                     if (editable) {
                         ZillitIconButton(
                             icon = ZillitIcons.Close,
-                            contentDescription = "Remove approver",
+                            contentDescription = str(S.desktop_remove_approver),
                             onClick = { update(value.copy(approverIds = value.approverIds - id)) },
                         )
                     }
                 }
             }
         }
-        "pay_period" -> SubCard(hint = "The seven days a pay period covers. Picking either end moves the other.") {
-            val days = (PayrollSettings.MONDAY..PayrollSettings.SUNDAY).toList()
-            val enabled = editable && !value.payPeriodLocked
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
+        "pay_period" -> {
+            SubCard(hint = str(S.desktop_hub_the_seven_days_a_pay_period_covers_picking_either_end)) {
+                PayPeriodFields(value, editable, ::update)
+            }
+            // The journal choices ride the same pane, as the web's
+            // "Pay Period & Journal" does — each under its own heading.
+            SubCard(
+                title = str(S.desktop_description_format),
+                hint = str(S.desktop_hub_how_a_payroll_journal_lines_description_is_cased),
             ) {
-                ZillitSelect(
-                    value = value.payPeriodStartDay,
-                    options = days,
-                    onSelect = { day -> update(value.copy(
-                        payPeriodStartDay = day,
-                        payPeriodEndDay = PayrollSettings.endFor(day),
-                    )) },
-                    label = { PayrollSettings.dayName(it) },
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitText(text = "→", style = ZillitTheme.typography.bodyMedium)
-                ZillitSelect(
-                    value = value.payPeriodEndDay,
-                    options = days,
-                    onSelect = { day -> update(value.copy(
-                        payPeriodEndDay = day,
-                        payPeriodStartDay = PayrollSettings.startFor(day),
-                    )) },
-                    label = { PayrollSettings.dayName(it) },
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f),
-                )
+                JournalDescriptionFormat.entries.forEach { format ->
+                    RadioCard(
+                        label = format.label,
+                        sample = "e.g. ${format.sample}",
+                        active = value.journalDescriptionFormat == format,
+                        onClick = { update(value.copy(journalDescriptionFormat = format)) },
+                        enabled = editable,
+                    )
+                }
             }
-            if (value.payPeriodLocked) {
-                ZillitNotice(
-                    text = "The pay period is fixed — this production already has timecards against it, and the " +
-                        "service refuses a change once that is true.",
-                    tone = StatusTone.Neutral,
-                    icon = ZillitIcons.Info,
-                )
-            }
-        }
-        "journal_description" -> SubCard(hint = "How a payroll journal line's description is cased.") {
-            JournalDescriptionFormat.entries.forEach { format ->
-                RadioCard(
-                    label = format.label,
-                    sample = "e.g. ${format.sample}",
-                    active = value.journalDescriptionFormat == format,
-                    onClick = { update(value.copy(journalDescriptionFormat = format)) },
+            SubCard(title = str(S.desktop_journal_grouping)) {
+                ToggleRow(
+                    label = "Group by pay category",
+                    hint = str(S.desktop_hub_group_the_journal_ledger_rows_into_ots_penalties_premiums_and),
+                    checked = value.journalGroupByCategory,
+                    onCheckedChange = { update(value.copy(journalGroupByCategory = it)) },
                     enabled = editable,
                 )
             }
         }
-        "journal_grouping" -> SubCard {
-            ToggleRow(
-                label = "Group by pay category",
-                hint = "Group the Journal Ledger rows into OTs, penalties, premiums and turnarounds (under each " +
-                    "company). Off = flat rows.",
-                checked = value.journalGroupByCategory,
-                onCheckedChange = { update(value.copy(journalGroupByCategory = it)) },
-                enabled = editable,
-            )
-        }
         "payroll_accounts" -> SubCard(
-            hint = "The balance-sheet codes payroll posts through. Real chart entries — the server keeps the two " +
-                "in step.",
+            hint = str(S.desktop_hub_the_balance_sheet_codes_payroll_posts_through_real_chart_entries),
             action = { if (editable) GhostAddButton(
-                "Add / Edit",
+                str(S.desktop_add_edit),
                 onClick = { onEvent(AccountHubEvent.OpenPayrollAccounts) },
             ) },
         ) {
-            if (value.payrollAccounts.isEmpty()) FieldHint("No payroll accounts yet — use Add / Edit to create one.")
+            if (value.payrollAccounts.isEmpty()) {
+                FieldHint(str(S.desktop_hub_no_payroll_accounts_yet_use_add_edit_to_create_one))
+            }
             value.payrollAccounts.forEach { code ->
                 val account = state.chart.accounts.firstOrNull { it.code.equals(code, ignoreCase = true) }
                 Row(
@@ -808,7 +948,7 @@ private fun ColumnScope.PayrollModalBody(
                 ) {
                     ZillitText(text = code, style = ZillitTheme.typography.numeric)
                     ZillitText(
-                        text = account?.name ?: "Not in the chart",
+                        text = account?.name ?: str(S.desktop_hub_not_in_the_chart),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textSecondary,
                         modifier = Modifier.weight(1f),
@@ -817,7 +957,7 @@ private fun ColumnScope.PayrollModalBody(
                     if (editable) {
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Remove",
+                            contentDescription = str(S.remove),
                             onClick = { onEvent(AccountHubEvent.AskRemove(SetupRemoval.PayrollAccountCode(
                                 code,
                                 account?.id,
@@ -829,16 +969,15 @@ private fun ColumnScope.PayrollModalBody(
             }
         }
         "payroll_groups" -> SubCard(
-            hint = "Assign crew to a specific accountant — by department, role or name — so payroll feeds can be " +
-                "scoped to them.",
+            hint = str(S.desktop_hub_assign_crew_to_a_specific_accountant_by_department_role_or),
             action = { if (editable) GhostAddButton(
-                "Add group",
+                str(S.mtg_add_group),
                 onClick = { onEvent(AccountHubEvent.ComposePayrollGroup(null)) },
             ) },
         ) {
             if (state.setup.payrollGroupsLoading) ZillitSpinner()
             if (state.setup.payrollGroups.isEmpty() && !state.setup.payrollGroupsLoading) FieldHint(
-                "No payroll groups yet.",
+                str(S.desktop_hub_no_payroll_groups_yet),
             )
             state.setup.payrollGroups.forEach { group ->
                 Row(
@@ -859,18 +998,18 @@ private fun ColumnScope.PayrollModalBody(
                                 group.designationIds.size
                                     .takeIf { it > 0 }?.let { "$it designation${if (it == 1) "" else "s"}" },
                                 group.userIds.size.takeIf { it > 0 }?.let { "$it crew" },
-                            ).joinToString(" · ").ifBlank { "Nothing routed yet" },
+                            ).joinToString(" · ").ifBlank { str(S.desktop_nothing_routed_yet) },
                         )
                     }
                     if (editable) {
                         ZillitIconButton(
                             icon = ZillitIcons.Edit,
-                            contentDescription = "Edit",
+                            contentDescription = str(S.edit),
                             onClick = { onEvent(AccountHubEvent.ComposePayrollGroup(group)) },
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Delete",
+                            contentDescription = str(S.delete),
                             onClick = { onEvent(AccountHubEvent.AskRemove(SetupRemoval.PayrollGroupRow(group))) },
                             tint = ZillitTheme.colors.danger,
                         )
@@ -890,19 +1029,19 @@ private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEve
     val departments = state.departmentList
     val designations = departments.flatMap { d -> d.designations.map { it to d } }
     ZillitDialogShell(
-        title = if (draft?.id.isNullOrBlank()) "Add Payroll Group" else "Edit Payroll Group",
+        title = if (draft?.id.isNullOrBlank()) str(S.desktop_add_payroll_group) else str(S.desktop_edit_payroll_group),
         icon = ZillitIcons.Users,
         visible = draft != null,
         onDismiss = { onEvent(AccountHubEvent.DismissPayrollGroup) },
         width = DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AccountHubEvent.DismissPayrollGroup) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Save",
+                text = str(S.save),
                 onClick = { onEvent(AccountHubEvent.SavePayrollGroup) },
                 enabled = draft?.canSave == true && !state.setup.payrollGroupSaving,
                 loading = state.setup.payrollGroupSaving,
@@ -917,39 +1056,39 @@ private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEve
             options = team,
             label = { it.name },
             onSelect = { update(draft.copy(assigneeId = it?.id.orEmpty())) },
-            placeholder = "Select accountant…",
-            fieldLabel = "Accountant",
+            placeholder = str(S.desktop_select_accountant),
+            fieldLabel = str(S.desktop_accountant),
             secondary = { it.roleLabel },
             modifier = Modifier.fillMaxWidth(),
         )
-        FieldHint("The accounts-team member this group's payroll routes to.")
+        FieldHint(str(S.desktop_hub_the_accounts_team_member_this_groups_payroll_routes_to))
         HubMultiSelect(
             selected = departments.filter { it.id in draft.departmentIds },
             options = departments,
             label = { it.name },
             onChange = { picked -> update(draft.copy(departmentIds = picked.map { it.id })) },
-            placeholder = "Select departments…",
-            fieldLabel = "Departments",
+            placeholder = str(S.desktop_select_departments_2),
+            fieldLabel = str(S.departments),
         )
-        FieldHint("All crew in these departments route here.")
+        FieldHint(str(S.desktop_hub_all_crew_in_these_departments_route_here))
         HubMultiSelect(
             selected = designations.filter { it.first.id in draft.designationIds },
             options = designations,
             label = { "${it.first.name} · ${it.second.name}" },
             onChange = { picked -> update(draft.copy(designationIds = picked.map { it.first.id })) },
-            placeholder = "Select designations…",
-            fieldLabel = "Designations",
+            placeholder = str(S.desktop_select_designations),
+            fieldLabel = str(S.designations),
         )
-        FieldHint("Crew with these roles route here.")
+        FieldHint(str(S.desktop_hub_crew_with_these_roles_route_here))
         HubMultiSelect(
             selected = team.filter { it.id in draft.userIds },
             options = team,
             label = { it.name },
             onChange = { picked -> update(draft.copy(userIds = picked.map { it.id })) },
-            placeholder = "Select crew members…",
-            fieldLabel = "Specific crew",
+            placeholder = str(S.desktop_select_crew_members),
+            fieldLabel = str(S.desktop_specific_crew),
         )
-        FieldHint("Pin individual crew members.")
+        FieldHint(str(S.desktop_hub_pin_individual_crew_members))
     }
 }
 
@@ -959,20 +1098,20 @@ private fun PayrollGroupDialog(state: AccountHubUiState, onEvent: (AccountHubEve
 private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val draft = state.setup.payrollAccounts
     ZillitDialogShell(
-        title = "Payroll accounts",
-        subtitle = "Rows without an id are created in the chart; a renamed row updates it.",
+        title = str(S.desktop_payroll_accounts),
+        subtitle = str(S.desktop_hub_rows_without_an_id_are_created_in_the_chart_a),
         icon = ZillitIcons.Ledger,
         visible = draft != null,
         onDismiss = { onEvent(AccountHubEvent.DismissPayrollAccounts) },
         width = DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AccountHubEvent.DismissPayrollAccounts) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Save",
+                text = str(S.save),
                 onClick = { onEvent(AccountHubEvent.SavePayrollAccounts) },
                 loading = draft?.saving == true,
                 enabled = draft?.saving != true,
@@ -992,7 +1131,7 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
                     onValueChange = { text ->
                         update(draft.rows.mapIndexed { i, r -> if (i == index) r.copy(code = text) else r })
                     },
-                    placeholder = "Code",
+                    placeholder = str(S.code),
                     modifier = Modifier.width(CODE_WIDTH),
                 )
                 ZillitTextField(
@@ -1000,7 +1139,7 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
                     onValueChange = { text ->
                         update(draft.rows.mapIndexed { i, r -> if (i == index) r.copy(name = text) else r })
                     },
-                    placeholder = "Display name",
+                    placeholder = str(S.av_display_name),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitSelect(
@@ -1015,14 +1154,13 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Remove row",
+                    contentDescription = str(S.desktop_remove_row),
                     onClick = { update(draft.rows.filterIndexed { i, _ -> i != index }) },
                 )
             }
         }
-        GhostAddButton("Add row", onClick = { update(draft.rows + PayrollAccountRow()) })
-        FieldHint("Removing a saved code here only drops it from the grid; use Remove on the list to deactivate it " +
-            "in the chart.")
+        GhostAddButton(str(S.cs_add_row), onClick = { update(draft.rows + PayrollAccountRow()) })
+        FieldHint(str(S.desktop_hub_removing_a_saved_code_here_only_drops_it_from_the))
     }
 }
 
@@ -1031,14 +1169,15 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
 private fun SharedUserPicker(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val picker = state.setup.userPicker
     val (title, pool) = when (picker?.purpose) {
-        UserPickerPurpose.PayrollApprovers -> "Payroll approvers" to HubUsers.available(state.users)
-        UserPickerPurpose.InvoiceTeamMember -> "Team member" to HubUsers.available(state.users)
+        UserPickerPurpose.PayrollApprovers -> str(S.desktop_payroll_approvers) to HubUsers.available(state.users)
+        UserPickerPurpose.InvoiceTeamMember -> str(S.desktop_team_member) to HubUsers.available(state.users)
         UserPickerPurpose.RunAuthorisation -> "Level ${picker.index + 1} authorisers" to HubUsers.available(state.users)
-        UserPickerPurpose.PayrollGroupAssignee -> "Accountant" to HubUsers.accountsTeam(state.users).ifEmpty {
-            HubUsers.available(state.users)
-        }
-        UserPickerPurpose.PayrollGroupCrew -> "Crew" to HubUsers.available(state.users)
-        UserPickerPurpose.ClosingRecipients -> "Recipients" to HubUsers.available(state.users)
+        UserPickerPurpose.PayrollGroupAssignee ->
+            str(S.desktop_accountant) to HubUsers.accountsTeam(state.users).ifEmpty {
+                HubUsers.available(state.users)
+            }
+        UserPickerPurpose.PayrollGroupCrew -> str(S.crew) to HubUsers.available(state.users)
+        UserPickerPurpose.ClosingRecipients -> str(S.recipients) to HubUsers.available(state.users)
         null -> "" to emptyList()
     }
     UserPickerDialog(

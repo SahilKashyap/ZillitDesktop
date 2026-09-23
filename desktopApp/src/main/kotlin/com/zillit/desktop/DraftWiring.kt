@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.database.ScreenplayCache
 import com.zillit.desktop.core.database.ScreenplaySnapshot
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.draft.data.PdfScreenplayRenderer
 import com.zillit.desktop.feature.draft.domain.DraftHost
 import com.zillit.desktop.feature.draft.domain.DraftStore
@@ -72,7 +74,7 @@ internal class MemoryDraftStore : DraftStore {
 internal class DesktopDraftHost(private val drive: () -> DriveViewModel?) : DraftHost {
 
     override suspend fun pickImport(): ImportedFile? = withContext(Dispatchers.IO) {
-        val dialog = FileDialog(null as Frame?, "Import a script (.fountain, .fdx, .txt)", FileDialog.LOAD)
+        val dialog = FileDialog(null as Frame?, str(S.desktop_import_script_dialog), FileDialog.LOAD)
         dialog.isMultipleMode = false
         dialog.setFilenameFilter { _, name ->
             name.lowercase().let { it.endsWith(".fountain") || it.endsWith(".fdx") || it.endsWith(".txt") }

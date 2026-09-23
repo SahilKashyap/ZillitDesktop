@@ -67,6 +67,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.rememberHorizontalResizeCursor
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.ui.EditorEvent
 import com.zillit.desktop.feature.productionreport.ui.EditorState
 import com.zillit.desktop.feature.productionreport.ui.ReportEvent
@@ -122,6 +124,7 @@ internal fun EditorView(state: ReportUiState, editor: EditorState, onEvent: (Rep
 // Header ---------------------------------------------------------------------------------------
 
 @Composable
+@Suppress("CyclomaticComplexMethod") // One gate per header button, in the web's order; splitting them hides that.
 private fun EditorHeader(state: ReportUiState, editor: EditorState, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
     Row(
@@ -136,7 +139,7 @@ private fun EditorHeader(state: ReportUiState, editor: EditorState, onEvent: (Re
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "${state.kind.title} Editor",
+                    str(S.desktop_x_editor, state.kind.title),
                     style = reportText(14.sp, FontWeight.SemiBold),
                     color = colors.textPrimary,
                     maxLines = 1,
@@ -155,53 +158,69 @@ private fun EditorHeader(state: ReportUiState, editor: EditorState, onEvent: (Re
                 if (editor.dirty) UnsavedPill()
             }
             Text(
-                "Select a section from preview to edit",
+                str(S.desktop_select_a_section_to_edit),
                 style = reportText(12.sp),
                 color = colors.textTertiary,
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
+        // The web's order: Focus, the template pair, the sends, and the save LAST.
+        val busy = editor.saving || editor.savingTemplate || state.busy
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FocusToggle(editor.focusMode) { onEvent(EditorEvent.ToggleFocus) }
-            ReportButton(
-                if (editor.savingTemplate) "Saving…" else "Save as Template",
-                { onEvent(EditorEvent.SaveAsTemplate) },
-                kind = ButtonKind.Outline,
-                enabled = !editor.savingTemplate,
-                height = 36.dp,
-                trailing = if (editor.savingTemplate) ({ SmallSpinner(colors.accent) }) else null,
-            )
+            // ZL-21539: create-only — a template is made while building one, never off an existing report.
+            if (editor.isNew) {
+                ReportButton(
+                    if (editor.savingTemplate) str(S.ah_saving) else str(S.save_as_template),
+                    { onEvent(EditorEvent.SaveAsTemplate) },
+                    kind = ButtonKind.Outline,
+                    enabled = !busy,
+                    height = 36.dp,
+                    trailing = if (editor.savingTemplate) ({ SmallSpinner(colors.accent) }) else null,
+                )
+            }
             editor.template?.let { template ->
-                ZillitTooltip("Overwrites \"${template.name}\"") {
+                ZillitTooltip(str(S.desktop_overwrites_named, template.name)) {
                     ReportButton(
-                        "Update Template",
+                        str(S.update_template),
                         { onEvent(EditorEvent.UpdateTemplate) },
                         kind = ButtonKind.Outline,
-                        enabled = !editor.savingTemplate,
+                        enabled = !busy,
                         height = 36.dp,
                     )
                 }
             }
+            // The shared `sheetSendActions` rule, on a SAVED report only — nothing to send before the first save.
+            val send = editor.sendActions
+            if (!editor.isNew && send.sendForSignature) {
+                ReportButton(
+                    if (state.busy) str(S.dd_busy_sending) else str(S.cs_send_for_signature),
+                    { onEvent(EditorEvent.SendForSignature) },
+                    kind = ButtonKind.Outline,
+                    enabled = !busy,
+                    height = 36.dp,
+                )
+            }
+            if (!editor.isNew && send.sendForComments) {
+                ReportButton(
+                    str(S.pr_send_for_comments),
+                    { onEvent(EditorEvent.SendForComments) },
+                    kind = ButtonKind.Outline,
+                    enabled = !busy,
+                    height = 36.dp,
+                )
+            }
             if (editor.isNew) {
                 ReportButton(
-                    if (editor.saving) "Saving…" else "Save As",
+                    if (editor.saving) str(S.ah_saving) else str(S.pr_save_as),
                     { onEvent(EditorEvent.SaveAs) },
                     kind = ButtonKind.Accent,
-                    enabled = !editor.saving,
+                    enabled = !busy,
                     height = 36.dp,
                     horizontalPadding = 20.dp,
                 )
             } else {
                 SaveSplit(editor, onEvent)
-            }
-            if (editor.offersSend) {
-                ReportButton(
-                    "Send for Approval",
-                    { onEvent(EditorEvent.OpenSend) },
-                    kind = ButtonKind.Outline,
-                    enabled = !editor.saving,
-                    height = 36.dp,
-                )
             }
         }
     }
@@ -212,7 +231,7 @@ private fun EditorHeader(state: ReportUiState, editor: EditorState, onEvent: (Re
 private fun BackButton(onClick: () -> Unit) {
     val colors = ReportTheme.colors
     val (source, hovered) = rememberHover()
-    ZillitTooltip("Back") {
+    ZillitTooltip(str(S.back)) {
         Box(
             Modifier
                 .size(32.dp)
@@ -224,7 +243,7 @@ private fun BackButton(onClick: () -> Unit) {
         ) {
             Icon(
                 ZillitIcons.ChevronLeft,
-                contentDescription = "Back",
+                contentDescription = str(S.back),
                 tint = Color.White,
                 modifier = Modifier.size(16.dp),
             )
@@ -241,7 +260,11 @@ private fun UnsavedPill() {
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(colors.accent))
-        Text("Unsaved changes", style = reportText(10.sp, FontWeight.Medium, 14.sp), color = colors.chipOnText)
+        Text(
+            str(S.desktop_unsaved_changes),
+            style = reportText(10.sp, FontWeight.Medium, 14.sp),
+            color = colors.chipOnText,
+        )
     }
 }
 
@@ -250,7 +273,7 @@ private fun FocusToggle(active: Boolean, onClick: () -> Unit) {
     val colors = ReportTheme.colors
     val (source, hovered) = rememberHover()
     val tint = if (active || hovered) colors.accent else colors.textSecondary
-    ZillitTooltip(if (active) "Exit focus (Esc)" else "Focus — hide the tips and give the page more room") {
+    ZillitTooltip(if (active) str(S.desktop_exit_focus_hint) else str(S.desktop_focus_hint)) {
         Row(
             Modifier
                 .height(36.dp)
@@ -269,7 +292,11 @@ private fun FocusToggle(active: Boolean, onClick: () -> Unit) {
                 tint = tint,
                 modifier = Modifier.size(12.dp),
             )
-            Text(if (active) "Exit Focus" else "Focus", style = reportText(13.sp, FontWeight.Medium), color = tint)
+            Text(
+                if (active) str(S.desktop_exit_focus) else str(S.desktop_focus),
+                style = reportText(13.sp, FontWeight.Medium),
+                color = tint,
+            )
         }
     }
 }
@@ -280,7 +307,7 @@ private fun SaveSplit(editor: EditorState, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
     Box {
         ReportButton(
-            if (editor.saving) "Saving…" else "Save",
+            if (editor.saving) str(S.ah_saving) else str(S.save),
             { onEvent(EditorEvent.ToggleSaveMenu) },
             kind = ButtonKind.Accent,
             enabled = !editor.saving,
@@ -304,10 +331,10 @@ private fun SaveSplit(editor: EditorState, onEvent: (ReportEvent) -> Unit) {
             modifier = Modifier.border(1.dp, colors.border, RoundedCornerShape(12.dp)),
         ) {
             Column(Modifier.widthIn(min = 180.dp).padding(horizontal = 6.dp)) {
-                SaveMenuItem("Save", "Update this draft", ZillitIcons.Save) { onEvent(EditorEvent.Save) }
+                SaveMenuItem(str(S.save), str(S.desktop_pr_save_hint), ZillitIcons.Save) { onEvent(EditorEvent.Save) }
                 SaveMenuItem(
-                    "Save As",
-                    "Keep this one and save a copy",
+                    str(S.pr_save_as),
+                    str(S.desktop_pr_save_as_hint),
                     ReportIcons.FileDone,
                 ) { onEvent(EditorEvent.SaveAs) }
             }
@@ -377,13 +404,13 @@ private fun TemplateTips(paneBusy: Boolean, onShowSections: () -> Unit) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "TEMPLATE TIPS",
+                    str(S.desktop_template_tips_upper),
                     style = reportText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.8.sp),
                     color = colors.tipsText,
                 )
                 TipLine(
                     androidx.compose.ui.text.buildAnnotatedString {
-                        append("Place the cursor in empty space between boxes or at the end of a box, then click ")
+                        append(str(S.desktop_tip_place_cursor) + " ")
                         pushStyle(
                             androidx.compose.ui.text.SpanStyle(
                                 fontWeight = FontWeight.SemiBold,
@@ -392,10 +419,10 @@ private fun TemplateTips(paneBusy: Boolean, onShowSections: () -> Unit) {
                         )
                         append("+")
                         pop()
-                        append(" to add a field.")
+                        append(" " + str(S.desktop_tip_to_add_a_field))
                     },
                 )
-                TipLine(androidx.compose.ui.text.AnnotatedString("Created templates can only be saved as a Draft."))
+                TipLine(androidx.compose.ui.text.AnnotatedString(str(S.desktop_tip_templates_saved_as_draft)))
             }
         }
         if (!paneBusy) {
@@ -407,18 +434,18 @@ private fun TemplateTips(paneBusy: Boolean, onShowSections: () -> Unit) {
                 Box(Modifier.width(1.dp).height(44.dp).background(colors.border))
                 Column(Modifier.widthIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        "LAYOUT",
+                        str(S.desktop_layout_upper),
                         style = reportText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.8.sp),
                         color = colors.tipsText,
                     )
                     Text(
-                        "Drag sections to reorder and customize their position on the page.",
+                        str(S.desktop_tip_drag_sections),
                         style = reportText(12.sp, lineHeight = 18.sp),
                         color = colors.tipsText,
                     )
                 }
                 ReportButton(
-                    "Sections",
+                    str(S.desktop_sections),
                     onShowSections,
                     kind = ButtonKind.Accent,
                     icon = ReportIcons.Table,
@@ -504,7 +531,7 @@ private fun Resizer(percent: Float, totalPx: Float, onSplit: (Float) -> Unit) {
             Box(Modifier.padding(bottom = 3.dp).size(3.dp).clip(CircleShape).background(ink))
         }
         Text(
-            "DRAG",
+            str(S.desktop_drag_upper),
             style = reportText(8.sp, FontWeight.Bold, 10.sp).copy(letterSpacing = 1.sp),
             color = ink,
             modifier = Modifier.padding(top = 4.dp).readsUpward(),
@@ -525,7 +552,7 @@ private fun PreviewArea(state: ReportUiState, editor: EditorState, onEvent: (Rep
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "PREVIEW",
+                str(S.dd_preview),
                 style = reportText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 1.5.sp),
                 color = colors.textMuted,
             )
@@ -608,7 +635,7 @@ private fun PopulatingPill() {
     ) {
         SmallSpinner(colors.accent)
         Text(
-            "Populating from last published call sheet…",
+            str(S.desktop_pr_populating_from_call_sheet),
             style = reportText(11.sp, FontWeight.Medium),
             color = colors.accent,
         )
@@ -630,9 +657,13 @@ private fun PopulatingCard(modifier: Modifier) {
     ) {
         SmallSpinner(colors.accent, 20.dp)
         Column {
-            Text("Loading call sheet data", style = reportText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
             Text(
-                "Fetching the last published call sheet to pre-fill this report…",
+                str(S.desktop_pr_loading_call_sheet_data),
+                style = reportText(14.sp, FontWeight.SemiBold),
+                color = colors.textPrimary,
+            )
+            Text(
+                str(S.desktop_pr_fetching_call_sheet_hint),
                 style = reportText(12.sp),
                 color = colors.textTertiary,
             )
@@ -653,11 +684,11 @@ private fun ZoomGroup(zoom: Int, onEvent: (ReportEvent) -> Unit) {
     ) {
         ZoomButton(
             ReportIcons.Minus,
-            "Reduce preview size",
+            str(S.desktop_reduce_preview_size),
             zoom > EditorState.MIN_ZOOM,
         ) { onEvent(EditorEvent.Zoom(-EditorState.ZOOM_STEP)) }
         val (source, hovered) = rememberHover()
-        ZillitTooltip("Reset to 100%") {
+        ZillitTooltip(str(S.desktop_reset_to_100)) {
             Text(
                 "$zoom%",
                 style = reportText(11.sp, FontWeight.SemiBold),
@@ -671,7 +702,7 @@ private fun ZoomGroup(zoom: Int, onEvent: (ReportEvent) -> Unit) {
         }
         ZoomButton(
             ZillitIcons.Add,
-            "Increase preview size",
+            str(S.desktop_increase_preview_size),
             zoom < EditorState.MAX_ZOOM,
         ) { onEvent(EditorEvent.Zoom(EditorState.ZOOM_STEP)) }
     }

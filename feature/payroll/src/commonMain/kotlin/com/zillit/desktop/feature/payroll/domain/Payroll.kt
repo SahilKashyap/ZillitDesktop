@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.payroll.domain
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * One pay-period week's timecards, as payroll works them.
@@ -111,13 +113,16 @@ data class PayrollLine(
 }
 
 /** Where a week is, derived from its timecards. */
-enum class WeekStatus(val label: String) {
-    Empty("No timecards"),
-    InProgress("In progress"),
-    Queried("Queried"),
-    ReadyToPay("Ready to pay"),
-    ReadyToPost("Ready to post"),
-    Posted("Posted"),
+enum class WeekStatus(private val labelKey: String) {
+    Empty(S.desktop_payroll_no_timecards),
+    InProgress(S.in_progress),
+    Queried(S.ah_queried),
+    ReadyToPay(S.desktop_timecard_ready_to_pay),
+    ReadyToPost(S.ah_ready_to_post),
+    Posted(S.ah_step_posted),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -129,18 +134,20 @@ enum class WeekStatus(val label: String) {
  * rows that will be ignored makes a batch report fewer moved than selected
  * with nothing to explain the gap.
  */
-enum class TimecardStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Submitted("submitted", "Submitted"),
-    AwaitingApproval("awaiting_approval", "Awaiting approval"),
-    Approved("approved", "Approved"),
-    Queried("queried", "Queried"),
-    Rejected("rejected", "Rejected"),
-    Locked("locked", "Locked"),
-    Paid("paid", "Paid"),
-    Posted("posted", "Posted"),
-    Unknown("", "Unknown"),
+enum class TimecardStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
+    Submitted("submitted", S.txt_submitted),
+    AwaitingApproval("awaiting_approval", S.dm_filter_status_pending),
+    Approved("approved", S.approved),
+    Queried("queried", S.ah_queried),
+    Rejected("rejected", S.rejected),
+    Locked("locked", S.docusign_prop_locked),
+    Paid("paid", S.desktop_paid),
+    Posted("posted", S.ah_step_posted),
+    Unknown("", S.desktop_unknown),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Approved work may be paid. */
     val isPayable: Boolean get() = this == Approved
@@ -184,7 +191,7 @@ data class DepartmentTotal(
                         // The first row that names the department wins; rows
                         // often carry the id without the name.
                         departmentName = group.firstNotNullOfOrNull { it.departmentName }
-                            ?: "Unassigned",
+                            ?: str(S.unassigned),
                         crewCount = group.size,
                         gross = group.sumOf { it.gross },
                         net = group.sumOf { it.net },

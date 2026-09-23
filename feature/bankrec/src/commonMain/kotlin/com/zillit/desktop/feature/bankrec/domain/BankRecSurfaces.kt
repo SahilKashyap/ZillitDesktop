@@ -1,25 +1,32 @@
 package com.zillit.desktop.feature.bankrec.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** What kind of thing an exception is, and what an accountant does about it. */
-enum class ExceptionType(val wire: String, val label: String, val guidance: String) {
-    BankCharge("bank_charge", "Bank Charges", "Monthly service charge. No matching entry in Zillit."),
-    VatReturn("vat_return", "Tax Return", "HMRC payment. No Tax control entry in Zillit for this period."),
+enum class ExceptionType(val wire: String, private val labelKey: String, private val guidanceKey: String) {
+    BankCharge("bank_charge", S.desktop_br_exc_bank_charges, S.desktop_br_exc_bank_charge_guidance),
+    VatReturn("vat_return", S.desktop_br_exc_tax_return, S.desktop_br_exc_tax_return_guidance),
     CardSettlement(
         "card_settlement",
-        "Card Settlement",
-        "Corporate card settlement. Post to Card Control account.",
+        S.desktop_br_exc_card_settlement,
+        S.desktop_br_exc_card_settlement_guidance,
     ),
-    Payroll("payroll", "Payroll", "Payroll payment. No matching payroll journal in Zillit."),
+    Payroll("payroll", S.dm_section_payroll, S.desktop_br_exc_payroll_guidance),
     FxPayment(
         "fx_payment",
-        "FX Payment",
-        "Foreign currency payment. Check FX variance and post accordingly.",
+        S.desktop_br_exc_fx_payment,
+        S.desktop_br_exc_fx_payment_guidance,
     ),
-    Interest("interest", "Interest", "Interest payment or receipt. Post to interest nominal."),
-    PettyCash("petty_cash", "Petty Cash", "Petty cash replenishment. Post to petty cash control."),
-    Insurance("insurance", "Insurance", "Insurance premium. Post to prepayments or insurance nominal."),
-    Unknown("unknown", "Unknown", "No matching entry found. Investigate and post manually."),
+    Interest("interest", S.desktop_interest, S.desktop_br_exc_interest_guidance),
+    PettyCash("petty_cash", S.desktop_petty_cash, S.desktop_br_exc_petty_cash_guidance),
+    Insurance("insurance", S.av_insurance, S.desktop_br_exc_insurance_guidance),
+    Unknown("unknown", S.desktop_unknown, S.desktop_br_exc_unknown_guidance),
     ;
+
+    val label: String get() = str(labelKey)
+
+    val guidance: String get() = str(guidanceKey)
 
     companion object {
         fun from(wire: String?): ExceptionType =
@@ -28,13 +35,15 @@ enum class ExceptionType(val wire: String, val label: String, val guidance: Stri
 }
 
 /** How far an exception has been taken. */
-enum class ExceptionStatus(val wire: String, val label: String) {
-    Open("open", "Open"),
-    UnderInvestigation("under_investigation", "Under Investigation"),
-    Investigated("investigated", "Investigated"),
-    Resolved("resolved", "Resolved"),
-    Ignored("ignored", "Ignored"),
+enum class ExceptionStatus(val wire: String, private val labelKey: String) {
+    Open("open", S.recce_open),
+    UnderInvestigation("under_investigation", S.ah_under_investigation_toast),
+    Investigated("investigated", S.desktop_investigated),
+    Resolved("resolved", S.ah_alert_filter_resolved),
+    Ignored("ignored", S.desktop_ignored),
     ;
+
+    val label: String get() = str(labelKey)
 
     val isOpen: Boolean get() = this == Open
 
@@ -98,11 +107,14 @@ data class QuickAddForm(
 }
 
 /** The cost centres the quick forms offer — the web's shared list, one for both forms. */
-enum class CostCentre(val code: String, val label: String) {
-    Production("PROD", "PROD — Production"),
-    PostProduction("POST", "POST — Post Production"),
-    Administration("ADMIN", "ADMIN — Administration"),
-    Operations("OPS", "OPS — Operations"),
+enum class CostCentre(val code: String, private val labelKey: String) {
+    Production("PROD", S.desktop_br_cost_centre_prod),
+    PostProduction("POST", S.desktop_br_cost_centre_post),
+    Administration("ADMIN", S.desktop_br_cost_centre_admin),
+    Operations("OPS", S.desktop_br_cost_centre_ops),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -154,7 +166,7 @@ data class FraudAlert(
 ) {
     val isHighRisk: Boolean get() = riskScore >= HIGH_RISK
 
-    val riskLabel: String get() = if (isHighRisk) "High Risk" else "Medium Risk"
+    val riskLabel: String get() = if (isHighRisk) str(S.desktop_high_risk) else str(S.desktop_medium_risk)
 
     val isActive: Boolean get() = status == FraudStatus.Active
 
@@ -167,7 +179,7 @@ data class FraudAlert(
     val hasSuggestion: Boolean get() = invoices.isNotEmpty() || vendor != null
 
     val typeLabel: String
-        get() = alertType?.label ?: alertTypeWire.ifBlank { "Fraud alert" }
+        get() = alertType?.label ?: alertTypeWire.ifBlank { str(S.desktop_fraud_alert) }
 
     private companion object {
         const val HIGH_RISK = 75
@@ -175,17 +187,19 @@ data class FraudAlert(
 }
 
 /** What an audit entry records. The web's own labels, and its reading of each. */
-enum class AuditAction(val wire: String, val label: String) {
-    Created("created", "Fraud Detected"),
-    Accepted("accepted", "Accepted & Matched"),
-    Escalated("escalated", "Escalated to Finance"),
-    Dismissed("dismissed", "Investigated — No Issue"),
-    RemovedByRerun("removed_by_rerun", "Removed (Auto-Match Re-run)"),
-    AutoMatchRerun("auto_match_rerun", "Auto-Match Re-run"),
-    StatementImport("statement_import", "Statement Imported"),
-    ImportResults("import_results", "Import Complete"),
-    PeriodDeleted("period_deleted", "Period Deleted"),
+enum class AuditAction(val wire: String, private val labelKey: String) {
+    Created("created", S.desktop_br_audit_fraud_detected),
+    Accepted("accepted", S.desktop_br_audit_accepted_matched),
+    Escalated("escalated", S.desktop_br_audit_escalated_finance),
+    Dismissed("dismissed", S.desktop_br_audit_investigated_no_issue),
+    RemovedByRerun("removed_by_rerun", S.desktop_br_audit_removed_rerun),
+    AutoMatchRerun("auto_match_rerun", S.desktop_br_audit_auto_match_rerun),
+    StatementImport("statement_import", S.desktop_br_audit_statement_imported),
+    ImportResults("import_results", S.desktop_br_audit_import_complete),
+    PeriodDeleted("period_deleted", S.desktop_br_audit_period_deleted),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): AuditAction? = entries.firstOrNull { it.wire == wire?.lowercase() }
@@ -237,10 +251,12 @@ data class AuditFilters(
 )
 
 /** Whether an FX variance has reached the ledger. */
-enum class FxStatus(val wire: String, val label: String) {
-    Unposted("unposted", "Unposted"),
-    Posted("posted", "Posted"),
+enum class FxStatus(val wire: String, private val labelKey: String) {
+    Unposted("unposted", S.desktop_unposted),
+    Posted("posted", S.ah_status_posted),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): FxStatus =
@@ -326,19 +342,29 @@ data class RulesSettings(
 data class FraudRule(val enabled: Boolean = true, val amount: Double? = null)
 
 /** The matching rules the engine runs, in the order the web lists them. */
-enum class MatchRule(val key: String, val label: String, val description: String, val confidence: String) {
+enum class MatchRule(
+    val key: String,
+    private val labelKey: String,
+    private val descriptionKey: String,
+    val confidence: String,
+) {
     AmountAndReference(
         "amt_ref_match",
-        "Exact amount + reference match",
-        "Matches transactions where amount and payment reference are identical.",
+        S.desktop_br_rule_amount_reference,
+        S.desktop_br_rule_amount_reference_desc,
         "100%",
     ),
     AmountAndVendor(
         "amt_fuzzy_vendor_match",
-        "Amount + supplier name (fuzzy)",
-        "Matches on amount with fuzzy supplier name similarity above threshold.",
+        S.desktop_br_rule_amount_vendor,
+        S.desktop_br_rule_amount_vendor_desc,
         "85–94%",
     ),
+    ;
+
+    val label: String get() = str(labelKey)
+
+    val description: String get() = str(descriptionKey)
 }
 
 /** How loudly the web marks a check. */
@@ -353,50 +379,56 @@ enum class RuleSeverity { Critical, Warning }
  */
 enum class FraudDetection(
     val key: String,
-    val label: String,
-    val description: String,
-    val severity: String,
+    private val labelKey: String,
+    private val descriptionKey: String,
+    private val severityKey: String,
     val tone: RuleSeverity,
     val defaultAmount: Double? = null,
 ) {
     BankChange(
         "bank_change_detection",
-        "Mandate / bank detail change detection",
-        "Flag any payment to a sort code not on the supplier’s verified record",
-        "Critical",
+        S.desktop_br_fraud_bank_change,
+        S.desktop_br_fraud_bank_change_desc,
+        S.desktop_critical,
         RuleSeverity.Critical,
     ),
     SplitPayment(
         "split_pay_threshold",
-        "Split payment threshold",
-        "Flag multiple same-day payments to same supplier if combined total exceeds threshold",
-        "Threshold",
+        S.desktop_br_fraud_split_payment,
+        S.desktop_br_fraud_split_payment_desc,
+        S.desktop_threshold,
         RuleSeverity.Warning,
         defaultAmount = 5_000.0,
     ),
     UnregisteredPayee(
         "unregistered_payee",
-        "New / unregistered payees",
-        "Flag payments to bank accounts not in the Zillit supplier register",
-        "Medium risk",
+        S.desktop_br_fraud_unregistered_payees,
+        S.desktop_br_fraud_unregistered_payees_desc,
+        S.desktop_medium_risk,
         RuleSeverity.Warning,
     ),
     RoundLargePayments(
         "round_large_payments",
-        "Round-number large payments",
-        "Flag exact round-number payments above a set amount with no invoice reference",
-        "Min. amount",
+        S.desktop_br_fraud_round_large,
+        S.desktop_br_fraud_round_large_desc,
+        S.desktop_min_amount,
         RuleSeverity.Warning,
         defaultAmount = 10_000.0,
     ),
     DuplicateDetection(
         "duplicate_detection",
-        "Duplicate detection (7-day window)",
-        "Flags potential duplicate payments within a rolling 7-day window",
-        "Always on",
+        S.desktop_br_fraud_duplicate,
+        S.desktop_br_fraud_duplicate_desc,
+        S.desktop_always_on,
         RuleSeverity.Critical,
     ),
     ;
+
+    val label: String get() = str(labelKey)
+
+    val description: String get() = str(descriptionKey)
+
+    val severity: String get() = str(severityKey)
 
     val hasThreshold: Boolean get() = defaultAmount != null
 }

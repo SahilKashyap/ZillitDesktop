@@ -15,6 +15,8 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.weather.domain.WeatherPlace
 import kotlinx.coroutines.launch
 
@@ -28,7 +30,7 @@ class WeatherToolProvider(
 ) : ToolProvider {
 
     override val path: String = WEATHER_PATH
-    override val title: String = "Weather"
+    override val title: String get() = str(S.recce_field_weather)
     override val icon = ZillitToolIcons.IcWeather
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -56,7 +58,7 @@ class WeatherToolProvider(
                             val current = state.place?.let { place ->
                                 PickedLocation(name = place.name, address = "", lat = place.lat, lng = place.lng)
                             }
-                            it.pick(initial = current, title = "Where is the unit?")?.let { place ->
+                            it.pick(initial = current, title = str(S.desktop_weather_where_is_the_unit))?.let { place ->
                                 viewModel.onEvent(
                                     WeatherEvent.PlacePicked(
                                         WeatherPlace(

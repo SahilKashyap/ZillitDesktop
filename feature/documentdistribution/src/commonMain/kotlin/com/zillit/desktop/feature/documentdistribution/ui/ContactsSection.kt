@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.Csv
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
@@ -94,12 +96,12 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
     fun saveEditor() {
         val editor = vm.state.contactEditor ?: return
         val email = editor.email.trim().lowercase()
-        if (!isValidEmail(email)) return vm.fail("Enter a valid email")
+        if (!isValidEmail(email)) return vm.fail(str(S.dd_invalid_email))
         if (vm.refusesWrite()) return
         val original = editor.originalEmail.lowercase()
         val clashes = vm.state.contacts.any { it.email.lowercase() == email && it.email.lowercase() != original }
         if ((editor.isNew || editor.emailChanged) && clashes) return vm.notice(
-            "That email is already in your address book",
+            str(S.desktop_docdist_email_already_in_address_book),
         )
         val contact = Contact(email = email, name = editor.name.trim(), jobTitle = editor.job.trim())
         vm.update { copy(contactEditor = editor.copy(saving = true)) }
@@ -114,11 +116,17 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
             if (editor.emailChanged) vm.repository.deleteContact(original)
             vm.update { copy(contactEditor = null, selectedContactEmail = email) }
             when {
-                listFailures -> vm.fail("Contact saved, but updating one or more lists failed")
+                listFailures -> vm.fail(str(S.desktop_docdist_contact_saved_lists_failed))
                 editor.isNew && editor.listIds.isNotEmpty() ->
-                    vm.notice("Contact added to ${plural(editor.listIds.size, "list")}")
-                editor.isNew -> vm.notice("Contact added")
-                else -> vm.notice("Contact updated")
+                    vm.notice(
+                        plural(
+                            editor.listIds.size,
+                            S.desktop_docdist_contact_added_to_one_list,
+                            S.desktop_docdist_contact_added_to_lists,
+                        ),
+                    )
+                editor.isNew -> vm.notice(str(S.desktop_contact_added))
+                else -> vm.notice(str(S.dd_contact_updated))
             }
             load()
         }
@@ -153,14 +161,21 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
         vm.update {
             copy(
                 prompt = DocDistPrompt(
-                    title = "Delete contact",
+                    title = str(S.dd_delete_contact),
                     message = if (contact.lists.isNotEmpty()) {
-                        "Removes ${contact.displayName} from your address book and " +
-                            "${plural(contact.lists.size, "distribution list")}."
+                        str(
+                            S.desktop_docdist_removes_contact_from_book_and_lists,
+                            contact.displayName,
+                            plural(
+                                contact.lists.size,
+                                S.desktop_docdist_one_distribution_list,
+                                S.desktop_docdist_distribution_lists_count,
+                            ),
+                        )
                     } else {
-                        "Remove ${contact.displayName} from your address book?"
+                        str(S.desktop_docdist_remove_contact_from_book, contact.displayName)
                     },
-                    confirmLabel = "Delete",
+                    confirmLabel = str(S.delete),
                     event = DocDistEvent.DeleteContact(contact.email),
                 ),
             )
@@ -172,7 +187,7 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
         vm.run {
             vm.onSuccess(vm.repository.deleteContact(email)) {
                 vm.update { copy(selectedContactEmail = null, contactEditor = null) }
-                vm.notice("Contact deleted")
+                vm.notice(str(S.dd_contact_deleted))
                 load()
             }
         }
@@ -183,7 +198,7 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
         if (vm.refusesWrite()) return
         vm.run {
             vm.onSuccess(vm.repository.saveContact(contact)) {
-                vm.notice("Contact saved")
+                vm.notice(str(S.dd_contact_saved))
                 load()
             }
         }
@@ -198,7 +213,7 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
         rewrite(
             list,
             list.recipients + Recipient(contact.email, contact.name, contact.jobTitle),
-            "Added to \"${list.name}\"",
+            str(S.desktop_docdist_added_to_list, list.name),
         )
     }
 
@@ -209,7 +224,7 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
         rewrite(
             list,
             list.recipients.filterNot { it.email.equals(contact.email, ignoreCase = true) },
-            "Removed from \"${list.name}\"",
+            str(S.desktop_docdist_removed_from_list, list.name),
         )
     }
 
@@ -228,12 +243,12 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
     fun copyEmail() {
         val contact = vm.state.selectedContact ?: return
         vm.host.copyToClipboard(contact.email)
-        vm.notice("Email copied")
+        vm.notice(str(S.dd_email_copied))
     }
 
     fun exportCsv() {
         val contacts = vm.state.contacts
-        if (contacts.isEmpty()) return vm.notice("No contacts to export")
+        if (contacts.isEmpty()) return vm.notice(str(S.dd_address_export_no_contacts))
         if (vm.refusesDownload()) return
         vm.run { library.saveAndOpen("Address Book.csv", Csv.contacts(contacts).encodeToByteArray()) }
     }

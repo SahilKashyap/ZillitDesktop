@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.AllowanceConversion
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealValidators
@@ -44,6 +46,7 @@ import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.MoneyInput
 import com.zillit.desktop.feature.dealmemo.ui.pages.preview.CoaCodeField
+import kotlin.time.Clock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -51,33 +54,35 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlin.time.Clock
 
 /** `BASIS_OPTIONS` — a retired basis still shows, disabled, until it is re-selected. */
 internal fun basisOptions(current: String): List<PickOption> {
     val options = listOf(
-        PickOption("day", "Daily"),
-        PickOption("week", "5 Days Week"),
+        PickOption("day", str(S.dm_rates_buyout_mode_daily)),
+        PickOption("week", str(S.desktop_5_days_week)),
         PickOption("3in5", "3 in 5"),
-        PickOption("mile", "Per Mile"),
+        PickOption("mile", str(S.desktop_per_mile)),
     )
     val legacy = when (current.trim().lowercase()) {
-        "hour" -> "Per Hour (retired — re-select)"
-        "night" -> "Per Night (retired — re-select)"
-        "event" -> "Per Event (retired — re-select)"
+        "hour" -> str(S.desktop_hub_per_hour_retired_re_select_dashes)
+        "night" -> str(S.desktop_hub_per_night_retired_re_select_dashes)
+        "event" -> str(S.desktop_hub_per_event_retired_re_select_dashes)
         else -> null
     }
     return if (legacy != null) options + PickOption(current.trim().lowercase(), legacy, disabled = true) else options
 }
 
-internal val ALLOWANCE_APPLIES = listOf(
-    PickOption("shoot", "Shoot Day only"),
-    PickOption("non_shoot", "Non-shoot day"),
-    PickOption("shoot_non_shoot", "Shoot & Non-shoot Days"),
+internal val ALLOWANCE_APPLIES get() = listOf(
+    PickOption("shoot", str(S.desktop_shoot_day_only)),
+    PickOption("non_shoot", str(S.desktop_non_shoot_day)),
+    PickOption("shoot_non_shoot", str(S.desktop_hub_shoot_non_shoot_days)),
 )
 
-internal val RENTAL_APPLIES =
-    listOf(PickOption("shoot", "Shoot Day only"), PickOption("full_production", "Full Contract"))
+internal val RENTAL_APPLIES get() =
+    listOf(
+        PickOption("shoot", str(S.desktop_shoot_day_only)),
+        PickOption("full_production", str(S.desktop_full_contract)),
+    )
 
 /**
  * Allowances & Rentals (`Step6Allowances.jsx`): the deal's entitlement rows —
@@ -90,7 +95,7 @@ internal fun AllowancesEditor(state: DealMemoUiState, builder: BuilderState, ops
     val nominal = state.viewer.isAccountant
     builder.conversion?.let { ConversionBanner(it) }
     EntitlementCard(
-        title = "Equipment Rentals / Box Rental",
+        title = str(S.desktop_hub_equipment_rentals_box_rental),
         key = "rentals",
         rental = true,
         state = state,
@@ -100,7 +105,7 @@ internal fun AllowancesEditor(state: DealMemoUiState, builder: BuilderState, ops
         ops = ops,
     )
     EntitlementCard(
-        title = "Allowances",
+        title = str(S.dm_section_allowances),
         key = "allowances",
         rental = false,
         state = state,
@@ -115,13 +120,9 @@ internal fun AllowancesEditor(state: DealMemoUiState, builder: BuilderState, ops
 private fun ConversionBanner(conversion: AllowanceConversion) {
     val text = when (conversion) {
         is AllowanceConversion.Converted ->
-            "Your project default currency (${conversion.from}) differs from the territory currency " +
-                "(${conversion.to}) — project allowance and rental amounts were automatically converted to " +
-                "${conversion.to} at exchange rate ${Js.number(conversion.rate)}."
+            str(S.desktop_dm_allowances_converted_note, conversion.from, conversion.to, Js.number(conversion.rate))
         is AllowanceConversion.NoRate ->
-            "The territory currency (${conversion.to}) has no exchange rate configured in Production Setup → Project " +
-                "Currencies, so project allowance and rental amounts were left in ${conversion.from}. Add the rate " +
-                "there to enable automatic conversion."
+            str(S.desktop_dm_allowances_no_rate_note, conversion.to, conversion.from)
     }
     BuilderAlert(
         text,
@@ -167,12 +168,15 @@ private fun EntitlementCard(
                         horizontalArrangement = Arrangement.spacedBy(GAP),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        HeadText(if (rental) "Item" else "Allowance", Modifier.weight(1f))
-                        HeadText("Rate", Modifier.width(if (rental) 80.dp else 90.dp))
-                        HeadText("Pay Frequency", Modifier.width(130.dp))
-                        HeadText("Applies To", Modifier.width(150.dp))
-                        if (rental) HeadText("Cap", Modifier.width(210.dp))
-                        if (nominal) HeadText("Nominal", Modifier.width(110.dp))
+                        HeadText(
+                            if (rental) str(S.desktop_dm_item) else str(S.desktop_dm_allowance),
+                            Modifier.weight(1f),
+                        )
+                        HeadText(str(S.dm_allow_rate), Modifier.width(if (rental) 80.dp else 90.dp))
+                        HeadText(str(S.dm_allow_basis), Modifier.width(130.dp))
+                        HeadText(str(S.dm_allow_applies_to), Modifier.width(150.dp))
+                        if (rental) HeadText(str(S.dm_allow_cap_type), Modifier.width(210.dp))
+                        if (nominal) HeadText(str(S.dm_rule_nominal), Modifier.width(110.dp))
                         Box(Modifier.width(32.dp))
                     }
                     rows.forEach { row ->
@@ -205,7 +209,9 @@ private fun EntitlementCard(
             }
             Rule(p.hairline)
             Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
-                AddRowButton(if (rental) "Add Custom Rental" else "Add Custom Allowance") {
+                AddRowButton(
+                    if (rental) str(S.dm_allow_add_dialog_title_rental) else str(S.dm_allow_add_dialog_title_allowance),
+                ) {
                     ops.edit { form -> form.with(key, JsonArray(form.list(key) + newRow(rental))) }
                 }
             }
@@ -247,7 +253,7 @@ private fun EntitlementRow(
                 BuilderInput(
                     value = text(row["name"]),
                     onValueChange = { onChange("name", JsonPrimitive(it)) },
-                    placeholder = if (rental) "Rental name" else "Allowance name",
+                    placeholder = if (rental) str(S.desktop_rental_name) else str(S.desktop_allowance_name),
                     error = "name" in missing,
                     height = ROW_CONTROL,
                     textSize = 13f,
@@ -279,7 +285,7 @@ private fun EntitlementRow(
             value = text(row["basis"]),
             options = basisOptions(text(row["basis"])),
             onPick = { onChange("basis", JsonPrimitive(it)) },
-            placeholder = "— pay frequency —",
+            placeholder = str(S.desktop_dm_pay_frequency_placeholder),
             error = "basis" in missing,
             height = ROW_CONTROL,
             textSize = 13f,
@@ -290,7 +296,7 @@ private fun EntitlementRow(
             value = text(row["applies_to"]),
             options = if (rental) RENTAL_APPLIES else ALLOWANCE_APPLIES,
             onPick = { onChange("applies_to", JsonPrimitive(it)) },
-            placeholder = "— applies to —",
+            placeholder = str(S.desktop_dm_applies_to_placeholder),
             error = "applies_to" in missing,
             height = ROW_CONTROL,
             textSize = 13f,
@@ -306,7 +312,10 @@ private fun EntitlementRow(
             ) {
                 NativeSelect(
                     value = text(row["cap_type"]).ifEmpty { "uncapped" },
-                    options = listOf(PickOption("uncapped", "Uncapped"), PickOption("capped", "Capped")),
+                    options = listOf(
+                        PickOption("uncapped", str(S.desktop_uncapped)),
+                        PickOption("capped", str(S.desktop_capped)),
+                    ),
                     onPick = { onChange("cap_type", JsonPrimitive(it)) },
                     height = ROW_CONTROL,
                     textSize = 13f,

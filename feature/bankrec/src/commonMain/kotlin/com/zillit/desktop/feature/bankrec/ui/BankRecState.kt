@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.AuditExportFormat
 import com.zillit.desktop.feature.bankrec.domain.AuditFilters
 import com.zillit.desktop.feature.bankrec.domain.BankAccountRef
@@ -34,17 +36,19 @@ import com.zillit.desktop.feature.bankrec.domain.WorkspaceFilter
  * [badgeKey] is the notification ledger's `level_1` for the tab. Open Banking
  * has none: it is a placeholder on the web too, and nothing is ever filed there.
  */
-enum class BankTab(val slug: String, val label: String, val badgeKey: String?) {
-    Overview("overview", "Overview", "bank_overview"),
-    Workspace("workspace", "Workspace", "bank_workspace"),
-    Exceptions("exceptions", "Exceptions", "bank_exceptions"),
-    FraudAlerts("fraud-alerts", "Fraud Alerts", "bank_fraud_alerts"),
-    FxVariances("fx-variances", "FX Variances", "bank_fx_variances"),
-    History("history", "History", "bank_period_history"),
-    OpenBanking("open-banking", "Open Banking", null),
-    GuarantorPortal("guarantor-portal", "Guarantor Portal", "bank_guarantor_portal"),
-    Settings("settings", "Accounts & Rules", "bank_settings"),
+enum class BankTab(val slug: String, private val labelKey: String, val badgeKey: String?) {
+    Overview("overview", S.ah_overview, "bank_overview"),
+    Workspace("workspace", S.desktop_workspace, "bank_workspace"),
+    Exceptions("exceptions", S.desktop_exceptions, "bank_exceptions"),
+    FraudAlerts("fraud-alerts", S.desktop_fraud_alerts, "bank_fraud_alerts"),
+    FxVariances("fx-variances", S.desktop_fx_variances, "bank_fx_variances"),
+    History("history", S.history, "bank_period_history"),
+    OpenBanking("open-banking", S.desktop_open_banking, null),
+    GuarantorPortal("guarantor-portal", S.desktop_guarantor_portal, "bank_guarantor_portal"),
+    Settings("settings", S.desktop_accounts_and_rules, "bank_settings"),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(slug: String?): BankTab = entries.firstOrNull { it.slug == slug } ?: Overview
@@ -100,12 +104,15 @@ data class ImportState(
 )
 
 /** The five steps the import dialog walks through. */
-enum class ImportStep(val label: String) {
-    Upload("Uploading statement"),
-    Parse("Parsing file & extracting transactions"),
-    Match("Auto-matching against invoices"),
-    Validate("Running fraud & compliance checks"),
-    Done("Import complete"),
+enum class ImportStep(private val labelKey: String) {
+    Upload(S.desktop_br_import_step_upload),
+    Parse(S.desktop_br_import_step_parse),
+    Match(S.desktop_br_import_step_match),
+    Validate(S.desktop_br_import_step_validate),
+    Done(S.desktop_br_audit_import_complete),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** A suggested match waiting for its confirmation. */

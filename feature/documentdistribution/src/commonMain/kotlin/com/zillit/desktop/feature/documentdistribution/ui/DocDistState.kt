@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistUnread
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.CsvContact
@@ -44,8 +46,8 @@ data class UploadProgress(
 
     val title: String
         get() = when (stage) {
-            Stage.Preparing -> "Preparing files…"
-            Stage.Uploading -> "Uploading ${index + 1} of $total"
+            Stage.Preparing -> str(S.desktop_docdist_preparing_files)
+            Stage.Uploading -> str(S.desktop_drive_uploading_of, index + 1, total)
         }
 }
 
@@ -115,7 +117,7 @@ data class ComposerState(
     val invalidCc: List<Recipient> get() = cc.filterNot { isValidEmail(it.email) }
     val invalidBcc: List<Recipient> get() = bcc.filterNot { isValidEmail(it.email) }
 
-    val title: String get() = if (folder != null) "Distribute folder" else "Compose email"
+    val title: String get() = str(if (folder != null) S.dd_distribute_folder else S.dd_compose_email)
 
     /** The draft as the domain validates it; [problem] is what blocks Send. */
     fun draft(replyTo: String?, folderId: String?): NewDistribution = NewDistribution(
@@ -608,8 +610,11 @@ data class LibraryRowGroup(
 ) {
     /** "12 of 80 items" when the server told us the day's total, else a plain count. */
     val countLabel: String
-        get() = if (total != null && items.any { it is LibraryRow.File }) "${items.size} of $total items"
-        else "${items.size} item" + if (items.size == 1) "" else "s"
+        get() = if (total != null && items.any { it is LibraryRow.File }) {
+            str(S.desktop_docdist_n_of_total_items, items.size, total)
+        } else {
+            plural(items.size, S.desktop_docdist_one_item, S.desktop_docdist_items_count)
+        }
 }
 
 /** The open "Move items" dialog: what is being moved, and where to. */
@@ -638,7 +643,7 @@ data class PublishState(
         get() = target?.republishable == true && !loadingPublished && alreadyPublished.isNotEmpty()
 
     fun problem(isTelevision: Boolean): String? {
-        val chosen = target ?: return "Choose a destination"
+        val chosen = target ?: return str(S.desktop_docdist_choose_destination)
         val effective = if (offersMode) draft else draft.copy(replaceChatIds = emptyList())
         return chosen.problem(effective, isTelevision)
     }

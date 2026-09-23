@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.callsheet.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -15,35 +17,136 @@ import kotlinx.datetime.toLocalDateTime
  */
 
 /** The top-level tabs, in display order. Labels are the web's raw `TABS` constants. */
-enum class SheetTab(val label: String) {
-    Drafts("Drafts"),
-    Approvals("Approvals"),
-    Published("Published Call sheet"),
-    Permission("Permission"),
+enum class SheetTab(private val labelKey: String) {
+    Drafts(S.cs_drafts),
+    Approvals(S.cs_approvals),
+    Published(S.desktop_cs_published_call_sheet_tab),
+    Permission(S.permission),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The Approvals sections: one flat row Sent | Received | Finalized. */
-enum class ApprovalSection(val label: String) { Sent("Sent"), Received("Received"), Finalized("Finalized") }
+enum class ApprovalSection(private val labelKey: String) {
+    Sent(S.cs_sent),
+    Received(S.cs_received),
+    Finalized(S.cs_finalized),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** The Drafts chips. */
-enum class DraftChip(val label: String) { All("All"), Drafts("Drafts"), Comments("For Comments") }
+enum class DraftChip(private val labelKey: String) {
+    All(S.cs_filter_all),
+    Drafts(S.cs_filter_drafts),
+    Comments(S.cs_filter_for_comments),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** `callSheetToolDisplayName`: posting users see the creation tool's name. */
-fun sheetToolName(isPoster: Boolean): String = if (isPoster) "Call Sheet Creation" else "Drafts Call Sheet"
+fun sheetToolName(isPoster: Boolean): String = if (isPoster) str(S.cs_title_creation) else str(S.cs_title_drafts)
 
 /**
- * `resolveCallSheetTabs`: posters get every list (and Permission with grid
- * view access); everyone else gets Drafts and Published, with Approvals only
- * when the signature flow reaches them. Never empty.
+ * `resolveCallSheetTabs` + `viewOnlyTabAccess` (`shared/workflow/workflowTabs.js`):
+ * posters get every list (and Permission with grid view access). A viewer
+ * can author nothing, so a tab is shown only when there is something behind
+ * it to DO — Drafts iff on the project's `internal_distribution_receivers`
+ * (the people who may post in a thread), Approvals iff on
+ * `final_approver_ids`, Published never; named by neither → no tabs at all.
+ * Fails OPEN on a FAILED metadata read: both lists ride one GET, and a 500
+ * read as "names nobody" would blank the module.
  */
-fun sheetTabs(isPoster: Boolean, canViewGrid: Boolean, isApprover: Boolean): List<SheetTab> = when {
+fun sheetTabs(
+    isPoster: Boolean,
+    canViewGrid: Boolean,
+    isFinalApprover: Boolean,
+    isInternalReceiver: Boolean,
+    metadataUnavailable: Boolean = false,
+): List<SheetTab> = when {
     isPoster -> listOfNotNull(
         SheetTab.Drafts,
         SheetTab.Approvals,
         SheetTab.Published,
         SheetTab.Permission.takeIf { canViewGrid },
     )
-    else -> listOfNotNull(SheetTab.Drafts, SheetTab.Approvals.takeIf { isApprover }, SheetTab.Published)
+    metadataUnavailable -> listOf(SheetTab.Drafts, SheetTab.Approvals)
+    else -> listOfNotNull(
+        SheetTab.Drafts.takeIf { isInternalReceiver },
+        SheetTab.Approvals.takeIf { isFinalApprover },
+    )
+}
+
+/**
+ * `isListedMember`: is this user named on a project member-id list
+ * (`final_approver_ids`, `internal_distribution_receivers`)? Both sides
+ * compared as trimmed strings — the ids come off the metadata GET in either
+ * type, and a bare equality hid the Approvals tab from a real approver.
+ */
+fun isListedMember(ids: List<String>, userId: String?): Boolean {
+    val me = userId?.trim().orEmpty()
+    return me.isNotEmpty() && ids.any { it.trim() == me }
+}
+
+/**
+ * `initialLanding`: where a user goes on first load, or null for "stay". A
+ * poster needs no move (Drafts is the default); a viewer lands on
+ * Approvals → Received when they have it, else on their first tab — always
+ * INSIDE the visible set, never a tab the bar does not show.
+ */
+fun initialLanding(isPoster: Boolean, tabs: List<SheetTab>): SheetTab? = when {
+    isPoster -> null
+    SheetTab.Approvals in tabs -> SheetTab.Approvals
+    else -> tabs.firstOrNull()
+}
+
+/**
+ * `canPostComments` (`shared/workflow/sendActions.js`): everyone who can see
+ * a row opens its thread and reads it; only the row's CREATOR and the
+ * project's internal-distribution recipients may write. With no member id,
+ * the creator's display NAME is the only handle left.
+ */
+fun canPostComments(
+    row: CallSheetSummary,
+    userId: String?,
+    userName: String = "",
+    isInternalReceiver: Boolean = false,
+): Boolean {
+    if (isInternalReceiver) return true
+    val me = userId?.trim().orEmpty()
+    if (me.isNotEmpty()) return row.createdById.trim() == me
+    return userName.isNotBlank() && row.createdBy == userName
+}
+
+/**
+ * `shouldWriteApproverMeta` (ZL-21468): the metadata PUT merges, so an
+ * emptied approver list must be WRITTEN, not omitted — but only when the
+ * editor OPENED with approvers. A fresh document carrying `[]` from its
+ * template must not clear the project default for everyone on first save.
+ */
+fun shouldWriteApproverMeta(approverIds: List<String>, initialApproverIds: List<String>): Boolean =
+    approverIds.isNotEmpty() || initialApproverIds.isNotEmpty()
+
+/** Who sent a reminder, ready to render. */
+data class ReminderSender(val name: String, val role: String)
+
+/**
+ * `getReminderSender` (`shared/workflow/members.js`): `sent_by` carries the
+ * sender's member id (the desktop also reads `sent_by_id`). Found → their
+ * CURRENT name and designation, the designation falling back to the recorded
+ * role; not found → `sent_by` and `sent_by_role` verbatim, which is also how
+ * every reminder written back when the field held a NAME still reads.
+ */
+fun reminderSender(members: List<SheetMember>, reminder: SheetReminder): ReminderSender {
+    val member = members.memberById(reminder.sentById) ?: members.memberById(reminder.sentBy)
+        ?: return ReminderSender(reminder.sentBy, reminder.sentByRole)
+    return ReminderSender(
+        name = member.fullName.ifBlank { reminder.sentBy },
+        role = member.designation.ifBlank { reminder.sentByRole },
+    )
 }
 
 /**
@@ -195,11 +298,11 @@ fun approvalStatusEntries(
                 userId = request.assigneeId,
                 name = member?.fullName?.ifBlank { null }
                     ?: request.assigneeName.ifBlank { request.assigneeId.ifBlank { "-" } },
-                role = member?.designation?.ifBlank { null } ?: request.role.ifBlank { "Unknown" },
+                role = member?.designation?.ifBlank { null } ?: request.role.ifBlank { str(S.desktop_unknown) },
                 status = request.status.ifBlank { "PENDING" }.uppercase(),
                 atMillis = request.actedOn ?: request.createdOn,
                 reason = request.reason,
-                stage = if (request.isInternal) "Internal" else "Final",
+                stage = if (request.isInternal) SheetHistory.STAGE_INTERNAL else SheetHistory.STAGE_FINAL,
             )
         }
 
@@ -210,22 +313,6 @@ fun List<SheetMember>.memberById(id: String?): SheetMember? {
     val wanted = id?.trim().orEmpty()
     if (wanted.isEmpty()) return null
     return firstOrNull { it.userId.trim() == wanted }
-}
-
-/**
- * `getApproverIds` (Sent "Chat with Approver"): everyone the sheet names as an
- * approver or comment recipient, minus me.
- */
-fun chatTargets(row: CallSheetSummary, userId: String?): List<String> {
-    val me = userId?.trim().orEmpty()
-    return (
-        row.approvals.map { it.assigneeId } +
-            row.shared?.approverIds.orEmpty() +
-            row.shared?.internalReceiverIds.orEmpty()
-        )
-        .map { it.trim() }
-        .filter { it.isNotEmpty() && it != me }
-        .distinct()
 }
 
 /**
@@ -303,9 +390,12 @@ fun sendActions(status: CallSheetStatus, unreadComments: Int = 0): SendActions {
     )
 }
 
-/** Approvals rows never offer Chat on these (`NO_CHAT_STATUSES`). */
-fun chatAllowed(status: CallSheetStatus): Boolean =
-    status !in setOf(CallSheetStatus.Draft, CallSheetStatus.Published, CallSheetStatus.ApprovedForPublish)
+/**
+ * ZL-21415: Send for Chat shares a read-only PDF and changes nothing on the
+ * sheet, so anyone who can see the row may send it — but not once
+ * final-approved or published.
+ */
+fun sendForChatAllowed(status: CallSheetStatus): Boolean = !status.locked
 
 /** Approvals rows offer Comment unless the sheet is a draft or published (`NO_COMMENT_STATUSES`) — or unread exist. */
 fun commentAllowed(status: CallSheetStatus, unread: Int): Boolean =
@@ -331,7 +421,7 @@ fun shootDayLabel(shared: SharedHeader?, fallbackTotalDays: String = ""): String
 
 /** The delete confirmation's question — literal on the web. */
 fun deleteQuestion(row: CallSheetSummary): String =
-    "Are you sure you want to delete call sheet #${row.serialNo}? This action cannot be undone."
+    str(S.desktop_cs_delete_question, row.serialNo)
 
 /**
  * `resolveSharedForTemplate`: a SAVED template opens as saved, with metadata

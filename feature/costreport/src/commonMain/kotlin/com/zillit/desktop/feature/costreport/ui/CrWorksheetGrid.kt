@@ -77,6 +77,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrCalc
 import com.zillit.desktop.feature.costreport.domain.CrColumn
 import com.zillit.desktop.feature.costreport.domain.CrColumnGroup
@@ -177,7 +179,11 @@ internal fun CrWorksheetGrid(
                 }
                 GrandTotalRow(
                     figures = table.grandTotal,
-                    label = (if (table.flat) "Grand Total — All Lines" else "Grand Total — $projectName").uppercase(),
+                    label = if (table.flat) {
+                        str(S.desktop_cr_grand_total_all).uppercase()
+                    } else {
+                        str(S.desktop_cr_grand_total_project, projectName).uppercase()
+                    },
                     valueWidth = valueWidth,
                     symbol = symbol,
                     decimals = decimals,
@@ -246,7 +252,7 @@ private fun GridHeader(valueWidth: Dp, sort: CrSort, readOnly: Boolean, onSort: 
                 contentAlignment = Alignment.BottomStart,
             ) {
                 ZillitText(
-                    text = "ACCOUNT",
+                    text = str(S.drive_settings_account).uppercase(),
                     style = ZillitTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.1.sp,
@@ -478,7 +484,7 @@ private fun HeaderTotalRow(row: CrRow.HeaderTotal, valueWidth: Dp, symbol: Strin
         ) {
             Spacer(Modifier.width(CHEVRON_SLOT + 6.dp))
             ZillitText(
-                text = "TOTAL",
+                text = str(S.desktop_cr_total_caps),
                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp),
                 color = colors.textSecondary,
             )
@@ -625,14 +631,18 @@ private fun ModeStripRow(row: CrRow.ModeStrip, onClear: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val parts = buildList {
-            if (row.filter != CrLineFilter.All) add("Filter: ${row.filter.stripLabel}")
+            if (row.filter != CrLineFilter.All) add(str(S.desktop_cr_filter_strip, row.filter.stripLabel))
             row.sort.column?.let { column ->
-                val direction = if (row.sort.direction == SortDirection.Descending) "(high→low)" else "(low→high)"
-                add("Sort: ${column.label} $direction")
+                val direction = if (row.sort.direction == SortDirection.Descending) {
+                    str(S.desktop_cr_sort_high_low)
+                } else {
+                    str(S.desktop_cr_sort_low_high)
+                }
+                add(str(S.desktop_cr_sort_strip, column.label, direction))
             }
         }
         ZillitText(
-            text = "${row.lines} line${if (row.lines == 1) "" else "s"}",
+            text = str(if (row.lines == 1) S.desktop_cr_line_one else S.desktop_draft_line_count, row.lines),
             style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
             color = CrPalette.cta,
         )
@@ -644,7 +654,7 @@ private fun ModeStripRow(row: CrRow.ModeStrip, onClear: () -> Unit) {
             maxLines = 1,
         )
         ZillitText(
-            text = "Clear ✕",
+            text = str(S.desktop_cr_clear_cross),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
             modifier = Modifier.clickable(onClick = onClear).padding(horizontal = 4.dp),
@@ -657,7 +667,7 @@ private fun ModeStripRow(row: CrRow.ModeStrip, onClear: () -> Unit) {
 private fun NoMatchesRow(row: CrRow.NoMatches) {
     Box(Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 14.dp), contentAlignment = Alignment.Center) {
         ZillitText(
-            text = "No codes or descriptions match “${row.query}”.",
+            text = str(S.desktop_cr_no_matches_query, row.query),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )

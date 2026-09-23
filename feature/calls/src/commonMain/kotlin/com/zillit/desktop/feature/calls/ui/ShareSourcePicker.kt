@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.ShareSource
 
 /**
@@ -66,16 +68,16 @@ fun ShareSourcePicker(
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         ZillitText(
-            text = "Choose what to share",
+            text = str(S.desktop_call_choose_what_to_share),
             style = ZillitTheme.typography.titleMedium,
             color = colors.textPrimary,
         )
 
         Box(modifier = Modifier.weight(1f)) {
             when {
-                picker.loading -> Centred("Looking for screens and windows…")
+                picker.loading -> Centred(str(S.desktop_call_looking_for_screens))
                 picker.isEmpty -> Centred(
-                    "No screens or windows could be listed. Sharing will send your whole screen.",
+                    str(S.desktop_call_no_screens_listed),
                 )
                 else -> SourceGrid(picker, preview, onChoose)
             }
@@ -85,9 +87,9 @@ fun ShareSourcePicker(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing.sm, Alignment.End),
         ) {
-            ZillitButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.cancel), onClick = onCancel, variant = ButtonVariant.Tertiary)
             ZillitButton(
-                text = "Share",
+                text = str(S.share),
                 onClick = onShare,
                 // Never disabled: with nothing listed, or nothing picked,
                 // Share still means "share my screen" — which is what the app
@@ -112,13 +114,13 @@ private fun SourceGrid(
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         if (picker.screens.isNotEmpty()) {
-            item { SectionHeading("Screen") }
+            item { SectionHeading(str(S.desktop_screen)) }
             items(picker.screens.chunked(COLUMNS), key = { row -> "s-" + row.first().id }) { row ->
                 SourceRow(row, picker.chosenId, preview, onChoose)
             }
         }
         if (picker.windows.isNotEmpty()) {
-            item { SectionHeading("Window") }
+            item { SectionHeading(str(S.desktop_window)) }
             items(picker.windows.chunked(COLUMNS), key = { row -> "w-" + row.first().id }) { row ->
                 SourceRow(row, picker.chosenId, preview, onChoose)
             }
@@ -193,7 +195,7 @@ private fun SourceTile(
                 // A tile with no picture is still pickable and still shares.
                 // Previews are real screen captures and arrive one by one.
                 ZillitText(
-                    text = if (source.isScreen) "Screen" else "Window",
+                    text = if (source.isScreen) str(S.desktop_screen) else str(S.desktop_window),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textSecondary,
                 )

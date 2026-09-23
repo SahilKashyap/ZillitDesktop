@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallProvider
 
 /**
@@ -44,7 +46,7 @@ fun CallMorePanel(state: CallUiState, onEvent: (CallEvent) -> Unit, modifier: Mo
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         ZillitText(
-            text = "More options",
+            text = str(S.dd_cd_more),
             style = ZillitTheme.typography.titleSmall,
             color = CallPalette.text,
             modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
@@ -55,29 +57,32 @@ fun CallMorePanel(state: CallUiState, onEvent: (CallEvent) -> Unit, modifier: Mo
         if (line3) {
             MoreRow(
                 if (state.onHold) ZillitIcons.Play else ZillitIcons.Pause,
-                if (state.onHold) "Resume call" else "Hold call",
+                if (state.onHold) str(S.desktop_call_resume_call) else str(S.desktop_call_hold_call),
             ) { pick(CallEvent.ToggleHold) }
         }
         // One recording per call is the rule every platform enforces; while
         // somebody else holds it the row says so. Never on a support call.
         if (state.session?.is247Call != true) {
             RecordingRow(state, pick)
-            MoreRow(ZillitIcons.UserPlus, "Add people") { pick(CallEvent.ToggleAddPeople) }
+            MoreRow(ZillitIcons.UserPlus, str(S.desktop_call_add_people)) { pick(CallEvent.ToggleAddPeople) }
         }
         if (state.inviteLinkOffered) {
-            MoreRow(ZillitIcons.Link, "Copy invite link") { pick(CallEvent.CopyInviteLink) }
+            MoreRow(ZillitIcons.Link, str(S.desktop_call_copy_invite_link)) { pick(CallEvent.CopyInviteLink) }
         }
         if (line3 && state.isHost) {
-            MoreRow(ZillitIcons.Shield, if (state.line3.policy.on) "Host controls · on" else "Host controls") {
+            MoreRow(
+                ZillitIcons.Shield,
+                if (state.line3.policy.on) str(S.desktop_call_host_controls_on) else str(S.desktop_call_host_controls),
+            ) {
                 pick(CallEvent.ToggleHostControls)
             }
         }
         if (state.pipOpen) {
-            MoreRow(ZillitIcons.Minimize, "Picture-in-picture") { pick(CallEvent.ToggleCallCompact) }
-            MoreRow(ZillitIcons.Restore, "Move back into Zillit") { pick(CallEvent.TogglePip) }
+            MoreRow(ZillitIcons.Minimize, str(S.desktop_call_picture_in_picture)) { pick(CallEvent.ToggleCallCompact) }
+            MoreRow(ZillitIcons.Restore, str(S.desktop_call_move_back_into_zillit)) { pick(CallEvent.TogglePip) }
         } else {
-            MoreRow(ZillitIcons.Detach, "Open in its own window") { pick(CallEvent.TogglePip) }
-            MoreRow(ZillitIcons.Minimize, "Minimise call") { pick(CallEvent.ToggleStage) }
+            MoreRow(ZillitIcons.Detach, str(S.desktop_call_open_in_its_own_window)) { pick(CallEvent.TogglePip) }
+            MoreRow(ZillitIcons.Minimize, str(S.desktop_call_minimise_call)) { pick(CallEvent.ToggleStage) }
         }
     }
 }
@@ -86,10 +91,10 @@ fun CallMorePanel(state: CallUiState, onEvent: (CallEvent) -> Unit, modifier: Mo
 @Composable
 private fun RecordingRow(state: CallUiState, pick: (CallEvent) -> Unit) {
     val label = when {
-        state.recordingLocked -> "Recording is off"
-        state.recording -> "Stop recording"
-        state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording"
-        else -> "Start recording"
+        state.recordingLocked -> str(S.desktop_call_recording_is_off)
+        state.recording -> str(S.txt_record_stop)
+        state.recordedBy.isNotBlank() -> str(S.desktop_call_name_is_recording, state.recordedBy)
+        else -> str(S.desktop_call_start_recording)
     }
     MoreRow(
         ZillitIcons.Record,

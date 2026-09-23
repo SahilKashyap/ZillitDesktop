@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A vendor's postal address.
  *
@@ -96,7 +99,7 @@ data class Vendor(
     val compliance: String = "",
 ) {
     /** What to show when the register is scanned — the name, or the email if unnamed. */
-    val display: String get() = name.ifBlank { email }.ifBlank { "Unnamed vendor" }
+    val display: String get() = name.ifBlank { email }.ifBlank { str(S.desktop_unnamed_vendor) }
 
     val hasBankDetails: Boolean
         get() = listOf(bankName, accountHolderName, accountNumber, sortCode, ibanCode, swiftCode)
@@ -186,12 +189,14 @@ fun NewVendor.withBank(bank: VendorBank): NewVendor = copy(
 )
 
 /** The payment terms a vendor can be on — the web's `PAYMENT_TERMS_OPTIONS`. */
-enum class VendorTerms(val wire: String, val label: String) {
-    Net7("net_7", "7 days"),
-    Net14("net_14", "14 days"),
-    Net30("net_30", "30 days"),
-    Net60("net_60", "60 days"),
+enum class VendorTerms(val wire: String, private val labelKey: String) {
+    Net7("net_7", S.drive_expiry_7d),
+    Net14("net_14", S.desktop_14_days),
+    Net30("net_30", S.drive_expiry_30d),
+    Net60("net_60", S.desktop_60_days),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /** `net_30` → "30 days"; an unknown value passes through; blank is a dash. */
@@ -203,11 +208,14 @@ enum class VendorTerms(val wire: String, val label: String) {
 }
 
 /** The web's vendor tabs, with the one department users get. */
-enum class VendorTab(val slug: String, val label: String) {
-    All("all", "All Vendors"),
-    Verified("verified", "Verified"),
-    Unverified("unverified", "Non-Verified"),
-    Mine("mine", "Added by Me"),
+enum class VendorTab(val slug: String, private val labelKey: String) {
+    All("all", S.desktop_all_vendors),
+    Verified("verified", S.ah_verified),
+    Unverified("unverified", S.ah_non_verified),
+    Mine("mine", S.ah_added_by_me),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** A change to a vendor, newest first, from its audit trail. */
@@ -308,42 +316,43 @@ data class NewVendor(
 @Suppress("CyclomaticComplexMethod") // One line per rule; the list IS the contract.
 fun NewVendor.fieldErrors(): Map<String, String> = buildMap {
     when {
-        name.isBlank() -> put("name", "Vendor name is required")
-        name.length > MAX_NAME -> put("name", "Max 200 characters")
+        name.isBlank() -> put("name", str(S.desktop_hub_vendor_name_is_required))
+        name.length > MAX_NAME -> put("name", str(S.desktop_max_200_characters))
     }
     when {
-        contactPerson.isBlank() -> put("contactPerson", "Contact person is required")
-        contactPerson.length > MAX_NAME -> put("contactPerson", "Max 200 characters")
+        contactPerson.isBlank() -> put("contactPerson", str(S.ah_err_contact_person_required))
+        contactPerson.length > MAX_NAME -> put("contactPerson", str(S.desktop_max_200_characters))
     }
     when {
-        email.isBlank() -> put("email", "Email is required")
-        !email.isPlausibleEmail() -> put("email", "Enter a valid email")
+        email.isBlank() -> put("email", str(S.ah_err_email_required))
+        !email.isPlausibleEmail() -> put("email", str(S.dd_invalid_email))
     }
     if (phoneNumber.isNotBlank()) {
         when {
-            phoneNumber.trim().length < MIN_PHONE_DIGITS -> put("phoneNumber", "Phone number must be at least 5 digits")
-            phoneNumber.length > MAX_PHONE -> put("phoneNumber", "Max 20 characters")
+            phoneNumber.trim().length < MIN_PHONE_DIGITS -> put("phoneNumber", str(S.ah_err_phone_min))
+            phoneNumber.length > MAX_PHONE -> put("phoneNumber", str(S.desktop_max_20_characters))
         }
     }
-    if (address.line1.isBlank()) put("line1", "Address line 1 is required")
+    if (address.line1.isBlank()) put("line1", str(S.ah_err_line1_required))
     when {
-        address.city.isBlank() -> put("city", "City is required")
-        address.city.length > MAX_CITY -> put("city", "Max 100 characters")
+        address.city.isBlank() -> put("city", str(S.ah_err_city_required))
+        address.city.length > MAX_CITY -> put("city", str(S.desktop_max_100_characters))
     }
     when {
-        address.postalCode.isBlank() -> put("postalCode", "Postal code is required")
-        address.postalCode.length > MAX_POSTCODE -> put("postalCode", "Max 20 characters")
+        address.postalCode.isBlank() -> put("postalCode", str(S.ah_err_postal_required))
+        address.postalCode.length > MAX_POSTCODE -> put("postalCode", str(S.desktop_max_20_characters))
     }
-    if (address.country.isBlank()) put("country", "Country is required")
+    if (address.country.isBlank()) put("country", str(S.ah_err_country_required))
     if (hasBankInput) {
-        if (bankName.isBlank()) put("bankName", "Bank name is required")
-        if (accountHolderName.isBlank()) put("accountHolderName", "Account holder is required")
+        if (bankName.isBlank()) put("bankName", str(S.ah_err_bank_name_required))
+        if (accountHolderName.isBlank()) put("accountHolderName", str(S.desktop_hub_account_holder_is_required))
         if (accountNumber.isBlank() && ibanCode.isBlank()) {
-            put("accountNumber", "Enter an account number or an IBAN")
-            put("ibanCode", "Enter an account number or an IBAN")
+            put("accountNumber", str(S.desktop_hub_enter_an_account_number_or_an_iban))
+            put("ibanCode", str(S.desktop_hub_enter_an_account_number_or_an_iban))
         }
         BankAccounts.firstInvalidDetail(additionalInfo)?.let {
-            put("additionalInfo", "\"${it.title}\" is not a valid ${it.fieldType.label.lowercase()}")
+            val type = it.fieldType.label.lowercase()
+            put("additionalInfo", str(S.desktop_hub_x_is_not_a_valid_y_field, it.title, type))
         }
     }
 }

@@ -151,7 +151,7 @@ class CalendarGridTest {
     @Test
     fun `time labels are zero padded and all-day is named`() {
         assertEquals("09:00 – 10:30", event("x", aug3 + 9 * hour, aug3 + 10 * hour + 1_800_000).timeLabel(utc))
-        assertEquals("All day", event("x", aug3, aug3 + day, allDay = true).timeLabel(utc))
+        assertEquals("All Day", event("x", aug3, aug3 + day, allDay = true).timeLabel(utc))
     }
 
     @Test

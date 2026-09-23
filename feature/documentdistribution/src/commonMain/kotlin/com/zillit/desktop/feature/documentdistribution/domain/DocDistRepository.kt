@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -72,16 +74,20 @@ data class NewDistribution(
      */
     @Suppress("ReturnCount") // One rule per return; merging them loses which failed.
     fun validationError(): String? {
-        if (to.isEmpty()) return "Add at least one recipient."
+        if (to.isEmpty()) return str(S.one_receipent_required)
         val bad = (to + cc + bcc).filterNot { isValidEmail(it.email) }
         if (bad.isNotEmpty()) {
-            return "Fix or remove invalid email address" + (if (bad.size > 1) "es" else "") +
-                ": " + bad.joinToString(", ") { it.email }
+            val addresses = bad.joinToString(", ") { it.email }
+            return if (bad.size > 1) str(S.desktop_docdist_fix_invalid_email_addresses, addresses)
+            else str(S.desktop_docdist_fix_invalid_email_address, addresses)
         }
-        if (totalAttachments == 0) return "Attach at least one document."
+        if (totalAttachments == 0) return str(S.desktop_docdist_attach_at_least_one_document)
         if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
-            return "Attachments exceed the ${formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} limit " +
-                "(${formatBytes(totalBytes)}). Remove some files before sending."
+            return str(
+                S.desktop_docdist_attachments_exceed_limit,
+                formatBytes(MAX_TOTAL_ATTACHMENT_BYTES),
+                formatBytes(totalBytes),
+            )
         }
         return null
     }

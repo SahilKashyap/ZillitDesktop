@@ -16,6 +16,8 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The artiste portal as a workspace tool.
@@ -31,7 +33,7 @@ class SaPortalToolProvider(
     override val path: String = SA_PORTAL_PATH,
 ) : ToolProvider {
 
-    override val title: String = "My work"
+    override val title: String get() = str(S.desktop_sa_my_work)
     override val icon = ZillitIcons.Users
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(WIDTH.dp, HEIGHT.dp)

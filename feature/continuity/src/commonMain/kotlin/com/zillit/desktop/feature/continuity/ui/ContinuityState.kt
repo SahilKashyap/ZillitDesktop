@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.continuity.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.continuity.domain.ContinuityCrewMember
 import com.zillit.desktop.feature.continuity.domain.ContinuityDepartment
 import com.zillit.desktop.feature.continuity.domain.ContinuityScene
@@ -11,10 +13,13 @@ import com.zillit.desktop.feature.continuity.domain.SceneDraft
 import com.zillit.desktop.feature.continuity.domain.TalentInfo
 
 /** Which OS picker the upload menu opens — the web's paperclip offers the same three. */
-enum class PickKind(val label: String) {
-    Photos("Photos"),
-    Videos("Videos"),
-    Documents("Documents"),
+enum class PickKind(private val labelKey: String) {
+    Photos(S.desktop_photos),
+    Videos(S.drive_search_videos),
+    Documents(S.txt_documents),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The cards of one scene folder (and, on the All board, one department) — the web's `ContinuityModal`. */

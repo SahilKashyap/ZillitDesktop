@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.ColumnSpec
 import com.zillit.desktop.feature.callsheet.domain.SheetTime
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
@@ -231,7 +233,7 @@ internal fun SectionBar(
 internal fun BarBadge(selected: Boolean, detail: String?, onEdit: () -> Unit) {
     val accent = SheetTheme.colors.accent
     if (selected) {
-        val text = detail?.let { "Editing: $it" } ?: "Editing"
+        val text = detail?.let { str(S.desktop_editing_detail, it) } ?: str(S.desktop_editing)
         Text(
             text,
             style = sheetText(9.sp, FontWeight.SemiBold, 12.sp),
@@ -249,7 +251,7 @@ internal fun BarBadge(selected: Boolean, detail: String?, onEdit: () -> Unit) {
     } else {
         val (source, hovered) = rememberHover()
         Text(
-            "Click to edit",
+            str(S.desktop_click_to_edit),
             style = sheetText(9.sp, FontWeight.Medium, 12.sp),
             color = if (hovered) Color.White else Color.White.copy(alpha = 0.7f),
             maxLines = 1,
@@ -273,7 +275,7 @@ internal fun FooterBadge(selected: Boolean, detail: String?, onEdit: () -> Unit,
     ) {
         if (selected) {
             Text(
-                detail?.let { "Editing: $it" } ?: "Editing",
+                detail?.let { str(S.desktop_editing_detail, it) } ?: str(S.desktop_editing),
                 style = sheetText(9.sp, FontWeight.SemiBold, 12.sp),
                 color = Color.White,
                 maxLines = 1,
@@ -286,7 +288,7 @@ internal fun FooterBadge(selected: Boolean, detail: String?, onEdit: () -> Unit,
         } else {
             val (source, hovered) = rememberHover()
             Text(
-                "Click to edit",
+                str(S.desktop_click_to_edit),
                 style = sheetText(if (small) 8.sp else 9.sp, FontWeight.Medium, 12.sp),
                 color = if (hovered) accent else if (small) doc.pillText.copy(alpha = 0.8f) else doc.pillText,
                 modifier = Modifier

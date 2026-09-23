@@ -35,8 +35,11 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import androidx.compose.foundation.layout.Box
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitLanguageMenu
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.WorkspaceEvent
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -56,6 +59,14 @@ fun AppShell(
     registry: ToolRegistry,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    /**
+     * The stored language preference — a code, or blank for "follow the
+     * system" — and where a new choice goes. Beside the theme toggle because
+     * they are the two things about the app itself that someone changes
+     * from wherever they happen to be.
+     */
+    language: String = "",
+    onLanguageChange: (String) -> Unit = {},
     projectName: String? = null,
     railItems: List<RailItem> = DefaultRailItems,
     /** Logout at the rail's foot; null hides it. The frame confirms before this fires. */
@@ -128,6 +139,8 @@ fun AppShell(
                     projectName = projectName,
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
+                    language = language,
+                    onLanguageChange = onLanguageChange,
                     onSwitchProject = onSwitchProject,
                     onOpenNotifications = notificationsRoute?.let {
                         { viewModel.onEvent(WorkspaceEvent.Open(it)) }
@@ -225,6 +238,8 @@ private fun TopBar(
     projectName: String?,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
     onSwitchProject: () -> Unit,
     /** What the Zillit mark opens — the notification list. Null makes it plain text. */
     onOpenNotifications: (() -> Unit)? = null,
@@ -247,12 +262,18 @@ private fun TopBar(
             ProjectSwitcher(projectName = projectName, onClick = onSwitchProject)
         }
 
-        // The theme toggle alone. Search and Profile stood here doing
-        // nothing — a magnifier that searched nothing and a person that
+        // Language and theme, nothing else. Search and Profile stood here
+        // doing nothing — a magnifier that searched nothing and a person that
         // opened nobody. Search lives in each tool that has something to
         // search, and the account is in Settings; two dead controls in the
         // app's most-looked-at corner taught people the bar is decorative.
-        ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitLanguageMenu(selected = language, onSelect = onLanguageChange)
+            ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
+        }
     }
 }
 
@@ -284,7 +305,7 @@ private fun BrandMark(badge: Int, onOpenNotifications: (() -> Unit)?) {
                         .clickable(
                             interactionSource = interaction,
                             indication = null,
-                            onClickLabel = "Notifications",
+                            onClickLabel = str(S.notifications),
                             onClick = onOpenNotifications,
                         )
                 },
@@ -294,7 +315,7 @@ private fun BrandMark(badge: Int, onOpenNotifications: (() -> Unit)?) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = "Zillit",
+            text = str(S.app_name),
             style = ZillitTheme.typography.titleMedium,
             color = colors.accent,
         )
@@ -332,7 +353,7 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "Switch project",
+                onClickLabel = str(S.desktop_switch_project),
                 onClick = onClick,
             )
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
@@ -340,14 +361,14 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = projectName ?: "No project selected",
+            text = projectName ?: str(S.desktop_no_project),
             style = ZillitTheme.typography.bodySmall,
             color = if (hovered) colors.textPrimary else colors.textSecondary,
             maxLines = 1,
         )
         ZillitIcon(
             icon = ZillitIcons.ChevronDown,
-            contentDescription = "Switch project",
+            contentDescription = str(S.desktop_switch_project),
             tint = if (hovered) colors.textPrimary else colors.textMuted,
             size = SWITCHER_CHEVRON,
         )
@@ -357,9 +378,9 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
 @Composable
 private fun ThemeToggle(themeMode: ThemeMode, onChange: (ThemeMode) -> Unit) {
     val (icon, label, next) = when (themeMode) {
-        ThemeMode.Light -> Triple(ZillitIcons.Sun, "Light theme", ThemeMode.Dark)
-        ThemeMode.Dark -> Triple(ZillitIcons.Moon, "Dark theme", ThemeMode.System)
-        ThemeMode.System -> Triple(ZillitIcons.Monitor, "Following system theme", ThemeMode.Light)
+        ThemeMode.Light -> Triple(ZillitIcons.Sun, str(S.desktop_theme_light), ThemeMode.Dark)
+        ThemeMode.Dark -> Triple(ZillitIcons.Moon, str(S.desktop_theme_dark), ThemeMode.System)
+        ThemeMode.System -> Triple(ZillitIcons.Monitor, str(S.desktop_theme_system), ThemeMode.Light)
     }
     ZillitIconButton(
         icon = icon,
@@ -408,7 +429,7 @@ private fun StatusBar(statusText: String, action: StatusAction?, unsaved: Boolea
             }
             if (unsaved) {
                 ZillitText(
-                    text = "Unsaved changes",
+                    text = str(S.desktop_unsaved_changes),
                     style = ZillitTheme.typography.labelSmall,
                     color = ZillitTheme.colors.accent,
                 )

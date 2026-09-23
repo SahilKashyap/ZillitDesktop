@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.bankrec.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankPeriod
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import kotlinx.coroutines.async
@@ -101,13 +103,13 @@ internal class PeriodActions(private val vm: BankRecViewModel) {
         val detail = state.periodDetail ?: return
         if (state.periods.none { it.id == detail.periodId }) {
             vm.update { copy(periodDetail = null) }
-            vm.refuse("This period was deleted by another user.")
+            vm.refuse(str(S.desktop_br_period_deleted_elsewhere))
         }
     }
 
     private fun askDelete(ids: List<String>) {
         val periods = ids.mapNotNull { id -> vm.ui.period(id) }.filter { it.isDeletable }
-        if (periods.isEmpty()) return vm.refuse("A signed-off period cannot be deleted.")
+        if (periods.isEmpty()) return vm.refuse(str(S.desktop_br_signed_off_cannot_delete))
         vm.update { copy(deleting = DeleteRequest(ids = periods.map { it.id }, label = monthsLabel(periods))) }
     }
 

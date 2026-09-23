@@ -9,6 +9,8 @@ import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.AccessPage
 import com.zillit.desktop.feature.callsheet.domain.ApprovalDecision
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDetail
@@ -249,6 +251,7 @@ class CallSheetRepositoryImpl(
             body = buildJsonObject {
                 put("sent_by", reminder.sentBy)
                 put("sent_by_id", idOrNull(reminder.sentById))
+                put("sent_by_role", reminder.sentByRole)
                 put("assignee_ids", reminder.assigneeIds.toJson())
                 put("message", reminder.message)
             },
@@ -286,7 +289,10 @@ class CallSheetRepositoryImpl(
             "$base/call-sheets/$id/comments",
             body = buildJsonObject {
                 put("author_id", idOrNull(author?.userId.orEmpty()))
-                put("author_name", author?.fullName?.ifBlank { null } ?: fallbackName.ifBlank { "Unknown" })
+                put(
+                    "author_name",
+                    author?.fullName?.ifBlank { null } ?: fallbackName.ifBlank { str(S.desktop_unknown) },
+                )
                 put("author_role", author?.designation.orEmpty())
                 put("text", text)
             },

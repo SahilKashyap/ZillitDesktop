@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
@@ -99,7 +101,7 @@ private fun MoreSchedules(
     Box {
         MoreChip("+ $hidden more", onClick = { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            val heading = "${schedules.size} schedule${if (schedules.size == 1) "" else "s"}"
+            val heading = str(S.desktop_bs_n_schedules, schedules.size)
             PopoverFrame(date, heading, onViewAll = {
                 open = false
                 onEvent(DayEvent.OpenDay(dayKey))
@@ -123,7 +125,7 @@ private fun RowScope.PopoverSchedule(block: ScheduleBlock, dayNumber: Int?) {
     Column(Modifier.weight(1f)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ZillitText(
-                block.typeName.ifBlank { "Schedule" },
+                block.typeName.ifBlank { str(S.schedule) },
                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
             )
             dayNumber?.let { DayBadge(it, block.color) }
@@ -192,7 +194,7 @@ private fun SchedulePill(
             ) {
                 ZillitIcon(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete this day from the schedule",
+                    contentDescription = str(S.desktop_bs_delete_day_from_schedule),
                     tint = ZillitTheme.colors.danger,
                     size = 10.dp,
                 )
@@ -204,7 +206,7 @@ private fun SchedulePill(
 @Composable
 private fun DayBadge(n: Int, hex: String) {
     ZillitText(
-        text = "DAY $n",
+        text = str(S.desktop_ad_day_number, n),
         style = ZillitTheme.typography.labelSmall.copy(
             fontSize = 8.sp,
             fontWeight = FontWeight.Bold,
@@ -257,7 +259,7 @@ internal fun CellEvents(
         }
         if (over) {
             MoreEventsPopover(
-                text = "+ ${events.size - visible.size} more",
+                text = str(S.desktop_bs_plus_n_more, events.size - visible.size),
                 date = date,
                 events = events,
                 noteCount = noteCount,
@@ -342,10 +344,10 @@ private fun MoreNotes(
     onViewAll: () -> Unit,
 ) {
     val (personal, general) = notes.partition { it.isPersonalNote }
-    PopoverFrame(date, "${notes.size} note${if (notes.size == 1) "" else "s"}", onViewAll = onViewAll) {
-        if (personal.isNotEmpty()) GroupHeading("Personal Notes")
+    PopoverFrame(date, str(S.desktop_bs_n_notes, notes.size), onViewAll = onViewAll) {
+        if (personal.isNotEmpty()) GroupHeading(str(S.bs_pdf_notes_label))
         personal.forEach { NoteRow(it, onView) }
-        if (general.isNotEmpty()) GroupHeading("General")
+        if (general.isNotEmpty()) GroupHeading(str(S.ce_note_type_general))
         general.forEach { NoteRow(it, onView) }
     }
 }
@@ -356,7 +358,7 @@ private fun NoteRow(note: DiaryEvent, onView: (String) -> Unit) {
         ZillitIcon(icon = ZillitIcons.Edit, tint = ZillitTheme.colors.warning, size = 11.dp)
         Column(Modifier.weight(1f)) {
             ZillitText(
-                note.title.ifBlank { "Untitled note" },
+                note.title.ifBlank { str(S.desktop_bs_untitled_note) },
                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
             )
@@ -367,6 +369,51 @@ private fun NoteRow(note: DiaryEvent, onView: (String) -> Unit) {
                     color = ZillitTheme.colors.textMuted,
                     maxLines = 2,
                 )
+            }
+        }
+    }
+}
+
+/** One event in the "+N more" popover: its colour stripe, time, title and place. */
+@Composable
+private fun PopoverEventRow(event: DiaryEvent, state: BoxScheduleUiState, onClick: () -> Unit) {
+    PopoverRow(onClick = onClick) {
+        Box(Modifier.width(3.dp).heightIn(min = 30.dp).background(hexColor(event.color) ?: EVENT_BLUE))
+        Column(Modifier.weight(1f)) {
+            val time = if (event.fullDay) {
+                str(S.desktop_bs_full_day_upper)
+            } else {
+                DiaryFormat.timeRange(event, state.zone)
+            }
+            if (time.isNotBlank()) {
+                ZillitText(
+                    time,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+            ZillitText(
+                event.title.ifBlank { str(S.desktop_cal_untitled_event) },
+                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+            )
+            if (event.location.isNotBlank()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    ZillitIcon(
+                        icon = ZillitIcons.Pin,
+                        tint = ZillitTheme.colors.textMuted,
+                        size = 10.dp,
+                    )
+                    ZillitText(
+                        event.location,
+                        style = ZillitTheme.typography.labelSmall,
+                        color = ZillitTheme.colors.textMuted,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
@@ -387,51 +434,16 @@ internal fun MoreEventsPopover(
     Box {
         MoreChip(text, onClick = { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            val count = "${events.size} event${if (events.size == 1) "" else "s"}" +
-                if (noteCount > 0) " · $noteCount note${if (noteCount == 1) "" else "s"}" else ""
+            val count = str(S.desktop_bs_n_events, events.size) +
+                if (noteCount > 0) " · " + str(S.desktop_bs_n_notes, noteCount) else ""
             PopoverFrame(date, count, onViewAll = {
                 open = false
                 onViewAll()
             }) {
                 events.forEach { event ->
-                    PopoverRow(onClick = {
+                    PopoverEventRow(event, state) {
                         open = false
                         onView(event.listKey)
-                    }) {
-                        Box(Modifier.width(3.dp).heightIn(min = 30.dp).background(hexColor(event.color) ?: EVENT_BLUE))
-                        Column(Modifier.weight(1f)) {
-                            val time = if (event.fullDay) "FULL DAY" else DiaryFormat.timeRange(event, state.zone)
-                            if (time.isNotBlank()) {
-                                ZillitText(
-                                    time,
-                                    style = ZillitTheme.typography.labelSmall,
-                                    color = ZillitTheme.colors.textMuted,
-                                )
-                            }
-                            ZillitText(
-                                event.title.ifBlank { "Untitled event" },
-                                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
-                                maxLines = 1,
-                            )
-                            if (event.location.isNotBlank()) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    ZillitIcon(
-                                        icon = ZillitIcons.Pin,
-                                        tint = ZillitTheme.colors.textMuted,
-                                        size = 10.dp,
-                                    )
-                                    ZillitText(
-                                        event.location,
-                                        style = ZillitTheme.typography.labelSmall,
-                                        color = ZillitTheme.colors.textMuted,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -462,7 +474,7 @@ private fun PopoverFrame(date: LocalDate, count: String, onViewAll: () -> Unit, 
         Box(Modifier.fillMaxWidth().background(colors.border).heightIn(min = 1.dp, max = 1.dp))
         Box(Modifier.fillMaxWidth().padding(10.dp)) {
             ZillitButton(
-                text = "View Full Day Details",
+                text = str(S.desktop_bs_view_full_day_details),
                 onClick = onViewAll,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -517,7 +529,7 @@ private fun CellRow(onClick: () -> Unit, hoverColor: Color, content: @Composable
 
 /** The web's `noteCellLabel`: the title, trimmed, or "Untitled note"; a hard cap keeps a runaway title out. */
 internal fun noteLabel(note: DiaryEvent): String {
-    val title = note.title.trim().ifEmpty { "Untitled note" }
+    val title = note.title.trim().ifEmpty { str(S.desktop_bs_untitled_note) }
     return if (title.length > NOTE_CHAR_LIMIT) title.take(NOTE_CHAR_LIMIT).trimEnd() + "…" else title
 }
 

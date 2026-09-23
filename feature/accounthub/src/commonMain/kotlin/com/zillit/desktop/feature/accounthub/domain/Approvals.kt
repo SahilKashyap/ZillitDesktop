@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Which module's approval chain is being configured.
  *
@@ -14,14 +17,16 @@ package com.zillit.desktop.feature.accounthub.domain
  * approver. Invoices has no tool of its own — it lives inside the Purchase
  * Orders module — so it borrows PO's, which is what the web does.
  */
-enum class ApprovalModule(val wire: String, val label: String, val tool: String) {
-    PurchaseOrders("purchase_orders", "Purchase Orders", "purchase_order_tool"),
-    Invoices("invoices", "Invoices", "purchase_order_tool"),
-    CardExpenses("card_expenses", "Card Expenses", "card_expenses_tool"),
-    CashExpenses("cash_expenses", "Petty Cash", "cash_expenses_tool"),
-    Timecard("timecard", "Time Card", "timecard_tool"),
-    DealMemo("deal_memo", "Deal Memo", "deal_memo_tool"),
+enum class ApprovalModule(val wire: String, private val labelKey: String, val tool: String) {
+    PurchaseOrders("purchase_orders", S.ah_purchase_orders, "purchase_order_tool"),
+    Invoices("invoices", S.ah_invoices, "purchase_order_tool"),
+    CardExpenses("card_expenses", S.desktop_card_expenses, "card_expenses_tool"),
+    CashExpenses("cash_expenses", S.desktop_petty_cash, "cash_expenses_tool"),
+    Timecard("timecard", S.timecards, "timecard_tool"),
+    DealMemo("deal_memo", S.dm_title, "deal_memo_tool"),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): ApprovalModule =
@@ -36,10 +41,12 @@ enum class ApprovalModule(val wire: String, val label: String, val tool: String)
  * production-wide one, so a department with no configuration of its own is not
  * a department with no approvals.
  */
-enum class ApprovalScope(val wire: String, val label: String) {
-    All("all", "Everyone"),
-    Department("department", "Department"),
+enum class ApprovalScope(val wire: String, private val labelKey: String) {
+    All("all", S.desktop_everyone),
+    Department("department", S.department),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): ApprovalScope =
@@ -193,20 +200,22 @@ object ApprovalSequence {
 
     /** "Level 2", "Level 2 and Level 4", "Level 1, Level 2 and Level 3" — the web's `fmtLevels`. */
     fun levelsText(levels: List<Int>): String {
-        val labels = levels.map { "Level $it" }
+        val labels = levels.map { str(S.desktop_level_n, it) }
         return if (labels.size <= 1) {
             labels.firstOrNull().orEmpty()
         } else {
-            labels.dropLast(1).joinToString(", ") + " and " + labels.last()
+            str(S.desktop_docdist_x_and_y, labels.dropLast(1).joinToString(", "), labels.last())
         }
     }
 
     /** What the save asks before a filled level moves up, word for word the web's. */
     fun compactionMessage(levels: List<Int>): String {
         val plural = levels.size > 1
-        return "${levelsText(levels)} ${if (plural) "have" else "has"} no approvers. " +
-            "${if (plural) "They" else "It"} will be removed and the levels below will move up. " +
-            "Save the updated approval levels?"
+        return if (plural) {
+            str(S.desktop_hub_levels_have_no_approvers_compaction, levelsText(levels))
+        } else {
+            str(S.desktop_hub_level_has_no_approvers_compaction, levelsText(levels))
+        }
     }
 
     /**
@@ -216,13 +225,12 @@ object ApprovalSequence {
      * blanks is allowed through — [compacted] removes them on the way out.
      */
     fun validationError(tiers: List<ApprovalTier>): String? = when {
-        tiers.none { it.isAssigned } -> "Add at least one approver."
+        tiers.none { it.isAssigned } -> str(S.desktop_hub_add_at_least_one_approver)
         !inSequence(tiers) -> {
             val empty = emptyLevels(tiers).filter { level ->
                 tiers.drop(level).any { it.isAssigned }
             }
-            "Level ${empty.joinToString(", ")} has no approvers. " +
-                "Levels must be filled in order."
+            str(S.desktop_hub_level_x_has_no_approvers_fill_in_order, empty.joinToString(", "))
         }
         else -> null
     }

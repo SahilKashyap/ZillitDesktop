@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.CrewMember
 import com.zillit.desktop.feature.settings.admin.domain.RightsSection
@@ -58,20 +60,20 @@ import com.zillit.desktop.feature.settings.admin.ui.RightsToggle
 fun CrewPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.Crew.title,
-        description = "Who is on this project, and who may administer it.",
+        description = str(S.desktop_crew_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
-        search = "Search by name, department or role",
+        search = str(S.desktop_search_by_name_department_or_role),
         bodyScrolls = true,
     ) {
         val rows = state.crewMatching
         when {
             rows.isEmpty() && state.hasLoaded && state.query.isNotBlank() ->
-                EmptyRow("Nobody matches “${state.query}”.")
+                EmptyRow(str(S.desktop_nobody_matches_query, state.query))
 
             rows.isEmpty() && state.hasLoaded ->
-                EmptyRow("Nobody has joined this project yet.")
+                EmptyRow(str(S.desktop_nobody_has_joined))
 
             else -> {
                 val listState = rememberLazyListState()
@@ -104,9 +106,9 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
                 ZillitText(text = person.fullName, style = ZillitTheme.typography.titleSmall, maxLines = 1)
-                if (person.isAdmin) ZillitTag("Admin", tone = TagTone.Accent)
+                if (person.isAdmin) ZillitTag(str(S.admin), tone = TagTone.Accent)
                 if (!person.isActive) {
-                    ZillitStatusPill(label = "Off the project", tone = StatusTone.Neutral)
+                    ZillitStatusPill(label = str(S.desktop_off_the_project), tone = StatusTone.Neutral)
                 }
             }
             // Department and role arrive as translation keys, like everywhere
@@ -127,13 +129,13 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
             ZillitCheckbox(
                 checked = person.isActive,
                 onCheckedChange = { onEvent(AdminEvent.CrewActiveChanged(person.userId, it)) },
-                label = "On the project",
+                label = str(S.desktop_on_the_project),
             )
         }
         ZillitCheckbox(
             checked = person.isAdmin,
             onCheckedChange = { onEvent(AdminEvent.AdminAccessChanged(person.userId, it)) },
-            label = "Administrator",
+            label = str(S.desktop_administrator),
             // An admin who is off the production is a state worth being able to
             // undo, but not one worth being able to create.
             enabled = person.isActive,
@@ -153,11 +155,11 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
 fun RightsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.Rights.title,
-        description = "Per tool, per person: what they may see, post and download.",
+        description = str(S.desktop_rights_grid_detail),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
-        search = "Search by name or role",
+        search = str(S.desktop_search_by_name_or_role),
         bodyScrolls = true,
     ) {
         Row(
@@ -175,7 +177,7 @@ private fun CrewPicker(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modif
     val rows = state.crewMatching
     RowCard(modifier) {
         if (rows.isEmpty() && state.hasLoaded) {
-            EmptyRow(if (state.query.isBlank()) "No crew yet." else "Nobody matches.")
+            EmptyRow(if (state.query.isBlank()) str(S.desktop_no_crew_yet) else str(S.desktop_nobody_matches))
             return@RowCard
         }
 
@@ -211,7 +213,7 @@ private fun CrewPicker(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modif
 private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modifier: Modifier) {
     val person = state.selectedCrew
     if (person == null) {
-        RowCard(modifier) { EmptyRow("Pick someone to see what they can reach.") }
+        RowCard(modifier) { EmptyRow(str(S.desktop_pick_someone_for_rights)) }
         return
     }
 
@@ -220,16 +222,13 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
         // ticked boxes that spring back — their access is changed by taking
         // their admin rights away, not here.
         RowCard(modifier) {
-            EmptyRow(
-                "${person.fullName} is an administrator and can reach everything. " +
-                    "Take their admin rights away on the crew page to set rights individually.",
-            )
+            EmptyRow(str(S.desktop_admin_reaches_everything, person.fullName))
         }
         return
     }
 
     if (state.selection.isLoadingRights) {
-        RowCard(modifier) { EmptyRow("Reading ${person.fullName}'s access…") }
+        RowCard(modifier) { EmptyRow(str(S.desktop_reading_access, person.fullName)) }
         return
     }
 
@@ -257,7 +256,7 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
         }
 
         if (RightsSection.entries.all { state.rights(it).isEmpty() }) {
-            item { RowCard { EmptyRow("This project has no tools to grant access to.") } }
+            item { RowCard { EmptyRow(str(S.desktop_no_tools_to_grant)) } }
         }
     }
 }
@@ -306,14 +305,14 @@ private fun RightsRow(rights: ToolRights, onEvent: (AdminEvent) -> Unit) {
 fun PreApprovedPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.PreApproved.title,
-        description = "Let straight in when they use the project code, without waiting for approval.",
+        description = str(S.desktop_pre_approved_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
-        search = "Search by name or email",
+        search = str(S.desktop_search_by_name_or_email),
         action = {
             ZillitButton(
-                text = "Pre-approve someone",
+                text = str(S.desktop_pre_approve_someone),
                 onClick = { onEvent(AdminEvent.OpenPreApproval()) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Primary,
@@ -327,10 +326,10 @@ fun PreApprovedPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: 
         RowCard {
             when {
                 rows.isEmpty() && state.hasLoaded && state.query.isNotBlank() ->
-                    EmptyRow("Nobody matches “${state.query}”.")
+                    EmptyRow(str(S.desktop_nobody_matches_query, state.query))
 
                 rows.isEmpty() && state.hasLoaded ->
-                    EmptyRow("Nobody is pre-approved. Everyone who joins waits for approval.")
+                    EmptyRow(str(S.desktop_nobody_pre_approved))
 
                 else -> rows.forEachIndexed { index, person ->
                     if (index > 0) RowRule()
@@ -379,20 +378,20 @@ fun PreApprovedPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: 
 fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.Sos.title,
-        description = "Alerted when someone on this project raises an SOS.",
+        description = str(S.desktop_sos_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
         action = {
             ZillitButton(
-                text = "Add crew",
+                text = str(S.desktop_cal_add_crew),
                 onClick = { onEvent(AdminEvent.OpenSos(SosEntryType.Crew)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
                 enabled = state.crew.isNotEmpty(),
             )
             ZillitButton(
-                text = "Add outsider",
+                text = str(S.desktop_add_outsider),
                 onClick = { onEvent(AdminEvent.OpenSos(SosEntryType.Outsider)) },
                 size = ButtonSize.Small,
             )
@@ -402,9 +401,7 @@ fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Un
             if (state.sos.isEmpty() && state.hasLoaded) {
                 // Not a neutral empty state. An SOS with nobody to alert is a
                 // safety gap, and the page should say so rather than look tidy.
-                EmptyRow(
-                    "Nobody is alerted on this project. An SOS raised here would reach no one.",
-                )
+                EmptyRow(str(S.desktop_nobody_alerted))
                 return@RowCard
             }
 
@@ -427,7 +424,7 @@ fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Un
                                 maxLines = 1,
                             )
                             ZillitTag(
-                                label = if (recipient.entryType == SosEntryType.Crew) "Crew" else "Outsider",
+                                label = if (recipient.entryType == SosEntryType.Crew) str(S.crew) else str(S.outsider),
                                 tone = TagTone.Neutral,
                             )
                         }
@@ -443,7 +440,7 @@ fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Un
                             maxLines = 1,
                         )
                     }
-                    RemoveButton("Remove") {
+                    RemoveButton(str(S.remove)) {
                         onEvent(
                             AdminEvent.Ask(AdminConfirmation.RemoveSos(recipient.id, recipient.name)),
                         )

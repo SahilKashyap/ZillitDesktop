@@ -251,7 +251,8 @@ class TransportValidationTest {
     @Test
     fun `a permanent allocation outranks a single trip in the availability label`() {
         assertEquals("Available", user().availability)
-        assertEquals("Assigned to trip", user(assigned = true).availability)
+        // Android's wording for this state, and its 21 translations come with it.
+        assertEquals("Assigned to Trip", user(assigned = true).availability)
         assertEquals("Permanent allocated", user(permanent = true).availability)
         assertEquals(
             "Permanent allocated",

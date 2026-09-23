@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.sides.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.ui.SidesEffect
 import com.zillit.desktop.feature.sides.ui.SidesPdfView
@@ -36,14 +38,14 @@ internal class PdfFlow(private val store: SidesStore) {
                 is ZillitResult.Success -> answer.data
                 is ZillitResult.Failure -> {
                     store.failed(answer.error)
-                    return@runTask fail("Failed to load PDF")
+                    return@runTask fail(str(S.desktop_pdf_load_failed))
                 }
             }
-            if (signed.isBlank()) return@runTask fail("No file URL returned")
+            if (signed.isBlank()) return@runTask fail(str(S.desktop_no_file_url))
             store.update { copy(pdf = pdf?.copy(url = signed)) }
             val bytes = when (val fetched = store.transfer.fetch(signed)) {
                 is ZillitResult.Success -> fetched.data
-                is ZillitResult.Failure -> return@runTask fail("Preview is unavailable for this file.")
+                is ZillitResult.Failure -> return@runTask fail(str(S.desktop_preview_unavailable_file))
             }
             if (!SidesRules.isPdfBytes(bytes)) {
                 store.update { copy(pdf = pdf?.copy(loading = false, notPdf = true, bytes = bytes)) }
@@ -53,7 +55,7 @@ internal class PdfFlow(private val store: SidesStore) {
                 is ZillitResult.Success -> store.update {
                     copy(pdf = pdf?.copy(loading = false, pages = pages.data, bytes = bytes))
                 }
-                is ZillitResult.Failure -> fail("Failed to render PDF")
+                is ZillitResult.Failure -> fail(str(S.desktop_pdf_render_failed))
             }
         }
     }
@@ -94,7 +96,7 @@ internal class PdfFlow(private val store: SidesStore) {
                 is ZillitResult.Success -> answer.data
                 is ZillitResult.Failure -> return@runTask store.failed(answer.error)
             }
-            if (signed.isBlank()) return@runTask store.failed("Download failed")
+            if (signed.isBlank()) return@runTask store.failed(str(S.download_failed))
             when (val fetched = store.transfer.fetch(signed)) {
                 is ZillitResult.Success -> store.effect(SidesEffect.SaveFile(fileName, fetched.data))
                 is ZillitResult.Failure -> store.effect(SidesEffect.OpenUrl(signed))

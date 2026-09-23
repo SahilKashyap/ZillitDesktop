@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrFormat
 import com.zillit.desktop.feature.costreport.domain.SnapshotFigures
 import com.zillit.desktop.feature.costreport.domain.SnapshotRow
@@ -72,7 +74,7 @@ internal fun SnapshotDetailTable(view: SnapshotView, callbacks: SnapshotCallback
     val colors = ZillitTheme.colors
     val detail = view.detail ?: return
     if (detail.lines.isEmpty()) {
-        ZillitEmptyState(title = "This snapshot doesn't have any line data.", modifier = modifier)
+        ZillitEmptyState(title = str(S.desktop_cr_no_line_data), modifier = modifier)
         return
     }
     val table = remember(view.sections, view.query, view.toggles) {
@@ -94,13 +96,13 @@ internal fun SnapshotDetailTable(view: SnapshotView, callbacks: SnapshotCallback
             ZillitSearchField(
                 value = view.query,
                 onValueChange = callbacks.onSearch,
-                placeholder = "Search code or name…",
+                placeholder = str(S.desktop_br_search_code_or_name),
                 modifier = Modifier.width(320.dp),
             )
             if (table.search.active) {
                 val n = table.search.matches
                 ZillitText(
-                    "$n match${if (n == 1) "" else "es"}",
+                    str(if (n == 1) S.desktop_cr_match_one else S.desktop_cr_match_many, n),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )
@@ -155,7 +157,7 @@ internal fun SnapshotDetailTable(view: SnapshotView, callbacks: SnapshotCallback
                                 contentAlignment = Alignment.Center,
                             ) {
                                 ZillitText(
-                                    "No codes or descriptions match “${row.query}”.",
+                                    str(S.desktop_cr_no_matches_query, row.query),
                                     style = ZillitTheme.typography.bodySmall,
                                     color = colors.textMuted,
                                 )
@@ -242,33 +244,66 @@ private fun HeadRow(nameWidth: Dp, valueWidth: Dp) {
     Column(Modifier.fillMaxWidth().background(colors.surfaceSunken)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Row(Modifier.height(26.dp), verticalAlignment = Alignment.Bottom) {
-                HeadCell("CODE", codeColumn(), style, colors.textSecondary, TextAlign.Start)
-                HeadCell("NAME", nameWidth, style, colors.textSecondary, TextAlign.Start)
+                HeadCell(str(S.code).uppercase(), codeColumn(), style, colors.textSecondary, TextAlign.Start)
+                HeadCell(str(S.name).uppercase(), nameWidth, style, colors.textSecondary, TextAlign.Start)
             }
             HeaderFigures(strip.scroll, strip.width) {
                 Column {
                     Row(Modifier.height(26.dp), verticalAlignment = Alignment.Bottom) {
-                        HeadCell("ACTUALS", valueWidth * 2, style, ACTUALS_INK, TextAlign.Center, Color(0xFFECF7F0))
-                        HeadCell("COMMITS", valueWidth * 4, style, COMMITS_INK, TextAlign.Center, Color(0xFFE9EFFF))
-                        HeadCell("ETC", valueWidth, style, Color(0xFF7A4CD6), TextAlign.End, Color(0xFFF1EBFF))
-                        HeadCell("EFC", valueWidth, style, EFC_INK, TextAlign.End, BAND)
-                        HeadCell("BUDGET", valueWidth, style, colors.textSecondary, TextAlign.End)
-                        HeadCell("VARIANCE", valueWidth * 2, style, ACTUALS_INK, TextAlign.Center, Color(0xFFECF7F0))
+                        HeadCell(
+                            str(S.desktop_actuals).uppercase(),
+                            valueWidth * 2,
+                            style,
+                            ACTUALS_INK,
+                            TextAlign.Center,
+                            Color(0xFFECF7F0),
+                        )
+                        HeadCell(
+                            str(S.desktop_cr_commits).uppercase(),
+                            valueWidth * 4,
+                            style,
+                            COMMITS_INK,
+                            TextAlign.Center,
+                            Color(0xFFE9EFFF),
+                        )
+                        HeadCell(
+                            str(S.desktop_cr_etc),
+                            valueWidth,
+                            style,
+                            Color(0xFF7A4CD6),
+                            TextAlign.End,
+                            Color(0xFFF1EBFF),
+                        )
+                        HeadCell(str(S.desktop_cr_efc), valueWidth, style, EFC_INK, TextAlign.End, BAND)
+                        HeadCell(str(S.budget_text).uppercase(), valueWidth, style, colors.textSecondary, TextAlign.End)
+                        HeadCell(
+                            str(S.desktop_variance).uppercase(),
+                            valueWidth * 2,
+                            style,
+                            ACTUALS_INK,
+                            TextAlign.Center,
+                            Color(0xFFECF7F0),
+                        )
                     }
                     Row(Modifier.height(22.dp), verticalAlignment = Alignment.Top) {
                         listOf(
                             "ATP",
                             "ATD",
                         ).forEach { HeadCell(it, valueWidth, sub, ACTUALS_INK, TextAlign.End, ACTUALS_WASH) }
-                        listOf("PO", "CARD", "CASH", "PAYROLL").forEach {
+                        listOf(
+                            str(S.desktop_po),
+                            str(S.ah_my_cards).uppercase(),
+                            str(S.desktop_cr_cash).uppercase(),
+                            str(S.dm_section_payroll).uppercase(),
+                        ).forEach {
                             HeadCell(it, valueWidth, sub, COMMITS_INK, TextAlign.End, Color(0xFFE9EFFF))
                         }
                         HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End, Color(0xFFF1EBFF))
                         HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End, BAND)
                         HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End)
                         listOf(
-                            "PERIOD",
-                            "TOTAL",
+                            str(S.cr_meta_period).uppercase(),
+                            str(S.asset_total).uppercase(),
                         ).forEach { HeadCell(it, valueWidth, sub, ACTUALS_INK, TextAlign.End, ACTUALS_WASH) }
                     }
                 }
@@ -439,7 +474,7 @@ private fun TotalRow(total: SnapshotFigures, nameWidth: Dp, valueWidth: Dp, symb
     ) {
         Box(Modifier.width(codeColumn()))
         ZillitText(
-            "GRAND TOTAL",
+            str(S.grand_total).uppercase(),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
             color = colors.textSecondary,
             modifier = Modifier.width(nameWidth).padding(horizontal = 4.dp),

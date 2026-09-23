@@ -14,6 +14,8 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.PickKind
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import java.util.UUID
 
 /**
@@ -129,8 +131,8 @@ private val PickKind.noun: String
 
 private val PickKind.acceptsLabel: String
     get() = when (this) {
-        PickKind.Receipt -> "Receipts are JPG, PNG or PDF"
-        PickKind.Statement -> "Statements are CSV, OFX or QIF"
+        PickKind.Receipt -> str(S.desktop_receipt_types)
+        PickKind.Statement -> str(S.desktop_statement_types)
     }
 
 /**

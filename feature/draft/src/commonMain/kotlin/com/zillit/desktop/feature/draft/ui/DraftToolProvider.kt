@@ -15,12 +15,14 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** Zillit Draft in the workspace — a tool like any other, at [DRAFT_PATH]. */
 class DraftToolProvider(private val viewModel: DraftViewModel) : ToolProvider {
 
     override val path: String = DRAFT_PATH
-    override val title: String = "Zillit Draft"
+    override val title: String get() = str(S.desktop_zillit_draft)
     override val icon = ZillitIcons.Edit
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(1360.dp, 900.dp)
@@ -39,8 +41,10 @@ class DraftToolProvider(private val viewModel: DraftViewModel) : ToolProvider {
             }
         }
         LaunchedEffect(state.open?.screenplay?.title) {
-            navigator.setTitle(state.open?.let { "Draft · ${it.screenplay.title.ifBlank { "Untitled" }}" }
-                ?: "Zillit Draft")
+            navigator.setTitle(
+                state.open?.let { str(S.desktop_draft_window_title, it.screenplay.title.ifBlank { str(S.untitled) }) }
+                    ?: str(S.desktop_zillit_draft),
+            )
         }
         LaunchedEffect(state.open?.dirty) { navigator.setDirty(state.open?.dirty == true) }
 

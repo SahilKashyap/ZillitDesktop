@@ -1,17 +1,28 @@
 package com.zillit.desktop.feature.costreport.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** The worksheet's Expand control: how deep the tree opens without a click per row. */
-enum class CrViewMode(val id: String, val label: String) {
-    Headers("section", "Headers"),
-    Nominals("nominal", "Nominals"),
-    SetCodes("set", "Set Codes"),
+enum class CrViewMode(val id: String, private val labelKey: String) {
+    Headers("section", S.desktop_headers),
+    Nominals("nominal", S.desktop_nominals),
+    SetCodes("set", S.desktop_cr_set_codes),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The worksheet's Filter control. Anything but All flattens the grid to header lines. */
-enum class CrLineFilter(val id: String, val label: String, val stripLabel: String) {
-    All("all", "All", "All"),
-    OverBudget("over", "Over Budget", "Over Budget"),
-    ActiveThisWeek("active", "Active This Wk", "Active This Week"),
+enum class CrLineFilter(val id: String, private val labelKey: String, private val stripLabelKey: String) {
+    All("all", S.all, S.all),
+    OverBudget("over", S.desktop_cr_over_budget, S.desktop_cr_over_budget),
+    ActiveThisWeek("active", S.desktop_cr_active_this_wk, S.desktop_cr_active_this_week),
+    ;
+
+    val label: String get() = str(labelKey)
+
+    val stripLabel: String get() = str(stripLabelKey)
 }
 
 enum class SortDirection { Descending, Ascending }

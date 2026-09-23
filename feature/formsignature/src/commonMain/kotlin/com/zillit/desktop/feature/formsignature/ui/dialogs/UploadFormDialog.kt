@@ -37,6 +37,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.StandardFormType
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureUiState
@@ -47,7 +49,7 @@ import com.zillit.desktop.feature.formsignature.ui.components.FileChip
 internal fun UploadFormDialog(state: FormSignatureUiState, onEvent: (FormSignatureEvent) -> Unit) {
     val upload = state.uploadForm
     ZillitDialogShell(
-        title = "Upload Document",
+        title = str(S.txt_document_add),
         visible = upload != null,
         onDismiss = { onEvent(FormSignatureEvent.CancelUploadForm) },
         icon = ZillitIcons.Upload,
@@ -55,14 +57,14 @@ internal fun UploadFormDialog(state: FormSignatureUiState, onEvent: (FormSignatu
         scrollable = false,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(FormSignatureEvent.CancelUploadForm) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 enabled = upload?.uploading != true,
             )
             ZillitButton(
-                text = "Upload",
+                text = str(S.upload),
                 onClick = { onEvent(FormSignatureEvent.SubmitUploadForm) },
                 size = ButtonSize.Small,
                 loading = upload?.uploading == true,
@@ -74,17 +76,17 @@ internal fun UploadFormDialog(state: FormSignatureUiState, onEvent: (FormSignatu
             ZillitTextField(
                 value = upload.name,
                 onValueChange = { onEvent(FormSignatureEvent.EditUploadForm(upload.copy(name = it))) },
-                placeholder = "Document Name",
-                label = "Document Name",
+                placeholder = str(S.dm_nda_document_name_label),
+                label = str(S.dm_nda_document_name_label),
             )
             AttachDropZone(
-                label = "Attach Document",
-                hint = "PDF / Doc format only",
+                label = str(S.ah_attach_document),
+                hint = str(S.desktop_fs_pdf_doc_format_only),
                 onClick = { onEvent(FormSignatureEvent.PickUploadFile) },
             )
             if (upload.fileName.isNotBlank()) FileChip(name = upload.fileName, extension = upload.extension)
 
-            ZillitText("Select the type of the document.", style = ZillitTheme.typography.titleSmall)
+            ZillitText(str(S.select_type_of_document), style = ZillitTheme.typography.titleSmall)
             StandardFormType.entries.forEach { type ->
                 ChoiceRow(
                     label = type.label,

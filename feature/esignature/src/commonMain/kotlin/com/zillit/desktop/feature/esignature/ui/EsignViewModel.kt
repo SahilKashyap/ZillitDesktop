@@ -138,7 +138,8 @@ class EsignViewModel(
     /** An envelope opened — its rows under both units, the web's per-envelope read on open. */
     override fun readEnvelopeBadges(envelopeId: String) {
         val unread = currentState.unread
-        if (unread.manageEnvelope(envelopeId, ManageBuckets.SENT) + unread.manageEnvelope(envelopeId, ManageBuckets.DRAFT) +
+        if (unread.manageEnvelope(envelopeId, ManageBuckets.SENT) +
+            unread.manageEnvelope(envelopeId, ManageBuckets.DRAFT) +
             unread.manageEnvelope(envelopeId, ManageBuckets.COMPLETED) +
             unread.manageEnvelope(envelopeId, ManageBuckets.REJECTED) > 0
         ) {

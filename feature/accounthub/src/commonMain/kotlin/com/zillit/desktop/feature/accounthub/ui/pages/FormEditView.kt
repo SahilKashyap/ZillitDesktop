@@ -77,6 +77,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.forms.FormSection
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.FormConfigState
@@ -111,10 +113,12 @@ internal fun FormEditView(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             ) {
                 EditTips()
                 Box(Modifier.height(ZillitTheme.spacing.sm))
-                DashedInsertRail("Insert section here") { onEvent(AccountHubEvent.ComposeFormSection(null)) }
+                DashedInsertRail(str(S.desktop_insert_section_here)) {
+                    onEvent(AccountHubEvent.ComposeFormSection(null))
+                }
                 config.template.configurable.forEach { section ->
                     EditableSection(section, config, onEvent)
-                    DashedInsertRail("Insert section here") {
+                    DashedInsertRail(str(S.desktop_insert_section_here)) {
                         onEvent(AccountHubEvent.ComposeFormSection(section.key))
                     }
                 }
@@ -162,7 +166,7 @@ private fun EditTopBar(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            MonoLabel("Forms", modifier = Modifier.clickable(onClick = back), color = colors.accentText)
+            MonoLabel(str(S.desktop_forms), modifier = Modifier.clickable(onClick = back), color = colors.accentText)
             ZillitText(text = "/", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
             ZillitText(
                 text = config.module.label,
@@ -172,27 +176,27 @@ private fun EditTopBar(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
             )
             ZillitText(text = "•", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
             ZillitText(
-                text = "Edit Fields",
+                text = str(S.desktop_edit_fields),
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
             )
-            if (config.dirty) Pill("Unsaved", tone = StatusTone.Pending, dot = true)
+            if (config.dirty) Pill(str(S.asset_unsaved), tone = StatusTone.Pending, dot = true)
         }
         ToggleButton(
-            text = "Rearrange",
+            text = str(S.desktop_rearrange),
             icon = SwapIcon,
             active = config.rearrange,
             onClick = { onEvent(AccountHubEvent.ToggleRearrange(!config.rearrange)) },
         )
         ZillitButton(
-            text = if (config.resetting) "Resetting…" else "Reset to defaults",
+            text = if (config.resetting) str(S.desktop_resetting) else str(S.desktop_reset_to_defaults),
             onClick = { onEvent(AccountHubEvent.AskResetFormTemplate) },
             variant = ButtonVariant.Secondary,
             loading = config.resetting,
             enabled = !config.busy,
         )
         ZillitButton(
-            text = if (config.saving) "Saving…" else "Save",
+            text = if (config.saving) str(S.ah_saving) else str(S.save),
             onClick = { onEvent(AccountHubEvent.SaveFormTemplate) },
             leadingIcon = ZillitIcons.Check,
             loading = config.saving,
@@ -204,7 +208,7 @@ private fun EditTopBar(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
 
 /** The web's square back button. */
 @Composable
-internal fun BackChip(onClick: () -> Unit, description: String = "Back") {
+internal fun BackChip(onClick: () -> Unit, description: String = str(S.back)) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -343,14 +347,14 @@ private fun EditableSection(section: FormSection, config: FormConfigState, onEve
                 // Composed always and revealed on hover: a control composed only
                 // while hovered loses the press that reaches it.
                 RemoveChip(
-                    text = "Remove",
+                    text = str(S.remove),
                     description = "Remove ${section.label}",
                     modifier = Modifier.alpha(reveal),
                 ) { onEvent(AccountHubEvent.AskRemoveFormSection(section)) }
             }
             FieldHint("${visible.size}/${section.fields.size} visible")
             AccentLink(
-                text = if (section.isLineItems) "Add Custom Column" else "Add Custom Field",
+                text = if (section.isLineItems) str(S.desktop_add_custom_column) else str(S.desktop_add_custom_field),
                 onClick = { onEvent(AccountHubEvent.FocusFormField(section.key, null)) },
             )
         },
@@ -360,8 +364,7 @@ private fun EditableSection(section: FormSection, config: FormConfigState, onEve
         }
         when {
             visible.isEmpty() -> FieldHint(
-                text = "Nothing in this section is on the form. Add a custom field, or bring a system field back " +
-                    "from Add Custom Field.",
+                text = str(S.desktop_hub_nothing_in_this_section_is_on_the_form_add_a),
                 modifier = Modifier.padding(ZillitTheme.spacing.lg + ZillitTheme.spacing.xs),
             )
             section.isLineItems -> LineItemsTable(visible, focusedId = focusedId, onField = onField)
@@ -387,7 +390,7 @@ private fun SectionTitle(section: FormSection, reveal: Float, onEvent: (AccountH
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitTooltip("Double-click to rename") {
+        ZillitTooltip(str(S.desktop_hub_double_click_to_rename)) {
             SectionEyebrow(
                 text = section.label,
                 modifier = Modifier.pointerInput(section.key, section.label) {
@@ -527,11 +530,11 @@ private class LatestHolder<T : Any> {
 }
 
 private val EDIT_TIPS = listOf(
-    "Click a field" to "to edit its properties",
-    "+ Add Custom Field" to "to create new fields",
-    "+ between sections" to "to insert a new section",
-    "Double-click" to "a section name to rename it",
-    "Rearrange" to "to drag & drop sections and fields",
+    str(S.desktop_click_a_field) to str(S.desktop_hub_to_edit_its_properties),
+    str(S.desktop_add_custom_field_plus) to str(S.desktop_hub_to_create_new_fields),
+    str(S.desktop_between_sections_plus) to str(S.desktop_hub_to_insert_a_new_section),
+    str(S.desktop_double_click) to str(S.desktop_hub_a_section_name_to_rename_it),
+    str(S.desktop_rearrange) to str(S.desktop_hub_to_drag_drop_sections_and_fields),
 )
 
 private const val PANEL_MS = 200

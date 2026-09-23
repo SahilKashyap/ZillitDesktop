@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_EVENTS
 import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_PAGES
 import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
@@ -164,19 +166,19 @@ class AdminViewModel(
                     },
                 )
             }
-            AdminEvent.SaveTools -> mutate("Tools updated.") {
+            AdminEvent.SaveTools -> mutate(str(S.desktop_tools_updated)) {
                 repository.setToolsEnabled(currentState.tools).also { result ->
                     if (result is ZillitResult.Success) onToolsChanged()
                 }
             }
 
             is AdminEvent.MoveTool ->
-                mutate("Tool moved.") { repository.moveTool(event.identifier, event.groupIdentifier) }
+                mutate(str(S.desktop_tool_moved)) { repository.moveTool(event.identifier, event.groupIdentifier) }
 
             is AdminEvent.RightsToggled -> onRightsToggled(event)
 
             is AdminEvent.UnitEnabledChanged -> mutate(
-                if (event.enabled) "Unit switched on." else "Unit switched off.",
+                if (event.enabled) str(S.desktop_unit_switched_on) else str(S.desktop_unit_switched_off),
             ) { repository.setUnitEnabled(event.unitId, event.enabled) }
 
             is AdminEvent.MoveDepartment -> setState {
@@ -189,7 +191,7 @@ class AdminViewModel(
             AdminEvent.DismissConfirmation -> setState { copy(confirming = null) }
             AdminEvent.ConfirmAction -> confirm()
 
-            AdminEvent.CancelDeletion -> mutate("Deletion called off.") { repository.cancelDeletion() }
+            AdminEvent.CancelDeletion -> mutate(str(S.desktop_deletion_called_off)) { repository.cancelDeletion() }
         }
     }
 
@@ -364,7 +366,7 @@ class AdminViewModel(
             setState {
                 copy(
                     form = form.copy(
-                        error = "A ${form.kind.noun} name needs at least three characters.",
+                        error = str(form.kind.nameTooShortKey),
                     ),
                 )
             }
@@ -376,7 +378,7 @@ class AdminViewModel(
         val departmentId = currentState.selection.departmentId
         val unitKind = currentState.unitKind
 
-        mutate(if (form.isRename) "Renamed to “$name”." else "“$name” added.") {
+        mutate(if (form.isRename) str(S.desktop_renamed_to, name) else str(S.desktop_name_added, name)) {
             when {
                 kind == NameKind.Department -> repository.createDepartment(name)
 
@@ -395,7 +397,7 @@ class AdminViewModel(
 
                 // Reachable only if a form is opened without the thing it names
                 // being selected — a wiring mistake rather than user input.
-                else -> ZillitResult.Failure(ZillitError.Validation("Nothing is selected to add this to."))
+                else -> ZillitResult.Failure(ZillitError.Validation(str(S.desktop_nothing_selected_to_add_to)))
             }
         }
     }
@@ -405,8 +407,7 @@ class AdminViewModel(
             setState {
                 copy(
                     form = form.copy(
-                        error = "A first and last name of three characters or more, " +
-                            "a department and a job title are all needed.",
+                        error = str(S.desktop_pre_approval_fields_needed),
                     ),
                 )
             }
@@ -422,7 +423,7 @@ class AdminViewModel(
             return
         }
 
-        mutate("${form.firstName.trim()} can now join with the project code.") {
+        mutate(str(S.desktop_can_now_join_with_code, form.firstName.trim())) {
             repository.addPreApproved(
                 NewPreApproval(
                     firstName = form.firstName,
@@ -443,10 +444,9 @@ class AdminViewModel(
                 copy(
                     form = form.copy(
                         error = when (form.draft.entryType) {
-                            SosEntryType.Crew -> "Choose someone on the crew."
+                            SosEntryType.Crew -> str(S.desktop_choose_someone_on_crew)
                             SosEntryType.Outsider ->
-                                "A name, a relationship, a country code and a number of " +
-                                    "five to twenty digits are all needed."
+                                str(S.desktop_outsider_fields_needed)
                         },
                     ),
                 )
@@ -454,13 +454,13 @@ class AdminViewModel(
             return
         }
 
-        mutate("Recipient added.") { repository.addSosRecipient(form.draft) }
+        mutate(str(S.desktop_recipient_added)) { repository.addSosRecipient(form.draft) }
     }
 
     private fun submitCompany(form: AdminForm.Company) {
         val email = form.draft.email.trim()
         if (email.isNotBlank() && !email.looksLikeEmail) {
-            setState { copy(form = form.copy(error = "That does not look like an email address.")) }
+            setState { copy(form = form.copy(error = str(S.desktop_not_an_email_address))) }
             return
         }
 
@@ -471,21 +471,21 @@ class AdminViewModel(
             return
         }
         if (phone.isNotBlank() && phone.length !in PHONE_LENGTH) {
-            setState { copy(form = form.copy(error = "A phone number is five to twenty digits.")) }
+            setState { copy(form = form.copy(error = str(S.desktop_phone_number_length))) }
             return
         }
 
-        mutate("Company details saved.") { repository.saveCompanyDetails(form.draft) }
+        mutate(str(S.desktop_company_details_saved)) { repository.saveCompanyDetails(form.draft) }
     }
 
     private fun submitProductionName(form: AdminForm.ProductionName) {
         if (!form.isValid) {
-            setState { copy(form = form.copy(error = "A project name is three to twenty-five characters.")) }
+            setState { copy(form = form.copy(error = str(S.desktop_project_name_length))) }
             return
         }
 
         val name = form.value.trim()
-        mutate("Renamed to “$name”.") {
+        mutate(str(S.desktop_renamed_to, name)) {
             repository.renameProduction(name).also { result ->
                 // The name is on the window chrome and the rail; the rest of
                 // the app has to be told rather than left to notice.
@@ -537,7 +537,7 @@ class AdminViewModel(
         if (event.isAdmin) {
             setState { copy(confirming = AdminConfirmation.GrantAdmin(person.userId, person.fullName)) }
         } else {
-            mutate("${person.fullName} is no longer an administrator.") {
+            mutate(str(S.desktop_no_longer_administrator, person.fullName)) {
                 repository.setAdminAccess(person.userId, false)
             }
         }
@@ -549,7 +549,7 @@ class AdminViewModel(
         val device = person.deviceId ?: return
 
         if (event.isActive) {
-            mutate("${person.fullName} is back on the project.") {
+            mutate(str(S.desktop_back_on_the_project, person.fullName)) {
                 repository.setCrewStatus(person.userId, device, CrewStatus.Accepted)
             }
         } else {
@@ -600,7 +600,7 @@ class AdminViewModel(
         val order = currentState.selection.order
         if (order.isEmpty()) return
 
-        mutate("Crew list order saved.") {
+        mutate(str(S.desktop_crew_list_order_saved)) {
             repository.reorderDepartments(order.map { it.id })
         }
     }
@@ -619,48 +619,48 @@ class AdminViewModel(
 
         when (confirmation) {
             is AdminConfirmation.RemoveDepartment ->
-                mutate("“${confirmation.name}” deleted.") {
+                mutate(str(S.desktop_name_deleted, confirmation.name)) {
                     repository.deleteDepartment(confirmation.id)
                 }
 
             is AdminConfirmation.RemoveJobTitle ->
-                mutate("“${confirmation.name}” deleted.") {
+                mutate(str(S.desktop_name_deleted, confirmation.name)) {
                     repository.deleteJobTitle(confirmation.departmentId, confirmation.id)
                 }
 
             is AdminConfirmation.RemoveToolGroup ->
-                mutate("“${confirmation.name}” deleted.") {
+                mutate(str(S.desktop_name_deleted, confirmation.name)) {
                     repository.deleteToolGroup(confirmation.id)
                 }
 
             is AdminConfirmation.RemoveUnit ->
-                mutate("“${confirmation.name}” deleted.") {
+                mutate(str(S.desktop_name_deleted, confirmation.name)) {
                     repository.deleteUnit(confirmation.kind, confirmation.id)
                 }
 
             is AdminConfirmation.RemoveSos ->
-                mutate("${confirmation.name} removed.") {
+                mutate(str(S.desktop_name_removed, confirmation.name)) {
                     repository.removeSosRecipient(confirmation.id)
                 }
 
             is AdminConfirmation.RemoveFromCrew ->
-                mutate("${confirmation.name} is off the project.") {
+                mutate(str(S.desktop_is_off_the_project, confirmation.name)) {
                     repository.setCrewStatus(confirmation.userId, confirmation.deviceId, CrewStatus.Removed)
                 }
 
             is AdminConfirmation.GrantAdmin ->
-                mutate("${confirmation.name} can now administer this project.") {
+                mutate(str(S.desktop_can_now_administer, confirmation.name)) {
                     repository.setAdminAccess(confirmation.userId, true)
                 }
 
             is AdminConfirmation.ClearWatermark ->
-                mutate("Watermark removed.") { repository.clearWatermark() }
+                mutate(str(S.desktop_watermark_removed)) { repository.clearWatermark() }
 
             is AdminConfirmation.ClearCompanyLogo ->
-                mutate("Company logo removed.") { repository.clearCompanyLogo() }
+                mutate(str(S.desktop_company_logo_removed)) { repository.clearCompanyLogo() }
 
             is AdminConfirmation.DeleteProduction ->
-                mutate("Deletion scheduled for ${confirmation.hours} hours from now.") {
+                mutate(str(S.desktop_deletion_scheduled_in_hours, confirmation.hours)) {
                     repository.scheduleDeletion(confirmation.hours).also { result ->
                         if (result is ZillitResult.Success) {
                             setState {
@@ -687,7 +687,7 @@ class AdminViewModel(
      */
     private fun mutate(success: String, block: suspend () -> ZillitResult<Unit>) {
         if (!isAdmin()) {
-            setState { copy(error = "Only an administrator can change this project's settings.") }
+            setState { copy(error = str(S.desktop_only_admin_can_change)) }
             return
         }
         if (currentState.isSaving) return
@@ -730,8 +730,7 @@ class AdminViewModel(
         val PHONE_LENGTH = 5..20
 
         /** Said the same way on both forms that take a number. */
-        const val PHONE_PAIR_REQUIRED =
-            "A phone number needs its country code, and the other way round."
+        val PHONE_PAIR_REQUIRED: String get() = str(S.desktop_phone_pair_required)
     }
 }
 

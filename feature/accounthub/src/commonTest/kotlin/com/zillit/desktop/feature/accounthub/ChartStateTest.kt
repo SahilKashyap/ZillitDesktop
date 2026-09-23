@@ -102,7 +102,8 @@ class ChartStateTest {
     @Test
     fun `the tree opens at its top level`() {
         assertEquals(listOf("h1", "s1", "r1"), chart.drawn())
-        assertEquals("Collapse all", chart.foldLabel)
+        // Title case: the shared key carries Android's wording.
+        assertEquals("Collapse All", chart.foldLabel)
     }
 
     /**
@@ -123,11 +124,11 @@ class ChartStateTest {
         val collapsed = chart.foldedAll()
         assertEquals(TreeFold.AllClosed, collapsed.fold)
         assertEquals(listOf("h1", "r1"), collapsed.drawn())
-        assertEquals("Expand all", collapsed.foldLabel)
+        assertEquals("Expand All", collapsed.foldLabel)
 
         val expanded = collapsed.foldedAll()
         assertEquals(listOf("h1", "s1", "c1", "r1"), expanded.drawn())
-        assertEquals("Collapse all", expanded.foldLabel)
+        assertEquals("Collapse All", expanded.foldLabel)
     }
 
     /** A hit beneath folded rows is drawn with its path open, or the search would look empty. */

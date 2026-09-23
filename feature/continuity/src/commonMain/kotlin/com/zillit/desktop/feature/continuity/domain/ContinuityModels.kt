@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.continuity.domain
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -17,18 +19,18 @@ import kotlinx.coroutines.flow.emptyFlow
  * `visibility`; [readSegment] is the badge ledger's `unit` for the tab and
  * the `segment` a read names (`IntraDepartment.jsx:494-508`).
  */
-enum class ContinuityTab(val label: String, val wireLabel: String, val readSegment: String) {
-    MyDepartment("My Department", "intra", "continuity_intra_label"),
-    AllDepartments("All Departments", "all", "continuity_all_label"),
+enum class ContinuityTab(private val labelKey: String, val wireLabel: String, val readSegment: String) {
+    MyDepartment(S.intradepartment, "intra", "continuity_intra_label"),
+    AllDepartments(S.all_departments, "all", "continuity_all_label"),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** The web's `note :` line under the header (`contunityMy_Notes` / `contunityAll_Notes`). */
     val note: String
         get() = when (this) {
-            MyDepartment ->
-                "You need to upload in ‘My Department’ folder in order to forward to ‘All Departments’ folder"
-            AllDepartments ->
-                "Pictures shown in ‘All Departments’ folder must be forwarded from ‘My Department’ folder."
+            MyDepartment -> str(S.desktop_continuity_note_my)
+            AllDepartments -> str(S.desktop_continuity_note_all)
         }
 }
 

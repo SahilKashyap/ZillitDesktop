@@ -56,6 +56,8 @@ import com.zillit.desktop.feature.crewlist.ui.components.CrewDrawer
 import com.zillit.desktop.feature.crewlist.ui.components.CrewIcons
 import com.zillit.desktop.feature.crewlist.ui.components.DialCodePicker
 import com.zillit.desktop.feature.crewlist.ui.components.crewPalette
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The production's company details — the web's `CompanyDetails` drawer
@@ -111,13 +113,13 @@ private fun DrawerFooter(editor: CompanyEditorState, copy: CrewCopy, onEvent: (C
         horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
     ) {
         ZillitButton(
-            text = copy.t("Cancel", "Cancel"),
+            text = copy.t("Cancel", str(S.cancel)),
             variant = ButtonVariant.Secondary,
             enabled = !editor.saving,
             onClick = { onEvent(CrewListEvent.Admin.CloseCompany) },
         )
         ZillitButton(
-            text = copy.t("SaveChanges", "Save changes"),
+            text = copy.t("SaveChanges", str(S.txt_save_changes)),
             leadingIcon = ZillitIcons.Save,
             loading = editor.saving,
             enabled = !editor.saving && !editor.loading,
@@ -130,26 +132,26 @@ private fun DrawerFooter(editor: CompanyEditorState, copy: CrewCopy, onEvent: (C
 @Composable
 private fun RemoveLogoDialog(visible: Boolean, copy: CrewCopy, onEvent: (CrewListEvent) -> Unit) {
     ZillitDialogShell(
-        title = copy.t("Areyousuretodelete", "Are you sure to delete?"),
+        title = copy.t("Areyousuretodelete", str(S.desktop_are_you_sure_to_delete)),
         icon = ZillitIcons.Trash,
         visible = visible,
         onDismiss = { onEvent(CrewListEvent.Admin.ResolveRemoveLogo(remove = false)) },
         width = 380.dp,
         actions = {
             ZillitButton(
-                text = copy.t("No", "No"),
+                text = copy.t("No", str(S.no)),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(CrewListEvent.Admin.ResolveRemoveLogo(remove = false)) },
             )
             ZillitButton(
-                text = copy.t("Yes", "Yes"),
+                text = copy.t("Yes", str(S.yes)),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(CrewListEvent.Admin.ResolveRemoveLogo(remove = true)) },
             )
         },
     ) {
         ZillitText(
-            text = "The logo is removed from the letterhead when you save.",
+            text = str(S.desktop_cl_logo_removed_on_save),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -165,8 +167,8 @@ private fun LivePreview(editor: CompanyEditorState, copy: CrewCopy, onEvent: (Cr
         Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(colors.accent))
-                val heading = copy.t("CompanyDetails", "Company Details") + " · " +
-                    copy.t("LivePreview", "Live preview")
+                val heading = copy.t("CompanyDetails", str(S.company_details)) + " · " +
+                    copy.t("LivePreview", str(S.desktop_live_preview))
                 ZillitText(
                     text = heading.uppercase(),
                     style = eyebrow(0.06),
@@ -175,7 +177,7 @@ private fun LivePreview(editor: CompanyEditorState, copy: CrewCopy, onEvent: (Cr
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = copy.t("Close", "Close"),
+                    contentDescription = copy.t("Close", str(S.close)),
                     onClick = { onEvent(CrewListEvent.Admin.CloseCompany) },
                 )
             }
@@ -194,7 +196,7 @@ private fun Letterhead(editor: CompanyEditorState, copy: CrewCopy) {
         LogoTile(editor.logoImage, details.initials, size = 56.dp, dashed = false)
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = details.name.ifBlank { copy.t("CompanyName", "Company name") },
+                text = details.name.ifBlank { copy.t("CompanyName", str(S.company_name)) },
                 style = ZillitTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
                 color = if (details.name.isBlank()) colors.textMuted else colors.textPrimary,
                 maxLines = 1,
@@ -215,9 +217,9 @@ private fun Letterhead(editor: CompanyEditorState, copy: CrewCopy) {
 private fun PreviewExtras(editor: CompanyEditorState, copy: CrewCopy, onEvent: (CrewListEvent) -> Unit) {
     val details = editor.details
     val extras = buildList {
-        if (details.number.isNotBlank()) add(copy.t("CompanyNumber", "Company No.") to details.number)
+        if (details.number.isNotBlank()) add(copy.t("CompanyNumber", str(S.desktop_company_no)) to details.number)
         if (details.registeredAddress.isNotBlank()) {
-            add(copy.t("CompanyRegisteredAddress", "Registered address") to details.registeredAddress)
+            add(copy.t("CompanyRegisteredAddress", str(S.company_registered_address)) to details.registeredAddress)
         }
         details.customFields.filter { it.label.isNotBlank() }.forEach { add(it.label to it.value) }
     }
@@ -238,7 +240,7 @@ private fun PreviewExtras(editor: CompanyEditorState, copy: CrewCopy, onEvent: (
             size = 12.dp,
             modifier = Modifier.rotate(if (editor.detailsExpanded) 0f else -90f),
         )
-        ZillitText(copy.t("Details", "Details").uppercase(), style = eyebrow(0.05), color = colors.textMuted)
+        ZillitText(copy.t("Details", str(S.details)).uppercase(), style = eyebrow(0.05), color = colors.textMuted)
         CountPill(extras.size)
     }
     if (!editor.detailsExpanded) return
@@ -266,27 +268,27 @@ private fun PreviewExtras(editor: CompanyEditorState, copy: CrewCopy, onEvent: (
 
 @Composable
 private fun LogoCard(editor: CompanyEditorState, copy: CrewCopy, onEvent: (CrewListEvent) -> Unit) {
-    SectionCard(copy.t("BrandLogo", "Brand logo")) {
+    SectionCard(copy.t("BrandLogo", str(S.desktop_brand_logo))) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             LogoTile(editor.logoImage, editor.details.initials, size = 84.dp, dashed = true)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 ZillitText(
                     text = if (editor.hasLogo) {
-                        copy.t("LogoUploaded", "Logo uploaded")
+                        copy.t("LogoUploaded", str(S.desktop_logo_uploaded))
                     } else {
-                        copy.t("NoLogoYet", "No logo yet")
+                        copy.t("NoLogoYet", str(S.desktop_no_logo_yet))
                     },
                     style = ZillitTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 )
                 ZillitText(
-                    text = copy.t("LogoSpecHint", "PNG, JPG or SVG · up to 2 MB · square works best"),
+                    text = copy.t("LogoSpecHint", str(S.desktop_cl_logo_spec_hint)),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
                 Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val upload = when {
-                        editor.hasLogo -> copy.t("Replace", "Replace")
-                        else -> copy.t("UploadLogo", "Upload logo")
+                        editor.hasLogo -> copy.t("Replace", str(S.replace))
+                        else -> copy.t("UploadLogo", str(S.desktop_upload_logo))
                     }
                     ZillitButton(
                         text = upload,
@@ -296,7 +298,7 @@ private fun LogoCard(editor: CompanyEditorState, copy: CrewCopy, onEvent: (CrewL
                     )
                     if (editor.hasLogo) {
                         ZillitButton(
-                            text = copy.t("Remove", "Remove"),
+                            text = copy.t("Remove", str(S.remove)),
                             variant = ButtonVariant.Danger,
                             leadingIcon = ZillitIcons.Trash,
                             onClick = { onEvent(CrewListEvent.Admin.AskRemoveLogo) },
@@ -317,26 +319,26 @@ private fun InformationCard(
 ) {
     val details = editor.details
     val edit = { changed: CompanyDetails -> onEvent(CrewListEvent.Admin.EditCompany(changed)) }
-    SectionCard(copy.t("CompanyInformation", "Company information")) {
+    SectionCard(copy.t("CompanyInformation", str(S.desktop_company_information))) {
         ZillitTextField(
             value = details.name,
             onValueChange = { edit(details.copy(name = it)) },
-            label = copy.t("CompanyName", "Company name"),
-            placeholder = copy.t("CompanyNamePlaceholder", "e.g. India Take One Production"),
+            label = copy.t("CompanyName", str(S.company_name)),
+            placeholder = copy.t("CompanyNamePlaceholder", str(S.desktop_cl_company_name_placeholder)),
             modifier = Modifier.fillMaxWidth(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             ZillitTextField(
                 value = details.number,
                 onValueChange = { edit(details.copy(number = it)) },
-                label = copy.t("CompanyNumber", "Company No."),
-                placeholder = copy.t("CompanyNumber", "Company No."),
+                label = copy.t("CompanyNumber", str(S.desktop_company_no)),
+                placeholder = copy.t("CompanyNumber", str(S.desktop_company_no)),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = details.email,
                 onValueChange = { edit(details.copy(email = it)) },
-                label = copy.t("CompanyEmail", "Company email"),
+                label = copy.t("CompanyEmail", str(S.company_email)),
                 placeholder = "office@company.com",
                 errorText = editor.problems.firstOrNull { it.field == CompanyField.Email }?.message,
                 modifier = Modifier.weight(1f),
@@ -358,7 +360,7 @@ private fun PhoneFields(
     val phoneProblem = editor.problems.firstOrNull { it.field == CompanyField.Phone }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         ZillitText(
-            text = copy.t("Phone", "Phone"),
+            text = copy.t("Phone", str(S.phone)),
             style = ZillitTheme.typography.label,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -366,7 +368,7 @@ private fun PhoneFields(
             DialCodePicker(
                 value = details.countryCode,
                 codes = dialCodes,
-                placeholder = copy.t("SelectCountrycode", "Code"),
+                placeholder = copy.t("SelectCountrycode", str(S.code)),
                 isError = phoneProblem != null && details.countryCode.isBlank(),
                 onPick = { code -> edit(details.copy(countryCode = code)) },
                 modifier = Modifier.width(130.dp),
@@ -378,7 +380,7 @@ private fun PhoneFields(
                 onValueChange = { raw ->
                     edit(details.copy(phone = raw.filter { it in '0'..'9' }.take(CompanyRules.MAX_PHONE)))
                 },
-                placeholder = copy.t("Phone", "Phone"),
+                placeholder = copy.t("Phone", str(S.phone)),
                 errorText = phoneProblem?.message,
                 modifier = Modifier.weight(1f),
             )
@@ -389,20 +391,20 @@ private fun PhoneFields(
 @Composable
 private fun AddressesCard(editor: CompanyEditorState, copy: CrewCopy, onEvent: (CrewListEvent) -> Unit) {
     val details = editor.details
-    SectionCard(copy.t("Addresses", "Addresses")) {
+    SectionCard(copy.t("Addresses", str(S.desktop_addresses))) {
         ZillitTextField(
             value = details.address,
             onValueChange = { onEvent(CrewListEvent.Admin.EditCompany(details.copy(address = it))) },
-            label = copy.t("CompanyAddress", "Company address"),
-            placeholder = copy.t("CompanyAddress", "Company address"),
+            label = copy.t("CompanyAddress", str(S.company_address)),
+            placeholder = copy.t("CompanyAddress", str(S.company_address)),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
             value = details.registeredAddress,
             onValueChange = { onEvent(CrewListEvent.Admin.EditCompany(details.copy(registeredAddress = it))) },
-            label = copy.t("CompanyRegisteredAddress", "Registered address"),
-            placeholder = copy.t("CompanyRegisteredAddress", "Registered address"),
+            label = copy.t("CompanyRegisteredAddress", str(S.company_registered_address)),
+            placeholder = copy.t("CompanyRegisteredAddress", str(S.company_registered_address)),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -415,10 +417,10 @@ private fun CustomFieldsCard(editor: CompanyEditorState, copy: CrewCopy, onEvent
     val setFields = { fields: List<CompanyCustomField> ->
         onEvent(CrewListEvent.Admin.EditCompany(details.copy(customFields = fields)))
     }
-    SectionCard(copy.t("CustomFields", "Custom fields"), count = details.customFields.size) {
+    SectionCard(copy.t("CustomFields", str(S.custom_fields)), count = details.customFields.size) {
         if (details.customFields.isEmpty()) {
             ZillitText(
-                text = copy.t("NoCustomFields", "No extra fields yet."),
+                text = copy.t("NoCustomFields", str(S.desktop_no_extra_fields_yet)),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -431,7 +433,7 @@ private fun CustomFieldsCard(editor: CompanyEditorState, copy: CrewCopy, onEvent
                     onValueChange = { label ->
                         setFields(details.customFields.replaced(index) { copy(label = label) })
                     },
-                    placeholder = copy.t("Label", "Label"),
+                    placeholder = copy.t("Label", str(S.ah_lbl_title)),
                     errorText = labelProblem?.message,
                     modifier = Modifier.weight(1f),
                 )
@@ -440,19 +442,19 @@ private fun CustomFieldsCard(editor: CompanyEditorState, copy: CrewCopy, onEvent
                     onValueChange = { value ->
                         setFields(details.customFields.replaced(index) { copy(value = value) })
                     },
-                    placeholder = copy.t("Value", "Value"),
+                    placeholder = copy.t("Value", str(S.ah_addl_value_hint)),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitIconButton(
                     icon = CrewIcons.Minus,
-                    contentDescription = copy.t("Remove", "Remove"),
+                    contentDescription = copy.t("Remove", str(S.remove)),
                     size = 36.dp,
                     onClick = { setFields(details.customFields.filterIndexed { i, _ -> i != index }) },
                 )
             }
         }
         ZillitButton(
-            text = copy.t("AddField", "Add field"),
+            text = copy.t("AddField", str(S.add_field)),
             variant = ButtonVariant.Tertiary,
             leadingIcon = ZillitIcons.Add,
             onClick = { setFields(details.customFields + CompanyCustomField()) },

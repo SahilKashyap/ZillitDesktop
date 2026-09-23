@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.sides.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.GeneratePoller
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.ui.GenerateState
@@ -201,8 +203,8 @@ internal class GenerateFlow(
         val current = store.current.generate ?: return
         if (current.running || store.refuses(RightsKind.Post)) return
         val refusal = when {
-            current.scriptId.isBlank() -> "No script selected"
-            !current.readyToSubmit -> "Select at least one scene or page"
+            current.scriptId.isBlank() -> str(S.desktop_no_script_selected)
+            !current.readyToSubmit -> str(S.desktop_sides_select_scene_or_page)
             else -> null
         }
         if (refusal != null) return store.failed(refusal)
@@ -216,7 +218,7 @@ internal class GenerateFlow(
             when (val outcome = poller.run(onTick = { tick -> form { copy(result = tick) } })) {
                 is ZillitResult.Success -> {
                     form { copy(running = false, result = outcome.data.sides) }
-                    if (outcome.data.timedOut) store.failed("Still rendering — check Sides shortly")
+                    if (outcome.data.timedOut) store.failed(str(S.desktop_sides_still_rendering))
                 }
                 is ZillitResult.Failure -> {
                     form { copy(running = false, result = null) }
@@ -234,8 +236,8 @@ internal class GenerateFlow(
         val result = current.result ?: return
         form { copy(viewed = true) }
         pdf.open(
-            title = result.title.ifBlank { "Sides" },
-            subtitle = "Generated sides",
+            title = result.title.ifBlank { str(S.txt_sides) },
+            subtitle = str(S.desktop_sides_generated_subtitle),
             fileName = SidesRules.downloadName(result.title),
             info = current.selectionInfo,
         ) { store.repository.downloadUrl(result.id, countDownload = false) }
@@ -257,7 +259,7 @@ internal class GenerateFlow(
             when (val published = store.repository.publish(result.id)) {
                 is ZillitResult.Success -> {
                     store.update { copy(generate = null) }
-                    store.notice("Published to Sides")
+                    store.notice(str(S.desktop_sides_published))
                     onPublished()
                 }
                 is ZillitResult.Failure -> {

@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.continuity.domain.ContinuityAttachment
 import com.zillit.desktop.feature.continuity.domain.ContinuityScene
 
@@ -148,7 +150,7 @@ internal fun ScenePoster(
                 contentScale = if (fit) ContentScale.Fit else ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-            attachment == null -> PosterGlyph(ZillitIcons.Photo, "No file")
+            attachment == null -> PosterGlyph(ZillitIcons.Photo, str(S.desktop_no_file))
             attachment.hasPoster && !failed -> ZillitSkeletonBar(Modifier.fillMaxSize(), height = SKELETON_HEIGHT)
             else -> PosterGlyph(attachment)
         }
@@ -164,8 +166,8 @@ private fun PosterGlyph(attachment: ContinuityAttachment) = when {
         caption = attachment.name.ifBlank { attachment.contentSubtype.uppercase() },
         tag = attachment.contentSubtype.uppercase().ifBlank { "DOC" },
     )
-    attachment.isVideo -> PosterGlyph(ZillitIcons.Play, attachment.name.ifBlank { "Video" })
-    else -> PosterGlyph(ZillitIcons.Photo, attachment.name.ifBlank { "Image" })
+    attachment.isVideo -> PosterGlyph(ZillitIcons.Play, attachment.name.ifBlank { str(S.video) })
+    else -> PosterGlyph(ZillitIcons.Photo, attachment.name.ifBlank { str(S.image) })
 }
 
 /** A glyph on the sunken ground with the file's name under it. */
@@ -231,7 +233,8 @@ internal fun PlayBadge(modifier: Modifier = Modifier, size: Dp = PLAY_BADGE) {
 
 /** "Scene No - 12", with the episode when the production has them. */
 internal fun sceneTitle(scene: ContinuityScene): String =
-    "Scene No - ${scene.sceneNumber}" + if (scene.episode.isNotBlank()) "  ·  Ep ${scene.episode}" else ""
+    str(S.desktop_scene_no_value, scene.sceneNumber) +
+        if (scene.episode.isNotBlank()) "  ·  " + str(S.desktop_episode_abbrev_list, scene.episode) else ""
 
 internal fun formatBytes(bytes: Long): String = when {
     bytes >= MB -> "${bytes / MB} MB"

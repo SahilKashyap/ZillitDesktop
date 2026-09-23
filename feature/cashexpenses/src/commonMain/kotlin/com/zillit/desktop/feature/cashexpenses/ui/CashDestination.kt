@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 
@@ -17,43 +19,45 @@ import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
  */
 enum class CashDestination(
     val slug: String,
-    val label: String,
+    private val labelKey: String,
     val section: CashSection,
 ) {
     // -- petty cash, accounts ---------------------------------------------
-    PettyCashOverview("petty-cash/overview", "Overview", CashSection.PettyCashAccounts),
-    PostLedger("petty-cash/post", "Post & Ledger", CashSection.PettyCashAccounts),
-    ActiveFloats("petty-cash/floats", "Active Floats", CashSection.PettyCashAccounts),
-    TopUps("petty-cash/top-ups", "Top-Ups", CashSection.PettyCashAccounts),
-    CashReconciliation("petty-cash/cash-recon", "Cash Recon", CashSection.PettyCashAccounts),
+    PettyCashOverview("petty-cash/overview", S.ah_overview, CashSection.PettyCashAccounts),
+    PostLedger("petty-cash/post", S.desktop_ce_post_and_ledger, CashSection.PettyCashAccounts),
+    ActiveFloats("petty-cash/floats", S.desktop_ce_active_floats, CashSection.PettyCashAccounts),
+    TopUps("petty-cash/top-ups", S.ah_topups_tab, CashSection.PettyCashAccounts),
+    CashReconciliation("petty-cash/cash-recon", S.desktop_ce_cash_recon, CashSection.PettyCashAccounts),
 
     // -- petty cash, senior ------------------------------------------------
-    PettyCashSignOff("petty-cash/sign-off", "Sign-off", CashSection.PettyCashSenior),
+    PettyCashSignOff("petty-cash/sign-off", S.ah_step_approval_desc, CashSection.PettyCashSenior),
 
     // -- petty cash, crew --------------------------------------------------
-    FloatRequest("petty-cash/float-request", "Float Request", CashSection.PettyCashCrew),
-    SubmitReceipts("petty-cash/submit-claim", "Submit Receipts", CashSection.PettyCashCrew),
-    ReceiptsHistory("petty-cash/my-claims", "Receipts History", CashSection.PettyCashCrew),
-    CashExtension("petty-cash/cash-extension", "Cash Extension", CashSection.PettyCashCrew),
+    FloatRequest("petty-cash/float-request", S.ah_float_request, CashSection.PettyCashCrew),
+    SubmitReceipts("petty-cash/submit-claim", S.desktop_ce_submit_receipts, CashSection.PettyCashCrew),
+    ReceiptsHistory("petty-cash/my-claims", S.desktop_ce_receipts_history, CashSection.PettyCashCrew),
+    CashExtension("petty-cash/cash-extension", S.desktop_ce_cash_extension, CashSection.PettyCashCrew),
 
     // -- out of pocket -----------------------------------------------------
-    OutOfPocketOverview("out-of-pocket/overview", "Overview", CashSection.OutOfPocketAccounts),
-    OutOfPocketPost("out-of-pocket/post", "Post & Ledger", CashSection.OutOfPocketAccounts),
-    PaymentRouting("out-of-pocket/payment", "Payment Routing", CashSection.OutOfPocketAccounts),
-    OutOfPocketSignOff("out-of-pocket/sign-off", "Sign-off", CashSection.OutOfPocketSenior),
-    ClaimReview("out-of-pocket/review", "Claim Review", CashSection.OutOfPocketApprover),
-    OutOfPocketSubmit("out-of-pocket/submit", "Submit Receipts", CashSection.OutOfPocketCrew),
-    OutOfPocketHistory("out-of-pocket/history", "Receipts History", CashSection.OutOfPocketCrew),
+    OutOfPocketOverview("out-of-pocket/overview", S.ah_overview, CashSection.OutOfPocketAccounts),
+    OutOfPocketPost("out-of-pocket/post", S.desktop_ce_post_and_ledger, CashSection.OutOfPocketAccounts),
+    PaymentRouting("out-of-pocket/payment", S.desktop_ce_payment_routing, CashSection.OutOfPocketAccounts),
+    OutOfPocketSignOff("out-of-pocket/sign-off", S.ah_step_approval_desc, CashSection.OutOfPocketSenior),
+    ClaimReview("out-of-pocket/review", S.desktop_ce_claim_review, CashSection.OutOfPocketApprover),
+    OutOfPocketSubmit("out-of-pocket/submit", S.desktop_ce_submit_receipts, CashSection.OutOfPocketCrew),
+    OutOfPocketHistory("out-of-pocket/history", S.desktop_ce_receipts_history, CashSection.OutOfPocketCrew),
 
     // -- shared, reached from the top bar rather than a section ------------
-    CodingQueue("coding-queue", "Coding Queue", CashSection.Shared),
-    AuditQueue("audit-queue", "Audit Queue", CashSection.Shared),
-    ApprovalQueue("approval-queue", "Approval Queue", CashSection.Shared),
-    History("history", "History", CashSection.Shared),
-    Settings("settings", "Settings", CashSection.Shared),
-    DepartmentOverview("petty-cash/dept-view", "Dept Overview", CashSection.Shared),
-    MyOverview("petty-cash/my-overview", "My Overview", CashSection.Shared),
+    CodingQueue("coding-queue", S.ah_coding_queue, CashSection.Shared),
+    AuditQueue("audit-queue", S.desktop_ce_audit_queue, CashSection.Shared),
+    ApprovalQueue("approval-queue", S.ah_approval_queue, CashSection.Shared),
+    History("history", S.history, CashSection.Shared),
+    Settings("settings", S.settings, CashSection.Shared),
+    DepartmentOverview("petty-cash/dept-view", S.desktop_ce_dept_overview, CashSection.Shared),
+    MyOverview("petty-cash/my-overview", S.desktop_ce_my_overview, CashSection.Shared),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Which of the two pipelines this page belongs to, for the header. */
     val expenseType: ExpenseType
@@ -149,15 +153,18 @@ enum class CashDestination(
 }
 
 /** The group a page appears under in the sub-navigation. */
-enum class CashSection(val label: String, val isOutOfPocket: Boolean = false) {
-    PettyCashAccounts("Accounts"),
-    PettyCashSenior("Senior"),
-    PettyCashCrew("Crew"),
-    OutOfPocketAccounts("Accounts", isOutOfPocket = true),
-    OutOfPocketSenior("Senior", isOutOfPocket = true),
-    OutOfPocketApprover("Approver", isOutOfPocket = true),
-    OutOfPocketCrew("Crew", isOutOfPocket = true),
+enum class CashSection(private val labelKey: String, val isOutOfPocket: Boolean = false) {
+    PettyCashAccounts(S.accounts),
+    PettyCashSenior(S.desktop_senior),
+    PettyCashCrew(S.crew),
+    OutOfPocketAccounts(S.accounts, isOutOfPocket = true),
+    OutOfPocketSenior(S.desktop_senior, isOutOfPocket = true),
+    OutOfPocketApprover(S.desktop_approver, isOutOfPocket = true),
+    OutOfPocketCrew(S.crew, isOutOfPocket = true),
 
     /** Reached from the top bar, so it belongs to neither pipeline. */
-    Shared("Shared"),
+    Shared(S.history_shared),
+    ;
+
+    val label: String get() = str(labelKey)
 }

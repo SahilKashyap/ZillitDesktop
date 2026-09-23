@@ -46,12 +46,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CellKind
 import com.zillit.desktop.feature.callsheet.domain.PageCell
 import com.zillit.desktop.feature.callsheet.domain.SheetTime
 import com.zillit.desktop.feature.callsheet.domain.SheetPayload
 import com.zillit.desktop.feature.callsheet.domain.StockTemplate
-import com.zillit.desktop.feature.callsheet.domain.templateSectionTitles
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
@@ -78,7 +79,7 @@ internal fun TemplatePickerDialog(dialog: SheetDialog.TemplatePicker, onEvent: (
     val pickable = templates.indices.filter { it != createOwn }
     val chosen = templates.getOrNull(dialog.selected)
     SheetModal(
-        title = "Choose a Call Sheet Template",
+        title = str(S.desktop_cs_choose_template),
         onClose = { onEvent(DialogEvent.Dismiss) },
         modifier = Modifier.fillMaxHeight(PICKER_HEIGHT),
         width = 1080.dp,
@@ -88,17 +89,15 @@ internal fun TemplatePickerDialog(dialog: SheetDialog.TemplatePicker, onEvent: (
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.width(230.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Pick a starting layout. Every section stays editable after it opens.",
+                    str(S.desktop_template_picker_hint),
                     style = sheetText(12.sp, lineHeight = 17.sp),
                     color = colors.textTertiary,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
                 var lastTap by remember { mutableStateOf<Pair<Int, TimeSource.Monotonic.ValueTimeMark>?>(null) }
                 pickable.forEach { index ->
-                    val template = templates[index]
                     TemplateOption(
                         label = labelFor(templates, index),
-                        sections = templateSectionTitles(template.payload).size,
                         selected = index == dialog.selected,
                     ) {
                         val previous = lastTap
@@ -140,11 +139,11 @@ internal fun TemplatePickerDialog(dialog: SheetDialog.TemplatePicker, onEvent: (
                     if (chosen != null) {
                         TemplateMiniPreview(
                             chosen.payload,
-                            pageTitle = "CALL SHEET",
+                            pageTitle = str(S.desktop_call_sheet_upper),
                             Modifier.widthIn(max = 820.dp),
                         )
                     } else {
-                        Text("No template to preview.", style = sheetText(13.sp), color = colors.textMuted)
+                        Text(str(S.desktop_no_template_to_preview), style = sheetText(13.sp), color = colors.textMuted)
                     }
                 }
                 ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
@@ -155,14 +154,14 @@ internal fun TemplatePickerDialog(dialog: SheetDialog.TemplatePicker, onEvent: (
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
         ) {
             SheetButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.Dismiss) },
                 kind = ButtonKind.Outline,
                 fontSize = 12.sp,
                 horizontalPadding = 16.dp,
             )
             SheetButton(
-                "Use ${labelFor(templates, dialog.selected)}",
+                str(S.tpl_use_template_named, labelFor(templates, dialog.selected)),
                 { onEvent(DialogEvent.UseTemplate(dialog.selected)) },
                 kind = ButtonKind.Accent,
                 enabled = chosen != null,
@@ -177,10 +176,11 @@ private const val PICKER_HEIGHT = 0.92f
 private const val DOUBLE_TAP_MS = 400
 
 private fun labelFor(templates: List<StockTemplate>, index: Int): String =
-    templates.getOrNull(index)?.displayName?.ifBlank { null } ?: "Template ${index + 1}"
+    templates.getOrNull(index)?.displayName?.ifBlank { null } ?: str(S.tpl_template_n, index + 1)
 
+/** One layout to pick — its name only; the section count came off the web's picker (Sep 2026). */
 @Composable
-private fun TemplateOption(label: String, sections: Int, selected: Boolean, onClick: () -> Unit) {
+private fun TemplateOption(label: String, selected: Boolean, onClick: () -> Unit) {
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
     val border by animateColorAsState(
@@ -221,21 +221,14 @@ private fun TemplateOption(label: String, sections: Int, selected: Boolean, onCl
         ) {
             if (selected) Box(Modifier.size(5.dp).clip(CircleShape).background(Color.White))
         }
-        Column(Modifier.weight(1f)) {
-            Text(
-                label,
-                style = sheetText(13.sp, FontWeight.SemiBold, 16.sp),
-                color = colors.textPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                if (sections == 1) "1 section" else "$sections sections",
-                style = sheetText(10.sp, lineHeight = 13.sp),
-                color = colors.textMuted,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
+        Text(
+            label,
+            style = sheetText(13.sp, FontWeight.SemiBold, 16.sp),
+            color = colors.textPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -256,7 +249,7 @@ internal fun TemplateMiniPreview(payload: SheetPayload, pageTitle: String, modif
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (rows.isEmpty()) {
-            Text("This template has no sections yet.", style = sheetText(12.sp), color = Color(0xFF98A2B3))
+            Text(str(S.desktop_template_has_no_sections), style = sheetText(12.sp), color = Color(0xFF98A2B3))
             return@Column
         }
         if (pageTitle.isNotBlank()) {
@@ -309,7 +302,11 @@ private fun PageBreakLine() {
             .padding(top = 4.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Text("PAGE BREAK", style = sheetText(10.sp, FontWeight.Medium).copy(letterSpacing = 0.5.sp), color = dash)
+        Text(
+            str(S.desktop_page_break_upper),
+            style = sheetText(10.sp, FontWeight.Medium).copy(letterSpacing = 0.5.sp),
+            color = dash,
+        )
     }
 }
 

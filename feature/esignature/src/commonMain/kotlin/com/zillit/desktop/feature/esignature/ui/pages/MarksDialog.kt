@@ -18,6 +18,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSegmented
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.ui.EsignEvent
 import com.zillit.desktop.feature.esignature.ui.EsignUiState
 import com.zillit.desktop.feature.esignature.ui.PadMode
@@ -34,8 +36,8 @@ internal fun MarksDialog(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
     val marks = state.marks
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "My saved signatures",
-        subtitle = "Save signatures and initials to reuse when signing documents.",
+        title = str(S.docusign_my_saved_signatures),
+        subtitle = str(S.desktop_ds_save_signatures_and_initials_to_reuse_when_signing),
         visible = marks.open,
         onDismiss = { onEvent(EsignEvent.CloseMarks) },
         scrollable = false,
@@ -43,14 +45,18 @@ internal fun MarksDialog(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
         width = 600.dp,
         actions = {
             ZillitButton(
-                "Close",
+                str(S.close),
                 onClick = { onEvent(EsignEvent.CloseMarks) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             if (marks.pad.mode != PadMode.Saved) {
                 ZillitButton(
-                    if (marks.forSignature) "Save signature" else "Save initials",
+                    if (marks.forSignature) {
+                        str(S.docusign_saved_sig_save_signature_title)
+                    } else {
+                        str(S.docusign_saved_sig_save_initial_title)
+                    },
                     onClick = { onEvent(EsignEvent.SaveMark) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Save,
@@ -71,9 +77,9 @@ internal fun MarksDialog(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
             )
             ZillitText(
                 if (marks.forSignature) {
-                    "The signature stamped wherever a document asks you to sign."
+                    str(S.desktop_ds_the_signature_stamped_wherever_a_document_asks_you)
                 } else {
-                    "The initials stamped on every page that asks for them."
+                    str(S.desktop_ds_the_initials_stamped_on_every_page_that_asks)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
@@ -98,9 +104,9 @@ internal fun MarksDialog(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
     }
     ConfirmDialog(
         visible = marks.confirmDeleteId != null,
-        title = "Delete this saved mark?",
-        body = "Envelopes already signed with it keep their copy; new ones will need another.",
-        confirmLabel = "Delete",
+        title = str(S.desktop_ds_delete_this_saved_mark),
+        body = str(S.desktop_ds_envelopes_already_signed_with_it_keep_their_copy),
+        confirmLabel = str(S.delete),
         onConfirm = { onEvent(EsignEvent.ConfirmDeleteMark) },
         onDismiss = { onEvent(EsignEvent.AskDeleteMark(null)) },
     )

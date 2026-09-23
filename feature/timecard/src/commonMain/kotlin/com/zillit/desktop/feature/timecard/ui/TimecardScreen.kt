@@ -52,6 +52,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.timecard.domain.AllowanceType
 import com.zillit.desktop.feature.timecard.domain.DayType
 import com.zillit.desktop.feature.timecard.domain.LocalWeek
@@ -85,12 +87,12 @@ fun TimecardScreen(
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
                 ZillitPageHeader(
-                    eyebrow = "Payroll",
-                    title = "Timecards",
-                    description = "File your week, approve your department's, and hand them to payroll.",
+                    eyebrow = str(S.dm_step9_title),
+                    title = str(S.desktop_timecards),
+                    description = str(S.desktop_timecard_header_blurb),
                     actions = {
                         ZillitButton(
-                            text = "Refresh",
+                            text = str(S.refresh_text),
                             onClick = { onEvent(TimecardEvent.Refresh) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -149,32 +151,32 @@ private fun TimecardListPage(state: TimecardUiState, onEvent: (TimecardEvent) ->
         if (state.destination == TimecardDestination.Processing) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
                 ZillitStatTile(
-                    label = "Weeks in hand",
+                    label = str(S.desktop_timecard_weeks_in_hand),
                     value = rows.size.toString(),
-                    sub = "This processing week",
+                    sub = str(S.desktop_timecard_this_processing_week),
                     icon = ZillitIcons.Clock,
                     modifier = Modifier.weight(1f),
                 )
                 ZillitStatTile(
-                    label = "Ready to pay",
+                    label = str(S.desktop_timecard_ready_to_pay),
                     value = rows.count { it.status.isPayable }.toString(),
-                    sub = "Final approved or locked",
+                    sub = str(S.desktop_timecard_final_approved_or_locked),
                     tone = StatusTone.Ready,
                     icon = ZillitIcons.Shield,
                     modifier = Modifier.weight(1f),
                 )
                 ZillitStatTile(
-                    label = "Value",
+                    label = str(S.ah_addl_value_hint),
                     value = state.totalsByCurrency.entries.firstOrNull()
                         ?.let { Money.format(it.value, it.key) } ?: "—",
-                    sub = "Net across these weeks",
+                    sub = str(S.desktop_timecard_net_across_weeks),
                     icon = ZillitIcons.Ledger,
                     modifier = Modifier.weight(1f),
                 )
                 ZillitStatTile(
-                    label = "Paid",
+                    label = str(S.desktop_paid),
                     value = rows.count { it.status.isPaid }.toString(),
-                    sub = "Already settled",
+                    sub = str(S.desktop_timecard_already_settled),
                     tone = StatusTone.Done,
                     icon = ZillitIcons.Wallet,
                     modifier = Modifier.weight(1f),
@@ -190,26 +192,29 @@ private fun TimecardListPage(state: TimecardUiState, onEvent: (TimecardEvent) ->
             ZillitSearchField(
                 value = state.search,
                 onValueChange = { onEvent(TimecardEvent.Search(it)) },
-                placeholder = "Search by crew member or week",
+                placeholder = str(S.desktop_timecard_search_placeholder),
                 modifier = Modifier.width(SEARCH_WIDTH),
             )
             ZillitText(
-                text = "${rows.size} week${if (rows.size == 1) "" else "s"}",
+                text = if (rows.size == 1) str(S.desktop_week_count_one, rows.size) else str(
+                    S.desktop_week_count_other,
+                    rows.size,
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
             if (batchable && state.selection.isNotEmpty()) {
                 ZillitButton(
-                    text = "Approve ${state.selection.size}",
+                    text = str(S.desktop_approve_count, state.selection.size),
                     onClick = {
                         onEvent(
                             TimecardEvent.Ask(
                                 TimecardPrompt.Confirm(
                                     TimecardConfirmAction.ApproveSelected,
                                     "",
-                                    "Approve ${state.selection.size} timecard(s)",
-                                    "They move on to the next stage together.",
+                                    str(S.desktop_timecard_approve_selected_title, state.selection.size),
+                                    str(S.desktop_timecard_approve_selected_message),
                                 ),
                             ),
                         )
@@ -219,15 +224,15 @@ private fun TimecardListPage(state: TimecardUiState, onEvent: (TimecardEvent) ->
                 )
                 if (state.viewer.isFinalApprover) {
                     ZillitButton(
-                        text = "Lock ${state.selection.size}",
+                        text = str(S.desktop_lock_count, state.selection.size),
                         onClick = {
                             onEvent(
                                 TimecardEvent.Ask(
                                     TimecardPrompt.Confirm(
                                         TimecardConfirmAction.LockSelected,
                                         "",
-                                        "Lock ${state.selection.size} timecard(s)",
-                                        "Locked weeks cannot change under a payroll run.",
+                                        str(S.desktop_timecard_lock_selected_title, state.selection.size),
+                                        str(S.desktop_timecard_lock_selected_message),
                                     ),
                                 ),
                             )
@@ -238,7 +243,7 @@ private fun TimecardListPage(state: TimecardUiState, onEvent: (TimecardEvent) ->
                     )
                 }
                 ZillitButton(
-                    text = "Clear",
+                    text = str(S.ah_clear),
                     onClick = { onEvent(TimecardEvent.ClearSelection) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -246,7 +251,7 @@ private fun TimecardListPage(state: TimecardUiState, onEvent: (TimecardEvent) ->
             }
             if (state.destination == TimecardDestination.MyWeeks) {
                 ZillitButton(
-                    text = "Fill in this week",
+                    text = str(S.desktop_timecard_fill_in_this_week),
                     onClick = { onEvent(TimecardEvent.Open(TimecardDestination.Edit)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Edit,
@@ -271,26 +276,30 @@ private fun TimecardListPage(state: TimecardUiState, onEvent: (TimecardEvent) ->
                     loading = state.loading,
                     onRowClick = { onEvent(TimecardEvent.Select(it.id)) },
                     isSelected = { it.id == state.selectedId },
-                    emptyTitle = if (state.search.isBlank()) "Nothing here" else "Nothing matches that search",
+                    emptyTitle = if (state.search.isBlank()) {
+                        str(S.desktop_nothing_here)
+                    } else {
+                        str(S.dm_nda_empty_search)
+                    },
                     emptyMessage = when (state.destination) {
-                        TimecardDestination.ApprovalQueue -> "Weeks submitted by your department appear here."
-                        TimecardDestination.Outstanding -> "Everyone has filed. Nothing to chase."
-                        TimecardDestination.MyWeeks -> "Fill in this week to get started."
-                        else -> "Weeks payroll is processing appear here."
+                        TimecardDestination.ApprovalQueue -> str(S.desktop_timecard_empty_approval)
+                        TimecardDestination.Outstanding -> str(S.desktop_timecard_empty_outstanding)
+                        TimecardDestination.MyWeeks -> str(S.desktop_timecard_empty_my_weeks)
+                        else -> str(S.desktop_timecard_empty_processing)
                     },
                 )
             }
 
             ZillitSectionCard(
-                title = "Week detail",
+                title = str(S.desktop_timecard_week_detail),
                 icon = ZillitIcons.Eye,
                 padded = false,
                 modifier = Modifier.weight(DETAIL_WEIGHT).fillMaxHeight(),
             ) {
                 if (selected == null) {
                     ZillitEmptyState(
-                        title = "Pick a week",
-                        message = "Its days, pay and history show here.",
+                        title = str(S.desktop_timecard_pick_a_week),
+                        message = str(S.desktop_timecard_pick_a_week_message),
                         icon = ZillitIcons.Eye,
                     )
                 } else {
@@ -313,7 +322,7 @@ private fun TimecardDetail(state: TimecardUiState, card: Timecard, onEvent: (Tim
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(text = card.crewName.ifBlank { card.userId }, style = ZillitTheme.typography.titleMedium)
                 ZillitText(
-                    text = "Week of ${EpochDate.date(card.weekStarting).ifEmpty { "—" }}" +
+                    text = str(S.desktop_sa_week_of, EpochDate.date(card.weekStarting).ifEmpty { "—" }) +
                         (card.designation?.let { " · ${it.localised()}" } ?: ""),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
@@ -326,25 +335,29 @@ private fun TimecardDetail(state: TimecardUiState, card: Timecard, onEvent: (Tim
 
         ZillitText(text = Money.format(card.net, card.currency), style = ZillitTheme.typography.displayLarge)
         ZillitText(
-            text = "${card.workedHours} hours over ${card.days.count { it.dayType.isPaidWork }} paid day(s)",
+            text = str(S.desktop_timecard_hours_over_days, card.workedHours, card.days.count { it.dayType.isPaidWork }),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
 
         card.queryNote?.takeIf { it.isNotBlank() }?.let {
-            ZillitNotice(text = "Queried: $it", tone = StatusTone.Pending, icon = ZillitIcons.Warning)
+            ZillitNotice(text = str(S.desktop_queried_value, it), tone = StatusTone.Pending, icon = ZillitIcons.Warning)
         }
         card.rejectionReason?.takeIf { it.isNotBlank() }?.let {
-            ZillitNotice(text = "Rejected: $it", tone = StatusTone.Rejected, icon = ZillitIcons.Warning)
+            ZillitNotice(
+                text = str(S.desktop_rejected_value, it),
+                tone = StatusTone.Rejected,
+                icon = ZillitIcons.Warning,
+            )
         }
 
         ZillitDivider()
-        PayLine("Basic", Money.format(card.basicPay, card.currency))
-        PayLine("Overtime", Money.format(card.overtimePay, card.currency))
-        PayLine("Allowances", Money.format(card.totalAllowances, card.currency))
-        PayLine("Additional fees", Money.format(card.additionalFees, card.currency))
+        PayLine(str(S.desktop_payroll_basic), Money.format(card.basicPay, card.currency))
+        PayLine(str(S.overtime), Money.format(card.overtimePay, card.currency))
+        PayLine(str(S.allowances_label), Money.format(card.totalAllowances, card.currency))
+        PayLine(str(S.desktop_additional_fees), Money.format(card.additionalFees, card.currency))
         if (card.deductions.isNotEmpty()) {
-            PayLine("Deductions", "-${Money.format(card.deductionTotal, card.currency)}")
+            PayLine(str(S.desktop_deductions), "-${Money.format(card.deductionTotal, card.currency)}")
             card.deductions.forEach { deduction ->
                 ZillitText(
                     text = "· ${deduction.label} ${Money.format(deduction.amount, card.currency)}",
@@ -356,7 +369,7 @@ private fun TimecardDetail(state: TimecardUiState, card: Timecard, onEvent: (Tim
 
         if (card.days.isNotEmpty()) {
             ZillitDivider()
-            ZillitText(text = "Days", style = ZillitTheme.typography.titleSmall)
+            ZillitText(text = str(S.dm_ds_unit_days), style = ZillitTheme.typography.titleSmall)
             card.days.forEach { day -> DayRow(day) }
         }
 
@@ -424,45 +437,48 @@ private fun TimecardActions(state: TimecardUiState, card: Timecard, onEvent: (Ti
         // ownership rides the route they came from, not an id comparison.
         if ((card.ownedByViewer || card.userId == state.viewer.userId) && card.isEditable) {
             add(
-                Triple("Submit", ButtonVariant.Primary) {
+                Triple(str(S.submit), ButtonVariant.Primary) {
                     TimecardPrompt.Confirm(
                         TimecardConfirmAction.Submit,
                         card.id,
-                        "Submit this week",
-                        "It goes to your head of department to approve.",
+                        str(S.desktop_timecard_submit_this_week),
+                        str(S.desktop_timecard_submit_message),
                     ) as TimecardPrompt
                 },
             )
         }
         if (state.destination == TimecardDestination.ApprovalQueue && state.viewer.isApprover) {
             add(
-                Triple("Approve", ButtonVariant.Primary) {
+                Triple(str(S.approve), ButtonVariant.Primary) {
                     TimecardPrompt.Confirm(
                         TimecardConfirmAction.Approve,
                         card.id,
-                        "Approve this week",
-                        "${Money.format(card.net, card.currency)} for " +
-                            "${card.crewName.ifBlank { "this crew member" }}.",
+                        str(S.desktop_timecard_approve_this_week),
+                        str(
+                            S.desktop_timecard_approve_message,
+                            Money.format(card.net, card.currency),
+                            card.crewName.ifBlank { str(S.desktop_this_crew_member) },
+                        ),
                     ) as TimecardPrompt
                 },
             )
             add(
-                Triple("Query", ButtonVariant.Secondary) {
+                Triple(str(S.ah_cd_query), ButtonVariant.Secondary) {
                     TimecardPrompt.WithReason(
                         TimecardReasonAction.Query,
                         card.id,
-                        "Query this week",
-                        "What needs correcting",
+                        str(S.desktop_timecard_query_this_week),
+                        str(S.desktop_timecard_query_label),
                     ) as TimecardPrompt
                 },
             )
             add(
-                Triple("Reject", ButtonVariant.Danger) {
+                Triple(str(S.reject), ButtonVariant.Danger) {
                     TimecardPrompt.WithReason(
                         TimecardReasonAction.Reject,
                         card.id,
-                        "Reject this week",
-                        "Why it is being refused",
+                        str(S.desktop_timecard_reject_this_week),
+                        str(S.desktop_timecard_reject_label),
                     ) as TimecardPrompt
                 },
             )
@@ -470,30 +486,30 @@ private fun TimecardActions(state: TimecardUiState, card: Timecard, onEvent: (Ti
         if (state.viewer.isFinalApprover) {
             if (card.status == TimecardStatus.Approved) {
                 add(
-                    Triple("Final approve", ButtonVariant.Primary) {
+                    Triple(str(S.desktop_final_approve), ButtonVariant.Primary) {
                         TimecardPrompt.Confirm(
                             TimecardConfirmAction.FinalApprove,
                             card.id,
-                            "Final approve this week",
-                            "It becomes available to a payroll run.",
+                            str(S.desktop_timecard_final_approve_this_week),
+                            str(S.desktop_timecard_final_approve_message),
                         ) as TimecardPrompt
                     },
                 )
             }
             if (card.status.isPayable && !card.locked) {
                 add(
-                    Triple("Lock", ButtonVariant.Secondary) {
+                    Triple(str(S.desktop_lock), ButtonVariant.Secondary) {
                         TimecardPrompt.Confirm(
                             TimecardConfirmAction.Lock,
                             card.id,
-                            "Lock this week",
-                            "Nothing can change on it while a run is being prepared.",
+                            str(S.desktop_timecard_lock_this_week),
+                            str(S.desktop_timecard_lock_message),
                         ) as TimecardPrompt
                     },
                 )
             }
             add(
-                Triple("Add deduction", ButtonVariant.Tertiary) {
+                Triple(str(S.desktop_add_deduction), ButtonVariant.Tertiary) {
                     TimecardPrompt.Deduct(card.id) as TimecardPrompt
                 },
             )
@@ -502,7 +518,7 @@ private fun TimecardActions(state: TimecardUiState, card: Timecard, onEvent: (Ti
 
     if (actions.isEmpty()) {
         ZillitText(
-            text = "Nothing to do on this week from here.",
+            text = str(S.desktop_timecard_nothing_to_do),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -534,11 +550,11 @@ private fun WeekEditor(state: TimecardUiState, onEvent: (TimecardEvent) -> Unit)
     if (draft == null) {
         Column(modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.xl)) {
             ZillitEmptyState(
-                title = "No week open",
-                message = "Pick a week from My Timecards, or start this one.",
+                title = str(S.desktop_timecard_no_week_open),
+                message = str(S.desktop_timecard_no_week_open_message),
                 action = {
                     ZillitButton(
-                        text = "Start this week",
+                        text = str(S.desktop_timecard_start_this_week),
                         onClick = { onEvent(TimecardEvent.LoadDraft(null)) },
                         size = ButtonSize.Small,
                     )
@@ -554,11 +570,14 @@ private fun WeekEditor(state: TimecardUiState, onEvent: (TimecardEvent) -> Unit)
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         ZillitSectionCard(
-            title = "Week of ${EpochDate.date(draft.weekStarting).ifEmpty { "—" }}",
+            title = str(S.desktop_sa_week_of, EpochDate.date(draft.weekStarting).ifEmpty { "—" }),
             icon = ZillitIcons.Clock,
-            meta = "${draft.workedHours} hours" +
+            meta = str(S.duration_hours, draft.workedHours) +
                 if (draft.allowanceTotal > 0) {
-                    " · ${Money.format(draft.allowanceTotal, state.selected?.currency)} allowances"
+                    " · " + str(
+                        S.desktop_allowances_value,
+                        Money.format(draft.allowanceTotal, state.selected?.currency),
+                    )
                 } else {
                     ""
                 },
@@ -579,25 +598,28 @@ private fun WeekEditor(state: TimecardUiState, onEvent: (TimecardEvent) -> Unit)
             }
         }
 
-        ZillitSectionCard(title = "Anything else", icon = ZillitIcons.Info) {
+        ZillitSectionCard(title = str(S.desktop_anything_else), icon = ZillitIcons.Info) {
             ZillitTextField(
                 value = draft.notes,
                 onValueChange = { onEvent(TimecardEvent.EditNotes(it)) },
-                label = "Note for your approver (optional)",
+                label = str(S.desktop_timecard_note_for_approver),
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.padding(ZillitTheme.spacing.xs))
             if (state.offline) {
                 ZillitNotice(
-                    text = "You're offline. The week will be saved on this computer and sent automatically " +
-                        "when you're back — you'll see it under My Timecards as \"Waiting to send\".",
+                    text = str(S.desktop_timecard_offline_save_notice),
                     tone = StatusTone.InTransit,
                     icon = ZillitIcons.Info,
                 )
             }
             ZillitButton(
-                text = if (state.offline) "Save and send when online" else "Save this week",
+                text = if (state.offline) {
+                    str(S.desktop_save_and_send_when_online)
+                } else {
+                    str(S.desktop_timecard_save_this_week)
+                },
                 onClick = { onEvent(TimecardEvent.SaveDraft) },
                 leadingIcon = ZillitIcons.Check,
                 loading = state.busy,
@@ -614,7 +636,7 @@ private fun DayEditorRow(index: Int, day: TimecardDay, onChange: (TimecardDay) -
         verticalAlignment = Alignment.Bottom,
     ) {
         ZillitText(
-            text = EpochDate.date(day.date).ifEmpty { "Day ${index + 1}" },
+            text = EpochDate.date(day.date).ifEmpty { str(S.desktop_ad_day_number, index + 1) },
             style = ZillitTheme.typography.bodyMedium,
             modifier = Modifier.width(DATE_WIDTH),
             maxLines = 1,
@@ -622,7 +644,7 @@ private fun DayEditorRow(index: Int, day: TimecardDay, onChange: (TimecardDay) -
         Column(modifier = Modifier.weight(1f)) {
             if (index == 0) {
                 ZillitText(
-                    text = "Day type",
+                    text = str(S.dm_rule_day_type),
                     style = ZillitTheme.typography.label,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -638,7 +660,7 @@ private fun DayEditorRow(index: Int, day: TimecardDay, onChange: (TimecardDay) -
         ZillitTextField(
             value = day.callTime.orEmpty(),
             onValueChange = { onChange(day.copy(callTime = it.takeIf(String::isNotBlank))) },
-            label = if (index == 0) "Call" else null,
+            label = if (index == 0) str(S.call) else null,
             placeholder = "07:00",
             // Times are only meaningful on a day that was worked; leaving them
             // enabled on a rest day invites entries nobody will pay.
@@ -648,7 +670,7 @@ private fun DayEditorRow(index: Int, day: TimecardDay, onChange: (TimecardDay) -
         ZillitTextField(
             value = day.wrapTime.orEmpty(),
             onValueChange = { onChange(day.copy(wrapTime = it.takeIf(String::isNotBlank))) },
-            label = if (index == 0) "Wrap" else null,
+            label = if (index == 0) str(S.dm_ds_phase_wrap) else null,
             placeholder = "19:00",
             enabled = day.dayType.isPaidWork,
             modifier = Modifier.weight(SMALL_FIELD),
@@ -656,7 +678,7 @@ private fun DayEditorRow(index: Int, day: TimecardDay, onChange: (TimecardDay) -
         ZillitTextField(
             value = if (day.workedHours == 0.0) "" else day.workedHours.toString(),
             onValueChange = { onChange(day.copy(workedHours = it.trim().toDoubleOrNull() ?: 0.0)) },
-            label = if (index == 0) "Hours" else null,
+            label = if (index == 0) str(S.dm_ds_unit_hours) else null,
             keyboardType = KeyboardType.Decimal,
             enabled = day.dayType.isPaidWork,
             modifier = Modifier.weight(SMALL_FIELD),
@@ -775,7 +797,7 @@ private fun TimecardPromptDialog(prompt: TimecardPrompt?, onEvent: (TimecardEven
         title = when (shown) {
             is TimecardPrompt.Confirm -> shown.title
             is TimecardPrompt.WithReason -> shown.title
-            is TimecardPrompt.Deduct -> "Add a deduction"
+            is TimecardPrompt.Deduct -> str(S.desktop_add_a_deduction)
             null -> ""
         },
         icon = ZillitIcons.Info,
@@ -801,13 +823,13 @@ private fun TimecardPromptDialog(prompt: TimecardPrompt?, onEvent: (TimecardEven
                 ZillitTextField(
                     value = shown.label,
                     onValueChange = { onEvent(TimecardEvent.UpdatePrompt(shown.copy(label = it))) },
-                    label = "What is being deducted",
+                    label = str(S.desktop_timecard_what_is_deducted),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ZillitTextField(
                     value = shown.amount,
                     onValueChange = { onEvent(TimecardEvent.UpdatePrompt(shown.copy(amount = it))) },
-                    label = "Amount",
+                    label = str(S.amount),
                     placeholder = "0.00",
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.fillMaxWidth(),
@@ -817,7 +839,7 @@ private fun TimecardPromptDialog(prompt: TimecardPrompt?, onEvent: (TimecardEven
                 ZillitTextField(
                     value = shown.nominalCode,
                     onValueChange = { onEvent(TimecardEvent.UpdatePrompt(shown.copy(nominalCode = it))) },
-                    label = "Nominal code (optional)",
+                    label = str(S.desktop_nominal_code_optional),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -830,12 +852,12 @@ private fun TimecardPromptDialog(prompt: TimecardPrompt?, onEvent: (TimecardEven
         ) {
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(TimecardEvent.DismissPrompt) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Confirm",
+                text = str(S.confirm),
                 onClick = { onEvent(TimecardEvent.ConfirmPrompt) },
                 variant = if (shown.isDestructive()) ButtonVariant.Danger else ButtonVariant.Primary,
             )
@@ -884,14 +906,26 @@ private fun timecardColumns(
             ),
         )
     }
-    add(textColumn("Crew", ColumnWidth.Weight(1.4f)) { it.crewName.ifBlank { it.userId } })
-    add(textColumn("Week", ColumnWidth.Weight(1.1f), muted = true) { EpochDate.date(it.weekStarting).ifEmpty { "—" } })
-    add(textColumn("Days", ColumnWidth.Fixed(NUMBER_COLUMN), numeric = true) { it.totalDays.toString() })
-    add(textColumn("Hours", ColumnWidth.Fixed(NUMBER_COLUMN), numeric = true) { it.workedHours.toString() })
-    add(textColumn("Net", ColumnWidth.Weight(1f), numeric = true) { Money.format(it.net, it.currency) })
+    add(textColumn(str(S.crew), ColumnWidth.Weight(1.4f)) { it.crewName.ifBlank { it.userId } })
+    add(
+        textColumn(str(S.weekly), ColumnWidth.Weight(1.1f), muted = true) {
+            EpochDate.date(it.weekStarting).ifEmpty { "—" }
+        },
+    )
+    add(
+        textColumn(str(S.dm_ds_unit_days), ColumnWidth.Fixed(NUMBER_COLUMN), numeric = true) {
+            it.totalDays.toString()
+        },
+    )
+    add(
+        textColumn(str(S.dm_ds_unit_hours), ColumnWidth.Fixed(NUMBER_COLUMN), numeric = true) {
+            it.workedHours.toString()
+        },
+    )
+    add(textColumn(str(S.desktop_net), ColumnWidth.Weight(1f), numeric = true) { Money.format(it.net, it.currency) })
     add(
         TableColumn(
-            header = "Status",
+            header = str(S.status),
             width = ColumnWidth.Fixed(STATUS_COLUMN),
             cell = { WeekStatusPill(it) },
         ),
@@ -907,9 +941,13 @@ private fun WeekStatusPill(card: Timecard) {
     val local = card.local
     when {
         local == null -> ZillitStatusPill(card.status.label, tone = card.status.tone, dot = true)
-        local.failed -> ZillitStatusPill("Not sent", tone = StatusTone.Rejected, dot = true)
-        local.submitQueued -> ZillitStatusPill("Submitting when online", tone = StatusTone.InTransit, dot = true)
-        else -> ZillitStatusPill("Waiting to send", tone = StatusTone.InTransit, dot = true)
+        local.failed -> ZillitStatusPill(str(S.dm_nda_status_not_sent), tone = StatusTone.Rejected, dot = true)
+        local.submitQueued -> ZillitStatusPill(
+            str(S.desktop_submitting_when_online),
+            tone = StatusTone.InTransit,
+            dot = true,
+        )
+        else -> ZillitStatusPill(str(S.desktop_waiting_to_send), tone = StatusTone.InTransit, dot = true)
     }
 }
 
@@ -921,14 +959,9 @@ private fun LocalWeekNotice(local: LocalWeek) {
     ZillitNotice(
         text = when {
             local.failed ->
-                "This week could not be sent: ${local.error ?: "the server refused it"}. " +
-                    "Retry or discard it from Pending changes in the status bar."
-            local.submitQueued ->
-                "This week is saved on this computer and will be sent, then submitted, " +
-                    "as soon as you're back online."
-            else ->
-                "This week is saved on this computer and will be sent to the server " +
-                    "as soon as you're back online."
+                str(S.desktop_timecard_local_failed, local.error ?: str(S.desktop_the_server_refused_it))
+            local.submitQueued -> str(S.desktop_timecard_local_submit_queued)
+            else -> str(S.desktop_timecard_local_saved)
         },
         tone = if (local.failed) StatusTone.Rejected else StatusTone.InTransit,
         icon = ZillitIcons.Info,
@@ -943,8 +976,7 @@ private fun LocalWeekNotice(local: LocalWeek) {
 private fun OfflineBanner(state: TimecardUiState) {
     val since = state.staleSince ?: return
     ZillitNotice(
-        text = "You're offline — showing timecards saved ${EpochDate.dateTime(since)}. " +
-            "They'll refresh when the connection is back.",
+        text = str(S.desktop_timecard_offline_banner, EpochDate.dateTime(since)),
         tone = StatusTone.Pending,
         icon = ZillitIcons.Info,
         modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),

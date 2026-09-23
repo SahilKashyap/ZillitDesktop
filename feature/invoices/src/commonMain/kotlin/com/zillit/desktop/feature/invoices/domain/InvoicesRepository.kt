@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.invoices.domain
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -28,9 +30,13 @@ data class InvoiceQuery(
 }
 
 /** PDF or Excel, as the web's export menu offers. */
-enum class InvoiceExportFormat(val wire: String, val label: String, val extension: String) {
-    Pdf("pdf", "Export PDF", "pdf"),
-    Excel("xlsx", "Export Excel", "xlsx"),
+enum class InvoiceExportFormat(val wire: String, private val labelKey: String, val extension: String) {
+    Pdf("pdf", S.recce_export_pdf, "pdf"),
+    Excel("xlsx", S.desktop_dm_export_excel, "xlsx"),
+    ;
+
+    val label: String get() = str(labelKey)
+
 }
 
 /** What can be exported as a file — the web's two export menus. */

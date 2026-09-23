@@ -40,6 +40,10 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.AppLanguage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.Strings
+import com.zillit.desktop.core.strings.str
 
 /**
  * Application settings.
@@ -76,9 +80,9 @@ fun SettingsScreen(
                             .background(ZillitTheme.colors.accent),
                     )
                     Column {
-                        ZillitText(text = "Settings", style = ZillitTheme.typography.displayLarge)
+                        ZillitText(text = str(S.settings), style = ZillitTheme.typography.displayLarge)
                         ZillitText(
-                            text = "How this computer runs Zillit.",
+                            text = str(S.desktop_settings_page_subtitle),
                             style = ZillitTheme.typography.bodyMedium,
                             color = ZillitTheme.colors.textMuted,
                         )
@@ -110,7 +114,7 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
     // Sign out must survive a profile that failed to load — the card shows
     // what it knows, even when that is only "someone is signed in here".
     val displayName = account.fullName.ifBlank {
-        account.email.ifBlank { "Signed in on this device" }
+        account.email.ifBlank { str(S.desktop_signed_in_on_this_device) }
     }
 
     Row(
@@ -136,13 +140,13 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
                     text = displayName,
                     style = ZillitTheme.typography.titleSmall,
                 )
-                if (account.isAdmin) ZillitTag("Admin", tone = TagTone.Accent)
+                if (account.isAdmin) ZillitTag(str(S.admin), tone = TagTone.Accent)
             }
             val detail = listOfNotNull(
                 account.email.takeIf { it.isNotBlank() && it != displayName },
                 account.productionName.takeIf { it.isNotBlank() },
             ).joinToString(" · ")
-                .ifBlank { "Signing out removes the mail and project data stored here." }
+                .ifBlank { str(S.desktop_sign_out_removes_local_data) }
             ZillitText(
                 text = detail,
                 style = ZillitTheme.typography.bodySmall,
@@ -150,7 +154,7 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
             )
         }
         ZillitButton(
-            text = "Sign out",
+            text = str(S.desktop_sign_out),
             variant = ButtonVariant.Danger,
             size = ButtonSize.Small,
             onClick = { onEvent(SettingsEvent.AskSignOut) },
@@ -182,10 +186,10 @@ private fun Destinations(onEvent: (SettingsEvent) -> Unit) {
 
 @Composable
 private fun AppearanceSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section("Appearance", ZillitIcons.Sun) {
+    Section(str(S.dd_watermark_appearance), ZillitIcons.Sun) {
         SettingRow(
-            title = "Theme",
-            detail = "Follows the system unless you choose otherwise.",
+            title = str(S.theme_mode),
+            detail = str(S.desktop_theme_detail),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ThemeMode.entries.forEach { mode ->
@@ -198,12 +202,13 @@ private fun AppearanceSection(state: SettingsUiState, onEvent: (SettingsEvent) -
             }
         }
 
+        LanguageRow(state.language) { onEvent(SettingsEvent.LanguageChanged(it)) }
+
         SettingRow(
-            title = "Interface size",
+            title = str(S.desktop_interface_size),
             // Says what it affects. "Scale" alone reads as a display setting
             // and people expect it to change their monitor resolution.
-            detail = "Makes text and controls throughout the app larger or smaller. " +
-                "Takes effect immediately.",
+            detail = str(S.desktop_interface_size_detail),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -229,7 +234,7 @@ private fun AppearanceSection(state: SettingsUiState, onEvent: (SettingsEvent) -
                 )
                 if (state.uiScalePercent != SettingsUiState.DEFAULT_SCALE) {
                     ZillitButton(
-                        text = "Reset",
+                        text = str(S.reset),
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
                         onClick = { onEvent(SettingsEvent.ScaleReset) },
@@ -252,13 +257,12 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
     val unit = state.unit
     if (!unit.isOfferable) return
 
-    Section("Project", ZillitIcons.Tools) {
+    Section(str(S.dm_step2_external_off), ZillitIcons.Tools) {
         SettingRow(
-            title = "Your unit",
+            title = str(S.desktop_your_unit),
             // Says what it changes. "Unit" alone is a word this industry uses
             // for four different things.
-            detail = "Which unit's call sheets and notices you receive. " +
-                "Change it if you move between units on this project.",
+            detail = str(S.desktop_your_unit_detail),
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 ZillitSelect(
@@ -266,7 +270,7 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
                     options = unit.options,
                     onSelect = { chosen -> chosen?.let { onEvent(SettingsEvent.UnitChanged(it.id)) } },
                     // `unit_name` is a translation key — `main_unit_label`.
-                    label = { it?.name?.localised() ?: "Not set" },
+                    label = { it?.name?.localised() ?: str(S.dm_gpr_not_set) },
                     enabled = unit.canChange,
                     // Fixed, or the select fills the row and crushes the
                     // title column to a letter a line — the calendar toolbar
@@ -290,35 +294,31 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
 /** What Zillit does on this computer when its window is not in front, or not open at all. */
 @Composable
 private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section("Desktop", ZillitIcons.Monitor) {
+    Section(str(S.desktop_section_desktop), ZillitIcons.Monitor) {
         NotifyToggle(
-            title = "Incoming call card",
-            detail = "A small card with Accept and Decline floats over whatever you are " +
-                "doing when a call rings and Zillit's window is not in front.",
+            title = str(S.desktop_incoming_call_card),
+            detail = str(S.desktop_incoming_call_card_detail),
             on = state.callWidget,
             onChange = { onEvent(SettingsEvent.CallWidgetChanged(it)) },
         )
         NotifyToggle(
-            title = "New message card",
-            detail = "The sender and the first line float over your work when a message " +
-                "arrives and Zillit's window is not in front. Click the card to open the thread.",
+            title = str(S.desktop_new_message_card),
+            detail = str(S.desktop_new_message_card_detail),
             on = state.messageWidget,
             onChange = { onEvent(SettingsEvent.MessageWidgetChanged(it)) },
         )
         NotifyToggle(
-            title = "Keep running when the window is closed",
-            detail = "Closing the window hides it. Zillit stays in the menu bar or tray so " +
-                "calls and messages still reach you; Quit lives on the tray icon.",
+            title = str(S.desktop_keep_running_when_closed),
+            detail = str(S.desktop_keep_running_when_closed_detail),
             on = state.closeToTray,
             onChange = { onEvent(SettingsEvent.CloseToTrayChanged(it)) },
         )
         NotifyToggle(
-            title = "Start Zillit when you sign in",
+            title = str(S.desktop_start_at_sign_in),
             detail = if (state.startAtLoginAvailable) {
-                "Zillit opens in the background at sign-in, window hidden, so you are " +
-                    "reachable before you open it. Also listed under the system's Login Items."
+                str(S.desktop_start_at_sign_in_detail)
             } else {
-                "Available from the installed Zillit app, not from a development run."
+                str(S.desktop_start_at_sign_in_unavailable)
             },
             on = state.startAtLogin && state.startAtLoginAvailable,
             onChange = { onEvent(SettingsEvent.StartAtLoginChanged(it)) },
@@ -347,17 +347,17 @@ private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> U
  */
 @Composable
 private fun AboutSection(about: AboutInfo, onEvent: (SettingsEvent) -> Unit) {
-    Section("About", ZillitIcons.Info) {
+    Section(str(S.about), ZillitIcons.Info) {
         val check = about.updateCheck
         SettingRow(
-            title = "Zillit Desktop ${about.version}".trimEnd(),
+            title = str(S.desktop_zillit_desktop_version, about.version).trimEnd(),
             detail = listOfNotNull(
-                about.build.takeIf { it.isNotBlank() }?.let { "Build $it" },
+                about.build.takeIf { it.isNotBlank() }?.let { str(S.desktop_build_number, it) },
                 about.platform.takeIf { it.isNotBlank() },
             ).joinToString(" · "),
         ) {
             ZillitButton(
-                text = "Check for updates",
+                text = str(S.desktop_check_for_updates),
                 onClick = { onEvent(SettingsEvent.CheckForUpdates) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -384,15 +384,14 @@ private fun UpdateCheckResult(check: UpdateCheck, onEvent: (SettingsEvent) -> Un
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         val (text, color) = when (check) {
-            UpdateCheck.UpToDate -> "You're on the latest version." to colors.textMuted
+            UpdateCheck.UpToDate -> str(S.desktop_update_up_to_date) to colors.textMuted
             is UpdateCheck.Available -> if (check.mandatory) {
-                "Version ${check.version} is required. This version will stop working." to colors.danger
+                str(S.desktop_update_required_stop_working, check.version) to colors.danger
             } else {
-                "Version ${check.version} is available." to colors.info
+                str(S.desktop_update_available, check.version) to colors.info
             }
             UpdateCheck.Unavailable ->
-                "Couldn't check for updates. You may be offline, or this build isn't set up to check." to
-                    colors.textMuted
+                str(S.desktop_update_check_failed) to colors.textMuted
             UpdateCheck.Idle, UpdateCheck.Checking -> "" to colors.textMuted
         }
         ZillitText(
@@ -403,7 +402,7 @@ private fun UpdateCheckResult(check: UpdateCheck, onEvent: (SettingsEvent) -> Un
         )
         (check as? UpdateCheck.Available)?.downloadUrl?.let { url ->
             ZillitButton(
-                text = "Download",
+                text = str(S.download),
                 onClick = { onEvent(SettingsEvent.DownloadUpdate(url)) },
                 variant = if (check.mandatory) ButtonVariant.Danger else ButtonVariant.Primary,
                 size = ButtonSize.Small,
@@ -421,73 +420,65 @@ private fun NotifyToggle(
     onChange: (Boolean) -> Unit,
 ) {
     SettingRow(title = title, detail = detail) {
-        ZillitCheckbox(checked = on, onCheckedChange = onChange, label = if (on) "On" else "Off")
+        ZillitCheckbox(checked = on, onCheckedChange = onChange, label = if (on) str(S.on) else str(S.desktop_off))
     }
 }
 
 @Composable
 private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section("Notifications", ZillitIcons.Calendar) {
+    Section(str(S.notifications), ZillitIcons.Calendar) {
         SettingRow(
-            title = "Event reminders",
+            title = str(S.desktop_event_reminders),
             // Says what silence costs. "Mute notifications" alone leaves the
             // user guessing whether the reminders they set are still recorded.
-            detail = "Reminders you set on calendar events appear as desktop " +
-                "notifications. Muting stops them arriving; the events keep their reminders.",
+            detail = str(S.desktop_event_reminders_detail),
         ) {
             ZillitCheckbox(
                 checked = !state.muteNotifications,
                 onCheckedChange = { onEvent(SettingsEvent.MuteNotificationsChanged(!it)) },
-                label = if (state.muteNotifications) "Muted" else "On",
+                label = if (state.muteNotifications) str(S.desktop_muted) else str(S.on),
             )
         }
 
         NotifyToggle(
-            title = "Chat messages",
-            detail = "A banner when someone messages you and you are looking " +
-                "elsewhere. Never for the conversation already on screen.",
+            title = str(S.desktop_chat_messages),
+            detail = str(S.desktop_chat_messages_detail),
             on = state.notifyMessages,
             onChange = { onEvent(SettingsEvent.NotifyMessagesChanged(it)) },
         )
 
         NotifyToggle(
-            title = "Updates",
-            detail = "A banner when someone posts to a notice board you can see. " +
-                "Your own posts never notify you.",
+            title = str(S.desktop_notify_updates),
+            detail = str(S.desktop_notify_updates_detail),
             on = state.notifyUpdates,
             onChange = { onEvent(SettingsEvent.NotifyUpdatesChanged(it)) },
         )
 
         NotifyToggle(
-            title = "Email",
-            detail = "A banner when mail lands in your inbox. Moving or " +
-                "deleting mail elsewhere does not count as arriving.",
+            title = str(S.email),
+            detail = str(S.desktop_notify_email_detail),
             on = state.notifyMail,
             onChange = { onEvent(SettingsEvent.NotifyMailChanged(it)) },
         )
 
         NotifyToggle(
-            title = "Production activity",
-            detail = "A banner for everything else the project did — a " +
-                "purchase order approved, a document shared, an SOS raised. " +
-                "The bell list's rows, as they happen.",
+            title = str(S.desktop_production_activity),
+            detail = str(S.desktop_production_activity_detail),
             on = state.notifyActivity,
             onChange = { onEvent(SettingsEvent.NotifyActivityChanged(it)) },
         )
 
         NotifyToggle(
-            title = "Calls",
+            title = str(S.desktop_calls),
             // Says plainly that this one outranks the mute above, because a
             // missed call is the one notification with someone waiting on it.
-            detail = "A banner when a call rings this device. Muting everything " +
-                "above does not silence calls — this switch does.",
+            detail = str(S.desktop_notify_calls_detail),
             on = state.notifyCalls,
             onChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
         )
         NotifyToggle(
-            title = "Ringtone",
-            detail = "The ring itself while a call comes in, on every line. Off, the call still " +
-                "shows — the card and the banner — it just makes no sound.",
+            title = str(S.desktop_ringtone),
+            detail = str(S.desktop_ringtone_detail),
             on = state.ringOnIncomingCall,
             onChange = { onEvent(SettingsEvent.RingtoneChanged(it)) },
         )
@@ -497,16 +488,15 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
 @Composable
 private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Sign out?",
-        subtitle = "This computer forgets; the server does not.",
+        title = str(S.desktop_sign_out_title),
+        subtitle = str(S.desktop_sign_out_subtitle),
         icon = ZillitIcons.User,
         visible = visible,
         onDismiss = { onEvent(SettingsEvent.DismissSignOut) },
         width = DIALOG_WIDTH,
     ) {
         ZillitText(
-            text = "Mail and project data stored on this computer will be removed. " +
-                "Nothing on the server is affected.",
+            text = str(S.desktop_sign_out_dialog_body),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -524,12 +514,12 @@ private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(SettingsEvent.DismissSignOut) },
             )
             ZillitButton(
-                text = "Sign out",
+                text = str(S.desktop_sign_out),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(SettingsEvent.ConfirmSignOut) },
             )
@@ -605,10 +595,45 @@ private fun SettingRow(
 
 private val ThemeMode.label: String
     get() = when (this) {
-        ThemeMode.Light -> "Light"
-        ThemeMode.Dark -> "Dark"
-        ThemeMode.System -> "System"
+        ThemeMode.Light -> str(S.theme_light)
+        ThemeMode.Dark -> str(S.theme_dark)
+        ThemeMode.System -> str(S.desktop_language_system_short)
     }
+
+/**
+ * The language, as a select rather than the bar's globe menu: a settings row
+ * shows its current value in words, and a globe says nothing about which
+ * language is on. "System" is a real option at the top, as in the bar.
+ */
+@Composable
+private fun LanguageRow(selected: String, onSelect: (String) -> Unit) {
+    SettingRow(
+        title = str(S.desktop_language),
+        detail = str(S.desktop_language_detail),
+    ) {
+        LanguageSelect(selected = selected, onSelect = onSelect)
+    }
+}
+
+@Composable
+private fun LanguageSelect(selected: String, onSelect: (String) -> Unit) {
+    val options = remember { listOf("") + AppLanguage.all.map { it.code } }
+    // A stored code we no longer ship reads as "System" rather than as a
+    // blank field; the store falls back the same way.
+    val value = selected.takeIf { code -> AppLanguage.all.any { it.code == code } }.orEmpty()
+    ZillitSelect(
+        value = value,
+        options = options,
+        onSelect = onSelect,
+        label = { code ->
+            if (code.isBlank()) {
+                str(S.desktop_language_system_short) + " · " + Strings.language.nativeName
+            } else {
+                AppLanguage.byCode(code)?.let { "${it.nativeName} · ${it.englishName}" } ?: code
+            }
+        },
+    )
+}
 
 private val DIALOG_WIDTH = 420.dp
 private val HAIRLINE = 1.dp
@@ -623,8 +648,5 @@ private val UNIT_SELECT_WIDTH = 240.dp
 internal const val UPDATE_RESULT_TAG = "settings-update-result"
 
 /** The sentence the sign-out question adds when unsent work would be lost. */
-internal fun unsentChangesWarning(count: Int): String {
-    val what = if (count == 1) "1 change made offline that has" else "$count changes made offline that have"
-    return "You have $what not reached the server yet. Signing out deletes them — " +
-        "wait for \"Pending changes\" in the status bar to clear first."
-}
+internal fun unsentChangesWarning(count: Int): String =
+    if (count == 1) str(S.desktop_unsent_changes_warning_one) else str(S.desktop_unsent_changes_warning_other, count)

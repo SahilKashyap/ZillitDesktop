@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.AssetExpenditureType
 import com.zillit.desktop.feature.purchaseorder.domain.AssetFilters
 import com.zillit.desktop.feature.purchaseorder.domain.PoAssignmentRule
@@ -78,8 +80,7 @@ internal fun PoSettingsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         ZillitNotice(
-            text = "Settings · Description formatting, rental split policies, auto-assignment rules, and the " +
-                "asset register rule for purchase orders.",
+            text = str(S.desktop_po_settings_intro),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Settings,
         )
@@ -95,7 +96,7 @@ internal fun PoSettingsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             loadError != null -> ZillitErrorState(
                 message = loadError.localised(),
                 onRetry = { onEvent(PoEvent.Refresh) },
-                title = "Failed to load PO settings",
+                title = str(S.desktop_po_settings_load_failed),
             )
 
             else -> {
@@ -129,18 +130,18 @@ private fun IssuanceCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val edited = settings.edited
     val editable = state.viewer.isSeniorAccountant
     ZillitSectionCard(
-        title = "PO Issuance",
+        title = str(S.desktop_po_issuance),
         icon = ZillitIcons.Send,
         action = { SectionSaveButton(settings, PoSettingsSection.Numbering, onEvent) },
     ) {
-        CardIntro("The document issued with a purchase order and the prefix on its number.")
+        CardIntro(str(S.desktop_hub_the_document_issued_with_a_purchase_order_and_the_prefix))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                RowTitle("PO number prefix")
+                RowTitle(str(S.desktop_po_number_prefix))
                 Hint(PoSettings.PREFIX_HINT)
             }
             ZillitTextField(
@@ -148,7 +149,7 @@ private fun IssuanceCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 onValueChange = {
                     onEvent(PoEvent.EditSettings(edited.copy(numberPrefix = PoSettings.normalisePrefix(it))))
                 },
-                placeholder = "e.g. QW",
+                placeholder = str(S.desktop_e_g_qw),
                 enabled = editable,
                 modifier = Modifier.width(PREFIX_WIDTH),
             )
@@ -160,10 +161,10 @@ private fun IssuanceCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            RowTitle("Terms and Conditions document")
-            ZillitStatusPill(label = "Saves on upload", tone = StatusTone.Done)
+            RowTitle(str(S.desktop_hub_terms_and_conditions_document))
+            ZillitStatusPill(label = str(S.desktop_po_terms_saves_on_upload), tone = StatusTone.Done)
         }
-        Hint("Issued with every purchase order.")
+        Hint(str(S.desktop_po_terms_issued_with_every_order))
         TermsDocumentBlock(state, editable, onEvent)
     }
 }
@@ -179,7 +180,7 @@ private fun TermsDocumentBlock(state: PoUiState, editable: Boolean, onEvent: (Po
         TermsAttachedRow(name = terms.displayName, uploading = settings.termsUploading, canChange = canChange, onEvent)
     } else {
         ZillitButton(
-            text = if (settings.termsUploading) "Uploading…" else "Add attachment",
+            text = if (settings.termsUploading) str(S.ah_uploading) else str(S.desktop_add_attachment),
             onClick = { onEvent(PoEvent.PickTermsDocument) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -191,7 +192,7 @@ private fun TermsDocumentBlock(state: PoUiState, editable: Boolean, onEvent: (Po
     settings.termsError?.let { error ->
         ZillitText(text = error, style = ZillitTheme.typography.bodySmall, color = colors.danger)
     }
-    Hint("PDF, DOC or DOCX · max 10MB")
+    Hint(str(S.desktop_hub_pdf_doc_or_docx_max_10mb))
 }
 
 /** The attached file: icon, name, "Attached", then View and Change. */
@@ -216,10 +217,10 @@ private fun TermsAttachedRow(name: String, uploading: Boolean, canChange: Boolea
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Hint("Attached")
+            Hint(str(S.dm_docs_attached))
         }
         ZillitButton(
-            text = "View",
+            text = str(S.view),
             onClick = { onEvent(PoEvent.OpenTermsDocument) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -227,7 +228,7 @@ private fun TermsAttachedRow(name: String, uploading: Boolean, canChange: Boolea
             enabled = !uploading,
         )
         ZillitButton(
-            text = if (uploading) "Uploading…" else "Change",
+            text = if (uploading) str(S.ah_uploading) else str(S.change),
             onClick = { onEvent(PoEvent.PickTermsDocument) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -247,11 +248,11 @@ private fun DescriptionCard(state: PoUiState, onEvent: (PoEvent) -> Unit, modifi
     val editable = state.viewer.isSeniorAccountant
     ZillitSectionCard(
         modifier = modifier,
-        title = "Description Formatting",
+        title = str(S.desktop_po_description_formatting),
         icon = ZillitIcons.Edit,
         action = { SectionSaveButton(settings, PoSettingsSection.Description, onEvent) },
     ) {
-        CardIntro("Controls how ledger entry descriptions are auto-formatted.")
+        CardIntro(str(S.desktop_po_description_formatting_intro))
         PoDescriptionFormat.offered.forEach { format ->
             FormatOption(
                 format = format,
@@ -285,7 +286,7 @@ private fun FormatOption(format: PoDescriptionFormat, selected: Boolean, enabled
                 color = if (selected) colors.accentText else colors.textPrimary,
             )
             ZillitText(
-                text = "e.g. ${format.sample}",
+                text = str(S.desktop_dm_eg_value, format.sample),
                 style = ZillitTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 color = colors.textSecondary,
             )
@@ -311,12 +312,12 @@ private fun RentalCard(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
     val editable = state.viewer.isSeniorAccountant
     ZillitSectionCard(
         modifier = modifier,
-        title = "Rental & Split Settings",
+        title = str(S.desktop_po_rental_split_settings),
         icon = ZillitIcons.Ledger,
         action = { SectionSaveButton(settings, PoSettingsSection.Rental, onEvent) },
     ) {
-        CardIntro("How rental POs are handled when posting to the ledger.")
-        SettingRow("Auto-split rental POs", "Automatically detect and split rental/hire POs by period") {
+        CardIntro(str(S.desktop_hub_how_rental_pos_are_handled_when_posting_to_the_ledger))
+        SettingRow(str(S.desktop_po_auto_split_rentals), str(S.desktop_po_auto_split_rentals_hint)) {
             ZillitSwitch(
                 checked = edited.autoSplitRentals,
                 onCheckedChange = { onEvent(PoEvent.EditSettings(edited.copy(autoSplitRentals = it))) },
@@ -325,7 +326,7 @@ private fun RentalCard(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
         }
         if (edited.autoSplitRentals) {
             HairRule()
-            FieldCaption("Default split type")
+            FieldCaption(str(S.desktop_default_split_type))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 PoSplitType.entries.forEach { type ->
                     ZillitChoiceChip(
@@ -338,12 +339,18 @@ private fun RentalCard(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
         }
         // Always-on: the service forces both whatever is stored, so a switch would lie.
         HairRule()
-        SettingRow("Require effective date", "Block PO posting without a confirmed effective date") {
-            ZillitStatusPill(label = "Always", tone = StatusTone.Done)
+        SettingRow(
+            str(S.desktop_require_effective_date),
+            str(S.desktop_hub_block_po_posting_without_a_confirmed_effective_date),
+        ) {
+            ZillitStatusPill(label = str(S.desktop_always), tone = StatusTone.Done)
         }
         HairRule()
-        SettingRow("Enforce period close", "Prevent back-dating entries to closed accounting periods") {
-            ZillitStatusPill(label = "Always", tone = StatusTone.Done)
+        SettingRow(
+            str(S.desktop_enforce_period_close),
+            str(S.desktop_hub_prevent_back_dating_entries_to_closed_accounting_periods),
+        ) {
+            ZillitStatusPill(label = str(S.desktop_always), tone = StatusTone.Done)
         }
     }
 }
@@ -361,27 +368,24 @@ private fun AssetRulesCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val symbol = Money.symbol(PoSettings.DEFAULT_CURRENCY)
     val update = { next: AssetFilters -> onEvent(PoEvent.EditSettings(edited.copy(assetFilters = next))) }
     ZillitSectionCard(
-        title = "Asset Register Rules",
+        title = str(S.desktop_asset_register_rules),
         icon = ZillitIcons.Receipt,
         action = {
             SectionSaveButton(settings, PoSettingsSection.Asset, onEvent, blocked = filters.error != null)
         },
     ) {
-        CardIntro(
-            "Which line items on posted & closed POs qualify as assets. Drives the Asset Register — change " +
-                "this and the register follows.",
-        )
+        CardIntro(str(S.desktop_hub_which_line_items_on_posted_closed_pos_qualify_as_assets))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldCaption("Expenditure type")
+                FieldCaption(str(S.expenditure_type))
                 // Single choice: All (every type) · Purchase · Consumables.
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                     ZillitChoiceChip(
-                        label = "All",
+                        label = str(S.all),
                         selected = filters.expTypes.isEmpty(),
                         onClick = { if (editable) update(filters.copy(expTypes = emptyList())) },
                     )
@@ -393,10 +397,10 @@ private fun AssetRulesCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                         )
                     }
                 }
-                Hint("All = every expenditure type qualifies.")
+                Hint(str(S.desktop_hub_all_every_expenditure_type_qualifies))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldCaption("Price range")
+                FieldCaption(str(S.desktop_price_range))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -409,30 +413,30 @@ private fun AssetRulesCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                         enabled = editable,
                         modifier = Modifier.weight(1f),
                     )
-                    Hint("to")
+                    Hint(str(S.recce_weather_to))
                     ZillitTextField(
                         value = filters.priceHigh,
                         onValueChange = { update(filters.copy(priceHigh = it)) },
-                        placeholder = "No max",
+                        placeholder = str(S.desktop_no_max),
                         keyboardType = KeyboardType.Number,
                         enabled = editable,
                         modifier = Modifier.weight(1f),
                     )
                 }
-                Hint("Inclusive, on the line total. Either bound can be left empty.")
+                Hint(str(S.desktop_hub_inclusive_on_the_line_total_either_bound_can_be_left))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldCaption("Tags")
+                FieldCaption(str(S.drive_tags))
                 ZillitMultiSelect(
                     selected = filters.tags,
                     options = (settings.tags + filters.tags).distinct(),
                     label = { it },
                     onChange = { update(filters.copy(tags = it)) },
-                    placeholder = "Any tag",
+                    placeholder = str(S.desktop_any_tag),
                     enabled = editable,
-                    emptyText = "No tags — add them in Production Setup",
+                    emptyText = str(S.desktop_po_no_tags_add_in_production_setup),
                 )
-                Hint("Matches a line carrying any of these. Select none for any tag.")
+                Hint(str(S.desktop_hub_matches_a_line_carrying_any_of_these_select_none_for))
             }
         }
         val error = filters.error
@@ -444,7 +448,7 @@ private fun AssetRulesCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                FieldCaption("Qualifies")
+                FieldCaption(str(S.desktop_po_qualifies))
                 ZillitText(
                     text = filters.summary(symbol),
                     style = ZillitTheme.typography.bodySmall,
@@ -461,11 +465,11 @@ private fun AssetRulesCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 @Composable
 private fun FormConfigurationCard(onEvent: (PoEvent) -> Unit) {
     ZillitSectionCard(
-        title = "Form Configuration",
+        title = str(S.desktop_form_configuration),
         icon = ZillitIcons.Edit,
         action = {
             ZillitButton(
-                text = "Edit",
+                text = str(S.edit),
                 onClick = { onEvent(PoEvent.OpenFormConfiguration) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -473,10 +477,7 @@ private fun FormConfigurationCard(onEvent: (PoEvent) -> Unit) {
             )
         },
     ) {
-        CardIntro(
-            "Fields and sections shown on the form. Add custom fields per section, reorder them, or reset to " +
-                "the system defaults.",
-        )
+        CardIntro(str(S.desktop_po_form_configuration_intro))
     }
 }
 
@@ -487,12 +488,12 @@ private fun AssignmentRulesCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val settings = state.settings
     val editable = state.viewer.isSeniorAccountant
     ZillitSectionCard(
-        title = "Auto-Assignment Rules",
+        title = str(S.desktop_auto_assignment_rules),
         icon = ZillitIcons.Users,
         action = {
             SectionSaveButton(settings, PoSettingsSection.Rules, onEvent)
             ZillitButton(
-                text = "Add Rule",
+                text = str(S.desktop_add_rule),
                 onClick = { onEvent(PoEvent.AddRule) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -501,10 +502,10 @@ private fun AssignmentRulesCard(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             )
         },
     ) {
-        CardIntro("Auto-assign POs to team members based on department, vendor, nominal code, or amount.")
+        CardIntro(str(S.desktop_po_auto_assign_intro))
         when {
-            settings.rulesLoading -> Hint("Loading rules…")
-            settings.rules.isEmpty() -> Hint("No rules configured. Click \"Add Rule\" to auto-assign POs.")
+            settings.rulesLoading -> Hint(str(S.desktop_loading_rules))
+            settings.rules.isEmpty() -> Hint(str(S.desktop_po_no_rules_configured))
             else -> settings.rules.forEach { rule -> RuleCard(state, rule, editable, onEvent) }
         }
     }
@@ -551,47 +552,47 @@ private fun RuleCard(state: PoUiState, rule: PoAssignmentRule, editable: Boolean
                     onCheckedChange = { update(rule.copy(isActive = it)) },
                     enabled = editable,
                 )
-                FieldCaption("Assign to")
+                FieldCaption(str(S.desktop_assign_to))
                 ZillitSelect<PoTeamMember?>(
                     value = settings.team.firstOrNull { it.id == rule.assignTo },
                     options = settings.team,
                     onSelect = { member -> member?.let { update(rule.copy(assignTo = it.id)) } },
-                    label = { it?.label ?: "Pick assignee…" },
+                    label = { it?.label ?: str(S.desktop_pick_assignee) },
                     enabled = editable,
                     modifier = Modifier.width(ASSIGNEE_WIDTH),
                 )
                 Spacer(Modifier.weight(1f))
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Remove rule",
+                    contentDescription = str(S.desktop_remove_rule),
                     onClick = { onEvent(PoEvent.RemoveRule(rule.id)) },
                     tint = colors.danger,
                     enabled = editable,
                 )
             }
-            FieldCaption("If any condition matches (or)")
+            FieldCaption(str(S.desktop_if_any_condition_matches))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 verticalAlignment = Alignment.Top,
             ) {
-                ConditionColumn("Departments", Modifier.weight(1f)) {
+                ConditionColumn(str(S.departments), Modifier.weight(1f)) {
                     ZillitMultiSelect(
                         selected = rule.departments,
                         options = (settings.departments.map { it.id } + rule.departments).distinct(),
                         label = { id -> settings.departments.firstOrNull { it.id == id }?.name ?: id },
                         onChange = { update(rule.copy(departments = it)) },
-                        placeholder = "Any department",
+                        placeholder = str(S.desktop_any_department),
                         enabled = editable,
                     )
                 }
-                ConditionColumn("Vendors", Modifier.weight(1f)) {
+                ConditionColumn(str(S.ah_vendors), Modifier.weight(1f)) {
                     ZillitMultiSelect(
                         selected = rule.vendors,
                         options = (state.vendors.map { it.id } + rule.vendors).distinct(),
                         label = { id -> state.vendors.firstOrNull { it.id == id }?.name ?: id },
                         onChange = { update(rule.copy(vendors = it)) },
-                        placeholder = "Any vendor",
+                        placeholder = str(S.desktop_any_vendor),
                         enabled = editable,
                     )
                 }
@@ -601,17 +602,17 @@ private fun RuleCard(state: PoUiState, rule: PoAssignmentRule, editable: Boolean
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 verticalAlignment = Alignment.Top,
             ) {
-                ConditionColumn("Nominal codes", Modifier.weight(1f)) {
+                ConditionColumn(str(S.dm_section_nominal), Modifier.weight(1f)) {
                     ZillitMultiSelect(
                         selected = rule.nominalCodes,
                         options = (settings.nominals.map { it.code } + rule.nominalCodes).distinct(),
                         label = { code -> settings.nominals.firstOrNull { it.code == code }?.label ?: code },
                         onChange = { update(rule.copy(nominalCodes = it)) },
-                        placeholder = "Any nominal",
+                        placeholder = str(S.desktop_any_nominal),
                         enabled = editable,
                     )
                 }
-                ConditionColumn("Amount min", Modifier.weight(1f)) {
+                ConditionColumn(str(S.desktop_amount_min), Modifier.weight(1f)) {
                     ZillitTextField(
                         value = rule.amountMin,
                         onValueChange = { update(rule.copy(amountMin = it)) },
@@ -647,9 +648,9 @@ private fun SectionSaveButton(
     if (!dirty && !saved) return
     ZillitButton(
         text = when {
-            saving -> "Saving…"
-            saved -> "Saved"
-            else -> "Save"
+            saving -> str(S.ah_saving)
+            saved -> str(S.saved)
+            else -> str(S.save)
         },
         onClick = { onEvent(PoEvent.SaveSettings(section)) },
         variant = if (saved) ButtonVariant.Secondary else ButtonVariant.Primary,

@@ -22,6 +22,8 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureHost
 import com.zillit.desktop.feature.formsignature.ui.components.ToolTopBar
 import com.zillit.desktop.feature.formsignature.ui.dialogs.ConfirmDialog
@@ -61,8 +63,7 @@ fun FormSignatureScreen(
         Box(Modifier.fillMaxSize()) {
             when {
                 state.viewer.isBlocked -> ZillitNotice(
-                    text = "You don’t have access to Documents & Signature on this project. " +
-                        "Access is granted per tool, by the project’s admin.",
+                    text = str(S.desktop_fs_no_access),
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Info,
                     modifier = Modifier.padding(ZillitTheme.spacing.xl),
@@ -112,7 +113,7 @@ private fun HeaderActions(state: FormSignatureUiState, onEvent: (FormSignatureEv
         ZillitButton(
             text = state.chat.receiver?.label?.let { name ->
                 if (name.length > RECEIVER_NAME_MAX) name.take(RECEIVER_NAME_MAX) + "…" else name
-            } ?: "Select User",
+            } ?: str(S.select_user),
             onClick = { onEvent(FormSignatureEvent.PickReceiver) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -121,7 +122,7 @@ private fun HeaderActions(state: FormSignatureUiState, onEvent: (FormSignatureEv
     }
     if (state.screen in REFRESHABLE) {
         ZillitButton(
-            text = "Refresh",
+            text = str(S.refresh_text),
             onClick = { onEvent(FormSignatureEvent.Refresh) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,

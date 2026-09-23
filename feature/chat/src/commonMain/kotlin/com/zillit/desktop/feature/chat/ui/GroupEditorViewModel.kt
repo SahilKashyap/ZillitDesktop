@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.chat.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 
 /**
@@ -90,10 +92,9 @@ class GroupEditorViewModel(
 internal fun groupComplaint(name: String, selected: Set<String>): String? {
     val trimmed = name.trim()
     return when {
-        trimmed.isEmpty() -> "Group name is required."
-        trimmed.length !in GROUP_NAME_MIN..GROUP_NAME_MAX ->
-            "Please Enter Group Name of length at least 3 characters or at most 40 characters."
-        selected.isEmpty() -> "Group members are required."
+        trimmed.isEmpty() -> str(S.group_name_required)
+        trimmed.length !in GROUP_NAME_MIN..GROUP_NAME_MAX -> str(S.group_name_validate)
+        selected.isEmpty() -> str(S.group_members_are_required)
         else -> null
     }
 }

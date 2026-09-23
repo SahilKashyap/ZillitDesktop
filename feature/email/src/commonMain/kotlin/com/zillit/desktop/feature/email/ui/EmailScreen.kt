@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The nav strip's three views — Email, Calendar, Contacts (`EmailNavStrip.jsx`). */
 enum class MailView { Email, Calendar, Contacts }
@@ -224,7 +226,7 @@ private fun SyncStrip(state: EmailUiState) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Syncing Emails…",
+                text = str(S.desktop_email_syncing_emails),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.accentText,
             )
@@ -261,9 +263,9 @@ private fun NavStrip(navigation: MailNavigation) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        NavButton(ZillitIcons.Mail, "Email", active = true) {}
-        NavButton(ZillitIcons.Calendar, "Calendar", active = false, onClick = navigation.onOpenCalendar)
-        NavButton(ZillitIcons.Users, "Contacts", active = false, onClick = navigation.onOpenContacts)
+        NavButton(ZillitIcons.Mail, str(S.email), active = true) {}
+        NavButton(ZillitIcons.Calendar, str(S.calendar), active = false, onClick = navigation.onOpenCalendar)
+        NavButton(ZillitIcons.Users, str(S.contacts), active = false, onClick = navigation.onOpenContacts)
     }
     Box(Modifier.width(1.dp).fillMaxHeight().background(colors.divider))
 }

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
 import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.forms.customValues
@@ -266,7 +268,7 @@ class CashExpensesViewModel(
             is CashEvent.EditFloatRequest -> setState { copy(floatDraft = event.draft) }
             CashEvent.SubmitFloatRequest -> submitFloatRequest()
 
-            is CashEvent.CodeClaim -> act("Coding saved") {
+            is CashEvent.CodeClaim -> act(str(S.desktop_card_coding_saved)) {
                 repository.codeClaim(event.batchId, event.claimId, event.costCode, event.description)
             }
 
@@ -494,7 +496,7 @@ class CashExpensesViewModel(
             return
         }
 
-        act("Receipts submitted", onSuccess = { copy(draft = SubmitDraft()) }) {
+        act(str(S.desktop_ce_receipts_submitted), onSuccess = { copy(draft = SubmitDraft()) }) {
             repository.submitReceipts(request)
         }
     }
@@ -517,11 +519,11 @@ class CashExpensesViewModel(
         val layout = currentState.floatForm
         val amount = draft.amount.trim().toDoubleOrNull()
         if (amount == null || amount <= 0) {
-            sendEffect(CashEffect.Failed("Enter the amount of cash you need."))
+            sendEffect(CashEffect.Failed(str(S.desktop_ce_enter_cash_amount)))
             return
         }
         if (draft.purpose.isBlank()) {
-            sendEffect(CashEffect.Failed("Say what the float is for."))
+            sendEffect(CashEffect.Failed(str(S.desktop_ce_say_what_float_is_for)))
             return
         }
         templateProblem(layout)?.let {
@@ -543,7 +545,7 @@ class CashExpensesViewModel(
         // The form is cleared only when the request lands: clearing it here,
         // before the answer, threw the amount and purpose away on every
         // failed save.
-        act("Float requested", onSuccess = { copy(floatDraft = FloatRequestDraft()) }) {
+        act(str(S.desktop_ce_float_requested), onSuccess = { copy(floatDraft = FloatRequestDraft()) }) {
             repository.requestFloat(request)
         }
     }
@@ -562,14 +564,14 @@ class CashExpensesViewModel(
         val required = { label: String -> layout.isRequired(CashFormFields.FLOAT_REQUEST, label) }
         return when {
             required(CashFormFields.DEPARTMENT) && draft.departmentId.isBlank() ->
-                "This production requires a department on every float request."
+                str(S.desktop_ce_department_required)
 
             required(CashFormFields.DURATION) && draft.duration.isBlank() ->
-                "This production requires how long the float is needed for."
+                str(S.desktop_ce_duration_required)
 
             else -> layout.missingCustom(CashFormFields.FLOAT_REQUEST, draft.customFields)
                 .firstOrNull()
-                ?.let { "${it.name} is required on this production's float requests." }
+                ?.let { str(S.desktop_ce_field_required_on_floats, it.name) }
         }
     }
 
@@ -620,21 +622,20 @@ class CashExpensesViewModel(
         if (!draft.balances) {
             sendEffect(
                 CashEffect.Failed(
-                    "The coding comes to a different amount from the receipt. " +
-                        "Adjust the lines so they add up before saving.",
+                    str(S.desktop_ce_coding_does_not_add_up),
                 ),
             )
             return
         }
         if (draft.lines.filterNot { it.autoDeduction }.any { it.account.isBlank() }) {
-            sendEffect(CashEffect.Failed("Every line needs a cost code."))
+            sendEffect(CashEffect.Failed(str(S.desktop_ce_line_needs_cost_code)))
             return
         }
 
         val lines = LineItemEditor.toWire(draft.lines, newLineId)
         // The editor closes only on a saved coding; a failed save keeps the
         // hand-entered lines open for a retry instead of discarding them.
-        act("Coding saved", onSuccess = { copy(coding = null) }) {
+        act(str(S.desktop_card_coding_saved), onSuccess = { copy(coding = null) }) {
             repository.saveClaimLines(draft.batchId, draft.claimId, lines)
         }
     }
@@ -649,7 +650,7 @@ class CashExpensesViewModel(
                         busy = false,
                         settings = saved.data,
                         settingsDraft = saved.data,
-                        notice = "Settings saved",
+                        notice = str(S.desktop_ce_settings_saved),
                     )
                 }
 
@@ -675,45 +676,45 @@ class CashExpensesViewModel(
             is CashPrompt.WithReason -> {
                 val reason = prompt.reason.trim()
                 if (reason.isEmpty()) {
-                    sendEffect(CashEffect.Failed("A reason is required."))
+                    sendEffect(CashEffect.Failed(str(S.desktop_a_reason_is_required)))
                     setState { copy(prompt = prompt) }
                     return
                 }
                 when (prompt.action) {
                     ReasonedAction.RejectFloat ->
-                        act("Float rejected") { repository.rejectFloat(prompt.targetId, reason) }
+                        act(str(S.desktop_ce_float_rejected)) { repository.rejectFloat(prompt.targetId, reason) }
 
                     ReasonedAction.RejectBatch ->
-                        act("Batch rejected") { repository.rejectBatch(prompt.targetId, reason) }
+                        act(str(S.ah_batch_rejected_toast)) { repository.rejectBatch(prompt.targetId, reason) }
 
                     ReasonedAction.QueryBatch ->
-                        act("Query sent") { repository.queryBatch(prompt.targetId, reason) }
+                        act(str(S.ah_query_sent_toast)) { repository.queryBatch(prompt.targetId, reason) }
 
                     ReasonedAction.EscalateBatch ->
-                        act("Escalated") { repository.escalateBatch(prompt.targetId, reason) }
+                        act(str(S.ah_escalated)) { repository.escalateBatch(prompt.targetId, reason) }
                 }
             }
 
             is CashPrompt.WithAmount -> {
                 val amount = prompt.amount.trim().toDoubleOrNull()
                 if (amount == null || amount <= 0) {
-                    sendEffect(CashEffect.Failed("Enter an amount greater than zero."))
+                    sendEffect(CashEffect.Failed(str(S.desktop_card_amount_greater_than_zero)))
                     setState { copy(prompt = prompt) }
                     return
                 }
                 when (prompt.action) {
                     AmountAction.PartialTopUp ->
-                        act("Top-up recorded") { repository.partialTopUp(prompt.targetId, amount) }
+                        act(str(S.desktop_card_topup_recorded)) { repository.partialTopUp(prompt.targetId, amount) }
 
-                    AmountAction.RecordCashReturn -> act("Cash return recorded") {
+                    AmountAction.RecordCashReturn -> act(str(S.desktop_ce_cash_return_recorded)) {
                         repository.recordCashReturn(prompt.targetId, amount, prompt.note.takeIf(String::isNotBlank))
                     }
 
-                    AmountAction.RequestFloatTopUp -> act("Top-up requested") {
+                    AmountAction.RequestFloatTopUp -> act(str(S.desktop_card_topup_requested)) {
                         repository.requestFloatTopUp(prompt.targetId, amount, prompt.note.takeIf(String::isNotBlank))
                     }
 
-                    AmountAction.CreateReconciliation -> act("Reconciliation started") {
+                    AmountAction.CreateReconciliation -> act(str(S.desktop_ce_reconciliation_started)) {
                         repository.createReconciliation(amount, prompt.note.takeIf(String::isNotBlank))
                             .toUnit()
                     }
@@ -730,7 +731,7 @@ class CashExpensesViewModel(
     private fun resolveAssign(prompt: CashPrompt.Assign) {
         val batch = currentState.queueBatches.firstOrNull { it.id == prompt.batchId }
         if (!BatchAssignment.canSubmit(batch, prompt.selectedUserId, prompt.reason)) {
-            sendEffect(CashEffect.Failed("Choose someone, and say why on a reassignment."))
+            sendEffect(CashEffect.Failed(str(S.desktop_ce_choose_someone_and_reason)))
             setState { copy(prompt = prompt) }
             return
         }
@@ -744,7 +745,11 @@ class CashExpensesViewModel(
                             prompt.batchId,
                             prompt.selectedUserId,
                         ),
-                        notice = "${prompt.label}ed",
+                        notice = if (BatchAssignment.isUnassigned(batch)) {
+                            str(S.assigned)
+                        } else {
+                            str(S.desktop_ce_reassigned)
+                        },
                     )
                 }
 
@@ -777,7 +782,7 @@ class CashExpensesViewModel(
             ConfirmAction.SignOffReconciliation -> viewer.isSenior
             else -> true
         }
-        return if (allowed) null else "You do not have the rights to do that on this project."
+        return if (allowed) null else str(S.desktop_po_no_rights_on_project)
     }
 
     @Suppress("CyclomaticComplexMethod") // One branch per confirmable action.
@@ -797,24 +802,26 @@ class CashExpensesViewModel(
             return
         }
         when (prompt.action) {
-            ConfirmAction.ApproveFloat -> act("Float approved") { repository.approveFloat(id, null) }
-            ConfirmAction.OverrideFloat -> act("Float overridden") { repository.overrideFloat(id) }
-            ConfirmAction.IssueFloat -> act("Float issued") { repository.issueFloat(id) }
-            ConfirmAction.ReadyToCollect -> act("Marked ready to collect") {
+            ConfirmAction.ApproveFloat -> act(str(S.desktop_ce_float_approved)) { repository.approveFloat(id, null) }
+            ConfirmAction.OverrideFloat -> act(str(S.desktop_ce_float_overridden)) { repository.overrideFloat(id) }
+            ConfirmAction.IssueFloat -> act(str(S.desktop_ce_float_issued)) { repository.issueFloat(id) }
+            ConfirmAction.ReadyToCollect -> act(str(S.desktop_ce_marked_ready_to_collect)) {
                 repository.markFloatReadyToCollect(id, floatCompany(id))
             }
 
-            ConfirmAction.CollectFloat -> act("Collection recorded") { repository.collectFloat(id) }
-            ConfirmAction.CloseFloat -> act("Float closed") { repository.closeFloat(id) }
-            ConfirmAction.ApproveBatch -> act("Batch approved") { repository.approveBatch(id, null) }
-            ConfirmAction.OverrideBatch -> act("Batch overridden") { repository.overrideBatch(id) }
+            ConfirmAction.CollectFloat -> act(str(S.desktop_ce_collection_recorded)) { repository.collectFloat(id) }
+            ConfirmAction.CloseFloat -> act(str(S.desktop_ce_float_closed)) { repository.closeFloat(id) }
+            ConfirmAction.ApproveBatch -> act(str(S.ah_batch_approved_toast)) { repository.approveBatch(id, null) }
+            ConfirmAction.OverrideBatch -> act(str(S.desktop_ce_batch_overridden)) { repository.overrideBatch(id) }
             ConfirmAction.PostBatch -> postBatch(id)
-            ConfirmAction.SubmitForReview -> act("Sent for review") { repository.submitBatchForReview(id) }
-            ConfirmAction.SaveAndVerify -> act("Verified") { repository.saveAndVerify(id) }
-            ConfirmAction.SaveAndSubmitCoded -> act("Coding submitted") { repository.saveAndSubmitCoded(id) }
-            ConfirmAction.CompleteTopUp -> act("Top-up completed") { repository.completeTopUp(id) }
-            ConfirmAction.SkipTopUp -> act("Top-up skipped") { repository.skipTopUp(id) }
-            ConfirmAction.SignOffReconciliation -> act("Reconciliation signed off") {
+            ConfirmAction.SubmitForReview -> act(str(S.desktop_sent_for_review)) { repository.submitBatchForReview(id) }
+            ConfirmAction.SaveAndVerify -> act(str(S.ah_verified)) { repository.saveAndVerify(id) }
+            ConfirmAction.SaveAndSubmitCoded ->
+                act(str(S.desktop_ce_coding_submitted)) { repository.saveAndSubmitCoded(id) }
+
+            ConfirmAction.CompleteTopUp -> act(str(S.desktop_card_topup_completed)) { repository.completeTopUp(id) }
+            ConfirmAction.SkipTopUp -> act(str(S.ah_topup_skipped_toast)) { repository.skipTopUp(id) }
+            ConfirmAction.SignOffReconciliation -> act(str(S.desktop_br_signed_off)) {
                 repository.signOffReconciliation(id, null)
             }
         }
@@ -833,12 +840,12 @@ class CashExpensesViewModel(
         if (!currentState.viewer.canPost(amount)) {
             sendEffect(
                 CashEffect.Failed(
-                    "This batch is above your posting limit. Escalate it for senior sign-off instead.",
+                    str(S.desktop_ce_above_posting_limit),
                 ),
             )
             return
         }
-        act("Batch posted") { repository.postBatch(batchId, null) }
+        act(str(S.desktop_ce_batch_posted)) { repository.postBatch(batchId, null) }
     }
 
     /** The company a float already carries, which the transition requires. */

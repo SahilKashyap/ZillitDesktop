@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.auth.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The top-level filter above the production list.
  *
@@ -7,12 +10,14 @@ package com.zillit.desktop.feature.auth.domain
  * free-form predicate so the chip row, the filter and the tests cannot drift
  * apart.
  */
-enum class ProjectFilter(val label: String) {
-    All("All projects"),
-    Entertainment("Entertainment"),
-    Personal("Personal"),
-    Favourites("Favourites"),
+enum class ProjectFilter(private val labelKey: String) {
+    All(S.desktop_all_projects),
+    Entertainment(S.desktop_entertainment),
+    Personal(S.personal),
+    Favourites(S.favorite),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun matches(project: Project): Boolean = when (this) {
         All -> true

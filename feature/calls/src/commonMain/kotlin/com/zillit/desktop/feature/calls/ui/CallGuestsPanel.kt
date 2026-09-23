@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitGuest
 
 /**
@@ -48,7 +50,7 @@ fun CallGuestsPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "Guests requesting to join",
+                text = str(S.desktop_call_guests_requesting_to_join),
                 style = ZillitTheme.typography.titleSmall,
                 color = CallPalette.text,
                 modifier = Modifier.weight(1f),
@@ -56,15 +58,13 @@ fun CallGuestsPanel(
             Box(modifier = Modifier.clickable(onClick = onClose)) {
                 ZillitIcon(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Close",
+                    contentDescription = str(S.close),
                     tint = CallPalette.muted,
                     size = ROW_ICON,
                 )
             }
         }
-        if (guests.isEmpty()) {
-            ZillitText(text = "Nobody is waiting", style = ZillitTheme.typography.bodySmall, color = CallPalette.muted)
-        }
+        if (guests.isEmpty()) NobodyWaiting()
         val listState = rememberLazyListState()
         ZillitLazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             items(guests, key = LiveKitGuest::guestId) { guest ->
@@ -74,15 +74,19 @@ fun CallGuestsPanel(
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitText(
-                        text = guest.name.ifBlank { "Guest" },
+                        text = guest.name.ifBlank { str(S.txt_badge_guest) },
                         style = ZillitTheme.typography.bodyMedium,
                         color = CallPalette.text,
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
                     )
-                    ZillitButton(text = "Admit", size = ButtonSize.Small, onClick = { onAdmit(guest.guestId) })
                     ZillitButton(
-                        text = "Decline",
+                        text = str(S.desktop_admit),
+                        size = ButtonSize.Small,
+                        onClick = { onAdmit(guest.guestId) },
+                    )
+                    ZillitButton(
+                        text = str(S.decline),
                         size = ButtonSize.Small,
                         variant = ButtonVariant.Tertiary,
                         onClick = { onDecline(guest.guestId) },
@@ -95,3 +99,12 @@ fun CallGuestsPanel(
 
 private val PANEL_CORNER = 12.dp
 private val ROW_ICON = 18.dp
+
+@Composable
+private fun NobodyWaiting() {
+    ZillitText(
+        text = str(S.desktop_call_nobody_is_waiting),
+        style = ZillitTheme.typography.bodySmall,
+        color = CallPalette.muted,
+    )
+}

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -70,9 +72,9 @@ data class CalendarEvent(
 
 /** Which calendar layout is on screen. */
 enum class CalendarViewMode(val label: String) {
-    Month("Month"),
-    Week("Week"),
-    Day("Day"),
+    Month(S.bs_month),
+    Week(S.bs_week),
+    Day(S.bs_day),
 }
 
 /**
@@ -159,7 +161,7 @@ fun CalendarEvent.dateLabel(zone: TimeZone): String {
 
 /** `HH:mm` in [zone], or "All day". */
 fun CalendarEvent.timeLabel(zone: TimeZone): String {
-    if (isAllDay) return "All day"
+    if (isAllDay) return str(S.all_day)
     val start = Instant.fromEpochMilliseconds(startMillis).toLocalDateTime(zone)
     val end = Instant.fromEpochMilliseconds(endMillis.takeIf { it > 0 } ?: startMillis)
         .toLocalDateTime(zone)

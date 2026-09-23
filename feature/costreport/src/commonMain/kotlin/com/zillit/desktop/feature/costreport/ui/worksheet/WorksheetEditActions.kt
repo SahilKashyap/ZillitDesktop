@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.costreport.ui.worksheet
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.localization.localisedMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrColumn
 import com.zillit.desktop.feature.costreport.domain.CrNominal
 import com.zillit.desktop.feature.costreport.domain.CrOverrides
@@ -72,7 +74,7 @@ internal class WorksheetEditActions(private val vm: WorksheetViewModel) {
     private fun loadVersion(pane: WorksheetPane, versionId: String, currency: String?) = vm.launchWork {
         when (val rows = vm.repository.etcVersion(versionId)) {
             is ZillitResult.Failure -> if (pane == WorksheetPane.Worksheet) {
-                vm.notice("Load failed: ${rows.error.localised()}", error = true)
+                vm.notice(str(S.desktop_cr_load_failed, rows.error.localised()), error = true)
             }
             is ZillitResult.Success -> {
                 if (vm.pane(pane).applied.versionId != versionId) return@launchWork
@@ -80,9 +82,15 @@ internal class WorksheetEditActions(private val vm: WorksheetViewModel) {
                 vm.updatePane(pane) { copy(overrides = overrides) }
                 if (pane == WorksheetPane.Worksheet) {
                     val label = vm.pane(pane).versions.firstOrNull { it.id == versionId }?.label?.ifBlank { null }
-                        ?: "version"
+                        ?: str(S.desktop_cr_version_word)
                     val count = rows.data.size
-                    vm.notice("Loaded $label · $count override row${if (count == 1) "" else "s"}")
+                    vm.notice(
+                        str(
+                            if (count == 1) S.desktop_cr_loaded_one else S.desktop_cr_loaded_many,
+                            label,
+                            count,
+                        ),
+                    )
                 }
             }
         }
@@ -116,7 +124,7 @@ internal class WorksheetEditActions(private val vm: WorksheetViewModel) {
             when (result) {
                 is ZillitResult.Failure -> vm.notice(result.error.localised(), error = true)
                 is ZillitResult.Success -> {
-                    vm.notice(result.data.message?.localisedMessage() ?: "Version saved")
+                    vm.notice(result.data.message?.localisedMessage() ?: str(S.desktop_cr_version_saved))
                     vm.updatePane(WorksheetPane.Worksheet) { copy(applied = applied.copy(versionId = versionId)) }
                     vm.refreshVersions(WorksheetPane.Worksheet)
                 }
@@ -135,7 +143,7 @@ internal class WorksheetEditActions(private val vm: WorksheetViewModel) {
         val modal = state.modal as? WorksheetModal.SaveVersion ?: return
         val week = state.ws.week ?: return
         if (state.savingVersion) return
-        val label = modal.label.trim().ifBlank { "Untitled" }
+        val label = modal.label.trim().ifBlank { str(S.untitled) }
         vm.update { copy(savingVersion = true) }
         vm.launchWork {
             val result = vm.repository.createEtcVersion(
@@ -147,7 +155,7 @@ internal class WorksheetEditActions(private val vm: WorksheetViewModel) {
             when (result) {
                 is ZillitResult.Failure -> vm.notice(result.error.localised(), error = true)
                 is ZillitResult.Success -> {
-                    vm.notice(result.data.message?.localisedMessage() ?: "Saved “$label”")
+                    vm.notice(result.data.message?.localisedMessage() ?: str(S.desktop_cr_saved_named, label))
                     val id = result.data.value
                     vm.refreshVersions(WorksheetPane.Worksheet) {
                         if (id != null) {

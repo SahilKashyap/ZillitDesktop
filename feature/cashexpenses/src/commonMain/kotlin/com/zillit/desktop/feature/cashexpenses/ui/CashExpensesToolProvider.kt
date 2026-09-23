@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -36,7 +38,7 @@ class CashExpensesToolProvider(
 ) : ToolProvider {
 
     override val path: String = CASH_EXPENSES_PATH
-    override val title: String = "Cash Expenses"
+    override val title: String get() = str(S.desktop_ce_tool_title)
     override val icon = ZillitToolIcons.CashExpense
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -76,7 +78,7 @@ class CashExpensesToolProvider(
         // The tab title names the open page, so several torn-off windows of the
         // same tool are told apart on the taskbar.
         LaunchedEffect(state.destination) {
-            navigator.setTitle("Cash · ${state.destination.label}")
+            navigator.setTitle(str(S.desktop_ce_window_title, state.destination.label))
         }
 
         CashExpensesScreen(state = state, onEvent = viewModel::onEvent, loadAvatar = loadAvatar)

@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.auth.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A production type offered at creation, with its sub-types.
  *
@@ -103,43 +106,43 @@ private class Rule(val message: String, val satisfied: () -> Boolean)
 private fun NewProductionDraft.rulesFor(
     selectedType: ProductionType?,
 ): Map<ProductionField, Rule> = buildMap {
-    put(ProductionField.FirstName, Rule("Enter a first name.") { firstName.isNotBlank() })
-    put(ProductionField.LastName, Rule("Enter a last name.") { lastName.isNotBlank() })
-    put(ProductionField.ProductionName, Rule("Enter a project name.") { productionName.isNotBlank() })
+    put(ProductionField.FirstName, Rule(str(S.desktop_enter_a_first_name)) { firstName.isNotBlank() })
+    put(ProductionField.LastName, Rule(str(S.desktop_enter_a_last_name)) { lastName.isNotBlank() })
+    put(ProductionField.ProductionName, Rule(str(S.desktop_enter_a_project_name)) { productionName.isNotBlank() })
 
     put(
         ProductionField.Email,
         if (email.isBlank()) {
-            Rule("Enter an email address.") { false }
+            Rule(str(S.desktop_enter_an_email_address)) { false }
         } else {
-            Rule("Enter a valid email address.") { email.looksLikeEmail() }
+            Rule(str(S.docusign_role_email_invalid)) { email.looksLikeEmail() }
         },
     )
 
-    put(ProductionField.Type, Rule("Choose a project type.") { !typeId.isNullOrBlank() })
+    put(ProductionField.Type, Rule(str(S.desktop_choose_a_project_type)) { !typeId.isNullOrBlank() })
 
     // Only demanded when the chosen type actually offers sub-types — requiring
     // one unconditionally would block types that have none.
     if (selectedType != null && selectedType.subTypes.isNotEmpty()) {
-        put(ProductionField.SubType, Rule("Choose a sub-type.") { !subType.isNullOrBlank() })
+        put(ProductionField.SubType, Rule(str(S.desktop_choose_a_sub_type_rule)) { !subType.isNullOrBlank() })
     }
 
     if (needsCustomSubType(selectedType)) {
-        put(ProductionField.CustomSubType, Rule("Name the new sub-type.") { customSubType.isNotBlank() })
+        put(ProductionField.CustomSubType, Rule(str(S.desktop_name_the_new_sub_type)) { customSubType.isNotBlank() })
     }
 
-    put(ProductionField.Language, Rule("Choose a language.") { !languageCode.isNullOrBlank() })
+    put(ProductionField.Language, Rule(str(S.desktop_choose_a_language_rule)) { !languageCode.isNullOrBlank() })
 
     // Both halves or neither. One half alone is what the backend rejects, and
     // it is the mistake a user makes by tabbing past the country code.
     put(
         ProductionField.Phone,
-        Rule("Enter both a country code and a number, or leave both empty.") {
+        Rule(str(S.desktop_enter_country_code_and_number_or_neither)) {
             countryCode.isBlank() == phone.isBlank()
         },
     )
 
-    put(ProductionField.Terms, Rule("Accept the terms to continue.") { agreedToTerms })
+    put(ProductionField.Terms, Rule(str(S.desktop_accept_the_terms_to_continue)) { agreedToTerms })
 }
 
 /**

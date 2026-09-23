@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.purchaseorder.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The chips above every order list — the web's `FILTERS_BY_TAB`.
  *
@@ -8,20 +11,23 @@ package com.zillit.desktop.feature.purchaseorder.domain
  * two chips there would render controls that can never match anything. The
  * Posted tab's chips are not statuses at all but relief labels.
  */
-enum class PoQuickFilter(val label: String) {
-    All("All"),
-    Pending("Pending"),
-    Approved("Approved"),
-    Rejected("Rejected"),
-    Posted("Posted"),
-    Closed("Closed"),
+enum class PoQuickFilter(private val labelKey: String) {
+    All(S.all),
+    Pending(S.pending),
+    Approved(S.approved),
+    Rejected(S.rejected),
+    Posted(S.ah_posted_label),
+    Closed(S.ah_status_closed),
 
     // -- the Posted tab's own chips: relief, not status --------------------
-    Open("Open"),
-    FullyRelieved("Fully Relieved"),
-    PartiallyRelieved("Partially Relieved"),
-    Invoice("Invoice"),
+    Open(S.dd_action_open),
+    FullyRelieved(S.desktop_fully_relieved),
+    PartiallyRelieved(S.desktop_partially_relieved),
+    Invoice(S.ah_run_detail_col_invoice),
     ;
+
+    /** What the chip shows. */
+    val label: String get() = str(labelKey)
 
     /**
      * Whether [order] belongs under this chip.
@@ -66,11 +72,14 @@ enum class PoQuickFilter(val label: String) {
  * Newest first by default, because a purchase-order list is read to find what
  * just came in.
  */
-enum class PoSortKey(val label: String) {
-    DateDescending("Date ↓"),
-    AmountDescending("Amount ↓"),
-    VendorAscending("Vendor A-Z"),
+enum class PoSortKey(private val labelKey: String) {
+    DateDescending(S.desktop_dm_sort_date_desc),
+    AmountDescending(S.desktop_po_sort_amount_desc),
+    VendorAscending(S.ah_sort_vendor_asc),
     ;
+
+    /** What the dropdown shows. */
+    val label: String get() = str(labelKey)
 
     fun sort(orders: List<PurchaseOrder>): List<PurchaseOrder> = when (this) {
         // An order with no effective date sorts last rather than interleaving:

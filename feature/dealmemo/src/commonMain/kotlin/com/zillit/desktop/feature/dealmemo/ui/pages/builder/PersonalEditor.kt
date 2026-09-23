@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewDraft
@@ -48,13 +50,13 @@ import com.zillit.desktop.feature.dealmemo.ui.pages.crew.AdditionalDetails
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.PairSeparators
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.PassportUploader
 import com.zillit.desktop.feature.dealmemo.ui.pages.crew.UkPayrollFieldset
+import kotlin.time.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlin.time.Clock
 
 /**
  * Crew Personal Details (`StepPersonalCrewDetails.jsx`): identity and
@@ -109,21 +111,21 @@ private fun PersonalDetailsCard(
 ) {
     val form = builder.form
     val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()).toString() }
-    CardBlock(title = "Personal Details") {
+    CardBlock(title = str(S.dm_step2_card_personal)) {
         BuilderGrid(columns = 2) {
             cell {
-                Field("Full Legal Name", required = true) {
+                Field(str(S.dm_req_full_legal_name), required = true) {
                     BuilderInput(
                         value = form.text("fullLegalName"),
                         onValueChange = { name -> ops.edit { it.withLegalName(name) } },
-                        placeholder = "As on passport",
+                        placeholder = str(S.dm_step2_full_legal_name_hint),
                     )
                 }
             }
             cell {
                 val email = form.text("email")
                 MarkableField(
-                    label = "Email",
+                    label = str(S.dm_req_email),
                     key = "email",
                     marks = marks,
                     mark = mark,
@@ -143,21 +145,21 @@ private fun PersonalDetailsCard(
                 ops,
                 mark,
                 marks,
-                "Screen Credit",
+                str(S.dm_step2_preferred_name),
                 "preferredName",
-                "As it should appear on screen / call sheet",
+                str(S.dm_step2_preferred_name_hint),
             )
             textCell(
                 form,
                 ops,
                 mark,
                 marks,
-                "Screen Credit Designation",
+                str(S.dm_step2_screen_credit_designation),
                 "screenCreditDesignation",
-                "As it should appear in credits",
+                str(S.desktop_dm_as_it_should_appear_in_credits),
             )
             cell {
-                MarkableField("Date of Birth", "dob", marks, mark) {
+                MarkableField(str(S.dm_req_dob), "dob", marks, mark) {
                     IsoDateInput(
                         value = form.text("dob"),
                         // A future date is dropped, not stored — `max` alone only bounds the calendar.
@@ -166,20 +168,20 @@ private fun PersonalDetailsCard(
                     )
                 }
             }
-            textCell(form, ops, mark, marks, "National Insurance No.", "niNumber", "AB 12 34 56 C")
-            textCell(form, ops, mark, marks, "Tax Code", "taxCode", "e.g. 1257L")
+            textCell(form, ops, mark, marks, str(S.dm_req_ni), "niNumber", str(S.dm_step2_ni_number_hint))
+            textCell(form, ops, mark, marks, str(S.dm_crew_tax_code), "taxCode", str(S.dm_step2_tax_code_hint))
             cell {
-                MarkableField("Right to Work", "rightToWork", marks, mark) {
+                MarkableField(str(S.dm_req_rtw), "rightToWork", marks, mark) {
                     NativeSelect(
                         value = form.text("rightToWork"),
                         options = RIGHT_TO_WORK.map { PickOption(it, it) },
                         onPick = { ops.set("rightToWork", it) },
-                        placeholder = "— Select —",
+                        placeholder = str(S.desktop_dm_select_placeholder),
                     )
                 }
             }
             cell(span = 2) {
-                MarkableField("Passport / ID", "passportAttachment", marks, mark) {
+                MarkableField(str(S.dm_step2_passport), "passportAttachment", marks, mark) {
                     val files = passportList(form["passportAttachment"])
                     PassportUploader(
                         files = files,
@@ -193,7 +195,7 @@ private fun PersonalDetailsCard(
             cell {
                 val mobile = CrewFormRules.sanitizePhone(form.text("mobile"), allowPlus = true)
                 MarkableField(
-                    label = "Mobile",
+                    label = str(S.dm_req_mobile),
                     key = "mobile",
                     marks = marks,
                     mark = mark,
@@ -208,12 +210,12 @@ private fun PersonalDetailsCard(
                 }
             }
             cell {
-                MarkableField("Gender", "gender", marks, mark) {
+                MarkableField(str(S.dm_step2_gender), "gender", marks, mark) {
                     NativeSelect(
                         value = form.text("gender"),
                         options = GENDERS,
                         onPick = { ops.set("gender", it) },
-                        placeholder = "— Select —",
+                        placeholder = str(S.desktop_dm_select_placeholder),
                     )
                 }
             }
@@ -235,16 +237,15 @@ private fun BankDetailsCard(form: DealForm, ops: FormOps, mark: MarkOps, marks: 
         current.with("bank", JsonObject((current.obj("bank") ?: DealForm.EMPTY_BANK) + (key to value)))
     }
     CardBlock(
-        title = "Bank Details",
-        tag = if (linked) "Linked to Account Hub" else "Optional",
+        title = str(S.dm_crew_step_bank),
+        tag = if (linked) str(S.desktop_dm_linked_to_account_hub) else str(S.dm_step9_optional),
         tone = BuilderTone.Teal,
     ) {
         BuilderAlert(
             text = if (linked) {
-                "This deal is issued — this account is linked in Account Hub. Changes saved here are applied there too."
+                str(S.desktop_dm_this_deal_is_issued_this_account_is)
             } else {
-                "Bank account used to pay this crew member. Saved with the deal; on issue it becomes an Account Hub " +
-                    "bank account."
+                str(S.desktop_dm_bank_account_used_to_pay_this_crew)
             },
             modifier = Modifier.padding(bottom = 16.dp),
         )
@@ -285,7 +286,7 @@ private fun BankDetailsCard(form: DealForm, ops: FormOps, mark: MarkOps, marks: 
             }
         }
         ZillitText(
-            text = "ADDITIONAL DETAILS",
+            text = str(S.dm_step2_bank_additional_title),
             style = DmType.mono(11.sp, FontWeight.Bold, 0.09.em),
             color = bp.muted,
             modifier = Modifier.padding(top = 18.dp, bottom = 8.dp),
@@ -299,13 +300,21 @@ private fun BankDetailsCard(form: DealForm, ops: FormOps, mark: MarkOps, marks: 
 
 @Composable
 private fun EmergencyCard(state: DealMemoUiState, form: DealForm, ops: FormOps, mark: MarkOps, marks: Set<String>) {
-    CardBlock(title = "Emergency Details") {
+    CardBlock(title = str(S.dm_crew_step_emergency)) {
         BuilderGrid(columns = 2) {
-            textCell(form, ops, mark, marks, "Emergency Contact Name", "emergencyContactName", "Full name")
+            textCell(
+                form,
+                ops,
+                mark,
+                marks,
+                str(S.desktop_dm_emergency_contact_name),
+                "emergencyContactName",
+                str(S.dm_step2_agency_name_hint),
+            )
             emailCell(form, ops, mark, marks, "emergencyEmail")
             cell {
                 val number = CrewFormRules.sanitizePhone(form.text("emergencyContactNumber"), allowPlus = false)
-                MarkableField("Emergency Contact Number", "emergencyContactNumber", marks, mark) {
+                MarkableField(str(S.desktop_dm_emergency_contact_number), "emergencyContactNumber", marks, mark) {
                     PhoneFields(
                         countries = state.production.countries,
                         storedCode = form.text("emergencyCountryCode"),
@@ -329,8 +338,8 @@ private fun EmergencyCard(state: DealMemoUiState, form: DealForm, ops: FormOps, 
 @Composable
 private fun AgencyCard(state: DealMemoUiState, form: DealForm, ops: FormOps, mark: MarkOps, marks: Set<String>) {
     val agencies = state.production.agencies
-    CardBlock(title = "Agency/Representative Details") {
-        Field("Representing Agency") {
+    CardBlock(title = str(S.dm_step2_card_representative)) {
+        Field(str(S.dm_step2_representing_agency)) {
             RichSelect(
                 options = agencies.map { (id, name) -> PickOption(id, name) },
                 selectedKey = form.text("agencyId").ifEmpty { null },
@@ -341,26 +350,32 @@ private fun AgencyCard(state: DealMemoUiState, form: DealForm, ops: FormOps, mar
                     )
                 },
                 placeholder = if (agencies.isEmpty()) {
-                    "No agencies registered — enter details below"
+                    str(S.dm_step2_no_agencies)
                 } else {
-                    "— Select agency —"
+                    str(S.desktop_dm_select_agency_placeholder)
                 },
                 triggerText = form.text("agencyName").ifEmpty { null }?.takeIf { form.text("agencyId").isNotEmpty() },
                 dropdownWidth = 360.dp,
             )
         }
         HintText(
-            text = "If the crew member is represented by an agency, select it here — the agency can later be sent " +
-                "the deal memo to review and sign on behalf of the crew member. If the agency isn't registered, " +
-                "enter its details below.",
+            text = str(S.desktop_dm_if_the_crew_member_is_represented_by),
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
         )
         BuilderGrid(columns = 2) {
-            textCell(form, ops, mark, marks, "Agency Name", "representativeName", "Full name")
+            textCell(
+                form,
+                ops,
+                mark,
+                marks,
+                str(S.dm_step2_agency_name),
+                "representativeName",
+                str(S.dm_step2_agency_name_hint),
+            )
             emailCell(form, ops, mark, marks, "representativeEmail")
             cell {
                 val number = CrewFormRules.sanitizePhone(form.text("representativePhone"), allowPlus = false)
-                MarkableField("Phone", "representativePhone", marks, mark) {
+                MarkableField(str(S.dm_step2_representative_phone), "representativePhone", marks, mark) {
                     PhoneFields(
                         countries = state.production.countries,
                         storedCode = form.text("representativeCountryCode"),
@@ -424,9 +439,9 @@ private fun MarkSwitch(marked: Boolean, visible: Boolean, onChange: (Boolean) ->
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(REVEAL_MILLIS))
     ZillitTooltip(
         text = if (marked) {
-            "Required for the crew member — click to make optional"
+            str(S.desktop_dm_required_for_the_crew_member_click_to)
         } else {
-            "Click to make this field required for the crew member"
+            str(S.desktop_dm_click_to_make_this_field_required_for)
         },
     ) {
         Row(
@@ -435,7 +450,7 @@ private fun MarkSwitch(marked: Boolean, visible: Boolean, onChange: (Boolean) ->
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             ZillitText(
-                text = "Mark Required",
+                text = str(S.dm_step2_mark_required),
                 style = DmType.sans(10.sp, FontWeight.Medium),
                 color = bp.muted,
                 maxLines = 1,
@@ -465,7 +480,7 @@ private fun AddressBlock(
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
                 text = buildAnnotatedString {
-                    append("Address")
+                    append(str(S.dm_address_label))
                     if (marked) withStyle(SpanStyle(color = bp.red)) { append(" *") }
                 },
                 style = DmType.sans(13.sp, FontWeight.Bold),
@@ -501,7 +516,7 @@ private fun BuilderGridScope.emailCell(form: DealForm, ops: FormOps, mark: MarkO
     cell {
         val email = form.text(key)
         MarkableField(
-            "Email",
+            str(S.dm_req_email),
             key,
             marks,
             mark,
@@ -527,24 +542,29 @@ private fun DealForm.withLegalName(name: String): DealForm {
 private class BankField(val key: String, val label: String, val placeholder: String, val markKey: String)
 
 /** The fourth slot is the key Mark Required writes — the crew panel's `bank.<field>` map reads it. */
-private val BANK_FIELDS = listOf(
-    BankField("account_holder_name", "Account Holder Name", "As it appears on the account", "bankAccountHolderName"),
-    BankField("name", "Bank Name", "e.g. Barclays", "bankName"),
-    BankField("account_number", "Account Number", "12345678", "bankAccountNumber"),
-    BankField("sort_code", "Sort Code", "20-48-91", "bankSortCode"),
+private val BANK_FIELDS get() = listOf(
+    BankField(
+        "account_holder_name",
+        str(S.dm_req_account_holder),
+        str(S.desktop_dm_as_it_appears_on_the_account),
+        "bankAccountHolderName",
+    ),
+    BankField("name", str(S.dm_step2_bank_name), str(S.dm_step2_bank_name_hint), "bankName"),
+    BankField("account_number", str(S.dm_step2_bank_account_number), "12345678", "bankAccountNumber"),
+    BankField("sort_code", str(S.dm_step2_bank_sort_code), "20-48-91", "bankSortCode"),
     BankField("iban_number", "IBAN", "GB29 NWBK 6016 1331 9268 19", "bankIbanNumber"),
-    BankField("swift_code", "SWIFT / BIC", "BARCGB22", "bankSwiftCode"),
+    BankField("swift_code", str(S.dm_step2_bank_swift), "BARCGB22", "bankSwiftCode"),
 )
 
 private val RIGHT_TO_WORK =
     listOf("Passport", "UK Citizen / Settled Status", "UK Visa", "EU Pre-Settled", "Work Permit")
 
-private val GENDERS = listOf(
-    PickOption("female", "Female"),
-    PickOption("male", "Male"),
-    PickOption("non_binary", "Non-binary"),
-    PickOption("other", "Other"),
-    PickOption("prefer_not_to_say", "Prefer not to say"),
+private val GENDERS get() = listOf(
+    PickOption("female", str(S.female)),
+    PickOption("male", str(S.male)),
+    PickOption("non_binary", str(S.desktop_gender_non_binary)),
+    PickOption("other", str(S.other)),
+    PickOption("prefer_not_to_say", str(S.desktop_prefer_not_to_say)),
 )
 
 private const val SORT_CODE_DIGITS = 6

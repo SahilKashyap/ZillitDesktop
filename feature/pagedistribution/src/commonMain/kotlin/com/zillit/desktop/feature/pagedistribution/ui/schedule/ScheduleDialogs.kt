@@ -63,6 +63,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.plural
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.ScheduleType
@@ -107,9 +110,9 @@ internal fun ScheduleDialogs(
     state.counts?.let { DodCountsDialog(state, onEvent, resolveUser) }
     state.confirmDelete?.let { document ->
         ConfirmDialog(
-            title = "Delete page",
-            body = "Are you sure you want to delete \"${document.displayName()}\"? It moves to the history.",
-            confirm = "Yes, delete",
+            title = str(S.desktop_delete_page),
+            body = str(S.desktop_dist_delete_confirm_body_long, document.displayName()),
+            confirm = str(S.desktop_dist_delete_confirm_yes),
             danger = true,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmDelete) },
@@ -124,9 +127,9 @@ internal fun ScheduleDialogs(
             document.episode.ifBlank { document.sceneNumber }.ifBlank { null },
         )
         ConfirmDialog(
-            title = "Publish to Document Distribution",
-            body = "File \"${document.displayName()}\" under ${path.joinToString(" / ")}?",
-            confirm = "Publish",
+            title = str(S.dd_publish_confirm_title),
+            body = str(S.desktop_dist_publish_confirm_body, document.displayName(), path.joinToString(" / ")),
+            confirm = str(S.publish),
             danger = false,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmPublish) },
@@ -164,13 +167,13 @@ private fun PagesFolderDialog(
     }
     val count = open.documents.size
     ZillitDialogShell(
-        title = "Pages · Scene ${open.folder.key.ifBlank { "—" }}",
+        title = str(S.desktop_dist_pages_scene_title, open.folder.key.ifBlank { "—" }),
         subtitle = listOfNotNull(
             open.folder.scheduleType?.scheduleLabel(),
             when {
-                !live -> "Deleted pages"
+                !live -> str(S.desktop_dist_deleted_pages)
                 count == 0 -> null
-                else -> "$count page${if (count == 1) "" else "s"}"
+                else -> plural(S.docusign_template_detail_doc_pages, count)
             },
         ).joinToString("  ·  ").ifBlank { null },
         icon = ZillitIcons.Folder,
@@ -181,14 +184,14 @@ private fun PagesFolderDialog(
         actions = {
             if (live) {
                 ZillitButton(
-                    text = "Upload here",
+                    text = str(S.desktop_location_upload_here),
                     onClick = { onEvent(DistributionEvent.PickPdf()) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Paperclip,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CloseFolder) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -207,8 +210,8 @@ private fun PagesFolderDialog(
                 state.loading && open.documents.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
                 open.documents.isEmpty() -> ZillitEmptyState(
-                    title = "No data found",
-                    message = if (live) "Upload a page here to start this scene." else null,
+                    title = str(S.no_data_found),
+                    message = if (live) str(S.desktop_sched_scene_empty_message) else null,
                     icon = ZillitIcons.File,
                 )
                 else -> LazyColumn(
@@ -251,7 +254,7 @@ internal fun PageCard(
     resolveUser: (String) -> String?,
 ) {
     val colors = ZillitTheme.colors
-    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { "Unknown user" }
+    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { str(S.unkone_user) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -264,13 +267,13 @@ internal fun PageCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
-            Ribbon(text = "Uploaded on: ${DistributionDates.dateTime(document.createdMs)}")
+            Ribbon(text = str(S.desktop_dist_uploaded_on_prefix, DistributionDates.dateTime(document.createdMs)))
             Row(
                 modifier = Modifier.padding(ZillitTheme.spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (document.deleted) ZillitStatusPill(label = "Deleted", tone = StatusTone.Rejected)
+                if (document.deleted) ZillitStatusPill(label = str(S.drive_deleted_default), tone = StatusTone.Rejected)
                 ScheduleMoreMenu(state, document, onEvent)
             }
         }
@@ -288,12 +291,15 @@ internal fun PageCard(
                 size = CARD_AVATAR,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                Fact(label = "Uploaded by", value = uploader)
-                if (state.viewer.isTelevision) Fact(label = "Episode", value = document.episode.ifBlank { "—" })
-                Fact(label = "Scene number", value = document.sceneNumber.ifBlank { "—" })
-                Fact(label = "Page number", value = document.pageNumber.ifBlank { "—" })
-                Fact(label = "Page date", value = DistributionDates.date(document.userSelectedDateMs).ifBlank { "—" })
-                Fact(label = "Schedule type", value = document.scheduleType?.scheduleLabel() ?: "—")
+                Fact(label = str(S.txt_uploaded_by), value = uploader)
+                if (state.viewer.isTelevision) Fact(label = str(S.episode), value = document.episode.ifBlank { "—" })
+                Fact(label = str(S.txt_scene_number), value = document.sceneNumber.ifBlank { "—" })
+                Fact(label = str(S.desktop_dist_page_number), value = document.pageNumber.ifBlank { "—" })
+                Fact(
+                    label = str(S.page_date),
+                    value = DistributionDates.date(document.userSelectedDateMs).ifBlank { "—" },
+                )
+                Fact(label = str(S.desktop_dist_schedule_type), value = document.scheduleType?.scheduleLabel() ?: "—")
                 FileLine(document)
             }
         }
@@ -347,14 +353,14 @@ private fun SearchDrawer(state: DistributionUiState, onEvent: (DistributionEvent
                     ) {
                         ZillitIcon(icon = ZillitIcons.Search, tint = colors.accent, size = DRAWER_ICON)
                         ZillitText(
-                            text = "Search",
+                            text = str(S.search),
                             style = ZillitTheme.typography.titleMedium,
                             color = colors.textPrimary,
                             modifier = Modifier.weight(1f),
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Close,
-                            contentDescription = "Close search",
+                            contentDescription = str(S.desktop_board_close_search),
                             onClick = onClose,
                         )
                     }
@@ -371,7 +377,7 @@ private fun SearchDrawer(state: DistributionUiState, onEvent: (DistributionEvent
                             ZillitTextField(
                                 value = state.searchEpisode,
                                 onValueChange = { onEvent(DistributionEvent.SearchChanged(episode = it)) },
-                                placeholder = "Search by episode",
+                                placeholder = str(S.desktop_dist_search_by_episode),
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -383,7 +389,7 @@ private fun SearchDrawer(state: DistributionUiState, onEvent: (DistributionEvent
                         ZillitTextField(
                             value = state.searchScene,
                             onValueChange = { onEvent(DistributionEvent.SearchChanged(scene = it)) },
-                            placeholder = "Search by scene number",
+                            placeholder = str(S.desktop_dist_search_by_scene),
                             leadingIcon = ZillitIcons.Search,
                             modifier = Modifier.weight(1f),
                         )
@@ -405,8 +411,8 @@ private fun SearchResultList(state: DistributionUiState, onEvent: (DistributionE
     when {
         state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
         groups.isEmpty() -> ZillitEmptyState(
-            title = "No data found",
-            message = "No pages match this search.",
+            title = str(S.no_data_found),
+            message = str(S.desktop_dist_no_pages_match_search),
             icon = ZillitIcons.Search,
         )
         else -> LazyColumn(
@@ -453,7 +459,7 @@ internal fun SearchFolderCard(
             .clickable(onClick = onClick),
     ) {
         Column {
-            Ribbon(text = "Uploaded on: ${DistributionDates.dateTime(first.createdMs)}")
+            Ribbon(text = str(S.desktop_dist_uploaded_on_prefix, DistributionDates.dateTime(first.createdMs)))
             Row(
                 modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -470,17 +476,25 @@ internal fun SearchFolderCard(
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                     ZillitText(
-                        text = "Scene number: ${scene.ifBlank { "—" }}",
+                        text = str(S.desktop_dist_scene_number_value, scene.ifBlank { "—" }),
                         style = ZillitTheme.typography.titleMedium,
                         color = colors.textPrimary,
                     )
-                    if (television) Fact(label = "Episode", value = first.episode.ifBlank { "—" })
+                    if (television) Fact(label = str(S.episode), value = first.episode.ifBlank { "—" })
                     val pageDate = DistributionDates.date(first.userSelectedDateMs).ifBlank { "—" }
-                    Fact(label = "Page date", value = pageDate)
-                    first.scheduleType?.let { Fact(label = "Schedule type", value = it.scheduleLabel()) }
-                    if (first.pageNumber.isNotBlank()) Fact(label = "Page number", value = first.pageNumber)
+                    Fact(label = str(S.page_date), value = pageDate)
+                    first.scheduleType?.let {
+                        Fact(label = str(S.desktop_dist_schedule_type), value = it.scheduleLabel())
+                    }
+                    if (first.pageNumber.isNotBlank()) {
+                        Fact(label = str(S.desktop_dist_page_number), value = first.pageNumber)
+                    }
                     ZillitText(
-                        text = "$pageCount page${if (pageCount == 1) "" else "s"} match",
+                        text = if (pageCount == 1) {
+                            str(S.desktop_dist_pages_match_one, pageCount)
+                        } else {
+                            str(S.desktop_dist_pages_match_other, pageCount)
+                        },
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )
@@ -494,7 +508,7 @@ internal fun SearchFolderCard(
                 horizontalArrangement = Arrangement.End,
             ) {
                 ZillitText(
-                    text = "View details",
+                    text = str(S.view_details),
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.accentText,
                 )
@@ -552,17 +566,17 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
     }
     ZillitDialogShell(
         title = when {
-            pages && replacing -> "Replace page"
-            pages -> "Upload pages"
-            replacing && oneLine -> "Replace one-line schedule"
-            replacing -> "Replace full schedule"
-            oneLine -> "Upload one-line schedule"
-            else -> "Upload full schedule"
+            pages && replacing -> str(S.desktop_sched_replace_page)
+            pages -> str(S.desktop_sched_upload_pages)
+            replacing && oneLine -> str(S.desktop_sched_replace_oneline)
+            replacing -> str(S.desktop_sched_replace_full)
+            oneLine -> str(S.desktop_sched_upload_oneline)
+            else -> str(S.upload_schedule)
         },
         subtitle = when {
-            pages -> "Pages are filed under their scene number"
-            replacing -> "The current schedule moves to the history"
-            else -> "Later uploads replace this one"
+            pages -> str(S.desktop_sched_pages_filed_by_scene)
+            replacing -> str(S.desktop_sched_current_moves_to_history)
+            else -> str(S.desktop_dist_later_uploads_replace)
         },
         icon = ZillitIcons.Upload,
         onDismiss = { onEvent(DistributionEvent.CancelUpload) },
@@ -570,12 +584,12 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
         width = UPLOAD_DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DistributionEvent.CancelUpload) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (replacing) "Replace" else "Upload",
+                text = if (replacing) str(S.replace) else str(S.upload),
                 onClick = onUpload,
                 leadingIcon = ZillitIcons.Upload,
                 loading = editor.saving,
@@ -590,7 +604,7 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
                 icon = ZillitIcons.Warning,
                 action = {
                     ZillitButton(
-                        text = "Dismiss",
+                        text = str(S.sync_action_dismiss),
                         onClick = { onEvent(DistributionEvent.DismissError) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -600,15 +614,15 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
         }
         FileStrip(editor)
         if (replacing && !pages) {
-            ZillitStatusPill(label = "Replaces the current schedule", tone = StatusTone.Pending)
+            ZillitStatusPill(label = str(S.desktop_sched_replaces_current), tone = StatusTone.Pending)
         }
         if (pages) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitTextField(
                     value = editor.sceneNumber,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(sceneNumber = it)) },
-                    label = "Scene number",
-                    placeholder = "12 or 12A",
+                    label = str(S.txt_scene_number),
+                    placeholder = str(S.desktop_dist_scene_placeholder),
                     enabled = !replacing,
                     errorText = problems[Field.Scene].takeIf { attempted },
                     modifier = Modifier.weight(1f),
@@ -616,7 +630,7 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
                 ZillitTextField(
                     value = editor.pageNumber,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(pageNumber = it)) },
-                    label = "Page number (optional)",
+                    label = str(S.desktop_dist_page_number_optional),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -626,9 +640,9 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
                 value = editor.dateYmd,
                 onValueChange = { onEvent(DistributionEvent.UploadChanged(dateYmd = it)) },
                 label = when {
-                    pages -> "Page date (optional)"
-                    oneLine -> "One-line date (optional)"
-                    else -> "Schedule date (optional)"
+                    pages -> str(S.desktop_dist_page_date_optional)
+                    oneLine -> str(S.desktop_dist_one_line_date_optional)
+                    else -> str(S.desktop_dist_schedule_date_optional)
                 },
                 errorText = problems[Field.Date].takeIf { attempted },
                 modifier = Modifier.weight(1f),
@@ -637,9 +651,9 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
                 ZillitTextField(
                     value = editor.episode,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(episode = it)) },
-                    label = "Episode number",
-                    placeholder = "1 or 1,2",
-                    helperText = "Required on a television production.",
+                    label = str(S.txt_episode_number),
+                    placeholder = str(S.desktop_dist_episode_placeholder),
+                    helperText = str(S.desktop_dist_required_on_television),
                     errorText = problems[Field.Episode].takeIf { attempted },
                     modifier = Modifier.weight(1f),
                 )
@@ -648,7 +662,7 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
         if (pages) {
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitText(
-                    text = "Page colour (optional)",
+                    text = str(S.desktop_dist_page_colour_optional),
                     style = ZillitTheme.typography.label,
                     color = colors.textSecondary,
                 )
@@ -675,9 +689,9 @@ private fun ScheduleUploadDialog(state: DistributionUiState, onEvent: (Distribut
             onBack = { step = UploadStep.Form },
         )
         UploadStep.ConfirmColour -> ConfirmDialog(
-            title = "Are you sure?",
-            body = "Page colour is ${editor.colour.label}. Do you want to continue with ${editor.colour.label}?",
-            confirm = "Yes",
+            title = str(S.txt_permission_ignore_title),
+            body = str(S.desktop_sched_colour_confirm, editor.colour.label),
+            confirm = str(S.yes),
             danger = false,
             busy = editor.saving,
             onConfirm = { onEvent(DistributionEvent.SubmitUpload) },
@@ -708,7 +722,7 @@ private fun FileStrip(editor: UploadEditor) {
             contentAlignment = Alignment.Center,
         ) {
             ZillitText(
-                text = "PDF",
+                text = str(S.av_pdf),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = colors.danger,
             )
@@ -720,7 +734,7 @@ private fun FileStrip(editor: UploadEditor) {
                 maxLines = 1,
             )
             ZillitText(
-                text = "File size: ${formatBytes(editor.bytes.size.toString()) ?: "—"}",
+                text = str(S.desktop_dist_file_size, formatBytes(editor.bytes.size.toString()) ?: "—"),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -743,16 +757,16 @@ private fun ChooseTypeDialog(
     val colors = ZillitTheme.colors
     var asked by remember { mutableStateOf(false) }
     ZillitDialogShell(
-        title = "Please select an option",
-        subtitle = "Which pages are these?",
+        title = str(S.desktop_dist_please_select_option),
+        subtitle = str(S.desktop_dist_which_pages),
         icon = ZillitIcons.File,
         onDismiss = onBack,
         visible = true,
         width = CHOOSE_DIALOG_WIDTH,
         actions = {
-            ZillitButton(text = "Back", onClick = onBack, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.back), onClick = onBack, variant = ButtonVariant.Tertiary)
             ZillitButton(
-                text = "OK",
+                text = str(S.ok),
                 onClick = { if (editor.scheduleType == null) asked = true else onConfirm() },
                 loading = busy,
                 enabled = !busy,
@@ -760,7 +774,7 @@ private fun ChooseTypeDialog(
         },
     ) {
         if (asked && editor.scheduleType == null) {
-            ZillitNotice(text = "Please select an option before uploading.", tone = StatusTone.Rejected)
+            ZillitNotice(text = str(S.desktop_dist_please_select_before_upload), tone = StatusTone.Rejected)
         }
         ScheduleType.entries.forEach { type ->
             val selected = editor.scheduleType == type
@@ -820,16 +834,16 @@ private fun uploadProblems(
     if (pages && !replacing) {
         val scene = editor.sceneNumber.trim()
         when {
-            scene.isEmpty() -> put(Field.Scene, "Scene number is required")
-            !scene.first().isDigit() -> put(Field.Scene, "Scene number should start with a number")
-            scene.length > MAX_SCENE -> put(Field.Scene, "Scene number not greater than $MAX_SCENE characters")
+            scene.isEmpty() -> put(Field.Scene, str(S.dd_publish_scene_number_required))
+            !scene.first().isDigit() -> put(Field.Scene, str(S.desktop_dist_scene_start_with_number))
+            scene.length > MAX_SCENE -> put(Field.Scene, str(S.desktop_dist_scene_not_greater_than, MAX_SCENE))
         }
     }
     val episodeAsked = television && !(pages && replacing)
-    if (episodeAsked && editor.episode.isBlank()) put(Field.Episode, "Episode number is required")
+    if (episodeAsked && editor.episode.isBlank()) put(Field.Episode, str(S.desktop_episode_number_required))
     val date = editor.dateYmd.trim()
     if (date.isNotEmpty() && runCatching { LocalDate.parse(date) }.isFailure) {
-        put(Field.Date, "The date must be YYYY-MM-DD")
+        put(Field.Date, str(S.desktop_dist_date_must_be_ymd))
     }
 }
 

@@ -63,6 +63,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.gatedClick
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LibrarySort
@@ -153,15 +155,13 @@ internal fun FloatingCard(modifier: Modifier = Modifier, content: @Composable Ro
 @Composable
 private fun InfoBanner(onEvent: (DocDistEvent) -> Unit) {
     ZillitNotice(
-        text = "Create Folder to organise files, then Upload (or drag & drop) documents into it. From a row you can " +
-            "preview, send by email, watermark + download, or publish to Info / Confidential Info / Production " +
-            "Report / Call Sheet. Supported: ${SupportedUploads.LABEL}.",
+        text = str(S.desktop_docdist_info_banner, SupportedUploads.LABEL),
         tone = StatusTone.Progress,
         icon = ZillitIcons.Upload,
         action = {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Dismiss",
+                contentDescription = str(S.sync_action_dismiss),
                 onClick = { onEvent(DocDistEvent.DismissInfoBanner) },
             )
         },
@@ -180,13 +180,13 @@ private fun LibraryToolbar(state: DocDistUiState, onEvent: (DocDistEvent) -> Uni
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(DocDistEvent.Search(it)) },
-            placeholder = "Search files & folders…",
+            placeholder = str(S.dd_search_files_folders),
             modifier = Modifier.width(SEARCH_WIDTH.dp),
         )
         ZillitDateField(
             value = state.dateFilter.orEmpty(),
             onValueChange = { onEvent(DocDistEvent.FilterByDate(it)) },
-            placeholder = "Filter by date",
+            placeholder = str(S.dd_filter_by_date),
             modifier = Modifier.width(DATE_WIDTH.dp),
         )
         ZillitSelect(
@@ -197,7 +197,10 @@ private fun LibraryToolbar(state: DocDistUiState, onEvent: (DocDistEvent) -> Uni
             modifier = Modifier.width(SORT_WIDTH.dp),
         )
         ZillitSegmented(
-            options = listOf(ZillitTab("list", "List"), ZillitTab("grid", "Grid")),
+            options = listOf(
+                ZillitTab("list", str(S.desktop_drive_view_list)),
+                ZillitTab("grid", str(S.desktop_drive_view_grid)),
+            ),
             activeId = if (state.view == LibraryView.List) "list" else "grid",
             onSelect = { onEvent(DocDistEvent.SetView(if (it == "grid") LibraryView.Grid else LibraryView.List)) },
         )
@@ -208,7 +211,7 @@ private fun LibraryToolbar(state: DocDistUiState, onEvent: (DocDistEvent) -> Uni
         ) {
             if (state.currentFolder != null) {
                 ZillitButton(
-                    text = "Upload",
+                    text = str(S.upload),
                     onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.PickAndUpload) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Upload,
@@ -216,14 +219,14 @@ private fun LibraryToolbar(state: DocDistUiState, onEvent: (DocDistEvent) -> Uni
                 )
             }
             ZillitButton(
-                text = "Create folder",
+                text = str(S.dd_empty_create_cta),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.OpenNewFolder) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
             )
             ZillitButton(
-                text = "Compose email",
+                text = str(S.dd_compose_email),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.ComposeBlank) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -242,12 +245,12 @@ private fun FolderPath(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     ) {
         ZillitIconButton(
             icon = ZillitIcons.ArrowLeft,
-            contentDescription = "Up one folder",
+            contentDescription = str(S.desktop_docdist_up_one_folder),
             onClick = { onEvent(DocDistEvent.GoUp) },
         )
         ZillitIconButton(
             icon = ZillitIcons.Home,
-            contentDescription = "Back to root",
+            contentDescription = str(S.desktop_docdist_back_to_root),
             onClick = { onEvent(DocDistEvent.OpenFolder(null)) },
         )
         state.breadcrumb.forEachIndexed { index, folder ->
@@ -289,13 +292,13 @@ private fun FolderHeader(folder: LibraryFolder, state: DocDistUiState, onEvent: 
         }
         if (state.documents.isNotEmpty()) {
             ZillitButton(
-                text = "Publish",
+                text = str(S.publish),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.PublishFolder(folder.id)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Distribute this folder",
+                text = str(S.dd_distribute_this_folder),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                     DocDistEvent.DistributeFolder(folder.id),
                 ) },
@@ -304,7 +307,7 @@ private fun FolderHeader(folder: LibraryFolder, state: DocDistUiState, onEvent: 
             )
         } else {
             ZillitText(
-                text = "Upload files to enable distribution",
+                text = str(S.dd_upload_to_enable),
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textMuted,
             )
@@ -332,14 +335,14 @@ private fun SelectionBar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit)
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "${state.selectionCount} selected",
+            text = str(S.dd_n_selected, state.selectionCount),
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
             color = c.warning,
             modifier = Modifier.weight(1f),
         )
         Box {
             ZillitButton(
-                text = "Actions",
+                text = str(S.dd_actions),
                 onClick = { menuOpen = true },
                 size = ButtonSize.Small,
                 trailingIcon = ZillitIcons.ChevronDown,
@@ -348,22 +351,22 @@ private fun SelectionBar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit)
                 expanded = menuOpen,
                 onDismiss = { menuOpen = false },
                 entries = listOf(
-                    MenuEntry("Share documents", post { onEvent(DocDistEvent.Compose) }, ZillitIcons.Send),
-                    MenuEntry("Watermark PDF and share", post { onEvent(DocDistEvent.Compose) }, ZillitIcons.Shield),
+                    MenuEntry(str(S.dd_share_documents), post { onEvent(DocDistEvent.Compose) }, ZillitIcons.Send),
+                    MenuEntry(str(S.dd_watermark_share), post { onEvent(DocDistEvent.Compose) }, ZillitIcons.Shield),
                     MenuEntry(
-                        "Watermark PDF and download",
+                        str(S.dd_watermark_download),
                         download { onEvent(DocDistEvent.OpenWatermarkBatch) },
                         ZillitIcons.Download,
                     ),
-                    MenuEntry("Publish", post { onEvent(DocDistEvent.OpenPublishSelection) }, ZillitIcons.Link),
+                    MenuEntry(str(S.publish), post { onEvent(DocDistEvent.OpenPublishSelection) }, ZillitIcons.Link),
                     MenuEntry(
-                        "Move…",
+                        str(S.dd_action_move),
                         post { onEvent(DocDistEvent.OpenMove) },
                         ZillitIcons.Grid,
                         dividerBefore = true,
                     ),
                     MenuEntry(
-                        "Delete",
+                        str(S.delete),
                         post { onEvent(DocDistEvent.ConfirmDeleteSelection) },
                         ZillitIcons.Trash,
                         danger = true,
@@ -373,7 +376,7 @@ private fun SelectionBar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit)
             )
         }
         ZillitButton(
-            text = "Clear",
+            text = str(S.dd_action_clear),
             onClick = { onEvent(DocDistEvent.ClearSelection) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -399,19 +402,17 @@ private fun ListingCard(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, 
             state.loading && state.documents.isEmpty() && state.folders.isEmpty() ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
             state.isEmptyListing && state.hasActiveFilter -> ZillitEmptyState(
-                title = "No matching files or folders.",
+                title = str(S.dd_empty_no_results_title),
                 message = when {
                     state.search.isNotBlank() && state.dateFilter != null ->
-                        "Nothing matches \"${state.search.trim()}\" on the selected date. " +
-                            "Try a different term or clear the filters."
-                    state.search.isNotBlank() ->
-                        "Nothing matches \"${state.search.trim()}\". Try a different term or check your spelling."
-                    else -> "No files or folders match the selected date."
+                        str(S.dd_empty_no_results_search_date, state.search.trim())
+                    state.search.isNotBlank() -> str(S.dd_empty_no_results_search, state.search.trim())
+                    else -> str(S.dd_empty_no_results_date)
                 },
                 icon = ZillitIcons.Search,
                 action = {
                     ZillitButton(
-                        text = "Clear filters",
+                        text = str(S.dd_empty_clear_filters),
                         onClick = { onEvent(DocDistEvent.ClearFilters) },
                         variant = ButtonVariant.Secondary,
                     )
@@ -431,26 +432,24 @@ private fun EmptyLibrary(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit)
     val folder = state.currentFolder
     val canPost = state.viewer.canPost
     ZillitEmptyState(
-        title = if (folder != null) "This folder is empty." else "Your library is empty.",
+        title = str(if (folder != null) S.dd_empty_folder_title else S.desktop_docdist_library_empty_title),
         message = if (folder != null) {
-            "Click Upload in the toolbar, or drag and drop files anywhere in this area " +
-                "to add them to \"${folder.name}\". " +
-                "Supported: ${SupportedUploads.LABEL}."
+            str(S.desktop_docdist_empty_folder_message, folder.name, SupportedUploads.LABEL)
         } else {
-            "Use Create Folder to get started, then open a folder and Upload (or drag & drop) to add documents."
+            str(S.desktop_docdist_empty_library_message)
         },
         icon = if (folder != null) ZillitIcons.Upload else ZillitIcons.Grid,
         action = {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 if (folder != null) {
                     ZillitButton(
-                        text = "Upload files",
+                        text = str(S.dd_empty_upload_cta),
                         onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.PickAndUpload) },
                         leadingIcon = ZillitIcons.Upload,
                     )
                 }
                 ZillitButton(
-                    text = "Create folder",
+                    text = str(S.dd_empty_create_cta),
                     onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.OpenNewFolder) },
                     variant = if (folder != null) ButtonVariant.Secondary else ButtonVariant.Primary,
                     leadingIcon = ZillitIcons.Add,
@@ -477,10 +476,10 @@ private fun DropOverlay(folderName: String) {
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
             ZillitIcon(icon = ZillitIcons.Upload, tint = c.accent, size = 40.dp)
-            ZillitText(text = "Drop files to upload", style = ZillitTheme.typography.titleMedium)
-            ZillitText(text = "Files will land in $folderName", color = c.textSecondary)
+            ZillitText(text = str(S.dd_drop_title), style = ZillitTheme.typography.titleMedium)
+            ZillitText(text = str(S.dd_drop_subtitle, folderName), color = c.textSecondary)
             ZillitText(
-                text = "Supported: ${SupportedUploads.LABEL}",
+                text = str(S.dd_drop_supported),
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textMuted,
             )
@@ -516,10 +515,10 @@ private fun ListView(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitCheckbox(checked = state.allSelected, onCheckedChange = { onEvent(DocDistEvent.SelectAll(it)) })
-            ColumnHeading("Name", Modifier.weight(NAME_WEIGHT))
-            ColumnHeading("Date", Modifier.width(DATE_COLUMN.dp))
-            ColumnHeading("Description", Modifier.weight(DESCRIPTION_WEIGHT))
-            ColumnHeading("Size", Modifier.width(SIZE_COLUMN.dp))
+            ColumnHeading(str(S.name), Modifier.weight(NAME_WEIGHT))
+            ColumnHeading(str(S.date), Modifier.width(DATE_COLUMN.dp))
+            ColumnHeading(str(S.description), Modifier.weight(DESCRIPTION_WEIGHT))
+            ColumnHeading(str(S.dd_watermark_size), Modifier.width(SIZE_COLUMN.dp))
             Box(Modifier.width(ACTIONS_COLUMN.dp))
         }
         ZillitLazyColumn(
@@ -575,7 +574,7 @@ private fun LoadingMoreRow(loading: Boolean) {
     Box(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg), contentAlignment = Alignment.Center) {
         if (loading) ZillitSpinner(size = 16.dp)
         else ZillitText(
-            text = "Loading more…",
+            text = str(S.desktop_loading_more),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -663,34 +662,34 @@ private fun FolderActions(
         modifier = Modifier.alpha(if (visible || menuOpen) 1f else 0.25f),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        ZillitTooltip(if (canPost) "Distribute this folder" else "No posting rights") {
+        ZillitTooltip(if (canPost) str(S.dd_distribute_this_folder) else str(S.desktop_no_posting_rights)) {
             ZillitIconButton(
                 ZillitIcons.Send,
-                "Distribute ${folder.name}",
+                str(S.desktop_docdist_distribute_named, folder.name),
                 gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.DistributeFolder(folder.id)) },
             )
         }
-        ZillitTooltip(if (canPost) "Publish folder" else "No posting rights") {
+        ZillitTooltip(if (canPost) str(S.desktop_docdist_publish_folder) else str(S.desktop_no_posting_rights)) {
             ZillitIconButton(
                 ZillitIcons.Link,
-                "Publish ${folder.name}",
+                str(S.desktop_docdist_publish_named, folder.name),
                 gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.PublishFolder(folder.id)) },
             )
         }
         Box {
-            ZillitIconButton(ZillitIcons.MoreHorizontal, "More", { menuOpen = true })
+            ZillitIconButton(ZillitIcons.MoreHorizontal, str(S.more), { menuOpen = true })
             MenuPopup(
                 expanded = menuOpen,
                 onDismiss = { menuOpen = false },
                 // Live without the right, asking for it — the repo's rule.
                 entries = listOf(
                     MenuEntry(
-                        "Edit",
+                        str(S.edit),
                         gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.OpenEditFolder(folder.id)) },
                         ZillitIcons.Edit,
                     ),
                     MenuEntry(
-                        "Delete",
+                        str(S.delete),
                         gatedClick(canPost, { onEvent(askPost) }) {
                             onEvent(DocDistEvent.ConfirmDeleteFolder(folder.id))
                         },
@@ -717,49 +716,49 @@ private fun FileActions(
         modifier = Modifier.alpha(if (visible) 1f else 0.25f),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        ZillitTooltip(if (canPost) "Send by email" else "No posting rights") {
+        ZillitTooltip(if (canPost) str(S.desktop_docdist_send_by_email) else str(S.desktop_no_posting_rights)) {
             ZillitIconButton(
                 ZillitIcons.Send,
-                "Send ${document.name}",
+                str(S.desktop_docdist_send_named, document.name),
                 gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.DistributeDocument(document.id)) },
             )
         }
-        ZillitTooltip(if (canPost) "Publish" else "No posting rights") {
+        ZillitTooltip(if (canPost) str(S.publish) else str(S.desktop_no_posting_rights)) {
             ZillitIconButton(
                 ZillitIcons.Link,
-                "Publish ${document.name}",
+                str(S.desktop_docdist_publish_named, document.name),
                 gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.PublishDocument(document.id)) },
             )
         }
         ZillitTooltip(
             when {
-                !canDownload -> "No download rights"
-                document.isWatermarkable -> "Watermark + download"
-                else -> "Watermark supports $WATERMARK_SUPPORTED_LABEL"
+                !canDownload -> str(S.dd_export_no_rights)
+                document.isWatermarkable -> str(S.desktop_docdist_watermark_plus_download)
+                else -> str(S.desktop_docdist_watermark_supports, WATERMARK_SUPPORTED_LABEL)
             },
         ) {
             ZillitIconButton(
                 ZillitIcons.Shield,
-                "Watermark ${document.name}",
+                str(S.desktop_docdist_watermark_named, document.name),
                 gatedClick(canDownload, { onEvent(askDownload) }) { onEvent(
                     DocDistEvent.OpenWatermarkDownload(document.id),
                 ) },
                 enabled = document.isWatermarkable,
             )
         }
-        ZillitTooltip(if (canDownload) "Download" else "No download rights") {
+        ZillitTooltip(if (canDownload) str(S.download) else str(S.dd_export_no_rights)) {
             ZillitIconButton(
                 ZillitIcons.Download,
-                "Download ${document.name}",
+                str(S.desktop_docdist_download_named, document.name),
                 gatedClick(canDownload, { onEvent(askDownload) }) { onEvent(
                     DocDistEvent.DownloadDocument(document.id),
                 ) },
             )
         }
-        ZillitTooltip(if (canPost) "Delete" else "No posting rights") {
+        ZillitTooltip(if (canPost) str(S.delete) else str(S.desktop_no_posting_rights)) {
             ZillitIconButton(
                 ZillitIcons.Trash,
-                "Delete ${document.name}",
+                str(S.desktop_delete_named, document.name),
                 gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.ConfirmDeleteDocument(document.id)) },
                 tint = ZillitTheme.colors.danger,
             )

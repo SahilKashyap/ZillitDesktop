@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.ContactSource
 import com.zillit.desktop.feature.email.domain.EmailAttachment
@@ -145,10 +147,10 @@ data class ComposeUiState(
 
     val title: String
         get() = when (mode) {
-            ComposeMode.New -> "New message"
-            ComposeMode.Reply -> "Reply"
-            ComposeMode.ReplyAll -> "Reply all"
-            ComposeMode.Forward -> "Forward"
+            ComposeMode.New -> str(S.notification_redacted_new_message)
+            ComposeMode.Reply -> str(S.reply)
+            ComposeMode.ReplyAll -> str(S.reply_all)
+            ComposeMode.Forward -> str(S.forward)
         }
 }
 
@@ -405,7 +407,7 @@ class ComposeViewModel(
                         address = address,
                         name = group.name,
                         source = ContactSource.Group,
-                        subtitle = "Email group",
+                        subtitle = str(S.desktop_email_group_subtitle),
                     )
                 }
             }
@@ -581,7 +583,7 @@ class ComposeViewModel(
             setState { copy(isSavingDraft = false) }
             if (draftId != null) {
                 rememberRecipients()
-                sendEffect(ComposeEffect.Notice("Draft saved"))
+                sendEffect(ComposeEffect.Notice(str(S.ah_draft_saved_msg)))
                 sendEffect(ComposeEffect.DraftSaved)
             }
         }
@@ -621,7 +623,7 @@ class ComposeViewModel(
         // the sent mail leaves a copy in Drafts forever.
         val message = state.message().copy(draftId = draftId).withStoredFiles()
         if (message.to.none { it.isValidEmail() }) {
-            setState { copy(error = "Please input the recipient email") }
+            setState { copy(error = str(S.desktop_email_recipient_required)) }
             return
         }
         // The button is already disabled while a file is in flight, but this is
@@ -630,7 +632,7 @@ class ComposeViewModel(
         // ("Please wait while files are uploading") rather than sending a mail
         // whose attachment never appears.
         if (!state.attachments.areSettled) {
-            setState { copy(error = "Please wait while the files are uploading") }
+            setState { copy(error = str(S.desktop_email_wait_for_uploads)) }
             return
         }
         if (!force && message.subject.isBlank() && state.mode == ComposeMode.New) {
@@ -655,7 +657,7 @@ class ComposeViewModel(
                     draftId = null
                     rememberRecipients()
                     setState { copy(isSending = false) }
-                    sendEffect(ComposeEffect.Notice("Email sent"))
+                    sendEffect(ComposeEffect.Notice(str(S.dd_send_notif_sent_title)))
                     sendEffect(ComposeEffect.Sent)
                 }
                 // The composer stays open on failure with everything still typed

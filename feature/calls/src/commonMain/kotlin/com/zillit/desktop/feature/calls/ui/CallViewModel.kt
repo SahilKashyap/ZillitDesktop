@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.calls.ui
 
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.CallCoordinator
 import com.zillit.desktop.feature.calls.data.CallEndEvent
 import com.zillit.desktop.feature.calls.data.CallEndReason
@@ -204,9 +206,9 @@ data class CallUiState(
      */
     val lineLabel: String
         get() = when (session?.provider) {
-            CallProvider.Mediasoup -> "Line 1"
-            CallProvider.Agora -> "Line 2"
-            CallProvider.LiveKit -> "Line 3"
+            CallProvider.Mediasoup -> str(S.txt_line_one)
+            CallProvider.Agora -> str(S.txt_line_two)
+            CallProvider.LiveKit -> str(S.txt_line_three)
             else -> ""
         }
 
@@ -781,7 +783,7 @@ class CallViewModel(
     /** The web's ⋮ row: the link on the clipboard and a line saying so — or the link itself, with no clipboard. */
     private fun copyInviteLink() {
         val link = coordinator.inviteLink() ?: run {
-            setState { copy(notice = "No invite link for this call") }
+            setState { copy(notice = str(S.desktop_call_no_invite_link)) }
             return
         }
         val clipboard = copyToClipboard
@@ -790,7 +792,7 @@ class CallViewModel(
             return
         }
         clipboard(link)
-        setState { copy(endedNotice = "Invite link copied — anyone who opens it can join") }
+        setState { copy(endedNotice = str(S.desktop_call_invite_link_copied)) }
     }
 
     private fun place(event: CallEvent.Place) = coordinator.placeCall(
@@ -879,13 +881,13 @@ class CallViewModel(
     /** The web's ended wording (`CallOverlays.tsx:132-142`, `App.tsx:2456-2457`). */
     private fun notice(event: CallEndEvent): String =
         when (event.reason) {
-            CallEndReason.Hungup -> "Call ended"
-            CallEndReason.RemoteEnded -> "Call ended"
-            CallEndReason.Declined -> "Declined"
-            CallEndReason.Busy -> "Busy on another call"
-            CallEndReason.Timeout -> "No answer"
-            CallEndReason.PickedElsewhere -> "Answered on another device"
-            CallEndReason.Error -> "Call failed"
+            CallEndReason.Hungup -> str(S.txt_call_ended)
+            CallEndReason.RemoteEnded -> str(S.txt_call_ended)
+            CallEndReason.Declined -> str(S.declined_events)
+            CallEndReason.Busy -> str(S.txt_busy)
+            CallEndReason.Timeout -> str(S.desktop_no_answer)
+            CallEndReason.PickedElsewhere -> str(S.desktop_call_answered_on_another_device)
+            CallEndReason.Error -> str(S.desktop_call_failed)
         }
 
     /**

@@ -2,6 +2,8 @@ package com.zillit.desktop.core.locationpicker
 
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A place the user picked: what it is called, where it is, and its coordinates.
@@ -41,7 +43,7 @@ data class PickedLocation(
 interface LocationPicker {
 
     /** Opens the picker; returns null when the user cancels. */
-    suspend fun pick(initial: PickedLocation? = null, title: String = "Pick a location"): PickedLocation?
+    suspend fun pick(initial: PickedLocation? = null, title: String = str(S.desktop_pick_location)): PickedLocation?
 }
 
 /**

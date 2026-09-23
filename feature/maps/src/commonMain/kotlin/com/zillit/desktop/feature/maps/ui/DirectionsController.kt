@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.maps.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.MapLocation
 import com.zillit.desktop.feature.maps.domain.PlaceKind
@@ -37,10 +39,10 @@ internal class DirectionsController(private val store: MapStore) {
     /** "Directions" on a pin's card or a Places result: a route to it from here. */
     fun startTo(point: LatLng?, name: String, address: String) {
         if (point == null) {
-            store.notice("Invalid destination coordinates", NoticeTone.Error)
+            store.notice(str(S.desktop_map_invalid_destination), NoticeTone.Error)
             return
         }
-        val destination = name.ifBlank { "Destination" }
+        val destination = name.ifBlank { str(S.drive_pick_dest_title) }
         store.update {
             copy(
                 directions = DirectionsState(
@@ -69,21 +71,24 @@ internal class DirectionsController(private val store: MapStore) {
             val here = store.position.current()
             if (here == null) {
                 if (reportFailure) {
-                    store.notice("Could not get your current location", NoticeTone.Error)
+                    store.notice(str(S.desktop_map_no_current_location), NoticeTone.Error)
                 } else {
-                    store.notice("Enable location access or enter a pickup location manually", NoticeTone.Info)
+                    store.notice(str(S.desktop_map_enable_location_access), NoticeTone.Info)
                     update { copy(usingCurrentLocation = false, pickup = null) }
                 }
                 return@spawn
             }
             update {
-                copy(pickup = RouteEnd(here, CURRENT_LOCATION), pickupText = CURRENT_LOCATION, usingCurrentLocation = true)
+                val label = str(S.desktop_map_my_current_location)
+                copy(pickup = RouteEnd(here, label), pickupText = label, usingCurrentLocation = true)
             }
             route()
             // The placeholder is replaced by a real address, so a trip booked
             // from it stores somewhere meaningful.
             val address = store.canvas.reverseGeocode(here)?.address?.takeIf { it.isNotBlank() } ?: return@spawn
-            update { if (pickup?.point == here) copy(pickup = pickup.copy(address = address), pickupText = address) else this }
+            update {
+                if (pickup?.point == here) copy(pickup = pickup.copy(address = address), pickupText = address) else this
+            }
         }
     }
 
@@ -134,7 +139,7 @@ internal class DirectionsController(private val store: MapStore) {
         update { copy(loading = true, route = null) }
         val found = store.canvas.route(origin.point, destination.point)
         update { copy(loading = false, route = found) }
-        if (found == null) store.notice("Could not find directions. Try a different route.", NoticeTone.Error)
+        if (found == null) store.notice(str(S.desktop_map_no_directions), NoticeTone.Error)
     }
 
     private fun close() {
@@ -170,7 +175,11 @@ internal class DirectionsController(private val store: MapStore) {
     private fun openShare(payload: SharePayload) {
         val people = store.host.share?.people().orEmpty().sortedBy { it.name.lowercase() }
         store.update {
-            copy(dialog = MapDialog.Share(ShareState(title = payload.title, text = payload.text, url = payload.url, people = people)))
+            copy(
+                dialog = MapDialog.Share(
+                    ShareState(title = payload.title, text = payload.text, url = payload.url, people = people),
+                ),
+            )
         }
     }
 
@@ -183,7 +192,7 @@ internal class DirectionsController(private val store: MapStore) {
             is MapEvent.Dialogs.ShareQuery -> updateShare { copy(query = event.text) }
             MapEvent.Dialogs.ShareCopy -> {
                 store.effect(MapEffect.Copy(share.text))
-                store.notice("Copied to clipboard", NoticeTone.Success)
+                store.notice(str(S.copy_success), NoticeTone.Success)
             }
             MapEvent.Dialogs.ShareOpenMaps -> store.effect(MapEffect.OpenUrl(share.url))
             MapEvent.Dialogs.ShareSend -> send(share)
@@ -205,11 +214,18 @@ internal class DirectionsController(private val store: MapStore) {
                 is ZillitResult.Success -> {
                     store.update { copy(dialog = null) }
                     val count = result.data
-                    store.notice(if (count == 1) "Shared with 1 person" else "Shared with $count people", NoticeTone.Success)
+                    store.notice(
+                        if (count == 1) {
+                            str(S.desktop_map_shared_with_one)
+                        } else {
+                            str(S.drive_shared_with_count_plural, count)
+                        },
+                        NoticeTone.Success,
+                    )
                 }
                 is ZillitResult.Failure -> {
                     updateShare { copy(sending = false) }
-                    store.failed(result.error, "Could not share")
+                    store.failed(result.error, str(S.desktop_map_could_not_share))
                 }
             }
         }
@@ -218,7 +234,6 @@ internal class DirectionsController(private val store: MapStore) {
     private companion object {
         const val SEARCH_DEBOUNCE_MS = 250L
         const val CITY_ZOOM = 13
-        const val CURRENT_LOCATION = "My Current Location"
 
         /** The web's `metersToMiles`. */
         const val MILES_PER_METER = 0.000621371

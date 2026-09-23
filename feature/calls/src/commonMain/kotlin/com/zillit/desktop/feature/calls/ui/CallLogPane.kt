@@ -48,6 +48,8 @@ import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
@@ -85,7 +87,7 @@ fun CallLogPane(
         ZillitSearchField(
             value = state.query,
             onValueChange = { onEvent(CallLogEvent.Search(it)) },
-            placeholder = "Search calls",
+            placeholder = str(S.desktop_search_calls),
         )
         state.error?.let { message ->
             ZillitNotice(text = message, tone = StatusTone.Rejected)
@@ -97,12 +99,12 @@ fun CallLogPane(
 
         val shown = state.entries.matchingCounterpart(state.query, nameFor)
         when {
-            state.entries.isEmpty() && state.isLoading -> PaneNote("Loading calls…")
+            state.entries.isEmpty() && state.isLoading -> PaneNote(str(S.desktop_call_loading_calls))
             // Android's `delete_call_record`: the wipe's own empty state.
             state.entries.isEmpty() && state.deletedAll -> PaneNote(NO_RECORDS)
-            state.entries.isEmpty() && state.missedOnly -> PaneNote("No missed calls.")
-            state.entries.isEmpty() -> PaneNote("No calls yet.")
-            shown.isEmpty() -> PaneNote("No calls match \"${state.query.trim()}\".")
+            state.entries.isEmpty() && state.missedOnly -> PaneNote(str(S.desktop_call_no_missed_calls))
+            state.entries.isEmpty() -> PaneNote(str(S.desktop_call_no_calls_yet))
+            shown.isEmpty() -> PaneNote(str(S.desktop_call_no_calls_match, state.query.trim()))
             else -> CallLogList(state, shown, onEvent, nameFor, nowMillis, lines)
         }
     }
@@ -153,12 +155,12 @@ private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitChoiceChip(
-            label = "All",
+            label = str(S.all),
             selected = !state.missedOnly,
             onClick = { onEvent(CallLogEvent.ShowAll) },
         )
         ZillitChoiceChip(
-            label = "Missed",
+            label = str(S.missed),
             selected = state.missedOnly,
             onClick = { onEvent(CallLogEvent.ShowMissed) },
         )
@@ -167,7 +169,7 @@ private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit) {
         // with a snackbar; a disabled control says the same without one.
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Delete all",
+            contentDescription = str(S.delete_all),
             onClick = { onEvent(CallLogEvent.DeleteAll) },
             enabled = state.entries.isNotEmpty() && !state.isDeleting,
             tint = ZillitTheme.colors.textMuted,
@@ -182,7 +184,7 @@ private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         ZillitText(
-            text = "Ongoing",
+            text = str(S.ongoing),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
             modifier = Modifier.padding(horizontal = ZillitTheme.spacing.sm),
@@ -236,39 +238,39 @@ private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -
 private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (CallLogEvent) -> Unit) {
     val switch = call.verb == OngoingVerb.Switch
     ZillitDialogShell(
-        title = if (switch) "Switch to this call?" else "Join this call?",
+        title = if (switch) str(S.desktop_call_switch_to_this_call) else str(S.desktop_call_join_this_call),
         icon = ZillitIcons.Phone,
         onDismiss = { onEvent(CallLogEvent.CancelJoinOngoing) },
         visible = true,
         width = CONFIRM_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(CallLogEvent.CancelJoinOngoing) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (switch) "Switch here" else "Join call",
+                text = if (switch) str(S.desktop_call_switch_here) else str(S.join_call),
                 onClick = { onEvent(CallLogEvent.ConfirmJoinOngoing) },
             )
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitText(
-                text = "${call.title} · ${call.count} in call",
+                text = str(S.desktop_call_title_count_in_call, call.title, call.count),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
             if (switch) {
                 ZillitText(
-                    text = "You're already in this call on another device.",
+                    text = str(S.desktop_call_already_in_on_another_device),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
             }
             if (call.inCall.isEmpty()) {
                 ZillitText(
-                    text = "No one has joined yet.",
+                    text = str(S.desktop_call_no_one_has_joined_yet),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -279,8 +281,9 @@ private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitAvatar(name = name.ifBlank { "?" }, userId = id, size = ROW_AVATAR)
+                    val shown = name.ifBlank { str(S.history_someone) }
                     ZillitText(
-                        text = name.ifBlank { "Someone" } + if (id == selfUserId) " (you)" else "",
+                        text = if (id == selfUserId) str(S.desktop_name_you_suffix, shown) else shown,
                         style = ZillitTheme.typography.bodyMedium,
                         maxLines = 1,
                     )
@@ -298,26 +301,26 @@ private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (
 @Composable
 private fun DeleteAllDialog(onEvent: (CallLogEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Alert",
+        title = str(S.alert),
         icon = ZillitIcons.Trash,
         onDismiss = { onEvent(CallLogEvent.CancelDeleteAll) },
         visible = true,
         width = CONFIRM_WIDTH,
         actions = {
             ZillitButton(
-                text = "No",
+                text = str(S.no),
                 onClick = { onEvent(CallLogEvent.CancelDeleteAll) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Yes",
+                text = str(S.yes),
                 onClick = { onEvent(CallLogEvent.ConfirmDeleteAll) },
                 variant = ButtonVariant.Danger,
             )
         },
     ) {
         ZillitText(
-            text = "Are you sure you want to delete all call logs?",
+            text = str(S.are_you_sure_you_want_to_delete_all),
             style = ZillitTheme.typography.bodyMedium,
         )
     }
@@ -371,7 +374,7 @@ private fun CallLogList(
                     contentAlignment = Alignment.Center,
                 ) {
                     ZillitText(
-                        text = if (state.isLoading) "Loading…" else "Show older",
+                        text = if (state.isLoading) str(S.ah_loading) else str(S.desktop_show_older),
                         style = ZillitTheme.typography.labelSmall,
                         color = ZillitTheme.colors.accentText,
                     )
@@ -500,21 +503,21 @@ private fun RowTrailing(entry: CallLogEntry, hovered: Boolean, onDetail: () -> U
     when {
         hovered && entry.isRedialable -> ZillitIcon(
             icon = ZillitIcons.Phone,
-            contentDescription = "Call again",
+            contentDescription = str(S.desktop_call_again),
             tint = colors.success,
             size = ROW_ICON,
         )
 
         entry.type == CallType.Video -> ZillitIcon(
             icon = ZillitIcons.Camera,
-            contentDescription = "Video call",
+            contentDescription = str(S.txt_video_call_label),
             tint = colors.textMuted,
             size = ROW_ICON,
         )
     }
     ZillitIconButton(
         icon = ZillitIcons.Info,
-        contentDescription = "Call details",
+        contentDescription = str(S.desktop_call_details),
         onClick = onDetail,
         tint = colors.textMuted,
         size = INFO_BUTTON,
@@ -550,9 +553,9 @@ internal fun DirectionMark(entry: CallLogEntry) {
         ZillitIcon(
             icon = if (outgoing) ZillitIcons.ArrowRight else ZillitIcons.ArrowLeft,
             contentDescription = when {
-                entry.missed -> "Missed"
-                outgoing -> "Outgoing"
-                else -> "Incoming"
+                entry.missed -> str(S.missed)
+                outgoing -> str(S.txt_call_outgoing)
+                else -> str(S.txt_call_incoming)
             },
             tint = glyph,
             size = DIRECTION_GLYPH,
@@ -572,7 +575,7 @@ private fun PaneNote(text: String) {
 }
 
 /** Android's `delete_call_record` (`res/values/strings.xml:1267`). */
-internal const val NO_RECORDS = "There are no call records to delete."
+internal val NO_RECORDS: String get() = str(S.delete_call_record)
 
 private val ROW_CORNER = 10.dp
 private val DIRECTION_DISC = 18.dp

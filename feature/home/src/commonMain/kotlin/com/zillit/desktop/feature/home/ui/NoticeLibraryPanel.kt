@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.LibraryEntry
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeLibrary
@@ -64,8 +66,8 @@ internal fun NoticeLibraryPanel(
     var tab by remember(visible) { mutableStateOf(LibraryTab.Media) }
 
     ZillitDialogShell(
-        title = unitLabel?.takeIf { it.isNotBlank() } ?: "Media, docs & links",
-        subtitle = "What has been shared on this board.",
+        title = unitLabel?.takeIf { it.isNotBlank() } ?: str(S.desktop_library_title),
+        subtitle = str(S.desktop_library_subtitle),
         icon = ZillitIcons.Photo,
         visible = visible,
         onDismiss = onDismiss,
@@ -73,9 +75,9 @@ internal fun NoticeLibraryPanel(
         scrollable = false,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            LibraryTabPill("Media", library.media.size, tab == LibraryTab.Media) { tab = LibraryTab.Media }
-            LibraryTabPill("Docs", library.docs.size, tab == LibraryTab.Docs) { tab = LibraryTab.Docs }
-            LibraryTabPill("Links", library.links.size, tab == LibraryTab.Links) { tab = LibraryTab.Links }
+            LibraryTabPill(str(S.media_tab), library.media.size, tab == LibraryTab.Media) { tab = LibraryTab.Media }
+            LibraryTabPill(str(S.docs_tab), library.docs.size, tab == LibraryTab.Docs) { tab = LibraryTab.Docs }
+            LibraryTabPill(str(S.links_tab), library.links.size, tab == LibraryTab.Links) { tab = LibraryTab.Links }
         }
 
         Box(Modifier.fillMaxWidth().heightIn(min = LIBRARY_MIN_HEIGHT, max = LIBRARY_MAX_HEIGHT)) {
@@ -131,7 +133,7 @@ private fun MediaTab(
     onOpen: (noticeId: String, NoticeAttachment) -> Unit,
 ) {
     if (entries.isEmpty()) {
-        EmptyTab("No photos or videos on this board yet.")
+        EmptyTab(str(S.desktop_library_no_media))
         return
     }
     val grid = rememberLazyGridState()
@@ -175,7 +177,7 @@ private fun MediaTile(entry: LibraryEntry.Media, media: NoticeMediaSource?, onCl
 
             else -> ZillitIcon(
                 icon = if (entry.isVideo) ZillitIcons.Play else ZillitIcons.Photo,
-                contentDescription = if (entry.isVideo) "Video" else "Photo",
+                contentDescription = if (entry.isVideo) str(S.video) else str(S.photo),
                 tint = ZillitTheme.colors.textMuted,
                 size = TILE_GLYPH,
             )
@@ -188,7 +190,7 @@ private fun MediaTile(entry: LibraryEntry.Media, media: NoticeMediaSource?, onCl
                     .background(ZillitTheme.colors.canvas.copy(alpha = BADGE_ALPHA)),
                 contentAlignment = Alignment.Center,
             ) {
-                ZillitIcon(icon = ZillitIcons.Play, contentDescription = "Video", size = BADGE_GLYPH)
+                ZillitIcon(icon = ZillitIcons.Play, contentDescription = str(S.video), size = BADGE_GLYPH)
             }
         }
     }
@@ -198,7 +200,7 @@ private fun MediaTile(entry: LibraryEntry.Media, media: NoticeMediaSource?, onCl
 @Composable
 private fun DocsTab(entries: List<LibraryEntry.Document>, onOpen: (noticeId: String, NoticeAttachment) -> Unit) {
     if (entries.isEmpty()) {
-        EmptyTab("No documents on this board yet.")
+        EmptyTab(str(S.desktop_library_no_docs))
         return
     }
     val list = rememberLazyListState()
@@ -234,7 +236,7 @@ private fun LinksTab(
     onOpenLink: (String) -> Unit,
 ) {
     if (entries.isEmpty()) {
-        EmptyTab("No links on this board yet.")
+        EmptyTab(str(S.desktop_library_no_links))
         return
     }
     val list = rememberLazyListState()
@@ -245,7 +247,7 @@ private fun LinksTab(
                 icon = {
                     ZillitIcon(
                         icon = ZillitIcons.ArrowRight,
-                        contentDescription = "Link",
+                        contentDescription = str(S.link),
                         tint = ZillitTheme.colors.accent,
                         size = ROW_ICON,
                     )

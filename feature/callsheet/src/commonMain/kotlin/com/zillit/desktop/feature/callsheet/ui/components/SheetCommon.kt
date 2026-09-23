@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.ui.theme.SheetIcons
 import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
 
@@ -98,7 +100,7 @@ internal fun SheetErrorLine(message: String, onRetry: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(message, style = sheetText(13.sp), color = colors.red, modifier = Modifier.weight(1f))
-        SheetButton("Retry", onRetry, kind = ButtonKind.DangerOutline, height = 30.dp, fontSize = 12.sp)
+        SheetButton(str(S.retry), onRetry, kind = ButtonKind.DangerOutline, height = 30.dp, fontSize = 12.sp)
     }
 }
 

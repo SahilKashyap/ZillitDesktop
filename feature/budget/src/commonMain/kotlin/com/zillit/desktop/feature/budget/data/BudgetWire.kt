@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.budget.data
 
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budget.domain.BudgetActivityRow
 import com.zillit.desktop.feature.budget.domain.BudgetChatEntry
 import com.zillit.desktop.feature.budget.domain.BudgetDocument
@@ -288,7 +290,7 @@ internal fun chatEntryOf(row: JsonObject): BudgetChatEntry? {
         val roomId = row.text("_id") ?: return null
         BudgetChatEntry.Group(
             roomId = roomId,
-            name = row.text("room_name") ?: "Group",
+            name = row.text("room_name") ?: str(S.group),
             ownedBy = row.text("owned_by").orEmpty(),
             memberIds = (row["members"] as? JsonArray).orEmpty().mapNotNull { member ->
                 when (member) {

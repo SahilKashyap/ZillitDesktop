@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.accounthub.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
@@ -400,13 +402,13 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
         val raw = ApprovalSequence.forSave(config.tiers)
         val compacted = ApprovalSequence.compacted(raw)
         if (compacted.isEmpty()) {
-            if (config.scope == ApprovalScope.All) return refuse("Please add at least one level.")
+            if (config.scope == ApprovalScope.All) return refuse(str(S.desktop_hub_please_add_at_least_one_level))
             val savedId = config.departmentId?.let(approvals::configFor)?.id?.takeIf { it.isNotBlank() }
                 ?: return closeBuilder()
             return updateBuilder { copy(confirm = BuilderConfirm.RevertToGlobal(savedId), error = null) }
         }
         if (ApprovalSequence.hasInvalidAmount(compacted)) {
-            return refuse("Enter an amount greater than 0 for each \"Amount greater than\" rule.")
+            return refuse(str(S.desktop_hub_enter_an_amount_greater_than_0_for_each_amount_greater))
         }
         val payload = config.copy(tiers = compacted)
         if (!ApprovalSequence.inSequence(raw)) {
@@ -429,8 +431,8 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
 
     private fun write(config: ApprovalConfig) = commit(
         call = { vm.repo.saveApprovalConfig(config) },
-        done = "Approval levels saved successfully.",
-        fallback = "Failed to save approval levels.",
+        done = str(S.desktop_hub_approval_levels_saved_successfully),
+        fallback = str(S.desktop_hub_failed_to_save_approval_levels),
     )
 
     /**
@@ -443,8 +445,8 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
      */
     private fun revertDepartmentToGlobal(configId: String) = commit(
         call = { vm.repo.deleteApprovalConfig(configId) },
-        done = "This department will now use the global approvers.",
-        fallback = "Failed to update approvers.",
+        done = str(S.desktop_hub_this_department_will_now_use_the_global_approvers),
+        fallback = str(S.desktop_hub_failed_to_update_approvers),
     )
 
     /**

@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.accounthub.ui
 import com.zillit.desktop.core.common.orDash
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
@@ -107,10 +109,12 @@ data class SectionEdit<T>(
 }
 
 /** Production Setup's two tabs, as the web groups them. */
-enum class SetupTab(val slug: String, val label: String) {
-    Accounting("acct", "Accounting Setup"),
-    DealMemo("deal", "Deal Memo Setup"),
+enum class SetupTab(val slug: String, private val labelKey: String) {
+    Accounting("acct", S.desktop_accounting_setup),
+    DealMemo("deal", S.dm_setup_title),
     ;
+
+    val label: String get() = str(labelKey)
 
     /**
      * The count on the tab's mono chip — the web's `TAB_DEFS`: nine accounting
@@ -236,27 +240,35 @@ internal fun Double?.asAmountText(): String {
 // -- production setup: the drill-down modals ----------------------------------
 
 /** The three module setups this console edits in a modal — the web's `SETUP_DETAILS`. */
-enum class SetupModal(val slug: String, val title: String, val eyebrow: String, val description: String) {
+enum class SetupModal(
+    val slug: String,
+    private val titleKey: String,
+    private val eyebrowKey: String,
+    private val descriptionKey: String,
+) {
     PurchaseOrders(
         "po_setup",
-        "Purchase Order Entry Setup",
-        "POs",
-        "Defaults for the PO module — description formatting, rental-split handling, and auto-assignment rules.",
+        S.desktop_hub_purchase_order_entry_setup,
+        S.desktop_pos,
+        S.desktop_hub_defaults_for_the_po_module_description_formatting_rental_split_handling,
     ),
     Invoices(
         "invoices_setup",
-        "Invoices Entry Setup",
-        "Invoices",
-        "AP controls — who can post invoices and at what limit, which events trigger an alert, and the " +
-            "sign-off chain that gates payment runs.",
+        S.desktop_invoices_entry_setup,
+        S.ah_invoices,
+        S.desktop_hub_ap_controls_who_can_post_invoices_and_at_what_limit,
     ),
     Payroll(
         "payroll_settings",
-        "Payroll Entry Setup",
-        "Payroll",
-        "Approvers and the project's pay-cycle window. Drives the approval gate + week boundary used by " +
-            "every timecard.",
+        S.desktop_payroll_entry_setup,
+        S.dm_step9_title,
+        S.desktop_hub_approvers_and_the_projects_pay_cycle_window_drives_the_approval,
     ),
+    ;
+
+    val title: String get() = str(titleKey)
+    val eyebrow: String get() = str(eyebrowKey)
+    val description: String get() = str(descriptionKey)
 }
 
 /** One section in a modal's left nav — `name`, and the mono count chip, or a dash. */
@@ -315,7 +327,13 @@ sealed interface SetupRemoval {
 }
 
 /** The currency picker's two filter chips. */
-enum class CurrencyFilter(val label: String) { All("All"), Major("Major") }
+enum class CurrencyFilter(private val labelKey: String) {
+    All(S.all),
+    Major(S.desktop_major),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** Everything Production Setup holds. */
 data class SetupState(
@@ -429,20 +447,20 @@ data class SetupState(
     /** Sections with unsaved edits, so the shell can warn before leaving. */
     val dirtySections: List<String>
         get() = buildList {
-            if (companies.dirty) add("Companies")
-            if (currencies.dirty) add("Project Currencies")
-            if (taxTypes.dirty) add("Tax Types")
-            if (assetTags.dirty) add("Account Tags")
-            if (schedule.dirty) add("Production Schedule")
-            if (payrollDefaults.dirty) add("Payroll Defaults")
-            if (dealConditions.dirty) add("Standard Deal Conditions")
-            if (payrollBureaus.dirty) add("Payroll Bureau")
-            if (allowances.dirty) add("Allowances & Rentals")
-            if (payrollSettings.dirty) add("Payroll Settings")
-            if (poSetup.dirty) add("Purchase Order Setup")
-            if (invoicesSetup.dirty) add("Invoices Setup")
-            if (nonUnionPay.dirty) add("Non-Union Pay Breakdown")
-            if (dayTypes.dirty) add("Day Types")
+            if (companies.dirty) add(str(S.desktop_companies))
+            if (currencies.dirty) add(str(S.desktop_project_currencies))
+            if (taxTypes.dirty) add(str(S.desktop_tax_types))
+            if (assetTags.dirty) add(str(S.desktop_account_tags))
+            if (schedule.dirty) add(str(S.desktop_production_schedule))
+            if (payrollDefaults.dirty) add(str(S.desktop_payroll_defaults))
+            if (dealConditions.dirty) add(str(S.desktop_standard_deal_conditions))
+            if (payrollBureaus.dirty) add(str(S.desktop_payroll_bureau))
+            if (allowances.dirty) add(str(S.dm_allow_title))
+            if (payrollSettings.dirty) add(str(S.desktop_payroll_settings))
+            if (poSetup.dirty) add(str(S.desktop_purchase_order_setup))
+            if (invoicesSetup.dirty) add(str(S.desktop_invoices_setup))
+            if (nonUnionPay.dirty) add(str(S.desktop_hub_non_union_pay_breakdown))
+            if (dayTypes.dirty) add(str(S.desktop_day_types))
         }
 
     /** Whether the open modal has unsaved work — its "Unsaved" pill and Save button. */
@@ -545,11 +563,14 @@ data class RuleImportState(
  * hand, and a round trip to hide half a list would make the tab feel slower
  * than the search does. "Added by Me" is the one a department user gets.
  */
-enum class VendorFilter(val slug: String, val label: String) {
-    All("all", "All Vendors"),
-    Verified("verified", "Verified"),
-    Unverified("unverified", "Non-Verified"),
-    Mine("mine", "Added by Me"),
+enum class VendorFilter(val slug: String, private val labelKey: String) {
+    All("all", S.desktop_all_vendors),
+    Verified("verified", S.ah_verified),
+    Unverified("unverified", S.ah_non_verified),
+    Mine("mine", S.ah_added_by_me),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The full-page vendor form — the web's `VendorForm`. */
@@ -578,7 +599,7 @@ data class VendorFormPage(
      */
     val postcodeLooking: Boolean = false,
 ) {
-    val title: String get() = if (editingId == null) "New Vendor" else "Editing"
+    val title: String get() = if (editingId == null) str(S.desktop_new_vendor) else str(S.desktop_editing)
 
     val errors: Map<String, String> get() = draft.fieldErrors()
 
@@ -592,7 +613,7 @@ data class VendorForm(
     val draft: NewVendor = NewVendor(),
     val saving: Boolean = false,
 ) {
-    val title: String get() = if (editingId == null) "New vendor" else "Edit vendor"
+    val title: String get() = if (editingId == null) str(S.desktop_new_vendor) else str(S.ah_edit_vendor_title)
 }
 
 data class VendorsState(
@@ -709,7 +730,14 @@ data class QueuedAgreementFile(
 // -- budget ---------------------------------------------------------------------
 
 /** Which step of the import the accountant is on. */
-enum class ImportStep(val label: String) { Upload("Upload"), Preview("Preview"), Done("Commit") }
+enum class ImportStep(private val labelKey: String) {
+    Upload(S.upload),
+    Preview(S.preview),
+    Done(S.desktop_commit),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /**
  * Importing a budget file.
@@ -786,10 +814,13 @@ data class BudgetState(
 // The trial balance's state is TrialBalanceState.kt's, and the bible's its own file's.
 
 /** The three tabs of the Period Close module. */
-enum class PeriodCloseTab(val slug: String, val label: String) {
-    Close("close", "Period Close"),
-    CashClose("cash-close", "Cash & Close"),
-    Publish("publish", "Publish Package"),
+enum class PeriodCloseTab(val slug: String, private val labelKey: String) {
+    Close("close", S.desktop_period_close),
+    CashClose("cash-close", S.desktop_cash_close),
+    Publish("publish", S.desktop_publish_package),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The outcome of the last close attempt, shown in the form's result banner. */
@@ -842,7 +873,14 @@ data class PeriodCloseState(
 // -- approvers ------------------------------------------------------------------
 
 /** The department toolbar's segmented filter — All / Custom / Default. */
-enum class DepartmentFilter(val label: String) { All("All"), Custom("Custom"), Default("Default") }
+enum class DepartmentFilter(private val labelKey: String) {
+    All(S.all),
+    Custom(S.custom),
+    Default(S.desktop_email_format_default),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** What the builder asks before it saves — the web's `confirmSave`. */
 sealed interface BuilderConfirm {

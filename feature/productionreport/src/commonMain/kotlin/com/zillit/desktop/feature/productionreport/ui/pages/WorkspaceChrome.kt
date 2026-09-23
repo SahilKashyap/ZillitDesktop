@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.reportToolName
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
@@ -121,11 +123,11 @@ internal fun WorkspaceRail(state: ReportUiState, onEvent: (ReportEvent) -> Unit)
                     )
                 },
         ) {
-            SwitchSegment("Chat", ZillitIcons.Chat, !second, badge = 0, Modifier.weight(1f)) {
+            SwitchSegment(str(S.pr_workspace_chat), ZillitIcons.Chat, !second, badge = 0, Modifier.weight(1f)) {
                 onEvent(ListEvent.SetWorkspace(Workspace.Chat))
             }
             SwitchSegment(
-                "Manage Reports",
+                str(S.pr_workspace_manage),
                 ReportIcons.FileDone,
                 second,
                 badge = if (second) 0 else state.manageBadge,
@@ -217,7 +219,7 @@ private fun CreateTemplateButton(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(ZillitIcons.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-        Text("Create Template", style = reportText(14.sp, FontWeight.SemiBold), color = Color.White)
+        Text(str(S.create_template), style = reportText(14.sp, FontWeight.SemiBold), color = Color.White)
     }
 }
 
@@ -226,7 +228,7 @@ private fun CreateTemplateButton(onClick: () -> Unit) {
 internal fun NothingToManage(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().fillMaxHeight(), contentAlignment = Alignment.Center) {
         Text(
-            "Published production reports arrive in this tool's chat.",
+            str(S.desktop_pr_published_arrive_in_chat),
             style = reportText(14.sp),
             color = ReportTheme.colors.textTertiary,
         )

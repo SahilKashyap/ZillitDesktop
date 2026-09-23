@@ -55,7 +55,7 @@ class NotificationsScreenRenderTest {
         onNodeWithText(row.timeLabel).assertExists()
 
         onNodeWithContentDescription("Delete notification").performClick()
-        onNodeWithText("Delete all").assertIsEnabled().performClick()
+        onNodeWithText("Delete All").assertIsEnabled().performClick()
         onNodeWithText("Show older").performClick()
         onNodeWithText("Sam posted in Chat").performClick()
 
@@ -76,7 +76,7 @@ class NotificationsScreenRenderTest {
             ZillitTheme { NotificationsScreen(state = NotificationsUiState(loaded = true), onEvent = {}) }
         }
         onNodeWithText("No notifications").assertExists()
-        onNodeWithText("Delete all").assertIsNotEnabled()
+        onNodeWithText("Delete All").assertIsNotEnabled()
     }
 
     @Test

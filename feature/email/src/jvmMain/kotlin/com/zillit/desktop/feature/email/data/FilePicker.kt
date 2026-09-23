@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.email.data
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.PickedFile
 import java.awt.FileDialog
 import java.awt.Frame
@@ -32,7 +34,7 @@ class FilePicker(
 
     /** Null when the user cancelled, or the file could not be read. */
     suspend fun pick(): List<PickedFile> = withContext(Dispatchers.IO) {
-        val dialog = FileDialog(null as Frame?, "Attach files", FileDialog.LOAD)
+        val dialog = FileDialog(null as Frame?, str(S.desktop_email_attach_files), FileDialog.LOAD)
         dialog.isMultipleMode = true
         dialog.isVisible = true
 

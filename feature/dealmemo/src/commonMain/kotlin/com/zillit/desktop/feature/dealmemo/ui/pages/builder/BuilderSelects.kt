@@ -57,6 +57,8 @@ import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.PayloadParts
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealAddress
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealCountry
@@ -221,7 +223,11 @@ private fun PickPanel(
             ZillitIcon(ZillitIcons.Search, size = 15.dp, tint = p.muted)
             Spacer(Modifier.width(10.dp))
             Box(Modifier.weight(1f)) {
-                if (query.isEmpty()) ZillitText(text = "Search…", style = DmType.sans(13.5.sp), color = p.placeholder)
+                if (query.isEmpty()) ZillitText(
+                    text = str(S.dm_picker_search_hint),
+                    style = DmType.sans(13.5.sp),
+                    color = p.placeholder,
+                )
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -259,7 +265,7 @@ private fun PickPanel(
         Rule(p.menuDivider)
         if (matches.isEmpty()) {
             ZillitText(
-                text = "No results for \"$query\"",
+                text = str(S.dm_empty_search, query),
                 style = DmType.sans(13.sp),
                 color = p.muted,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 28.dp),
@@ -288,12 +294,18 @@ private fun PickPanel(
         ) {
             ZillitText(text = "${matches.size}", style = DmType.mono(11.sp, FontWeight.Bold), color = p.ink2)
             ZillitText(
-                text = if (matches.size == 1) " option" else " options",
+                text = " " + if (matches.size == 1) str(S.desktop_dm_one_option_suffix) else str(
+                    S.desktop_dm_options_suffix,
+                ),
                 style = DmType.sans(11.sp),
                 color = p.muted,
                 modifier = Modifier.weight(1f),
             )
-            ZillitText(text = "↑ ↓ navigate  ↵ select", style = DmType.sans(10.5.sp), color = p.muted)
+            ZillitText(
+                text = str(S.desktop_dm_keys_navigate_select_hint),
+                style = DmType.sans(10.5.sp),
+                color = p.muted,
+            )
         }
     }
 }
@@ -545,32 +557,37 @@ internal fun AddressFields(
 ) {
     BuilderGrid(columns = 2) {
         cell(span = 2) {
-            AddressLine("Address line 1", "12 Baker Street", address.line1, enabled) {
+            AddressLine(str(S.dm_step2_address_line1), "12 Baker Street", address.line1, enabled) {
                 onChange(address.copy(line1 = it))
             }
         }
         cell(span = 2) {
-            AddressLine("Address line 2", "Flat 4", address.line2, enabled) { onChange(address.copy(line2 = it)) }
+            AddressLine(
+                str(S.dm_step2_address_line2),
+                "Flat 4",
+                address.line2,
+                enabled,
+            ) { onChange(address.copy(line2 = it)) }
         }
-        cell { AddressLine("City", "London", address.city, enabled) { onChange(address.copy(city = it)) } }
+        cell { AddressLine(str(S.city), "London", address.city, enabled) { onChange(address.copy(city = it)) } }
         cell {
-            AddressLine("County / State", "Greater London", address.state, enabled) {
+            AddressLine(str(S.dm_step2_address_state), "Greater London", address.state, enabled) {
                 onChange(address.copy(state = it))
             }
         }
         cell {
-            AddressLine("Postal code / ZIP", "NW1 6XE", address.postalCode, enabled, mono = true) {
+            AddressLine(str(S.desktop_dm_postal_code_zip), "NW1 6XE", address.postalCode, enabled, mono = true) {
                 onChange(address.copy(postalCode = it))
             }
         }
         cell {
-            Field("Country") {
+            Field(str(S.dm_step2_address_country)) {
                 val selected = countries.firstOrNull { it.name == address.country }
                 CountryPicker(
                     countries = countries,
                     selectedCode = selected?.code,
                     triggerText = selected?.name ?: address.country,
-                    placeholder = "Select country…",
+                    placeholder = str(S.desktop_dm_select_country),
                     onPick = { onChange(address.copy(country = it?.name)) },
                     rowStyle = CountryRowStyle.Name,
                     height = CONTROL_HEIGHT,
@@ -632,7 +649,7 @@ internal fun PhoneFields(
                 countries = countries,
                 selectedCode = iso.ifEmpty { null },
                 triggerText = trigger,
-                placeholder = "Country code",
+                placeholder = str(S.dm_loanout_country_code),
                 onPick = { picked ->
                     onCode(
                         when {
@@ -651,7 +668,7 @@ internal fun PhoneFields(
             BuilderInput(
                 value = number,
                 onValueChange = { typed -> onNumber(typed.filter { it.isDigit() }) },
-                placeholder = "Phone number",
+                placeholder = str(S.dm_step2_representative_phone_hint),
                 modifier = Modifier.weight(1f),
                 error = error != null,
             )

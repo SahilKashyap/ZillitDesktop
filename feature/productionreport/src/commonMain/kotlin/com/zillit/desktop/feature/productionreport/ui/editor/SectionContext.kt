@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.productionreport.ui.editor
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.PageCell
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
 
@@ -17,8 +19,8 @@ internal class SectionContext(
     /** "Row 2 → Name" — positional on purpose, so an id in a users column never leaks into the badge. */
     fun detail(cell: PageCell): String? {
         val line = focusedLine?.takeIf { selected } ?: return null
-        val column = focusedColumn ?: return "Row ${line + 1}"
+        val column = focusedColumn ?: return str(S.desktop_row_n, line + 1)
         val label = cell.columns.getOrNull(column)?.label?.trim().orEmpty()
-        return "Row ${line + 1} → ${label.ifEmpty { "Col ${column + 1}" }}"
+        return str(S.desktop_row_col_path, line + 1, label.ifEmpty { str(S.desktop_col_n, column + 1) })
     }
 }

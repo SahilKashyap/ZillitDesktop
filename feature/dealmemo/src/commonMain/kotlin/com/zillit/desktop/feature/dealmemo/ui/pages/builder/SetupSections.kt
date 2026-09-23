@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderDocuments
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderSeeds
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
@@ -52,10 +54,10 @@ import com.zillit.desktop.feature.dealmemo.ui.pages.rules.GridInput
 import com.zillit.desktop.feature.dealmemo.ui.pages.rules.GridOption
 import com.zillit.desktop.feature.dealmemo.ui.pages.rules.GridSelect
 import com.zillit.desktop.feature.dealmemo.ui.pages.rules.rp
+import kotlin.time.Clock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlin.time.Clock
 
 // -- §5 Production Schedule ------------------------------------------------------------------------
 
@@ -73,10 +75,10 @@ internal fun SetupScheduleSection(builder: BuilderState, ops: FormOps) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         BuilderGrid(columns = 2, gap = 16.dp) {
             cell {
-                Field("Start Date") { IsoDateInput(dealStart, { ops.set("dealStart", it) }) }
+                Field(str(S.dm_ds_start_date)) { IsoDateInput(dealStart, { ops.set("dealStart", it) }) }
             }
             cell {
-                Field("End Date") {
+                Field(str(S.dm_label_end_date)) {
                     IsoDateInput(
                         dealEnd,
                         { ops.set("dealEnd", it) },
@@ -86,17 +88,17 @@ internal fun SetupScheduleSection(builder: BuilderState, ops: FormOps) {
             }
         }
         ToggleRow(
-            title = "Set Prep / Shoot / Wrap Schedule",
-            sub = "Phase dates become the project's production schedule.",
+            title = str(S.dm_ds_phase_schedule_title),
+            sub = str(S.desktop_dm_phase_dates_become_the_projects_production_schedule),
             checked = form.flag("schedOn"),
             onChange = { ops.set("schedOn", it) },
         )
         if (form.flag("schedOn")) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PHASES.forEach { (label, startKey, endKey) ->
-                    val startMin = when (label) {
-                        "Prep" -> dealStart
-                        "Shoot" -> BuilderSeeds.nextDay(form.text("schedPrepEnd")).ifEmpty { dealStart }
+                    val startMin = when (startKey) {
+                        "schedPrepStart" -> dealStart
+                        "schedShootStart" -> BuilderSeeds.nextDay(form.text("schedPrepEnd")).ifEmpty { dealStart }
                         else -> BuilderSeeds.nextDay(form.text("schedShootEnd")).ifEmpty { dealStart }
                     }.ifEmpty { null }
                     Row(
@@ -130,10 +132,10 @@ internal fun SetupScheduleSection(builder: BuilderState, ops: FormOps) {
     }
 }
 
-private val PHASES = listOf(
-    Triple("Prep", "schedPrepStart", "schedPrepEnd"),
-    Triple("Shoot", "schedShootStart", "schedShootEnd"),
-    Triple("Wrap", "schedWrapStart", "schedWrapEnd"),
+private val PHASES get() = listOf(
+    Triple(str(S.dm_ds_phase_prep), "schedPrepStart", "schedPrepEnd"),
+    Triple(str(S.dm_ds_phase_shoot), "schedShootStart", "schedShootEnd"),
+    Triple(str(S.dm_ds_phase_wrap), "schedWrapStart", "schedWrapEnd"),
 )
 
 // -- §7 Allowances & Rentals ------------------------------------------------------------------------
@@ -164,14 +166,14 @@ private fun EntitlementSheet(state: DealMemoUiState, form: DealForm, ops: FormOp
     Column {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = if (rental) "Rentals" else "Allowances",
+                text = if (rental) str(S.dm_allow_card_rentals) else str(S.dm_section_allowances),
                 style = DmType.sans(13.sp, FontWeight.Bold),
                 color = rp.ink,
             )
             CountPill(rows.size, Modifier.padding(start = 8.dp))
             Spacer(Modifier.weight(1f))
             DashedAddButton(
-                label = if (rental) "+ Add Rental" else "+ Add Allowance",
+                label = if (rental) str(S.desktop_dm_add_rental_plus) else str(S.desktop_dm_add_allowance_plus),
                 onClick = {
                     ops.edit { current ->
                         current.with(key, JsonArray(current.list(key) + newEntitlement(key, rental)))
@@ -258,7 +260,9 @@ private fun EntitlementRow(
                         "name" -> GridInput(
                             text("name"),
                             { patch("name", it) },
-                            placeholder = if (rental) "e.g. Camera Kit" else "e.g. Per Diem",
+                            placeholder = if (rental) str(S.desktop_dm_e_g_camera_kit) else str(
+                                S.desktop_dm_e_g_per_diem,
+                            ),
                         )
                         "rate" -> GridInput(
                             text("rate"),
@@ -282,7 +286,10 @@ private fun EntitlementRow(
                         )
                         "cap" -> GridSelect(
                             value = text("cap_type").ifEmpty { "uncapped" },
-                            options = listOf(GridOption("uncapped", "Uncapped"), GridOption("capped", "Capped")),
+                            options = listOf(
+                                GridOption("uncapped", str(S.desktop_uncapped)),
+                                GridOption("capped", str(S.desktop_capped)),
+                            ),
                             onPick = { patch("cap_type", it) },
                         )
                         "capAmount" -> Box(Modifier.alpha(if (text("cap_type") == "capped") 1f else DISABLED_ALPHA)) {
@@ -311,7 +318,10 @@ private fun EntitlementRow(
                             alignEnd = false,
                             borderless = true,
                         )
-                        else -> RemoveRowButton(if (rental) "Remove rental" else "Remove allowance", onRemove)
+                        else -> RemoveRowButton(
+                            if (rental) str(S.desktop_dm_remove_rental) else str(S.desktop_dm_remove_allowance),
+                            onRemove,
+                        )
                     }
                 }
             }
@@ -369,23 +379,23 @@ private class SheetColumn(
 
 private const val COLUMN_REMOVE = "remove"
 
-private val ALLOWANCE_COLUMNS = listOf(
-    SheetColumn("name", "Name", 1.6f, required = true),
-    SheetColumn("rate", "Amount", 0.9f, required = true),
-    SheetColumn("basis", "Basis", 1.1f),
-    SheetColumn("applies", "Applies To", 1.4f),
-    SheetColumn("nominal", "Nominal", 0.9f, edge = true),
+private val ALLOWANCE_COLUMNS get() = listOf(
+    SheetColumn("name", str(S.name), 1.6f, required = true),
+    SheetColumn("rate", str(S.dm_rule_amount), 0.9f, required = true),
+    SheetColumn("basis", str(S.dm_rule_basis), 1.1f),
+    SheetColumn("applies", str(S.dm_allow_applies_to), 1.4f),
+    SheetColumn("nominal", str(S.dm_rule_nominal), 0.9f, edge = true),
     SheetColumn(COLUMN_REMOVE, "", width = 40.dp),
 )
 
-private val RENTAL_COLUMNS = listOf(
-    SheetColumn("name", "Name", 1.5f, required = true),
-    SheetColumn("rate", "Amount", 0.8f, required = true),
-    SheetColumn("basis", "Basis", 1f),
-    SheetColumn("applies", "Applies To", 1.2f),
-    SheetColumn("cap", "Cap", 0.9f, edge = true),
-    SheetColumn("capAmount", "Cap Amount", 0.9f),
-    SheetColumn("nominal", "Nominal", 0.8f, edge = true),
+private val RENTAL_COLUMNS get() = listOf(
+    SheetColumn("name", str(S.name), 1.5f, required = true),
+    SheetColumn("rate", str(S.dm_rule_amount), 0.8f, required = true),
+    SheetColumn("basis", str(S.dm_rule_basis), 1f),
+    SheetColumn("applies", str(S.dm_allow_applies_to), 1.2f),
+    SheetColumn("cap", str(S.dm_allow_cap_type), 0.9f, edge = true),
+    SheetColumn("capAmount", str(S.dm_allow_cap_amount), 0.9f),
+    SheetColumn("nominal", str(S.dm_rule_nominal), 0.8f, edge = true),
     SheetColumn(COLUMN_REMOVE, "", width = 40.dp),
 )
 
@@ -437,10 +447,10 @@ internal fun SetupConditionsSection(
 private fun StandardConditions(form: DealForm, ops: FormOps) {
     val conditions = form.list("customConditions")
     Column {
-        FieldLabel("Standard Deal Conditions")
+        FieldLabel(str(S.desktop_standard_deal_conditions))
         if (conditions.isEmpty()) {
             ZillitText(
-                text = "No conditions yet — add the clauses every deal should carry.",
+                text = str(S.desktop_dm_no_conditions_yet_add_the_clauses_every),
                 style = DmType.sans(12.5.sp),
                 color = bp.muted,
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -465,10 +475,10 @@ private fun StandardConditions(form: DealForm, ops: FormOps) {
                                 current.with("customConditions", JsonArray(next))
                             }
                         },
-                        placeholder = "e.g. Travel out of London paid at agreed rate",
+                        placeholder = str(S.dm_ds_custom_conditions_hint),
                         modifier = Modifier.weight(1f),
                     )
-                    RemoveButton("Remove condition", onClick = {
+                    RemoveButton(str(S.desktop_dm_remove_condition), onClick = {
                         ops.edit { current ->
                             current.with(
                                 "customConditions",
@@ -480,7 +490,7 @@ private fun StandardConditions(form: DealForm, ops: FormOps) {
             }
         }
         DashedAddButton(
-            label = "+ Add Condition",
+            label = str(S.desktop_dm_add_condition_plus),
             onClick = {
                 ops.edit { it.with("customConditions", JsonArray(it.list("customConditions") + JsonPrimitive(""))) }
             },
@@ -501,7 +511,7 @@ private fun AgreementDocuments(state: DealMemoUiState, builder: BuilderState, on
     val busy = page.documentsBusy
     val saved = state.projectSettings.view.agreementDocuments
     Column {
-        FieldLabel("Agreement Documents")
+        FieldLabel(str(S.desktop_dm_agreement_documents))
         saved.forEachIndexed { index, row ->
             val id = BuilderDocuments.agreementId(row)
             val nested = row["document"] as? JsonObject
@@ -518,7 +528,7 @@ private fun AgreementDocuments(state: DealMemoUiState, builder: BuilderState, on
                 description = description,
                 caption = fileName.ifEmpty { null },
                 busy = busy,
-                removeLabel = "Remove document",
+                removeLabel = str(S.desktop_remove_document),
                 onEdit = { t, d -> onEvent(BuilderEvent.EditAgreementDocument(id, t, d)) },
                 onLeave = { onEvent(BuilderEvent.CommitAgreementDocument(id)) },
                 onRemove = { onEvent(BuilderEvent.DeleteAgreementDocument(id)) },
@@ -532,7 +542,7 @@ private fun AgreementDocuments(state: DealMemoUiState, builder: BuilderState, on
                 description = row.description,
                 caption = "${row.file.name} · ${megabytes(row.file.bytes.size)}",
                 busy = busy,
-                removeLabel = "Remove from pending",
+                removeLabel = str(S.desktop_remove_from_pending),
                 onEdit = { t, d -> onEvent(BuilderEvent.EditPendingDocument(row.id, t, d)) },
                 onLeave = {},
                 onRemove = { onEvent(BuilderEvent.RemovePendingDocument(row.id)) },
@@ -545,13 +555,16 @@ private fun AgreementDocuments(state: DealMemoUiState, builder: BuilderState, on
         ) {
             Box(Modifier.alpha(if (busy) BUSY_ALPHA else 1f)) {
                 DashedAddButton(
-                    label = "+ Add Document (PDF)",
+                    label = str(S.desktop_dm_add_document_pdf_plus),
                     onClick = { if (!busy) onEvent(BuilderEvent.QueueAgreementDocuments) },
                 )
             }
             if (page.pendingDocuments.isNotEmpty()) {
                 SolidButton(
-                    text = if (busy) "Uploading…" else "Save all ${page.pendingDocuments.size}",
+                    text = if (busy) str(S.dm_nda_uploading) else str(
+                        S.desktop_dm_save_all_n,
+                        page.pendingDocuments.size,
+                    ),
                     enabled = !busy,
                     onClick = { onEvent(BuilderEvent.SaveAgreementDocuments) },
                 )
@@ -585,7 +598,7 @@ private fun DocumentRow(
                 BuilderInput(
                     value = title,
                     onValueChange = { onEdit(it, description) },
-                    placeholder = "Title *",
+                    placeholder = str(S.ce_note_title_label),
                     enabled = !busy,
                     onBlur = onLeave,
                     modifier = Modifier.weight(1f),
@@ -593,7 +606,7 @@ private fun DocumentRow(
                 BuilderInput(
                     value = description,
                     onValueChange = { onEdit(title, it) },
-                    placeholder = "Description (optional)",
+                    placeholder = str(S.sides_description_hint),
                     enabled = !busy,
                     onBlur = onLeave,
                     modifier = Modifier.weight(DESCRIPTION_WEIGHT),
@@ -659,27 +672,27 @@ internal fun SetupBureauSection(builder: BuilderState, onEvent: (DealMemoEvent) 
         builder.setupBureaus.forEachIndexed { index, row ->
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
-                    if (index == 0) FieldLabel("Bureau")
+                    if (index == 0) FieldLabel(str(S.dm_pay_preview_bureau))
                     BuilderInput(
                         value = row.title,
                         onValueChange = { onEvent(BuilderEvent.EditBureau(row.id, title = it)) },
-                        placeholder = "e.g. Sargent-Disc",
+                        placeholder = str(S.desktop_dm_e_g_sargent_disc),
                     )
                 }
                 Column(Modifier.weight(DESCRIPTION_WEIGHT)) {
-                    if (index == 0) FieldLabel("Description")
+                    if (index == 0) FieldLabel(str(S.dm_docs_description_hint))
                     BuilderInput(
                         value = row.description,
                         onValueChange = { onEvent(BuilderEvent.EditBureau(row.id, description = it)) },
-                        placeholder = "Optional — what this bureau handles",
+                        placeholder = str(S.desktop_dm_optional_what_this_bureau_handles),
                     )
                 }
                 Box(Modifier.padding(top = if (index == 0) FIRST_ROW_OFFSET else 0.dp)) {
-                    RemoveButton("Remove bureau", onClick = { onEvent(BuilderEvent.RemoveBureau(row.id)) })
+                    RemoveButton(str(S.desktop_remove_bureau), onClick = { onEvent(BuilderEvent.RemoveBureau(row.id)) })
                 }
             }
         }
-        DashedAddButton(label = "+ Add Bureau", onClick = { onEvent(BuilderEvent.AddBureau) })
+        DashedAddButton(label = str(S.desktop_dm_add_bureau_plus), onClick = { onEvent(BuilderEvent.AddBureau) })
     }
 }
 

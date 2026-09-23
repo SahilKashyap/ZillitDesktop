@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.cardexpenses.ui
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardViewer
 
 /**
@@ -17,33 +19,35 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardViewer
  */
 enum class CardDestination(
     val slug: String,
-    val label: String,
+    private val labelKey: String,
     val icon: ImageVector,
     val group: CardNavGroup,
 ) {
     // -- accountant --------------------------------------------------------
-    Overview("", "Overview", ZillitIcons.Grid, CardNavGroup.Top),
-    CardRegister("cards", "Card Register", ZillitIcons.CreditCard, CardNavGroup.Cards),
-    ImportStatement("import", "Import Statement", ZillitIcons.Upload, CardNavGroup.Workflow),
-    ReceiptInbox("inbox", "Receipt Inbox", ZillitIcons.Receipt, CardNavGroup.Workflow),
-    AllTransactions("transactions", "All Transactions", ZillitIcons.Ledger, CardNavGroup.Workflow),
-    PendingCoding("pending", "Pending Coding", ZillitIcons.Clock, CardNavGroup.Workflow),
-    ApprovalQueue("approval", "Approval Queue", ZillitIcons.Shield, CardNavGroup.Workflow),
-    ProcessQueue("process", "Process Expenses", ZillitIcons.Settings, CardNavGroup.Workflow),
-    BulkProcess("bulk", "Bulk Process", ZillitIcons.Grid, CardNavGroup.Workflow),
-    TopUpQueue("topups", "Top-Up To Do", ZillitIcons.Wallet, CardNavGroup.Workflow),
-    History("history", "History", ZillitIcons.Ledger, CardNavGroup.Workflow),
-    Analytics("analytics", "Analytics", ZillitIcons.BarChart, CardNavGroup.Management),
-    Alerts("alerts", "Smart Alerts", ZillitIcons.Bell, CardNavGroup.Management),
-    Settings("settings", "Settings", ZillitIcons.Settings, CardNavGroup.Management),
+    Overview("", S.ah_overview, ZillitIcons.Grid, CardNavGroup.Top),
+    CardRegister("cards", S.ah_card_register, ZillitIcons.CreditCard, CardNavGroup.Cards),
+    ImportStatement("import", S.ah_import_statement, ZillitIcons.Upload, CardNavGroup.Workflow),
+    ReceiptInbox("inbox", S.ah_receipt_inbox, ZillitIcons.Receipt, CardNavGroup.Workflow),
+    AllTransactions("transactions", S.ah_all_transactions, ZillitIcons.Ledger, CardNavGroup.Workflow),
+    PendingCoding("pending", S.ah_pending_coding, ZillitIcons.Clock, CardNavGroup.Workflow),
+    ApprovalQueue("approval", S.ah_approval_queue, ZillitIcons.Shield, CardNavGroup.Workflow),
+    ProcessQueue("process", S.desktop_card_process_expenses, ZillitIcons.Settings, CardNavGroup.Workflow),
+    BulkProcess("bulk", S.ah_bulk_process, ZillitIcons.Grid, CardNavGroup.Workflow),
+    TopUpQueue("topups", S.ah_topup_todo, ZillitIcons.Wallet, CardNavGroup.Workflow),
+    History("history", S.history, ZillitIcons.Ledger, CardNavGroup.Workflow),
+    Analytics("analytics", S.analytics, ZillitIcons.BarChart, CardNavGroup.Management),
+    Alerts("alerts", S.desktop_card_smart_alerts, ZillitIcons.Bell, CardNavGroup.Management),
+    Settings("settings", S.settings, ZillitIcons.Settings, CardNavGroup.Management),
 
     // -- cardholder --------------------------------------------------------
-    MyTransactions("my-receipts", "My Transactions", ZillitIcons.Receipt, CardNavGroup.Mine),
-    MyCards("my-cards", "My Card", ZillitIcons.CreditCard, CardNavGroup.Mine),
-    CardExtension("extension", "Card Extension", ZillitIcons.Wallet, CardNavGroup.Mine),
-    CardsForApproval("card-approval", "Approval Queue", ZillitIcons.Shield, CardNavGroup.Mine),
-    CodingQueue("coding", "Coding Queue", ZillitIcons.Clock, CardNavGroup.Mine),
+    MyTransactions("my-receipts", S.ah_my_transactions, ZillitIcons.Receipt, CardNavGroup.Mine),
+    MyCards("my-cards", S.desktop_card_my_card, ZillitIcons.CreditCard, CardNavGroup.Mine),
+    CardExtension("extension", S.ah_card_extension, ZillitIcons.Wallet, CardNavGroup.Mine),
+    CardsForApproval("card-approval", S.ah_approval_queue, ZillitIcons.Shield, CardNavGroup.Mine),
+    CodingQueue("coding", S.ah_coding_queue, ZillitIcons.Clock, CardNavGroup.Mine),
     ;
+
+    val label: String get() = str(labelKey)
 
     /**
      * Whether [viewer] may open this page.
@@ -100,11 +104,14 @@ enum class CardDestination(
 }
 
 /** The heading a destination sits under in the sidebar. */
-enum class CardNavGroup(val title: String?) {
+enum class CardNavGroup(private val titleKey: String?) {
     /** Ungrouped, at the very top. */
     Top(null),
-    Mine("My expenses"),
-    Cards("Cards"),
-    Workflow("Workflow"),
-    Management("Management"),
+    Mine(S.desktop_card_nav_my_expenses),
+    Cards(S.ah_cards),
+    Workflow(S.desktop_card_nav_workflow),
+    Management(S.desktop_management),
+    ;
+
+    val title: String? get() = titleKey?.let { str(it) }
 }

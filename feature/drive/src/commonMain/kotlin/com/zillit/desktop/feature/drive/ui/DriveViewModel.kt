@@ -26,6 +26,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Drive's one view model.
@@ -309,7 +311,8 @@ class DriveViewModel(
             is DriveEvent.ShareLinkMaxViews -> drawers.updateLink { copy(maxViews = event.views) }
             is DriveEvent.ShareLinkMessage -> drawers.updateLink { copy(message = event.text) }
             DriveEvent.GenerateShareLink -> drawers.generateShareLink()
-            is DriveEvent.CopyShareLink -> sendEffect(DriveEffect.CopyToClipboard(event.link.url, "Link copied"))
+            is DriveEvent.CopyShareLink ->
+                sendEffect(DriveEffect.CopyToClipboard(event.link.url, str(S.dm_share_link_copied)))
             is DriveEvent.RevokeShareLink -> drawers.revokeShareLink(event.link)
 
             // -- move to ---------------------------------------------------
@@ -353,7 +356,7 @@ class DriveViewModel(
 
             DriveEvent.SubmitFileRequest -> submitFileRequest()
             is DriveEvent.CopyFileRequest -> sendEffect(
-                DriveEffect.CopyToClipboard(event.request.link, "Request link copied"),
+                DriveEffect.CopyToClipboard(event.request.link, str(S.desktop_drive_request_link_copied)),
             )
 
             is DriveEvent.RevokeFileRequest -> revokeFileRequest(event.request)
@@ -390,9 +393,9 @@ class DriveViewModel(
             is DriveEvent.RequestRestoreVersion -> setState {
                 copy(
                     prompt = DrivePrompt(
-                        title = "Restore this version?",
-                        message = "The current file will be saved as a new version first.",
-                        confirmLabel = "Restore",
+                        title = str(S.desktop_drive_restore_version_title),
+                        message = str(S.desktop_drive_restore_version_message),
+                        confirmLabel = str(S.drive_restore),
                         event = DriveEvent.RestoreVersion(event.fileId, event.versionId),
                         danger = false,
                     ),
@@ -401,38 +404,43 @@ class DriveViewModel(
 
             is DriveEvent.RestoreVersion -> mutate(
                 { repository.restoreVersion(event.fileId, event.versionId) },
-                "Version restored",
+                str(S.desktop_drive_version_restored),
             ) { details.reloadOpen() }
 
             // -- trash -----------------------------------------------------
 
-            is DriveEvent.Restore -> mutate({ repository.restore(event.ref) }, "Restored") { loadTrash() }
+            is DriveEvent.Restore ->
+                mutate({ repository.restore(event.ref) }, str(S.desktop_drive_restored)) { loadTrash() }
             is DriveEvent.RequestPurge -> setState {
                 copy(
                     prompt = DrivePrompt(
-                        title = "Permanently delete?",
-                        message = "\"${event.item.name}\" will be permanently removed. This action cannot be undone.",
-                        confirmLabel = "Delete forever",
+                        title = str(S.desktop_drive_purge_title),
+                        message = str(S.desktop_drive_purge_message, event.item.name),
+                        confirmLabel = str(S.desktop_delete_forever),
                         event = DriveEvent.Purge(event.item.ref),
                     ),
                 )
             }
 
-            is DriveEvent.Purge -> mutate({ repository.purge(event.ref) }, "Permanently deleted") { loadTrash() }
+            is DriveEvent.Purge ->
+                mutate({ repository.purge(event.ref) }, str(S.desktop_drive_permanently_deleted)) { loadTrash() }
             DriveEvent.RequestEmptyTrash -> setState {
                 copy(
                     prompt = DrivePrompt(
-                        title = "Empty trash?",
-                        message = "All ${trash.items.size} item" +
-                            (if (trash.items.size == 1) "" else "s") +
-                            " will be permanently deleted. This cannot be undone.",
-                        confirmLabel = "Empty trash",
+                        title = str(S.drive_empty_trash_title),
+                        message = if (trash.items.size == 1) {
+                            str(S.desktop_drive_empty_trash_message_one)
+                        } else {
+                            str(S.desktop_drive_empty_trash_message_many, trash.items.size)
+                        },
+                        confirmLabel = str(S.drive_cd_empty_trash),
                         event = DriveEvent.EmptyTrash,
                     ),
                 )
             }
 
-            DriveEvent.EmptyTrash -> mutate({ repository.emptyTrash() }, "Trash emptied") { loadTrash() }
+            DriveEvent.EmptyTrash ->
+                mutate({ repository.emptyTrash() }, str(S.desktop_drive_trash_emptied)) { loadTrash() }
         }
     }
 
@@ -544,7 +552,7 @@ class DriveViewModel(
                 // or access withdrawn) sends them back to the root, and says so.
                 folderId = if (folderGone) null else folderId,
                 breadcrumb = if (folderGone) emptyList() else breadcrumbTo(folderId, listing.folders),
-                notice = if (folderGone) "That folder no longer exists — back at the root." else notice,
+                notice = if (folderGone) str(S.desktop_drive_folder_gone) else notice,
             )
         }
         // ZL-21229: the "Shared with me" landing only stays when it has
@@ -625,13 +633,13 @@ class DriveViewModel(
         val matched = state.rows.filter { row -> refs.any { it.id == row.id } }
         val allowed = state.viewer.eligible(DriveAction.Edit, matched)
         if (matched.isNotEmpty() && allowed.isEmpty()) {
-            sendEffect(DriveEffect.Failed("You do not have permission to move the selected items."))
+            sendEffect(DriveEffect.Failed(str(S.desktop_drive_no_move_permission)))
             return
         }
         // A folder cannot go into itself or its own descendants; the server
         // would refuse the loop, and refusing here says why.
         if (targetFolderId != null && allowed.any { it.isFolder && it.id == targetFolderId }) {
-            sendEffect(DriveEffect.Failed("A folder cannot be moved into itself."))
+            sendEffect(DriveEffect.Failed(str(S.desktop_drive_folder_into_itself)))
             return
         }
         val toMove = if (matched.isEmpty()) refs else allowed.map { it.ref }
@@ -647,12 +655,12 @@ class DriveViewModel(
             },
             buildString {
                 if (toMove.size == 1) {
-                    append("Moved \"${allowed.firstOrNull()?.name ?: "item"}\"")
+                    val name = allowed.firstOrNull()?.name ?: str(S.desktop_drive_item)
+                    append(str(S.desktop_drive_moved_one, name, targetName))
                 } else {
-                    append("Moved ${toMove.size} items")
+                    append(str(S.desktop_drive_moved_many, toMove.size, targetName))
                 }
-                append(" to $targetName")
-                if (skipped > 0) append(" · $skipped skipped (no edit rights)")
+                if (skipped > 0) append(" · " + str(S.desktop_drive_moved_skipped, skipped))
             },
         ) { setState { copy(selected = emptySet()) } }
     }
@@ -673,7 +681,7 @@ class DriveViewModel(
         val items = state.rows.filter { item -> refs.any { it.id == item.id } }
         val allowed = state.viewer.eligible(DriveAction.Delete, items)
         if (allowed.isEmpty()) {
-            sendEffect(DriveEffect.Failed("You do not have permission to delete the selected items."))
+            sendEffect(DriveEffect.Failed(str(S.desktop_drive_no_delete_permission)))
             return
         }
         val blocked = items.size - allowed.size
@@ -681,23 +689,24 @@ class DriveViewModel(
             copy(
                 menu = null,
                 prompt = DrivePrompt(
-                    title = if (allowed.size == 1) {
-                        "Delete ${if (allowed.first().isFolder) "folder" else "file"}?"
-                    } else {
-                        "Delete ${allowed.size} items?"
+                    title = when {
+                        allowed.size != 1 -> str(S.drive_delete_count_title_plural, allowed.size)
+                        allowed.first().isFolder -> str(S.desktop_drive_delete_folder_title)
+                        else -> str(S.desktop_drive_delete_file_title)
                     },
                     message = buildString {
-                        append("This action will move the selected item")
-                        append(if (allowed.size == 1) "" else "s")
-                        append(" to trash.")
-                        if (allowed.any { it.isFolder }) append(" Everything inside a folder goes with it.")
-                        if (blocked > 0) {
-                            append(" ($blocked item")
-                            append(if (blocked == 1) "" else "s")
-                            append(" skipped — insufficient permissions.)")
-                        }
+                        append(
+                            if (allowed.size == 1) {
+                                str(S.desktop_drive_delete_message_one)
+                            } else {
+                                str(S.desktop_drive_delete_message_many)
+                            },
+                        )
+                        if (allowed.any { it.isFolder }) append(" " + str(S.desktop_drive_delete_folder_note))
+                        if (blocked == 1) append(" " + str(S.desktop_drive_delete_skipped_one))
+                        if (blocked > 1) append(" " + str(S.desktop_drive_delete_skipped_many, blocked))
                     },
-                    confirmLabel = "Delete",
+                    confirmLabel = str(S.delete),
                     event = DriveEvent.Delete(allowed.map { it.ref }),
                 ),
             )
@@ -712,7 +721,11 @@ class DriveViewModel(
             {
                 if (refs.size == 1) repository.delete(refs.first()) else repository.bulkDelete(refs)
             },
-            if (refs.size == 1) "Moved to trash" else "${refs.size} items moved to trash",
+            if (refs.size == 1) {
+                str(S.desktop_drive_moved_to_trash)
+            } else {
+                str(S.desktop_drive_items_moved_to_trash, refs.size)
+            },
         ) {
             setState {
                 copy(
@@ -744,7 +757,13 @@ class DriveViewModel(
         launch {
             when (val result = repository.toggleFavourite(ref)) {
                 is ZillitResult.Success -> setState {
-                    copy(notice = if (adding) "Added to favourites" else "Removed from favourites")
+                    copy(
+                        notice = if (adding) {
+                            str(S.desktop_drive_added_to_favourites)
+                        } else {
+                            str(S.desktop_drive_removed_from_favourites)
+                        },
+                    )
                 }
 
                 is ZillitResult.Failure -> {
@@ -763,7 +782,7 @@ class DriveViewModel(
             when (val url = repository.editorUrl(item.id, editable)) {
                 is ZillitResult.Success -> {
                     sendEffect(DriveEffect.OpenEditor(url.data, item.name))
-                    if (!editable) setState { copy(notice = "Opening in preview mode") }
+                    if (!editable) setState { copy(notice = str(S.desktop_drive_opening_preview_mode)) }
                 }
 
                 is ZillitResult.Failure -> report(url.error)
@@ -778,13 +797,13 @@ class DriveViewModel(
             return
         }
         if (!currentState.viewer.may(DriveAction.Download, item)) {
-            sendEffect(DriveEffect.Failed("You do not have download rights for that file."))
+            sendEffect(DriveEffect.Failed(str(S.desktop_drive_no_download_rights_file)))
             return
         }
         launch {
             when (val url = repository.downloadUrl(item.id)) {
                 is ZillitResult.Success -> {
-                    setState { copy(notice = "Downloading ${item.name}") }
+                    setState { copy(notice = str(S.desktop_drive_downloading_name, item.name)) }
                     sendEffect(DriveEffect.OpenUrl(url.data))
                 }
 
@@ -825,9 +844,9 @@ class DriveViewModel(
             sendEffect(
                 DriveEffect.Failed(
                     if (files.isEmpty()) {
-                        "No files selected for download (folders cannot be downloaded yet)."
+                        str(S.desktop_drive_no_files_for_download)
                     } else {
-                        "You do not have permission to download the selected files."
+                        str(S.desktop_drive_no_download_permission_selected)
                     },
                 ),
             )
@@ -836,8 +855,13 @@ class DriveViewModel(
         val skipped = files.size - allowed.size
         setState {
             copy(
-                notice = "Downloading ${allowed.size} file" + (if (allowed.size == 1) "" else "s") +
-                    (if (skipped > 0) " ($skipped skipped — no download permission)" else "…"),
+                notice = (
+                    if (allowed.size == 1) {
+                        str(S.desktop_drive_downloading_one)
+                    } else {
+                        str(S.desktop_drive_downloading_many, allowed.size)
+                    }
+                    ) + (if (skipped > 0) " " + str(S.desktop_drive_download_skipped, skipped) else "…"),
             )
         }
         launch {
@@ -858,7 +882,7 @@ class DriveViewModel(
         launch {
             when (val link = repository.shareLink(item.id)) {
                 is ZillitResult.Success -> sendEffect(
-                    DriveEffect.CopyToClipboard(link.data, "Link copied (expires in 24h)"),
+                    DriveEffect.CopyToClipboard(link.data, str(S.desktop_drive_link_copied_24h)),
                 )
 
                 is ZillitResult.Failure -> report(link.error)
@@ -928,7 +952,7 @@ class DriveViewModel(
             when (val made = repository.createFileRequest(draft)) {
                 is ZillitResult.Success -> {
                     setState { copy(fileRequests = FileRequests.created(fileRequests, made.data)) }
-                    sendEffect(DriveEffect.CopyToClipboard(made.data.link, "Request link copied"))
+                    sendEffect(DriveEffect.CopyToClipboard(made.data.link, str(S.desktop_drive_request_link_copied)))
                 }
 
                 is ZillitResult.Failure -> {
@@ -1031,7 +1055,7 @@ interface DriveUploader {
             target: UploadTarget,
             onProgress: (Int, Int) -> Unit,
         ): ZillitResult<DriveItem> = ZillitResult.Failure(
-            ZillitError.Validation("Uploading is not available in this build."),
+            ZillitError.Validation(str(S.desktop_drive_upload_unavailable)),
         )
     }
 }
@@ -1054,10 +1078,10 @@ interface DrivePreviewHost {
 
     object Unsupported : DrivePreviewHost {
         override suspend fun fetchBytes(url: String, maxBytes: Long): ZillitResult<ByteArray> =
-            ZillitResult.Failure(ZillitError.Validation("Previews are not available in this build."))
+            ZillitResult.Failure(ZillitError.Validation(str(S.desktop_drive_preview_unavailable)))
 
         override suspend fun renderPdfPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<ByteArray>> =
-            ZillitResult.Failure(ZillitError.Validation("PDF previews are not available in this build."))
+            ZillitResult.Failure(ZillitError.Validation(str(S.desktop_drive_pdf_preview_unavailable)))
     }
 }
 

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.json.JsonObject
 
 import com.zillit.desktop.core.forms.FormModule
@@ -436,8 +438,8 @@ data class NewAccount(
      * below the top level; a taken code and a parent at the wrong level are not.
      */
     fun validationError(rows: List<CoaAccount>): String? = when {
-        code.isBlank() -> "Code is required"
-        ChartOfAccounts.codeTaken(rows, code) -> "Code \"${code.trim().uppercase()}\" already exists"
+        code.isBlank() -> str(S.desktop_code_is_required)
+        ChartOfAccounts.codeTaken(rows, code) -> str(S.desktop_hub_code_already_exists, code.trim().uppercase())
         else -> ChartOfAccounts.parentProblem(lineType, parentId, rows)
     }
 }

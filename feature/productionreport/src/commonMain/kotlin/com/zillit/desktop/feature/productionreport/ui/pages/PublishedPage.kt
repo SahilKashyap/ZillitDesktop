@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
 import com.zillit.desktop.feature.productionreport.domain.relativeLong
@@ -69,10 +71,9 @@ internal fun PublishedPage(state: ReportUiState, onEvent: (ReportEvent) -> Unit,
         if (latest == null) {
             ReportEmptyState(
                 if (list.loaded || !list.loading) {
-                    "No published production reports yet. " +
-                        "Published reports will appear here once approved and published."
+                    str(S.desktop_pr_no_published_yet)
                 } else {
-                    "Loading published production reports…"
+                    str(S.desktop_pr_loading_published)
                 },
             )
         } else {
@@ -82,7 +83,11 @@ internal fun PublishedPage(state: ReportUiState, onEvent: (ReportEvent) -> Unit,
         if (older.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ReportButton(
-                    text = if (state.showOlderPublished) "Hide History" else "History (${older.size})",
+                    text = if (state.showOlderPublished) {
+                        str(S.desktop_hide_history)
+                    } else {
+                        str(S.desktop_history_n, older.size)
+                    },
                     onClick = { onEvent(ListEvent.ToggleOlderPublished) },
                     kind = ButtonKind.Outline,
                     radius = 12.dp,
@@ -116,13 +121,13 @@ private fun HeroCard(state: ReportUiState, report: ReportSummary, nowMillis: Lon
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "This is the current live version of the production report.",
+                str(S.desktop_pr_current_live_version),
                 style = reportText(11.sp),
                 color = colors.textMuted,
                 modifier = Modifier.weight(1f),
             )
             ReportButton(
-                "Attach Document",
+                str(S.ah_attach_document),
                 { onEvent(ListEvent.AttachDocument) },
                 kind = ButtonKind.Secondary,
                 icon = ZillitIcons.Paperclip,
@@ -130,7 +135,7 @@ private fun HeroCard(state: ReportUiState, report: ReportSummary, nowMillis: Lon
             )
             if (state.canDistribute) {
                 ReportButton(
-                    "Publish to Doc Distribution",
+                    str(S.dd_publish_to_distribution),
                     { onEvent(WorkflowEvent.SendToDocDist(report, fromDraft = false)) },
                     kind = ButtonKind.Secondary,
                     icon = ZillitIcons.Send,
@@ -138,7 +143,7 @@ private fun HeroCard(state: ReportUiState, report: ReportSummary, nowMillis: Lon
                 )
             }
             ReportButton(
-                "View PDF",
+                str(S.ah_view_pdf),
                 { onEvent(ListEvent.View(report)) },
                 kind = ButtonKind.Accent,
                 icon = ZillitIcons.Eye,
@@ -168,10 +173,14 @@ private fun HeroHeader(report: ReportSummary, nowMillis: Long) {
         }
         Column(Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Currently Published", style = reportText(14.sp, FontWeight.SemiBold), color = colors.textStrong)
+                Text(
+                    str(S.desktop_currently_published),
+                    style = reportText(14.sp, FontWeight.SemiBold),
+                    color = colors.textStrong,
+                )
                 LivePill()
             }
-            val subject = report.name.ifBlank { "${shootDayLabel(report.shared)} production report" }
+            val subject = report.name.ifBlank { str(S.desktop_pr_day_production_report, shootDayLabel(report.shared)) }
             val published = report.publishedOn?.let { " • Published ${relativeLong(it, nowMillis)}" }.orEmpty()
             Text(
                 "$subject$published",
@@ -202,7 +211,11 @@ private fun LivePill() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(6.dp).alpha(alpha).clip(CircleShape).background(Color(0xFF12B76A)))
-        Text("LIVE", style = reportText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp), color = colors.green)
+        Text(
+            str(S.desktop_status_live),
+            style = reportText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
+            color = colors.green,
+        )
     }
 }
 
@@ -214,15 +227,19 @@ private fun HeroMeta(state: ReportUiState, report: ReportSummary, nowMillis: Lon
     BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
         val columns = if (maxWidth >= 720.dp) 4 else 2
         val items: List<@Composable (Modifier) -> Unit> = listOf(
-            { m -> MetaItem(m, ZillitIcons.Calendar, null, "Shoot Day", shootDayLabel(report.shared), null) },
-            { m -> MetaItem(m, null, report, "Created By", report.createdBy.ifBlank { "-" }, member?.designation) },
-            { m -> MetaItem(m, ZillitIcons.Clock, null, "Created At", formatDateTime(report.createdOn), null) },
+            { m -> MetaItem(m, ZillitIcons.Calendar, null, str(S.pr_shoot_day), shootDayLabel(report.shared), null) },
+            { m ->
+                MetaItem(m, null, report, str(S.pr_created_by), report.createdBy.ifBlank { "-" }, member?.designation)
+            },
+            { m ->
+                MetaItem(m, ZillitIcons.Clock, null, str(S.ah_lbl_created_at), formatDateTime(report.createdOn), null)
+            },
             { m ->
                 MetaItem(
                     m,
                     ZillitIcons.Clock,
                     null,
-                    "Published At",
+                    str(S.desktop_published_at),
                     formatDateTime(report.publishedOn),
                     relativeLong(report.publishedOn, nowMillis),
                 )
@@ -276,12 +293,12 @@ private fun MetaItem(
 private fun OlderTable(state: ReportUiState, rows: List<ReportSummary>, onEvent: (ReportEvent) -> Unit) {
     ReportTable(
         columns = listOf(
-            TableColumn("S.No", width = 70.dp),
-            TableColumn("Day", width = 100.dp),
-            TableColumn("Created By", weight = 1.2f),
-            TableColumn("Created At", width = 190.dp),
-            TableColumn("Published At", width = 190.dp),
-            TableColumn("Actions", width = 210.dp),
+            TableColumn(str(S.desktop_s_no), width = 70.dp),
+            TableColumn(str(S.bs_day), width = 100.dp),
+            TableColumn(str(S.pr_created_by), weight = 1.2f),
+            TableColumn(str(S.ah_lbl_created_at), width = 190.dp),
+            TableColumn(str(S.desktop_published_at), width = 190.dp),
+            TableColumn(str(S.dd_actions), width = 210.dp),
         ),
         rows = rows,
         minWidth = 900.dp,
@@ -295,8 +312,8 @@ private fun OlderTable(state: ReportUiState, rows: List<ReportSummary>, onEvent:
             else -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val loading = state.historyLoadingId == row.id
                 ReportButton(
-                    if (loading) "Loading…" else "View History",
-                    { onEvent(ListEvent.OpenHistory(row, "History")) },
+                    if (loading) str(S.pr_loading) else str(S.cs_action_view_history),
+                    { onEvent(ListEvent.OpenHistory(row, str(S.history))) },
                     kind = ButtonKind.Outline,
                     enabled = state.historyLoadingId == null,
                     height = 26.dp,
@@ -304,7 +321,7 @@ private fun OlderTable(state: ReportUiState, rows: List<ReportSummary>, onEvent:
                     horizontalPadding = 8.dp,
                 )
                 ReportButton(
-                    "View",
+                    str(S.view),
                     { onEvent(ListEvent.View(row)) },
                     kind = ButtonKind.Warning,
                     height = 26.dp,

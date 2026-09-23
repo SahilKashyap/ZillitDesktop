@@ -17,6 +17,8 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** Transportation as a workspace tool, at the web's path (`/film-tools/transportation`). */
 class TransportToolProvider(
@@ -27,7 +29,7 @@ class TransportToolProvider(
 ) : ToolProvider {
 
     override val path: String = TRANSPORT_PATH
-    override val title: String = "Transportation"
+    override val title: String get() = str(S.txt_transportation)
     override val icon = ZillitToolIcons.Transportation
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

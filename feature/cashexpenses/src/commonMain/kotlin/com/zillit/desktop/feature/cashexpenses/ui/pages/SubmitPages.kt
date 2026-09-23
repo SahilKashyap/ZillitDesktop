@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -59,12 +61,12 @@ fun SubmitReceiptsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     if (!outOfPocket && activeFloat == null) {
         ScrollingPage {
             ZillitNotice(
-                text = "You have no float to spend against, so there is nothing to submit receipts to.",
+                text = str(S.desktop_ce_no_float_to_spend),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Wallet,
                 action = {
                     ZillitButton(
-                        text = "Request a float",
+                        text = str(S.ah_request_a_float),
                         onClick = { onEvent(CashEvent.Open(CashDestination.FloatRequest)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -72,7 +74,7 @@ fun SubmitReceiptsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 },
             )
             ZillitText(
-                text = "Paid for something yourself? Claim it under Out of Pocket instead.",
+                text = str(S.desktop_ce_claim_out_of_pocket_hint),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -100,7 +102,7 @@ fun SubmitReceiptsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                     )
                 }
                 ZillitButton(
-                    text = "Add another receipt",
+                    text = str(S.desktop_ce_add_another_receipt),
                     onClick = { onEvent(CashEvent.AddReceipt) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Add,
@@ -122,12 +124,12 @@ private fun ReceiptCard(
     onRemove: () -> Unit,
 ) {
     ZillitSectionCard(
-        title = "Receipt ${index + 1}",
+        title = str(S.desktop_ce_receipt_number, index + 1),
         icon = ZillitIcons.Receipt,
         action = {
             if (removable) {
                 ZillitButton(
-                    text = "Remove",
+                    text = str(S.remove),
                     onClick = onRemove,
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -139,8 +141,8 @@ private fun ReceiptCard(
         ZillitTextField(
             value = receipt.description,
             onValueChange = { onChange(receipt.copy(description = it)) },
-            label = "What was bought",
-            placeholder = "Gaffer tape and cable ties",
+            label = str(S.desktop_ce_what_was_bought),
+            placeholder = str(S.desktop_ce_what_was_bought_placeholder),
             modifier = Modifier.fillMaxWidth(),
         )
         Row(
@@ -150,14 +152,14 @@ private fun ReceiptCard(
             ZillitTextField(
                 value = receipt.supplier,
                 onValueChange = { onChange(receipt.copy(supplier = it)) },
-                label = "Supplier",
-                placeholder = "Where it was bought",
+                label = str(S.supplier),
+                placeholder = str(S.desktop_ce_where_it_was_bought),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = receipt.amount,
                 onValueChange = { onChange(receipt.copy(amount = it)) },
-                label = "Amount",
+                label = str(S.amount),
                 placeholder = "0.00",
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.weight(1f),
@@ -165,7 +167,7 @@ private fun ReceiptCard(
             ZillitTextField(
                 value = receipt.vat,
                 onValueChange = { onChange(receipt.copy(vat = it)) },
-                label = "VAT",
+                label = str(S.desktop_vat),
                 placeholder = "0.00",
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.weight(1f),
@@ -178,7 +180,7 @@ private fun ReceiptCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = "Category",
+                    text = str(S.av_category),
                     style = ZillitTheme.typography.label,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -194,7 +196,7 @@ private fun ReceiptCard(
             ZillitDateField(
                 value = receipt.date?.let { EpochDate.isoDate(it) }.orEmpty(),
                 onValueChange = { onChange(receipt.copy(date = parseIsoDate(it))) },
-                label = "Date of purchase",
+                label = str(S.desktop_ce_date_of_purchase),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -209,7 +211,7 @@ private fun ReceiptCard(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitText(
-                text = receipt.attachmentName ?: "No attachment yet — required",
+                text = receipt.attachmentName ?: str(S.desktop_ce_no_attachment_yet),
                 style = ZillitTheme.typography.bodySmall,
                 color = if (receipt.attachmentKey == null) {
                     ZillitTheme.colors.danger
@@ -229,8 +231,8 @@ private fun ReceiptCard(
                         ),
                     )
                 },
-                label = "Receipt file",
-                placeholder = "Paste or drop the uploaded file reference",
+                label = str(S.desktop_ce_receipt_file),
+                placeholder = str(S.desktop_ce_receipt_file_placeholder),
                 leadingIcon = ZillitIcons.Paperclip,
                 modifier = Modifier.width(ATTACHMENT_FIELD_WIDTH),
             )
@@ -258,13 +260,13 @@ private fun SettlementPanel(
     val currency = activeFloat?.currency
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-        ZillitSectionCard(title = "This batch", icon = ZillitIcons.Ledger) {
+        ZillitSectionCard(title = str(S.desktop_ce_this_batch), icon = ZillitIcons.Ledger) {
             ZillitText(
                 text = money(state.draft.total, currency),
                 style = ZillitTheme.typography.displayLarge,
             )
             ZillitText(
-                text = "${state.draft.receipts.size} receipt(s)",
+                text = str(S.desktop_ce_receipts_count, state.draft.receipts.size),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -273,17 +275,17 @@ private fun SettlementPanel(
                 Spacer(Modifier.padding(ZillitTheme.spacing.xs))
                 ZillitDivider()
                 Spacer(Modifier.padding(ZillitTheme.spacing.xs))
-                SettlementLine("Float headroom", money(settlement.headroom, currency))
-                SettlementLine("Absorbed by the float", money(settlement.floatConsumed, currency))
+                SettlementLine(str(S.desktop_ce_float_headroom), money(settlement.headroom, currency))
+                SettlementLine(str(S.desktop_ce_absorbed_by_float), money(settlement.floatConsumed, currency))
                 if (settlement.reimburses) {
                     SettlementLine(
-                        label = "Reimbursed to you",
+                        label = str(S.desktop_ce_reimbursed_to_you),
                         value = money(settlement.overdraft, currency),
                         tone = StatusTone.Ready,
                     )
                 } else {
                     SettlementLine(
-                        label = "Cash still to return",
+                        label = str(S.desktop_ce_cash_still_to_return),
                         value = money(settlement.returnAmount, currency),
                         tone = StatusTone.Neutral,
                     )
@@ -293,24 +295,23 @@ private fun SettlementPanel(
 
         if (!outOfPocket && settlement.reimburses) {
             ZillitNotice(
-                text = "This batch is over the float's headroom. " +
-                    "${money(settlement.overdraft, currency)} will come back to you rather than reduce the float.",
+                text = str(S.desktop_ce_over_headroom, money(settlement.overdraft, currency)),
                 tone = StatusTone.Progress,
                 icon = ZillitIcons.Info,
             )
         }
 
-        ZillitSectionCard(title = "Anything else", icon = ZillitIcons.Info) {
+        ZillitSectionCard(title = str(S.desktop_anything_else), icon = ZillitIcons.Info) {
             ZillitTextField(
                 value = state.draft.notes,
                 onValueChange = { onEvent(CashEvent.EditSubmitNotes(it)) },
-                label = "Note for the accounts team (optional)",
+                label = str(S.desktop_ce_note_for_accounts),
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.padding(ZillitTheme.spacing.xs))
             ZillitButton(
-                text = "Submit ${state.draft.receipts.size} receipt(s)",
+                text = str(S.desktop_ce_submit_receipts_count, state.draft.receipts.size),
                 onClick = { onEvent(CashEvent.SubmitReceipts) },
                 leadingIcon = ZillitIcons.Send,
                 loading = state.busy,
@@ -354,16 +355,20 @@ fun ReceiptsHistoryPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     FixedPage {
         if (needsAction.isNotEmpty()) {
             ZillitNotice(
-                text = "${needsAction.size} batch(es) came back to you — open one to see what needs correcting.",
+                text = str(S.desktop_ce_batches_came_back, needsAction.size),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
             )
         }
 
         ZillitSectionCard(
-            title = "Your ${wanted.label.lowercase()} receipts",
+            title = str(S.desktop_ce_your_kind_receipts, wanted.label.lowercase()),
             icon = ZillitIcons.Receipt,
-            meta = "${rows.size} batch${if (rows.size == 1) "" else "es"}",
+            meta = if (rows.size == 1) {
+                str(S.desktop_ce_batch_count_one, rows.size)
+            } else {
+                str(S.desktop_ce_batch_count_other, rows.size)
+            },
             padded = false,
             modifier = Modifier.weight(1f),
         ) {
@@ -374,8 +379,8 @@ fun ReceiptsHistoryPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 loading = state.loading,
                 onRowClick = { onEvent(CashEvent.SelectBatch(it.id)) },
                 isSelected = { it.id == state.selectedBatchId },
-                emptyTitle = "Nothing submitted yet",
-                emptyMessage = "Batches you submit appear here with their progress through the workflow.",
+                emptyTitle = str(S.desktop_ce_nothing_submitted_yet),
+                emptyMessage = str(S.desktop_ce_submitted_batches_empty),
             )
         }
     }

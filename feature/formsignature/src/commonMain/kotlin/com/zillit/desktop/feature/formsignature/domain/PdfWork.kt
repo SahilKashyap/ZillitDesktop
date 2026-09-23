@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.formsignature.domain
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The PDF work this tool needs, as interfaces so the implementations (PDFBox,
@@ -30,7 +32,7 @@ interface PdfWork {
             is ZillitResult.Failure -> all
             is ZillitResult.Success -> all.data.firstOrNull { it.page == page }
                 ?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Validation("Page $page is not in this document."))
+                ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_fs_page_not_in_document, page)))
         }
 
     /** How many pages [pdf] has; a failure when it is not a PDF at all. */

@@ -52,6 +52,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.rules.BulkRuleRow
 import com.zillit.desktop.feature.dealmemo.domain.rules.BulkRules
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
@@ -67,26 +69,26 @@ import com.zillit.desktop.feature.dealmemo.ui.preview.CoaState
 import com.zillit.desktop.feature.dealmemo.ui.preview.RulesEditorState
 
 /** The grid's columns, in order — fixed widths, the name the one that stretches. */
-internal val RULE_COLUMNS: List<Pair<String, Dp?>> = listOf(
+internal val RULE_COLUMNS: List<Pair<String, Dp?>> get() = listOf(
     "" to 28.dp,
-    "Rule type" to 196.dp,
-    "Name" to null,
-    "Rate type" to 132.dp,
-    "Amount" to 78.dp,
-    "Base rate" to 118.dp,
-    "Trigger" to 128.dp,
-    "Day type" to 104.dp,
-    "OT Increment" to 104.dp,
-    "Basic + OT on Top" to 112.dp,
-    "Min Basic Daily Rate to apply OT" to 136.dp,
-    "Max Basic Daily Rate no OT applied" to 136.dp,
-    "OT Cap" to 96.dp,
-    "Nominal" to 96.dp,
-    "Notes" to 200.dp,
+    str(S.desktop_rule_type) to 196.dp,
+    str(S.name) to null,
+    str(S.dm_rule_rate_type) to 132.dp,
+    str(S.dm_rule_amount) to 78.dp,
+    str(S.dm_rates_scale_base_rate) to 118.dp,
+    str(S.desktop_dm_trigger) to 128.dp,
+    str(S.dm_rule_day_type) to 104.dp,
+    str(S.desktop_dm_ot_increment) to 104.dp,
+    str(S.dm_rule_add_on_top) to 112.dp,
+    str(S.dm_rule_bdr_min) to 136.dp,
+    str(S.dm_rule_bdr_max) to 136.dp,
+    str(S.desktop_dm_ot_cap) to 96.dp,
+    str(S.dm_rule_nominal) to 96.dp,
+    str(S.dm_rates_scale_notes) to 200.dp,
     "" to 34.dp,
 )
 
-private val REQUIRED_COLUMNS = setOf("Rule type", "Name", "Amount")
+private val REQUIRED_COLUMNS get() = setOf(str(S.desktop_rule_type), str(S.name), str(S.dm_rule_amount))
 
 /** The table's smallest width: every fixed column, the name's minimum, and the row padding. */
 private val TABLE_MIN = 1888.dp
@@ -113,8 +115,7 @@ fun RulesEditorPage(
     ) {
         TopBar(editor, eyebrow, onEvent)
         ZillitText(
-            text = "Add or edit several pay rules at once — one row per rule. Overtime, premium and penalty rules " +
-                "all read the same shape; leave any optional column (increment, cap, BDR, notes) blank to skip it.",
+            text = str(S.desktop_dm_add_or_edit_several_pay_rules_at),
             style = DmType.sans(12.5.sp).copy(lineHeight = 19.sp),
             color = rp.ink2,
             modifier = Modifier.widthIn(max = 760.dp).padding(start = 26.dp, end = 26.dp, top = 16.dp, bottom = 12.dp),
@@ -129,6 +130,7 @@ fun RulesEditorPage(
 }
 
 @Composable
+@Suppress("LongMethod") // Layout in one place; the sweep's wrapped calls added the lines.
 private fun TopBar(editor: RulesEditorState, eyebrow: String, onEvent: (DealMemoEvent) -> Unit) {
     Column(Modifier.fillMaxWidth().background(rp.surface)) {
         Row(
@@ -136,7 +138,7 @@ private fun TopBar(editor: RulesEditorState, eyebrow: String, onEvent: (DealMemo
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            ZillitTooltip(text = if (editor.saving) "Saving…" else "Back to pay breakdown") {
+            ZillitTooltip(text = if (editor.saving) str(S.dm_nda_saving) else str(S.desktop_dm_back_to_pay_breakdown)) {
                 val shape = RoundedCornerShape(10.dp)
                 Box(
                     modifier = Modifier
@@ -158,22 +160,32 @@ private fun TopBar(editor: RulesEditorState, eyebrow: String, onEvent: (DealMemo
                     maxLines = 1,
                 )
                 Spacer(Modifier.height(3.dp))
-                ZillitText(text = "Edit rules", style = DmType.sans(18.sp, FontWeight.Bold, (-0.02).em), color = rp.ink)
+                ZillitText(
+                    text = str(S.dm_rules_edit),
+                    style = DmType.sans(18.sp, FontWeight.Bold, (-0.02).em),
+                    color = rp.ink,
+                )
             }
             val total = editor.rows.size
             val ready = editor.readyCount
             ZillitText(
                 text = buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = rp.ink)) { append(ready.toString()) }
-                    append(" of $total ready")
-                    if (ready < total) withStyle(SpanStyle(color = rp.red)) { append(" · ${total - ready} incomplete") }
+                    append(" " + str(S.desktop_dm_of_total_ready, total))
+                    if (ready < total) withStyle(SpanStyle(color = rp.red)) {
+                        append(" " + str(S.desktop_dm_n_incomplete, total - ready))
+                    }
                 },
                 style = DmType.sans(12.sp),
                 color = rp.ink2,
                 maxLines = 1,
             )
             PrimaryButton(
-                text = if (editor.saving) "Saving…" else "Save $total ${if (total == 1) "rule" else "rules"}",
+                text = when {
+                    editor.saving -> str(S.dm_nda_saving)
+                    total == 1 -> str(S.desktop_dm_save_one_rule)
+                    else -> str(S.desktop_dm_save_n_rules, total)
+                },
                 enabled = editor.allReady && !editor.saving,
                 loading = editor.saving,
                 onClick = { onEvent(RulesEvent.Save) },
@@ -191,11 +203,14 @@ private fun Toolbar(editor: RulesEditorState, onEvent: (DealMemoEvent) -> Unit) 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        ZillitText(text = "Rules", style = DmType.sans(13.sp, FontWeight.Bold), color = rp.ink)
+        ZillitText(text = str(S.desktop_rules), style = DmType.sans(13.sp, FontWeight.Bold), color = rp.ink)
         CountPill(editor.rows.size)
         editor.importNote?.let { (added, skipped) ->
             ZillitText(
-                text = "Added $added" + if (skipped > 0) " · $skipped already here" else "",
+                text = str(S.desktop_dm_added_n, added) + if (skipped > 0) " " + str(
+                    S.desktop_dm_n_already_here,
+                    skipped,
+                ) else "",
                 style = DmType.sans(11.5.sp, FontWeight.SemiBold),
                 color = rp.ink3,
             )
@@ -203,10 +218,10 @@ private fun Toolbar(editor: RulesEditorState, onEvent: (DealMemoEvent) -> Unit) 
         Spacer(Modifier.weight(1f))
         if (editor.agreementImport) {
             ToolbarButton(
-                text = "+ Import union rules",
+                text = str(S.desktop_dm_import_union_rules_plus),
                 enabled = true,
                 loading = false,
-                tooltip = "Pick a union agreement and add its rules to this list",
+                tooltip = str(S.dm_rule_import_subtitle),
                 onClick = { onEvent(RulesEvent.ImportAgreement) },
             )
         }
@@ -215,14 +230,14 @@ private fun Toolbar(editor: RulesEditorState, onEvent: (DealMemoEvent) -> Unit) 
             if (source.loading || source.rows.isNotEmpty()) {
                 val tooltip = when {
                     source.loading -> null
-                    importable.isEmpty() -> "Every rule in ${source.label} is already on this deal"
-                    else -> "Adds ${importable.size} rule${if (importable.size == 1) "" else "s"} not already here. " +
-                        "Rules already on this deal are left exactly as they are."
+                    importable.isEmpty() -> str(S.desktop_dm_every_rule_already_on_deal, source.label)
+                    importable.size == 1 -> str(S.desktop_dm_adds_one_rule_not_here)
+                    else -> str(S.desktop_dm_adds_n_rules_not_here, importable.size)
                 }
                 val label = when {
-                    source.loading -> "Loading ${source.label}…"
-                    importable.isEmpty() -> "All of ${source.label} added"
-                    else -> "+ Add ${importable.size} from ${source.label}"
+                    source.loading -> str(S.desktop_media_loading_kind, source.label)
+                    importable.isEmpty() -> str(S.desktop_dm_all_of_source_added, source.label)
+                    else -> str(S.desktop_dm_add_n_from_source, importable.size, source.label)
                 }
                 ToolbarButton(
                     text = label,
@@ -284,7 +299,7 @@ private fun HeaderRow() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RULE_COLUMNS.forEachIndexed { index, (title, _) ->
-            GridCell(index, center = index == 0 || title == "Basic + OT on Top") {
+            GridCell(index, center = index == 0 || title == str(S.dm_rule_add_on_top)) {
                 if (title.isNotEmpty()) {
                     ZillitText(
                         text = buildAnnotatedString {
@@ -347,7 +362,12 @@ private fun RuleRow(number: Int, row: BulkRuleRow, tried: Boolean, coa: CoaState
 private fun AddRulesMenu(up: Boolean, onEvent: (DealMemoEvent) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        ToolbarButton(text = "+ Add Rules", enabled = true, dashed = true, onClick = { open = !open })
+        ToolbarButton(
+            text = str(S.desktop_dm_add_rules_plus),
+            enabled = true,
+            dashed = true,
+            onClick = { open = !open },
+        )
         if (open) {
             Popup(
                 popupPositionProvider = remember(up) {
@@ -369,7 +389,7 @@ private fun AddRulesMenu(up: Boolean, onEvent: (DealMemoEvent) -> Unit) {
                     for (count in 1..MAX_ADD) {
                         val (source, hovered) = rememberHover()
                         ZillitText(
-                            text = "$count ${if (count == 1) "row" else "rows"}",
+                            text = if (count == 1) str(S.desktop_dm_one_row) else str(S.desktop_dm_n_rows, count),
                             style = DmType.sans(12.5.sp, FontWeight.SemiBold),
                             color = rp.ink,
                             modifier = Modifier

@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -34,7 +36,7 @@ class BankRecToolProvider(
 ) : ToolProvider {
 
     override val path: String = BANK_REC_PATH
-    override val title: String = "Bank Reconciliation"
+    override val title: String get() = str(S.desktop_bank_reconciliation)
     override val icon = ZillitIcons.Bank
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -65,7 +67,7 @@ class BankRecToolProvider(
         // The tab title names the open tab, so several torn-off windows of the
         // same reconciliation are told apart on the taskbar.
         LaunchedEffect(state.tab) {
-            navigator.setTitle("Bank Reconciliation · ${state.tab.label}")
+            navigator.setTitle(str(S.desktop_br_window_title, state.tab.label))
         }
 
         CompositionLocalProvider(LocalBankRecPeople provides viewModel.people) {

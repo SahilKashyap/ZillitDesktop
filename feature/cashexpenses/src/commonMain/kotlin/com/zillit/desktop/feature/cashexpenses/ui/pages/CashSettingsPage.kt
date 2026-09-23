@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
 import com.zillit.desktop.feature.cashexpenses.domain.DeductionRule
 import com.zillit.desktop.feature.cashexpenses.domain.QuickCode
@@ -57,7 +59,7 @@ import com.zillit.desktop.feature.cashexpenses.ui.personColumn
 fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val draft = state.settingsDraft ?: state.settings
     if (draft == null) {
-        ScrollingPage { ZillitNotice(text = "Loading the project's cash settings…") }
+        ScrollingPage { ZillitNotice(text = str(S.desktop_ce_loading_settings)) }
         return
     }
 
@@ -65,21 +67,20 @@ fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
     ScrollingPage {
         ZillitNotice(
-            text = "These settings apply to everyone on this project. " +
-                "Changes take effect as soon as they are saved.",
+            text = str(S.desktop_ce_settings_intro),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Info,
         )
 
         ZillitSectionCard(
-            title = "Custodian account",
+            title = str(S.desktop_ce_custodian_account),
             icon = ZillitIcons.Bank,
-            meta = "Where petty cash is drawn from",
+            meta = str(S.desktop_ce_custodian_meta),
         ) {
             ZillitTextField(
                 value = draft.custodianAccount,
                 onValueChange = { onEvent(CashEvent.EditSettings(draft.copy(custodianAccount = it))) },
-                label = "Float custodian account",
+                label = str(S.desktop_ce_float_custodian_account),
                 placeholder = "1200",
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -90,50 +91,50 @@ fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 ZillitTextField(
                     value = draft.bsCodeFrom,
                     onValueChange = { onEvent(CashEvent.EditSettings(draft.copy(bsCodeFrom = it))) },
-                    label = "Balance sheet codes from",
+                    label = str(S.desktop_ce_bs_codes_from),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitTextField(
                     value = draft.bsCodeTo,
                     onValueChange = { onEvent(CashEvent.EditSettings(draft.copy(bsCodeTo = it))) },
-                    label = "to",
+                    label = str(S.recce_weather_to),
                     modifier = Modifier.weight(1f),
                 )
             }
         }
 
-        ZillitSectionCard(title = "Workflow", icon = ZillitIcons.Shield) {
+        ZillitSectionCard(title = str(S.desktop_card_nav_workflow), icon = ZillitIcons.Shield) {
             SettingSwitch(
                 checked = draft.requireCoordinatorCoding,
-                label = "Coordinators code batches before accounts see them",
-                detail = "Turns on the Coding Queue. Without it, batches go straight from submission to audit.",
+                label = str(S.desktop_ce_coordinators_code_label),
+                detail = str(S.desktop_ce_coordinators_code_detail),
                 onChange = { onEvent(CashEvent.EditSettings(draft.copy(requireCoordinatorCoding = it))) },
             )
             SettingSwitch(
                 checked = draft.requireSeniorSignOff,
-                label = "Senior sign-off before posting",
-                detail = "Adds the Sign-off queue. Batches cannot be posted until a senior has cleared them.",
+                label = str(S.desktop_card_senior_signoff_label),
+                detail = str(S.desktop_ce_senior_signoff_detail),
                 onChange = { onEvent(CashEvent.EditSettings(draft.copy(requireSeniorSignOff = it))) },
             )
             SettingSwitch(
                 checked = draft.overrideFloatRequest,
-                label = "Accountants may override float approvals",
-                detail = "Lets an accountant with the override right push a float past its approval chain.",
+                label = str(S.desktop_ce_override_float_label),
+                detail = str(S.desktop_ce_override_float_detail),
                 onChange = { onEvent(CashEvent.EditSettings(draft.copy(overrideFloatRequest = it))) },
             )
             SettingSwitch(
                 checked = draft.overrideReceiptBatch,
-                label = "Accountants may override batch approvals",
-                detail = "The same, for receipt batches. Every override is recorded against the person who made it.",
+                label = str(S.desktop_ce_override_batch_label),
+                detail = str(S.desktop_ce_override_batch_detail),
                 onChange = { onEvent(CashEvent.EditSettings(draft.copy(overrideReceiptBatch = it))) },
             )
         }
 
-        ZillitSectionCard(title = "Reimbursement", icon = ZillitIcons.Wallet) {
+        ZillitSectionCard(title = str(S.desktop_ce_reimbursement), icon = ZillitIcons.Wallet) {
             SettingSwitch(
                 checked = draft.reimburseToPayroll,
-                label = "Reimburse out-of-pocket claims through payroll",
-                detail = "Approved claims are settled in the next pay run rather than queued for BACS.",
+                label = str(S.desktop_ce_payroll_reimbursement_label),
+                detail = str(S.desktop_ce_payroll_reimbursement_detail),
                 onChange = { onEvent(CashEvent.EditSettings(draft.copy(reimburseToPayroll = it))) },
             )
         }
@@ -142,18 +143,17 @@ fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         QuickCodesCard(draft, onEvent)
 
         ZillitSectionCard(
-            title = "Team & posting rights",
+            title = str(S.ah_settings_team_posting),
             icon = ZillitIcons.Users,
-            meta = "${draft.teamMembers.size} member(s)",
+            meta = str(S.desktop_ce_member_count, draft.teamMembers.size),
             padded = false,
         ) {
             ZillitDataTable(
                 rows = draft.teamMembers,
                 columns = teamColumns(),
                 key = { it.userId },
-                emptyTitle = "No cash team configured",
-                emptyMessage = "Production Accountants and Financial Controllers are senior by role " +
-                    "whether or not they are listed here.",
+                emptyTitle = str(S.desktop_ce_no_team_configured),
+                emptyMessage = str(S.desktop_ce_team_empty_note),
             )
         }
 
@@ -163,19 +163,19 @@ fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                text = "Save settings",
+                text = str(S.desktop_ce_save_settings),
                 onClick = { onEvent(CashEvent.SaveSettings) },
                 enabled = dirty && !state.busy,
                 loading = state.busy,
             )
             if (dirty) {
                 ZillitButton(
-                    text = "Discard changes",
+                    text = str(S.desktop_dm_discard_changes),
                     onClick = { state.settings?.let { onEvent(CashEvent.EditSettings(it)) } },
                     variant = ButtonVariant.Tertiary,
                 )
                 ZillitText(
-                    text = "Unsaved changes",
+                    text = str(S.desktop_unsaved_changes),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.warning,
                 )
@@ -210,31 +210,31 @@ private fun SettingSwitch(
 
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 private fun teamColumns(): List<TableColumn<CashTeamMember>> = listOf(
-    personColumn("Name", ColumnWidth.Weight(1.8f), userId = { it.userId }) { it.name },
+    personColumn(str(S.name), ColumnWidth.Weight(1.8f), userId = { it.userId }) { it.name },
     TableColumn(
-        header = "Seniority",
+        header = str(S.desktop_ce_seniority),
         width = ColumnWidth.Weight(1f),
         cell = { row ->
             ZillitStatusPill(
-                label = if (row.isSenior) "Senior" else "Team",
+                label = if (row.isSenior) str(S.desktop_senior) else str(S.desktop_ce_team),
                 tone = if (row.isSenior) StatusTone.Done else StatusTone.Neutral,
             )
         },
     ),
     TableColumn(
-        header = "Override",
+        header = str(S.dm_nom_table_override),
         width = ColumnWidth.Weight(1f),
         cell = { row ->
             ZillitStatusPill(
-                label = if (row.canOverride) "Allowed" else "No",
+                label = if (row.canOverride) str(S.desktop_ce_allowed) else str(S.no),
                 tone = if (row.canOverride) StatusTone.Pending else StatusTone.Neutral,
             )
         },
     ),
-    textColumn("Posting limit", ColumnWidth.Weight(1f), numeric = true) {
+    textColumn(str(S.desktop_posting_limit), ColumnWidth.Weight(1f), numeric = true) {
         // No limit is a real answer, and printing it as "0.00" would read as
         // "may post nothing" — the opposite of what it means.
-        it.postingLimit?.let { limit -> Money.format(limit, null) } ?: "No limit"
+        it.postingLimit?.let { limit -> Money.format(limit, null) } ?: str(S.desktop_ce_no_limit)
     },
 )
 
@@ -250,13 +250,17 @@ private fun teamColumns(): List<TableColumn<CashTeamMember>> = listOf(
 @Composable
 private fun DeductionRulesCard(draft: CashSettings, onEvent: (CashEvent) -> Unit) {
     ZillitSectionCard(
-        title = "Deduction & processing rules",
+        title = str(S.ah_settings_deduction_rules),
         icon = ZillitIcons.Ledger,
-        meta = "${draft.deductionRules.count { it.enabled }} of ${draft.deductionRules.size} on",
+        meta = str(
+            S.desktop_ce_rules_on_count,
+            draft.deductionRules.count { it.enabled },
+            draft.deductionRules.size,
+        ),
     ) {
         if (draft.deductionRules.isEmpty()) {
             ZillitText(
-                text = "No rules configured for this production.",
+                text = str(S.desktop_ce_no_rules_configured),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -338,9 +342,9 @@ private fun RuleThresholdRow(rule: DeductionRule, replace: (DeductionRule) -> Un
         )
         ZillitText(
             text = if (rule.triggerCodes.isEmpty()) {
-                "on every receipt"
+                str(S.desktop_ce_on_every_receipt)
             } else {
-                "on " + rule.triggerCodes.joinToString(", ")
+                str(S.desktop_ce_on_codes, rule.triggerCodes.joinToString(", "))
             },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
@@ -366,12 +370,12 @@ private fun Double.trimmedText(): String =
 private fun QuickCodesCard(draft: CashSettings, onEvent: (CashEvent) -> Unit) {
     fun update(codes: List<QuickCode>) = onEvent(CashEvent.EditSettings(draft.copy(quickCodes = codes)))
     ZillitSectionCard(
-        title = "Quick codes",
+        title = str(S.desktop_ce_quick_codes),
         icon = ZillitIcons.Receipt,
-        meta = "${draft.quickCodes.size} code(s)",
+        meta = str(S.desktop_ce_code_count, draft.quickCodes.size),
         action = {
             ZillitButton(
-                text = "Add code",
+                text = str(S.desktop_add_code),
                 onClick = { update(draft.quickCodes + QuickCode(name = "")) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -381,7 +385,7 @@ private fun QuickCodesCard(draft: CashSettings, onEvent: (CashEvent) -> Unit) {
     ) {
         if (draft.quickCodes.isEmpty()) {
             ZillitText(
-                text = "No quick codes yet. They appear as options when a receipt is coded.",
+                text = str(S.desktop_ce_no_quick_codes),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -411,19 +415,19 @@ private fun QuickCodeRow(code: QuickCode, onChange: (QuickCode) -> Unit, onRemov
         ZillitTextField(
             value = code.name,
             onValueChange = { onChange(code.copy(name = it)) },
-            placeholder = "Category",
+            placeholder = str(S.av_category),
             modifier = Modifier.weight(NAME_WEIGHT),
         )
         ZillitTextField(
             value = code.nominalCode,
             onValueChange = { onChange(code.copy(nominalCode = it)) },
-            placeholder = "Nominal",
+            placeholder = str(S.dm_rule_nominal),
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = code.vat?.trimmedText().orEmpty(),
             onValueChange = { onChange(code.copy(vat = it.toDoubleOrNull())) },
-            placeholder = "VAT %",
+            placeholder = str(S.desktop_ce_vat_percent),
             keyboardType = KeyboardType.Number,
             modifier = Modifier.width(VAT_WIDTH),
         )
@@ -432,12 +436,12 @@ private fun QuickCodeRow(code: QuickCode, onChange: (QuickCode) -> Unit, onRemov
             onValueChange = { typed ->
                 onChange(code.copy(keywords = typed.split(",").map { it.trim() }.filter { it.isNotBlank() }))
             },
-            placeholder = "Words that pick it",
+            placeholder = str(S.desktop_ce_words_that_pick_it),
             modifier = Modifier.weight(KEYWORD_WEIGHT),
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Remove ${code.name.ifBlank { "this code" }}",
+            contentDescription = str(S.bs_chip_remove, code.name.ifBlank { str(S.desktop_ce_this_code) }),
             onClick = onRemove,
             tint = ZillitTheme.colors.danger,
         )

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.esignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.BulkJob
 import com.zillit.desktop.feature.esignature.domain.CsvParse
 import com.zillit.desktop.feature.esignature.domain.EnvelopeTemplate
@@ -80,7 +82,7 @@ internal class BulkFlow(private val store: EsignStore) {
             val ok = store.orFail { store.repository.retryFailedRows(jobId) }
             store.update { copy(bulk = bulk.copy(busyJobId = null)) }
             if (ok != null) {
-                store.notice("Failed rows re-queued.")
+                store.notice(str(S.desktop_ds_failed_rows_re_queued))
                 load()
             }
         }
@@ -93,7 +95,13 @@ internal class BulkFlow(private val store: EsignStore) {
             val reminded = store.orFail { store.repository.remindOutstanding(jobId) }
             store.update { copy(bulk = bulk.copy(busyJobId = null)) }
             if (reminded != null) {
-                store.notice(if (reminded > 0) "Reminded $reminded recipient(s)." else "Nobody outstanding to remind.")
+                store.notice(
+                    if (reminded > 0) {
+                        str(S.desktop_ds_reminded_n_recipients, reminded)
+                    } else {
+                        str(S.desktop_ds_nobody_outstanding_to_remind)
+                    },
+                )
             }
         }
     }
@@ -117,7 +125,7 @@ internal class BulkFlow(private val store: EsignStore) {
         store.update {
             copy(bulk = bulk.copy(send = send.copy(fileName = name, csvText = text, parsed = csv, step = 2)))
         }
-        if (!csv.hasRequiredColumns) store.failed("The CSV needs a “name” column and an “email” column.")
+        if (!csv.hasRequiredColumns) store.failed(str(S.desktop_ds_the_csv_needs_a_name_column_and_an))
     }
 
     fun step(step: Int) = store.update {
@@ -134,12 +142,12 @@ internal class BulkFlow(private val store: EsignStore) {
         val send = store.current.bulk.send ?: return
         val parsed = send.parsed ?: return
         if (!parsed.hasRequiredColumns) {
-            store.failed("The CSV needs a “name” column and an “email” column.")
+            store.failed(str(S.desktop_ds_the_csv_needs_a_name_column_and_an))
             return
         }
         val rows = parsed.validRows()
         if (rows.isEmpty()) {
-            store.failed("No sendable rows — every row is missing a valid name or email.")
+            store.failed(str(S.desktop_ds_no_sendable_rows_every_row_is_missing_a))
             return
         }
         if (rows.size > BULK_ROW_CAP) {

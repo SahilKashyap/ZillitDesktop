@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.invoices.domain.PoSuggestion
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.PoPicker
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The orders an unmatched invoice could belong to — the web's
@@ -65,17 +67,17 @@ internal fun PoSuggestionMenu(picker: PoPicker, projectCurrency: String, onEvent
                     ZillitSpinner()
                 }
 
-                picker.suggestions.isEmpty -> MenuNote("No matching purchase orders found.")
+                picker.suggestions.isEmpty -> MenuNote(str(S.desktop_inv_no_matching_pos))
 
                 else -> ZillitScrollColumn(modifier = Modifier.heightIn(max = MENU_HEIGHT)) {
                     if (picker.suggestions.vendorPos.isNotEmpty()) {
-                        MenuHeading("This vendor's orders")
+                        MenuHeading(str(S.desktop_inv_this_vendors_orders))
                         picker.suggestions.vendorPos.forEach {
                             SuggestionRow(it, picker, projectCurrency, onEvent)
                         }
                     }
                     if (picker.suggestions.userPos.isNotEmpty()) {
-                        MenuHeading("Orders you raised")
+                        MenuHeading(str(S.desktop_inv_orders_you_raised))
                         picker.suggestions.userPos.forEach {
                             SuggestionRow(it, picker, projectCurrency, onEvent)
                         }

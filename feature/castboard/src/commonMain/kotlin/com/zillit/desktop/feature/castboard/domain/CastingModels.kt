@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.castboard.domain
 
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * One list on this production.
@@ -37,10 +39,13 @@ data class CastingUnit(
  * spells them `selected`, `shortlisted`, `published`
  * (`CastingPage.jsx:83-89`).
  */
-enum class CastingStatus(val wire: String, val label: String) {
-    Selected("selected", "Selected"),
-    Shortlisted("shortlisted", "Shortlist"),
-    Published("published", "Publish"),
+enum class CastingStatus(val wire: String, private val labelKey: String) {
+    Selected("selected", S.selected),
+    Shortlisted("shortlisted", S.shortlisted),
+    Published("published", S.publish),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The photo (or clip) that belongs to a casting entry. */

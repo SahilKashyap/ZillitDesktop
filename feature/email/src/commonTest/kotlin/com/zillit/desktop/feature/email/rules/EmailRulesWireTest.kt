@@ -98,7 +98,7 @@ class EmailRulesWireTest {
         assertEquals(ConditionOperator.IsTrue, flipped.operator)
         assertEquals("", flipped.value)
         val rule = EmailRule(conditions = listOf(c), actions = listOf(RuleAction.MarkRead))
-        assertEquals("subject contains \"x\" → mark as read", rule.summary())
+        assertEquals("subject contains \"x\" → Mark as read", rule.summary())
     }
 
     @Test

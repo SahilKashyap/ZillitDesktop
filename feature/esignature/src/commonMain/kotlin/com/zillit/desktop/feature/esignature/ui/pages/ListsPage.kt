@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.Envelope
 import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
 import com.zillit.desktop.feature.esignature.domain.EsignFormat
@@ -94,7 +96,7 @@ internal fun ManageListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) 
             },
             trailing = {
                 ZillitButton(
-                    text = "Upload Doc for E-Signature",
+                    text = str(S.desktop_ds_upload_doc_for_e_signature),
                     onClick = { onEvent(EsignEvent.StartCompose) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Upload,
@@ -107,7 +109,7 @@ internal fun ManageListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) 
                 ZillitSearchField(
                     value = manage.search,
                     onValueChange = { onEvent(EsignEvent.SearchManage(it)) },
-                    placeholder = "Search envelopes…",
+                    placeholder = str(S.docusign_search_hint),
                     modifier = Modifier.width(240.dp),
                 )
             },
@@ -161,14 +163,14 @@ internal fun ManageListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) 
             else -> RowKind.Sent
         }
         val emptyTitle = when (kind) {
-            RowKind.Draft -> "No draft envelopes"
+            RowKind.Draft -> str(S.desktop_ds_no_draft_envelopes)
             RowKind.Sent -> if (manage.hiddenBulkSent > 0 && manage.sent.isEmpty()) {
                 "No directly-sent envelopes (${manage.hiddenBulkSent} via bulk send)"
             } else {
-                "No sent envelopes"
+                str(S.docusign_empty_sent)
             }
-            RowKind.Completed -> "No completed envelopes yet"
-            RowKind.Rejected -> "No rejected envelopes"
+            RowKind.Completed -> str(S.docusign_empty_complete)
+            RowKind.Rejected -> str(S.docusign_empty_rejected)
             RowKind.Received -> ""
         }
         AnimatedContent(
@@ -182,13 +184,13 @@ internal fun ManageListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) 
                         title = emptyTitle,
                         message = when {
                             manage.search.isNotBlank() -> "Nothing matches “${manage.search}”."
-                            rowKind == RowKind.Draft -> "Upload a PDF to start an envelope."
+                            rowKind == RowKind.Draft -> str(S.desktop_ds_upload_a_pdf_to_start_an_envelope)
                             else -> null
                         },
                         action = if (rowKind == RowKind.Draft && manage.search.isBlank()) {
                             {
                                 ZillitButton(
-                                    "Upload a document",
+                                    str(S.desktop_ds_upload_a_document),
                                     onClick = { onEvent(EsignEvent.StartCompose) },
                                     size = ButtonSize.Small,
                                     leadingIcon = ZillitIcons.Upload,
@@ -206,9 +208,9 @@ internal fun ManageListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) 
     }
     ConfirmDialog(
         visible = manage.confirmDeleteId != null,
-        title = "Delete this envelope?",
-        body = "This draft will be permanently removed.",
-        confirmLabel = "Delete",
+        title = str(S.desktop_ds_delete_this_envelope),
+        body = str(S.docusign_delete_draft_message),
+        confirmLabel = str(S.delete),
         onConfirm = { onEvent(EsignEvent.ConfirmDeleteDraft) },
         onDismiss = { onEvent(EsignEvent.AskDeleteDraft(null)) },
     )
@@ -242,7 +244,7 @@ internal fun SignListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                 ZillitSearchField(
                     value = list.search,
                     onValueChange = { onEvent(EsignEvent.SearchSign(it)) },
-                    placeholder = "Search documents…",
+                    placeholder = str(S.um_search_documents),
                     modifier = Modifier.width(240.dp),
                 )
             },
@@ -254,9 +256,9 @@ internal fun SignListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
             SignBucket.Rejected -> RowKind.Rejected
         }
         val emptyTitle = when (list.tab) {
-            SignBucket.Action -> "Nothing waiting for your signature"
-            SignBucket.Completed -> "No completed documents yet"
-            SignBucket.Rejected -> "No rejected documents"
+            SignBucket.Action -> str(S.desktop_fs_nothing_waiting)
+            SignBucket.Completed -> str(S.docusign_receiver_empty_complete_title)
+            SignBucket.Rejected -> str(S.docusign_receiver_empty_rejected_title)
         }
         AnimatedContent(
             targetState = kind to state.layout,
@@ -268,7 +270,7 @@ internal fun SignListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                     rows.isEmpty() && !list.loading -> EmptyRows(
                         emptyTitle,
                         if (rowKind == RowKind.Received) {
-                            "Documents sent to you for signing will appear here."
+                            str(S.desktop_ds_documents_sent_to_you_for_signing_will_appear)
                         } else {
                             null
                         },
@@ -319,7 +321,11 @@ private fun BulkHiddenBanner(count: Int, onJump: () -> Unit) {
             color = colors.accentText,
             modifier = Modifier.weight(1f),
         )
-        ZillitText("Manage in Bulk Sends →", style = ZillitTheme.typography.labelSmall, color = colors.accentText)
+        ZillitText(
+            str(S.desktop_ds_manage_in_bulk_sends),
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.accentText,
+        )
     }
 }
 
@@ -348,7 +354,7 @@ private fun EnvelopeTable(
             onRowClick = { onEvent(EsignEvent.OpenEnvelope(it)) },
             columns = buildList {
                 add(
-                    TableColumn(header = "Document name", width = ColumnWidth.Weight(2.2f)) { envelope ->
+                    TableColumn(header = str(S.desktop_document_name), width = ColumnWidth.Weight(2.2f)) { envelope ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -361,7 +367,8 @@ private fun EnvelopeTable(
                                 ) {
                                     ZillitText(
                                         envelope.title.ifBlank { envelope.document?.name ?: "(untitled)" },
-                                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        style = ZillitTheme.typography.bodyMedium
+                                            .copy(fontWeight = FontWeight.SemiBold),
                                         maxLines = 1,
                                         modifier = Modifier.weight(1f, fill = false),
                                     )
@@ -381,25 +388,29 @@ private fun EnvelopeTable(
                     },
                 )
                 if (kind == RowKind.Sent || kind == RowKind.Received) {
-                    add(TableColumn(header = "Signed by", width = ColumnWidth.Fixed(150.dp)) { SignedProgress(it) })
+                    add(
+                        TableColumn(header = str(S.signed_by_label), width = ColumnWidth.Fixed(150.dp)) {
+                            SignedProgress(it)
+                        },
+                    )
                 }
                 add(
-                    TableColumn(header = "Signers", width = ColumnWidth.Fixed(150.dp)) {
+                    TableColumn(header = str(S.docusign_section_signers), width = ColumnWidth.Fixed(150.dp)) {
                         SignerAvatarGroup(it.recipients, maxCount = 4)
                     },
                 )
                 add(
                     TableColumn(
-                        header = "Status",
+                        header = str(S.status),
                         width = ColumnWidth.Fixed(if (terminal) 200.dp else 130.dp),
                     ) { envelope ->
                         when (kind) {
                             RowKind.Sent -> DeliveryPill(envelope)
                             RowKind.Received -> ZillitStatusPill(
                                 label = if (envelope.awaitsMyCounterSign(state)) {
-                                    "Counter-sign"
+                                    str(S.desktop_ds_counter_sign)
                                 } else {
-                                    "Pending signature"
+                                    str(S.pr_status_pending_signature)
                                 },
                                 tone = StatusTone.Pending,
                                 dot = true,
@@ -419,7 +430,11 @@ private fun EnvelopeTable(
                 if (!terminal) {
                     add(
                         TableColumn(
-                            header = if (kind == RowKind.Draft) "Last change" else "Sent on",
+                            header = if (kind == RowKind.Draft) {
+                                str(S.docusign_last_change)
+                            } else {
+                                str(S.desktop_ds_sent_on)
+                            },
                             width = ColumnWidth.Fixed(110.dp),
                         ) { envelope ->
                             ZillitText(
@@ -459,14 +474,14 @@ private fun RowActions(envelope: Envelope, kind: RowKind, state: EsignUiState, o
     when (kind) {
         RowKind.Draft -> {
             ZillitButton(
-                "Edit",
+                str(S.edit),
                 onClick = { onEvent(EsignEvent.OpenEnvelope(envelope)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Edit,
             )
             ZillitButton(
-                "Delete",
+                str(S.delete),
                 onClick = { onEvent(EsignEvent.AskDeleteDraft(envelope.id)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
@@ -477,14 +492,14 @@ private fun RowActions(envelope: Envelope, kind: RowKind, state: EsignUiState, o
             val mine = envelope.recipientFor(state.currentUserId, state.currentUserEmail)
             if (mine != null) {
                 ZillitButton(
-                    if (envelope.awaitsMyCounterSign(state)) "Counter-sign" else "Sign",
+                    if (envelope.awaitsMyCounterSign(state)) str(S.desktop_ds_counter_sign) else str(S.sign),
                     onClick = { onEvent(EsignEvent.OpenSigning(envelope, SigningMode.Sign)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Edit,
                 )
             }
             ZillitButton(
-                "View",
+                str(S.view),
                 onClick = { onEvent(EsignEvent.OpenSigning(envelope, SigningMode.ViewSigned)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
@@ -493,14 +508,14 @@ private fun RowActions(envelope: Envelope, kind: RowKind, state: EsignUiState, o
         }
         else -> {
             ZillitButton(
-                "Details",
+                str(S.docusign_section_details),
                 onClick = { onEvent(EsignEvent.OpenEnvelope(envelope)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Info,
             )
             ZillitButton(
-                "View",
+                str(S.view),
                 onClick = { onEvent(EsignEvent.OpenSigning(envelope, SigningMode.ViewSigned)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
@@ -545,7 +560,10 @@ private fun EnvelopeCard(envelope: Envelope, kind: RowKind, state: EsignUiState,
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             DocTile()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     ZillitText(
                         envelope.title.ifBlank { envelope.document?.name ?: "(untitled)" },
                         style = ZillitTheme.typography.titleSmall,
@@ -569,7 +587,7 @@ private fun EnvelopeCard(envelope: Envelope, kind: RowKind, state: EsignUiState,
             when (kind) {
                 RowKind.Sent -> DeliveryPill(envelope)
                 RowKind.Received -> ZillitStatusPill(
-                    label = if (counterSign) "Counter-sign" else "Action required",
+                    label = if (counterSign) str(S.desktop_ds_counter_sign) else str(S.docusign_status_action_required),
                     tone = StatusTone.Pending,
                     dot = true,
                 )
@@ -604,7 +622,7 @@ private fun EnvelopeCard(envelope: Envelope, kind: RowKind, state: EsignUiState,
             ) {
                 ZillitIcon(ZillitIcons.Info, tint = colors.accentText, size = 13.dp)
                 ZillitText(
-                    "Everyone else has signed — your counter-signature completes it.",
+                    str(S.desktop_ds_everyone_else_has_signed_your_counter_signature_completes),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.accentText,
                 )

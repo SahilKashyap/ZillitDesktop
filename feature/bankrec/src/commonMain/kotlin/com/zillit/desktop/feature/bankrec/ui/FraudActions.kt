@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.AuditAction
 import com.zillit.desktop.feature.bankrec.domain.AuditExportFormat
 import com.zillit.desktop.feature.bankrec.domain.AuditFilters
@@ -62,7 +64,13 @@ internal class FraudActions(private val vm: BankRecViewModel) {
                         fraudAlerts = fraudAlerts.map { if (it.id == id) it.copy(status = status) else it },
                     )
                 }
-                vm.notify(if (action == AlertAction.Dismiss) "Marked as investigated." else "Escalated to finance.")
+                vm.notify(
+                    if (action == AlertAction.Dismiss) {
+                        str(S.desktop_br_marked_investigated)
+                    } else {
+                        str(S.desktop_br_escalated_to_finance_toast)
+                    },
+                )
                 // The period's fraud count and the workspace's flags move with it.
                 vm.loadFraudAlerts()
                 vm.loadPeriods()

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.core.forms.FormSection
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
@@ -717,22 +719,25 @@ sealed interface AccountHubEvent {
 }
 
 /** Which Production Setup section a save or revert applies to. */
-enum class SetupSection(val label: String) {
-    Companies("Companies"),
-    Currencies("Project Currencies"),
-    TaxTypes("Tax Types"),
-    AssetTags("Account Tags"),
-    Budget("Project Budget"),
-    Schedule("Production Schedule"),
-    PayrollDefaults("Payroll Defaults"),
-    DealConditions("Standard Deal Conditions"),
-    PayrollBureaus("Payroll Bureau"),
-    Allowances("Allowances & Rentals"),
-    PayrollSettings("Payroll Settings"),
-    PoSetup("Purchase Order Setup"),
-    InvoicesSetup("Invoices Setup"),
-    NonUnionPay("Non-Union Pay Breakdown"),
-    DayTypes("Day Types"),
+enum class SetupSection(private val labelKey: String) {
+    Companies(S.desktop_companies),
+    Currencies(S.desktop_project_currencies),
+    TaxTypes(S.desktop_tax_types),
+    AssetTags(S.desktop_account_tags),
+    Budget(S.desktop_project_budget),
+    Schedule(S.desktop_production_schedule),
+    PayrollDefaults(S.desktop_payroll_defaults),
+    DealConditions(S.desktop_standard_deal_conditions),
+    PayrollBureaus(S.desktop_payroll_bureau),
+    Allowances(S.dm_allow_title),
+    PayrollSettings(S.desktop_payroll_settings),
+    PoSetup(S.desktop_purchase_order_setup),
+    InvoicesSetup(S.desktop_invoices_setup),
+    NonUnionPay(S.desktop_hub_non_union_pay_breakdown),
+    DayTypes(S.desktop_day_types),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** One-shot things the console asks the host to do. */
@@ -753,7 +758,10 @@ sealed interface AccountHubEffect {
  * [route] is a deep link: the workspace resolves a tool by longest path
  * prefix, so the tail lands the tool on that page rather than its own default.
  */
-enum class SpendSetup(val route: String, val title: String) {
-    Cards("/film-tools/card-expenses/settings", "Card Expenses"),
-    PettyCash("/film-tools/cash-expenses/settings", "Petty Cash"),
+enum class SpendSetup(val route: String, private val titleKey: String) {
+    Cards("/film-tools/card-expenses/settings", S.desktop_card_expenses),
+    PettyCash("/film-tools/cash-expenses/settings", S.desktop_petty_cash),
+    ;
+
+    val title: String get() = str(titleKey)
 }

@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.purchaseorder.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.orDash
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
@@ -128,7 +130,7 @@ data class PoUiState(
      * The two web modules disagree and both are right: accounts *enter* an
      * order already agreed, a department *creates* a request for one.
      */
-    val createLabel: String get() = if (viewer.isAccountant) "Enter PO" else "Create PO"
+    val createLabel: String get() = if (viewer.isAccountant) str(S.desktop_enter_po) else str(S.ah_create_po)
 
     /**
      * Whether the "Assistant View" banner belongs on screen.
@@ -230,9 +232,9 @@ data class PoUiState(
      * on, not a blank.
      */
     fun assigneeName(order: PurchaseOrder): String = when {
-        order.assignedTo.isNullOrBlank() -> "Unassigned"
-        order.assignedTo == viewer.userId -> "Me"
-        else -> personName(order.assignedTo).ifBlank { "Assigned" }
+        order.assignedTo.isNullOrBlank() -> str(S.unassigned)
+        order.assignedTo == viewer.userId -> str(S.txt_me)
+        else -> personName(order.assignedTo).ifBlank { str(S.assigned) }
     }
 
     /**
@@ -244,7 +246,7 @@ data class PoUiState(
      */
     fun personName(id: String?): String = when {
         id.isNullOrBlank() -> ""
-        id == viewer.userId -> "Me"
+        id == viewer.userId -> str(S.txt_me)
         else -> (people + team).firstOrNull { it.id == id }?.name.orEmpty()
     }
 
@@ -335,32 +337,33 @@ data class PoFormState(
 
     val title: String
         get() = when (mode) {
-            PoFormMode.NewOrder -> "New PO"
-            PoFormMode.EditOrder -> "Edit PO"
-            PoFormMode.EditDraft -> "Edit Draft"
-            PoFormMode.NewTemplate -> "New Template"
-            PoFormMode.EditTemplate -> "Edit Template"
+            PoFormMode.NewOrder -> str(S.desktop_new_po)
+            PoFormMode.EditOrder -> str(S.ah_edit_po_upper)
+            PoFormMode.EditDraft -> str(S.desktop_edit_draft)
+            PoFormMode.NewTemplate -> str(S.dm_template_new)
+            PoFormMode.EditTemplate -> str(S.dd_edit_template)
         }
 
     /** The web's `backLabel`: a template came from the Templates tab. */
-    val backLabel: String get() = if (isTemplate) "Back to Templates" else "Back to POs"
+    val backLabel: String get() = if (isTemplate) str(S.desktop_back_to_templates) else str(S.desktop_back_to_pos)
 
     val isTemplate: Boolean get() = mode == PoFormMode.NewTemplate || mode == PoFormMode.EditTemplate
 
     /** The primary button — the web's `Update & Submit PO` / `Create & Submit PO`. */
     val submitLabel: String
         get() = when (mode) {
-            PoFormMode.EditOrder -> "Update & Submit PO"
-            else -> "Create & Submit PO"
+            PoFormMode.EditOrder -> str(S.desktop_update_and_submit_po)
+            else -> str(S.desktop_create_and_submit_po)
         }
 
-    val saveDraftLabel: String get() = if (mode == PoFormMode.EditDraft) "Update draft" else "Save Draft"
+    val saveDraftLabel: String
+        get() = if (mode == PoFormMode.EditDraft) str(S.ah_update_draft_opt) else str(S.ah_save_draft)
 
     val saveTemplateLabel: String
         get() = when (mode) {
-            PoFormMode.EditTemplate -> "Update template"
-            PoFormMode.NewTemplate -> "Save Template"
-            else -> "Save as Template"
+            PoFormMode.EditTemplate -> str(S.update_template)
+            PoFormMode.NewTemplate -> str(S.ah_save_template_btn)
+            else -> str(S.save_as_template)
         }
 }
 
@@ -422,14 +425,15 @@ data class PoReassignState(
     val resolvedReason: String get() = if (reason == OTHER) customReason.trim() else reason
 
     companion object {
-        const val OTHER = "Other (custom reason)"
-        val REASONS = listOf(
-            "Workload balancing",
-            "Department specialisation",
-            "Absence cover",
-            "Escalation",
-            OTHER,
-        )
+        val OTHER: String get() = str(S.desktop_other_custom_reason)
+        val REASONS: List<String>
+            get() = listOf(
+                str(S.desktop_inv_reason_workload),
+                str(S.desktop_po_reason_department_specialisation),
+                str(S.desktop_po_reason_absence_cover),
+                str(S.desktop_po_reason_escalation),
+                OTHER,
+            )
     }
 }
 

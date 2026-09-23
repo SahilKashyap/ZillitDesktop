@@ -3,6 +3,9 @@ package com.zillit.desktop.feature.productionreport
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.productionreport.domain.ApprovalDecision
 import com.zillit.desktop.feature.productionreport.domain.ApprovalRequest
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
+import com.zillit.desktop.feature.productionreport.domain.BadgeSurface
+import com.zillit.desktop.feature.productionreport.domain.CallSheetForDay
 import com.zillit.desktop.feature.productionreport.domain.CellKind
 import com.zillit.desktop.feature.productionreport.domain.ComposeReport
 import com.zillit.desktop.feature.productionreport.domain.MetadataUpdate
@@ -10,8 +13,8 @@ import com.zillit.desktop.feature.productionreport.domain.PageCell
 import com.zillit.desktop.feature.productionreport.domain.PageRow
 import com.zillit.desktop.feature.productionreport.domain.PublishedCallSheetLookup
 import com.zillit.desktop.feature.productionreport.domain.ReminderRequest
+import com.zillit.desktop.feature.productionreport.domain.ReplaceTarget
 import com.zillit.desktop.feature.productionreport.domain.ReportBadgeSource
-import com.zillit.desktop.feature.productionreport.domain.ReportChatOpener
 import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.ReportDelivery
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
@@ -56,8 +59,18 @@ internal object Samples {
         ready = true,
     )
 
+    /** The same person without posting rights — a viewer. */
+    val viewer = author.copy(canPost = false)
+
     val crew = listOf(
-        SheetMember("me", "Author", department = "Production", designation = "2nd AD", status = "accepted"),
+        SheetMember(
+            "me",
+            "Author",
+            department = "Production",
+            designation = "2nd AD",
+            designationKey = "2nd_assistant_director_label",
+            status = "accepted",
+        ),
         SheetMember("u2", "Uma", department = "Production", designation = "Producer", status = "accepted"),
         SheetMember("u3", "Vic", department = "Direction", designation = "Director", status = "accepted"),
     )
@@ -98,11 +111,15 @@ internal class FakeReportRepository : ReportRepository {
     override val events: Flow<ReportSyncEvent> get() = liveEvents
 
     var metadata = SheetMetadata()
+
+    /** Set to make the metadata GET fail — the tabs must then fail OPEN. */
+    var metadataFails = false
     var stock: List<StockTemplate> = emptyList()
     var rows: (ReportQuery) -> List<ReportSummary> = { emptyList() }
     val details = mutableMapOf<String, ReportDetail>()
     val thread = mutableListOf<ReportComment>()
     var deleteAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
+    var approveAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
 
     val queries = mutableListOf<ReportQuery>()
     val metadataWrites = mutableListOf<MetadataUpdate>()
@@ -122,7 +139,12 @@ internal class FakeReportRepository : ReportRepository {
 
     private val ok = ZillitResult.Success(Unit)
 
-    override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> = ZillitResult.Success(metadata)
+    override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> =
+        if (metadataFails) {
+            ZillitResult.Failure(com.zillit.desktop.core.common.ZillitError.Http(500, "boom"))
+        } else {
+            ZillitResult.Success(metadata)
+        }
 
     override suspend fun saveMetadata(projectId: String, update: MetadataUpdate): ZillitResult<SheetMetadata?> {
         metadataWrites += update
@@ -136,8 +158,12 @@ internal class FakeReportRepository : ReportRepository {
     override suspend fun savedTemplate(id: String): ZillitResult<SavedTemplate> =
         ZillitResult.Success(SavedTemplate(id, "Saved", payload = Samples.document()))
 
-    override suspend fun createTemplate(payload: SheetPayload): ZillitResult<SavedTemplate?> =
-        ZillitResult.Success(SavedTemplate("t1", "Draft Template 1"))
+    var templateCreates = 0
+
+    override suspend fun createTemplate(payload: SheetPayload): ZillitResult<SavedTemplate?> {
+        templateCreates += 1
+        return ZillitResult.Success(SavedTemplate("t1", "Draft Template 1"))
+    }
 
     override suspend fun updateTemplate(id: String, payload: SheetPayload): ZillitResult<Unit> = ok
 
@@ -176,7 +202,11 @@ internal class FakeReportRepository : ReportRepository {
         return ZillitResult.Success(null)
     }
 
+    /** Set to hold a delete in flight until the test completes it. */
+    var deleteGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
     override suspend fun delete(id: String): ZillitResult<Unit> {
+        deleteGate?.await()
         if (deleteAnswer is ZillitResult.Success) deleted += id
         return deleteAnswer
     }
@@ -200,8 +230,8 @@ internal class FakeReportRepository : ReportRepository {
     }
 
     override suspend fun approve(requestId: String, decision: ApprovalDecision): ZillitResult<Unit> {
-        approvals += requestId to decision
-        return ok
+        if (approveAnswer is ZillitResult.Success) approvals += requestId to decision
+        return approveAnswer
     }
 
     override suspend fun reject(requestId: String, reason: String): ZillitResult<Unit> = ok
@@ -262,13 +292,28 @@ internal class FakePublishing : ReportPublishing {
             ApprovalDecision.Signature(media = "p/sig.png", thumbnail = "", bucket = "b", region = "eu"),
         )
 
+    /** The unit chat's live documents offered to a Replace. */
+    var replaceable: List<ReplaceTarget> = emptyList()
+    var chatPostAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
+    var directChatAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
+
     /** File name, from-draft, shoot date. */
     val library = mutableListOf<Triple<String, Boolean, String?>>()
 
-    /** File name, replace-previous. */
-    val chatPosts = mutableListOf<Pair<String, Boolean>>()
+    /** File name, replace-previous, replace target. */
+    val chatPosts = mutableListOf<Triple<String, Boolean, String?>>()
+
+    /** Recipient id, file name — "Send for Chat". */
+    val directChats = mutableListOf<Pair<String, String>>()
 
     override fun canDistribute(): Boolean = distributes
+
+    override suspend fun replaceableDocuments(): ZillitResult<List<ReplaceTarget>> = ZillitResult.Success(replaceable)
+
+    override suspend fun sendPdfToChat(userId: String, pdf: ByteArray, fileName: String): ZillitResult<Unit> {
+        if (directChatAnswer is ZillitResult.Success) directChats += userId to fileName
+        return directChatAnswer
+    }
 
     override suspend fun sendToDocumentDistribution(
         pdf: ByteArray,
@@ -280,9 +325,14 @@ internal class FakePublishing : ReportPublishing {
         return ZillitResult.Success(Unit)
     }
 
-    override suspend fun postToChat(pdf: ByteArray, fileName: String, replacePrevious: Boolean): ZillitResult<Unit> {
-        chatPosts += fileName to replacePrevious
-        return ZillitResult.Success(Unit)
+    override suspend fun postToChat(
+        pdf: ByteArray,
+        fileName: String,
+        replacePrevious: Boolean,
+        replaceChatId: String?,
+    ): ZillitResult<Unit> {
+        chatPosts += Triple(fileName, replacePrevious, replaceChatId)
+        return chatPostAnswer
     }
 
     override suspend fun attachDocuments(replacePrevious: Boolean): ZillitResult<Int> = ZillitResult.Success(0)
@@ -299,11 +349,18 @@ internal class FakeDelivery : ReportDelivery {
     override suspend fun savePdf(fileName: String, pdf: ByteArray): ZillitResult<Unit> = ZillitResult.Success(Unit)
 }
 
-internal class FakeBadges : ReportBadgeSource {
-    val threadsRead = mutableListOf<String>()
+/** One read per (surface, kind, report) — never unit-wide. */
+internal data class BadgeRead(val surface: BadgeSurface, val kind: BadgeKind, val reportId: String)
 
-    override fun readCommentThread(reportId: String) {
-        threadsRead += reportId
+internal class FakeBadges : ReportBadgeSource {
+    /** The ledger's rows; a test emits a new set into it. */
+    val live = MutableSharedFlow<List<com.zillit.desktop.feature.productionreport.domain.BadgeLeaf>>(replay = 1)
+    override val leaves: Flow<List<com.zillit.desktop.feature.productionreport.domain.BadgeLeaf>> get() = live
+
+    val reads = mutableListOf<BadgeRead>()
+
+    override fun readBadge(surface: BadgeSurface, kind: BadgeKind, reportId: String) {
+        reads += BadgeRead(surface, kind, reportId)
     }
 }
 
@@ -313,8 +370,11 @@ internal class ReportHarness(private val dispatcher: TestDispatcher) {
     val repository = FakeReportRepository()
     val publishing = FakePublishing()
     val badges = FakeBadges()
-    val chats = mutableListOf<Pair<String, String>>()
     val toasts = mutableListOf<ReportEffect.Toast>()
+
+    /** What the call-sheet service answers for the shoot day; the days asked are recorded. */
+    var callSheetForDay: CallSheetForDay = CallSheetForDay.Unavailable
+    val callSheetDays = mutableListOf<String>()
 
     fun start(scope: TestScope, viewer: ReportViewer = Samples.author, hasChat: Boolean = false): ReportViewModel {
         val vm = ReportViewModel(
@@ -322,12 +382,11 @@ internal class ReportHarness(private val dispatcher: TestDispatcher) {
             services = ReportServices(
                 delivery = FakeDelivery(),
                 publishing = publishing,
-                callSheets = PublishedCallSheetLookup { null },
-                badges = badges,
-                chat = ReportChatOpener { userId, fullName ->
-                    chats += userId to fullName
-                    true
+                callSheets = PublishedCallSheetLookup { _, dateYmd ->
+                    callSheetDays += dateYmd
+                    callSheetForDay
                 },
+                badges = badges,
             ),
             resolveViewer = { viewer },
             projectIdProvider = { Samples.PROJECT },

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.maps.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.LocationDraft
 import com.zillit.desktop.feature.maps.domain.LocationRules
@@ -36,7 +38,7 @@ internal class LocationController(private val store: MapStore) {
                 }
                 is ZillitResult.Failure -> {
                     store.update { copy(locationsLoading = false) }
-                    store.failed(result.error, "Failed to fetch locations")
+                    store.failed(result.error, str(S.desktop_map_failed_fetch_locations))
                 }
             }
         }
@@ -68,8 +70,10 @@ internal class LocationController(private val store: MapStore) {
     /** "Copy" beside the coordinates — six decimals, as shown. */
     private fun copyCoordinates(locationId: String) {
         val point = store.state.location(locationId)?.point ?: return
-        store.effect(MapEffect.Copy("${toFixed(point.lat, COORDINATE_DIGITS)}, ${toFixed(point.lng, COORDINATE_DIGITS)}"))
-        store.notice("Coordinates copied", NoticeTone.Success)
+        store.effect(
+            MapEffect.Copy("${toFixed(point.lat, COORDINATE_DIGITS)}, ${toFixed(point.lng, COORDINATE_DIGITS)}"),
+        )
+        store.notice(str(S.desktop_map_coordinates_copied), NoticeTone.Success)
     }
 
     // Form ---------------------------------------------------------------------
@@ -107,7 +111,9 @@ internal class LocationController(private val store: MapStore) {
         }
     }
 
-    fun pickType(name: String) = updateForm { copy(type = name, subTypes = emptyList(), typeSearch = "", typeMenuOpen = false) }
+    fun pickType(name: String) = updateForm {
+        copy(type = name, subTypes = emptyList(), typeSearch = "", typeMenuOpen = false)
+    }
 
     /**
      * Opens a blank form. From the map it carries the tapped point and its
@@ -129,7 +135,7 @@ internal class LocationController(private val store: MapStore) {
 
     fun openEdit(locationId: String) {
         val location = store.state.location(locationId) ?: run {
-            store.notice("Location not found", NoticeTone.Error)
+            store.notice(str(S.location_not_found), NoticeTone.Error)
             return
         }
         show(
@@ -188,7 +194,9 @@ internal class LocationController(private val store: MapStore) {
     }
 
     private fun addressText(value: String) {
-        updateForm { copy(address = value, addressSuggestions = if (value.isBlank()) emptyList() else addressSuggestions) }
+        updateForm {
+            copy(address = value, addressSuggestions = if (value.isBlank()) emptyList() else addressSuggestions)
+        }
         addressJob?.cancel()
         if (value.isBlank()) return
         val anchor = store.state.locationForm?.anchor
@@ -221,7 +229,7 @@ internal class LocationController(private val store: MapStore) {
             )
             val state = store.state
             if (!isWithinSelectedCity(pick.point, state.selectedCity, state.zones, state.cityBounds)) {
-                val label = state.selectedCity?.name?.ifBlank { null } ?: "the selected city"
+                val label = state.selectedCity?.name?.ifBlank { null } ?: str(S.desktop_map_the_selected_city)
                 store.update { copy(dialog = MapDialog.AddressOutside(label, pick)) }
             } else {
                 applyAddress(pick)
@@ -253,18 +261,18 @@ internal class LocationController(private val store: MapStore) {
 
     /** `addFiles`: at most [LocationRules.MAX_MEDIA] photos, existing ones included. */
     private fun addPhotos(photos: List<PickedPhoto>, refused: List<String>) {
-        refused.forEach { store.notice("$it is not a supported image.", NoticeTone.Warning) }
+        refused.forEach { store.notice(str(S.desktop_map_unsupported_image, it), NoticeTone.Warning) }
         val form = store.state.locationForm ?: return
         if (photos.isEmpty()) return
         val remaining = LocationRules.MAX_MEDIA - form.mediaCount
         if (remaining <= 0) {
-            store.notice("Maximum ${LocationRules.MAX_MEDIA} media allowed", NoticeTone.Warning)
+            store.notice(str(S.desktop_map_max_media, LocationRules.MAX_MEDIA), NoticeTone.Warning)
             return
         }
         val batch = photos.take(remaining)
         if (batch.size < photos.size) {
             store.notice(
-                "Only ${batch.size} of ${photos.size} files added (limit: ${LocationRules.MAX_MEDIA})",
+                str(S.desktop_map_only_n_files_added, batch.size, photos.size, LocationRules.MAX_MEDIA),
                 NoticeTone.Warning,
             )
         }
@@ -285,7 +293,10 @@ internal class LocationController(private val store: MapStore) {
         // can move it after that, and being told is still useful. It no
         // longer blocks (req I reversed the old refusal).
         if (!isWithinSelectedCity(point, state.selectedCity, state.zones, state.cityBounds)) {
-            store.notice("Saved outside ${state.selectedCity?.name ?: "the selected city"}.", NoticeTone.Info)
+            store.notice(
+                str(S.desktop_map_saved_outside, state.selectedCity?.name ?: str(S.desktop_map_the_selected_city)),
+                NoticeTone.Info,
+            )
         }
         updateForm { copy(saving = true) }
         store.spawn {
@@ -306,24 +317,36 @@ internal class LocationController(private val store: MapStore) {
             )
             val result = form.editId?.let { store.repository.updateLocation(it, draft) }
                 ?: store.repository.createLocation(draft)
-            when (result) {
-                is ZillitResult.Failure -> {
-                    updateForm { copy(saving = false) }
-                    store.failed(result.error, if (form.isEdit) "Failed to update location" else "Failed to create location")
-                }
-                is ZillitResult.Success -> {
-                    store.succeeded(
-                        result.data,
-                        if (form.isEdit) "Location updated successfully" else "Location created successfully",
-                    )
-                    close()
-                    store.canvas.clearPreview()
-                    store.canvas.clearPlace()
-                    store.hooks.reloadLocations()
-                    store.hooks.reloadCities()
-                    // Req P: centre on the saved pin, never re-zoom.
-                    if (form.origin == FormOrigin.Map) store.canvas.panTo(point, zoom = null)
-                }
+            finishSave(form, point, result)
+        }
+    }
+
+    /** The save's answer: the toast, and — on success — the reloads and the pan. */
+    private fun finishSave(form: LocationFormState, point: LatLng, result: ZillitResult<String?>) {
+        when (result) {
+            is ZillitResult.Failure -> {
+                updateForm { copy(saving = false) }
+                store.failed(
+                    result.error,
+                    if (form.isEdit) {
+                        str(S.desktop_map_failed_update_location)
+                    } else {
+                        str(S.desktop_map_failed_create_location)
+                    },
+                )
+            }
+            is ZillitResult.Success -> {
+                store.succeeded(
+                    result.data,
+                    if (form.isEdit) str(S.desktop_map_location_updated) else str(S.desktop_map_location_created),
+                )
+                close()
+                store.canvas.clearPreview()
+                store.canvas.clearPlace()
+                store.hooks.reloadLocations()
+                store.hooks.reloadCities()
+                // Req P: centre on the saved pin, never re-zoom.
+                if (form.origin == FormOrigin.Map) store.canvas.panTo(point, zoom = null)
             }
         }
     }
@@ -332,7 +355,7 @@ internal class LocationController(private val store: MapStore) {
     private suspend fun upload(added: List<NewPhoto>): List<MapAttachment>? {
         if (added.isEmpty()) return emptyList()
         val photos = store.host.photos ?: run {
-            store.notice("Upload configuration not available. Please try again.", NoticeTone.Error)
+            store.notice(str(S.desktop_map_upload_config_unavailable), NoticeTone.Error)
             return null
         }
         val stored = mutableListOf<MapAttachment>()
@@ -340,7 +363,7 @@ internal class LocationController(private val store: MapStore) {
             when (val result = photos.upload(photo.photo)) {
                 is ZillitResult.Success -> stored += result.data
                 is ZillitResult.Failure -> {
-                    store.notice("Failed to upload files", NoticeTone.Error)
+                    store.notice(str(S.desktop_map_failed_upload_files), NoticeTone.Error)
                     return null
                 }
             }
@@ -353,9 +376,9 @@ internal class LocationController(private val store: MapStore) {
         store.update {
             copy(
                 dialog = MapDialog.Confirm(
-                    title = "Delete Location",
-                    message = "Are you sure you want to delete \"${location.name}\"?",
-                    confirmLabel = "Delete",
+                    title = str(S.desktop_map_delete_location_title),
+                    message = str(S.desktop_map_delete_confirm_named, location.name),
+                    confirmLabel = str(S.delete),
                     danger = true,
                     action = ConfirmAction.DeleteLocation(locationId),
                 ),
@@ -366,9 +389,9 @@ internal class LocationController(private val store: MapStore) {
     fun delete(locationId: String, done: () -> Unit) {
         store.spawn {
             when (val result = store.repository.deleteLocation(locationId)) {
-                is ZillitResult.Failure -> store.failed(result.error, "Failed to delete location")
+                is ZillitResult.Failure -> store.failed(result.error, str(S.desktop_map_failed_delete_location))
                 is ZillitResult.Success -> {
-                    store.succeeded(result.data, "Location deleted successfully")
+                    store.succeeded(result.data, str(S.desktop_map_location_deleted))
                     store.update { copy(locations = locations.filterNot { it.id == locationId }) }
                     store.popPanel { it == MapPanel.LocationDetail(locationId) }
                     store.hooks.reloadLocations()

@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailSummary
 import com.zillit.desktop.feature.email.domain.MailRow
 import com.zillit.desktop.feature.email.domain.headerName
@@ -158,7 +160,7 @@ private fun MessageLines(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitText(
-                text = shown.subject.ifBlank { "No Subject" },
+                text = shown.subject.ifBlank { str(S.no_subject) },
                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = weight),
                 color = if (row.hasUnread) colors.textPrimary else colors.textSecondary,
                 maxLines = 1,
@@ -167,7 +169,7 @@ private fun MessageLines(
             if (message.hasAttachments) {
                 ZillitIcon(
                     icon = ZillitIcons.Paperclip,
-                    contentDescription = "Has attachments",
+                    contentDescription = str(S.has_attachments_txt),
                     tint = colors.textMuted,
                     size = META_ICON,
                 )
@@ -311,7 +313,7 @@ private fun DraftLines(message: EmailSummary, time: String, modifier: Modifier =
     Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "Draft",
+                text = str(S.draft),
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.danger,
                 modifier = Modifier.weight(1f),
@@ -325,7 +327,7 @@ private fun DraftLines(message: EmailSummary, time: String, modifier: Modifier =
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = message.subject.ifBlank { "(No Subject)" },
+                text = message.subject.ifBlank { str(S.no_subject_parenthesis) },
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
                 maxLines = 1,

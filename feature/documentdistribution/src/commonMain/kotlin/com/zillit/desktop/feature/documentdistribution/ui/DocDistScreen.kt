@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.ui.pages.AddressBookPage
 import com.zillit.desktop.feature.documentdistribution.ui.pages.ComposerDialog
 import com.zillit.desktop.feature.documentdistribution.ui.pages.DocDistPromptDialog
@@ -61,9 +63,8 @@ fun DocDistScreen(
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         if (state.viewer.isBlocked) {
             ZillitEmptyState(
-                title = "No access to Document Distribution",
-                message = "An administrator has not granted you view rights for this tool on " +
-                    "this project.",
+                title = str(S.desktop_docdist_no_access_title),
+                message = str(S.desktop_docdist_no_access_message),
                 icon = ZillitIcons.Shield,
             )
             return@Box
@@ -92,6 +93,9 @@ fun DocDistScreen(
     }
 }
 
+// The badge reader takes its units as a vararg, and a destination names at
+// most two of them, so the copy the spread makes is a two-element array.
+@Suppress("SpreadOperator")
 @Composable
 private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     Column(
@@ -102,13 +106,12 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitPageHeader(
-            eyebrow = "Projects",
-            title = "Document Distribution",
-            description = "Catalogue what the project issues, send it out watermarked, " +
-                "and see who opened it.",
+            eyebrow = str(S.cs_projects),
+            title = str(S.dd_title),
+            description = str(S.desktop_docdist_description),
             actions = {
                 ZillitButton(
-                    text = "Refresh",
+                    text = str(S.dd_action_refresh),
                     onClick = { onEvent(DocDistEvent.Refresh) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -119,7 +122,9 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
         )
 
         ZillitTabStrip(
-            tabs = state.destinations.map { ZillitTab(it.slug, it.label, count = state.unread.unit(*it.badgeUnits.toTypedArray())) },
+            tabs = state.destinations.map {
+                ZillitTab(it.slug, it.label, count = state.unread.unit(*it.badgeUnits.toTypedArray()))
+            },
             activeId = state.destination.slug,
             onSelect = { slug ->
                 DocDistDestination.fromSlug(slug)?.let { onEvent(DocDistEvent.Open(it)) }
@@ -141,7 +146,7 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
                 // notice — one press, for the right they are short of.
                 action = {
                     ZillitButton(
-                        text = "Request access",
+                        text = str(S.desktop_request_access),
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
                         onClick = {
@@ -159,14 +164,11 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
 }
 
 private fun restrictionText(state: DocDistUiState): String = when {
-    !state.viewer.canPost && !state.viewer.canDownload ->
-        "You can browse this library but cannot send or download from it. Ask an " +
-            "administrator for posting and download rights."
+    !state.viewer.canPost && !state.viewer.canDownload -> str(S.desktop_docdist_view_only_notice)
 
-    !state.viewer.canPost ->
-        "You can browse and download from this library but cannot send from it."
+    !state.viewer.canPost -> str(S.desktop_docdist_download_only_notice)
 
-    else -> "You can browse and send from this library but cannot download its files."
+    else -> str(S.desktop_docdist_send_only_notice)
 }
 
 @Composable

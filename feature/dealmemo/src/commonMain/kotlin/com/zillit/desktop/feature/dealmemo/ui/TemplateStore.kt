@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealTemplate
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -146,7 +148,7 @@ internal class TemplateStore(private val vm: DealMemoViewModel) {
     }
 
     companion object {
-        const val UNTITLED = "Untitled setup"
+        val UNTITLED: String get() = str(S.desktop_dm_untitled_setup)
         const val DRAFT_PREFIX = "TPL-DRFT-"
     }
 }

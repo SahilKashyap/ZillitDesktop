@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.formsignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
 import com.zillit.desktop.feature.formsignature.domain.PdfWork
 import com.zillit.desktop.feature.formsignature.domain.SignFileTransfer
@@ -60,7 +62,9 @@ internal class MarksFlow(
     suspend fun imageOf(block: SignatureBlock): ZillitResult<ByteArray> {
         store.state.signatures.images[block.id]?.let { return ZillitResult.Success(it) }
         val stored = block.image
-            ?: return ZillitResult.Failure(ZillitError.Validation("That ${block.kind.label.lowercase()} has no image."))
+            ?: return ZillitResult.Failure(
+                ZillitError.Validation(str(S.desktop_fs_mark_has_no_image, block.kind.label.lowercase())),
+            )
         return transfer.fetch(stored)
     }
 
@@ -68,7 +72,7 @@ internal class MarksFlow(
     suspend fun imageFor(kind: SignSpotKind): ZillitResult<ByteArray> {
         val block = store.state.signatures.of(kind)
             ?: return ZillitResult.Failure(
-                ZillitError.Validation("Set up your ${kind.label.lowercase()} in the signature block first."),
+                ZillitError.Validation(str(S.desktop_fs_set_up_mark_first, kind.label.lowercase())),
             )
         return imageOf(block)
     }
@@ -117,12 +121,18 @@ internal class MarksFlow(
     fun submit() {
         val draw = store.state.draw ?: return
         if (draw.name.isBlank()) {
-            store.fail(if (draw.isSignature) "Signature Name is required." else "Initials name is required")
+            store.fail(
+                if (draw.isSignature) {
+                    str(S.desktop_fs_signature_name_required)
+                } else {
+                    str(S.desktop_fs_initials_name_required)
+                },
+            )
             return
         }
         if (!draw.hasInk) {
             store.fail(
-                if (draw.isSignature) "Please draw your signature first." else "Please draw your initials first.",
+                if (draw.isSignature) str(S.dm_sign_empty) else str(S.desktop_fs_draw_initials_first),
             )
             return
         }
@@ -153,7 +163,9 @@ internal class MarksFlow(
                             screen = if (draw.asPage) FormSignScreen.SignatureBlock else screen,
                         )
                     }
-                    store.notice(if (draw.isSignature) "Signature saved." else "Initials saved.")
+                    store.notice(
+                        if (draw.isSignature) str(S.desktop_fs_signature_saved) else str(S.desktop_fs_initials_saved),
+                    )
                     load()
                 }
             }
@@ -175,7 +187,7 @@ internal class MarksFlow(
                             ),
                         )
                     }
-                    store.notice("Deleted.")
+                    store.notice(str(S.desktop_deleted_dot))
                 }
             }
         }

@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.purchaseorder.ui
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAssignmentRule
 import com.zillit.desktop.feature.purchaseorder.domain.PoSettings
 import com.zillit.desktop.feature.purchaseorder.domain.PoSettingsPeople
@@ -136,7 +138,7 @@ internal class PoSettingsActions(
     private fun saveRules() {
         val rules = settings.rules
         if (rules.any { it.assignTo.isBlank() }) {
-            vm.fail("Pick who each rule assigns to.")
+            vm.fail(str(S.desktop_inv_pick_who_each_rule_assigns_to))
             return
         }
         edit { copy(saving = saving + PoSettingsSection.Rules) }
@@ -182,14 +184,15 @@ internal class PoSettingsActions(
             edit { copy(rules = rules - rule) }
             return
         }
-        val assignee = settings.team.firstOrNull { it.id == rule.assignTo }?.label ?: "Unknown"
+        val assignee = settings.team.firstOrNull { it.id == rule.assignTo }?.label ?: str(S.desktop_unknown)
         vm.ask(
             PoPrompt.Confirm(
                 action = PoConfirmAction.RemoveRule,
                 targetId = id,
-                title = "Remove Assignment Rule",
-                message = "Are you sure you want to remove this rule?\n\n" +
-                    "${rule.summary(symbol)} → assign to $assignee\n\nThis action cannot be undone.",
+                title = str(S.desktop_po_remove_assignment_rule),
+                message = str(S.desktop_po_remove_rule_question) + "\n\n" +
+                    str(S.desktop_po_rule_assign_to, rule.summary(symbol), assignee) +
+                    "\n\n" + str(S.action_cannot_be_undone),
             ),
         )
     }
@@ -255,6 +258,6 @@ internal class PoSettingsActions(
 
     companion object {
         const val SAVED_FLASH_MILLIS = 2_500L
-        const val UPLOAD_FAILED = "Upload failed — please try again"
+        val UPLOAD_FAILED: String get() = str(S.desktop_hub_upload_failed_please_try_again)
     }
 }

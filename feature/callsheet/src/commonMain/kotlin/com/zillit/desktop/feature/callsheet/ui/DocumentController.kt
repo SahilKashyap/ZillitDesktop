@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.callsheet.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CellValue
 import com.zillit.desktop.feature.callsheet.domain.EditorSelection
 import com.zillit.desktop.feature.callsheet.domain.MetadataUpdate
@@ -149,7 +151,7 @@ internal class DocumentController(private val ctx: SheetContext) {
         val doc = editor.document
         val removed = doc.rows.getOrNull(row) ?: return
         val label = removed.cells.mapNotNull { it.title.trim().ifEmpty { null } }.joinToString(", ")
-            .ifEmpty { "Row ${row + 1}" }
+            .ifEmpty { str(S.desktop_row_n, row + 1) }
         val action = UndoAction.Row(removed, row, doc.shared.headerPosition, doc.shared.approversPosition)
         applyRemoval(
             editor = editor,
@@ -178,7 +180,7 @@ internal class DocumentController(private val ctx: SheetContext) {
             editor = editor,
             document = doc.removeCell(row, cellIndex),
             record = action,
-            label = removed.title.trim().ifEmpty { "Section" },
+            label = removed.title.trim().ifEmpty { str(S.desktop_section) },
             clearsSelection = selected?.row == row,
             systemCells = listOfNotNull(
                 removed.takeIf { it.systemDefault }?.let {
@@ -219,7 +221,11 @@ internal class DocumentController(private val ctx: SheetContext) {
             copy(
                 editor = editor.copy(
                     document = editor.document.updateCell(row, cellIndex) { it.withLineRemoved(line) },
-                    quickUndo = UndoRecord("Row removed", UndoAction.Line(row, cellIndex, removed, line), serial),
+                    quickUndo = UndoRecord(
+                        str(S.desktop_row_removed),
+                        UndoAction.Line(row, cellIndex, removed, line),
+                        serial,
+                    ),
                 ),
             )
         }
@@ -237,7 +243,7 @@ internal class DocumentController(private val ctx: SheetContext) {
                 editor = editor.copy(
                     document = editor.document.updateCell(row, cellIndex) { it.withColumnRemoved(column) },
                     quickUndo = UndoRecord(
-                        "Column removed",
+                        str(S.desktop_column_removed),
                         UndoAction.Column(row, cellIndex, spec, values, column),
                         serial,
                     ),
@@ -290,11 +296,11 @@ internal class DocumentController(private val ctx: SheetContext) {
                             editor = this.editor?.copy(savingApprovers = false, initialApproverIds = ids),
                         )
                     }
-                    ctx.toast("Approvers saved for all call sheets!")
+                    ctx.toast(str(S.desktop_cs_approvers_saved_all))
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(editor = this.editor?.copy(savingApprovers = false)) }
-                    ctx.toast("Failed to save approvers: ${saved.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_failed_to_save_approvers_reason, saved.error.localised()), isError = true)
                 }
             }
         }
@@ -306,7 +312,7 @@ internal class DocumentController(private val ctx: SheetContext) {
         val editor = ctx.state.editor ?: return
         val source = ctx.services.weather
         if (source == null) {
-            ctx.toast("Weather isn't available here.", isError = true)
+            ctx.toast(str(S.desktop_weather_not_available_here), isError = true)
             return
         }
         val previous = editor.weather?.takeIf { it.row == row && it.cell == cell }
@@ -324,7 +330,7 @@ internal class DocumentController(private val ctx: SheetContext) {
                         editor = current.copy(
                             weather = current.weather?.copy(
                                 fetching = false,
-                                error = result.error.localised().ifBlank { "Failed to fetch weather." },
+                                error = result.error.localised().ifBlank { str(S.desktop_failed_to_fetch_weather) },
                             ),
                         ),
                     )
@@ -364,7 +370,7 @@ internal class DocumentController(private val ctx: SheetContext) {
                         lng = lng,
                         response = response,
                         selectedDay = SheetWeather.shootDayIndex(response, dateMs),
-                        error = if (value == null) "No weather data received." else null,
+                        error = if (value == null) str(S.desktop_no_weather_data_received) else null,
                     ),
                     document = if (value == null) {
                         current.document
@@ -404,7 +410,7 @@ internal class DocumentController(private val ctx: SheetContext) {
         val lat = stored?.lat ?: panel?.lat
         val lng = stored?.lon ?: panel?.lng
         if (lat == null || lng == null) {
-            ctx.toast("Pick a location to fetch the weather.", isError = true)
+            ctx.toast(str(S.desktop_pick_location_to_fetch_weather), isError = true)
             return
         }
         fetchWeather(row, cell, lat, lng, stored?.location ?: panel?.location.orEmpty())

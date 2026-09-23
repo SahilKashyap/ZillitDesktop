@@ -42,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
 import com.zillit.desktop.feature.productionreport.domain.relativeShort
@@ -86,6 +88,8 @@ internal fun ReportGridCard(
     links: List<CardLink>,
     pills: List<CardPill>,
     modifier: Modifier = Modifier,
+    /** The unread REPORT count, drawn beside the name (badges v2). */
+    nameBadge: Int = 0,
 ) {
     val colors = ReportTheme.colors
     val (source, hovered) = rememberHover()
@@ -105,17 +109,24 @@ internal fun ReportGridCard(
         )
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Eyebrow("Report", modifier = Modifier.weight(1f), strong = true)
+                Eyebrow(str(S.desktop_report), modifier = Modifier.weight(1f), strong = true)
                 StatusBadge(row.status, row.statusLabel)
             }
-            Text(
-                row.name.ifBlank { "Untitled" },
-                style = reportText(18.sp, FontWeight.Bold, 22.sp),
-                color = colors.textStrong,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            Row(
+                Modifier.padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    row.name.ifBlank { str(S.untitled) },
+                    style = reportText(18.sp, FontWeight.Bold, 22.sp),
+                    color = colors.textStrong,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                TabBadge(nameBadge)
+            }
         }
         Row(
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -164,7 +175,11 @@ private fun DayAndApprovals(row: ReportSummary, approvals: CardApprovals?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (total > 0) {
-            Text("Day $day / ", style = reportText(13.sp, FontWeight.SemiBold), color = colors.textPrimary)
+            Text(
+                str(S.desktop_dm_sum_day_n, day) + " / ",
+                style = reportText(13.sp, FontWeight.SemiBold),
+                color = colors.textPrimary,
+            )
             Text(
                 "$total",
                 style = reportText(13.sp, FontWeight.Medium),
@@ -188,14 +203,18 @@ private fun ApprovalsCounter(approvals: CardApprovals) {
     val colors = ReportTheme.colors
     val content: @Composable () -> Unit = {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Approvals:", style = reportText(13.sp, FontWeight.Medium), color = colors.textTertiary)
+            Text(
+                str(S.desktop_approvals_colon),
+                style = reportText(13.sp, FontWeight.Medium),
+                color = colors.textTertiary,
+            )
             ApprovalsGlyph(approvals.approved, approvals.total)
             Text("${approvals.approved}", style = reportText(13.sp, FontWeight.SemiBold), color = colors.textPrimary)
             Text("/ ${approvals.total}", style = reportText(13.sp), color = colors.textMuted)
         }
     }
     val popover = approvals.popover
-    if (popover == null) content() else HoverCard("Approval Status", trigger = content, content = popover)
+    if (popover == null) content() else HoverCard(str(S.onboarding_status), trigger = content, content = popover)
 }
 
 /** A 12 px pie of approved over total. */
@@ -218,9 +237,9 @@ private fun Timestamps(row: ReportSummary, nowMillis: Long) {
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        TimestampRow("Created", row.createdOn)
+        TimestampRow(str(S.drive_created), row.createdOn)
         if (row.updatedOn != null) {
-            TimestampRow("Updated", row.updatedOn)
+            TimestampRow(str(S.desktop_updated), row.updatedOn)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     ZillitIcons.Clock,
@@ -229,13 +248,13 @@ private fun Timestamps(row: ReportSummary, nowMillis: Long) {
                     modifier = Modifier.size(11.dp),
                 )
                 Text(
-                    "Last updated ${relativeShort(row.updatedOn, nowMillis)}",
+                    str(S.desktop_last_updated, relativeShort(row.updatedOn, nowMillis)),
                     style = reportText(11.sp),
                     color = colors.textMuted,
                 )
             }
         } else {
-            TimestampRow("Updated", null)
+            TimestampRow(str(S.desktop_updated), null)
         }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.borderFaint))
@@ -252,7 +271,7 @@ private fun TimestampRow(label: String, millis: Long?) {
         Text(label, style = reportText(12.sp, FontWeight.SemiBold), color = colors.textSecondary)
         Text("•", style = reportText(12.sp), color = colors.textMuted)
         Text(
-            if (millis == null && label == "Updated") "—" else date,
+            if (millis == null && label == str(S.desktop_updated)) "—" else date,
             style = reportText(12.sp, FontWeight.Medium),
             color = colors.textPrimary,
         )

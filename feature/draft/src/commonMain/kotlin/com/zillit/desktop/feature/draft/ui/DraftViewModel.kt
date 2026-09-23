@@ -21,6 +21,8 @@ import com.zillit.desktop.feature.draft.domain.SmartType
 import com.zillit.desktop.feature.draft.domain.TitlePage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Zillit Draft: a screenwriting editor in the shape writers know from Final
@@ -117,7 +119,7 @@ class DraftViewModel(
 
     private fun createNew() {
         val project = state.value.projectId ?: return
-        val title = state.value.newTitle.trim().ifBlank { "Untitled" }
+        val title = state.value.newTitle.trim().ifBlank { str(S.untitled) }
         val now = nowMillis()
         val first = ScriptElement(newId(), ElementFlow.first, "")
         val screenplay = Screenplay(
@@ -142,7 +144,7 @@ class DraftViewModel(
         launch {
             val stored = store.load(id)
             if (stored == null) {
-                setState { copy(loading = false, error = "That script is no longer here.") }
+                setState { copy(loading = false, error = str(S.desktop_draft_script_gone)) }
             } else {
                 openLoaded(ScreenplayCodec.decode(stored))
             }
@@ -164,7 +166,7 @@ class DraftViewModel(
             store.delete(target.id)
             if (state.value.open?.screenplay?.id == target.id) setState { copy(open = null) }
             refresh()
-            sendEffect(DraftEffect.Notice("Deleted \"${target.title}\""))
+            sendEffect(DraftEffect.Notice(str(S.desktop_draft_deleted, target.title)))
         }
     }
 
@@ -189,7 +191,7 @@ class DraftViewModel(
             }
             val (page, elements) = parsed
             if (elements.isEmpty()) {
-                setState { copy(error = "Nothing readable in ${file.name}") }
+                setState { copy(error = str(S.desktop_draft_nothing_readable, file.name)) }
                 return@launch
             }
             val title = page.title.ifBlank { file.name.substringBeforeLast('.') }
@@ -198,7 +200,7 @@ class DraftViewModel(
             store.save(ScreenplayCodec.encode(screenplay))
             refresh()
             openLoaded(screenplay)
-            sendEffect(DraftEffect.Notice("Imported ${file.name}"))
+            sendEffect(DraftEffect.Notice(str(S.desktop_draft_imported, file.name)))
         }
     }
 
@@ -361,7 +363,7 @@ class DraftViewModel(
                 is ZillitResult.Failure -> setState { copy(busy = false, error = out.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
-                    sendEffect(DraftEffect.Notice("Exported ${format.label}"))
+                    sendEffect(DraftEffect.Notice(str(S.desktop_draft_exported, format.label)))
                 }
             }
         }
@@ -377,7 +379,7 @@ class DraftViewModel(
                 is ZillitResult.Failure -> setState { copy(busy = false, error = out.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
-                    sendEffect(DraftEffect.Notice("Sent to Drive"))
+                    sendEffect(DraftEffect.Notice(str(S.desktop_draft_sent_to_drive)))
                 }
             }
         }

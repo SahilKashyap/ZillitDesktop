@@ -42,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
 import com.zillit.desktop.feature.callsheet.domain.relativeShort
@@ -86,6 +88,8 @@ internal fun SheetGridCard(
     links: List<CardLink>,
     pills: List<CardPill>,
     modifier: Modifier = Modifier,
+    /** The unread REPORT number beside the title; nothing at zero. */
+    reportBadge: Int = 0,
 ) {
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
@@ -105,17 +109,25 @@ internal fun SheetGridCard(
         )
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Eyebrow("Call Sheet", modifier = Modifier.weight(1f), strong = true)
+                Eyebrow(str(S.cs_app_name), modifier = Modifier.weight(1f), strong = true)
                 StatusBadge(row.status, row.statusLabel)
             }
-            Text(
-                row.name.ifBlank { "Untitled" },
-                style = sheetText(18.sp, FontWeight.Bold, 22.sp),
-                color = colors.textStrong,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            Row(
+                Modifier.padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // The name truncates on its own, so a long title never clips the number.
+                Text(
+                    row.name.ifBlank { str(S.untitled) },
+                    style = sheetText(18.sp, FontWeight.Bold, 22.sp),
+                    color = colors.textStrong,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                InlineCount(reportBadge)
+            }
         }
         Row(
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -164,7 +176,11 @@ private fun DayAndApprovals(row: CallSheetSummary, approvals: CardApprovals?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (total > 0) {
-            Text("Day $day / ", style = sheetText(13.sp, FontWeight.SemiBold), color = colors.textPrimary)
+            Text(
+                str(S.desktop_day_n_slash, day) + " ",
+                style = sheetText(13.sp, FontWeight.SemiBold),
+                color = colors.textPrimary,
+            )
             Text(
                 "$total",
                 style = sheetText(13.sp, FontWeight.Medium),
@@ -188,14 +204,18 @@ private fun ApprovalsCounter(approvals: CardApprovals) {
     val colors = SheetTheme.colors
     val content: @Composable () -> Unit = {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Approvals:", style = sheetText(13.sp, FontWeight.Medium), color = colors.textTertiary)
+            Text(
+                str(S.desktop_approvals_colon),
+                style = sheetText(13.sp, FontWeight.Medium),
+                color = colors.textTertiary,
+            )
             ApprovalsGlyph(approvals.approved, approvals.total)
             Text("${approvals.approved}", style = sheetText(13.sp, FontWeight.SemiBold), color = colors.textPrimary)
             Text("/ ${approvals.total}", style = sheetText(13.sp), color = colors.textMuted)
         }
     }
     val popover = approvals.popover
-    if (popover == null) content() else HoverCard("Approval Status", trigger = content, content = popover)
+    if (popover == null) content() else HoverCard(str(S.onboarding_status), trigger = content, content = popover)
 }
 
 /** A 12 px pie of approved over total. */
@@ -218,9 +238,9 @@ private fun Timestamps(row: CallSheetSummary, nowMillis: Long) {
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        TimestampRow("Created", row.createdOn)
+        TimestampRow(str(S.drive_created), row.createdOn)
         if (row.updatedOn != null) {
-            TimestampRow("Updated", row.updatedOn)
+            TimestampRow(str(S.desktop_updated), row.updatedOn)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     ZillitIcons.Clock,
@@ -229,13 +249,13 @@ private fun Timestamps(row: CallSheetSummary, nowMillis: Long) {
                     modifier = Modifier.size(11.dp),
                 )
                 Text(
-                    "Last updated ${relativeShort(row.updatedOn, nowMillis)}",
+                    str(S.desktop_last_updated, relativeShort(row.updatedOn, nowMillis)),
                     style = sheetText(11.sp),
                     color = colors.textMuted,
                 )
             }
         } else {
-            TimestampRow("Updated", null)
+            TimestampRow(str(S.desktop_updated), null)
         }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.borderFaint))
@@ -252,7 +272,7 @@ private fun TimestampRow(label: String, millis: Long?) {
         Text(label, style = sheetText(12.sp, FontWeight.SemiBold), color = colors.textSecondary)
         Text("•", style = sheetText(12.sp), color = colors.textMuted)
         Text(
-            if (millis == null && label == "Updated") "—" else date,
+            if (millis == null && label == str(S.desktop_updated)) "—" else date,
             style = sheetText(12.sp, FontWeight.Medium),
             color = colors.textPrimary,
         )

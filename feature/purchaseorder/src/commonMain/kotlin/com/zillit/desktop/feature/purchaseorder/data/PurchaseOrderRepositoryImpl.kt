@@ -19,6 +19,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.AssetFilters
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoAssignmentRule
@@ -165,7 +167,7 @@ class PurchaseOrderRepositoryImpl(
             },
         ).flatMap { dto ->
             dto.attachment?.toDomain()?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Unknown("The server rendered no PDF for this order."))
+                ?: ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_po_no_pdf_rendered)))
         }
 
     override suspend fun create(order: NewPurchaseOrder): ZillitResult<Unit> =
@@ -197,7 +199,7 @@ class PurchaseOrderRepositoryImpl(
      * selecting 140 rows can act on the answer, a 400 tells them nothing.
      */
     override suspend fun bulkSetEffectiveDate(ids: List<String>, effectiveDate: Long): ZillitResult<Unit> = when {
-        ids.isEmpty() -> ZillitResult.Failure(ZillitError.Unknown("Nothing is selected."))
+        ids.isEmpty() -> ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_nothing_is_selected)))
         ids.size > BULK_LIMIT ->
             ZillitResult.Failure(ZillitError.Unknown("Bulk changes are limited to $BULK_LIMIT orders at a time."))
 

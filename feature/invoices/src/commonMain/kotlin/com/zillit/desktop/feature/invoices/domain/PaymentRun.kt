@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A batch of approved invoices paid together — the web's Active Runs, on
  * `/invoices/active-runs`.
@@ -19,13 +22,15 @@ data class PaymentRun(
 )
 
 /** Where a run stands. Only a pending one can be authorised or turned down. */
-enum class PaymentRunStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Pending("pending", "Awaiting approval"),
-    Approved("approved", "Approved"),
-    Rejected("rejected", "Rejected"),
-    Paid("paid", "Paid"),
+enum class PaymentRunStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
+    Pending("pending", S.dm_filter_status_pending),
+    Approved("approved", S.approved),
+    Rejected("rejected", S.rejected),
+    Paid("paid", S.desktop_paid),
     ;
+
+    val label: String get() = str(labelKey)
 
     val isDecidable: Boolean get() = this == Pending || this == Draft
 
@@ -88,11 +93,15 @@ object PaymentRuns {
 }
 
 /** The four surfaces of the Payment Runs page — the web's tabs. */
-enum class PaymentTab(val id: String, val label: String) {
-    OpenItems("openItems", "Open Items"),
-    Wires("wires", "Wires"),
-    Cheques("cheques", "Cheques"),
-    Runs("runs", "Active Runs"),
+enum class PaymentTab(val id: String, private val labelKey: String) {
+    OpenItems("openItems", S.desktop_open_items),
+    Wires("wires", S.desktop_wires),
+    Cheques("cheques", S.desktop_cheques),
+    Runs("runs", S.desktop_active_runs),
+    ;
+
+    val label: String get() = str(labelKey)
+
 }
 
 /**
@@ -115,13 +124,15 @@ data class SalesInvoice(
 )
 
 /** A sales invoice's life: drafted, sent to the client, paid. */
-enum class SalesInvoiceStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Sent("sent", "Sent"),
-    Paid("paid", "Paid"),
-    Overdue("overdue", "Overdue"),
-    Cancelled("cancelled", "Cancelled"),
+enum class SalesInvoiceStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
+    Sent("sent", S.cs_sent),
+    Paid("paid", S.desktop_paid),
+    Overdue("overdue", S.desktop_overdue),
+    Cancelled("cancelled", S.cancelled),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Sending is for a draft; marking paid is for one already out. */
     val canSend: Boolean get() = this == Draft
@@ -150,10 +161,10 @@ data class VendorRow(
     /** What the compliance column says: what is missing, or that nothing is. */
     val complianceLabel: String
         get() = when {
-            isCompliant -> "Complete"
-            vendor.taxNumber.isBlank() && vendor.bankName.isBlank() -> "No tax ID or bank"
-            vendor.taxNumber.isBlank() -> "No tax ID"
-            else -> "No bank"
+            isCompliant -> str(S.dm_action_complete)
+            vendor.taxNumber.isBlank() && vendor.bankName.isBlank() -> str(S.desktop_no_tax_id_or_bank)
+            vendor.taxNumber.isBlank() -> str(S.desktop_no_tax_id)
+            else -> str(S.desktop_no_bank)
         }
 }
 

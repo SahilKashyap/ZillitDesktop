@@ -51,6 +51,8 @@ import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.DriveViewMode
 import com.zillit.desktop.feature.drive.ui.LocalDriveNow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The trash, in place of the listing — `TrashView.jsx`: a header with the
@@ -83,9 +85,12 @@ internal fun TrashView(state: DriveUiState, onEvent: (DriveEvent) -> Unit, modif
             ) {
                 ZillitIcon(icon = ZillitIcons.Trash, tint = colors.danger, size = ZillitTheme.spacing.lg)
             }
-            ZillitText(text = "Trash (${trash.items.size})", style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "Items here can be restored to where they were. Permanently deleting cannot be undone.",
+                text = str(S.desktop_drive_trash_count, trash.items.size),
+                style = ZillitTheme.typography.titleMedium,
+            )
+            ZillitText(
+                text = str(S.desktop_drive_trash_note),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
                 maxLines = 1,
@@ -93,7 +98,7 @@ internal fun TrashView(state: DriveUiState, onEvent: (DriveEvent) -> Unit, modif
             )
             if (trash.items.isNotEmpty()) {
                 ZillitButton(
-                    text = "Empty trash",
+                    text = str(S.drive_cd_empty_trash),
                     onClick = { onEvent(DriveEvent.RequestEmptyTrash) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -101,7 +106,7 @@ internal fun TrashView(state: DriveUiState, onEvent: (DriveEvent) -> Unit, modif
                 )
             }
             ZillitButton(
-                text = "Back to Drive",
+                text = str(S.desktop_drive_back_to_drive),
                 onClick = { onEvent(DriveEvent.ShowTrash(false)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -115,8 +120,8 @@ internal fun TrashView(state: DriveUiState, onEvent: (DriveEvent) -> Unit, modif
             }
 
             trash.items.isEmpty() -> ZillitEmptyState(
-                title = "Trash is empty",
-                message = "Deleted files and folders wait here until you restore or permanently delete them.",
+                title = str(S.drive_trash_is_empty),
+                message = str(S.desktop_drive_trash_empty_message),
                 icon = ZillitIcons.Trash,
             )
 
@@ -140,9 +145,9 @@ private fun TrashList(items: List<DriveItem>, onEvent: (DriveEvent) -> Unit) {
                         .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 ) {
-                    HeaderText("Name", Modifier.weight(1f))
-                    HeaderText("Size", Modifier.width(SIZE_WIDTH))
-                    HeaderText("Deleted", Modifier.width(DELETED_WIDTH))
+                    HeaderText(str(S.name), Modifier.weight(1f))
+                    HeaderText(str(S.drive_sort_size), Modifier.width(SIZE_WIDTH))
+                    HeaderText(str(S.drive_deleted_default), Modifier.width(DELETED_WIDTH))
                     Box(Modifier.width(ACTIONS_WIDTH))
                 }
                 ZillitDivider()
@@ -223,18 +228,18 @@ private fun TrashRow(item: DriveItem, onEvent: (DriveEvent) -> Unit) {
             modifier = Modifier.width(ACTIONS_WIDTH),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
         ) {
-            ZillitTooltip(text = "Restore to original location") {
+            ZillitTooltip(text = str(S.desktop_drive_restore_tooltip)) {
                 ZillitButton(
-                    text = "Restore",
+                    text = str(S.drive_restore),
                     onClick = { onEvent(DriveEvent.Restore(item.ref)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Reload,
                 )
             }
-            ZillitTooltip(text = "Permanently delete — cannot be undone") {
+            ZillitTooltip(text = str(S.desktop_drive_purge_tooltip)) {
                 ZillitButton(
-                    text = "Delete",
+                    text = str(S.delete),
                     onClick = { onEvent(DriveEvent.RequestPurge(item)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -284,13 +289,13 @@ private fun TrashGrid(items: List<DriveItem>, onEvent: (DriveEvent) -> Unit) {
                     ) {
                         ZillitIconButton(
                             icon = ZillitIcons.Reload,
-                            contentDescription = "Restore ${item.name}",
+                            contentDescription = str(S.desktop_drive_restore_item, item.name),
                             onClick = { onEvent(DriveEvent.Restore(item.ref)) },
                             tint = colors.success,
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Delete ${item.name} forever",
+                            contentDescription = str(S.desktop_drive_delete_item_forever, item.name),
                             onClick = { onEvent(DriveEvent.RequestPurge(item)) },
                             tint = colors.danger,
                         )

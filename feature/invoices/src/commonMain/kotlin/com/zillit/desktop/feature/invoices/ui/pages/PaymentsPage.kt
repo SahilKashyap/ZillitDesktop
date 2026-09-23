@@ -42,6 +42,8 @@ import com.zillit.desktop.feature.invoices.domain.PaymentRunStatus
 import com.zillit.desktop.feature.invoices.domain.PaymentTab
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Payment Runs — the web's `PaymentsPage`.
@@ -73,7 +75,7 @@ internal fun ColumnScope.PaymentsPage(
     if (!state.viewer.isRunApprover && !state.viewer.isSenior) {
         // The web raises the same banner: without an authoriser nobody can
         // action a run, so say it here rather than failing at the button.
-        MutedLine("Nobody on the team has run access yet, so runs cannot be authorised.")
+        MutedLine(str(S.desktop_inv_nobody_has_run_access))
     }
     if (state.paymentTab == PaymentTab.OpenItems) PaymentTiles(state)
     Row(
@@ -84,24 +86,24 @@ internal fun ColumnScope.PaymentsPage(
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = "Search ref, vendor, description",
+            placeholder = str(S.desktop_inv_search_ref_vendor_description),
             modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
         )
         ProcessActions(state, onEvent)
     }
     val rows = state.paymentRows
     TableCard(
-        title = "Open Items",
+        title = str(S.desktop_open_items),
         icon = ZillitIcons.Wallet,
-        meta = countMeta(rows.size, "invoice"),
+        meta = countMeta(rows.size),
     ) {
         ZillitDataTable(
             rows = rows,
             columns = openItemColumns(state, nowMs, onEvent),
             key = { it.id },
             onRowClick = { onEvent(InvoicesEvent.Open(it)) },
-            emptyTitle = "Nothing waiting to be paid",
-            emptyMessage = "Approved invoices appear here once they are ready to pay.",
+            emptyTitle = str(S.desktop_inv_nothing_waiting_to_be_paid),
+            emptyMessage = str(S.desktop_inv_open_items_empty_message),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
@@ -119,23 +121,23 @@ private fun openItemColumns(
             onCheckedChange = { onEvent(InvoicesEvent.ToggleSelect(invoice.id)) },
         )
     },
-    TableColumn("Ref", ColumnWidth.Weight(1f)) { CellText(it.displayNumber) },
-    TableColumn("Vendor", ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.vendorName(it)) },
-    TableColumn("Description", ColumnWidth.Weight(WEIGHT_WIDEST)) {
+    TableColumn(str(S.desktop_ref), ColumnWidth.Weight(1f)) { CellText(it.displayNumber) },
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.vendorName(it)) },
+    TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
         CellText(it.description.ifBlank { "—" }, muted = it.description.isBlank())
     },
-    TableColumn("Amount", ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
+    TableColumn(str(S.amount), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
         MoneyText(it.grossAmount, it.currency, state.projectCurrency)
     },
     poColumn(),
-    TableColumn("Method", ColumnWidth.Fixed(PAY_WIDTH)) {
+    TableColumn(str(S.desktop_method), ColumnWidth.Fixed(PAY_WIDTH)) {
         ZillitStatusPill(label = it.payMethod.label, tone = it.payMethod.tone())
     },
-    TableColumn("Days", ColumnWidth.Fixed(DUE_WIDTH)) { invoice ->
+    TableColumn(str(S.dm_ds_unit_days), ColumnWidth.Fixed(DUE_WIDTH)) { invoice ->
         val overdue = InvoiceRules.daysOverdue(invoice, nowMs)
         if (overdue != null) {
             ZillitText(
-                text = "${overdue}d overdue",
+                text = str(S.desktop_inv_n_days_overdue, overdue),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.danger,
                 maxLines = 1,
@@ -159,13 +161,13 @@ private fun PaymentTiles(state: InvoicesUiState) {
         modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Tile("Open Items", state.invoices, StatusTone.Pending, state.rates)
-        Tile("BACs Queue", state.bacsInvoices, StatusTone.InTransit, state.rates)
-        Tile("Wires Pending", state.wireInvoices, StatusTone.Rejected, state.rates)
-        Tile("Cheques", state.chequeInvoices, StatusTone.Escalated, state.rates)
+        Tile(str(S.desktop_open_items), state.invoices, StatusTone.Pending, state.rates)
+        Tile(str(S.desktop_bacs_queue), state.bacsInvoices, StatusTone.InTransit, state.rates)
+        Tile(str(S.desktop_wires_pending), state.wireInvoices, StatusTone.Rejected, state.rates)
+        Tile(str(S.desktop_cheques), state.chequeInvoices, StatusTone.Escalated, state.rates)
         val groups = state.openItemGroups.size
         ZillitStatTile(
-            label = "Vendors",
+            label = str(S.ah_vendors),
             value = groups.toString(),
             sub = if (groups == 1) "1 vendor group" else "$groups vendor groups",
             tone = StatusTone.Ready,
@@ -199,14 +201,14 @@ private fun ProcessActions(state: InvoicesUiState, onEvent: (InvoicesEvent) -> U
     val rows = state.paymentRows
     val allTicked = rows.isNotEmpty() && rows.all { it.id in state.selected }
     ZillitButton(
-        text = if (allTicked) "Select none" else "Select all",
+        text = if (allTicked) str(S.desktop_select_none) else str(S.select_all),
         onClick = { onEvent(InvoicesEvent.ToggleSelectAll) },
         variant = ButtonVariant.Tertiary,
         size = ButtonSize.Small,
         enabled = rows.isNotEmpty(),
     )
     if (state.selected.isEmpty()) return
-    ZillitText(text = "${state.selected.size} selected", style = ZillitTheme.typography.bodySmall)
+    ZillitText(text = str(S.dd_n_selected, state.selected.size), style = ZillitTheme.typography.bodySmall)
     ZillitButton(
         text = processLabel(state),
         onClick = { onEvent(InvoicesEvent.ProcessSelected(null)) },
@@ -214,7 +216,7 @@ private fun ProcessActions(state: InvoicesUiState, onEvent: (InvoicesEvent) -> U
         enabled = (state.viewer.isRunApprover || state.viewer.isSenior) && !state.busy,
     )
     ZillitButton(
-        text = "Clear",
+        text = str(S.ah_clear),
         onClick = { onEvent(InvoicesEvent.ClearSelection) },
         variant = ButtonVariant.Tertiary,
         size = ButtonSize.Small,
@@ -222,11 +224,11 @@ private fun ProcessActions(state: InvoicesUiState, onEvent: (InvoicesEvent) -> U
 }
 
 private fun processLabel(state: InvoicesUiState): String = when (state.selectedPayMethod) {
-    PayMethod.Bacs -> "Create BACs Run"
-    PayMethod.Wire, PayMethod.Faster -> "Mark Paid"
-    PayMethod.Cheque -> "Ready to Print"
-    null -> "Process ${state.selected.size}"
-    else -> "Process ${state.selected.size}"
+    PayMethod.Bacs -> str(S.desktop_create_bacs_run)
+    PayMethod.Wire, PayMethod.Faster -> str(S.desktop_mark_paid_title)
+    PayMethod.Cheque -> str(S.desktop_ready_to_print)
+    null -> str(S.desktop_process_n, state.selected.size)
+    else -> str(S.desktop_process_n, state.selected.size)
 }
 
 /** The batches themselves: what each pays, by what method, and where it stands. */
@@ -234,16 +236,16 @@ private fun processLabel(state: InvoicesUiState): String = when (state.selectedP
 private fun ColumnScope.RunsTab(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     val runs = state.paymentRuns
     TableCard(
-        title = "Active Runs",
+        title = str(S.desktop_active_runs),
         icon = ZillitIcons.Wallet,
-        meta = countMeta(runs.size, "run"),
+        meta = countMeta(runs.size, S.desktop_run_count_one, S.desktop_run_count_other),
     ) {
         ZillitDataTable(
             rows = runs,
             columns = runColumns(state, onEvent),
             key = { it.id },
-            emptyTitle = "No runs yet",
-            emptyMessage = "Tick open items and build a run to pay them together.",
+            emptyTitle = str(S.email_rule_exec_empty_title),
+            emptyMessage = str(S.desktop_inv_runs_empty_message),
             loading = state.loading && runs.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
@@ -252,20 +254,23 @@ private fun ColumnScope.RunsTab(state: InvoicesUiState, onEvent: (InvoicesEvent)
 
 private fun runColumns(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit): List<TableColumn<PaymentRun>> =
     listOf(
-        TableColumn("Run", ColumnWidth.Weight(1f)) { CellText(it.number.ifBlank { it.id.take(RUN_ID_CHARS) }) },
-        TableColumn("Description", ColumnWidth.Weight(WEIGHT_WIDEST)) {
+        TableColumn(
+            str(S.ah_run_card_run_label),
+            ColumnWidth.Weight(1f),
+        ) { CellText(it.number.ifBlank { it.id.take(RUN_ID_CHARS) }) },
+        TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
             CellText(it.name.ifBlank { "—" }, muted = it.name.isBlank())
         },
-        TableColumn("Method", ColumnWidth.Fixed(PAY_WIDTH)) {
+        TableColumn(str(S.desktop_method), ColumnWidth.Fixed(PAY_WIDTH)) {
             ZillitStatusPill(label = it.payMethod.label, tone = it.payMethod.tone())
         },
-        TableColumn("Total", ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
+        TableColumn(str(S.ah_total_label), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
             MoneyText(it.total, it.currency, state.projectCurrency)
         },
-        TableColumn("Inv", ColumnWidth.Fixed(TICK_COUNT_WIDTH), numeric = true) {
+        TableColumn(str(S.desktop_inv_col_inv), ColumnWidth.Fixed(TICK_COUNT_WIDTH), numeric = true) {
             CellText(it.invoiceCount.toString())
         },
-        TableColumn("Status", ColumnWidth.Weight(WEIGHT_NARROW)) {
+        TableColumn(str(S.status), ColumnWidth.Weight(WEIGHT_NARROW)) {
             ZillitStatusPill(label = it.status.label, tone = it.status.tone())
         },
         TableColumn("", ColumnWidth.Fixed(RUN_ACTIONS_WIDTH)) { run ->
@@ -283,13 +288,13 @@ private fun RunActions(state: InvoicesUiState, run: PaymentRun, onEvent: (Invoic
     ) {
         if (run.status.isDecidable && mayDecide) {
             ZillitButton(
-                text = "Approve",
+                text = str(S.approve),
                 onClick = { onEvent(InvoicesEvent.ApproveRun(run)) },
                 size = ButtonSize.Small,
                 enabled = !state.busy,
             )
             ZillitButton(
-                text = "Reject",
+                text = str(S.reject),
                 onClick = { onEvent(InvoicesEvent.StartRejectRun(run)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -298,7 +303,7 @@ private fun RunActions(state: InvoicesUiState, run: PaymentRun, onEvent: (Invoic
         }
         if (run.status == PaymentRunStatus.Draft && mayDecide) {
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 onClick = { onEvent(InvoicesEvent.DeleteRun(run)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

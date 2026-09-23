@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.documentdistribution.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
@@ -12,12 +14,14 @@ import kotlinx.datetime.minus
  * backend's whitelisted `sort_by` (`services/v2/document.js SORT_OPTIONS`) —
  * anything else is rejected outright.
  */
-enum class LibrarySort(val wire: String, val label: String) {
-    NameAsc("name_asc", "Name (A–Z)"),
-    NameDesc("name_desc", "Name (Z–A)"),
-    DateDesc("date_desc", "Date (newest first)"),
-    DateAsc("date_asc", "Date (oldest first)"),
+enum class LibrarySort(val wire: String, private val labelKey: String) {
+    NameAsc("name_asc", S.dd_sort_name_asc),
+    NameDesc("name_desc", S.dd_sort_name_desc),
+    DateDesc("date_desc", S.dd_sort_date_desc),
+    DateAsc("date_asc", S.dd_sort_date_asc),
     ;
+
+    val label: String get() = str(labelKey)
 
     /**
      * Whether the listing groups by date under this order.
@@ -31,10 +35,10 @@ enum class LibrarySort(val wire: String, val label: String) {
     /** The compact form the sort button shows once chosen. */
     val shortLabel: String
         get() = when (this) {
-            NameAsc -> "A–Z"
-            NameDesc -> "Z–A"
-            DateDesc -> "Newest"
-            DateAsc -> "Oldest"
+            NameAsc -> str(S.desktop_sort_a_to_z)
+            NameDesc -> str(S.desktop_sort_z_to_a)
+            DateDesc -> str(S.desktop_sort_newest)
+            DateAsc -> str(S.desktop_sort_oldest)
         }
 
     companion object {
@@ -70,13 +74,14 @@ data class DateGroup(
 object LibraryGrouping {
 
     private val months = listOf(
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+        S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+        S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
     )
 
     private val weekdays = listOf(
-        "Monday", "Tuesday", "Wednesday", "Thursday",
-        "Friday", "Saturday", "Sunday",
+        S.day_monday, S.day_tuesday, S.day_wednesday, S.day_thursday,
+        S.day_friday, S.day_saturday, S.day_sunday,
     )
 
     /**
@@ -92,11 +97,11 @@ object LibraryGrouping {
             runCatching { LocalDate.parse(it) }.getOrNull()
         } ?: return UNDATED
 
-        val pretty = "${months[date.monthNumber - 1]} ${date.dayOfMonth}, ${date.year}"
+        val pretty = "${str(months[date.monthNumber - 1])} ${date.dayOfMonth}, ${date.year}"
         return when (date) {
-            today -> "Today · $pretty"
-            today.minus(DatePeriod(days = 1)) -> "Yesterday · $pretty"
-            else -> "${weekdays[date.dayOfWeek.ordinal]}, $pretty"
+            today -> "${str(S.today)} · $pretty"
+            today.minus(DatePeriod(days = 1)) -> "${str(S.yesterday)} · $pretty"
+            else -> "${str(weekdays[date.dayOfWeek.ordinal])}, $pretty"
         }
     }
 
@@ -141,7 +146,7 @@ object LibraryGrouping {
     private fun String.reversedForSort(): String =
         map { if (it.isDigit()) ('9' - (it - '0')) else it }.joinToString("")
 
-    const val UNDATED = "Undated"
+    val UNDATED: String get() = str(S.desktop_undated)
 }
 
 /** "1.20 MB" / "840 KB" — the library's size column. Ported from `formatBytes`. */

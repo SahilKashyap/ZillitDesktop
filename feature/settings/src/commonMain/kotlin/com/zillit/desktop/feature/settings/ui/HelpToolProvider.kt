@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.launch
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import androidx.compose.runtime.setValue
@@ -79,7 +81,7 @@ class HelpToolProvider(
 ) : ToolProvider {
 
     override val path: String = HELP_PATH
-    override val title: String = "Zillit Help"
+    override val title: String get() = str(S.zillit_help)
     override val icon = ZillitIcons.Help
     override val defaultSize: DpSize = DpSize(560.dp, 560.dp)
 
@@ -113,33 +115,36 @@ class HelpToolProvider(
 
 /** One card of the help desk. */
 internal data class HelpEntry(
-    val title: String,
-    val blurb: String,
+    private val titleKey: String,
+    private val blurbKey: String,
     val url: String?,
     /** This row can also ring the support team, not only write to them. */
     val callable: Boolean = false,
-)
+) {
+    val title: String get() = str(titleKey)
+    val blurb: String get() = str(blurbKey)
+}
 
 /** The phones' four cards and links, in their order. See the class comment. */
 internal val HELP_ENTRIES: List<HelpEntry> = listOf(
     HelpEntry(
-        "FAQs",
-        "Answers to the questions people ask most.",
+        S.desktop_faqs,
+        S.desktop_help_faqs_blurb,
         "https://corporate.zillit.com/frequently-asked-questions-for-zillit-application-and-web-platform",
     ),
     HelpEntry(
-        "Privacy Policy",
-        "What Zillit stores, and why.",
+        S.privacy,
+        S.desktop_help_privacy_blurb,
         "https://corporate.zillit.com/privacy-policy-for-zillit-application-and-web-platform",
     ),
     HelpEntry(
-        "Terms of Use",
-        "The terms you agreed to when you joined Zillit.",
+        S.txt_help_condition,
+        S.desktop_help_terms_blurb,
         "https://corporate.zillit.com/terms-conditions-for-zillit-application-and-web-platform",
     ),
     HelpEntry(
-        "Contact Us",
-        "Call our 24x7 support team, or write to support@zillit.com — we read everything.",
+        S.txt_help_contact,
+        S.desktop_help_contact_blurb,
         null,
         callable = true,
     ),
@@ -159,9 +164,9 @@ internal fun HelpScreen(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitPageHeader(
-            eyebrow = "Zillit",
-            title = "Zillit Help",
-            description = "Get assistance and information about Zillit.",
+            eyebrow = str(S.app_name),
+            title = str(S.zillit_help),
+            description = str(S.desktop_help_description),
         )
         HELP_ENTRIES.forEach { entry ->
             ZillitSectionCard(
@@ -171,14 +176,14 @@ internal fun HelpScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                         if (entry.callable && onCallSupport != null) {
                             ZillitButton(
-                                text = "Call us",
+                                text = str(S.txt_call_us),
                                 variant = ButtonVariant.Primary,
                                 size = ButtonSize.Small,
                                 onClick = onCallSupport,
                             )
                         }
                         ZillitButton(
-                            text = if (entry.url == null) "Write to us" else "Open",
+                            text = if (entry.url == null) str(S.desktop_write_to_us) else str(S.recce_open),
                             variant = ButtonVariant.Secondary,
                             size = ButtonSize.Small,
                             onClick = { entry.url?.let(onOpenExternal) ?: onContactSupport() },

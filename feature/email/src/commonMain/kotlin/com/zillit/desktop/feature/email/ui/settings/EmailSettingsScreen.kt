@@ -15,6 +15,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.rules.EmailRulesUiState
 import com.zillit.desktop.feature.email.rules.EmailRulesPage
 import com.zillit.desktop.feature.email.rules.EmailRulesEvent
@@ -68,7 +70,7 @@ private fun SettingsCards(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitPageHeader(
-            title = "Email Settings",
+            title = str(S.email_settings),
             modifier = Modifier.padding(bottom = ZillitTheme.spacing.sm),
         )
 
@@ -84,7 +86,7 @@ private fun SettingsCards(
 
         if (state.isLoading) {
             ZillitText(
-                text = "Loading…",
+                text = str(S.ah_loading),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
                 modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
@@ -102,8 +104,8 @@ private fun SettingsCardList(
 ) {
     SettingsCard(
         icon = ZillitIcons.Mail,
-        title = "Conversation View",
-        detail = "Group emails in the same conversation together",
+        title = str(S.email_trailing),
+        detail = str(S.desktop_email_conversation_view_detail),
         onClick = null,
         trailing = {
             // A checkbox rather than a switch: the design system has no
@@ -117,40 +119,40 @@ private fun SettingsCardList(
     )
     SettingsCard(
         icon = ZillitIcons.Edit,
-        title = "Signatures",
-        detail = "Manage your email signatures",
+        title = str(S.signatures),
+        detail = str(S.desktop_email_signatures_detail),
         onClick = onOpenSignatures,
     )
     if (state.canManageGroups) {
         SettingsCard(
             icon = ZillitIcons.Users,
-            title = "Email Groups",
-            detail = "Manage your email groups",
+            title = str(S.email_groups),
+            detail = str(S.desktop_email_groups_subtitle),
             onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Groups)) },
         )
     }
     SettingsCard(
         icon = ZillitIcons.Filter,
-        title = "Email rules",
-        detail = "Sort, save, forward or mark incoming mail automatically",
+        title = str(S.email_rules_title),
+        detail = str(S.desktop_email_rules_detail),
         onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Rules)) },
     )
     SettingsCard(
         icon = ZillitIcons.UserPlus,
-        title = "BCC Presets",
-        detail = "Auto-add BCC recipients to every email",
+        title = str(S.desktop_email_bcc_presets_title),
+        detail = str(S.desktop_email_bcc_presets_subtitle),
         onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.BccPresets)) },
     )
     SettingsCard(
         icon = ZillitIcons.ArrowRight,
-        title = "Email Forwarding",
-        detail = "Auto-forward incoming emails to an external address",
+        title = str(S.desktop_email_forwarding),
+        detail = str(S.desktop_email_forwarding_subtitle),
         onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Forwarding)) },
     )
     SettingsCard(
         icon = ZillitIcons.Info,
-        title = "Email Setup Externally",
-        detail = "View IMAP/SMTP credentials for external clients",
+        title = str(S.email_credentials),
+        detail = str(S.desktop_email_credentials_subtitle),
         onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Credentials)) },
     )
 }

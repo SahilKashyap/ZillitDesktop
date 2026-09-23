@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.BankRow
 import com.zillit.desktop.feature.bankrec.domain.FxDetail
@@ -307,7 +309,11 @@ private fun SuggestionStrip(bar: SuggestionBar, row: BankRow, actions: BankRowAc
         )
         val firstMatched = row.txn.matchedInvoiceIds.firstOrNull()
         if (bar.viewsInvoice && bar.invoiceId != null) {
-            BrLinkButton("View ›", ZillitTheme.colors.info, { actions.onViewInvoice(bar.invoiceId) })
+            BrLinkButton(
+                str(S.desktop_br_view_chevron),
+                ZillitTheme.colors.info,
+                { actions.onViewInvoice(bar.invoiceId) },
+            )
         }
         bar.action?.let { label ->
             BrLinkButton("$label ›", actionColor, {
@@ -339,24 +345,33 @@ private fun FxBubble(fx: FxDetail, homeCurrency: String, onPost: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         FxFigure(
-            "Invoice (${fx.currency.ifBlank { "FX" }})",
+            str(S.desktop_br_invoice_in_currency, fx.currency.ifBlank { str(S.desktop_fx) }),
             foreignMoney(fx.foreignAmount, fx.currency),
             colors.teal,
             Modifier.weight(1f),
         )
-        FxFigure("Budget Rate", BankRecFormat.rate(fx.budgetRate), colors.textSecondary, Modifier.weight(1f))
-        FxFigure("Bank Rate", BankRecFormat.rate(fx.bankRate), colors.textSecondary, Modifier.weight(1f))
         FxFigure(
-            if (fx.isGain) "FX Gain" else "FX Loss",
+            str(S.desktop_budget_rate),
+            BankRecFormat.rate(fx.budgetRate),
+            colors.textSecondary,
+            Modifier.weight(1f),
+        )
+        FxFigure(str(S.desktop_bank_rate), BankRecFormat.rate(fx.bankRate), colors.textSecondary, Modifier.weight(1f))
+        FxFigure(
+            if (fx.isGain) str(S.desktop_fx_gain) else str(S.desktop_fx_loss),
             BankRecFormat.signedMoney(fx.gain, homeCurrency),
             if (fx.isGain) colors.success else colors.danger,
             Modifier.weight(1f),
         )
         if (fx.varianceId.isNotBlank()) {
             if (fx.isPosted) {
-                ZillitText("Posted ✓", style = mono(11.sp, FontWeight.SemiBold), color = colors.success)
+                ZillitText(
+                    str(S.desktop_br_posted_tick),
+                    style = mono(11.sp, FontWeight.SemiBold),
+                    color = colors.success,
+                )
             } else {
-                BrLinkButton("Post ›", colors.teal, onPost)
+                BrLinkButton(str(S.desktop_br_post_chevron), colors.teal, onPost)
             }
         }
     }

@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -21,7 +23,7 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 class AdToolProvider(private val viewModel: AdViewModel) : ToolProvider {
 
     override val path: String = AD_DASHBOARD_PATH
-    override val title: String = "AD Dashboard"
+    override val title: String get() = str(S.desktop_ad_dashboard_title)
     override val icon = ZillitIcons.Users
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(WIDTH.dp, HEIGHT.dp)

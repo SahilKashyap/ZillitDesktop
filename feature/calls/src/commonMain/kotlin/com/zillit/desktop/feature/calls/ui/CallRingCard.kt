@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
@@ -128,7 +130,7 @@ private fun RingActions(incoming: Boolean, video: Boolean, onEvent: (CallEvent) 
             // the hand lands when reaching for accept.
             CaptionedAction(
                 icon = ZillitIcons.PhoneDown,
-                caption = "Decline",
+                caption = str(S.decline),
                 background = CallPalette.danger,
                 onClick = { onEvent(CallEvent.Decline) },
             )
@@ -136,7 +138,7 @@ private fun RingActions(incoming: Boolean, video: Boolean, onEvent: (CallEvent) 
             // the web's `incomingPulse` (`CallOverlays.tsx:84-93`).
             CaptionedAction(
                 icon = if (video) ZillitIcons.Camera else ZillitIcons.Phone,
-                caption = "Accept",
+                caption = str(S.accept),
                 background = CallPalette.green,
                 pulsing = true,
                 onClick = { onEvent(CallEvent.Accept) },
@@ -144,7 +146,7 @@ private fun RingActions(incoming: Boolean, video: Boolean, onEvent: (CallEvent) 
         } else {
             CaptionedAction(
                 icon = ZillitIcons.PhoneDown,
-                caption = "Cancel",
+                caption = str(S.cancel),
                 background = CallPalette.danger,
                 onClick = { onEvent(CallEvent.HangUp) },
             )
@@ -225,7 +227,7 @@ private fun CaptionedAction(
 }
 
 internal val CallSession.ringTitle: String
-    get() = displayName.ifBlank { "Unknown caller" }
+    get() = displayName.ifBlank { str(S.desktop_unknown_caller) }
 
 /**
  * Where the ring comes from, above the name: the room on a group ring
@@ -241,13 +243,21 @@ internal fun CallSession.ringContext(incoming: Boolean): String? {
  * until the far end has answered, `Joining…` once someone is in the room.
  */
 internal fun CallSession.outgoingRingStatus(): String =
-    if (participants.any { it.userId != selfUserId && it.status == CallStatus.InCall }) "Joining…" else "Calling…"
+    if (participants.any { it.userId != selfUserId && it.status == CallStatus.InCall }) {
+        str(S.desktop_call_joining)
+    } else {
+        str(S.desktop_call_calling_ellipsis)
+    }
 
 /** "Incoming [group ]{audio|video} call…" (`CallOverlays.tsx:39`). */
 internal fun CallSession.incomingRingSubtitle(): String {
-    val group = if (mode == CallMode.Group) "group " else ""
-    val kind = if (hasVideo) "video" else "audio"
-    return "Incoming ${group}$kind call…"
+    val group = mode == CallMode.Group
+    return when {
+        group && hasVideo -> str(S.desktop_call_incoming_group_video)
+        group -> str(S.desktop_call_incoming_group_audio)
+        hasVideo -> str(S.desktop_call_incoming_video)
+        else -> str(S.desktop_call_incoming_audio)
+    }
 }
 
 private val CARD_WIDTH = 380.dp

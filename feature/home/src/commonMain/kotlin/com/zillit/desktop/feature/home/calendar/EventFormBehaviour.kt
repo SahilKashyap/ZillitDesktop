@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -159,9 +161,9 @@ internal fun EventDraft.addingGuest(typed: String): GuestAddition {
     val address = typed.trim()
     return when {
         address.isEmpty() -> GuestAddition.Empty
-        !address.looksLikeGuestEmail() -> GuestAddition.Refused("That is not an email address.")
+        !address.looksLikeGuestEmail() -> GuestAddition.Refused(str(S.desktop_cal_not_an_email))
         externalEmails.any { it.equals(address, ignoreCase = true) } ->
-            GuestAddition.Refused("That guest is already on the list.")
+            GuestAddition.Refused(str(S.desktop_cal_guest_already_listed))
         else -> GuestAddition.Added(copy(externalEmails = externalEmails + address))
     }
 }

@@ -5,6 +5,8 @@ import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.externalusers.data.EXTERNAL_USERS_SYNC_EVENTS
 import com.zillit.desktop.feature.externalusers.domain.CREW_TYPE
 import com.zillit.desktop.feature.externalusers.domain.Creator
@@ -300,8 +302,11 @@ private val rights: RightsRequestBus? = null,
     private fun askForRights(kind: RightsKind) {
         sendEffect(
             ExternalUsersEffect.Notice(
-                "You do not have ${kind.verb} rights on $MODULE_LABEL" +
-                    if (rights == null) "." else " — asking an administrator.",
+                if (rights == null) {
+                    str(S.desktop_no_rights_on_module, kind.verb, str(S.external_invitees))
+                } else {
+                    str(S.desktop_no_rights_on_module_asking_admin, kind.verb, str(S.external_invitees))
+                },
             ),
         )
         rights?.ask(MODULE_LABEL, kind)
@@ -312,7 +317,7 @@ private val rights: RightsRequestBus? = null,
         if (currentState.viewer.mayEdit(user)) block()
         else sendEffect(
             ExternalUsersEffect.Notice(
-                "Only the person who added this contact, or an admin, can change it.",
+                str(S.desktop_eu_only_creator_or_admin_can_change),
             ),
         )
     }
@@ -378,7 +383,7 @@ private val rights: RightsRequestBus? = null,
             onSuccess = {
                 sendEffect(
                     ExternalUsersEffect.Notice(
-                        if (editing.isNew) "User added successfully." else "User updated successfully.",
+                        if (editing.isNew) str(S.desktop_eu_user_added) else str(S.desktop_eu_user_updated),
                     ),
                 )
                 setState {
@@ -400,7 +405,7 @@ private val rights: RightsRequestBus? = null,
         launchResult(
             block = { repository.delete(target.id) },
             onSuccess = {
-                sendEffect(ExternalUsersEffect.Notice("User deleted successfully."))
+                sendEffect(ExternalUsersEffect.Notice(str(S.desktop_eu_user_deleted)))
                 setState { copy(isSaving = false) }
                 refresh()
             },

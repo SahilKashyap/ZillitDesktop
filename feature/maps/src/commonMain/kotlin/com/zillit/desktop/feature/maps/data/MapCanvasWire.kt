@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.maps.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.CanvasTheme
 import com.zillit.desktop.feature.maps.domain.GeoBounds
 import com.zillit.desktop.feature.maps.domain.GeoComponent
@@ -15,6 +17,9 @@ import com.zillit.desktop.feature.maps.domain.PlaceDetails
 import com.zillit.desktop.feature.maps.domain.PlacePrediction
 import com.zillit.desktop.feature.maps.domain.RouteInfo
 import com.zillit.desktop.feature.maps.domain.SceneCircle
+import com.zillit.desktop.feature.maps.domain.SceneCities
+import com.zillit.desktop.feature.maps.domain.SceneMarker
+import com.zillit.desktop.feature.maps.domain.SceneZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -140,8 +145,8 @@ object MapCanvasWire {
             "map-ready" -> MapCanvasEvent.Ready
             // The page's `gm_authFailure` hook — Google refused the key.
             // Without it the canvas is silently a grey slab.
-            "auth-failed" -> MapCanvasEvent.Failed("Google rejected this project's Maps key, so the map cannot load.")
-            "error" -> MapCanvasEvent.Failed(body.str("message") ?: "The map page reported an error.")
+            "auth-failed" -> MapCanvasEvent.Failed(str(S.desktop_map_auth_failed))
+            "error" -> MapCanvasEvent.Failed(body.str("message") ?: str(S.desktop_map_page_error))
             "marker-action" -> markerAction(body)
             "zone-action" -> body.str("id")?.let { MapCanvasEvent.ZoneEdit(it) }
             "preview-action" -> body.point()?.let {
@@ -229,6 +234,7 @@ object MapCanvasWire {
         }
     }
 
+    @Suppress("ReturnCount") // One guard per required edge; a partial box is no box.
     fun bounds(reply: CanvasReply): GeoBounds? {
         if (!reply.ok) return null
         val body = reply.body
@@ -245,27 +251,7 @@ object MapCanvasWire {
     // Scene --------------------------------------------------------------------
 
     internal fun sceneJson(scene: MapScene): JsonObject = buildJsonObject {
-        put(
-            "markers",
-            buildJsonArray {
-                scene.markers.forEach { marker ->
-                    add(
-                        buildJsonObject {
-                            put("id", marker.id)
-                            put("name", marker.name)
-                            put("type", marker.type)
-                            put("icon", marker.icon)
-                            put("color", marker.color)
-                            putPoint(marker.point)
-                            put("address", marker.address)
-                            put("subTypes", buildJsonArray { marker.subTypes.forEach { add(JsonPrimitive(it)) } })
-                            put("sceneNumber", marker.sceneNumber)
-                            put("description", marker.description)
-                        },
-                    )
-                }
-            },
-        )
+        put("markers", markersJson(scene.markers))
         put("pinMode", scene.pinMode)
         put("draggable", scene.draggable)
         put("lockedId", scene.lockedId)
@@ -273,20 +259,7 @@ object MapCanvasWire {
             "pendingMove",
             scene.pendingMove?.let { pin -> buildJsonObject { put("id", pin.id); putPoint(pin.point) } } ?: JsonNull,
         )
-        put(
-            "zone",
-            scene.zone?.let { zone ->
-                buildJsonObject {
-                    put("id", zone.id)
-                    put("name", zone.name)
-                    putPoint(zone.circle.centre)
-                    put("radiusMiles", zone.circle.radiusMiles)
-                    put("address", zone.address)
-                    put("type", zone.type)
-                    put("streets", zone.streets)
-                }
-            } ?: JsonNull,
-        )
+        put("zone", scene.zone?.let(::zoneJson) ?: JsonNull)
         put(
             "draftZone",
             scene.draftZone?.let { circle ->
@@ -297,17 +270,7 @@ object MapCanvasWire {
             } ?: JsonNull,
         )
         put("draftPin", scene.draftPin?.let { point -> buildJsonObject { putPoint(point) } } ?: JsonNull)
-        put(
-            "cities",
-            scene.cities?.let { cities ->
-                buildJsonObject {
-                    put("count", cities.count)
-                    put("unread", cities.unread)
-                    put("selectedName", cities.selectedName)
-                    put("selectedCount", cities.selectedCount)
-                }
-            } ?: JsonNull,
-        )
+        put("cities", scene.cities?.let(::citiesJson) ?: JsonNull)
         put(
             "guide",
             buildJsonObject {
@@ -317,6 +280,42 @@ object MapCanvasWire {
         )
         put("canPost", scene.canPost)
         put("nonce", scene.nonce)
+    }
+
+    private fun markersJson(markers: List<SceneMarker>): JsonArray = buildJsonArray {
+        markers.forEach { marker ->
+            add(
+                buildJsonObject {
+                    put("id", marker.id)
+                    put("name", marker.name)
+                    put("type", marker.type)
+                    put("icon", marker.icon)
+                    put("color", marker.color)
+                    putPoint(marker.point)
+                    put("address", marker.address)
+                    put("subTypes", buildJsonArray { marker.subTypes.forEach { add(JsonPrimitive(it)) } })
+                    put("sceneNumber", marker.sceneNumber)
+                    put("description", marker.description)
+                },
+            )
+        }
+    }
+
+    private fun zoneJson(zone: SceneZone): JsonObject = buildJsonObject {
+        put("id", zone.id)
+        put("name", zone.name)
+        putPoint(zone.circle.centre)
+        put("radiusMiles", zone.circle.radiusMiles)
+        put("address", zone.address)
+        put("type", zone.type)
+        put("streets", zone.streets)
+    }
+
+    private fun citiesJson(cities: SceneCities): JsonObject = buildJsonObject {
+        put("count", cities.count)
+        put("unread", cities.unread)
+        put("selectedName", cities.selectedName)
+        put("selectedCount", cities.selectedCount)
     }
 
     // Internals ----------------------------------------------------------------

@@ -4,6 +4,8 @@ import com.zillit.desktop.core.forms.CustomFieldGroup
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
@@ -125,7 +127,7 @@ data class PurchaseOrder(
      */
     val statusLabel: String
         get() = if (status == PoStatus.AwaitingApproval && approvals.isNotEmpty()) {
-            "Pending (${approvals.count { it.decided }}/${approvals.size})"
+            str(S.ah_status_pending_progress, approvals.count { it.decided }, approvals.size)
         } else {
             status.label
         }
@@ -263,11 +265,15 @@ data class PoTotals(val net: Double, val tax: Double) {
  * The web's Posted tab shows these as both a column and its filter chips, and
  * the wording is theirs.
  */
-enum class PoRelief(val label: String) {
-    Open("Open"),
-    PartiallyRelieved("Partially Relieved"),
-    FullyRelieved("Fully Relieved"),
-    Closed("Closed"),
+enum class PoRelief(private val labelKey: String) {
+    Open(S.dd_action_open),
+    PartiallyRelieved(S.desktop_partially_relieved),
+    FullyRelieved(S.desktop_fully_relieved),
+    Closed(S.ah_status_closed),
+    ;
+
+    /** What the column and its chip show. */
+    val label: String get() = str(labelKey)
 }
 
 /** One step of a PO's approval chain, and whether it has been taken. */
@@ -293,9 +299,9 @@ data class PoApproval(
  * posting), `APPROVED`, `REJECTED`, `POSTED`, `CLOSED`, `CANCELLED`.
  */
 @Serializable
-enum class PoStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    AwaitingApproval("pending", "Pending"),
+enum class PoStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
+    AwaitingApproval("pending", S.pending),
 
     /**
      * `ACCT_ENTERED` — raised by accounts, with no approval chain.
@@ -306,15 +312,18 @@ enum class PoStatus(val wire: String, val label: String) {
      * labelled the same, and every predicate here pairs them — because getting
      * it wrong fails silently on orders already entered in the books.
      */
-    AccountsEntered("acct_entered", "Acct Entered"),
-    Approved("approved", "Approved"),
-    Queued("queued", "Acct Entered"),
-    Rejected("rejected", "Rejected"),
-    Posted("posted", "Posted"),
-    Closed("closed", "Closed"),
-    Cancelled("cancelled", "Cancelled"),
-    Unknown("", "Unknown"),
+    AccountsEntered("acct_entered", S.desktop_acct_entered),
+    Approved("approved", S.approved),
+    Queued("queued", S.desktop_acct_entered),
+    Rejected("rejected", S.rejected),
+    Posted("posted", S.ah_posted_label),
+    Closed("closed", S.ah_status_closed),
+    Cancelled("cancelled", S.cancelled),
+    Unknown("", S.desktop_unknown),
     ;
+
+    /** What a list shows for this status. */
+    val label: String get() = str(labelKey)
 
     /** Still open to being edited by whoever raised it. */
     val isEditable: Boolean get() = this == Draft || this == Rejected
@@ -465,11 +474,11 @@ data class NewPurchaseOrder(
 
     /** The first reason this order cannot be raised, or null. */
     fun validationError(): String? = when {
-        vendorName.isBlank() -> "Choose the vendor this order is with."
-        description.isBlank() -> "Describe what is being ordered."
-        lines.isEmpty() -> "Add at least one line."
-        lines.any { it.description.isBlank() } -> "Every line needs a description."
-        lines.any { it.total <= 0 } -> "Every line needs a quantity and a price."
+        vendorName.isBlank() -> str(S.desktop_po_needs_vendor)
+        description.isBlank() -> str(S.desktop_po_needs_description)
+        lines.isEmpty() -> str(S.desktop_po_needs_a_line)
+        lines.any { it.description.isBlank() } -> str(S.desktop_po_line_needs_description)
+        lines.any { it.total <= 0 } -> str(S.desktop_po_line_needs_qty_price)
         else -> null
     }
 }
@@ -655,7 +664,7 @@ interface PurchaseOrderRepository {
     suspend fun saveDeliveryAddress(id: String?, address: PoAddress): ZillitResult<PoDeliveryAddress> = noRegister()
 
     private fun <T> noRegister(): ZillitResult<T> =
-        ZillitResult.Failure(ZillitError.Unknown("This purchase-order register is not available here."))
+        ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_po_register_unavailable)))
 
     // -- the Settings tab: the web's `poSettingsApi` and `assignmentRulesApi` ---
     // Defaulted to a refusal so a host or a test double without settings still
@@ -688,7 +697,7 @@ interface PurchaseOrderRepository {
     suspend fun assetTags(): ZillitResult<List<String>> = noSettings()
 
     private fun <T> noSettings(): ZillitResult<T> =
-        ZillitResult.Failure(ZillitError.Unknown("Purchase order settings are not available here."))
+        ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_po_settings_unavailable)))
 }
 
 /**

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
 import com.zillit.desktop.feature.boxschedule.domain.CalendarMode
 import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
@@ -224,20 +226,22 @@ sealed interface PanelEvent : BoxScheduleEvent {
 }
 
 /** The command palette's actions — `commandActions`. Writes are offered only to someone who may post. */
-enum class DiaryCommand(val label: String, val hint: String, val writes: Boolean) {
-    NewSchedule("New Schedule", "N", writes = true),
-    NewEvent("New Event", "E", writes = true),
-    NewNote("New Note", "", writes = true),
-    EditTypes("Edit Schedule Types", "", writes = true),
-    CalendarView("Switch to Calendar View", "", writes = false),
-    ListView("Switch to List View", "", writes = false),
-    Today("Jump to Today", "T", writes = false),
-    Previous("Previous", "←", writes = false),
-    Next("Next", "→", writes = false),
-    History("Open Activity Log", "", writes = false),
-    ShareLink("Share via Link", "", writes = false),
-    Print("Print", "", writes = true),
+enum class DiaryCommand(private val labelKey: String, val hint: String, val writes: Boolean) {
+    NewSchedule(S.desktop_bs_cmd_new_schedule, "N", writes = true),
+    NewEvent(S.new_event, "E", writes = true),
+    NewNote(S.desktop_bs_cmd_new_note, "", writes = true),
+    EditTypes(S.desktop_bs_cmd_edit_schedule_types, "", writes = true),
+    CalendarView(S.desktop_bs_cmd_switch_calendar_view, "", writes = false),
+    ListView(S.desktop_bs_cmd_switch_list_view, "", writes = false),
+    Today(S.desktop_bs_cmd_jump_to_today, "T", writes = false),
+    Previous(S.txt_prev, "←", writes = false),
+    Next(S.next, "→", writes = false),
+    History(S.desktop_bs_cmd_open_activity_log, "", writes = false),
+    ShareLink(S.share_via_link, "", writes = false),
+    Print(S.print, "", writes = true),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /** The palette's list: writes first when the viewer may post, as the web orders it. */

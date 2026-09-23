@@ -59,6 +59,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sos.domain.SosAlert
 
 /**
@@ -137,11 +139,10 @@ private fun SosHero(state: SosUiState, onEvent: (SosEvent) -> Unit) {
     ) {
         SirenMark()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            ZillitSectionLabel("Emergency")
-            ZillitText(text = "SOS", style = ZillitTheme.typography.titleLarge, maxLines = 1)
+            ZillitSectionLabel(str(S.desktop_sos_emergency))
+            ZillitText(text = str(S.sos), style = ZillitTheme.typography.titleLarge, maxLines = 1)
             ZillitText(
-                text = "Raise the alarm and your location goes to every receiver on this project. " +
-                    "Use it only if you are in real danger.",
+                text = str(S.desktop_sos_intro),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
                 maxLines = 3,
@@ -149,7 +150,7 @@ private fun SosHero(state: SosUiState, onEvent: (SosEvent) -> Unit) {
             ReachPill(state)
         }
         ZillitButton(
-            text = "Send SOS",
+            text = str(S.desktop_sos_send),
             onClick = { onEvent(SosEvent.AskSendAlert) },
             variant = ButtonVariant.Danger,
             leadingIcon = ZillitIcons.Siren,
@@ -167,8 +168,12 @@ private fun ReachPill(state: SosUiState) {
     val crew = contacts.members.size
     val outside = contacts.outsiders.size
     val label = when {
-        crew + outside == 0 -> "No receivers yet — add some below"
-        else -> "Reaches ${crew.count("crew member")} and ${outside.count("outside contact")}"
+        crew + outside == 0 -> str(S.desktop_sos_no_receivers_yet)
+        else -> str(
+            S.desktop_sos_reaches,
+            crew.count(S.desktop_sos_crew_member_one, S.desktop_sos_crew_members),
+            outside.count(S.desktop_sos_outside_contact_one, S.desktop_sos_outside_contacts),
+        )
     }
     Box(Modifier.padding(top = ZillitTheme.spacing.xs)) {
         ZillitStatusPill(
@@ -179,7 +184,7 @@ private fun ReachPill(state: SosUiState) {
     }
 }
 
-private fun Int.count(noun: String): String = if (this == 1) "1 $noun" else "$this ${noun}s"
+private fun Int.count(one: String, many: String): String = if (this == 1) str(one) else str(many, this)
 
 /**
  * The siren in a soft red disc, with two rings breathing out of it.
@@ -228,7 +233,7 @@ private fun ErrorNotice(message: String, onEvent: (SosEvent) -> Unit) {
         icon = ZillitIcons.Warning,
         action = {
             ZillitButton(
-                text = "Dismiss",
+                text = str(S.sync_action_dismiss),
                 onClick = { onEvent(SosEvent.DismissError) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -248,19 +253,19 @@ private fun AlertsCard(
 ) {
     ZillitSectionCard(
         modifier = modifier,
-        title = "Alerts",
+        title = str(S.desktop_sos_alerts),
         icon = ZillitIcons.Bell,
         meta = if (state.alerts.isEmpty()) null else "${state.alerts.size}",
         action = {
             ZillitIconButton(
                 icon = ZillitIcons.Reload,
-                contentDescription = "Refresh alerts",
+                contentDescription = str(S.desktop_sos_refresh_alerts),
                 onClick = { onEvent(SosEvent.Refresh) },
                 enabled = !state.loading,
             )
             if (state.alerts.isNotEmpty()) {
                 ZillitButton(
-                    text = "Clear all",
+                    text = str(S.txt_clear_all),
                     onClick = { onEvent(SosEvent.AskDeleteAllAlerts) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -274,8 +279,8 @@ private fun AlertsCard(
             state.loading && state.alerts.isEmpty() -> AlertsSkeleton()
 
             state.loaded && state.alerts.isEmpty() -> ZillitEmptyState(
-                title = "All quiet",
-                message = "Nobody on this project has raised the alarm.",
+                title = str(S.desktop_sos_all_quiet),
+                message = str(S.desktop_sos_nobody_raised_alarm),
                 icon = ZillitIcons.Shield,
             )
 
@@ -331,7 +336,7 @@ private fun MoreRow(state: SosUiState, onEvent: (SosEvent) -> Unit) {
             ZillitSpinner()
         } else {
             ZillitButton(
-                text = "Show older",
+                text = str(S.desktop_show_older),
                 onClick = { onEvent(SosEvent.LoadOlder) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -367,7 +372,7 @@ private fun AlertCard(
         label = "alert-hover",
     )
     val edge = if (sent) colors.borderStrong else colors.danger
-    val name = alert.senderNameHint.ifBlank { if (sent) "You" else "Unknown sender" }
+    val name = alert.senderNameHint.ifBlank { if (sent) str(S.you) else str(S.desktop_sos_unknown_sender) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -405,7 +410,7 @@ private fun AlertHead(name: String, sent: Boolean) {
         // "Sent" / "Received", the two words the web puts on the card
         // (`SOSMain.jsx:451-457`).
         ZillitStatusPill(
-            label = if (sent) "Sent" else "Received",
+            label = if (sent) str(S.cs_sent) else str(S.recived),
             tone = if (sent) StatusTone.Neutral else StatusTone.Rejected,
             dot = !sent,
         )
@@ -426,7 +431,7 @@ private fun AlertMeta(alert: SosAlert) {
     }
     if (alert.isEntertainment) {
         ZillitText(
-            text = "You can call GSM contacts through a mobile.",
+            text = str(S.desktop_sos_gsm_call_hint),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
@@ -463,26 +468,26 @@ private fun AlertActions(
         if (mayCall && !sent && alert.senderId.isNotBlank()) {
             ZillitIconButton(
                 icon = ZillitIcons.Phone,
-                contentDescription = "Call them",
+                contentDescription = str(S.desktop_sos_call_them),
                 onClick = { onEvent(SosEvent.CallSender(alert.id, video = false)) },
                 enabled = !busy,
             )
             ZillitIconButton(
                 icon = ZillitIcons.Camera,
-                contentDescription = "Video call them",
+                contentDescription = str(S.desktop_sos_video_call_them),
                 onClick = { onEvent(SosEvent.CallSender(alert.id, video = true)) },
                 enabled = !busy,
             )
         }
         ZillitIconButton(
             icon = ZillitToolIcons.Location,
-            contentDescription = "Open location",
+            contentDescription = str(S.desktop_sos_open_location),
             onClick = { onEvent(SosEvent.OpenMap(alert.id)) },
             enabled = alert.mapsUrl.isNotBlank(),
         )
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Delete alert",
+            contentDescription = str(S.desktop_sos_delete_alert),
             onClick = { onEvent(SosEvent.AskDeleteAlert(alert.id)) },
             enabled = !busy,
             tint = ZillitTheme.colors.danger,
@@ -500,23 +505,21 @@ private fun AlertActions(
 @Composable
 private fun ConfirmDialog(confirm: SosConfirm, onEvent: (SosEvent) -> Unit) {
     val title = when (confirm) {
-        SosConfirm.SendAlert -> "Send SOS?"
-        is SosConfirm.DeleteAlert -> "Delete this alert?"
-        SosConfirm.DeleteAllAlerts -> "Clear all alerts?"
-        is SosConfirm.DeleteContact -> "Remove this receiver?"
+        SosConfirm.SendAlert -> str(S.desktop_sos_send_question)
+        is SosConfirm.DeleteAlert -> str(S.desktop_sos_delete_alert_question)
+        SosConfirm.DeleteAllAlerts -> str(S.desktop_sos_clear_all_alerts_question)
+        is SosConfirm.DeleteContact -> str(S.desktop_sos_remove_receiver_question)
     }
     val message = when (confirm) {
-        SosConfirm.SendAlert ->
-            "Every receiver on this project will be alerted, with your location. " +
-                "Do this only if you are in real danger."
-        is SosConfirm.DeleteAlert, is SosConfirm.DeleteContact -> "Are you sure you want to delete this record?"
-        SosConfirm.DeleteAllAlerts -> "Are you sure you want to clear all SOS alerts?"
+        SosConfirm.SendAlert -> str(S.desktop_sos_send_confirm_body)
+        is SosConfirm.DeleteAlert, is SosConfirm.DeleteContact -> str(S.desktop_delete_record_confirm)
+        SosConfirm.DeleteAllAlerts -> str(S.desktop_sos_clear_all_confirm)
     }
     val confirmLabel = when (confirm) {
-        SosConfirm.SendAlert -> "Send SOS now"
-        is SosConfirm.DeleteAlert -> "Delete"
-        SosConfirm.DeleteAllAlerts -> "Clear all"
-        is SosConfirm.DeleteContact -> "Remove"
+        SosConfirm.SendAlert -> str(S.desktop_sos_send_now)
+        is SosConfirm.DeleteAlert -> str(S.delete)
+        SosConfirm.DeleteAllAlerts -> str(S.txt_clear_all)
+        is SosConfirm.DeleteContact -> str(S.remove)
     }
     ZillitDialogShell(
         title = title,
@@ -525,7 +528,7 @@ private fun ConfirmDialog(confirm: SosConfirm, onEvent: (SosEvent) -> Unit) {
         icon = if (confirm == SosConfirm.SendAlert) ZillitIcons.Siren else ZillitIcons.Warning,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(SosEvent.CancelConfirm) },
                 variant = ButtonVariant.Tertiary,
             )

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.maps.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.CityDraft
 import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.MapCity
@@ -14,6 +16,7 @@ import kotlinx.coroutines.delay
  * Cities: the list and its order, the auto-selection ladder, the Cities panel
  * (`common/Sidebar.jsx`) and the Add City dialog (`cities/AddCityModal.jsx`).
  */
+@Suppress("TooManyFunctions") // One function per city action the panel and dialog offer.
 internal class CityController(private val store: MapStore) {
 
     private var searchJob: Job? = null
@@ -66,7 +69,7 @@ internal class CityController(private val store: MapStore) {
                 }
                 is ZillitResult.Failure -> {
                     store.update { copy(citiesLoading = false, citiesLoaded = true) }
-                    store.failed(result.error, "Failed to fetch cities")
+                    store.failed(result.error, str(S.desktop_map_failed_fetch_cities))
                 }
             }
         }
@@ -135,13 +138,22 @@ internal class CityController(private val store: MapStore) {
     private fun close() = store.popPanel { it == MapPanel.Cities }
 
     private fun search(text: String) {
-        store.update { copy(citiesPanel = citiesPanel.copy(search = text, suggestions = if (text.isBlank()) emptyList() else citiesPanel.suggestions)) }
+        store.update {
+            copy(
+                citiesPanel = citiesPanel.copy(
+                    search = text,
+                    suggestions = if (text.isBlank()) emptyList() else citiesPanel.suggestions,
+                ),
+            )
+        }
         searchJob?.cancel()
         if (text.isBlank()) return
         searchJob = store.spawn {
             delay(SEARCH_DEBOUNCE_MS)
             val found = store.canvas.predictions(text, PlaceKind.Cities).orEmpty()
-            store.update { if (citiesPanel.search == text) copy(citiesPanel = citiesPanel.copy(suggestions = found)) else this }
+            store.update {
+                if (citiesPanel.search == text) copy(citiesPanel = citiesPanel.copy(suggestions = found)) else this
+            }
         }
     }
 
@@ -219,10 +231,10 @@ internal class CityController(private val store: MapStore) {
         val name = add.name.trim()
         val point = add.point
         val problem = when {
-            name.isBlank() -> "Please enter a city name"
-            point == null -> "Please search and select a city location"
+            name.isBlank() -> str(S.desktop_map_enter_city_name)
+            point == null -> str(S.desktop_map_select_city_location)
             store.state.cities.any { it.name.trim().equals(name, ignoreCase = true) } ->
-                "\"$name\" already exists. Please use a different city name."
+                str(S.desktop_map_city_exists, name)
             else -> null
         }
         if (problem != null) {
@@ -235,10 +247,10 @@ internal class CityController(private val store: MapStore) {
             when (val result = store.repository.createCity(CityDraft(name, add.description, at))) {
                 is ZillitResult.Failure -> {
                     updateAdd { copy(saving = false) }
-                    store.failed(result.error, "Failed to add city")
+                    store.failed(result.error, str(S.desktop_map_failed_add_city))
                 }
                 is ZillitResult.Success -> {
-                    store.notice("City added successfully", NoticeTone.Success)
+                    store.notice(str(S.txt_city_Added), NoticeTone.Success)
                     store.update { copy(dialog = null) }
                     val createdId = result.data.city?.id
                     load { cities -> afterCreate(createdId ?: cities.firstOrNull { it.name.equals(name, true) }?.id) }
@@ -256,7 +268,7 @@ internal class CityController(private val store: MapStore) {
     private fun afterCreate(cityId: String?) {
         val waiting = pendingPin.also { pendingPin = null }
         if (cityId == null) {
-            if (waiting != null) store.notice("City created. Open it and place the pin again.", NoticeTone.Info)
+            if (waiting != null) store.notice(str(S.desktop_map_city_created_reopen), NoticeTone.Info)
             return
         }
         // Select first: choosing a city resets every panel, and the form the
@@ -274,10 +286,9 @@ internal class CityController(private val store: MapStore) {
         store.update {
             copy(
                 dialog = MapDialog.Confirm(
-                    title = "Delete City",
-                    message = "Are you sure you want to delete \"${city.name}\"? " +
-                        "This will also delete all associated locations.",
-                    confirmLabel = "Delete",
+                    title = str(S.desktop_map_delete_city_title),
+                    message = str(S.desktop_map_delete_city_confirm, city.name),
+                    confirmLabel = str(S.delete),
                     danger = true,
                     action = ConfirmAction.DeleteCity(cityId),
                 ),
@@ -288,11 +299,18 @@ internal class CityController(private val store: MapStore) {
     fun delete(cityId: String, done: () -> Unit) {
         store.spawn {
             when (val result = store.repository.deleteCity(cityId)) {
-                is ZillitResult.Failure -> store.failed(result.error, "Failed to delete city")
+                is ZillitResult.Failure -> store.failed(result.error, str(S.desktop_map_failed_delete_city))
                 is ZillitResult.Success -> {
-                    store.notice("City deleted successfully", NoticeTone.Success)
+                    store.notice(str(S.txt_city_deleted), NoticeTone.Success)
                     if (store.state.selectedCityId == cityId) {
-                        store.update { copy(selectedCityId = null, locations = emptyList(), zones = emptyList(), activeZoneId = null) }
+                        store.update {
+                            copy(
+                                selectedCityId = null,
+                                locations = emptyList(),
+                                zones = emptyList(),
+                                activeZoneId = null,
+                            )
+                        }
                     }
                     load()
                 }
@@ -313,7 +331,7 @@ internal class CityController(private val store: MapStore) {
         store.spawn {
             val result = store.repository.reorderCities(cityIds)
             if (result is ZillitResult.Failure) {
-                store.failed(result.error, "Failed to reorder cities")
+                store.failed(result.error, str(S.desktop_map_failed_reorder_cities))
                 load()
             }
         }

@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsBlock
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsFormat
 import com.zillit.desktop.feature.costreport.domain.analytics.ForecastView
@@ -57,10 +59,14 @@ internal fun ForecastPanel(block: AnalyticsBlock.Forecast, context: BlockContext
     val colors = analyticsColors
     val view = remember(block.data, context.currency) { ForecastView.of(block.data, context.currency) }
     val hex = colors.toneHex(view.tone)
-    val title = block.title ?: if (block.projection) "Cost to Final — All Modules" else "Forecast to Final Cost"
-    val wrap = view.wrap.takeIf { it.isNotBlank() }?.let { " · wrap $it" }.orEmpty()
+    val title = block.title ?: if (block.projection) {
+        str(S.desktop_cr_cost_to_final)
+    } else {
+        str(S.desktop_cr_forecast_to_final)
+    }
+    val wrap = view.wrap.takeIf { it.isNotBlank() }?.let { str(S.desktop_cr_wrap_suffix, it) }.orEmpty()
     Panel(border = colors.tone(view.tone).ring) {
-        SectionLabel(hex, title, "shoot week ${view.currentWeek} of ${view.totalWeeks}$wrap")
+        SectionLabel(hex, title, str(S.desktop_cr_shoot_week_of, view.currentWeek, view.totalWeeks, wrap))
         FlowRow(
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.Start),
@@ -72,16 +78,16 @@ internal fun ForecastPanel(block: AnalyticsBlock.Forecast, context: BlockContext
                 horizontalArrangement = Arrangement.spacedBy(26.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ForecastStat("Actual to date", view.actualText)
-                ForecastStat("Committed", view.committedText)
-                ForecastStat("Est. to complete", view.etcText, hex)
-                ForecastStat("Budget", view.budgetText)
+                ForecastStat(str(S.desktop_cr_actual_to_date), view.actualText)
+                ForecastStat(str(S.desktop_cr_committed), view.committedText)
+                ForecastStat(str(S.desktop_cr_est_to_complete), view.etcText, hex)
+                ForecastStat(str(S.budget_text), view.budgetText)
             }
         }
         BudgetRail(view, hex, Modifier.padding(top = 18.dp))
         Column(Modifier.padding(top = 20.dp).fillMaxWidth().topRule(colors.line).padding(top = 18.dp)) {
             ZillitText(
-                "CUMULATIVE SPEND — ACTUAL → FORECAST TO WRAP",
+                str(S.desktop_cr_cumulative_spend),
                 style = AnalyticsType.mono(10f, FontWeight.Bold, 0.09f),
                 color = colors.ink3,
                 modifier = Modifier.padding(bottom = 6.dp),
@@ -102,7 +108,11 @@ private fun EfcHeadline(view: ForecastView) {
     val colors = analyticsColors
     val tone = colors.tone(view.varianceTone)
     Column {
-        ZillitText("ESTIMATED FINAL COST", style = AnalyticsType.mono(10f, FontWeight.Bold, 0.1f), color = colors.ink3)
+        ZillitText(
+            str(S.desktop_cr_estimated_final_cost_caps),
+            style = AnalyticsType.mono(10f, FontWeight.Bold, 0.1f),
+            color = colors.ink3,
+        )
         Row(
             Modifier.padding(top = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -181,9 +191,9 @@ private fun BudgetRail(view: ForecastView, hex: Color, modifier: Modifier = Modi
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            RailKey(hex, 1f, "Actual", view.actualText)
-            RailKey(hex, COMMITTED_ALPHA, "Committed", view.committedText)
-            RailKey(hex, ETC_ALPHA, "Est. to complete", view.etcText)
+            RailKey(hex, 1f, str(S.desktop_cr_actual), view.actualText)
+            RailKey(hex, COMMITTED_ALPHA, str(S.desktop_cr_committed), view.committedText)
+            RailKey(hex, ETC_ALPHA, str(S.desktop_cr_est_to_complete), view.etcText)
         }
     }
 }
@@ -261,9 +271,18 @@ internal fun ModuleForecastBlock(block: AnalyticsBlock.ModuleForecast, context: 
     if (block.rows.isEmpty()) return
     val colors = analyticsColors
     Panel {
-        SectionLabel(colors.amber, block.title ?: "Spend & Forecast by Module", block.sub ?: "actual → EFC vs budget")
+        SectionLabel(
+            colors.amber,
+            block.title ?: str(S.desktop_cr_spend_forecast_by_module),
+            block.sub ?: str(S.desktop_cr_actual_efc_vs_budget),
+        )
         ForecastGridRow(Modifier.bottomRule(true, colors.line).padding(bottom = 10.dp)) {
-            listOf("Module", "Actual · Committed · ETC", "EFC", "Variance").forEachIndexed { i, header ->
+            listOf(
+                str(S.desktop_cr_module),
+                str(S.desktop_cr_actual_committed_etc),
+                str(S.desktop_cr_efc),
+                str(S.desktop_variance),
+            ).forEachIndexed { i, header ->
                 ZillitText(
                     header.uppercase(),
                     style = AnalyticsType.mono(10f, FontWeight.Bold, 0.08f),
@@ -300,6 +319,7 @@ private class ModuleFigures(row: ModuleForecastRow, currency: String?) {
     private fun share(value: Double) = (value / scale).toFloat().coerceIn(0f, 1f)
 }
 
+@Suppress("LongMethod") // One block, in one place; the sweep's wrapped calls added the lines.
 @Composable
 private fun ModuleForecastLine(row: ModuleForecastRow, context: BlockContext, last: Boolean) {
     val colors = analyticsColors
@@ -327,7 +347,12 @@ private fun ModuleForecastLine(row: ModuleForecastRow, context: BlockContext, la
                     overflow = TextOverflow.Ellipsis,
                 )
                 val ytd = AnalyticsFormat.money(meta?.total ?: row.actual, context.currency)
-                ZillitText("$ytd YTD", style = AnalyticsType.mono(11f), color = colors.ink3, maxLines = 1)
+                ZillitText(
+                    str(S.desktop_cr_ytd, ytd),
+                    style = AnalyticsType.mono(11f),
+                    color = colors.ink3,
+                    maxLines = 1,
+                )
             }
         }
         Column {
@@ -340,7 +365,7 @@ private fun ModuleForecastLine(row: ModuleForecastRow, context: BlockContext, la
                 radius = 5.dp,
             )
             ZillitText(
-                "Budget ${AnalyticsFormat.money(row.budget, context.currency)}",
+                str(S.desktop_br_budget_in_currency, AnalyticsFormat.money(row.budget, context.currency)),
                 style = AnalyticsType.mono(10f),
                 color = colors.ink4,
                 modifier = Modifier.padding(top = 3.dp),

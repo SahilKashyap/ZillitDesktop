@@ -49,6 +49,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.domain.AssetExportFormat
 
 /**
@@ -125,7 +127,7 @@ private fun ExportTrigger(busy: Boolean, enabled: Boolean, onClick: () -> Unit) 
             ZillitIcon(icon = ZillitIcons.Download, tint = colors.textSecondary, size = 13.dp)
         }
         ZillitText(
-            text = if (busy) "Exporting…" else "Export",
+            text = if (busy) str(S.desktop_exporting) else str(S.asset_export),
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
             color = colors.textSecondary,
             maxLines = 1,
@@ -147,7 +149,7 @@ private fun MenuPanel(onExport: (AssetExportFormat) -> Unit) {
             .padding(7.dp),
     ) {
         ZillitText(
-            text = "DOWNLOAD AS",
+            text = str(S.desktop_download_as),
             style = ZillitTheme.typography.labelSmall.copy(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,

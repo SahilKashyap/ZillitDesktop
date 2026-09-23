@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Who an event or note is distributed to — the web's Distribute-To value
@@ -11,14 +13,16 @@ import com.zillit.desktop.core.common.ZillitResult
  * travel on every write, arrays never null, `userPresetId` null unless the
  * mode is [AudienceMode.Presets] (plural on the wire).
  */
-enum class AudienceMode(val wire: String, val label: String) {
-    None("", "Select"),
-    Self("self", "Only Me"),
-    AllDepartments("all_departments", "All Departments"),
-    Departments("departments", "Specific Departments"),
-    Users("users", "Specific Users"),
-    Presets("presets", "Saved Preset"),
+enum class AudienceMode(val wire: String, private val labelKey: String) {
+    None("", S.select),
+    Self("self", S.ce_distribute_self),
+    AllDepartments("all_departments", S.all_departments),
+    Departments("departments", S.ce_distribute_depts),
+    Users("users", S.ce_distribute_users),
+    Presets("presets", S.desktop_bs_saved_preset),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(value: String?): AudienceMode = entries.firstOrNull { it.wire == value?.trim() } ?: None
@@ -36,13 +40,21 @@ data class DiaryAudience(
     /** The closed field's line — `DistributeToField`'s summary. Blank when nothing is chosen. */
     fun summary(presetName: String?): String = when (mode) {
         AudienceMode.None -> ""
-        AudienceMode.Self -> "Only Me"
-        AudienceMode.AllDepartments -> "All Departments"
+        AudienceMode.Self -> str(S.ce_distribute_self)
+        AudienceMode.AllDepartments -> str(S.all_departments)
         AudienceMode.Departments ->
-            if (departmentIds.isEmpty()) "Selected Departments" else "Selected Departments: ${departmentIds.size}"
+            if (departmentIds.isEmpty()) {
+                str(S.selected_departments)
+            } else {
+                str(S.desktop_bs_selected_departments_count, departmentIds.size)
+            }
         AudienceMode.Users ->
-            "${userIds.size} ${if (userIds.size == 1) "user" else "users"} selected — click to edit"
-        AudienceMode.Presets -> presetName?.takeIf { it.isNotBlank() } ?: "Preset"
+            if (userIds.size == 1) {
+                str(S.desktop_bs_one_user_selected_click_edit)
+            } else {
+                str(S.desktop_bs_users_selected_click_edit, userIds.size)
+            }
+        AudienceMode.Presets -> presetName?.takeIf { it.isNotBlank() } ?: str(S.preset)
     }
 
     /**
@@ -52,28 +64,28 @@ data class DiaryAudience(
     val chipLabel: String?
         get() = when (mode) {
             AudienceMode.None -> null
-            AudienceMode.Self -> "Only Me"
-            AudienceMode.AllDepartments -> "All Departments"
+            AudienceMode.Self -> str(S.ce_distribute_self)
+            AudienceMode.AllDepartments -> str(S.all_departments)
             AudienceMode.Departments -> when (departmentIds.size) {
-                0 -> "Departments"
-                1 -> "1 Department"
-                else -> "${departmentIds.size} Departments"
+                0 -> str(S.departments)
+                1 -> str(S.desktop_bs_one_department)
+                else -> str(S.desktop_bs_departments_count, departmentIds.size)
             }
             AudienceMode.Users -> when (userIds.size) {
                 0 -> null
-                1 -> "1 user"
-                else -> "${userIds.size} users"
+                1 -> str(S.desktop_bs_one_user)
+                else -> str(S.desktop_bs_users_count, userIds.size)
             }
-            AudienceMode.Presets -> "Preset"
+            AudienceMode.Presets -> str(S.preset)
         }
 
     /** The chip's hover line, where the web gives one. */
     val chipHint: String?
         get() = when (mode) {
-            AudienceMode.Self -> "Only the creator can see this"
-            AudienceMode.AllDepartments -> "Visible to every department"
-            AudienceMode.Departments -> if (departmentIds.isEmpty()) "No departments selected" else null
-            AudienceMode.Presets -> "Distributed to a saved user preset"
+            AudienceMode.Self -> str(S.desktop_bs_only_creator_sees)
+            AudienceMode.AllDepartments -> str(S.desktop_bs_visible_every_department)
+            AudienceMode.Departments -> if (departmentIds.isEmpty()) str(S.desktop_bs_no_departments_selected) else null
+            AudienceMode.Presets -> str(S.desktop_bs_distributed_saved_preset)
             else -> null
         }
 
@@ -82,10 +94,11 @@ data class DiaryAudience(
      * or null when it is complete. [noun] is "event" or "note".
      */
     fun problem(noun: String): String? = when {
-        mode == AudienceMode.None -> "Please choose who to distribute this $noun to"
-        mode == AudienceMode.Users && userIds.isEmpty() -> "Pick at least one user"
-        mode == AudienceMode.Departments && departmentIds.isEmpty() -> "Pick at least one department"
-        mode == AudienceMode.Presets && presetId.isNullOrBlank() -> "Select a preset"
+        mode == AudienceMode.None ->
+            str(if (noun == "note") S.desktop_bs_choose_distribute_note else S.desktop_bs_choose_distribute_event)
+        mode == AudienceMode.Users && userIds.isEmpty() -> str(S.desktop_bs_pick_one_user)
+        mode == AudienceMode.Departments && departmentIds.isEmpty() -> str(S.desktop_bs_pick_one_department)
+        mode == AudienceMode.Presets && presetId.isNullOrBlank() -> str(S.desktop_bs_select_a_preset)
         else -> null
     }
 

@@ -1,10 +1,14 @@
 package com.zillit.desktop.feature.productionreport.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ApprovalRequest
 import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
-import com.zillit.desktop.feature.productionreport.domain.CommentScope
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
+import com.zillit.desktop.feature.productionreport.domain.BadgeSurface
 import com.zillit.desktop.feature.productionreport.domain.DraftChip
 import com.zillit.desktop.feature.productionreport.domain.ManageTab
+import com.zillit.desktop.feature.productionreport.domain.ReplaceTarget
 import com.zillit.desktop.feature.productionreport.domain.ReportBadges
 import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
@@ -14,7 +18,7 @@ import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.domain.SheetMetadata
 import com.zillit.desktop.feature.productionreport.domain.StockTemplate
 import com.zillit.desktop.feature.productionreport.domain.approvalSections
-import com.zillit.desktop.feature.productionreport.domain.hasApprovalInvolvement
+import com.zillit.desktop.feature.productionreport.domain.isListedMember
 import com.zillit.desktop.feature.productionreport.domain.manageTabs
 import com.zillit.desktop.feature.productionreport.domain.resolveSection
 import com.zillit.desktop.feature.productionreport.domain.visibleBadgeCount
@@ -61,9 +65,13 @@ data class ReportUiState(
     val section: ApprovalSection = ApprovalSection.Sent,
     val lists: ReportLists = ReportLists(),
     val badges: ReportBadges = ReportBadges(),
-    /** Reports where I owe a current-round signature; null while the probe is out. */
-    val approverReportCount: Int? = null,
-    val approverProbeFailed: Boolean = false,
+    /**
+     * Has the project-metadata read finished, and did it fail? Since Sep
+     * 2026 its two lists ARE a view-only user's tab set, so "not fetched yet"
+     * and "fetched, names nobody" have to be told apart.
+     */
+    val metadataSettled: Boolean = false,
+    val metadataFailed: Boolean = false,
     val stockTemplates: List<StockTemplate> = emptyList(),
     val savedTemplates: List<SavedTemplate> = emptyList(),
     val draftChip: DraftChip = DraftChip.All,
@@ -87,18 +95,23 @@ data class ReportUiState(
     /** Posting rights or project admin — the web's `is2ndAD`. */
     val isPoster: Boolean get() = viewer.canAuthor
 
-    val isFinalApprover: Boolean get() = me.isNotBlank() && me in metadata.finalApproverIds
+    /** On the project's `final_approver_ids` — the Received section, and a viewer's Approvals tab. */
+    val isFinalApprover: Boolean get() = isListedMember(metadata.finalApproverIds, me)
 
-    val hasApprovalAccess: Boolean
-        get() = isPoster || hasApprovalInvolvement(
-            userId = me,
-            assignedReportCount = approverReportCount,
-            probeFailed = approverProbeFailed,
-            defaultApproverIds = metadata.finalApproverIds,
-            internalReceiverIds = metadata.internalReceiverIds,
-        )
+    /** On `internal_distribution_receivers` — may post in every thread, and a viewer's Drafts tab. */
+    val isInternalReceiver: Boolean get() = isListedMember(metadata.internalReceiverIds, me)
 
-    val manageTabs: List<ManageTab> get() = manageTabs(isPoster, hasApprovalAccess)
+    /**
+     * A viewer's whole workspace comes out of the metadata, so it answers
+     * only once that read has settled; posting rights alone release a poster
+     * from that wait. Visibility is additive — nothing is retracted.
+     */
+    val manageTabs: List<ManageTab>
+        get() = if (!isPoster && !metadataSettled) {
+            emptyList()
+        } else {
+            manageTabs(isPoster, isFinalApprover, isInternalReceiver, metadataFailed)
+        }
 
     val canManage: Boolean get() = manageTabs.isNotEmpty()
 
@@ -106,19 +119,23 @@ data class ReportUiState(
 
     val activeSection: ApprovalSection get() = resolveSection(sections, section)
 
-    /** Which comment map the open list reads. */
-    val commentScope: CommentScope?
+    /** The badge surface the open list is — where its row badges and reads go. */
+    val badgeSurface: BadgeSurface?
         get() = when {
             workspace != Workspace.Manage -> null
-            tab == ManageTab.Drafts -> CommentScope.Drafts
-            tab == ManageTab.Published -> CommentScope.Published
+            tab == ManageTab.Drafts -> BadgeSurface.Drafts
+            tab == ManageTab.Published -> BadgeSurface.Published
             else -> when (activeSection) {
-                ApprovalSection.Sent -> CommentScope.Sent
-                ApprovalSection.Received -> CommentScope.Received
-                ApprovalSection.Finalized -> CommentScope.Finalized
+                ApprovalSection.Sent -> BadgeSurface.Sent
+                ApprovalSection.Received -> BadgeSurface.Received
+                ApprovalSection.Finalized -> BadgeSurface.Finalized
             }
         }
 
+    /** A row's unread of one kind on the open list: REPORT beside the name, COMMENT on the kebab. */
+    fun rowBadge(row: ReportSummary, kind: BadgeKind): Int = badges.count(badgeSurface, kind, row.id)
+
+    /** ZL-20659 kept: a count on a section known to be empty is hidden. */
     fun sectionBadge(section: ApprovalSection): Int = when (section) {
         ApprovalSection.Sent -> visibleBadgeCount(badges.sent, lists.sent.rows.size, lists.sent.loaded)
         ApprovalSection.Received -> visibleBadgeCount(badges.received, lists.received.rows.size, lists.received.loaded)
@@ -130,13 +147,10 @@ data class ReportUiState(
     }
 
     /**
-     * The Approvals chip: each section's guarded count, the unmapped units,
-     * and status comments no sub-tab claims (the util's stated intent — the
-     * web's own recomputation dropped them).
+     * The Approvals chip sums only the sub-tabs this user can see (the web's
+     * `approvalsBadgeCount`): a count on a hidden sub-tab could never be cleared.
      */
-    val approvalsBadge: Int
-        get() = ApprovalSection.entries.sumOf { sectionBadge(it) } + badges.unmapped +
-            (badges.commentStatus - badges.commentSent - badges.commentReceived).coerceAtLeast(0)
+    val approvalsBadge: Int get() = sections.sumOf { sectionBadge(it) }
 
     fun tabBadge(tab: ManageTab): Int = when (tab) {
         ManageTab.Drafts -> badges.drafts
@@ -170,7 +184,11 @@ class SignatureImage(val png: ByteArray)
 /** Every dialog the tool can show; one at a time. */
 sealed interface ReportDialog {
 
-    /** The shared confirm: a warning disc, a title, a message, Cancel · confirm [· secondary]. */
+    /**
+     * The shared confirm: a warning disc, a title, a message, Cancel · confirm
+     * [· secondary]. [busy] keeps it up, spinning, until its request settles;
+     * [reportId] lets a remote delete of that report close it.
+     */
     data class Confirm(
         val action: ConfirmAction,
         val title: String,
@@ -178,18 +196,19 @@ sealed interface ReportDialog {
         val confirmLabel: String,
         val danger: Boolean,
         val secondaryLabel: String? = null,
+        val busy: Boolean = false,
+        val reportId: String? = null,
     ) : ReportDialog
 
     data class TemplatePicker(val templates: List<StockTemplate>, val selected: Int) : ReportDialog
 
-    /** "Save As" — the draft's name. */
+    /** "Save As" — its own input, never the live draft name (ZL-21540). */
     data class DraftName(val name: String) : ReportDialog
 
-    /** Send for comments (recipients) — or, from the editor, the comments/signature chooser first. */
+    /** Send for comments: the recipient picker. From the editor it saves first, then sends. */
     data class SendPicker(
         val reportId: String?,
         val fromEditor: Boolean,
-        val choosing: Boolean,
         val selected: Set<String>,
         val initial: Set<String>,
         val search: String = "",
@@ -201,13 +220,27 @@ sealed interface ReportDialog {
         val report: ReportSummary,
         val choosingDestination: Boolean = true,
         val destination: PublishDestination = PublishDestination.InApp,
-        val continuation: Boolean? = null,
+        val type: PublishType? = null,
+        /** The unit chat's live documents; empty hides the Replace card (no empty picker on a first publish). */
+        val replaceOptions: List<ReplaceTarget> = emptyList(),
+        val replaceChatId: String = "",
+    ) : ReportDialog
+
+    /** ZL-21415 "Send for Chat": one crew member gets the PDF in a 1:1 chat. */
+    data class SendForChat(
+        val report: ReportSummary,
+        val selected: String? = null,
+        val search: String = "",
+        val sending: Boolean = false,
     ) : ReportDialog
 
     data class Comments(
         val reportId: String,
         val reportName: String,
+        /** No composer: a locked report, or a viewer who is neither the creator nor a comment recipient. */
         val readOnly: Boolean,
+        /** Why the composer is missing, under the thread. */
+        val closedNote: String = str(S.desktop_pr_comments_closed_note),
         val comments: List<com.zillit.desktop.feature.productionreport.domain.ReportComment> = emptyList(),
         val loading: Boolean = true,
         val draft: String = "",
@@ -225,12 +258,18 @@ sealed interface ReportDialog {
     data class History(
         val title: String,
         val entries: List<com.zillit.desktop.feature.productionreport.domain.HistoryEntry>,
-        val emptyText: String = "No history found.",
+        val emptyText: String = str(S.desktop_no_history_found),
     ) : ReportDialog
 
+    /**
+     * ZL-21512 — Approve asks first: the chooser (with / without signature),
+     * then, on [sign], the signing screen locked to "Approve with Signature".
+     * Closes only on success, so a failed approve can be retried.
+     */
     data class Approve(
         val report: ReportSummary,
         val request: ApprovalRequest,
+        val sign: Boolean = false,
         val uploading: Boolean = false,
     ) : ReportDialog
 
@@ -238,10 +277,10 @@ sealed interface ReportDialog {
 
     data class ReminderCompose(val report: ReportSummary, val message: String = "") : ReportDialog
 
-    data class Reminders(val reminders: List<com.zillit.desktop.feature.productionreport.domain.ReportReminder>) :
-        ReportDialog
-
-    data class ChatPicker(val title: String, val userIds: List<String>) : ReportDialog
+    data class Reminders(
+        val reportId: String,
+        val reminders: List<com.zillit.desktop.feature.productionreport.domain.ReportReminder>,
+    ) : ReportDialog
 
     /** Document Distribution: confirm, then a success note naming the file. */
     data class DocDistConfirm(
@@ -255,10 +294,36 @@ sealed interface ReportDialog {
 }
 
 /** Where a publish goes. */
-enum class PublishDestination(val label: String, val hint: String, val needsDocDist: Boolean) {
-    InApp("Publish in App", "Appears in the Published tab.", false),
-    DocDist("Publish via Document Distribution", "Sends the PDF to the library only.", true),
-    Both("Publish on Both", "Published in the app and copied to the library.", true),
+enum class PublishDestination(
+    private val labelKey: String,
+    private val hintKey: String,
+    val needsDocDist: Boolean,
+) {
+    InApp(S.pub_dest_in_app, S.desktop_pub_dest_in_app_hint, false),
+    DocDist(S.pub_dest_dd, S.desktop_pub_dest_dd_hint, true),
+    Both(S.pub_dest_both, S.desktop_pub_dest_both_hint, true),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
+}
+
+/**
+ * How a publish reaches the unit chat — the composer's own three answers.
+ * The publish API knows two values, so a Replace travels as NEW and is told
+ * apart by the target it names; the wipe flag follows the CHOICE, never the
+ * presence of a target (a Replace with an empty target must append).
+ */
+enum class PublishType(val wire: String, private val labelKey: String, private val hintKey: String) {
+    Continuation("CONTINUATION", S.continuation, S.desktop_pr_publish_continuation_hint),
+    New("NEW", S.continue_new, S.desktop_pr_publish_new_hint),
+    Replace("NEW", S.replace, S.desktop_pr_publish_replace_hint),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
+
+    val wipesChat: Boolean get() = this == New
 }
 
 /** What a confirm does when accepted. */
@@ -266,6 +331,12 @@ sealed interface ConfirmAction {
     data class DeleteReport(val report: ReportSummary) : ConfirmAction
     data class DeleteTemplate(val template: SavedTemplate) : ConfirmAction
     data object NoApprovers : ConfirmAction
+
+    /** ZL-21398: a Crew Call / Unit Wrap line is empty — the send has not happened. */
+    data object MissingCallTimes : ConfirmAction
+
+    /** Nothing published for the shoot day; the report can still be filled in. */
+    data object NoPublishedCallSheet : ConfirmAction
     data class RestartReview(val then: SaveIntent) : ConfirmAction
 
     /** Unsaved changes on Back: confirm discards, secondary saves. */

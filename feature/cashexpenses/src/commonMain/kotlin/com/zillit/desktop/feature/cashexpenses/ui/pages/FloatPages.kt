@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
@@ -67,18 +69,22 @@ fun ActiveFloatsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             ZillitSearchField(
                 value = state.search,
                 onValueChange = { onEvent(CashEvent.Search(it)) },
-                placeholder = "Search by holder or reference",
+                placeholder = str(S.desktop_ce_search_floats),
                 modifier = Modifier.width(SEARCH_WIDTH),
             )
             ZillitText(
-                text = "${rows.size} float${if (rows.size == 1) "" else "s"}",
+                text = if (rows.size == 1) {
+                    str(S.desktop_ce_float_count_one, rows.size)
+                } else {
+                    str(S.desktop_ce_floats_count, rows.size)
+                },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
         }
 
         ZillitSectionCard(
-            title = "Active floats",
+            title = str(S.desktop_ce_active_floats),
             icon = ZillitIcons.Wallet,
             padded = false,
             modifier = Modifier.weight(1f),
@@ -88,11 +94,15 @@ fun ActiveFloatsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 columns = floatColumns() + floatActionColumn(state, onEvent),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = if (state.search.isBlank()) "No active floats" else "No floats match that search",
-                emptyMessage = if (state.search.isBlank()) {
-                    "Approved float requests appear here once they are issued."
+                emptyTitle = if (state.search.isBlank()) {
+                    str(S.desktop_ce_no_active_floats)
                 } else {
-                    "Clear the search to see every float."
+                    str(S.desktop_ce_no_floats_match)
+                },
+                emptyMessage = if (state.search.isBlank()) {
+                    str(S.desktop_ce_active_floats_empty)
+                } else {
+                    str(S.desktop_ce_clear_search_floats)
                 },
                 isSelected = { it.id == state.selectedFloatId },
                 onRowClick = { onEvent(CashEvent.SelectFloat(it.id)) },
@@ -114,7 +124,7 @@ private fun floatActionColumn(
     header = "",
     width = ColumnWidth.Fixed(ACTION_COLUMN),
     cell = { row ->
-        val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: "the holder"
+        val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: str(S.desktop_ce_the_holder)
         val action = row.nextAction(holder)
         if (action == null || !state.viewer.isAccountant) {
             ZillitText(
@@ -154,27 +164,27 @@ private data class FloatAction(
 /** [holder] is the name the confirmation addresses, already looked up. */
 private fun CashFloat.nextAction(holder: String): FloatAction? = when (status) {
     FloatStatus.Approved, FloatStatus.AcctOverride -> FloatAction(
-        label = "Ready to collect",
+        label = str(S.desktop_ce_ready_to_collect),
         action = ConfirmAction.ReadyToCollect,
-        message = "Tell $holder their cash is ready to pick up.",
+        message = str(S.desktop_ce_tell_holder_ready, holder),
     )
 
     FloatStatus.ReadyToCollect -> FloatAction(
-        label = "Mark collected",
+        label = str(S.desktop_ce_mark_collected),
         action = ConfirmAction.CollectFloat,
-        message = "Record that ${money(requestedAmount, currency)} was handed over.",
+        message = str(S.desktop_ce_record_handover, money(requestedAmount, currency)),
     )
 
     FloatStatus.Spent, FloatStatus.PendingReturn -> FloatAction(
-        label = "Close float",
+        label = str(S.desktop_ce_close_float),
         action = ConfirmAction.CloseFloat,
-        message = "Closing is final. Any outstanding return must be recorded first.",
+        message = str(S.desktop_ce_close_float_note),
     )
 
     FloatStatus.AwaitingApproval -> FloatAction(
-        label = "Issue",
+        label = str(S.desktop_ce_issue),
         action = ConfirmAction.IssueFloat,
-        message = "Issue this float without waiting for the approval chain.",
+        message = str(S.desktop_ce_issue_float_note),
     )
 
     else -> null
@@ -201,21 +211,20 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     ScrollingPage {
         if (existing.isNotEmpty()) {
             ZillitNotice(
-                text = "You already hold ${existing.size} float(s). " +
-                    "Ask for a top-up on Cash Extension rather than a second float.",
+                text = str(S.desktop_ce_already_hold_floats, existing.size),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Wallet,
             )
         }
 
-        ZillitSectionCard(title = "Request a float", icon = ZillitIcons.Wallet) {
+        ZillitSectionCard(title = str(S.ah_request_a_float), icon = ZillitIcons.Wallet) {
             // The amount and the purpose are what a float *is*; the form
             // template can require them but never take them away, because a
             // request without either is not a request.
             ZillitTextField(
                 value = draft.amount,
                 onValueChange = { onEvent(CashEvent.EditFloatRequest(draft.copy(amount = it))) },
-                label = "Amount needed",
+                label = str(S.desktop_ce_amount_needed),
                 placeholder = "0.00",
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.fillMaxWidth(),
@@ -223,8 +232,8 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             ZillitTextField(
                 value = draft.purpose,
                 onValueChange = { onEvent(CashEvent.EditFloatRequest(draft.copy(purpose = it))) },
-                label = "What is it for",
-                placeholder = "Set dressing consumables for the week",
+                label = str(S.desktop_ce_what_is_it_for),
+                placeholder = str(S.desktop_ce_float_purpose_placeholder),
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -240,9 +249,9 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                                 onEvent(CashEvent.EditFloatRequest(draft.copy(duration = it)))
                             },
                             label = if (required(CashFormFields.DURATION)) {
-                                "How long for (required)"
+                                str(S.desktop_ce_how_long_for_required)
                             } else {
-                                "How long for"
+                                str(S.desktop_ce_how_long_for)
                             },
                             placeholder = "2",
                             keyboardType = KeyboardType.Number,
@@ -252,7 +261,7 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                     if (shows(CashFormFields.DURATION_TYPE)) {
                         Column(modifier = Modifier.weight(1f)) {
                             ZillitText(
-                                text = "Unit",
+                                text = str(S.dm_step2_unit),
                                 style = ZillitTheme.typography.label,
                                 color = ZillitTheme.colors.textSecondary,
                             )
@@ -276,27 +285,27 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitButton(
-                    text = "Send request",
+                    text = str(S.av_send_request),
                     onClick = { onEvent(CashEvent.SubmitFloatRequest) },
                     leadingIcon = ZillitIcons.Send,
                     loading = state.busy,
                 )
                 ZillitButton(
-                    text = "Clear",
+                    text = str(S.ah_clear),
                     onClick = { onEvent(CashEvent.EditFloatRequest(FloatRequestDraft())) },
                     variant = ButtonVariant.Tertiary,
                 )
             }
         }
 
-        ZillitSectionCard(title = "Your floats", icon = ZillitIcons.Ledger, padded = false) {
+        ZillitSectionCard(title = str(S.desktop_ce_your_floats), icon = ZillitIcons.Ledger, padded = false) {
             ZillitDataTable(
                 rows = state.myFloats,
                 columns = crewFloatColumns(),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "No floats yet",
-                emptyMessage = "Once a request is approved it appears here with its balance.",
+                emptyTitle = str(S.desktop_ce_no_floats_yet),
+                emptyMessage = str(S.desktop_ce_your_floats_empty),
                 virtualised = false,
             )
         }
@@ -310,6 +319,7 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
  * team: a top-up lands in their top-up inbox and adds to a float that already
  * has a balance and a history.
  */
+@Suppress("LongMethod") // One page, laid out in one place; the sweep's wrapped calls added the lines.
 @Composable
 fun CashExtensionPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val activeFloat = state.myFloats.firstOrNull { it.status.isOutstanding }
@@ -317,14 +327,14 @@ fun CashExtensionPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     ScrollingPage {
         if (activeFloat == null) {
             ZillitNotice(
-                text = "You have no float to extend. Request one first.",
+                text = str(S.desktop_ce_no_float_to_extend),
                 tone = StatusTone.Progress,
             )
             return@ScrollingPage
         }
 
         ZillitSectionCard(
-            title = "Top up ${activeFloat.requestNumber}",
+            title = str(S.desktop_card_top_up_card, activeFloat.requestNumber),
             icon = ZillitIcons.Wallet,
             meta = activeFloat.status.label,
         ) {
@@ -335,21 +345,24 @@ fun CashExtensionPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                         style = ZillitTheme.typography.displayLarge,
                     )
                     ZillitText(
-                        text = "remaining of ${money(activeFloat.issuedAmount, activeFloat.currency)}",
+                        text = str(
+                            S.desktop_ce_remaining_of,
+                            money(activeFloat.issuedAmount, activeFloat.currency),
+                        ),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textSecondary,
                     )
                 }
                 ZillitButton(
-                    text = "Request top-up",
+                    text = str(S.desktop_card_request_top_up),
                     onClick = {
                         onEvent(
                             CashEvent.Ask(
                                 CashPrompt.WithAmount(
                                     action = AmountAction.RequestFloatTopUp,
                                     targetId = activeFloat.id,
-                                    title = "Request a top-up",
-                                    label = "How much more do you need",
+                                    title = str(S.desktop_card_request_a_top_up),
+                                    label = str(S.desktop_card_how_much_more),
                                 ),
                             ),
                         )
@@ -360,14 +373,18 @@ fun CashExtensionPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             }
         }
 
-        ZillitSectionCard(title = "Top-ups on this float", icon = ZillitIcons.Ledger, padded = false) {
+        ZillitSectionCard(
+            title = str(S.desktop_ce_topups_on_this_float),
+            icon = ZillitIcons.Ledger,
+            padded = false,
+        ) {
             ZillitDataTable(
                 rows = state.floatTopUps,
                 columns = topUpColumns(showHolder = false),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "No top-ups requested",
-                emptyMessage = "Every top-up you ask for shows here with what the accounts team did with it.",
+                emptyTitle = str(S.desktop_card_no_topups_requested),
+                emptyMessage = str(S.desktop_ce_topups_empty),
                 virtualised = false,
             )
         }
@@ -379,9 +396,9 @@ fun CashExtensionPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 fun TopUpsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     FixedPage {
         ZillitSectionCard(
-            title = "Top-up requests",
+            title = str(S.desktop_card_topup_requests),
             icon = ZillitIcons.Wallet,
-            meta = "${state.topUps.count { it.status == PENDING }} pending",
+            meta = str(S.desktop_card_pending_count, state.topUps.count { it.status == PENDING }),
             padded = false,
             modifier = Modifier.weight(1f),
         ) {
@@ -390,8 +407,8 @@ fun TopUpsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 columns = topUpColumns(showHolder = true) + topUpActionColumn(state, onEvent),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "Nothing waiting",
-                emptyMessage = "Crew top-up requests land here as they are raised.",
+                emptyTitle = str(S.desktop_nothing_waiting),
+                emptyMessage = str(S.desktop_ce_topup_queue_empty),
             )
         }
     }
@@ -405,7 +422,7 @@ private fun topUpActionColumn(
     header = "",
     width = ColumnWidth.Fixed(TOPUP_ACTION_COLUMN),
     cell = { row ->
-        val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: "the holder"
+        val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: str(S.desktop_ce_the_holder)
         if (row.status != PENDING) {
             ZillitText(
                 text = "—",
@@ -415,15 +432,19 @@ private fun topUpActionColumn(
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitButton(
-                    text = "Pay",
+                    text = str(S.desktop_pay),
                     onClick = {
                         onEvent(
                             CashEvent.Ask(
                                 CashPrompt.Confirm(
                                     action = ConfirmAction.CompleteTopUp,
                                     targetId = row.id,
-                                    title = "Complete top-up",
-                                    message = "Record ${money(row.amount, row.currency)} handed to $holder.",
+                                    title = str(S.desktop_ce_complete_topup),
+                                    message = str(
+                                        S.desktop_ce_record_topup_handed,
+                                        money(row.amount, row.currency),
+                                        holder,
+                                    ),
                                 ),
                             ),
                         )
@@ -432,15 +453,15 @@ private fun topUpActionColumn(
                     enabled = !state.busy,
                 )
                 ZillitButton(
-                    text = "Part",
+                    text = str(S.desktop_card_part),
                     onClick = {
                         onEvent(
                             CashEvent.Ask(
                                 CashPrompt.WithAmount(
                                     action = AmountAction.PartialTopUp,
                                     targetId = row.id,
-                                    title = "Partial top-up",
-                                    label = "Amount handed over",
+                                    title = str(S.ah_partial_topup),
+                                    label = str(S.desktop_ce_amount_handed_over),
                                 ),
                             ),
                         )
@@ -450,15 +471,15 @@ private fun topUpActionColumn(
                     enabled = !state.busy,
                 )
                 ZillitButton(
-                    text = "Skip",
+                    text = str(S.skip),
                     onClick = {
                         onEvent(
                             CashEvent.Ask(
                                 CashPrompt.Confirm(
                                     action = ConfirmAction.SkipTopUp,
                                     targetId = row.id,
-                                    title = "Skip this top-up",
-                                    message = "The request is closed without cash changing hands.",
+                                    title = str(S.desktop_card_skip_this_topup),
+                                    message = str(S.desktop_ce_skip_topup_note),
                                 ),
                             ),
                         )
@@ -477,19 +498,23 @@ private fun topUpColumns(showHolder: Boolean): List<TableColumn<CashTopUp>> = bu
     if (showHolder) {
         // The web treats a top-up's `holder_name` as the holder's id when
         // `user_id` is missing, so it is only a fallback for the lookup.
-        add(personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
+        add(personColumn(str(S.ah_holder), ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
     }
-    add(textColumn("Float", ColumnWidth.Weight(1f), muted = true) { it.floatRequestNumber ?: "—" })
-    add(textColumn("Requested", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
-    add(textColumn("Float balance", ColumnWidth.Weight(1f), numeric = true) { money(it.floatBalance, it.currency) })
-    add(textColumn("Raised", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
+    add(textColumn(str(S.ah_col_float), ColumnWidth.Weight(1f), muted = true) { it.floatRequestNumber ?: "—" })
+    add(textColumn(str(S.av_chip_requested), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
+    add(
+        textColumn(str(S.desktop_ce_float_balance), ColumnWidth.Weight(1f), numeric = true) {
+            money(it.floatBalance, it.currency)
+        },
+    )
+    add(textColumn(str(S.desktop_card_raised), ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
     add(
         TableColumn(
-            header = "Status",
+            header = str(S.status),
             width = ColumnWidth.Fixed(TOPUP_STATUS_COLUMN),
             cell = { row ->
                 ZillitStatusPill(
-                    label = row.status.replaceFirstChar { it.uppercase() }.ifBlank { "Pending" },
+                    label = row.status.replaceFirstChar { it.uppercase() }.ifBlank { str(S.pending) },
                     tone = when (row.status) {
                         COMPLETED -> StatusTone.Done
                         PARTIAL -> StatusTone.Progress
@@ -505,13 +530,15 @@ private fun topUpColumns(showHolder: Boolean): List<TableColumn<CashTopUp>> = bu
 
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 private fun crewFloatColumns(): List<TableColumn<CashFloat>> = listOf(
-    textColumn("Reference", ColumnWidth.Weight(1f)) { it.requestNumber.ifBlank { "—" } },
-    textColumn("Requested", ColumnWidth.Weight(1f), numeric = true) { money(it.requestedAmount, it.currency) },
-    textColumn("Issued", ColumnWidth.Weight(1f), numeric = true) { money(it.issuedAmount, it.currency) },
-    textColumn("Balance", ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) },
-    textColumn("Asked on", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) },
+    textColumn(str(S.desktop_reference), ColumnWidth.Weight(1f)) { it.requestNumber.ifBlank { "—" } },
+    textColumn(str(S.av_chip_requested), ColumnWidth.Weight(1f), numeric = true) {
+        money(it.requestedAmount, it.currency)
+    },
+    textColumn(str(S.desktop_issued), ColumnWidth.Weight(1f), numeric = true) { money(it.issuedAmount, it.currency) },
+    textColumn(str(S.ah_balance_label), ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) },
+    textColumn(str(S.desktop_ce_asked_on), ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) },
     TableColumn(
-        header = "Status",
+        header = str(S.status),
         width = ColumnWidth.Fixed(FLOAT_STATUS_COLUMN),
         cell = { FloatStatusPill(it.status) },
     ),
@@ -564,7 +591,7 @@ private fun ColumnScope.FloatCustomFields(state: CashUiState, onEvent: (CashEven
                     ),
                 )
             },
-            label = if (field.required) "${field.name} (required)" else field.name,
+            label = if (field.required) str(S.desktop_ce_field_required, field.name) else field.name,
             helperText = field.typeLabel.takeIf { field.knownType == null },
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
@@ -586,9 +613,7 @@ private fun ColumnScope.FloatUnansweredNotice(state: CashUiState) {
         .requiredMissing(CashFormFields.FLOAT_REQUEST, CashFormFields.RENDERED)
     if (missing.isEmpty()) return
     ZillitNotice(
-        text = "This production also requires ${missing.joinToString(", ") { it.name }} on a " +
-            "float request. Those are filled in on the web, not here, so this request may " +
-            "come back.",
+        text = str(S.desktop_ce_web_only_fields, missing.joinToString(", ") { it.name }),
         tone = StatusTone.Pending,
         icon = ZillitIcons.Info,
     )

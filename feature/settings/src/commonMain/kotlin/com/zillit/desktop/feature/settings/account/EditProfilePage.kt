@@ -21,6 +21,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The crew member's own profile.
@@ -47,9 +49,7 @@ fun EditProfilePage(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
         if (!seed.isAdmin) {
             ZillitNotice(
-                text = "You are not an administrator on this project, so changes here are " +
-                    "sent for approval rather than applied. Your profile updates once an " +
-                    "admin accepts them.",
+                text = str(S.desktop_profile_not_admin_notice),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )
@@ -68,7 +68,7 @@ fun EditProfilePage(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Undo changes",
+                text = str(S.desktop_undo_changes),
                 variant = ButtonVariant.Tertiary,
                 enabled = !form.isSaving,
                 onClick = { onEvent(AccountEvent.ResetProfile) },
@@ -76,7 +76,7 @@ fun EditProfilePage(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
             ZillitButton(
                 // Names what the button will actually do, which differs by who
                 // is pressing it.
-                text = if (seed.isAdmin) "Save profile" else "Send for approval",
+                text = if (seed.isAdmin) str(S.desktop_save_profile) else str(S.av_send_for_approval),
                 enabled = form.canSave,
                 loading = form.isSaving,
                 onClick = { onEvent(AccountEvent.SaveProfile) },
@@ -87,7 +87,7 @@ fun EditProfilePage(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
 
 @Composable
 private fun NameCard(form: ProfileFormState, seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
-    ZillitSectionCard(title = "Your name", icon = ZillitIcons.User) {
+    ZillitSectionCard(title = str(S.docusign_type_hint), icon = ZillitIcons.User) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -105,28 +105,27 @@ private fun NameCard(form: ProfileFormState, seed: ProfileSeed, onEvent: (Accoun
             ZillitTextField(
                 value = form.firstName,
                 onValueChange = { onEvent(AccountEvent.FirstNameChanged(it)) },
-                label = "First name",
+                label = str(S.first_name_label),
                 modifier = Modifier.weight(1f),
                 enabled = !form.isSaving,
                 // Said on the field rather than as a toast on submit: the user
                 // is looking here, and both phone clients answer an empty name
                 // with an alert that hides which one it meant.
-                errorText = "Required".takeIf { form.firstName.isBlank() },
+                errorText = str(S.docusign_prop_required).takeIf { form.firstName.isBlank() },
             )
             ZillitTextField(
                 value = form.lastName,
                 onValueChange = { onEvent(AccountEvent.LastNameChanged(it)) },
-                label = "Last name",
+                label = str(S.last_name_label),
                 modifier = Modifier.weight(1f),
                 enabled = !form.isSaving,
-                errorText = "Required".takeIf { form.lastName.isBlank() },
+                errorText = str(S.docusign_prop_required).takeIf { form.lastName.isBlank() },
             )
         }
 
         if (seed.email.isNotBlank()) {
             ZillitText(
-                text = "Signed in as ${seed.email}. Your address is set when the device is " +
-                    "registered and cannot be changed here.",
+                text = str(S.desktop_signed_in_as_email_fixed, seed.email),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -147,13 +146,12 @@ private fun PlacementCard(
     onEvent: (AccountEvent) -> Unit,
 ) {
     ZillitSectionCard(
-        title = "Department and role",
+        title = str(S.desktop_department_and_role),
         icon = ZillitIcons.Tools,
-        meta = "Decides which boards and tools you see".takeIf { !form.isLoadingDepartments },
+        meta = str(S.desktop_department_and_role_meta).takeIf { !form.isLoadingDepartments },
     ) {
         ZillitText(
-            text = "Changing your department moves which notices, call sheets and tools reach " +
-                "you. Pick the department first — the roles below belong to it.",
+            text = str(S.desktop_department_and_role_hint),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -199,11 +197,10 @@ private fun SaveOutcomeNotice(outcome: ProfileSaveOutcome) {
     ZillitNotice(
         text = when (outcome) {
             ProfileSaveOutcome.Saved ->
-                "Saved. The crew list and everything you have posted now carry the new details."
+                str(S.desktop_profile_saved_notice)
 
             ProfileSaveOutcome.SentForApproval ->
-                "Sent. An administrator sees this in “Approve profile changes”; " +
-                    "your profile is unchanged until one accepts it."
+                str(S.desktop_profile_sent_notice)
         },
         tone = StatusTone.Ready,
         icon = ZillitIcons.Check,
@@ -224,12 +221,11 @@ private fun PrivateNameRow(form: ProfileFormState, onEvent: (AccountEvent) -> Un
         ZillitCheckbox(
             checked = form.keepNamePrivate,
             onCheckedChange = { onEvent(AccountEvent.PrivateNameChanged(it)) },
-            label = "Keep my name off the crew list",
+            label = str(S.desktop_keep_name_off_crew_list),
             enabled = !form.isSaving,
         )
         ZillitText(
-            text = "Your role still appears and people can still write to you — your name " +
-                "is withheld from lists and generated documents.",
+            text = str(S.desktop_keep_name_off_crew_list_hint),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -244,15 +240,15 @@ private fun PrivateNameRow(form: ProfileFormState, onEvent: (AccountEvent) -> Un
  * exactly when it matters.
  */
 private fun departmentPlaceholder(form: ProfileFormState): String = when {
-    form.isLoadingDepartments -> "Loading departments…"
-    form.departments.isEmpty() -> "No departments on this project"
-    else -> "Choose a department"
+    form.isLoadingDepartments -> str(S.desktop_loading_departments)
+    form.departments.isEmpty() -> str(S.desktop_no_departments_on_project)
+    else -> str(S.desktop_choose_a_department)
 }
 
 private fun rolePlaceholder(form: ProfileFormState): String = when {
-    form.departmentId == null -> "Choose a department first"
-    form.roles.isEmpty() -> "This department has no roles yet"
-    else -> "Choose a role"
+    form.departmentId == null -> str(S.desktop_choose_a_department_first)
+    form.roles.isEmpty() -> str(S.desktop_department_has_no_roles)
+    else -> str(S.desktop_choose_a_role)
 }
 
 private val AVATAR = 44.dp
@@ -268,11 +264,11 @@ private fun MailboxConsentRow(form: ProfileFormState, onEvent: (AccountEvent) ->
         ZillitCheckbox(
             checked = form.showMailboxInCrewList,
             onCheckedChange = { onEvent(AccountEvent.MailboxConsentChanged(it)) },
-            label = "Show my Zillit mailbox address in the crew list",
+            label = str(S.desktop_show_mailbox_in_crew_list),
             enabled = !form.isSaving,
         )
         ZillitText(
-            text = "${form.mailboxAddress.orEmpty()} appears next to your name so the crew can write to it.",
+            text = str(S.desktop_mailbox_appears_next_to_name, form.mailboxAddress.orEmpty()),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )

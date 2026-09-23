@@ -25,6 +25,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 
 /**
@@ -147,7 +149,7 @@ private fun Placement(
 
     if (presets.isLoading) ReadingChoices()
 
-    Field(label = "Department") {
+    Field(label = str(S.department)) {
         ZillitSelect(
             value = departments.firstOrNull { it?.id == review.departmentId },
             options = listOf<CrewDepartment?>(null) + departments.filterNotNull(),
@@ -160,7 +162,7 @@ private fun Placement(
     }
 
     Field(
-        label = "Role",
+        label = str(S.recce_field_role),
         // Says why it is empty rather than showing an inert picker: a role
         // list is empty because its department has none, not because the form
         // is broken.
@@ -183,7 +185,7 @@ private fun Placement(
     // Only when joining. A profile change never moves someone between units —
     // the server's change-request payload has no field for it.
     if (review.queue == ApprovalQueue.NewCrew) {
-        Field(label = "Unit") {
+        Field(label = str(S.dm_step2_unit)) {
             ZillitSelect(
                 value = units.firstOrNull { it?.id == review.unitId },
                 options = listOf<ProductionUnit?>(null) + units.filterNotNull(),
@@ -198,7 +200,7 @@ private fun Placement(
     ZillitCheckbox(
         checked = review.keepNamePrivate,
         onCheckedChange = { onEvent(ApprovalsEvent.Review.PrivacyChanged(it)) },
-        label = "Keep their name off crew lists",
+        label = str(S.desktop_keep_their_name_off_crew_lists),
     )
 
     if (presets.failed) ChoicesUnavailable()
@@ -212,7 +214,7 @@ private fun ReadingChoices() {
     ) {
         ZillitSpinner(size = SMALL_SPINNER)
         ZillitText(
-            text = "Reading this project's departments…",
+            text = str(S.desktop_reading_departments),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -235,8 +237,7 @@ private fun ChoicesUnavailable() {
         ZillitText(
             // Approving is still the right thing to be able to do: what the
             // person asked for is usually what they should get.
-            text = "The project's departments could not be read. " +
-                "Approving keeps what they asked for.",
+            text = str(S.desktop_departments_unreadable_approving_keeps),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -276,7 +277,7 @@ private fun Actions(saving: Boolean, onEvent: (ApprovalsEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitButton(
-            text = "Decline",
+            text = str(S.decline),
             variant = ButtonVariant.Danger,
             enabled = !saving,
             onClick = { onEvent(ApprovalsEvent.Review.Decline) },
@@ -291,12 +292,12 @@ private fun Actions(saving: Boolean, onEvent: (ApprovalsEvent) -> Unit) {
             }
         } else {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(ApprovalsEvent.Review.Close) },
             )
             ZillitButton(
-                text = "Approve",
+                text = str(S.approve),
                 onClick = { onEvent(ApprovalsEvent.Review.Approve) },
             )
         }
@@ -326,12 +327,12 @@ private fun PendingApproval.asRole(id: String?): List<CrewRole> =
 
 private val ApprovalQueue.reviewTitle: String
     get() = when (this) {
-        ApprovalQueue.NewCrew -> "Let them onto the project?"
-        ApprovalQueue.ProfileChanges -> "Approve this change?"
+        ApprovalQueue.NewCrew -> str(S.desktop_let_them_onto_project)
+        ApprovalQueue.ProfileChanges -> str(S.desktop_approve_this_change)
     }
 
-private const val NOT_SET = "Not set"
-private const val UNKNOWN = "Their own choice"
+private val NOT_SET: String get() = str(S.dm_gpr_not_set)
+private val UNKNOWN: String get() = str(S.desktop_their_own_choice)
 private val DIALOG_WIDTH = 520.dp
 private val FIELD_WIDTH = 240.dp
 private val AVATAR = 40.dp

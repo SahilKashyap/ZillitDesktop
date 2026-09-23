@@ -111,7 +111,7 @@ class BoardToolTest {
         val state = CastingUiState(viewer = CastingViewer.from(permissions, BoardTool.Casting))
 
         assertEquals("Casting", state.title(BoardTool.Casting.title))
-        assertEquals("Main cast", state.viewer.units.single().label)
+        assertEquals("Main Cast", state.viewer.units.single().label)
     }
 
     /** Only wardrobe draws them, whatever a row happens to carry. */

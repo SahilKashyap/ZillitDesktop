@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.ui.BatchStatusPill
@@ -57,33 +59,33 @@ fun PettyCashOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         StatRow(
             listOf(
                 StatTileSpec(
-                    label = "Active floats",
+                    label = str(S.desktop_ce_active_floats),
                     value = overview?.stats?.activeFloats?.toString() ?: "—",
-                    sub = "Cash out with crew",
+                    sub = str(S.desktop_ce_cash_out_with_crew),
                     tone = StatusTone.Ready,
                     icon = ZillitIcons.Wallet,
                     onClick = { onEvent(CashEvent.Open(CashDestination.ActiveFloats)) },
                 ),
                 StatTileSpec(
-                    label = "Awaiting audit",
+                    label = str(S.desktop_ce_awaiting_audit),
                     value = overview?.stats?.awaitingAudit?.toString() ?: "—",
-                    sub = "Tax extraction pending",
+                    sub = str(S.desktop_ce_tax_extraction_pending),
                     tone = StatusTone.Progress,
                     icon = ZillitIcons.Receipt,
                     onClick = { onEvent(CashEvent.Open(CashDestination.AuditQueue)) },
                 ),
                 StatTileSpec(
-                    label = "Awaiting approval",
+                    label = str(S.av_subtab_awaiting_approval),
                     value = overview?.stats?.awaitingApproval?.toString() ?: "—",
-                    sub = "With the approvers",
+                    sub = str(S.desktop_ce_with_the_approvers),
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Shield,
                     onClick = { onEvent(CashEvent.Open(CashDestination.ApprovalQueue)) },
                 ),
                 StatTileSpec(
-                    label = "Ready to post",
+                    label = str(S.ah_ready_to_post),
                     value = overview?.stats?.readyToPost?.toString() ?: "—",
-                    sub = money(overview?.stats?.readyToPostAmount, currency) + " to ledger",
+                    sub = str(S.desktop_ce_amount_to_ledger, money(overview?.stats?.readyToPostAmount, currency)),
                     tone = StatusTone.Done,
                     icon = ZillitIcons.Ledger,
                     onClick = { onEvent(CashEvent.Open(CashDestination.PostLedger)) },
@@ -93,12 +95,12 @@ fun PettyCashOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
         if ((overview?.stats?.escalated ?: 0) > 0) {
             ZillitNotice(
-                text = "${overview?.stats?.escalated} batch(es) escalated for senior sign-off.",
+                text = str(S.desktop_ce_escalated_count, overview?.stats?.escalated ?: 0),
                 tone = StatusTone.Escalated,
                 icon = ZillitIcons.Shield,
                 action = {
                     ZillitButton(
-                        text = "Open sign-off",
+                        text = str(S.desktop_ce_open_sign_off),
                         onClick = { onEvent(CashEvent.Open(CashDestination.PettyCashSignOff)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -109,13 +111,15 @@ fun PettyCashOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
         if ((overview?.summary?.oopBacsQueued ?: 0.0) > 0) {
             ZillitNotice(
-                text = "BACS file not yet generated — " +
-                    "${money(overview?.summary?.oopBacsQueued, currency)} waiting to pay.",
+                text = str(
+                    S.desktop_ce_bacs_not_generated,
+                    money(overview?.summary?.oopBacsQueued, currency),
+                ),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Bank,
                 action = {
                     ZillitButton(
-                        text = "Payment routing",
+                        text = str(S.desktop_ce_payment_routing),
                         onClick = { onEvent(CashEvent.Open(CashDestination.PaymentRouting)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -129,22 +133,28 @@ fun PettyCashOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             ZillitSectionCard(
-                title = "Cash position",
+                title = str(S.desktop_ce_cash_position),
                 icon = ZillitIcons.Bank,
                 modifier = Modifier.weight(1f),
             ) {
-                SummaryLine("Total petty cash issued", money(overview?.summary?.totalPettyCashIssued, currency))
-                SummaryLine("Receipts approved", money(overview?.summary?.totalReceiptsApproved, currency))
-                SummaryLine("Cash still to account for", money(overview?.summary?.cashToAccount, currency))
-                SummaryLine("VAT recoverable", money(overview?.summary?.vatRecoverable, currency))
-                SummaryLine("Out of pocket — BACS queued", money(overview?.summary?.oopBacsQueued, currency))
-                SummaryLine("Out of pocket — payroll", money(overview?.summary?.oopPayrollAdditions, currency))
+                SummaryLine(
+                    str(S.desktop_ce_total_petty_cash_issued),
+                    money(overview?.summary?.totalPettyCashIssued, currency),
+                )
+                SummaryLine(
+                    str(S.desktop_ce_receipts_approved),
+                    money(overview?.summary?.totalReceiptsApproved, currency),
+                )
+                SummaryLine(str(S.desktop_ce_cash_to_account_for), money(overview?.summary?.cashToAccount, currency))
+                SummaryLine(str(S.desktop_ce_vat_recoverable), money(overview?.summary?.vatRecoverable, currency))
+                SummaryLine(str(S.desktop_ce_oop_bacs_queued), money(overview?.summary?.oopBacsQueued, currency))
+                SummaryLine(str(S.desktop_ce_oop_payroll), money(overview?.summary?.oopPayrollAdditions, currency))
             }
 
             ZillitSectionCard(
-                title = "Outstanding",
+                title = str(S.desktop_outstanding),
                 icon = ZillitIcons.Wallet,
-                meta = "${overview?.floats?.size ?: 0} floats",
+                meta = str(S.desktop_ce_floats_count, overview?.floats?.size ?: 0),
                 modifier = Modifier.weight(1f),
             ) {
                 ZillitText(
@@ -152,7 +162,7 @@ fun PettyCashOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                     style = ZillitTheme.typography.displayLarge,
                 )
                 ZillitText(
-                    text = "Cash issued and not yet accounted for.",
+                    text = str(S.desktop_ce_cash_not_accounted),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -163,14 +173,14 @@ fun PettyCashOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             }
         }
 
-        ZillitSectionCard(title = "Floats on this project", icon = ZillitIcons.Users, padded = false) {
+        ZillitSectionCard(title = str(S.desktop_ce_floats_on_project), icon = ZillitIcons.Users, padded = false) {
             ZillitDataTable(
                 rows = overview?.floats.orEmpty(),
                 columns = floatColumns(),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "No floats issued",
-                emptyMessage = "Float requests appear here once crew ask for cash.",
+                emptyTitle = str(S.desktop_ce_no_floats_issued),
+                emptyMessage = str(S.desktop_ce_floats_empty),
                 onRowClick = { onEvent(CashEvent.Open(CashDestination.ActiveFloats)) },
                 virtualised = false,
             )
@@ -187,7 +197,7 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
     ScrollingPage {
         ZillitNotice(
-            text = "Crew are reimbursed by BACS or through payroll for expenses they paid personally.",
+            text = str(S.desktop_ce_oop_intro),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Receipt,
         )
@@ -195,30 +205,30 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         StatRow(
             listOf(
                 StatTileSpec(
-                    label = "Pending claims",
+                    label = str(S.desktop_ce_pending_claims),
                     value = overview?.pendingClaims?.toString() ?: "—",
-                    sub = "Awaiting routing or approval",
+                    sub = str(S.desktop_ce_awaiting_routing),
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Receipt,
                 ),
                 StatTileSpec(
-                    label = "Total claimed",
+                    label = str(S.desktop_ce_total_claimed),
                     value = money(overview?.totalClaimed, currency),
-                    sub = "Across every open claim",
+                    sub = str(S.desktop_ce_across_open_claims),
                     icon = ZillitIcons.BarChart,
                 ),
                 StatTileSpec(
-                    label = "BACS ready",
+                    label = str(S.desktop_ce_bacs_ready),
                     value = money(overview?.bacsReady, currency),
-                    sub = "Approved, awaiting the file",
+                    sub = str(S.desktop_ce_approved_awaiting_file),
                     tone = StatusTone.Ready,
                     icon = ZillitIcons.Bank,
                     onClick = { onEvent(CashEvent.Open(CashDestination.PaymentRouting)) },
                 ),
                 StatTileSpec(
-                    label = "Payroll additions",
+                    label = str(S.desktop_ce_payroll_additions),
                     value = money(overview?.payrollAuto, currency),
-                    sub = "Routed to the next run",
+                    sub = str(S.desktop_ce_routed_to_next_run),
                     tone = StatusTone.Done,
                     icon = ZillitIcons.Users,
                 ),
@@ -229,23 +239,27 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
-            ZillitSectionCard(title = "Routing split", icon = ZillitIcons.Bank, modifier = Modifier.weight(1f)) {
+            ZillitSectionCard(
+                title = str(S.desktop_ce_routing_split),
+                icon = ZillitIcons.Bank,
+                modifier = Modifier.weight(1f),
+            ) {
                 val routing = overview?.routing
                 val total = routing?.total?.takeIf { it > 0 } ?: 1.0
                 RoutingBar("BACS", routing?.bacs ?: 0.0, total, currency, StatusTone.Progress)
-                RoutingBar("Payroll", routing?.payroll ?: 0.0, total, currency, StatusTone.Done)
+                RoutingBar(str(S.dm_step9_title), routing?.payroll ?: 0.0, total, currency, StatusTone.Done)
             }
 
             ZillitSectionCard(
-                title = "Spend by category",
+                title = str(S.desktop_ce_spend_by_category),
                 icon = ZillitIcons.BarChart,
                 modifier = Modifier.weight(1f),
             ) {
                 val rows = overview?.spendByCategory.orEmpty()
                 if (rows.isEmpty()) {
                     ZillitEmptyState(
-                        title = "Nothing claimed yet",
-                        message = "Categories appear as claims are coded.",
+                        title = str(S.desktop_ce_nothing_claimed_yet),
+                        message = str(S.desktop_ce_categories_appear),
                     )
                 } else {
                     val max = rows.maxOf { it.amount }.takeIf { it > 0 } ?: 1.0
@@ -256,14 +270,14 @@ fun OutOfPocketOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             }
         }
 
-        ZillitSectionCard(title = "Claims", icon = ZillitIcons.Receipt, padded = false) {
+        ZillitSectionCard(title = str(S.desktop_ce_claims), icon = ZillitIcons.Receipt, padded = false) {
             ZillitDataTable(
                 rows = overview?.batches.orEmpty(),
                 columns = batchColumns(state.viewer.isAccountant),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "No out-of-pocket claims",
-                emptyMessage = "Claims appear here as crew submit receipts they paid for themselves.",
+                emptyTitle = str(S.desktop_ce_no_oop_claims),
+                emptyMessage = str(S.desktop_ce_claims_empty),
                 onRowClick = { onEvent(CashEvent.SelectBatch(it.id)) },
                 isSelected = { it.id == state.selectedBatchId },
                 virtualised = false,
@@ -287,7 +301,11 @@ fun MyOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
     ScrollingPage {
         if (activeFloat != null) {
-            ZillitSectionCard(title = "Your float", icon = ZillitIcons.Wallet, meta = activeFloat.requestNumber) {
+            ZillitSectionCard(
+                title = str(S.desktop_ce_your_float),
+                icon = ZillitIcons.Wallet,
+                meta = activeFloat.requestNumber,
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         ZillitText(
@@ -295,7 +313,10 @@ fun MyOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                             style = ZillitTheme.typography.displayLarge,
                         )
                         ZillitText(
-                            text = "left of ${money(activeFloat.issuedAmount, activeFloat.currency)} issued",
+                            text = str(
+                                S.desktop_ce_left_of_issued,
+                                money(activeFloat.issuedAmount, activeFloat.currency),
+                            ),
                             style = ZillitTheme.typography.bodySmall,
                             color = ZillitTheme.colors.textSecondary,
                         )
@@ -314,14 +335,14 @@ fun MyOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 Spacer(Modifier.padding(ZillitTheme.spacing.xs))
                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                     ZillitButton(
-                        text = "Submit receipts",
+                        text = str(S.desktop_ce_submit_receipts),
                         onClick = { onEvent(CashEvent.Open(CashDestination.SubmitReceipts)) },
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Add,
                         enabled = activeFloat.status.isSubmittable,
                     )
                     ZillitButton(
-                        text = "Ask for more cash",
+                        text = str(S.desktop_ce_ask_for_more_cash),
                         onClick = { onEvent(CashEvent.Open(CashDestination.CashExtension)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -330,11 +351,11 @@ fun MyOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             }
         } else {
             ZillitNotice(
-                text = "You have no active float. Request one to start spending against petty cash.",
+                text = str(S.desktop_ce_no_active_float),
                 tone = StatusTone.Progress,
                 action = {
                     ZillitButton(
-                        text = "Request a float",
+                        text = str(S.ah_request_a_float),
                         onClick = { onEvent(CashEvent.Open(CashDestination.FloatRequest)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -347,32 +368,32 @@ fun MyOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             .filter { it.status.needsSubmitterAction }
         if (needsAction.isNotEmpty()) {
             ZillitNotice(
-                text = "${needsAction.size} of your batches came back — they need correcting and resubmitting.",
+                text = str(S.desktop_ce_your_batches_came_back, needsAction.size),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
             )
         }
 
-        ZillitSectionCard(title = "Petty cash receipts", icon = ZillitIcons.Receipt, padded = false) {
+        ZillitSectionCard(title = str(S.desktop_ce_petty_cash_receipts), icon = ZillitIcons.Receipt, padded = false) {
             ZillitDataTable(
                 rows = overview?.pettyCashClaims.orEmpty(),
                 columns = batchColumns(accountant = false),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "Nothing submitted yet",
-                emptyMessage = "Receipts you submit against your float show up here.",
+                emptyTitle = str(S.desktop_ce_nothing_submitted_yet),
+                emptyMessage = str(S.desktop_ce_your_receipts_empty),
                 virtualised = false,
             )
         }
 
-        ZillitSectionCard(title = "Out of pocket", icon = ZillitIcons.Wallet, padded = false) {
+        ZillitSectionCard(title = str(S.desktop_ce_out_of_pocket), icon = ZillitIcons.Wallet, padded = false) {
             ZillitDataTable(
                 rows = overview?.outOfPocketClaims.orEmpty(),
                 columns = batchColumns(accountant = false),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "Nothing claimed",
-                emptyMessage = "Expenses you paid for yourself and claimed back appear here.",
+                emptyTitle = str(S.desktop_ce_nothing_claimed),
+                emptyMessage = str(S.desktop_ce_your_claims_empty),
                 virtualised = false,
             )
         }
@@ -387,47 +408,47 @@ fun DepartmentOverviewPage(state: CashUiState) {
         StatRow(
             listOf(
                 StatTileSpec(
-                    label = "Issued to the department",
+                    label = str(S.desktop_ce_issued_to_department),
                     value = money(overview?.totalIssued, null),
                     icon = ZillitIcons.Wallet,
                 ),
                 StatTileSpec(
-                    label = "Spent",
+                    label = str(S.ah_spent_label),
                     value = money(overview?.totalSpent, null),
                     tone = StatusTone.Progress,
                     icon = ZillitIcons.Receipt,
                 ),
                 StatTileSpec(
-                    label = "Floats",
+                    label = str(S.desktop_ce_floats),
                     value = overview?.floats?.size?.toString() ?: "—",
                     icon = ZillitIcons.Users,
                 ),
                 StatTileSpec(
-                    label = "Batches",
+                    label = str(S.desktop_ce_batches),
                     value = overview?.batches?.size?.toString() ?: "—",
                     icon = ZillitIcons.Ledger,
                 ),
             ),
         )
 
-        ZillitSectionCard(title = "Department floats", icon = ZillitIcons.Wallet, padded = false) {
+        ZillitSectionCard(title = str(S.desktop_ce_department_floats), icon = ZillitIcons.Wallet, padded = false) {
             ZillitDataTable(
                 rows = overview?.floats.orEmpty(),
                 columns = floatColumns(),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "No floats in this department",
+                emptyTitle = str(S.desktop_ce_no_floats_in_department),
                 virtualised = false,
             )
         }
 
-        ZillitSectionCard(title = "Department batches", icon = ZillitIcons.Receipt, padded = false) {
+        ZillitSectionCard(title = str(S.desktop_ce_department_batches), icon = ZillitIcons.Receipt, padded = false) {
             ZillitDataTable(
                 rows = overview?.batches.orEmpty(),
                 columns = batchColumns(accountant = false),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "No batches in this department",
+                emptyTitle = str(S.desktop_ce_no_batches_in_department),
                 virtualised = false,
             )
         }
@@ -513,16 +534,20 @@ private fun RoutingBar(
  */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = buildList {
-    add(personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
-    add(textColumn("Reference", ColumnWidth.Weight(1f), muted = true) { it.requestNumber.ifBlank { "—" } })
+    add(personColumn(str(S.ah_holder), ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
+    add(textColumn(str(S.desktop_reference), ColumnWidth.Weight(1f), muted = true) { it.requestNumber.ifBlank { "—" } })
     if (!compact) {
-        add(textColumn("Issued", ColumnWidth.Weight(1f), numeric = true) { money(it.issuedAmount, it.currency) })
+        add(
+            textColumn(str(S.desktop_issued), ColumnWidth.Weight(1f), numeric = true) {
+                money(it.issuedAmount, it.currency)
+            },
+        )
     }
-    add(textColumn("Balance", ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) })
+    add(textColumn(str(S.ah_balance_label), ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) })
     if (!compact) {
         add(
             TableColumn(
-                header = "Consumed",
+                header = str(S.desktop_ce_consumed),
                 width = ColumnWidth.Fixed(METER_COLUMN),
                 cell = { row ->
                     ZillitMeter(
@@ -533,11 +558,11 @@ fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = build
                 },
             ),
         )
-        add(textColumn("Requested", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
+        add(textColumn(str(S.av_chip_requested), ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
     }
     add(
         TableColumn(
-            header = "Status",
+            header = str(S.status),
             width = ColumnWidth.Fixed(STATUS_COLUMN),
             cell = { FloatStatusPill(it.status) },
         ),
@@ -547,18 +572,30 @@ fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = build
 /** The batch table's columns. Identical everywhere a batch is listed. */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 fun batchColumns(accountant: Boolean, compact: Boolean = false): List<TableColumn<ClaimBatch>> = buildList {
-    add(textColumn("Reference", ColumnWidth.Weight(1.2f)) { it.reference.ifBlank { it.id.take(REF_FALLBACK) } })
-    add(personColumn("Submitted by", ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
+    add(
+        textColumn(str(S.desktop_reference), ColumnWidth.Weight(1.2f)) {
+            it.reference.ifBlank { it.id.take(REF_FALLBACK) }
+        },
+    )
+    add(
+        personColumn(str(S.desktop_ce_submitted_by), ColumnWidth.Weight(1.6f), userId = { it.userId }) {
+            it.holderName
+        },
+    )
     if (!compact) {
-        add(textColumn("Receipts", ColumnWidth.Fixed(COUNT_COLUMN), numeric = true) { it.claimCount.toString() })
+        add(
+            textColumn(str(S.ah_receipts_label), ColumnWidth.Fixed(COUNT_COLUMN), numeric = true) {
+                it.claimCount.toString()
+            },
+        )
     }
-    add(textColumn("Total", ColumnWidth.Weight(1f), numeric = true) { money(it.totalGross, it.currency) })
+    add(textColumn(str(S.ah_total_label), ColumnWidth.Weight(1f), numeric = true) { money(it.totalGross, it.currency) })
     if (!compact) {
-        add(textColumn("Submitted", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
+        add(textColumn(str(S.txt_submitted), ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
     }
     add(
         TableColumn(
-            header = "Status",
+            header = str(S.status),
             width = ColumnWidth.Fixed(STATUS_COLUMN),
             cell = { BatchStatusPill(it.status, accountant) },
         ),

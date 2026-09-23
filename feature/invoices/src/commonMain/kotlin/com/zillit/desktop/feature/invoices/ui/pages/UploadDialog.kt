@@ -23,6 +23,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.UploadType
@@ -36,20 +38,20 @@ internal fun UploadDialog(state: InvoicesUiState, flow: UploadFlow, onEvent: (In
     val colors = ZillitTheme.colors
     val ready = flow.stage == UploadStage.Ready && flow.attachment != null
     ZillitDialogShell(
-        title = "Upload invoice",
+        title = str(S.ah_upload_invoice),
         subtitle = flow.file.name,
         onDismiss = { if (!flow.sending) onEvent(InvoicesEvent.CancelUpload) },
         visible = true,
         width = UPLOAD_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CancelUpload) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !flow.sending,
             )
             ZillitButton(
-                text = "Send to Accounts",
+                text = str(S.desktop_send_to_accounts),
                 onClick = { onEvent(InvoicesEvent.SendUpload) },
                 enabled = ready && flow.type != null,
                 loading = flow.sending,
@@ -59,13 +61,12 @@ internal fun UploadDialog(state: InvoicesUiState, flow: UploadFlow, onEvent: (In
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             when (flow.stage) {
                 UploadStage.Uploading -> StageLine("Uploading ${flow.file.name}…")
-                UploadStage.Extracting -> StageLine("Extracting invoice data…")
+                UploadStage.Extracting -> StageLine(str(S.desktop_extracting_invoice_data))
                 UploadStage.Ready -> {
                     val x = flow.extraction
                     if (flow.extractionFailed || x == null) {
                         ZillitNotice(
-                            text = "The document is uploaded. Automatic extraction did not read it — " +
-                                "Accounts will enter the details.",
+                            text = str(S.desktop_inv_uploaded_extraction_failed),
                             tone = StatusTone.Pending,
                         )
                     } else {
@@ -78,18 +79,18 @@ internal fun UploadDialog(state: InvoicesUiState, flow: UploadFlow, onEvent: (In
                             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
                         ) {
                             ZillitText(
-                                text = "Read from the document",
+                                text = str(S.desktop_read_from_the_document),
                                 style = ZillitTheme.typography.label,
                                 color = colors.textSecondary,
                             )
                             listOf(
-                                "Supplier" to x.supplierName,
-                                "Invoice number" to x.invoiceNumber,
-                                "Invoice date" to x.invoiceDate,
-                                "Due date" to x.dueDate,
-                                "Gross" to (x.gross?.let { InvoiceFormat.money(it, currency) } ?: ""),
+                                str(S.supplier) to x.supplierName,
+                                str(S.desktop_invoice_number) to x.invoiceNumber,
+                                str(S.desktop_invoice_date) to x.invoiceDate,
+                                str(S.desktop_due_date_title) to x.dueDate,
+                                str(S.desktop_gross) to (x.gross?.let { InvoiceFormat.money(it, currency) } ?: ""),
                                 "PO number" to x.poNumber,
-                                "Confidence" to (x.confidence?.let { "${it.toInt()}%" } ?: ""),
+                                str(S.desktop_confidence) to (x.confidence?.let { "${it.toInt()}%" } ?: ""),
                             ).filter { it.second.isNotBlank() }.forEach { (label, value) ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                                     ZillitText(
@@ -110,7 +111,7 @@ internal fun UploadDialog(state: InvoicesUiState, flow: UploadFlow, onEvent: (In
                 }
             }
             ZillitText(
-                text = "What is this invoice?",
+                text = str(S.desktop_what_is_this_invoice),
                 style = ZillitTheme.typography.label,
                 color = colors.textSecondary,
             )
@@ -147,17 +148,17 @@ private fun StageLine(text: String) {
 @Composable
 internal fun DeleteDialog(state: InvoicesUiState, invoice: Invoice, onEvent: (InvoicesEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Delete invoice",
+        title = str(S.ah_delete_invoice),
         onDismiss = { onEvent(InvoicesEvent.CancelDelete) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CancelDelete) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 onClick = { onEvent(InvoicesEvent.ConfirmDelete) },
                 variant = ButtonVariant.Danger,
                 loading = state.busy,

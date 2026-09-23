@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -317,7 +319,7 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
 
     return CalendarEvent(
         id = id,
-        title = row.str("title")?.takeIf { it.isNotBlank() } ?: "Untitled event",
+        title = row.str("title")?.takeIf { it.isNotBlank() } ?: str(S.desktop_cal_untitled_event),
         startMillis = start,
         endMillis = row.millis("end_datetime"),
         isAllDay = row.bool("full_day"),

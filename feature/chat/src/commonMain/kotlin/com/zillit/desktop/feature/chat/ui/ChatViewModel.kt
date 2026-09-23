@@ -6,6 +6,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
 import com.zillit.desktop.core.sync.SyncState
@@ -829,7 +831,7 @@ class ChatViewModel(
         // a keyboard shortcut or a stale event must not message someone who
         // is no longer on the production (Android's userActive gate).
         if (!currentState.peerIsGroup && peer.hasLeft) {
-            setState { copy(error = "This person is no longer on the project.") }
+            setState { copy(error = str(S.desktop_chat_person_no_longer_on_project)) }
             return
         }
         val typed = currentState.draft.trim()
@@ -946,7 +948,7 @@ class ChatViewModel(
         val enqueued = support.engine.enqueue(
             NewOperation(
                 kind = CHAT_SEND_KIND,
-                label = "Message to ${currentState.peer?.fullName?.ifBlank { null } ?: receiverId}",
+                label = str(S.desktop_outbox_message_to, currentState.peer?.fullName?.ifBlank { null } ?: receiverId),
                 payload = json.encodeToString(QueuedChatSend.serializer(), payload),
                 // One thread's messages leave in the order they were written.
                 groupKey = "chat:$receiverId",
@@ -1157,7 +1159,7 @@ class ChatViewModel(
         ZillitLog.d(TAG) { "media upload finished stored=${stored != null}" }
         if (stored == null) {
             markMediaUnsent(entry)
-            setState { copy(error = "Could not upload ${entry.message.attachment?.name}.") }
+            setState { copy(error = str(S.desktop_could_not_upload_named, entry.message.attachment?.name)) }
         }
         return stored
     }
@@ -1636,7 +1638,7 @@ class ChatViewModel(
     private fun previewLine(message: ChatMessage): ChatPreview = ChatPreview(
         text = when {
             message.location != null ->
-                "📍 " + message.body.ifBlank { message.location.address }.ifBlank { "Location" }
+                "📍 " + message.body.ifBlank { message.location.address }.ifBlank { str(S.location) }
             message.attachment != null -> "📎 ${message.attachment.name}"
             else -> message.body
         },
@@ -1811,10 +1813,10 @@ private const val TAG = "Chat"
 private const val RECORDING_TICK_MILLIS = 1_000L
 
 /** The web's `forward_successfully` (`utils/language/en.js:6781`). */
-internal const val FORWARDED = "Forward Successfully"
+internal val FORWARDED: String get() = str(S.desktop_chat_forward_successfully)
 
 /** The web's own sentence, used as its key (`cncUtil.js:1087`). */
-internal const val TRANSLATED = "Message translated successfully."
+internal val TRANSLATED: String get() = str(S.desktop_chat_message_translated)
 
 /** The last DM list this production showed, and its stamps, for when the socket cannot answer. */
 private const val RECENTS_CACHE = "chat.recents"

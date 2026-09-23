@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.callsheet.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
+import com.zillit.desktop.feature.callsheet.domain.BadgeKind
+import com.zillit.desktop.feature.callsheet.domain.BadgeSurface
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.SheetBadges
@@ -11,6 +13,7 @@ import com.zillit.desktop.feature.callsheet.domain.SheetQuery
 import com.zillit.desktop.feature.callsheet.domain.SheetSyncEvent
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
 import com.zillit.desktop.feature.callsheet.domain.draftsQuery
+import com.zillit.desktop.feature.callsheet.domain.initialLanding
 import com.zillit.desktop.feature.callsheet.domain.mergeApprovalRequests
 import com.zillit.desktop.feature.callsheet.domain.receivedRows
 import kotlinx.coroutines.CompletableDeferred
@@ -19,12 +22,14 @@ import kotlinx.coroutines.flow.conflate
 
 /**
  * The tabs, the lists and their live updates — the web's lazy tab loader
- * (`CallSheetApp.jsx:1648-1686`), its first landing, the socket table
- * (`:1873-1921`) and the badge reads a tab fires on entry.
+ * (`CallSheetApp.jsx`), its first landing (`initialLanding`), the socket
+ * table and the badge reads: one sheet's report or comment badge per open
+ * (`readCallSheetBadge`), and Published drained on entry — at app level, so
+ * a viewer who has no Published tab still clears it (`useReadBadgesOnEntry`).
  *
- * Divergences, each fixing a web bug: the landing waits for the metadata and
- * a view-only user's Received probe (B-1, B-30); members are read live, never
- * a one-time snapshot (B-3); no eager Published fetch (B-2, B-33).
+ * Divergences, each fixing a web bug: the landing waits for the metadata
+ * (B-1, B-30); members are read live, never a one-time snapshot (B-3); no
+ * eager Published fetch (B-2, B-33).
  */
 @Suppress("TooManyFunctions") // One loader per list the web keeps, and the socket and badge plumbing that feeds them.
 internal class ListsController(private val ctx: SheetContext) {
@@ -33,9 +38,10 @@ internal class ListsController(private val ctx: SheetContext) {
     private var listening = false
     private var waitingForRights = false
     private var landed = false
-    private var metadataSettled = false
-    private var receivedProbeSettled = false
     private var metadataRequest: CompletableDeferred<SheetMetadata?>? = null
+
+    /** Published leaves already read, keyed `kind:id:count` — a badge that comes back is read again. */
+    private var publishedReads: Set<String> = emptySet()
 
     /** Comment frames go to the open thread; the VM sets this. */
     var onCommentEvent: (SheetSyncEvent) -> Unit = {}
@@ -50,7 +56,6 @@ internal class ListsController(private val ctx: SheetContext) {
                 viewer = viewer,
                 members = ctx.members(),
                 canDistribute = ctx.services.publishing.canDistribute(),
-                canUseSavedSignatures = ctx.services.signatures != null,
             )
         }
         if (!listening) {
@@ -58,7 +63,7 @@ internal class ListsController(private val ctx: SheetContext) {
             listen()
         }
         bootstrap()
-        if (viewer.ready) onRightsReady() else awaitRights()
+        if (viewer.ready) maybeLand() else awaitRights()
         lastLoadKey = null
         loadCurrentTab()
     }
@@ -106,7 +111,7 @@ internal class ListsController(private val ctx: SheetContext) {
                 if (viewer.ready) {
                     ctx.update { copy(viewer = viewer, members = ctx.members()) }
                     waitingForRights = false
-                    onRightsReady()
+                    maybeLand()
                     refreshCurrent()
                     return@launchWork
                 }
@@ -115,36 +120,28 @@ internal class ListsController(private val ctx: SheetContext) {
         }
     }
 
-    private fun onRightsReady() {
-        if (!ctx.state.isPoster && !receivedProbeSettled) {
-            // A view-only user's Approvals tab depends on whether Received names them.
-            loadReceived()
-        } else {
-            receivedProbeSettled = true
-        }
-        maybeLand()
-    }
-
     /**
-     * The first landing, once: a view-only user who the signature flow
-     * reaches lands on Approvals → Received; everyone else stays on Drafts.
+     * The first landing, once, and only once the tab set is real: a poster
+     * stays on Drafts; a viewer lands on Approvals → Received when they have
+     * it, else on their first tab — never on a tab the bar does not show.
      */
     private fun maybeLand() {
         val state = ctx.state
-        val settled = state.viewer.ready && metadataSettled && receivedProbeSettled
+        val settled = state.viewer.ready && (state.isPoster || state.metadataSettled)
         if (landed || !settled) return
         landed = true
-        if (!state.isPoster && state.isApprover) {
-            ctx.update { copy(tab = SheetTab.Approvals, section = ApprovalSection.Received) }
-            refreshCurrent()
+        val landing = initialLanding(state.isPoster, state.tabs) ?: return
+        ctx.update {
+            copy(tab = landing, section = if (landing == SheetTab.Approvals) ApprovalSection.Received else section)
         }
+        refreshCurrent()
     }
 
     private fun bootstrap() {
         ctx.launchWork {
             refreshMetadata()
-            metadataSettled = true
             maybeLand()
+            readPublishedBadges()
             when (val stock = ctx.repository.stockTemplates()) {
                 is ZillitResult.Success -> ctx.update { copy(stockTemplates = stock.data) }
                 is ZillitResult.Failure -> Unit
@@ -160,14 +157,27 @@ internal class ListsController(private val ctx: SheetContext) {
         }
     }
 
-    /** One metadata request at a time — the backend flagged bursts. */
+    /**
+     * One metadata request at a time — the backend flagged bursts. A settled
+     * FAILURE is recorded (a viewer's tabs then fail open); in flight is not
+     * failure, so nothing is ever retracted.
+     */
     suspend fun refreshMetadata(): SheetMetadata? {
         metadataRequest?.let { return it.await() }
         val project = ctx.projectId() ?: return null
         val request = CompletableDeferred<SheetMetadata?>()
         metadataRequest = request
-        val meta = (ctx.repository.metadata(project) as? ZillitResult.Success)?.data
-        if (meta != null) ctx.update { copy(metadata = meta, metadataLoaded = true) }
+        val meta = when (val result = ctx.repository.metadata(project)) {
+            is ZillitResult.Success -> result.data
+            is ZillitResult.Failure -> null
+        }
+        ctx.update {
+            if (meta != null) {
+                copy(metadata = meta, metadataLoaded = true, metadataSettled = true, metadataFailed = false)
+            } else {
+                copy(metadataSettled = true, metadataFailed = !metadataLoaded)
+            }
+        }
         request.complete(meta)
         metadataRequest = null
         return meta
@@ -177,7 +187,9 @@ internal class ListsController(private val ctx: SheetContext) {
     fun loadCurrentTab() {
         val state = ctx.state
         if (ctx.projectId() == null || state.editor != null || !state.viewer.ready) return
+        readPublishedBadges()
         val tab = state.activeTab
+        if (tab !in state.tabs) return
         val section = if (tab == SheetTab.Approvals) state.activeSection.name else ""
         val key = "${tab}_$section:${state.isPoster}"
         if (key == lastLoadKey) return
@@ -192,7 +204,6 @@ internal class ListsController(private val ctx: SheetContext) {
             SheetTab.Published -> loadPublished()
             SheetTab.Permission -> onPermissionTab()
         }
-        readVisibleBadges()
     }
 
     /** Drafts: the whole project's pre-signature phase for posters, approver-scoped for everyone else. */
@@ -208,23 +219,21 @@ internal class ListsController(private val ctx: SheetContext) {
     }
 
     /**
-     * Sent: my own sheets in the signature phase. The listing may omit the
-     * requests; they are filled in from the approver-scoped listing.
+     * Sent: the PROJECT's signature phase — `buildSentQuery` — never scoped by
+     * creator: the sub-tab is already poster-gated, and a second author could
+     * not see a colleague's sent sheet. The listing may omit the requests;
+     * they are filled in from the approver-scoped listing.
      */
     fun loadSent() {
         val project = ctx.projectId() ?: return
         val me = ctx.state.me.takeIf { it.isNotBlank() }
-        if (me == null) {
-            ctx.update { copy(lists = lists.copy(sent = SheetList(loaded = true))) }
-            return
-        }
         ctx.update { copy(lists = lists.copy(sent = lists.sent.copy(loading = true, error = null))) }
         ctx.launchWork {
-            val query = SheetQuery(projectId = project, createdById = me, statuses = CallSheetStatus.SIGNATURE_PHASE)
+            val query = SheetQuery(projectId = project, statuses = CallSheetStatus.SIGNATURE_PHASE)
             when (val result = ctx.repository.sheets(query)) {
                 is ZillitResult.Success -> {
                     var rows = result.data
-                    if (rows.any { !it.approvalsIncluded }) {
+                    if (me != null && rows.any { !it.approvalsIncluded }) {
                         val mine = ctx.repository.sheets(SheetQuery(approverId = me))
                         if (mine is ZillitResult.Success) rows = mergeApprovalRequests(rows, mine.data)
                     }
@@ -238,7 +247,6 @@ internal class ListsController(private val ctx: SheetContext) {
                     )
                 }
             }
-            readVisibleBadges()
         }
     }
 
@@ -250,7 +258,6 @@ internal class ListsController(private val ctx: SheetContext) {
         val me = ctx.state.me
         if (me.isBlank()) {
             ctx.update { copy(lists = lists.copy(received = SheetList(loaded = true))) }
-            settleReceivedProbe()
             return
         }
         ctx.launchWork { refreshMetadata() }
@@ -258,14 +265,7 @@ internal class ListsController(private val ctx: SheetContext) {
             SheetQuery(approverId = me, statuses = CallSheetStatus.SIGNATURE_PHASE),
             select = { received },
             store = { copy(received = it) },
-            onSettled = ::settleReceivedProbe,
         ) { fetched, _ -> receivedRows(fetched, me) }
-    }
-
-    private fun settleReceivedProbe() {
-        if (receivedProbeSettled) return
-        receivedProbeSettled = true
-        maybeLand()
     }
 
     /** Finalized under the caller's own scope — a view-only user never gets the project list. */
@@ -302,7 +302,6 @@ internal class ListsController(private val ctx: SheetContext) {
         query: SheetQuery,
         select: SheetLists.() -> SheetList,
         store: SheetLists.(SheetList) -> SheetLists,
-        onSettled: () -> Unit = {},
         merge: (fetched: List<CallSheetSummary>, previous: List<CallSheetSummary>) -> List<CallSheetSummary> =
             { fetched, _ -> fetched },
     ) {
@@ -322,8 +321,6 @@ internal class ListsController(private val ctx: SheetContext) {
                     )
                 }
             }
-            onSettled()
-            readVisibleBadges()
         }
     }
 
@@ -334,7 +331,7 @@ internal class ListsController(private val ctx: SheetContext) {
         ctx.launchWork {
             ctx.services.badges.leaves.conflate().collect { leaves ->
                 ctx.update { copy(badges = SheetBadges.from(leaves)) }
-                readVisibleBadges()
+                readPublishedBadges()
             }
         }
     }
@@ -356,30 +353,55 @@ internal class ListsController(private val ctx: SheetContext) {
         }
     }
 
+    // Badge reads ------------------------------------------------------------------------------------
+
     /**
-     * The reads a tab fires on entry: Approvals clears its section's approval
-     * units; Published clears its whole comment tab (its rows have no thread).
+     * Opening a sheet (View, Edit, History, the dialogs) reads its REPORT
+     * badges on the list on screen; opening its thread reads its COMMENT
+     * badges — only when it has some, and never unit-wide. A poster off
+     * `final_approver_ids` has no Received section yet can hold a request on
+     * their own sheet: opening it from Sent clears those received leaves too,
+     * or they would stay on the tile for good.
      */
-    fun readVisibleBadges() {
+    fun readRowBadge(sheetId: String, kind: BadgeKind) {
         val state = ctx.state
-        if (state.editor != null) return
-        val badges = state.badges
+        if (!state.viewer.ready) return
+        val surface = state.surface ?: return
         val source = ctx.services.badges
-        when (state.activeTab) {
-            SheetTab.Approvals -> when (state.activeSection) {
-                ApprovalSection.Finalized -> if (badges.finalized > 0) source.readUnit(SheetBadges.UNIT_APPROVED)
-                ApprovalSection.Sent -> {
-                    if (badges.sentUnits > 0) source.readUnit(SheetBadges.UNIT_REJECTION)
-                    if (badges.approvedStatus > 0) source.readUnitLevel(SheetBadges.UNIT_APPROVED, "status")
-                }
-                ApprovalSection.Received -> if (badges.receivedUnits > 0) {
-                    source.readUnit(SheetBadges.UNIT_APPROVAL)
-                    source.readUnit(SheetBadges.UNIT_REMINDER)
-                }
-            }
-            SheetTab.Published -> if (badges.published > 0) source.readCommentTab("published")
-            SheetTab.Drafts, SheetTab.Permission -> Unit
+        if (state.badges.count(surface, kind, sheetId) > 0) source.read(surface, kind, sheetId)
+        val receivedHidden = ApprovalSection.Received !in state.sections
+        if (surface == BadgeSurface.Sent && receivedHidden &&
+            state.badges.count(BadgeSurface.Received, kind, sheetId) > 0
+        ) {
+            source.read(BadgeSurface.Received, kind, sheetId)
         }
+    }
+
+    fun readReport(sheetId: String) = readRowBadge(sheetId, BadgeKind.Report)
+
+    /**
+     * Published clears on entry, report and comment, per id — while the tab
+     * is on screen, and at app level for a user who has no Published tab
+     * (their badges would otherwise sit on the tile unread forever). A tab
+     * set still unknown reads nothing: a poster's tab must not be drained
+     * before it is drawn.
+     */
+    fun readPublishedBadges() {
+        val state = ctx.state
+        if (!state.viewer.ready || state.editor != null) return
+        val tabs = state.tabs
+        val tabSetKnown = state.isPoster || state.metadataSettled
+        if (!tabSetKnown) return
+        val drains = state.activeTab == SheetTab.Published || SheetTab.Published !in tabs
+        if (!drains) return
+        val leaves = state.badges.leavesOf(BadgeSurface.Published)
+        val keys = leaves.map { (kind, id, count) -> "${kind.wire}:$id:$count" }.toSet()
+        leaves.forEach { (kind, id, count) ->
+            if ("${kind.wire}:$id:$count" !in publishedReads) {
+                ctx.services.badges.read(BadgeSurface.Published, kind, id)
+            }
+        }
+        publishedReads = keys
     }
 
     private companion object {

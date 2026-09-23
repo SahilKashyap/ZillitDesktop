@@ -4,6 +4,8 @@ package com.zillit.desktop.feature.esignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.Envelope
 import com.zillit.desktop.feature.esignature.domain.EnvelopeField
 import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
@@ -143,7 +145,7 @@ internal class SigningFlow(private val store: EsignStore) {
                 }
                 is ZillitResult.Failure -> {
                     store.update { copy(signing = this.signing?.copy(consenting = false)) }
-                    store.failed("Your acceptance was not recorded — please try again.")
+                    store.failed(str(S.desktop_ds_your_acceptance_was_not_recorded_please_try_again))
                 }
             }
         }
@@ -223,7 +225,7 @@ internal class SigningFlow(private val store: EsignStore) {
                     MARK_RASTER_HEIGHT,
                 )
                 PadMode.Upload -> pad.uploadBytes?.let { ZillitResult.Success(it) }
-                    ?: ZillitResult.Failure(ZillitError.Validation("Choose an image first."))
+                    ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_ds_choose_an_image_first)))
                 PadMode.Saved -> return@runTask
             }
             val bytes = when (png) {
@@ -278,7 +280,7 @@ internal class SigningFlow(private val store: EsignStore) {
 
     fun padImagePicked(name: String, bytes: ByteArray) {
         if (bytes.size > MAX_UPLOAD_BYTES) {
-            store.failed("Images must be under 8 MB.")
+            store.failed(str(S.desktop_ds_images_must_be_under_8_mb))
             return
         }
         editPad { it.copy(mode = PadMode.Upload, uploadBytes = bytes, uploadName = name) }
@@ -291,7 +293,7 @@ internal class SigningFlow(private val store: EsignStore) {
         val s = store.current.signing ?: return
         val field = s.current ?: return
         if (bytes.size > MAX_UPLOAD_BYTES) {
-            store.failed("Files must be under 8 MB.")
+            store.failed(str(S.desktop_ds_files_must_be_under_8_mb))
             return
         }
         store.runTask {
@@ -378,7 +380,7 @@ internal class SigningFlow(private val store: EsignStore) {
         store.runTask {
             store.orFail { store.repository.decline(s.envelope.id, s.declineReason) } ?: return@runTask
             store.update { copy(signing = null, detail = null, page = EsignPageKind.Lists) }
-            store.notice("Declined.")
+            store.notice(str(S.docusign_status_declined))
             lists.loadBoth()
         }
     }
@@ -394,16 +396,16 @@ internal class SigningFlow(private val store: EsignStore) {
             val v = value.trim()
             if (v.isBlank()) return null
             return when (type) {
-                FieldType.Email -> if (EMAIL_RE.matches(v)) null else "Please enter a valid email address"
+                FieldType.Email -> if (EMAIL_RE.matches(v)) null else str(S.ah_err_email_invalid)
                 FieldType.Phone -> when {
-                    !PHONE_RE.matches(v) -> "Use digits, spaces, +, - or () only"
-                    v.count { it.isDigit() } < MIN_PHONE_DIGITS -> "Phone number is too short"
-                    v.count { it.isDigit() } > MAX_PHONE_DIGITS -> "Phone number is too long"
+                    !PHONE_RE.matches(v) -> str(S.desktop_ds_use_digits_spaces_or_only)
+                    v.count { it.isDigit() } < MIN_PHONE_DIGITS -> str(S.desktop_phone_number_too_short)
+                    v.count { it.isDigit() } > MAX_PHONE_DIGITS -> str(S.desktop_phone_number_too_long)
                     else -> null
                 }
                 FieldType.Number -> {
                     val numeric = v.replace(",", "").replace(" ", "").toDoubleOrNull() != null
-                    if (numeric) null else "Numbers only"
+                    if (numeric) null else str(S.desktop_ds_numbers_only)
                 }
                 else -> null
             }

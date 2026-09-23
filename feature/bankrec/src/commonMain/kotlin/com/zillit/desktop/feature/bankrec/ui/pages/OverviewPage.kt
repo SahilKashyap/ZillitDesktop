@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankPeriod
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.ui.BankKpi
@@ -64,13 +66,17 @@ fun ColumnScope.OverviewPage(state: BankRecUiState, onEvent: (BankRecEvent) -> U
                 BrBanner(
                     tone = BrTone.Red,
                     icon = ZillitIcons.Shield,
-                    title = "${current.fraudCount} Fraud Alert${if (current.fraudCount == 1) "" else "s"}",
-                    message = "Requires your review",
+                    title = if (current.fraudCount == 1) {
+                        str(S.desktop_br_fraud_alert_one, current.fraudCount)
+                    } else {
+                        str(S.desktop_br_fraud_alert_many, current.fraudCount)
+                    },
+                    message = str(S.desktop_br_requires_your_review),
                     fill = false,
                     action = {
                         Spacer(Modifier.width(6.dp))
                         ZillitButton(
-                            text = "Review",
+                            text = str(S.av_review),
                             onClick = { onEvent(BankRecEvent.OpenTab(BankTab.FraudAlerts)) },
                             variant = ButtonVariant.Danger,
                             size = ButtonSize.Small,
@@ -82,7 +88,7 @@ fun ColumnScope.OverviewPage(state: BankRecUiState, onEvent: (BankRecEvent) -> U
         },
     ) {
         ZillitButton(
-            text = "Import Statement",
+            text = str(S.ah_import_statement),
             onClick = { onEvent(BankRecEvent.OpenImport) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -91,7 +97,7 @@ fun ColumnScope.OverviewPage(state: BankRecUiState, onEvent: (BankRecEvent) -> U
         )
         if (current != null) {
             ZillitButton(
-                text = "Open Workspace",
+                text = str(S.desktop_open_workspace),
                 onClick = { onEvent(BankRecEvent.OpenPeriod(current.id)) },
                 size = ButtonSize.Small,
                 trailingIcon = ZillitIcons.ArrowRight,
@@ -114,27 +120,27 @@ private fun KpiGrid(state: BankRecUiState, current: BankPeriod?) {
             { modifier -> BankBalanceTile(kpi, modifier) },
             { modifier ->
                 BrStatCard(
-                    label = "Zillit Balance",
+                    label = str(S.desktop_br_zillit_balance),
                     value = BankRecFormat.plainMoney(kpi.zillitBalance, kpi.currency),
-                    sub = "Ledger balance",
+                    sub = str(S.desktop_br_ledger_balance),
                     modifier = modifier,
                 )
             },
             { modifier -> DifferenceTile(kpi, modifier) },
             { modifier ->
                 BrStatCard(
-                    label = "Auto-Matched",
+                    label = str(S.desktop_br_auto_matched),
                     value = kpi.matched.toString(),
-                    sub = "of ${kpi.total} transactions",
+                    sub = str(S.desktop_br_of_n_transactions, kpi.total),
                     valueColor = colors.success,
                     modifier = modifier,
                 )
             },
             { modifier ->
                 BrStatCard(
-                    label = "Period",
+                    label = str(S.cr_meta_period),
                     value = current?.let(BankRecFormat::periodLabel) ?: BankRecFormat.DASH,
-                    sub = "Current reconciliation",
+                    sub = str(S.desktop_br_current_reconciliation),
                     valueColor = colors.gold,
                     modifier = modifier,
                 )
@@ -156,16 +162,21 @@ private fun BankBalanceTile(kpi: BankKpi, modifier: Modifier) {
     val colors = ZillitTheme.colors
     val native = kpi.nativeBalance
     BrStatCard(
-        label = "Bank Balance",
+        label = str(S.desktop_br_bank_balance),
         value = when {
             kpi.bankBalance != null -> BankRecFormat.plainMoney(kpi.bankBalance, kpi.currency)
             native != null -> BankRecFormat.plainMoney(native, kpi.nativeCurrency)
             else -> BankRecFormat.DASH
         },
         sub = when {
-            !kpi.hasRate -> "${kpi.nativeCurrency} — no exchange rate set"
-            native != null -> "${BankRecFormat.plainMoney(native, kpi.nativeCurrency)} ${kpi.nativeCurrency} converted"
-            else -> "Statement closing"
+            !kpi.hasRate -> str(S.desktop_br_no_rate_set_for, kpi.nativeCurrency.orEmpty())
+            native != null -> str(
+                S.desktop_br_converted_from,
+                BankRecFormat.plainMoney(native, kpi.nativeCurrency),
+                kpi.nativeCurrency.orEmpty(),
+            )
+
+            else -> str(S.desktop_br_statement_closing)
         },
         valueColor = if (kpi.hasRate) null else colors.warning,
         modifier = modifier,
@@ -178,9 +189,13 @@ private fun DifferenceTile(kpi: BankKpi, modifier: Modifier) {
     val colors = ZillitTheme.colors
     val difference = kpi.difference
     BrStatCard(
-        label = "Difference",
+        label = str(S.ah_difference_upper),
         value = difference?.let { BankRecFormat.money(it, kpi.currency) } ?: BankRecFormat.DASH,
-        sub = if (difference == null) "Not comparable — no exchange rate" else "To reconcile",
+        sub = if (difference == null) {
+            str(S.desktop_br_not_comparable_no_rate)
+        } else {
+            str(S.desktop_br_to_reconcile)
+        },
         valueColor = when {
             difference == null -> colors.warning
             kpi.isReconciled -> colors.success
@@ -199,7 +214,10 @@ private fun ProgressCard(state: BankRecUiState, period: BankPeriod, onEvent: (Ba
 
     BrCard(modifier = Modifier.fillMaxWidth(), padded = true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ZillitText("${BankRecFormat.fullPeriodLabel(period)} Reconciliation", style = titleStyle(14.sp))
+            ZillitText(
+                str(S.desktop_br_period_reconciliation, BankRecFormat.fullPeriodLabel(period)),
+                style = titleStyle(14.sp),
+            )
             BrBadge(period.status.label, period.status.tone)
             state.account(period.bankAccountId)?.displayName?.takeIf { it.isNotBlank() }?.let {
                 ZillitText("· $it", style = ZillitTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
@@ -207,13 +225,13 @@ private fun ProgressCard(state: BankRecUiState, period: BankPeriod, onEvent: (Ba
             Spacer(Modifier.weight(1f))
             period.createdAtMillis?.let {
                 ZillitText(
-                    "Started ${BankRecFormat.day(it)}",
+                    str(S.docusign_bulk_job_started, BankRecFormat.day(it)),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
             ZillitButton(
-                text = "Continue",
+                text = str(S.continue_text),
                 onClick = { onEvent(BankRecEvent.OpenPeriod(period.id)) },
                 size = ButtonSize.Small,
                 trailingIcon = ZillitIcons.ArrowRight,
@@ -231,15 +249,19 @@ private fun ProgressCard(state: BankRecUiState, period: BankPeriod, onEvent: (Ba
         )
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            BrLegendDot(colors.success, "Matched", period.matchedCount)
-            BrLegendDot(colors.warning, "Suggested", period.suggestedCount)
+            BrLegendDot(colors.success, str(S.desktop_matched), period.matchedCount)
+            BrLegendDot(colors.warning, str(S.desktop_suggested), period.suggestedCount)
             // Unmatched counts the flagged lines too, as the web's legend does:
             // a line under fraud review is not matched either.
-            BrLegendDot(colors.danger.copy(alpha = 0.7f), "Unmatched", period.unmatchedCount + period.fraudCount)
-            BrLegendDot(colors.danger, "Fraud flags", period.fraudCount, pulse = period.fraudCount > 0)
+            BrLegendDot(
+                colors.danger.copy(alpha = 0.7f),
+                str(S.desktop_dm_unmatched),
+                period.unmatchedCount + period.fraudCount,
+            )
+            BrLegendDot(colors.danger, str(S.desktop_fraud_flags), period.fraudCount, pulse = period.fraudCount > 0)
             Spacer(Modifier.weight(1f))
             ZillitText(
-                "${BankRecFormat.percent(period.matchedCount, total)} complete",
+                str(S.desktop_br_percent_complete, BankRecFormat.percent(period.matchedCount, total)),
                 style = mono(12.sp, FontWeight.Medium),
                 color = colors.textSecondary,
             )
@@ -274,7 +296,7 @@ private fun OverviewSkeleton() {
         Spacer(Modifier.height(12.dp))
         ZillitSkeletonBar(Modifier.width(360.dp))
     }
-    BrCard(Modifier.fillMaxWidth(), title = "Reconciliation History", icon = ZillitIcons.Clock) {
+    BrCard(Modifier.fillMaxWidth(), title = str(S.desktop_br_reconciliation_history), icon = ZillitIcons.Clock) {
         com.zillit.desktop.feature.bankrec.ui.components.BrSkeletonRows(5)
     }
 }

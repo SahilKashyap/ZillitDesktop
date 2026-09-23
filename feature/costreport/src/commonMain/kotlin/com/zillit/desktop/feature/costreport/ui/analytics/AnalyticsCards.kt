@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.analytics.AlertItem
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsBlock
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsFormat
@@ -153,7 +155,7 @@ private fun GaugeCard(card: MethodItem, sum: Double, context: BlockContext) {
                 val meta = AnalyticsType.mono(11f)
                 FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     card.count?.let { ZillitText("$it claims", style = meta, color = colors.ink3) }
-                    card.turn?.let { ZillitText("Turnaround $it", style = meta, color = colors.ink3) }
+                    card.turn?.let { ZillitText(str(S.desktop_cr_turnaround, it), style = meta, color = colors.ink3) }
                 }
             }
         }
@@ -169,7 +171,7 @@ internal fun AlertsBlock(block: AnalyticsBlock.Alerts, context: BlockContext) {
     Panel {
         SectionLabel(
             dot = block.heading.dot?.let(colors::toneHex) ?: colors.red,
-            title = block.heading.title ?: "Needs Attention",
+            title = block.heading.title ?: str(S.desktop_cr_needs_attention),
             sub = block.heading.sub,
             right = {
                 ZillitText(
@@ -235,7 +237,7 @@ internal fun SnapshotCardsBlock(block: AnalyticsBlock.SnapshotCards, context: Bl
     Column {
         SectionLabel(
             block.heading.dot?.let(colors::toneHex) ?: colors.amber,
-            block.heading.title ?: "By Module",
+            block.heading.title ?: str(S.desktop_cr_by_module),
             block.heading.sub,
         )
         FlowGrid(minCell = 220.dp, gap = 14.dp) {

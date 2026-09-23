@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The one dialog chrome: scrim, centred card, header, entrance.
@@ -229,7 +231,7 @@ private fun ShellHeader(
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close",
+            contentDescription = str(S.close),
             onClick = onDismiss,
         )
     }

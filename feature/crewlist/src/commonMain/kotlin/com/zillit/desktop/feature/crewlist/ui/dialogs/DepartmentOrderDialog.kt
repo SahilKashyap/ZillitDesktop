@@ -55,6 +55,8 @@ import com.zillit.desktop.feature.crewlist.ui.components.CrewCellField
 import com.zillit.desktop.feature.crewlist.ui.components.CrewCopy
 import com.zillit.desktop.feature.crewlist.ui.components.CrewIcons
 import com.zillit.desktop.feature.crewlist.ui.components.ReorderList
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The listing order, opened from the banner's "Click Here" — the web's
@@ -72,10 +74,10 @@ internal fun DepartmentOrderDialog(
 ) {
     val shown = editor ?: DepartmentOrderState()
     ZillitDialogShell(
-        title = copy.t("set_department_priority_staff_list", "Listing Order for {tool_name}"),
+        title = copy.t("set_department_priority_staff_list", str(S.desktop_cl_listing_order_for_tool)),
         subtitle = copy.t(
             "change_priority_modal_title",
-            "Drag and Drop between numbers or Update through by number priority.",
+            str(S.set_department_priority_header),
         ),
         icon = CrewIcons.Swap,
         visible = editor != null && !editor.confirmDiscard,
@@ -83,9 +85,9 @@ internal fun DepartmentOrderDialog(
         width = 720.dp,
         scrollable = false,
         actions = {
-            ZillitTooltip(copy.t("reset_tooltip", "Press to go back to default settings")) {
+            ZillitTooltip(copy.t("reset_tooltip", str(S.desktop_cl_reset_tooltip))) {
                 ZillitButton(
-                    text = copy.t("reset", "Reset"),
+                    text = copy.t("reset", str(S.reset)),
                     variant = ButtonVariant.Tertiary,
                     leadingIcon = ZillitIcons.Reload,
                     enabled = !shown.loading && !shown.saving,
@@ -94,13 +96,13 @@ internal fun DepartmentOrderDialog(
             }
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = copy.t("Cancel", "Cancel"),
+                text = copy.t("Cancel", str(S.cancel)),
                 variant = ButtonVariant.Secondary,
                 enabled = !shown.saving,
                 onClick = { onEvent(CrewListEvent.Admin.CloseDepartments) },
             )
             ZillitButton(
-                text = copy.t("save", "Save"),
+                text = copy.t("save", str(S.save)),
                 loading = shown.saving,
                 enabled = shown.order.isChanged && !shown.saving,
                 onClick = { onEvent(CrewListEvent.Admin.SaveDepartments) },
@@ -128,25 +130,25 @@ internal fun DepartmentOrderDialog(
 @Composable
 private fun DiscardChangesDialog(visible: Boolean, copy: CrewCopy, onEvent: (CrewListEvent) -> Unit) {
     ZillitDialogShell(
-        title = copy.t("warning_title", "Warning"),
+        title = copy.t("warning_title", str(S.desktop_warning)),
         icon = ZillitIcons.Warning,
         visible = visible,
         onDismiss = { onEvent(CrewListEvent.Admin.ResolveDiscard(save = false)) },
         width = 400.dp,
         actions = {
             ZillitButton(
-                text = copy.t("No", "No"),
+                text = copy.t("No", str(S.no)),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(CrewListEvent.Admin.ResolveDiscard(save = false)) },
             )
             ZillitButton(
-                text = copy.t("Yes", "Yes"),
+                text = copy.t("Yes", str(S.yes)),
                 onClick = { onEvent(CrewListEvent.Admin.ResolveDiscard(save = true)) },
             )
         },
     ) {
         ZillitText(
-            text = copy.t("project_departments_unsaved_warning", "Do you want to save changes?"),
+            text = copy.t("project_departments_unsaved_warning", str(S.do_you_want_to_save_changes)),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -162,14 +164,14 @@ private fun DepartmentList(editor: DepartmentOrderState, copy: CrewCopy, onEvent
         ZillitNotice(
             text = copy.t(
                 "change_priority_designation_hint",
-                "Click a department to change the order of designations within it.",
+                str(S.desktop_cl_change_priority_designation_hint),
             ),
             tone = StatusTone.Progress,
         )
         ZillitSearchField(
             value = editor.query,
             onValueChange = { onEvent(CrewListEvent.Admin.SearchDepartments(it)) },
-            placeholder = copy.t("placeholder", "Search Department"),
+            placeholder = copy.t("placeholder", str(S.desktop_cl_search_department)),
             modifier = Modifier.fillMaxWidth(),
         )
         ReorderList(
@@ -224,7 +226,7 @@ private fun PeopleOrderDialog(
     people?.let { held[0] = it }
     val shown = people ?: held[0]
     ZillitDialogShell(
-        title = shown?.order?.department?.name ?: "Department Details",
+        title = shown?.order?.department?.name ?: str(S.desktop_cl_department_details),
         icon = ZillitIcons.Users,
         visible = people != null,
         onDismiss = { onEvent(CrewListEvent.Admin.ClosePeople) },
@@ -232,12 +234,12 @@ private fun PeopleOrderDialog(
         scrollable = false,
         actions = {
             ZillitButton(
-                text = copy.t("Close", "Close"),
+                text = copy.t("Close", str(S.close)),
                 variant = ButtonVariant.Secondary,
                 onClick = { onEvent(CrewListEvent.Admin.ClosePeople) },
             )
             ZillitButton(
-                text = copy.t("save", "Save"),
+                text = copy.t("save", str(S.save)),
                 loading = shown?.saving == true,
                 enabled = shown != null && !shown.saving && !shown.loading && shown.order.isChanged,
                 onClick = { onEvent(CrewListEvent.Admin.SavePeople) },
@@ -252,7 +254,7 @@ private fun PeopleOrderDialog(
             shown.failure != null -> ZillitText(shown.failure, color = ZillitTheme.colors.danger)
             shown.order.current.isEmpty() ->
                 Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
-                    ZillitText(copy.t("NODATAFOUND", "No data Found"), color = ZillitTheme.colors.textMuted)
+                    ZillitText(copy.t("NODATAFOUND", str(S.no_data_found)), color = ZillitTheme.colors.textMuted)
                 }
             else -> PeopleList(shown, copy, faces, onEvent)
         }
@@ -272,7 +274,7 @@ private fun PeopleList(
         ZillitSearchField(
             value = people.query,
             onValueChange = { onEvent(CrewListEvent.Admin.SearchPeople(it)) },
-            placeholder = copy.t("Search", "Search"),
+            placeholder = copy.t("Search", str(S.search)),
             modifier = Modifier.fillMaxWidth(),
         )
         ReorderList(
@@ -297,7 +299,7 @@ private fun PeopleList(
                 draggable = needle.isEmpty(),
                 copy = copy,
                 modifier = rowModifier.height(PERSON_HEIGHT),
-                updateLabel = copy.t("change_order", "Change Order"),
+                updateLabel = copy.t("change_order", str(S.desktop_cl_change_order)),
                 onPosition = { position -> onEvent(CrewListEvent.Admin.PositionPerson(index, position)) },
             ) { _ ->
                 ZillitAvatar(name = person.name, size = 36.dp, image = face)
@@ -308,7 +310,7 @@ private fun PeopleList(
                         maxLines = 1,
                     )
                     ZillitText(
-                        text = "${copy.t("Designation", "Designation")}: ${copy.label(person.designation)}",
+                        text = "${copy.t("Designation", str(S.designation))}: ${copy.label(person.designation)}",
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textMuted,
                         maxLines = 1,
@@ -420,7 +422,7 @@ private fun PositionEditor(
 ) {
     if (updateLabel == null) {
         ZillitText(
-            text = copy.t("enter_priority", "Enter priority number to move department:"),
+            text = copy.t("enter_priority", str(S.enter_priority_number_to_move_department)),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             maxLines = 1,
@@ -435,7 +437,7 @@ private fun PositionEditor(
     )
     val number = typed.toIntOrNull()
     ZillitButton(
-        text = updateLabel ?: copy.t("update", "Update"),
+        text = updateLabel ?: copy.t("update", str(S.update)),
         variant = ButtonVariant.Secondary,
         size = ButtonSize.Small,
         enabled = number != null && number in 1..total,

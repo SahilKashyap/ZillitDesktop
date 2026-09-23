@@ -18,9 +18,12 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistPrompt
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistUiState
+import com.zillit.desktop.feature.documentdistribution.ui.plural
 
 /**
  * The confirmation for anything that cannot be undone.
@@ -44,7 +47,7 @@ fun DocDistPromptDialog(prompt: DocDistPrompt?, onEvent: (DocDistEvent) -> Unit)
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DocDistEvent.DismissPrompt) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -68,44 +71,44 @@ internal fun FolderEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -
     ZillitDialogShell(
         title = when {
             editor == null -> ""
-            !editor.isNew -> "Edit folder"
-            editor.parent != null -> "New subfolder inside \"${editor.parent.name}\""
-            else -> "Create folder"
+            !editor.isNew -> str(S.dd_edit_folder)
+            editor.parent != null -> str(S.desktop_docdist_new_subfolder_inside, editor.parent.name)
+            else -> str(S.dd_empty_create_cta)
         },
-        subtitle = if (editor?.isNew == true && editor.parent == null) "At the top of the library" else null,
+        subtitle = if (editor?.isNew == true && editor.parent == null) str(S.desktop_docdist_top_of_library) else null,
         visible = editor != null,
         onDismiss = { onEvent(DocDistEvent.CloseFolderEditor) },
         icon = ZillitIcons.Add,
         width = 480.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DocDistEvent.CloseFolderEditor) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (editor?.isNew == false) "Save" else "Create",
+                text = str(if (editor?.isNew == false) S.save else S.create),
                 onClick = { onEvent(DocDistEvent.SaveFolder) },
                 enabled = editor?.canSave == true,
                 loading = editor?.saving == true,
             )
         },
     ) {
-        FieldLabel("Name *")
+        FieldLabel(str(S.dd_publish_name_hint))
         ZillitTextField(
             value = editor?.name.orEmpty(),
             onValueChange = { onEvent(DocDistEvent.EditFolderName(it)) },
-            placeholder = "My folder",
+            placeholder = str(S.desktop_docdist_my_folder),
             onImeAction = { onEvent(DocDistEvent.SaveFolder) },
         )
-        FieldLabel("Description")
+        FieldLabel(str(S.description))
         ZillitTextField(
             value = editor?.description.orEmpty(),
             onValueChange = { onEvent(DocDistEvent.EditFolderDescription(it)) },
-            placeholder = "What this folder contains",
+            placeholder = str(S.desktop_docdist_what_this_folder_contains),
         )
         if (editor?.isNew != false) {
-            FieldLabel("Date *")
+            FieldLabel(str(S.recce_field_date))
             ZillitDateField(
                 value = editor?.folderDate.orEmpty(),
                 onValueChange = { onEvent(DocDistEvent.EditFolderDate(it)) },
@@ -126,11 +129,17 @@ internal fun MoveItemsDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> U
     val folders = state.selectedFolderIds.size
     val documents = state.selectedDocumentIds.size
     ZillitDialogShell(
-        title = "Move items",
+        title = str(S.desktop_docdist_move_items),
         subtitle = listOfNotNull(
-            "$folders folder".takeIf { folders > 0 }?.plus(if (folders == 1) "" else "s"),
-            "$documents file".takeIf { documents > 0 }?.plus(if (documents == 1) "" else "s"),
-        ).joinToString(" and ").ifBlank { "Nothing selected" },
+            plural(folders, S.drive_count_folder_singular, S.drive_count_folder_plural).takeIf { folders > 0 },
+            plural(documents, S.drive_count_file_singular, S.drive_count_file_plural).takeIf { documents > 0 },
+        ).let { parts ->
+            when (parts.size) {
+                0 -> str(S.desktop_docdist_nothing_selected)
+                1 -> parts.single()
+                else -> str(S.desktop_docdist_x_and_y, parts[0], parts[1])
+            }
+        },
         visible = move != null,
         onDismiss = { onEvent(DocDistEvent.CloseMove) },
         icon = ZillitIcons.Grid,
@@ -138,12 +147,12 @@ internal fun MoveItemsDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> U
         scrollable = false,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DocDistEvent.CloseMove) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Move here",
+                text = str(S.dd_action_move_here),
                 onClick = { onEvent(DocDistEvent.ConfirmMove) },
                 loading = move?.saving == true,
                 enabled = move?.saving == false && state.selectionCount > 0 &&
@@ -158,7 +167,7 @@ internal fun MoveItemsDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> U
             // Shown even when it cannot be chosen: a root that vanishes reads
             // as a missing destination, where a dimmed one with a reason reads as a rule.
             DestinationRow(
-                label = if (state.rootForbidden) "Root · files must be inside a folder" else "Root",
+                label = str(if (state.rootForbidden) S.desktop_docdist_root_files_inside_folder else S.dd_root),
                 indent = 0,
                 selected = move?.destinationId == null && !state.rootForbidden,
                 enabled = !state.rootForbidden,

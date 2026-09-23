@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.home.data
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.AudioRecorder
 import com.zillit.desktop.feature.home.domain.RecordedAudio
 import java.io.ByteArrayInputStream
@@ -87,7 +89,7 @@ class JvmAudioRecorder : AudioRecorder {
     override suspend fun stop(): ZillitResult<RecordedAudio> = withContext(Dispatchers.IO) {
         val open = line
             ?: return@withContext ZillitResult.Failure(
-                ZillitError.Validation("Nothing is recording."),
+                ZillitError.Validation(str(S.desktop_nothing_is_recording)),
             )
 
         try {
@@ -100,7 +102,7 @@ class JvmAudioRecorder : AudioRecorder {
 
             if (pcm.isEmpty()) {
                 return@withContext ZillitResult.Failure(
-                    ZillitError.Validation("Nothing was captured — check the microphone."),
+                    ZillitError.Validation(str(S.desktop_nothing_captured_check_mic)),
                 )
             }
 
@@ -115,7 +117,7 @@ class JvmAudioRecorder : AudioRecorder {
             ZillitResult.Success(RecordedAudio(wav.toByteArray(), durationMillis))
         } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
             ZillitLog.w(TAG) { "recording failed to finish: ${throwable::class.simpleName}" }
-            ZillitResult.Failure(ZillitError.Storage("The recording could not be saved."))
+            ZillitResult.Failure(ZillitError.Storage(str(S.desktop_recording_not_saved)))
         } finally {
             reset()
         }
@@ -151,8 +153,7 @@ class JvmAudioRecorder : AudioRecorder {
 
         fun noMicrophone() = ZillitError.Storage(
             technical = "no usable TargetDataLine",
-            userMessage = "The microphone could not be opened. " +
-                "Check the system's microphone permission for Zillit.",
+            userMessage = str(S.desktop_microphone_not_opened),
         )
     }
 }

@@ -13,6 +13,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.random.Random
 
 /**
@@ -128,7 +130,7 @@ class GooglePlacesGateway(
         const val GEOCODE = "https://maps.googleapis.com/maps/api/geocode/json"
         const val GEOLOCATE = "https://www.googleapis.com/geolocation/v1/geolocate"
         const val GEOLOCATE_BODY = "{\"considerIp\":true}"
-        const val CURRENT_LOCATION = "Current location"
+        val CURRENT_LOCATION: String get() = str(S.desktop_weather_current_location)
         const val RADIX = 36
     }
 }

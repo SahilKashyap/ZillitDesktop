@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolWindow
 import com.zillit.desktop.core.workspace.WindowState
 import com.zillit.desktop.core.workspace.WorkspaceEvent
@@ -92,7 +94,7 @@ private fun TabList(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = "${state.windows.size} open",
+            text = str(S.desktop_workspace_n_open, state.windows.size),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.padding(end = ZillitTheme.spacing.xs),
@@ -173,7 +175,7 @@ private fun LayoutControls(state: WorkspaceState, onEvent: (WorkspaceEvent) -> U
     ) {
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close all tools",
+            contentDescription = str(S.desktop_workspace_close_all_tools),
             onClick = { onEvent(WorkspaceEvent.CloseAll) },
             enabled = state.windows.any { !it.isPinned },
         )
@@ -319,7 +321,7 @@ private fun RowScope.TabBody(
     if (showClose) {
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close ${window.title}",
+            contentDescription = str(S.desktop_workspace_close_window, window.title),
             onClick = onClose,
             size = CLOSE_SIZE,
         )

@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.BankRow
 import com.zillit.desktop.feature.bankrec.domain.LedgerRow
@@ -68,23 +70,27 @@ internal fun ConfirmMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) -
     val fraud = txn?.fraudType != null
     val accepting = state.workspace.accepting
     ZillitDialogShell(
-        title = if (fraud) "Fraud Alert — Confirm Match" else "Confirm Match",
+        title = if (fraud) {
+            str(S.desktop_br_fraud_confirm_match)
+        } else {
+            str(S.desktop_card_confirm_match)
+        },
         onDismiss = { if (!accepting) onEvent(BankRecEvent.DismissMatch) },
         visible = state.workspace.proposal != null,
         icon = if (fraud) ZillitIcons.Shield else ZillitIcons.Check,
         width = 560.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(BankRecEvent.DismissMatch) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !accepting,
             )
             ZillitButton(
                 text = when {
-                    accepting -> "Matching…"
-                    fraud -> "Accept & Match"
-                    else -> "Confirm Match"
+                    accepting -> str(S.desktop_matching_ellipsis)
+                    fraud -> str(S.desktop_br_accept_and_match)
+                    else -> str(S.desktop_card_confirm_match)
                 },
                 onClick = { onEvent(BankRecEvent.ConfirmMatch) },
                 variant = if (fraud) ButtonVariant.Danger else ButtonVariant.Primary,
@@ -98,23 +104,26 @@ internal fun ConfirmMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) -
             BrBanner(
                 tone = BrTone.Red,
                 icon = ZillitIcons.Shield,
-                title = "${fraudType.shortLabel} — Risk Score: ${txn.fraudScore ?: BankRecFormat.DASH}",
-                message = "This transaction has been flagged as a potential fraud. Accepting this match will be " +
-                    "recorded in the audit logs of this record.",
+                title = str(
+                    S.desktop_br_fraud_risk_score,
+                    fraudType.shortLabel,
+                    txn.fraudScore ?: BankRecFormat.DASH,
+                ),
+                message = str(S.desktop_br_fraud_match_warning),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BankSide(bank, view, tone = null)
             if (invoice != null) {
-                LedgerSide(invoice, view, heading = "Invoice", tone = null)
+                LedgerSide(invoice, view, heading = str(S.ah_run_detail_col_invoice), tone = null)
             } else {
-                SideCard("Invoice", "Invoice details unavailable", "", "", null)
+                SideCard(str(S.ah_run_detail_col_invoice), str(S.desktop_br_invoice_unavailable), "", "", null)
             }
         }
         if (!fraud) {
             ZillitText(
-                "This will match the bank transaction to the invoice and mark both as reconciled.",
+                str(S.desktop_br_match_explainer),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -134,7 +143,11 @@ internal fun ManualMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) ->
     val chosen = view.ledgerRow(state.workspace.manualMatchEntryId)
     val matching = state.workspace.manualMatching
     ZillitDialogShell(
-        title = if (chosen == null) "Manual Match" else "Confirm Manual Match",
+        title = if (chosen == null) {
+            str(S.desktop_manual_match)
+        } else {
+            str(S.desktop_br_confirm_manual_match)
+        },
         onDismiss = {
             when {
                 matching -> Unit
@@ -150,14 +163,14 @@ internal fun ManualMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) ->
         } else {
             {
                 ZillitButton(
-                    text = "Back",
+                    text = str(S.back),
                     onClick = { onEvent(BankRecEvent.PickManualMatch(null)) },
                     variant = ButtonVariant.Tertiary,
                     leadingIcon = ZillitIcons.ChevronLeft,
                     enabled = !matching,
                 )
                 ZillitButton(
-                    text = if (matching) "Matching…" else "Confirm Match",
+                    text = if (matching) str(S.desktop_matching_ellipsis) else str(S.desktop_card_confirm_match),
                     onClick = { onEvent(BankRecEvent.ConfirmManualMatch) },
                     loading = matching,
                 )
@@ -168,8 +181,7 @@ internal fun ManualMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) ->
             PickEntry(bank, view, onEvent)
         } else {
             ZillitText(
-                "You are about to match this bank transaction to the selected ledger entry. This action will mark " +
-                    "both as matched.",
+                str(S.desktop_br_manual_match_explainer),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -178,7 +190,7 @@ internal fun ManualMatchDialog(state: BankRecUiState, onEvent: (BankRecEvent) ->
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 BankSide(bank, view, tone = BrTone.Blue)
-                LedgerSide(chosen, view, heading = "Ledger Entry", tone = BrTone.Green)
+                LedgerSide(chosen, view, heading = str(S.desktop_ledger_entry), tone = BrTone.Green)
             }
         }
     }
@@ -194,7 +206,7 @@ private fun PickEntry(bank: BankRow?, view: WorkspaceView, onEvent: (BankRecEven
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            ZillitText("MATCHING TRANSACTION", style = eyebrow(10.sp), color = BrTone.Blue.fg())
+            ZillitText(str(S.desktop_br_matching_transaction), style = eyebrow(10.sp), color = BrTone.Blue.fg())
             ZillitText(
                 bank.title,
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -209,10 +221,10 @@ private fun PickEntry(bank: BankRow?, view: WorkspaceView, onEvent: (BankRecEven
         }
     }
     val entries = view.unmatchedLedger
-    BrFieldLabel("Select a ledger entry to match (${entries.size})")
+    BrFieldLabel(str(S.desktop_br_select_ledger_entry, entries.size))
     if (entries.isEmpty()) {
         ZillitText(
-            "No unmatched ledger entries available",
+            str(S.desktop_br_no_unmatched_entries),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
             textAlign = TextAlign.Center,
@@ -266,11 +278,11 @@ private fun EntryRow(entry: LedgerRow, view: WorkspaceView, onClick: () -> Unit)
 @Composable
 private fun RowScope.BankSide(bank: BankRow?, view: WorkspaceView, tone: BrTone?) {
     if (bank == null) {
-        SideCard("Bank Transaction", "Transaction details unavailable", "", "", null, tone)
+        SideCard(str(S.desktop_bank_transaction), str(S.desktop_br_transaction_unavailable), "", "", null, tone)
         return
     }
     SideCard(
-        heading = "Bank Transaction",
+        heading = str(S.desktop_bank_transaction),
         title = bank.title,
         reference = bank.reference,
         amount = signed(bank.amount, bank.amountCurrency ?: view.statementCurrency),
@@ -312,7 +324,7 @@ internal fun SignOffDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
     val issues = view.hasIssues
     val canSubmit = !dialog.submitting && (!issues || dialog.note.isNotBlank())
     ZillitDialogShell(
-        title = "Sign Off Reconciliation",
+        title = str(S.desktop_br_sign_off_reconciliation),
         subtitle = view.period?.let { BankRecFormat.fullPeriodLabel(it) },
         onDismiss = { if (!dialog.submitting) onEvent(BankRecEvent.CloseSignOff) },
         visible = state.workspace.signOff != null,
@@ -320,16 +332,16 @@ internal fun SignOffDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
         width = 480.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(BankRecEvent.CloseSignOff) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !dialog.submitting,
             )
             ZillitButton(
                 text = when {
-                    dialog.submitting -> "Signing Off…"
-                    issues -> "Sign Off with Exceptions"
-                    else -> "Sign Off"
+                    dialog.submitting -> str(S.desktop_br_signing_off)
+                    issues -> str(S.desktop_br_sign_off_with_exceptions)
+                    else -> str(S.desktop_br_sign_off)
                 },
                 onClick = { onEvent(BankRecEvent.ConfirmSignOff) },
                 variant = if (issues) ButtonVariant.Danger else ButtonVariant.Primary,
@@ -342,18 +354,22 @@ internal fun SignOffDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
         DifferenceBox(view)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                BrFieldLabel("Sign-off note")
+                BrFieldLabel(str(S.desktop_br_sign_off_note))
                 if (issues) {
-                    ZillitText("(required)", style = eyebrow(), color = ZillitTheme.colors.danger)
+                    ZillitText(
+                        str(S.desktop_required_parenthetical),
+                        style = eyebrow(),
+                        color = ZillitTheme.colors.danger,
+                    )
                 }
             }
             BrNoteField(
                 value = dialog.note,
                 onValueChange = { onEvent(BankRecEvent.EditSignOffNote(it)) },
                 placeholder = if (issues) {
-                    "Explain why you are signing off with exceptions…"
+                    str(S.desktop_br_sign_off_note_required_hint)
                 } else {
-                    "Optional notes for this sign-off…"
+                    str(S.desktop_br_sign_off_note_hint)
                 },
                 enabled = !dialog.submitting,
             )
@@ -361,6 +377,7 @@ internal fun SignOffDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
     }
 }
 
+@Suppress("LongMethod") // One block, in one place; the sweep's wrapped calls added the lines.
 @Composable
 private fun SignOffWarnings(view: WorkspaceView) {
     val counts = view.counts
@@ -369,8 +386,8 @@ private fun SignOffWarnings(view: WorkspaceView) {
         BrBanner(
             tone = BrTone.Green,
             icon = ZillitIcons.Check,
-            title = "Ready to sign off",
-            message = "All transactions matched, no outstanding items",
+            title = str(S.desktop_br_ready_to_sign_off),
+            message = str(S.desktop_br_ready_to_sign_off_detail),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -378,20 +395,38 @@ private fun SignOffWarnings(view: WorkspaceView) {
         BrBanner(
             tone = BrTone.Red,
             icon = ZillitIcons.Shield,
-            title = "${counts.fraud} fraud alert${plural(counts.fraud)} unresolved",
-            message = "Active fraud flags require review before sign-off",
+            title = if (counts.fraud == 1) {
+                str(S.desktop_br_fraud_alert_one_unresolved, counts.fraud)
+            } else {
+                str(S.desktop_br_fraud_alert_many_unresolved, counts.fraud)
+            },
+            message = str(S.desktop_br_fraud_flags_require_review),
             modifier = Modifier.fillMaxWidth(),
         )
     }
     if (unresolved > 0) {
+        val unmatchedText = if (counts.unmatched == 1) {
+            str(S.desktop_br_unmatched_one, counts.unmatched)
+        } else {
+            str(S.desktop_br_unmatched_many, counts.unmatched)
+        }
+        val suggestedText = if (counts.suggested == 1) {
+            str(S.desktop_br_pending_one, counts.suggested)
+        } else {
+            str(S.desktop_br_pending_many, counts.suggested)
+        }
         val parts = listOfNotNull(
-            "${counts.unmatched} unmatched transaction${plural(counts.unmatched)}".takeIf { counts.unmatched > 0 },
-            "${counts.suggested} pending suggestion${plural(counts.suggested)}".takeIf { counts.suggested > 0 },
+            unmatchedText.takeIf { counts.unmatched > 0 },
+            suggestedText.takeIf { counts.suggested > 0 },
         )
         BrBanner(
             tone = BrTone.Red,
             icon = ZillitIcons.Warning,
-            title = "$unresolved item${plural(unresolved)} still unresolved",
+            title = if (unresolved == 1) {
+                str(S.desktop_br_item_one_unresolved, unresolved)
+            } else {
+                str(S.desktop_br_item_many_unresolved, unresolved)
+            },
             message = parts.joinToString(" and "),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -400,8 +435,12 @@ private fun SignOffWarnings(view: WorkspaceView) {
         BrBanner(
             tone = BrTone.Amber,
             icon = BankRecIcons.Exclaim,
-            title = "${view.openExceptions} open exception${plural(view.openExceptions)}",
-            message = "Bank charges, payroll, or other items not yet posted",
+            title = if (view.openExceptions == 1) {
+                str(S.desktop_br_open_exception_one, view.openExceptions)
+            } else {
+                str(S.desktop_br_open_exception_many, view.openExceptions)
+            },
+            message = str(S.desktop_br_open_exceptions_detail),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -418,7 +457,7 @@ private fun DifferenceBox(view: WorkspaceView) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        ZillitText("UNRECONCILED DIFFERENCE", style = eyebrow(), color = colors.textMuted)
+        ZillitText(str(S.desktop_br_unreconciled_difference), style = eyebrow(), color = colors.textMuted)
         ZillitText(
             BankRecFormat.money(view.difference, code),
             style = mono(24.sp, FontWeight.Bold),
@@ -426,8 +465,11 @@ private fun DifferenceBox(view: WorkspaceView) {
         )
         if (view.difference != 0.0) {
             ZillitText(
-                "Bank total ${BankRecFormat.money(view.bankSum, code)} vs Zillit total " +
+                str(
+                    S.desktop_br_bank_vs_zillit_total,
+                    BankRecFormat.money(view.bankSum, code),
                     BankRecFormat.money(view.ledgerSum, code),
+                ),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -435,4 +477,3 @@ private fun DifferenceBox(view: WorkspaceView) {
     }
 }
 
-private fun plural(count: Int): String = if (count == 1) "" else "s"

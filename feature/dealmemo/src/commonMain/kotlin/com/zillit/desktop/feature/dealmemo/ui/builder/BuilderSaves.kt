@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.dealmemo.ui.builder
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.SavedRecord
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderSeeds
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
@@ -117,7 +119,9 @@ internal class BuilderSaves(private val vm: DealMemoViewModel, private val sessi
 
     /** One picked file stored, as the attachment its row will carry. */
     private suspend fun uploadDocument(doc: JsonObject, file: PickedDealFile): ZillitResult<JsonObject> {
-        val store = vm.store ?: return ZillitResult.Failure(ZillitError.Validation("Documents can't be uploaded here."))
+        val store = vm.store ?: return ZillitResult.Failure(
+            ZillitError.Validation(str(S.desktop_dm_documents_cant_be_uploaded_here)),
+        )
         return store.upload(file.name, file.mime, file.bytes).map { stored ->
             JsonObject(
                 stored.json + mapOf(
@@ -258,11 +262,10 @@ internal class BuilderSaves(private val vm: DealMemoViewModel, private val sessi
                     issueErrors = failures,
                     showEntitlementErrors = showEntitlementErrors || DealValidators.ALLOWANCES in failures,
                     validation = BuilderValidation(
-                        title = "Complete these sections before issuing",
-                        message = "Each section below is highlighted on the page — open its Edit to fill what's " +
-                            "missing.",
+                        title = str(S.dm_quick_validation_title),
+                        message = str(S.desktop_dm_each_section_below_is_highlighted_on_the),
                         fields = failures.map { (sectionId, fields) ->
-                            (names[sectionId] ?: "Section $sectionId") + if (fields.isEmpty()) {
+                            (names[sectionId] ?: str(S.desktop_dm_section_n, sectionId)) + if (fields.isEmpty()) {
                                 ""
                             } else {
                                 " — ${fields.joinToString(", ")}"
@@ -467,13 +470,11 @@ internal class BuilderSaves(private val vm: DealMemoViewModel, private val sessi
             session.update {
                 copy(
                     validation = BuilderValidation(
-                        title = "${BuilderSeeds.setupKindLabel(form)} is incomplete",
+                        title = str(S.desktop_dm_kind_is_incomplete, BuilderSeeds.setupKindLabel(form)),
                         message = if (isNonUnionId(form.text("union"))) {
-                            "A non-union setup needs a production entity and pay rules with day types before it can " +
-                                "be saved."
+                            str(S.dm_builder_incomplete_non_union)
                         } else {
-                            "A union setup needs a production entity, a territory and an agreement before it can be " +
-                                "saved."
+                            str(S.dm_builder_incomplete_union)
                         },
                         fields = missing,
                     ),
@@ -572,15 +573,14 @@ internal class BuilderSaves(private val vm: DealMemoViewModel, private val sessi
         val (written, failed) = writeSections(patches)
         if (written.isNotEmpty()) {
             vm.toast(
-                "Deal Memo Setup started from this template — ${SetupSeeding.labels(written)} saved.",
+                str(S.desktop_dm_setup_started_from_template, SetupSeeding.labels(written)),
                 DealToastTone.Success,
             )
             vm.refreshProjectSettings()
         }
         if (failed.isNotEmpty()) {
             vm.toast(
-                "Saved the template, but couldn't add ${SetupSeeding.labels(failed)} to Deal Memo Setup. " +
-                    "Add them under Production Setup → Deal Memo Setup.",
+                str(S.desktop_dm_saved_template_but_couldnt_add, SetupSeeding.labels(failed)),
                 DealToastTone.Error,
             )
         }
@@ -601,11 +601,11 @@ internal class BuilderSaves(private val vm: DealMemoViewModel, private val sessi
         if (changed.isEmpty()) return
         val (written, failed) = writeSections(changed)
         if (written.isNotEmpty()) {
-            vm.toast("Deal Memo Setup updated — ${SetupSeeding.labels(written)}.", DealToastTone.Success)
+            vm.toast(str(S.desktop_dm_setup_updated_sections, SetupSeeding.labels(written)), DealToastTone.Success)
         }
         if (failed.isNotEmpty()) {
             vm.toast(
-                "Saved the setup, but couldn't update ${SetupSeeding.labels(failed)} on the project.",
+                str(S.desktop_dm_saved_setup_but_couldnt_update, SetupSeeding.labels(failed)),
                 DealToastTone.Error,
             )
         }

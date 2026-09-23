@@ -47,6 +47,7 @@ dependencies {
     implementation(project(":core:database"))
     implementation(project(":core:sync"))
     implementation(project(":core:localization"))
+    implementation(project(":core:strings"))
     implementation(project(":core:session"))
     implementation(project(":core:socket"))
     implementation(project(":feature:accounthub"))

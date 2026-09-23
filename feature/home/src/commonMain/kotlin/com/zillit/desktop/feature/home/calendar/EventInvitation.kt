@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.strings.S
+
 /**
  * One row of `calendar/invite` — an invitation and the event it is for.
  *
@@ -20,10 +22,10 @@ data class EventInvitation(
 
 /** The server's four answers to "have they replied" — the web's tab set. */
 enum class InvitationStatus(val wire: String, val label: String) {
-    Pending("pending", "Pending"),
-    Accepted("accepted", "Accepted"),
-    Rejected("rejected", "Rejected"),
-    Expired("expired", "Expired"),
+    Pending("pending", S.pending),
+    Accepted("accepted", S.accepted),
+    Rejected("rejected", S.rejected),
+    Expired("expired", S.expired),
     ;
 
     companion object {

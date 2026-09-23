@@ -81,9 +81,9 @@ class PoSettingsRenderTest {
         onNodeWithText("Rental & Split Settings").assertExists()
         onNodeWithText("Asset Register Rules").assertExists()
         onNodeWithText("Lines on a posted or closed PO matching total ≥ £100, and tagged Camera.").assertExists()
-        onNodeWithText("Form Configuration").assertExists()
+        onNodeWithText("Form configuration").assertExists()
         onNodeWithText("Auto-Assignment Rules").assertExists()
-        onNodeWithText("Add Rule").assertExists()
+        onNodeWithText("Add rule").assertExists()
         // The rules and asset cards are dirty, so each offers its own Save.
         onAllNodesWithText("Save").assertCountEquals(2)
         onNodeWithText("Jane Smith (Production Accountant)").assertExists()

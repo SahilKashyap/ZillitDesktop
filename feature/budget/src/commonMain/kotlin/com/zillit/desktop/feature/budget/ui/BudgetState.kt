@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.budget.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budget.domain.BudgetActivity
 import com.zillit.desktop.feature.budget.domain.BudgetActivityRow
 import com.zillit.desktop.feature.budget.domain.BudgetChatEntry
@@ -28,7 +30,7 @@ data class BudgetContext(
 
     companion object {
         /** The web's fallback when the catalogue has no such department. */
-        const val UNKNOWN_DEPARTMENT = "Unknown Department"
+        val UNKNOWN_DEPARTMENT: String get() = str(S.desktop_unknown_department)
     }
 }
 
@@ -102,9 +104,12 @@ data class BudgetMembersDialog(
     val complaint: String? = null,
     val saving: Boolean = false,
 ) {
-    enum class Kind(val title: String) {
-        Member("Add member"),
-        Group("Create group"),
+    enum class Kind(private val titleKey: String) {
+        Member(S.cs_add_member),
+        Group(S.create_group),
+        ;
+
+        val title: String get() = str(titleKey)
     }
 
     val visible: List<BudgetPerson>

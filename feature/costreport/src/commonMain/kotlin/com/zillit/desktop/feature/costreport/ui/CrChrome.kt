@@ -57,6 +57,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** One tab of the header bar. [badge] is drawn after the label — the worksheet's "N over". */
 internal data class CrHeaderTab(
@@ -107,7 +109,7 @@ internal fun CrHeaderBar(
                         ZillitIcons.ChevronLeft,
                         tint = colors.textSecondary,
                         size = 14.dp,
-                        contentDescription = "Back",
+                        contentDescription = str(S.back),
                     )
                 }
             }
@@ -143,7 +145,7 @@ private fun AnalyticsButton(onClick: () -> Unit) {
         ) {
             ZillitIcon(ZillitIcons.BarChart, tint = Color.White, size = 13.dp)
             ZillitText(
-                "Analytics",
+                str(S.analytics),
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 color = Color.White,
             )
@@ -334,18 +336,18 @@ internal fun CrPeriodStepper(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StepperArrow(ZillitIcons.ChevronLeft, "Previous week", enabled, onPrevious)
+            StepperArrow(ZillitIcons.ChevronLeft, str(S.desktop_cr_previous_week), enabled, onPrevious)
             ZillitText(
                 text = range,
                 style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
                 maxLines = 1,
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
-            StepperArrow(ZillitIcons.ChevronRight, "Next week", enabled && canGoNext, onNext)
+            StepperArrow(ZillitIcons.ChevronRight, str(S.desktop_cr_next_week), enabled && canGoNext, onNext)
         }
         if (showGoCurrent) {
             ZillitText(
-                text = "Go to this week",
+                text = str(S.desktop_cr_go_to_this_week),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.5.sp),
                 color = colors.textMuted,
                 maxLines = 1,
@@ -501,7 +503,7 @@ internal fun BoxScope.CrProgressCard(
                     ZillitIcons.Close,
                     tint = colors.textMuted,
                     size = 12.dp,
-                    contentDescription = "Close",
+                    contentDescription = str(S.close),
                     modifier = Modifier.clip(CircleShape).clickable(onClick = onClose).padding(4.dp),
                 )
             }
@@ -520,13 +522,13 @@ private fun StatusDot(color: Color, icon: ImageVector) {
 @Composable
 internal fun CrUncodedBanner(onView: () -> Unit, modifier: Modifier = Modifier) {
     ZillitNotice(
-        text = "There are unallocated costs at the bottom due to lack of nominal coding.",
+        text = str(S.cr_unallocated_banner),
         tone = StatusTone.Progress,
         icon = ZillitIcons.Info,
         modifier = modifier,
         action = {
             ZillitText(
-                text = "View",
+                text = str(S.view),
                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))

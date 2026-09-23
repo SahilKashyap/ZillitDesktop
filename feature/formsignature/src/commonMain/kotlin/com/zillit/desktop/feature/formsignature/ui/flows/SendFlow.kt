@@ -3,6 +3,8 @@
 package com.zillit.desktop.feature.formsignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureHost
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
@@ -68,7 +70,7 @@ internal class SendFlow(
     fun filePicked(name: String, bytes: ByteArray) {
         val send = store.state.send ?: return
         if (!name.endsWith(".pdf", ignoreCase = true) || pdfWork.pageCount(bytes) !is ZillitResult.Success) {
-            store.fail("PDF format only")
+            store.fail(str(S.desktop_fs_pdf_format_only))
             return
         }
         store.update {
@@ -92,14 +94,14 @@ internal class SendFlow(
         val send = store.state.send ?: return
         val bytes = send.fileBytes
         val problem = when {
-            send.title.isBlank() -> "Please add a document name"
-            bytes == null -> "Please upload a document"
-            send.people.isEmpty() -> "Please select atleast one member"
-            send.hasExternal && send.chosenExternal.isEmpty() -> "Select External Users"
+            send.title.isBlank() -> str(S.desktop_fs_please_add_document_name)
+            bytes == null -> str(S.desktop_fs_please_upload_a_document)
+            send.people.isEmpty() -> str(S.desktop_fs_select_at_least_one_member)
+            send.hasExternal && send.chosenExternal.isEmpty() -> str(S.select_external_users_txt)
             else -> null
         }
         if (problem != null || bytes == null) {
-            store.fail(problem ?: "Please upload a document")
+            store.fail(problem ?: str(S.desktop_fs_please_upload_a_document))
             return
         }
         store.update { copy(send = send.copy(busy = true)) }
@@ -290,13 +292,13 @@ internal class SendFlow(
 
     /** The web's `handleSubmit` gate, in its order. */
     private fun refusal(send: SendState): String? = when {
-        send.senderSigns && !send.senderSignaturePlaced -> "Please add your signature on the document."
+        send.senderSigns && !send.senderSignaturePlaced -> str(S.desktop_fs_add_your_signature_on_document)
         send.senderSigns && !send.onlySignature && !send.senderInitialsPlaced ->
-            "Please add your initials on the document."
+            str(S.desktop_fs_add_your_initials_on_document)
         send.people.any { send.spotsOf(it.id, SignSpotKind.Signature).isEmpty() } ->
-            "Please add a signature placeholder for all users."
+            str(S.desktop_fs_signature_placeholder_for_all)
         !send.onlySignature && send.people.any { send.spotsOf(it.id, SignSpotKind.Initials).isEmpty() } ->
-            "Please add an initials placeholder for all users."
+            str(S.desktop_fs_initials_placeholder_for_all)
         else -> null
     }
 
@@ -349,7 +351,7 @@ internal class SendFlow(
                 }
                 is ZillitResult.Success -> {
                     store.update { copy(send = null) }
-                    store.notice("Document sent for signature.")
+                    store.notice(str(S.desktop_fs_document_sent_for_signature))
                     onSent()
                 }
             }

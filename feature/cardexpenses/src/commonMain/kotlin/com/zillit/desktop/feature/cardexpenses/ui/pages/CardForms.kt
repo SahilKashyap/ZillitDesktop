@@ -18,6 +18,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
 import com.zillit.desktop.feature.cardexpenses.ui.CardEditDraft
@@ -45,11 +47,11 @@ fun NewCardDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val blocked = draft.validationError(providers.isNotEmpty(), holderRequired = accountant)
 
     ZillitDialogShell(
-        title = if (accountant) "Issue a card" else "Request a card",
+        title = if (accountant) str(S.desktop_card_issue_a_card) else str(S.desktop_card_request_a_card),
         subtitle = if (accountant) {
-            "The holder can spend against it once you approve and activate it."
+            str(S.desktop_card_issue_subtitle)
         } else {
-            "It goes to the accounts team, who set the limit they authorise."
+            str(S.desktop_card_request_subtitle)
         },
         icon = ZillitIcons.CreditCard,
         visible = true,
@@ -57,12 +59,12 @@ fun NewCardDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         width = FORM_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(CardEvent.CloseNewCard) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (accountant) "Issue card" else "Send request",
+                text = if (accountant) str(S.desktop_card_issue_card) else str(S.av_send_request),
                 onClick = { onEvent(CardEvent.SubmitNewCard) },
                 enabled = blocked == null && !state.busy,
                 loading = state.busy,
@@ -70,7 +72,7 @@ fun NewCardDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         },
     ) {
         if (accountant) {
-            FieldGroupLabel("Cardholder")
+            FieldGroupLabel(str(S.desktop_cardholder))
             HolderPicker(
                 people = state.eligibleHolders,
                 selectedId = draft.holderId,
@@ -78,15 +80,17 @@ fun NewCardDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             )
             if (state.people.isNotEmpty() && state.eligibleHolders.size < state.people.size) {
                 ZillitText(
-                    text = "${state.people.size - state.eligibleHolders.size} crew already hold a card and are " +
-                        "not offered here. Suspend or close the old card first.",
+                    text = str(
+                        S.desktop_card_crew_already_hold,
+                        state.people.size - state.eligibleHolders.size,
+                    ),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
             }
         }
 
-        FieldGroupLabel("The card")
+        FieldGroupLabel(str(S.desktop_card_the_card))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -94,16 +98,16 @@ fun NewCardDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             ZillitTextField(
                 value = draft.proposedLimit,
                 onValueChange = { onEvent(CardEvent.EditNewCard(draft.copy(proposedLimit = it))) },
-                label = "Proposed limit",
+                label = str(S.desktop_card_proposed_limit),
                 placeholder = "0.00",
                 keyboardType = KeyboardType.Decimal,
-                helperText = "What the card should be authorised for.",
+                helperText = str(S.desktop_card_authorised_for_helper),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = draft.currency,
                 onValueChange = { onEvent(CardEvent.EditNewCard(draft.copy(currency = it.uppercase()))) },
-                label = "Currency",
+                label = str(S.ah_lbl_currency),
                 placeholder = "GBP",
                 modifier = Modifier.weight(CURRENCY_FIELD),
             )
@@ -124,17 +128,17 @@ fun NewCardDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         ZillitTextField(
             value = draft.bsControlCode,
             onValueChange = { onEvent(CardEvent.EditNewCard(draft.copy(bsControlCode = it))) },
-            label = "Balance-sheet control code",
+            label = str(S.desktop_card_bs_control_code),
             placeholder = "2100",
-            helperText = "The control account this card's spend sits against.",
+            helperText = str(S.desktop_card_control_account_helper),
             modifier = Modifier.fillMaxWidth(),
         )
 
         ZillitTextField(
             value = draft.justification,
             onValueChange = { onEvent(CardEvent.EditNewCard(draft.copy(justification = it))) },
-            label = "Justification",
-            placeholder = "Daily unit spend for the art department",
+            label = str(S.desktop_card_justification),
+            placeholder = str(S.desktop_card_justification_placeholder),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -166,20 +170,21 @@ fun CardEditDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val blocked = draft.validationError(providers.isNotEmpty())
 
     ZillitDialogShell(
-        title = "Edit card details",
-        subtitle = card?.holderName?.takeIf { it.isNotBlank() }?.let { "$it · card ${card.lastFour ?: "—"}" },
+        title = str(S.desktop_card_edit_card_details),
+        subtitle = card?.holderName?.takeIf { it.isNotBlank() }
+            ?.let { str(S.desktop_card_holder_card_suffix, it, card.lastFour ?: "—") },
         icon = ZillitIcons.Edit,
         visible = true,
         onDismiss = { onEvent(CardEvent.CloseCardEdit) },
         width = FORM_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(CardEvent.CloseCardEdit) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Save and resubmit",
+                text = str(S.desktop_card_save_and_resubmit),
                 onClick = { onEvent(CardEvent.SaveCardEdit) },
                 enabled = blocked == null && !state.busy,
                 loading = state.busy,
@@ -187,8 +192,7 @@ fun CardEditDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         },
     ) {
         ZillitNotice(
-            text = "Saving resubmits the card: the approvals it has collected so far are cleared and the " +
-                "chain starts again from the top.",
+            text = str(S.desktop_card_resubmit_warning),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Warning,
         )
@@ -200,14 +204,14 @@ fun CardEditDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             ZillitTextField(
                 value = draft.limit,
                 onValueChange = { onEvent(CardEvent.EditCardDraft(draft.copy(limit = it))) },
-                label = "Authorised limit",
+                label = str(S.desktop_card_authorised_limit),
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = draft.currency,
                 onValueChange = { onEvent(CardEvent.EditCardDraft(draft.copy(currency = it.uppercase()))) },
-                label = "Currency",
+                label = str(S.ah_lbl_currency),
                 modifier = Modifier.weight(CURRENCY_FIELD),
             )
         }
@@ -217,8 +221,11 @@ fun CardEditDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         // surprise on the holder's card.
         if (draft.limitValue > 0 && draft.limitValue != draft.currentLimit) {
             ZillitText(
-                text = "Remaining balance becomes ${money(draft.newBalance, draft.currency)}, " +
-                    "from ${money(draft.currentBalance, draft.currency)}.",
+                text = str(
+                    S.desktop_card_new_balance_note,
+                    money(draft.newBalance, draft.currency),
+                    money(draft.currentBalance, draft.currency),
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -239,14 +246,14 @@ fun CardEditDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         ZillitTextField(
             value = draft.bsControlCode,
             onValueChange = { onEvent(CardEvent.EditCardDraft(draft.copy(bsControlCode = it))) },
-            label = "Balance-sheet control code",
+            label = str(S.desktop_card_bs_control_code),
             modifier = Modifier.fillMaxWidth(),
         )
 
         ZillitTextField(
             value = draft.justification,
             onValueChange = { onEvent(CardEvent.EditCardDraft(draft.copy(justification = it))) },
-            label = "Justification",
+            label = str(S.desktop_card_justification),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -269,7 +276,7 @@ private fun HolderPicker(
 ) {
     if (people.isEmpty()) {
         ZillitText(
-            text = "Nobody on this production can be issued a card right now.",
+            text = str(S.desktop_card_nobody_eligible),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -280,7 +287,7 @@ private fun HolderPicker(
         value = selected,
         options = people,
         onSelect = { onSelect(it?.id.orEmpty()) },
-        label = { it?.pickerLabel ?: "Choose a cardholder" },
+        label = { it?.pickerLabel ?: str(S.desktop_card_choose_a_cardholder) },
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -300,19 +307,19 @@ private fun ProviderPicker(
 ) {
     if (providers.isEmpty()) {
         ZillitText(
-            text = "No card providers are configured for this production, so the card is raised without one.",
+            text = str(S.desktop_card_no_providers_note),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldGroupLabel("Provider")
+        FieldGroupLabel(str(S.desktop_card_provider))
         ZillitSelect(
             value = providers.firstOrNull { it.id == selectedId },
             options = providers,
             onSelect = onSelect,
-            label = { it?.name ?: "Choose a provider" },
+            label = { it?.name ?: str(S.desktop_card_choose_a_provider) },
             modifier = Modifier.fillMaxWidth(),
         )
     }

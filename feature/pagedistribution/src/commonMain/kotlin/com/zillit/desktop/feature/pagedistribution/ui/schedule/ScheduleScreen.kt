@@ -69,6 +69,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
 import com.zillit.desktop.feature.pagedistribution.domain.DistFolder
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
@@ -125,7 +127,7 @@ fun ScheduleScreen(
                     .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
-                if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to ${state.tool.title}.")
+                if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_dist_no_access, state.tool.title))
                 state.error?.let { message ->
                     ZillitNotice(
                         text = message,
@@ -133,7 +135,7 @@ fun ScheduleScreen(
                         icon = ZillitIcons.Warning,
                         action = {
                             ZillitButton(
-                                text = "Dismiss",
+                                text = str(S.sync_action_dismiss),
                                 onClick = { onEvent(DistributionEvent.DismissError) },
                                 variant = ButtonVariant.Tertiary,
                                 size = ButtonSize.Small,
@@ -144,8 +146,7 @@ fun ScheduleScreen(
                 // ZL-17014 — the web's history alert.
                 if (!live) {
                     ZillitNotice(
-                        text = "Records of deleted messages. Replaced schedules and deleted pages can be " +
-                            "viewed and downloaded, not changed.",
+                        text = str(S.desktop_sched_history_note),
                         tone = StatusTone.Progress,
                         icon = ZillitIcons.Info,
                     )
@@ -194,13 +195,13 @@ private fun ScheduleHeader(state: DistributionUiState, onEvent: (DistributionEve
             )
             HeaderTitle(state, Modifier.weight(1f))
             ZillitButton(
-                text = if (live) "History" else "Back to live",
+                text = if (live) str(S.history) else str(S.desktop_dist_back_to_live),
                 onClick = { onEvent(DistributionEvent.ToggleHistory) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = if (live) ZillitIcons.Clock else ZillitIcons.ArrowLeft,
             )
             ZillitButton(
-                text = "Refresh",
+                text = str(S.refresh_text),
                 onClick = { onEvent(DistributionEvent.Refresh) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = ZillitIcons.Reload,
@@ -211,7 +212,7 @@ private fun ScheduleHeader(state: DistributionUiState, onEvent: (DistributionEve
                 // already, the pick is a replace — the engine decides.
                 val replaces = !state.isFolderTab && state.documents.isNotEmpty()
                 ZillitButton(
-                    text = if (replaces) "Replace PDF" else "Upload PDF",
+                    text = if (replaces) str(S.desktop_dist_replace_pdf) else str(S.desktop_dist_upload_pdf),
                     onClick = { onEvent(DistributionEvent.PickPdf()) },
                     leadingIcon = ZillitIcons.Paperclip,
                     loading = state.busy && state.upload == null,
@@ -241,22 +242,25 @@ private fun HeaderTitle(state: DistributionUiState, modifier: Modifier = Modifie
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitText(
-                text = if (live) state.tool.title else "${state.tool.title} History",
+                text = if (live) state.tool.title else str(S.desktop_dist_title_history_suffix, state.tool.title),
                 style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = colors.textPrimary,
             )
-            if (!live) ZillitStatusPill(label = "History", tone = StatusTone.Neutral)
+            if (!live) ZillitStatusPill(label = str(S.history), tone = StatusTone.Neutral)
             val total = state.tabUnread.values.sum()
             if (live && total > 0) {
-                ZillitStatusPill(label = "$total unread", tone = StatusTone.Rejected, dot = true)
+                ZillitStatusPill(
+                    label = str(S.desktop_unread_count, total),
+                    tone = StatusTone.Rejected,
+                    dot = true,
+                )
             }
         }
         ZillitText(
             text = if (live) {
-                "The current shooting schedule, its pages by scene, and the one-line schedule — " +
-                    "one live copy each, replaced rather than added to."
+                str(S.desktop_sched_description)
             } else {
-                "Schedules that were replaced and pages that were deleted, kept for the record."
+                str(S.desktop_sched_history_description)
             },
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
@@ -279,17 +283,17 @@ private fun ScheduleDocumentList(
     when {
         state.loading && rows.isEmpty() -> SkeletonList()
         rows.isEmpty() -> ZillitEmptyState(
-            title = if (live) "No data found" else "Nothing in the history",
+            title = if (live) str(S.no_data_found) else str(S.desktop_dist_nothing_in_history),
             message = when {
-                !live -> "Replaced schedules will be listed here."
-                oneLine -> "Upload the one-line schedule PDF — later uploads replace it."
-                else -> "Upload the full schedule PDF — later uploads replace it."
+                !live -> str(S.desktop_sched_replaced_listed)
+                oneLine -> str(S.desktop_sched_empty_oneline)
+                else -> str(S.desktop_sched_empty_full)
             },
             icon = ZillitIcons.File,
             action = if (live) {
                 {
                     ZillitButton(
-                        text = "Upload PDF",
+                        text = str(S.desktop_dist_upload_pdf),
                         onClick = { onEvent(DistributionEvent.PickPdf()) },
                         leadingIcon = ZillitIcons.Paperclip,
                     )
@@ -323,7 +327,7 @@ internal fun ScheduleDocumentCard(
     resolveUser: (String) -> String?,
 ) {
     val colors = ZillitTheme.colors
-    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { "Unknown user" }
+    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { str(S.unkone_user) }
     val oneLine = state.activeTabKey == ONE_LINE_TAB
     Column(
         modifier = Modifier
@@ -338,7 +342,7 @@ internal fun ScheduleDocumentCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
-            Ribbon(text = "Uploaded on: ${DistributionDates.dateTime(document.createdMs)}")
+            Ribbon(text = str(S.desktop_dist_uploaded_on_prefix, DistributionDates.dateTime(document.createdMs)))
             Row(
                 modifier = Modifier.padding(ZillitTheme.spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -365,13 +369,13 @@ internal fun ScheduleDocumentCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                 if (state.viewer.isTelevision) {
                     ZillitText(
-                        text = "Episode ${document.episode.ifBlank { "—" }}",
+                        text = str(S.desktop_episode_numbered, document.episode.ifBlank { "—" }),
                         style = ZillitTheme.typography.titleMedium,
                         color = colors.textPrimary,
                     )
                 }
                 Fact(
-                    label = if (oneLine) "One-line date" else "Schedule date",
+                    label = if (oneLine) str(S.desktop_dist_one_line_date) else str(S.desktop_dist_schedule_date),
                     value = DistributionDates.date(document.dateMs).ifBlank { "—" },
                 )
                 Fact(label = "Uploaded by", value = uploader)
@@ -445,52 +449,52 @@ internal fun ScheduleMoreMenu(
         ) {
             ZillitIcon(icon = ZillitIcons.Paperclip, tint = colors.textOnAccent, size = FACT_ICON)
             ZillitText(
-                text = "More",
+                text = str(S.more),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textOnAccent,
             )
         }
         val entries = buildList {
             add(
-                ZillitMenuEntry.Action("View", ZillitIcons.Eye, ZillitMenuTone.Primary) {
+                ZillitMenuEntry.Action(str(S.view), ZillitIcons.Eye, ZillitMenuTone.Primary) {
                     onEvent(DistributionEvent.View(document))
                 },
             )
             if (live && state.viewer.mayPublish) {
                 add(
-                    ZillitMenuEntry.Action("Publish to Doc Distribution", ZillitIcons.Send, ZillitMenuTone.Info) {
+                    ZillitMenuEntry.Action(str(S.dd_publish_to_distribution), ZillitIcons.Send, ZillitMenuTone.Info) {
                         onEvent(DistributionEvent.Publish(document))
                     },
                 )
             }
             if (live && single) {
                 add(
-                    ZillitMenuEntry.Action("Replace", ZillitIcons.Upload, ZillitMenuTone.Approve) {
+                    ZillitMenuEntry.Action(str(S.replace), ZillitIcons.Upload, ZillitMenuTone.Approve) {
                         onEvent(DistributionEvent.PickPdf(replaces = document))
                     },
                 )
             }
             if (live && !single) {
                 add(
-                    ZillitMenuEntry.Action("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) {
+                    ZillitMenuEntry.Action(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) {
                         onEvent(DistributionEvent.Delete(document))
                     },
                 )
             }
             add(
-                ZillitMenuEntry.Action("Download", ZillitIcons.Download, ZillitMenuTone.Neutral) {
+                ZillitMenuEntry.Action(str(S.download), ZillitIcons.Download, ZillitMenuTone.Neutral) {
                     onEvent(DistributionEvent.Download(document))
                 },
             )
             if (live && state.viewer.isAdmin) {
                 add(ZillitMenuEntry.Divider)
                 add(
-                    ZillitMenuEntry.Action("Download count", ZillitIcons.BarChart, ZillitMenuTone.Neutral) {
+                    ZillitMenuEntry.Action(str(S.download_count), ZillitIcons.BarChart, ZillitMenuTone.Neutral) {
                         onEvent(DistributionEvent.ShowCounts(document, downloads = true))
                     },
                 )
                 add(
-                    ZillitMenuEntry.Action("View count", ZillitIcons.Users, ZillitMenuTone.Neutral) {
+                    ZillitMenuEntry.Action(str(S.view_count), ZillitIcons.Users, ZillitMenuTone.Neutral) {
                         onEvent(DistributionEvent.ShowCounts(document, downloads = false))
                     },
                 )
@@ -551,7 +555,7 @@ private fun PagesSearchBar(state: DistributionUiState, onEvent: (DistributionEve
         ZillitTextField(
             value = state.searchScene,
             onValueChange = { onEvent(DistributionEvent.SearchChanged(scene = it)) },
-            placeholder = "Search by scene number",
+            placeholder = str(S.desktop_dist_search_by_scene),
             leadingIcon = ZillitIcons.Search,
             modifier = Modifier.weight(1f),
         )
@@ -559,7 +563,7 @@ private fun PagesSearchBar(state: DistributionUiState, onEvent: (DistributionEve
             ZillitTextField(
                 value = state.searchEpisode,
                 onValueChange = { onEvent(DistributionEvent.SearchChanged(episode = it)) },
-                placeholder = "Search by episode",
+                placeholder = str(S.desktop_dist_search_by_episode),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -570,7 +574,7 @@ private fun PagesSearchBar(state: DistributionUiState, onEvent: (DistributionEve
         )
         if (state.isSearching || state.searchResults != null) {
             ZillitButton(
-                text = "Clear",
+                text = str(S.clear_label),
                 onClick = { onEvent(DistributionEvent.ClearSearch) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = ZillitIcons.Close,
@@ -586,7 +590,7 @@ internal fun ColourSelect(value: PageColour?, onSelect: (PageColour?) -> Unit, m
         value = value,
         options = listOf<PageColour?>(null) + PageColour.entries,
         onSelect = onSelect,
-        label = { it?.label ?: "Search by colour" },
+        label = { it?.label ?: str(S.search_by_page_color) },
         modifier = modifier,
     )
 }
@@ -598,17 +602,17 @@ private fun PagesFolderGrid(state: DistributionUiState, onEvent: (DistributionEv
     when {
         state.loading && state.folders.isEmpty() && state.searchResults == null -> SkeletonGrid()
         state.folders.isEmpty() -> ZillitEmptyState(
-            title = if (live) "No data found" else "Nothing in the history",
+            title = if (live) str(S.no_data_found) else str(S.desktop_dist_nothing_in_history),
             message = if (live) {
-                "Upload the first schedule page — it is filed under its scene number."
+                str(S.desktop_sched_pages_empty_message)
             } else {
-                "Deleted pages will be listed here."
+                str(S.desktop_dist_deleted_pages_listed)
             },
             icon = ZillitIcons.Folder,
             action = if (live) {
                 {
                     ZillitButton(
-                        text = "Upload PDF",
+                        text = str(S.desktop_dist_upload_pdf),
                         onClick = { onEvent(DistributionEvent.PickPdf()) },
                         leadingIcon = ZillitIcons.Paperclip,
                     )
@@ -687,7 +691,7 @@ internal fun SceneFolderCard(folder: DistFolder, unread: Int, onClick: () -> Uni
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ZillitText(
-                    text = "Scene No:",
+                    text = str(S.scene_no) + ":",
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.textMuted,
                 )
@@ -702,7 +706,7 @@ internal fun SceneFolderCard(folder: DistFolder, unread: Int, onClick: () -> Uni
                 ZillitStatusPill(label = type.scheduleLabel(), tone = type.tone())
             }
             ZillitText(
-                text = "Uploaded on\n${DistributionDates.dateTime(folder.createdMs)}",
+                text = str(S.desktop_dist_uploaded_on_line) + "\n" + DistributionDates.dateTime(folder.createdMs),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -741,8 +745,8 @@ internal fun UnreadBadge(count: Int, modifier: Modifier = Modifier) {
 
 /** The web's folder-card and page-card wording for the two page kinds. */
 internal fun ScheduleType.scheduleLabel(): String = when (this) {
-    ScheduleType.FullSchedulePages -> "Full Schedule Pages"
-    ScheduleType.OneLinePages -> "One Line Schedule Pages"
+    ScheduleType.FullSchedulePages -> str(S.schedule_pages)
+    ScheduleType.OneLinePages -> str(S.one_line_pages)
 }
 
 private fun ScheduleType.tone(): StatusTone = when (this) {
@@ -827,12 +831,16 @@ private fun DropOverlay(visible: Boolean, folderTab: Boolean) {
                 ZillitIcon(icon = ZillitIcons.Upload, tint = colors.accent, size = FOLDER_GLYPH)
                 Spacer(Modifier.height(ZillitTheme.spacing.sm))
                 ZillitText(
-                    text = "Drop a PDF to upload it",
+                    text = str(S.desktop_dist_drop_pdf),
                     style = ZillitTheme.typography.titleMedium,
                     color = colors.textPrimary,
                 )
                 ZillitText(
-                    text = if (folderTab) "You will give its scene number next." else "You will date it next.",
+                    text = if (folderTab) {
+                        str(S.desktop_sched_drop_hint_scene)
+                    } else {
+                        str(S.desktop_sched_drop_hint_date)
+                    },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )

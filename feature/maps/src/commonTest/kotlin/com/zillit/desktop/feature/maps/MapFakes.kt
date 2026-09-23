@@ -58,7 +58,12 @@ internal class FakeMapRepository(
 
     override suspend fun createCity(draft: CityDraft): ZillitResult<CityWrite> {
         createdCities += draft
-        val city = MapCity(id = "c${cityList.size + 1}", name = draft.name, description = draft.description, coordinates = draft.point)
+        val city = MapCity(
+            id = "c${cityList.size + 1}",
+            name = draft.name,
+            description = draft.description,
+            coordinates = draft.point,
+        )
         cityList += city
         return ZillitResult.Success(CityWrite("city_added", city))
     }
@@ -129,10 +134,17 @@ internal class FakeCanvasHost(
     override fun execute(script: String) {
         scripts += script
         if (!script.startsWith("zillitMap.request(")) return
-        val payload = Json.parseToJsonElement(script.removePrefix("zillitMap.request(").removeSuffix(")")).jsonPrimitive.content
+        val payload = Json.parseToJsonElement(
+            script.removePrefix("zillitMap.request(").removeSuffix(")"),
+        ).jsonPrimitive.content
         val request = Json.parseToJsonElement(payload).jsonObject
         val id = request["id"]!!.jsonPrimitive.content.toInt()
-        val reply: JsonObject = when (request["op"]!!.jsonPrimitive.content) {
+        messages.tryEmit(replyTo(request["op"]!!.jsonPrimitive.content, id).toString())
+    }
+
+    /** The canvas's answer to one request op — the fake half of `zillitMap.request(…)`. */
+    @Suppress("LongMethod") // One branch per op; splitting them reads worse than the table.
+    private fun replyTo(op: String, id: Int): JsonObject =when (op) {
             "reverseGeocode" -> buildJsonObject {
                 put("type", "reply"); put("id", id); put("ok", true); put("address", geocodedAddress)
                 put(
@@ -141,7 +153,12 @@ internal class FakeCanvasHost(
                         add(
                             buildJsonObject {
                                 put("long_name", geocodedName)
-                                put("types", buildJsonArray { add(kotlinx.serialization.json.JsonPrimitive("sublocality_level_1")) })
+                                put(
+                                    "types",
+                                    buildJsonArray {
+                                        add(kotlinx.serialization.json.JsonPrimitive("sublocality_level_1"))
+                                    },
+                                )
                             },
                         )
                         add(
@@ -159,19 +176,35 @@ internal class FakeCanvasHost(
             }
             "predictions" -> buildJsonObject {
                 put("type", "reply"); put("id", id); put("ok", true)
-                put("items", buildJsonArray { add(buildJsonObject { put("placeId", "p1"); put("description", "1 Picked Rd"); put("main", "1 Picked Rd") }) })
+                put(
+                    "items",
+                    buildJsonArray {
+                        add(
+                            buildJsonObject {
+                                put("placeId", "p1")
+                                put("description", "1 Picked Rd")
+                                put("main", "1 Picked Rd")
+                            },
+                        )
+                    },
+                )
             }
             "geocode" -> buildJsonObject {
-                put("type", "reply"); put("id", id); put("ok", true); put("lat", placeAt.lat); put("lng", placeAt.lng); put("address", "Crossing")
+                put("type", "reply")
+                put("id", id)
+                put("ok", true)
+                put("lat", placeAt.lat)
+                put("lng", placeAt.lng)
+                put("address", "Crossing")
             }
             else -> buildJsonObject { put("type", "reply"); put("id", id); put("ok", false) }
         }
-        messages.tryEmit(reply.toString())
-    }
 
     /** The last camera command's coordinates, when it had any. */
     fun lastCameraLat(): Double? = scripts.lastOrNull { it.startsWith("zillitMap.camera(") }?.let { script ->
-        val payload = Json.parseToJsonElement(script.removePrefix("zillitMap.camera(").removeSuffix(")")).jsonPrimitive.content
+        val payload = Json.parseToJsonElement(
+            script.removePrefix("zillitMap.camera(").removeSuffix(")"),
+        ).jsonPrimitive.content
         Json.parseToJsonElement(payload).jsonObject["lat"]?.jsonPrimitive?.double
     }
 }
@@ -190,7 +223,9 @@ internal class FakePhotos : MapPhotos {
     override suspend fun pick(onRefused: (String) -> Unit): List<PickedPhoto> = emptyList()
     override suspend fun upload(photo: PickedPhoto): ZillitResult<MapAttachment> {
         uploaded += photo.name
-        return ZillitResult.Success(MapAttachment(media = "map/${photo.name}", bucket = "b", region = "r", name = photo.name))
+        return ZillitResult.Success(
+            MapAttachment(media = "map/${photo.name}", bucket = "b", region = "r", name = photo.name),
+        )
     }
     override suspend fun read(attachment: MapAttachment, preview: Boolean) = ZillitResult.Success(ByteArray(0))
 }

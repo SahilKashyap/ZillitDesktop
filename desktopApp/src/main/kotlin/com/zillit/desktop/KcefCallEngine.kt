@@ -1,6 +1,8 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.EngineBridge
 import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallJoin
@@ -350,14 +352,13 @@ class KcefCallEngine(
     private fun shareFailureNotice(text: String): String = when {
         text.contains("Permission denied by system", ignoreCase = true) ||
             text.contains("NotAllowed", ignoreCase = true) ->
-            "Screen sharing needs Screen Recording permission for Zillit in " +
-                "System Settings → Privacy & Security, then a restart of the app."
+            str(S.desktop_screen_share_needs_permission)
         // A window that closed between the pick and the capture. Nothing is
         // broken; there is just nothing left to share.
         text.contains("NotReadable", ignoreCase = true) ||
             text.contains("video source", ignoreCase = true) ->
-            "That screen or window is no longer available. Try sharing again."
-        else -> "Screen sharing did not start: $text"
+            str(S.desktop_screen_share_source_gone)
+        else -> str(S.desktop_screen_share_failed, text)
     }
 
     private fun handledAsRecording(message: String): Boolean {

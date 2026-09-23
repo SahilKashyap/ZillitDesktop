@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitRailIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 
 /**
@@ -54,11 +56,15 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
  */
 data class RailItem(
     val id: String,
-    val label: String,
+    /** The `S` key of the label — held as a key so a language switch redraws the rail. */
+    val labelKey: String,
     val icon: ImageVector,
     val route: WorkspaceRoute,
     val badge: Int = 0,
-)
+) {
+    /** The label in the current language. Read in composition, it follows the language. */
+    val label: String get() = str(labelKey)
+}
 
 /**
  * The rail: the app's fixed sections.
@@ -77,11 +83,11 @@ val DefaultRailItems: List<RailItem> = listOf(
     // labels AppHelper.kt:134-172): Home, Email, Tools, C&C, Settings.
     // The icons are the web side menu's own SVGs (`ZillitRailIcons`); Email
     // keeps the app's envelope, as the web draws that one from Material too.
-    RailItem("home", "Home", ZillitRailIcons.Home, WorkspaceRoute.Home),
-    RailItem("email", "Email", ZillitIcons.Mail, WorkspaceRoute.Tool("/email")),
-    RailItem("tools", "Film Tools", ZillitRailIcons.Tools, WorkspaceRoute.Tool("/home/tools")),
-    RailItem("cnc", "Chat & Calls", ZillitRailIcons.Cnc, WorkspaceRoute.Tool("/cnc")),
-    RailItem("settings", "Settings", ZillitRailIcons.Settings, WorkspaceRoute.Tool("/settings")),
+    RailItem("home", S.home, ZillitRailIcons.Home, WorkspaceRoute.Home),
+    RailItem("email", S.email, ZillitIcons.Mail, WorkspaceRoute.Tool("/email")),
+    RailItem("tools", S.desktop_film_tools, ZillitRailIcons.Tools, WorkspaceRoute.Tool("/home/tools")),
+    RailItem("cnc", S.desktop_chat_calls, ZillitRailIcons.Cnc, WorkspaceRoute.Tool("/cnc")),
+    RailItem("settings", S.settings, ZillitRailIcons.Settings, WorkspaceRoute.Tool("/settings")),
 )
 
 /**
@@ -93,8 +99,8 @@ val DefaultRailItems: List<RailItem> = listOf(
  * app is already installed, and the web's page only existed to install one.
  */
 val AppRailItems: List<RailItem> = listOf(
-    RailItem("sos", "SOS", ZillitRailIcons.Sos, WorkspaceRoute.Tool("/sos")),
-    RailItem("help", "Zillit Help", ZillitIcons.Help, WorkspaceRoute.Tool("/settings/help")),
+    RailItem("sos", S.sos, ZillitRailIcons.Sos, WorkspaceRoute.Tool("/sos")),
+    RailItem("help", S.zillit_help, ZillitIcons.Help, WorkspaceRoute.Tool("/settings/help")),
 )
 
 /**
@@ -110,7 +116,7 @@ val AppRailItems: List<RailItem> = listOf(
  * windows it opens.
  */
 val AdminRailItem: RailItem =
-    RailItem("admin", "Admin Settings", ZillitToolIcons.Production, WorkspaceRoute.Tool("/settings/admin"))
+    RailItem("admin", S.admin_settings, ZillitToolIcons.Production, WorkspaceRoute.Tool("/settings/admin"))
 
 /**
  * The rail for this reader.
@@ -199,7 +205,7 @@ fun NavigationRail(
         Box(Modifier.weight(1f))
         onSignOut?.let { requestSignOut ->
             RailButton(
-                item = RailItem("logout", "Logout", ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
+                item = RailItem("logout", S.logout, ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
                 isActive = false,
                 expanded = expanded,
                 onClick = requestSignOut,
@@ -222,20 +228,20 @@ fun NavigationRail(
 @Composable
 fun SignOutDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     ZillitDialogShell(
-        title = "Sign out?",
-        subtitle = "You'll be signed out on this computer and need to sign in again to continue.",
+        title = str(S.desktop_sign_out_title),
+        subtitle = str(S.desktop_sign_out_body),
         icon = ZillitIcons.Logout,
         visible = visible,
         onDismiss = onDismiss,
         width = SIGN_OUT_DIALOG_WIDTH,
         actions = {
             Spacer(Modifier.weight(1f))
-            ZillitButton(text = "Cancel", variant = ButtonVariant.Secondary, onClick = onDismiss)
-            ZillitButton(text = "Sign out", onClick = onConfirm)
+            ZillitButton(text = str(S.cancel), variant = ButtonVariant.Secondary, onClick = onDismiss)
+            ZillitButton(text = str(S.desktop_sign_out), onClick = onConfirm)
         },
     ) {
         ZillitText(
-            text = "Anything waiting to be sent will stay on this computer until you sign in again.",
+            text = str(S.desktop_sign_out_note),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )

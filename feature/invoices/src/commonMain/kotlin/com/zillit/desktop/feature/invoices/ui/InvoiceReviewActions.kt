@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.PoSuggestion
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The pre-approval queue's two overlays — the web's `POMatchingOverlay` and
@@ -22,8 +24,9 @@ internal class InvoiceReviewActions(private val vm: InvoicesViewModel) {
             is InvoicesEvent.OpenReview -> open(event.invoice)
             InvoicesEvent.CloseReview -> vm.update { copy(review = null) }
             is InvoicesEvent.SelectReviewPo -> vm.update { copy(review = review?.copy(selectedPo = event.index)) }
-            InvoicesEvent.ReviewSendToApproval -> decide("Sent for approval") { vm.repo.sendToApproval(it) }
-            InvoicesEvent.ReviewOverride -> decide("Override approved") { vm.repo.override(it) }
+            InvoicesEvent.ReviewSendToApproval ->
+                decide(str(S.ah_sent_for_approval_toast)) { vm.repo.sendToApproval(it) }
+            InvoicesEvent.ReviewOverride -> decide(str(S.ah_override_approved_toast)) { vm.repo.override(it) }
 
             is InvoicesEvent.OpenPoSuggestions -> openPicker(event.invoice)
             is InvoicesEvent.MatchToPo -> match(event.suggestion)
@@ -129,7 +132,7 @@ internal class InvoiceReviewActions(private val vm: InvoicesViewModel) {
         val picker = vm.currentState.poPicker ?: return
         if (picker.matching != null) return
         if (picker.invoice.currency.isBlank() && vm.currentState.projectCurrency.isBlank()) {
-            vm.fail("Currency is required")
+            vm.fail(str(S.ah_err_currency_required))
             return
         }
         vm.update { copy(poPicker = poPicker?.copy(matching = suggestion.poId)) }
@@ -137,7 +140,7 @@ internal class InvoiceReviewActions(private val vm: InvoicesViewModel) {
             when (val result = vm.repo.match(picker.invoice.id, suggestion)) {
                 is ZillitResult.Success -> {
                     vm.update { copy(poPicker = null) }
-                    vm.notice("Matched to ${suggestion.label}")
+                    vm.notice(str(S.desktop_inv_matched_to, suggestion.label))
                     vm.refresh()
                 }
                 is ZillitResult.Failure -> vm.update {

@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.HubUser
 import com.zillit.desktop.feature.accounthub.domain.HubUsers
 
@@ -99,7 +101,7 @@ fun UserPickerDialog(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
-    applyLabel: String = "Done",
+    applyLabel: String = str(S.ah_done),
 ) {
     val colors = ZillitTheme.colors
     val shown = HubUsers.search(users, search)
@@ -112,19 +114,19 @@ fun UserPickerDialog(
         modifier = modifier,
         scrollable = false,
         actions = {
-            ZillitButton(text = "Cancel", onClick = onDismiss, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.cancel), onClick = onDismiss, variant = ButtonVariant.Tertiary)
             ZillitButton(text = applyLabel, onClick = onApply)
         },
     ) {
         ZillitSearchField(
             value = search,
             onValueChange = onSearch,
-            placeholder = "Search users...",
+            placeholder = str(S.invitees_search_users),
             modifier = Modifier.fillMaxWidth(),
         )
         Column(modifier = Modifier.fillMaxWidth().heightIn(max = PICKER_LIST).verticalScroll(rememberScrollState())) {
             if (shown.isEmpty()) FieldHint(
-                if (users.isEmpty()) "No team members" else "No results for “$search”",
+                if (users.isEmpty()) str(S.desktop_no_team_members) else "No results for “$search”",
                 Modifier.padding(ZillitTheme.spacing.sm),
             )
             shown.forEach { user ->
@@ -150,12 +152,12 @@ fun UserPickerDialog(
                                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                 maxLines = 1,
                             )
-                            if (user.isAdmin) Pill("Admin", tone = StatusTone.Progress)
+                            if (user.isAdmin) Pill(str(S.admin), tone = StatusTone.Progress)
                         }
                         if (user.roleLabel.isNotBlank()) FieldHint(user.roleLabel)
                     }
                     if (picked) {
-                        Pill("Added", tone = StatusTone.Done)
+                        Pill(str(S.history_added), tone = StatusTone.Done)
                     } else {
                         ZillitIcon(icon = ZillitIcons.Add, tint = colors.textMuted, size = 16.dp)
                     }

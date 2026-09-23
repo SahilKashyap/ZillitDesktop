@@ -36,6 +36,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.crewlist.domain.DialCode
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The dial-code selector beside a phone input — the web's searchable,
@@ -114,7 +116,12 @@ private fun Trigger(
         )
         if (value.isNotEmpty() && hovered) {
             Box(Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onClear).padding(2.dp)) {
-                ZillitIcon(ZillitIcons.Close, contentDescription = "Clear code", tint = colors.textMuted, size = 12.dp)
+                ZillitIcon(
+                    ZillitIcons.Close,
+                    contentDescription = str(S.desktop_clear_code),
+                    tint = colors.textMuted,
+                    size = 12.dp,
+                )
             }
         } else {
             ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.textMuted, size = 13.dp)
@@ -136,7 +143,7 @@ private fun DialCodeList(codes: List<DialCode>, selected: String, onPick: (Strin
         ZillitSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Search country or code",
+            placeholder = str(S.desktop_search_country_or_code),
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
         )
         // A FIXED height: a lazy list inside a menu measures its intrinsics on
@@ -145,7 +152,7 @@ private fun DialCodeList(codes: List<DialCode>, selected: String, onPick: (Strin
             if (shown.isEmpty()) {
                 item {
                     ZillitText(
-                        text = "No matching country",
+                        text = str(S.desktop_no_matching_country),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                         modifier = Modifier.padding(10.dp),

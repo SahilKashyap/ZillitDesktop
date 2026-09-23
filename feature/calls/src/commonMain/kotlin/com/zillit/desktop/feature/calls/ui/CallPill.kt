@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.roundToInt
 
 /**
@@ -111,7 +113,7 @@ private fun PillControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
     RoundAction(
         icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
-        label = if (state.micMuted) "Unmute" else "Mute",
+        label = if (state.micMuted) str(S.desktop_unmute) else str(S.desktop_mute),
         background = if (state.micMuted) colors.danger else colors.surfaceHover,
         tint = if (state.micMuted) Color.White else colors.textPrimary,
         size = PILL_BUTTON,
@@ -122,7 +124,7 @@ private fun PillControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     if (state.stage == CallStageKind.Video) {
         RoundAction(
             icon = ZillitIcons.Detach,
-            label = if (state.pipOpen) "Bring video back" else "Pop out video",
+            label = if (state.pipOpen) str(S.desktop_call_bring_video_back) else str(S.desktop_call_pop_out_video),
             background = if (state.pipOpen) colors.surfaceSelected else colors.surfaceHover,
             tint = colors.textPrimary,
             size = PILL_BUTTON,
@@ -131,14 +133,14 @@ private fun PillControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     }
     RoundAction(
         icon = ZillitIcons.PhoneDown,
-        label = "End call",
+        label = str(S.desktop_end_call),
         background = colors.danger,
         size = PILL_BUTTON,
         onClick = { onEvent(CallEvent.HangUp) },
     )
     RoundAction(
         icon = ZillitIcons.Maximize,
-        label = "Expand call",
+        label = str(S.desktop_call_expand_call),
         background = colors.surfaceHover,
         tint = colors.textPrimary,
         size = PILL_BUTTON,

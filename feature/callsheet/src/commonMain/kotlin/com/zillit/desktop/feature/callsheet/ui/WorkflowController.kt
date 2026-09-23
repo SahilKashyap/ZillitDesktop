@@ -1,7 +1,10 @@
 package com.zillit.desktop.feature.callsheet.ui
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.ApprovalDecision
 import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
@@ -13,15 +16,17 @@ import com.zillit.desktop.feature.callsheet.domain.actionableRequest
 import com.zillit.desktop.feature.callsheet.domain.approverIdsFromSheet
 import com.zillit.desktop.feature.callsheet.domain.canPublish
 import com.zillit.desktop.feature.callsheet.domain.reminderAssigneeIds
+import com.zillit.desktop.feature.callsheet.domain.replaceTargets
+import com.zillit.desktop.feature.callsheet.domain.sendForChatAllowed
 
 /**
  * The review workflow: Send for Signature and for Comments, Send for Chat,
- * approve (with or without a signature), reject, remind, publish, attach and
- * Document Distribution — the web's `submitForApproval`,
- * `submitForInternalApproval`, `sendCallSheetForChat`, `approve/rejectCallSheet`,
- * `sendReminder`, `publishCallSheet`, `attachToPublished` and
- * `distributeCallSheetToDocDist`. Every action re-checks its gate here, not
- * only on screen.
+ * approve (asked first: with or without a signature), reject, remind,
+ * publish (Continuation / New / Replace one document), attach and Document
+ * Distribution — the web's `submitForApproval`, `submitForInternalApproval`,
+ * `sendCallSheetForChat`, `approve/rejectCallSheet`, `sendReminder`,
+ * `publishCallSheet`, `attachToPublished` and `distributeCallSheetToDocDist`.
+ * Every action re-checks its gate here, not only on screen.
  *
  * Divergences, each fixing a web bug: an editor send lands where the sheet is
  * (Comments → Drafts, B-9) and only after the send succeeded (B-12); reminders
@@ -50,9 +55,8 @@ internal class WorkflowController(private val ctx: SheetContext) {
             is WorkflowEvent.OpenSendForChat, is WorkflowEvent.SearchChatRecipients,
             is WorkflowEvent.PickChatRecipient, WorkflowEvent.ConfirmSendForChat,
             -> onChatEvent(event)
-            is WorkflowEvent.OpenApprove, is WorkflowEvent.UseSignature, WorkflowEvent.ChangeSignature,
-            WorkflowEvent.ApproveWithSignature, WorkflowEvent.ApproveWithoutSignature,
-            WorkflowEvent.OpenSavedSignatures, WorkflowEvent.CloseSavedSignatures, is WorkflowEvent.PickSavedSignature,
+            is WorkflowEvent.OpenApprove, WorkflowEvent.ChooseSignature, is WorkflowEvent.UseSignature,
+            WorkflowEvent.ChangeSignature, WorkflowEvent.ApproveWithSignature, WorkflowEvent.ApproveWithoutSignature,
             -> onApproveEvent(event)
             is WorkflowEvent.OpenReject -> openReject(event.sheet)
             is WorkflowEvent.EditRejectReason -> ctx.update {
@@ -67,9 +71,9 @@ internal class WorkflowController(private val ctx: SheetContext) {
             }
             WorkflowEvent.ConfirmReminder -> remind()
             is WorkflowEvent.OpenPublish, is WorkflowEvent.PickDestination, WorkflowEvent.ContinuePublish,
-            WorkflowEvent.BackToDestination, is WorkflowEvent.PickContinuation, is WorkflowEvent.EditPublishNotes,
-            WorkflowEvent.ConfirmPublish, WorkflowEvent.AttachInstead, is WorkflowEvent.EditAttachCaption,
-            WorkflowEvent.ConfirmAttach,
+            WorkflowEvent.BackToDestination, is WorkflowEvent.PickPublishChoice, is WorkflowEvent.PickReplaceTarget,
+            is WorkflowEvent.EditPublishNotes, WorkflowEvent.ConfirmPublish, WorkflowEvent.AttachInstead,
+            is WorkflowEvent.EditAttachCaption, WorkflowEvent.ConfirmAttach,
             -> onPublishEvent(event)
         }
     }
@@ -94,12 +98,12 @@ internal class WorkflowController(private val ctx: SheetContext) {
             when (val sent = ctx.repository.submitForApproval(sheet.id)) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(busy = false, lists = lists.without(sheet.id)) }
-                    ctx.toast("Sent for approval!")
+                    ctx.toast(str(S.desktop_sent_for_approval))
                     afterSend()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Failed: ${sent.error.localised()}", isError = true)
+                    ctx.toast(str(S.drive_uploads_status_failed_format, sent.error.localised()), isError = true)
                 }
             }
         }
@@ -107,9 +111,9 @@ internal class WorkflowController(private val ctx: SheetContext) {
 
     private fun noApproversPrompt() = SheetDialog.Confirm(
         action = ConfirmAction.NoApprovers,
-        title = "No Approvers",
-        message = "No approvers exist for this project. Add approvers before sending a call sheet for signature.",
-        confirmLabel = "OK",
+        title = str(S.desktop_no_approvers),
+        message = str(S.desktop_cs_no_approvers_message),
+        confirmLabel = str(S.ok),
         danger = false,
     )
 
@@ -172,7 +176,7 @@ internal class WorkflowController(private val ctx: SheetContext) {
     private fun sendForComments(sheetId: String, ids: List<String>, revokeAccess: Boolean, afterSend: () -> Unit) {
         if (!ctx.state.isPoster || ctx.state.busy) return
         if (ids.isEmpty()) {
-            ctx.toast("No recipients selected.", isError = true)
+            ctx.toast(str(S.desktop_no_recipients_selected), isError = true)
             return
         }
         ctx.update { copy(busy = true) }
@@ -191,18 +195,18 @@ internal class WorkflowController(private val ctx: SheetContext) {
                 ReviewAssignee(
                     assigneeId = id,
                     assigneeName = member?.fullName.orEmpty(),
-                    role = member?.designation?.ifBlank { null } ?: "Member",
+                    role = member?.designation?.ifBlank { null } ?: str(S.member),
                 )
             }
             when (val sent = ctx.repository.submitForInternalApproval(sheetId, approvers)) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Sent for internal distribution!")
+                    ctx.toast(str(S.desktop_sent_for_internal_distribution))
                     afterSend()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Failed: ${sent.error.localised()}", isError = true)
+                    ctx.toast(str(S.drive_uploads_status_failed_format, sent.error.localised()), isError = true)
                 }
             }
         }
@@ -210,9 +214,10 @@ internal class WorkflowController(private val ctx: SheetContext) {
 
     // Send for chat ---------------------------------------------------------------------------
 
+    /** ZL-21415: sharing a read-only PDF is not a posting action — anyone who sees the row may, until it locks. */
     private fun onChatEvent(event: WorkflowEvent) {
         when (event) {
-            is WorkflowEvent.OpenSendForChat -> if (ctx.state.isPoster) {
+            is WorkflowEvent.OpenSendForChat -> if (sendForChatAllowed(event.sheet.status)) {
                 ctx.update { copy(dialog = SheetDialog.ChatSend(event.sheet)) }
             }
             is WorkflowEvent.SearchChatRecipients -> ctx.update {
@@ -245,13 +250,13 @@ internal class WorkflowController(private val ctx: SheetContext) {
             when (outcome) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(dialog = if (dialog is SheetDialog.ChatSend) null else dialog) }
-                    ctx.toast("Call sheet PDF sent to chat.")
+                    ctx.toast(str(S.desktop_cs_pdf_sent_to_chat))
                 }
                 is ZillitResult.Failure -> {
                     ctx.update {
                         copy(dialog = (dialog as? SheetDialog.ChatSend)?.copy(sending = false) ?: dialog)
                     }
-                    ctx.toast("Send for Chat failed: ${outcome.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_send_for_chat_failed_reason, outcome.error.localised()), isError = true)
                 }
             }
         }
@@ -259,20 +264,26 @@ internal class WorkflowController(private val ctx: SheetContext) {
 
     // Approve / reject / remind ------------------------------------------------------------------
 
-    @Suppress("CyclomaticComplexMethod") // One branch per step of the signature dialog.
+    /**
+     * ZL-21512 — Approve asks first. Both call sites (Received, and the
+     * creator-approver shortcut on Sent) open the same chooser; "without"
+     * approves straight away, "with" advances to the pad, whose one button
+     * stays locked to that choice. Opening reads the sheet's report badge.
+     */
     private fun onApproveEvent(event: WorkflowEvent) {
         when (event) {
             is WorkflowEvent.OpenApprove -> {
                 val request = actionableRequest(event.sheet, ctx.state.me)?.takeIf { it.isFinalStage } ?: return
+                ctx.lists.readReport(event.sheet.id)
                 ctx.update { copy(dialog = SheetDialog.Approve(event.sheet, request)) }
+            }
+            WorkflowEvent.ChooseSignature -> approveDialog {
+                if (uploading || ctx.state.busy) this else copy(sign = true)
             }
             is WorkflowEvent.UseSignature -> approveDialog { copy(signature = SignatureImage(event.png)) }
             WorkflowEvent.ChangeSignature -> approveDialog { if (uploading) this else copy(signature = null) }
             WorkflowEvent.ApproveWithSignature -> approveWithSignature()
-            WorkflowEvent.ApproveWithoutSignature -> approve(ApprovalDecision.WithoutSignature)
-            WorkflowEvent.OpenSavedSignatures -> openSavedSignatures()
-            WorkflowEvent.CloseSavedSignatures -> approveDialog { copy(savedPicker = null) }
-            is WorkflowEvent.PickSavedSignature -> pickSavedSignature(event)
+            WorkflowEvent.ApproveWithoutSignature -> approveWithoutSignature()
             else -> Unit
         }
     }
@@ -281,17 +292,27 @@ internal class WorkflowController(private val ctx: SheetContext) {
         copy(dialog = (dialog as? SheetDialog.Approve)?.change() ?: dialog)
     }
 
+    /** Only from the chooser: once the pad is up, the unsigned outcome is no longer on offer. */
+    private fun approveWithoutSignature() {
+        val dialog = ctx.state.dialog as? SheetDialog.Approve ?: return
+        if (dialog.sign) return
+        approve(ApprovalDecision.WithoutSignature)
+    }
+
     private fun approveWithSignature() {
         val dialog = ctx.state.dialog as? SheetDialog.Approve ?: return
         val signature = dialog.signature ?: return
-        if (dialog.uploading || ctx.state.busy) return
+        if (!dialog.sign || dialog.uploading || ctx.state.busy) return
         approveDialog { copy(uploading = true) }
         ctx.launchWork {
             when (val stored = ctx.services.publishing.uploadSignature(signature.png)) {
                 is ZillitResult.Success -> approve(stored.data)
                 is ZillitResult.Failure -> {
                     approveDialog { copy(uploading = false) }
-                    ctx.toast("Couldn't upload the signature: ${stored.error.localised()}", isError = true)
+                    ctx.toast(
+                        str(S.desktop_could_not_upload_signature_reason, stored.error.localised()),
+                        isError = true,
+                    )
                 }
             }
         }
@@ -315,70 +336,13 @@ internal class WorkflowController(private val ctx: SheetContext) {
                             ),
                         )
                     }
-                    ctx.toast("Approved!")
+                    ctx.toast(str(S.desktop_approved_exclaim))
                     ctx.lists.refreshCurrent()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
                     approveDialog { copy(uploading = false) }
-                    ctx.toast("Approve failed: ${result.error.localised()}", isError = true)
-                }
-            }
-        }
-    }
-
-    /** "Choose Saved Signature": the approver's saved signatures and initials. */
-    private fun openSavedSignatures() {
-        val source = ctx.services.signatures
-        if (source == null) {
-            ctx.toast("Saved signatures aren't available here.", isError = true)
-            return
-        }
-        approveDialog { copy(savedPicker = SavedSignaturesPicker()) }
-        ctx.launchWork {
-            when (val listed = source.list()) {
-                is ZillitResult.Failure -> approveDialog {
-                    copy(
-                        savedPicker = savedPicker?.copy(loading = false, error = listed.error.localised()),
-                    )
-                }
-                is ZillitResult.Success -> {
-                    approveDialog { copy(savedPicker = savedPicker?.copy(loading = false, signatures = listed.data)) }
-                    listed.data.forEach { signature ->
-                        val image = (source.image(signature) as? ZillitResult.Success)?.data ?: return@forEach
-                        approveDialog {
-                            copy(
-                                savedPicker = savedPicker?.let { picker ->
-                                    picker.copy(images = picker.images + (signature.id to image))
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /** Picking a saved signature confirms it at once — no "Use This Signature". */
-    private fun pickSavedSignature(event: WorkflowEvent.PickSavedSignature) {
-        val dialog = ctx.state.dialog as? SheetDialog.Approve ?: return
-        val picker = dialog.savedPicker ?: return
-        val cached = picker.images[event.signature.id]
-        if (cached != null) {
-            approveDialog { copy(signature = SignatureImage(cached), savedPicker = null) }
-            return
-        }
-        val source = ctx.services.signatures ?: return
-        approveDialog { copy(savedPicker = savedPicker?.copy(picking = event.signature.id)) }
-        ctx.launchWork {
-            when (val image = source.image(event.signature)) {
-                is ZillitResult.Success -> approveDialog { copy(
-                    signature = SignatureImage(image.data),
-                    savedPicker = null,
-                ) }
-                is ZillitResult.Failure -> {
-                    approveDialog { copy(savedPicker = savedPicker?.copy(picking = null)) }
-                    ctx.toast("Couldn't load the signature: ${image.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_approve_failed_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -386,6 +350,7 @@ internal class WorkflowController(private val ctx: SheetContext) {
 
     private fun openReject(sheet: CallSheetSummary) {
         val request = actionableRequest(sheet, ctx.state.me)?.takeIf { it.isFinalStage } ?: return
+        ctx.lists.readReport(sheet.id)
         ctx.update { copy(dialog = SheetDialog.Reject(sheet, request)) }
     }
 
@@ -407,12 +372,12 @@ internal class WorkflowController(private val ctx: SheetContext) {
                             ),
                         )
                     }
-                    ctx.toast("Rejected.")
+                    ctx.toast(str(S.desktop_rejected_dot))
                     ctx.lists.refreshCurrent()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Reject failed: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_reject_failed_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -421,6 +386,9 @@ internal class WorkflowController(private val ctx: SheetContext) {
     /**
      * Reminders go to the current round's PENDING approvers of the stage the
      * sheet is in. A list row without requests asks the detail first.
+     * `sent_by` is the sender's MEMBER ID (the reader resolves who they are
+     * today) and `sent_by_role` the designation KEY, never the resolved label
+     * (ZL-20648 — that would bake in the sender's locale).
      */
     private fun remind() {
         val dialog = ctx.state.dialog as? SheetDialog.ReminderCompose ?: return
@@ -435,24 +403,26 @@ internal class WorkflowController(private val ctx: SheetContext) {
             }
             if (assignees.isEmpty()) {
                 ctx.update { copy(busy = false, dialog = null) }
-                ctx.toast("No pending approvers to remind on this call sheet.", isError = true)
+                ctx.toast(str(S.desktop_cs_no_pending_approvers_to_remind), isError = true)
                 return@launchWork
             }
+            val me = ctx.state.currentMember
             val request = ReminderRequest(
-                sentBy = ctx.state.currentMember?.fullName?.ifBlank { null } ?: ctx.viewer().displayName,
+                sentBy = ctx.state.me,
                 sentById = ctx.state.me,
+                sentByRole = me?.designationKey?.ifBlank { null } ?: me?.designation.orEmpty(),
                 assigneeIds = assignees,
                 message = dialog.message.trim().ifEmpty { DEFAULT_REMINDER },
             )
             when (val sent = ctx.repository.sendReminder(sheet.id, request)) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(busy = false, dialog = null) }
-                    ctx.toast("Reminder sent!")
+                    ctx.toast(str(S.desktop_reminder_sent_exclaim))
                     ctx.lists.refreshCurrent()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Reminder failed: ${sent.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_reminder_failed_reason, sent.error.localised()), isError = true)
                 }
             }
         }
@@ -464,7 +434,9 @@ internal class WorkflowController(private val ctx: SheetContext) {
     private fun onPublishEvent(event: WorkflowEvent) {
         when (event) {
             is WorkflowEvent.OpenPublish -> if (canPublish(event.sheet, ctx.state.me)) {
+                ctx.lists.readReport(event.sheet.id)
                 ctx.update { copy(dialog = SheetDialog.Publish(event.sheet)) }
+                loadReplaceTargets(event.sheet.id)
             }
             is WorkflowEvent.PickDestination -> ctx.update {
                 val publish = dialog as? SheetDialog.Publish
@@ -483,8 +455,16 @@ internal class WorkflowController(private val ctx: SheetContext) {
             WorkflowEvent.BackToDestination -> ctx.update {
                 copy(dialog = (dialog as? SheetDialog.Publish)?.copy(step = PublishStep.Destination) ?: dialog)
             }
-            is WorkflowEvent.PickContinuation -> ctx.update {
-                copy(dialog = (dialog as? SheetDialog.Publish)?.copy(continuation = event.continuation) ?: dialog)
+            is WorkflowEvent.PickPublishChoice -> ctx.update {
+                val publish = dialog as? SheetDialog.Publish
+                // Replace is hidden, not disabled, when there is nothing to swap.
+                val blocked = event.choice == PublishChoice.Replace && publish?.replaceTargets.isNullOrEmpty()
+                copy(dialog = if (publish == null || blocked) dialog else publish.copy(choice = event.choice))
+            }
+            is WorkflowEvent.PickReplaceTarget -> ctx.update {
+                val publish = dialog as? SheetDialog.Publish
+                val known = publish?.replaceTargets?.any { it.chatId == event.chatId } == true
+                copy(dialog = if (publish == null || !known) dialog else publish.copy(replaceChatId = event.chatId))
             }
             is WorkflowEvent.EditPublishNotes -> ctx.update {
                 copy(dialog = (dialog as? SheetDialog.Publish)?.copy(notes = event.notes) ?: dialog)
@@ -501,27 +481,63 @@ internal class WorkflowController(private val ctx: SheetContext) {
     }
 
     /**
-     * Publish in app (and on Both): the publish call, then — with the dialog
-     * closed — the PDF posted into the Home call-sheet unit, where New replaces
-     * the previous call sheet and Continuation appends; on Both, the Document
-     * Distribution copy last, so its failure never un-publishes.
+     * The Replace card's options, read on OPEN rather than on reaching step 2
+     * (a third card appearing under the cursor), refetched every open (the
+     * unit's list changes with each publish, and a stale id is exactly how a
+     * publish earns `unit_chat_replace_target_not_found`). Newest first, and
+     * seeded only while nothing is chosen. A failed read hides the card.
+     */
+    private fun loadReplaceTargets(sheetId: String) {
+        ctx.launchWork {
+            val targets = when (val messages = ctx.services.publishing.unitMessages()) {
+                is ZillitResult.Success -> replaceTargets(messages.data)
+                is ZillitResult.Failure -> emptyList()
+            }
+            ctx.update {
+                val publish = dialog as? SheetDialog.Publish
+                if (publish == null || publish.sheet.id != sheetId) {
+                    this
+                } else {
+                    copy(
+                        dialog = publish.copy(
+                            replaceTargets = targets,
+                            replaceChatId = publish.replaceChatId ?: targets.firstOrNull()?.chatId,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Publish in app (and on Both): the publish call holds the dialog — busy
+     * covers that call ONLY — then, with it closed, the PDF posted into the
+     * Home call-sheet unit as a detached tail reporting its own outcome: New
+     * replaces every live call sheet, Continuation appends, Replace retires
+     * the one picked document; on Both, the Document Distribution copy last,
+     * so its failure never un-publishes.
      */
     private fun publish() {
         val dialog = ctx.state.dialog as? SheetDialog.Publish ?: return
-        val continuation = dialog.continuation ?: return
-        if (!canPublish(dialog.sheet, ctx.state.me) || ctx.state.busy) return
+        val choice = dialog.choice ?: return
+        if (!dialog.canConfirm || !canPublish(dialog.sheet, ctx.state.me) || ctx.state.busy) return
         ctx.update { copy(busy = true) }
         ctx.launchWork {
-            val result = publishCall(dialog.sheet, continuation, dialog.notes.trim())
+            val result = publishCall(dialog.sheet, choice.continuation, dialog.notes.trim())
             if (result is ZillitResult.Failure) {
                 ctx.update { copy(busy = false) }
-                ctx.toast("Publish failed: ${result.error.localised()}", isError = true)
+                ctx.toast(str(S.desktop_publish_failed_reason, result.error.localised()), isError = true)
                 return@launchWork
             }
             ctx.update { copy(busy = false, dialog = null) }
-            ctx.toast("Published!")
+            ctx.toast(str(S.desktop_published_exclaim))
             ctx.lists.refreshCurrent()
-            postPdfToUnit(dialog.sheet, replacePrevious = !continuation)
+            // The tail — the dialog and busy are already released above.
+            postPdfToUnit(
+                dialog.sheet,
+                replacePrevious = choice.replacePrevious,
+                replaceChatId = dialog.replaceChatId.takeIf { choice == PublishChoice.Replace },
+            )
             if (dialog.destination == PublishDestination.Both) {
                 askDocDist(dialog.sheet, fromDraft = false, alreadyPublished = true)
             }
@@ -537,13 +553,16 @@ internal class WorkflowController(private val ctx: SheetContext) {
             notes = notes,
         )
 
-    /** Best-effort, like the web: a failed chat post never unpublishes — but it is said. */
-    private suspend fun postPdfToUnit(sheet: CallSheetSummary, replacePrevious: Boolean) {
+    /**
+     * Best-effort, like the web: a failed chat post never unpublishes — but it
+     * is said, a target archived or deleted since the picker was read included.
+     */
+    private suspend fun postPdfToUnit(sheet: CallSheetSummary, replacePrevious: Boolean, replaceChatId: String?) {
         val pdf = when (val bytes = ctx.services.delivery.pdf(sheet.id)) {
             is ZillitResult.Success -> bytes.data
             is ZillitResult.Failure -> {
                 ctx.toast(
-                    "Published, but the PDF couldn't be posted to Home: ${bytes.error.localised()}",
+                    str(S.desktop_published_but_pdf_not_posted_reason, bytes.error.localised()),
                     isError = true,
                 )
                 return
@@ -555,9 +574,21 @@ internal class WorkflowController(private val ctx: SheetContext) {
             contentType = PDF,
             caption = "",
             replacePrevious = replacePrevious,
+            replaceChatId = replaceChatId,
         )
         if (posted is ZillitResult.Failure) {
-            ctx.toast("Published, but the PDF couldn't be posted to Home: ${posted.error.localised()}", isError = true)
+            // The key as the server spells it — `localised()` humanises it ("Unit Chat Replace Target Not Found").
+            val gone = replaceChatId != null &&
+                listOfNotNull((posted.error as? ZillitError.Http)?.serverMessage, posted.error.localised())
+                    .any { it.lowercase().replace(' ', '_').contains(REPLACE_TARGET_GONE) }
+            ctx.toast(
+                if (gone) {
+                    str(S.desktop_replace_target_gone)
+                } else {
+                    str(S.desktop_published_but_pdf_not_posted_reason, posted.error.localised())
+                },
+                isError = true,
+            )
         }
     }
 
@@ -581,15 +612,15 @@ internal class WorkflowController(private val ctx: SheetContext) {
         if (attach.uploading || ctx.state.busy || !ctx.state.isPoster) return
         ctx.update { copy(dialog = attach.copy(uploading = true)) }
         ctx.launchWork {
-            ctx.toast("Uploading document…")
+            ctx.toast(str(S.dm_nda_step_upload))
             if (attach.withPublish) {
                 val published = publishCall(attach.sheet, continuation = true, notes = "")
                 if (published is ZillitResult.Failure) {
-                    uploadFailed("Publish failed: ${published.error.localised()}")
+                    uploadFailed(str(S.desktop_publish_failed_reason, published.error.localised()))
                     return@launchWork
                 }
-                ctx.toast("Published!")
-                postPdfToUnit(attach.sheet, replacePrevious = false)
+                ctx.toast(str(S.desktop_published_exclaim))
+                postPdfToUnit(attach.sheet, replacePrevious = false, replaceChatId = null)
             }
             val posted = ctx.services.publishing.postToUnit(
                 bytes = attach.document.bytes,
@@ -601,7 +632,7 @@ internal class WorkflowController(private val ctx: SheetContext) {
             when (posted) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(dialog = if (dialog is SheetDialog.AttachDocument) null else dialog) }
-                    ctx.toast("Document attached successfully!")
+                    ctx.toast(str(S.desktop_document_attached))
                     ctx.lists.refreshCurrent()
                 }
                 is ZillitResult.Failure -> {
@@ -609,7 +640,7 @@ internal class WorkflowController(private val ctx: SheetContext) {
                         ctx.update { copy(dialog = if (dialog is SheetDialog.AttachDocument) null else dialog) }
                         ctx.lists.refreshCurrent()
                     }
-                    uploadFailed("Attach document failed: ${posted.error.localised()}")
+                    uploadFailed(str(S.desktop_attach_document_failed_reason, posted.error.localised()))
                 }
             }
         }
@@ -624,7 +655,7 @@ internal class WorkflowController(private val ctx: SheetContext) {
 
     private fun askDocDist(sheet: CallSheetSummary, fromDraft: Boolean, alreadyPublished: Boolean) {
         if (!ctx.services.publishing.canDistribute()) {
-            ctx.toast("You don't have permission to distribute to Document Distribution.", isError = true)
+            ctx.toast(str(S.desktop_no_permission_to_distribute_dd), isError = true)
             return
         }
         if (distributing) return
@@ -647,7 +678,7 @@ internal class WorkflowController(private val ctx: SheetContext) {
         if (distributing) return
         distributing = true
         ctx.launchWork {
-            ctx.toast("Sending to Document Distribution…")
+            ctx.toast(str(S.dd_distribute_loading))
             val detail = (ctx.repository.sheet(sheet.id) as? ZillitResult.Success)?.data
             val dateMs = detail?.payload?.shared?.dateMs ?: sheet.shared?.dateMs ?: sheet.publishedOn
             val fileName = documentName(detail?.summary ?: sheet)
@@ -665,10 +696,10 @@ internal class WorkflowController(private val ctx: SheetContext) {
                 is ZillitResult.Success -> ctx.update { copy(dialog = SheetDialog.DocDistDone(fileName)) }
                 is ZillitResult.Failure -> ctx.toast(
                     if (alreadyPublished) {
-                        "Published, but the Document Distribution copy failed: ${outcome.error.localised()}"
+                        str(S.desktop_published_but_dd_copy_failed_reason, outcome.error.localised())
                     } else {
                         outcome.error.localised()
-                            .ifBlank { "Couldn't send to Document Distribution — please try again" }
+                            .ifBlank { str(S.dd_distribute_error) }
                     },
                     isError = true,
                 )
@@ -684,7 +715,10 @@ internal class WorkflowController(private val ctx: SheetContext) {
     private fun unitFileName(sheet: CallSheetSummary) = "CallSheet_${sheet.serialNo.ifBlank { sheet.id }}.pdf"
 
     private companion object {
-        const val DEFAULT_REMINDER = "Please review and approve this call sheet."
+        val DEFAULT_REMINDER: String get() = str(S.desktop_cs_default_reminder)
         const val PDF = "application/pdf"
+
+        /** The server's refusal of a replace target already archived or deleted. */
+        const val REPLACE_TARGET_GONE = "unit_chat_replace_target_not_found"
     }
 }

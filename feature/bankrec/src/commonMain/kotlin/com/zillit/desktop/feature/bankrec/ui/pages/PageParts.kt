@@ -14,6 +14,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankPeriod
 import com.zillit.desktop.feature.bankrec.domain.ExceptionStatus
 import com.zillit.desktop.feature.bankrec.domain.FraudStatus
@@ -39,13 +41,17 @@ internal fun PeriodFilter(state: BankRecUiState, choice: String?, onChoose: (Str
     val open = state.openPeriods
     if (open.size < 2) return
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ZillitText("PERIOD", style = eyebrow(), color = ZillitTheme.colors.textSecondary)
+        ZillitText(str(S.cr_meta_period), style = eyebrow(), color = ZillitTheme.colors.textSecondary)
         ZillitSelect(
             value = resolvePeriodChoice(choice, open),
             options = listOf(ALL_PERIODS) + open.map { it.id },
             onSelect = onChoose,
             label = { id ->
-                if (id == ALL_PERIODS) "All Open Periods" else state.period(id)?.let(state::periodOptionLabel) ?: id
+                if (id == ALL_PERIODS) {
+                    str(S.desktop_all_open_periods)
+                } else {
+                    state.period(id)?.let(state::periodOptionLabel) ?: id
+                }
             },
             modifier = Modifier.widthIn(min = 180.dp, max = 260.dp),
         )
@@ -74,8 +80,8 @@ internal fun ActionRow(
 @Composable
 internal fun NoActivePeriod(icon: ImageVector) {
     BrEmpty(
-        title = "No Active Period",
-        message = "Import a bank statement to start a reconciliation period.",
+        title = str(S.desktop_br_no_active_period),
+        message = str(S.desktop_br_no_active_period_detail),
         icon = icon,
     )
 }
@@ -91,7 +97,11 @@ internal fun <T> List<T>.forPeriod(state: BankRecUiState, choice: String?, perio
 internal val PeriodStatus.tone: BrTone get() = if (this == PeriodStatus.Complete) BrTone.Green else BrTone.Amber
 
 internal val BankPeriod.fraudBadge: Pair<String, BrTone>
-    get() = if (fraudCount > 0) "$fraudCount flags" to BrTone.Red else "Clear" to BrTone.Green
+    get() = if (fraudCount > 0) {
+        str(S.desktop_br_n_flags, fraudCount) to BrTone.Red
+    } else {
+        str(S.txt_clear) to BrTone.Green
+    }
 
 /** The web's workspace colours: matched green, suggested amber, unmatched red, fraud deep red, FX teal. */
 internal val TxnStatus.tone: BrTone
@@ -106,28 +116,28 @@ internal val TxnStatus.tone: BrTone
 internal val ExceptionStatus.badge: Pair<String, BrTone>?
     get() = when (this) {
         ExceptionStatus.Open -> null
-        ExceptionStatus.Ignored -> "Ignored" to BrTone.Gray
-        ExceptionStatus.UnderInvestigation -> "Under Investigation" to BrTone.Amber
-        ExceptionStatus.Investigated -> "Investigated" to BrTone.Green
-        ExceptionStatus.Resolved -> "Resolved" to BrTone.Green
+        ExceptionStatus.Ignored -> str(S.desktop_ignored) to BrTone.Gray
+        ExceptionStatus.UnderInvestigation -> str(S.ah_under_investigation_toast) to BrTone.Amber
+        ExceptionStatus.Investigated -> str(S.desktop_investigated) to BrTone.Green
+        ExceptionStatus.Resolved -> str(S.ah_alert_filter_resolved) to BrTone.Green
     }
 
 /** The portal summary's words for the same statuses, which differ from the tab's. */
 internal val ExceptionStatus.portalBadge: Pair<String, BrTone>
     get() = when (this) {
-        ExceptionStatus.Open -> "Open" to BrTone.Amber
-        ExceptionStatus.Resolved -> "Resolved" to BrTone.Green
-        ExceptionStatus.Ignored -> "Ignored" to BrTone.Gray
-        ExceptionStatus.UnderInvestigation -> "Investigating" to BrTone.Blue
-        ExceptionStatus.Investigated -> "Investigated" to BrTone.Green
+        ExceptionStatus.Open -> str(S.recce_open) to BrTone.Amber
+        ExceptionStatus.Resolved -> str(S.ah_alert_filter_resolved) to BrTone.Green
+        ExceptionStatus.Ignored -> str(S.desktop_ignored) to BrTone.Gray
+        ExceptionStatus.UnderInvestigation -> str(S.desktop_investigating) to BrTone.Blue
+        ExceptionStatus.Investigated -> str(S.desktop_investigated) to BrTone.Green
     }
 
 internal val FraudStatus.badge: Pair<String, BrTone>
     get() = when (this) {
-        FraudStatus.Active -> "Under Review" to BrTone.Red
-        FraudStatus.Escalated -> "Escalated" to BrTone.Red
-        FraudStatus.Dismissed -> "Dismissed" to BrTone.Gray
-        FraudStatus.Accepted -> "Accepted" to BrTone.Green
+        FraudStatus.Active -> str(S.ah_under_review) to BrTone.Red
+        FraudStatus.Escalated -> str(S.ah_escalated) to BrTone.Red
+        FraudStatus.Dismissed -> str(S.ah_dismissed_toast) to BrTone.Gray
+        FraudStatus.Accepted -> str(S.accepted) to BrTone.Green
     }
 
 internal val PortalStatus.tone: BrTone

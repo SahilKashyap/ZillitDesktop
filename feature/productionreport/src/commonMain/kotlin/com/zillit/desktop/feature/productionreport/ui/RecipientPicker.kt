@@ -24,7 +24,6 @@ internal class RecipientPicker(private val ctx: ReportContext) {
                 dialog = ReportDialog.SendPicker(
                     reportId = reportId,
                     fromEditor = fromEditor,
-                    choosing = fromEditor,
                     selected = initial,
                     initial = initial,
                 ),
@@ -32,16 +31,9 @@ internal class RecipientPicker(private val ctx: ReportContext) {
         }
     }
 
-    @Suppress("CyclomaticComplexMethod") // One branch per picker event.
-    fun onEvent(event: WorkflowEvent, onFinalFromEditor: () -> Unit, onFinish: (revokeAccess: Boolean) -> Unit) {
+    fun onEvent(event: WorkflowEvent, onFinish: (revokeAccess: Boolean) -> Unit) {
         val picker = ctx.state.dialog as? ReportDialog.SendPicker ?: return
         when (event) {
-            WorkflowEvent.ChooseComments -> update(picker.copy(choosing = false))
-            WorkflowEvent.BackToChooser -> update(picker.copy(choosing = true, search = ""))
-            WorkflowEvent.ChooseSignature -> {
-                ctx.update { copy(dialog = null) }
-                onFinalFromEditor()
-            }
             is WorkflowEvent.SearchRecipients -> update(picker.copy(search = event.query))
             is WorkflowEvent.ToggleRecipient -> update(
                 picker.copy(

@@ -36,6 +36,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -179,7 +181,7 @@ internal fun ThreadPane(
                 exit = fadeOut() + slideOutVertically { it / 2 },
             ) {
                 // A room's typing signal names nobody, so neither does the line.
-                TypingIndicator(if (state.peerIsGroup) "Someone" else peer.fullName.substringBefore(' '))
+                TypingIndicator(if (state.peerIsGroup) str(S.history_someone) else peer.fullName.substringBefore(' '))
             }
 
             if (refused) {
@@ -285,7 +287,7 @@ private fun DownloadRefusedNotice(onAsk: (() -> Unit)?, onDismiss: () -> Unit) {
             // The sentence names an admin without offering one. This does.
             if (onAsk != null) {
                 ZillitButton(
-                    text = "Ask an admin",
+                    text = str(S.desktop_ask_an_admin),
                     onClick = {
                         onAsk()
                         onDismiss()
@@ -296,7 +298,7 @@ private fun DownloadRefusedNotice(onAsk: (() -> Unit)?, onDismiss: () -> Unit) {
             }
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Dismiss",
+                contentDescription = str(S.sync_action_dismiss),
                 onClick = onDismiss,
                 size = REACT_BUTTON,
             )
@@ -323,7 +325,7 @@ private fun ChatReplyBar(parent: ChatMessage, authorLabel: String, onCancel: () 
     ) {
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = "Replying to $authorLabel",
+                text = str(S.desktop_replying_to, authorLabel),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
             )
@@ -339,7 +341,7 @@ private fun ChatReplyBar(parent: ChatMessage, authorLabel: String, onCancel: () 
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Cancel the reply",
+            contentDescription = str(S.desktop_cancel_the_reply),
             onClick = onCancel,
         )
     }
@@ -364,7 +366,7 @@ private fun OnlineLine(state: ChatUiState) {
                 .background(ZillitTheme.colors.success, CircleShape),
         )
         ZillitText(
-            text = "Online",
+            text = str(S.online),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.success,
         )
@@ -380,7 +382,7 @@ private fun OnlineLine(state: ChatUiState) {
 private fun DisconnectedLine(state: ChatUiState, peer: com.zillit.desktop.feature.chat.domain.CrewContact) {
     if (!state.peerIsGroup && peer.hasLeft) {
         ZillitText(
-            text = "Disconnected",
+            text = str(S.disconnected),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.danger,
         )
@@ -475,7 +477,7 @@ private fun ThreadHeader(
         if (onCall != null && callable) {
             CallLineButton(
                 icon = ZillitIcons.Phone,
-                label = "Start call",
+                label = str(S.desktop_start_call),
                 tint = ZillitTheme.colors.success,
                 disc = ZillitTheme.colors.successSoft,
                 lines = lines,
@@ -483,7 +485,7 @@ private fun ThreadHeader(
             )
             CallLineButton(
                 icon = ZillitIcons.Camera,
-                label = "Start video call",
+                label = str(S.desktop_start_video_call),
                 tint = ZillitTheme.colors.accentText,
                 disc = ZillitTheme.colors.accentSoft,
                 lines = lines,
@@ -493,7 +495,7 @@ private fun ThreadHeader(
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close conversation",
+            contentDescription = str(S.desktop_close_conversation),
             onClick = { onEvent(ChatEvent.CloseThread) },
         )
     }
@@ -601,7 +603,7 @@ private fun TypingIndicator(firstName: String) {
             }
         }
         ZillitText(
-            text = "$firstName is typing…",
+            text = str(S.desktop_name_is_typing, firstName),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -652,7 +654,7 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
         ZillitTextField(
             value = state.draft,
             onValueChange = { onEvent(ChatEvent.DraftChanged(it)) },
-            placeholder = "Message $peerName…",
+            placeholder = str(S.desktop_chat_message_placeholder, peerName),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(COMPOSER_RADIUS),
             // Multi-line like the board's composer: Enter sends, Shift+Enter
             // breaks the line — the same keys the board answers to.
@@ -667,7 +669,7 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
         )
         ZillitIconButton(
             icon = ZillitIcons.Send,
-            contentDescription = "Send",
+            contentDescription = str(S.send),
             onClick = {
                 onEvent(ChatEvent.Send)
                 fieldFocus.requestFocus()
@@ -832,7 +834,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.olderPager(
             contentAlignment = Alignment.Center,
         ) {
             ZillitText(
-                text = if (state.loadingOlder) "Loading…" else "Show older",
+                text = if (state.loadingOlder) str(S.ah_loading) else str(S.desktop_show_older),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
             )
@@ -955,7 +957,7 @@ private fun DayChip(label: String) {
 private fun LoadingThread(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         ZillitText(
-            text = "Loading the conversation…",
+            text = str(S.desktop_chat_loading_conversation),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -977,12 +979,14 @@ private fun EmptyThread(peerName: String, modifier: Modifier = Modifier) {
                 size = EMPTY_GLYPH,
             )
             ZillitText(
-                text = "No messages yet.",
+                text = str(S.av_no_comments_yet),
                 style = ZillitTheme.typography.titleSmall,
             )
             ZillitText(
-                text = "Say hello to ${peerName.substringBefore(' ').ifBlank { "them" }} — " +
-                    "only the two of you see this thread.",
+                text = str(
+                    S.desktop_chat_say_hello,
+                    peerName.substringBefore(' ').ifBlank { str(S.desktop_chat_them) },
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -1193,7 +1197,7 @@ private val ChatMessage.isDeletable: Boolean get() = isMine && id != uniqueId
 private fun DeleteAffordance(onDelete: () -> Unit) {
     ZillitIconButton(
         icon = ZillitIcons.Trash,
-        contentDescription = "Delete for everyone",
+        contentDescription = str(S.desktop_delete_for_everyone),
         onClick = onDelete,
         tint = ZillitTheme.colors.textMuted,
         size = REACT_BUTTON,
@@ -1239,7 +1243,7 @@ private fun QuotedLine(
         )
         Column(Modifier.padding(ZillitTheme.spacing.xs)) {
             ZillitText(
-                text = resolveName(quoted.senderId) ?: "Someone",
+                text = resolveName(quoted.senderId) ?: str(S.history_someone),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
                 maxLines = 1,
@@ -1253,7 +1257,7 @@ private fun QuotedLine(
             // A wordless quote names the file, as Android's does
             // (HoldersViewhandler.kt:792-795).
             val snippet = when {
-                isPlace -> "📍 " + quoted.body.ifBlank { "Location" }
+                isPlace -> "📍 " + quoted.body.ifBlank { str(S.location) }
                 else -> quoted.body.ifBlank {
                     quoted.attachmentName.ifBlank { quoted.kind.replaceFirstChar(Char::uppercase) }
                 }
@@ -1445,7 +1449,7 @@ private fun BubbleBody(
         // the bubble's ceiling (seen in the first render).
         if (translation != null) {
             ZillitText(
-                text = "Translated message",
+                text = str(S.translated),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
                 modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
@@ -1510,7 +1514,7 @@ private fun UploadingFile(name: String, percent: Int) {
         )
         if (percent < 0) {
             ZillitText(
-                text = "Processing…",
+                text = str(S.txt_processing),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -1520,7 +1524,7 @@ private fun UploadingFile(name: String, percent: Int) {
                 modifier = Modifier.width(UPLOAD_BAR_WIDTH),
             )
             ZillitText(
-                text = "Uploading $percent%",
+                text = str(S.drive_uploads_status_uploading_format, percent),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -1548,7 +1552,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.ReactionChips(
             // Who: resting the pointer on a chip names the people behind it —
             // the phones open a sheet for the same question. The wire carries
             // only ids; the crew list gives the names.
-            val who = rows.joinToString { resolveName(it.userId) ?: "Someone" }
+            val who = rows.joinToString { resolveName(it.userId) ?: str(S.history_someone) }
             com.zillit.desktop.core.designsystem.component.ZillitTooltip(text = who) {
                 Row(
                     modifier = Modifier
@@ -1639,17 +1643,19 @@ private fun BubbleMenu(
         }
         ZillitMenuDivider()
         val entries = buildList {
-            actions.onEdit?.let { add(menuLine("Edit", ZillitIcons.Edit, ZillitMenuTone.Primary, it)) }
-            actions.onImageReply?.let { add(menuLine("Image Reply", ZillitIcons.Photo, ZillitMenuTone.Primary, it)) }
+            actions.onEdit?.let { add(menuLine(str(S.edit), ZillitIcons.Edit, ZillitMenuTone.Primary, it)) }
+            actions.onImageReply?.let {
+                add(menuLine(str(S.image_reply), ZillitIcons.Photo, ZillitMenuTone.Primary, it))
+            }
             // Only a line the server can address can be quoted: a just-sent
             // bubble still wears its local id (see isDeletable's reasoning).
             if (message.id.isNotBlank() && (!message.isMine || message.id != message.uniqueId)) {
-                add(menuLine("Reply", ZillitIcons.Reply, ZillitMenuTone.Primary, actions.onReply))
+                add(menuLine(str(S.reply), ZillitIcons.Reply, ZillitMenuTone.Primary, actions.onReply))
             }
-            actions.onForward?.let { add(menuLine("Forward", ZillitIcons.Forward, onClick = it)) }
+            actions.onForward?.let { add(menuLine(str(S.forward), ZillitIcons.Forward, onClick = it)) }
             if (message.body.isNotBlank()) {
                 add(
-                    menuLine("Copy", ZillitIcons.Copy) {
+                    menuLine(str(S.copy), ZillitIcons.Copy) {
                         com.zillit.desktop.core.designsystem.component.copyTextToClipboard(message.body)
                     },
                 )
@@ -1669,7 +1675,7 @@ private fun BubbleMenu(
                 val clipboard = seams.clipboard
                 if (file.kind == "image" && clipboard != null) {
                     add(
-                        menuLine("Copy image", ZillitIcons.Photo) {
+                        menuLine(str(S.desktop_copy_image), ZillitIcons.Photo) {
                             scope.launch {
                                 val image = seams.loadFullImage?.invoke(file) ?: media.loadThumbnail(file)
                                 image?.let { clipboard.writeImage(it) }
@@ -1677,16 +1683,18 @@ private fun BubbleMenu(
                         },
                     )
                 }
-                add(menuLine("Download", ZillitIcons.Download) { media.onOpen(file) })
+                add(menuLine(str(S.download), ZillitIcons.Download) { media.onOpen(file) })
             }
             actions.onTranslate?.let { translate ->
-                val label = if (actions.translating) "Translating…" else "Translate"
+                val label = if (actions.translating) str(S.desktop_translating) else str(S.translate)
                 add(menuLine(label, ZillitIcons.Globe, onClick = translate))
             }
-            actions.onShowOriginal?.let { add(menuLine("Show original", ZillitIcons.Globe, onClick = it)) }
-            actions.onShare?.let { add(menuLine("Share", ZillitIcons.Mail, onClick = it)) }
-            actions.onDelete?.let { add(menuLine("Delete for everyone", ZillitIcons.Trash, ZillitMenuTone.Danger, it)) }
-            actions.onReadBy?.let { add(menuLine("Read by", ZillitIcons.Eye, onClick = it)) }
+            actions.onShowOriginal?.let { add(menuLine(str(S.desktop_show_original), ZillitIcons.Globe, onClick = it)) }
+            actions.onShare?.let { add(menuLine(str(S.share), ZillitIcons.Mail, onClick = it)) }
+            actions.onDelete?.let {
+                add(menuLine(str(S.desktop_delete_for_everyone), ZillitIcons.Trash, ZillitMenuTone.Danger, it))
+            }
+            actions.onReadBy?.let { add(menuLine(str(S.read_byr), ZillitIcons.Eye, onClick = it)) }
         }
         ZillitMenuEntries(entries = entries, onDismiss = onDismiss)
     }
@@ -1712,7 +1720,7 @@ private fun ReactAffordance(
     Box(modifier) {
         com.zillit.desktop.core.designsystem.component.ZillitIconButton(
             icon = ZillitIcons.Smiley,
-            contentDescription = "React",
+            contentDescription = str(S.desktop_react),
             onClick = { onOpenChange(true) },
             size = REACT_BUTTON,
         )
@@ -1764,19 +1772,19 @@ private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
     // Document, Audio — the microphone and the pin stay their own buttons.
     com.zillit.desktop.core.media.AttachMenu(
         kinds = com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS,
-        contentDescription = "Attach a file",
+        contentDescription = str(S.desktop_attach_a_file),
         onPick = { kind -> onEvent(ChatEvent.AttachKind(kind)) },
     )
     ZillitIconButton(
         icon = ZillitIcons.Mic,
-        contentDescription = "Record a voice message",
+        contentDescription = str(S.desktop_record_a_voice_message),
         onClick = { onEvent(ChatEvent.StartRecording) },
     )
     ShareLocationAction(onEvent)
     Box {
         ZillitIconButton(
             icon = ZillitIcons.Smiley,
-            contentDescription = "Insert an emoji",
+            contentDescription = str(S.desktop_insert_an_emoji),
             onClick = { emojiOpen = true },
         )
         ZillitMenuSurface(
@@ -1813,10 +1821,10 @@ private fun ShareLocationAction(onEvent: (ChatEvent) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     ZillitIconButton(
         icon = ZillitIcons.Pin,
-        contentDescription = "Share location",
+        contentDescription = str(S.desktop_share_location),
         onClick = {
             scope.launch {
-                picker.pick(title = "Share a location")?.let { place ->
+                picker.pick(title = str(S.desktop_share_a_location))?.let { place ->
                     onEvent(ChatEvent.ShareLocation(place))
                 }
             }
@@ -1852,7 +1860,7 @@ private fun LocationCard(
     media: BubbleMedia,
 ) {
     val open = LocalChatSeams.current.onOpenUrl
-    val headline = label.ifBlank { location.address }.ifBlank { "Shared location" }
+    val headline = label.ifBlank { location.address }.ifBlank { str(S.desktop_shared_location) }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         // The sender's own map picture, where there is one. Its click opens
         // the map rather than the lightbox — Android's location branch in
@@ -1897,7 +1905,7 @@ private fun LocationCard(
         }
         if (open != null) {
             ZillitText(
-                text = "Open in Maps",
+                text = str(S.desktop_open_in_maps),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
                 modifier = Modifier
@@ -1943,7 +1951,7 @@ private fun VoiceBubble(
     ) {
         com.zillit.desktop.core.designsystem.component.ZillitIconButton(
             icon = if (mine?.isPlaying == true) ZillitIcons.Pause else ZillitIcons.Play,
-            contentDescription = if (mine?.isPlaying == true) "Pause" else "Play",
+            contentDescription = if (mine?.isPlaying == true) str(S.desktop_pause) else str(S.desktop_play),
             onClick = {
                 scope.launch {
                     val bytes = media.loadAudio(file)
@@ -2053,7 +2061,7 @@ private fun PosterTile(
             ) {
                 com.zillit.desktop.core.designsystem.component.ZillitIcon(
                     icon = com.zillit.desktop.core.designsystem.icon.ZillitIcons.Play,
-                    contentDescription = "Video",
+                    contentDescription = str(S.video),
                     tint = androidx.compose.ui.graphics.Color.White,
                     size = PLAY_BADGE / 2,
                 )
@@ -2106,14 +2114,14 @@ private fun androidx.compose.foundation.layout.ColumnScope.BubbleFooter(message:
     ) {
         if (message.sendState == ChatSendState.Failed) {
             ZillitText(
-                text = "Not sent",
+                text = str(S.dm_nda_status_not_sent),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.danger,
             )
         }
         if (message.isEdited) {
             ZillitText(
-                text = "Edited",
+                text = str(S.edited),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -2153,12 +2161,12 @@ private fun ChatSendState.tint() = when (this) {
 }
 
 private fun ChatSendState.describe() = when (this) {
-    ChatSendState.Sending -> "Sending"
-    ChatSendState.Queued -> "Waiting to send — goes when you're back online"
-    ChatSendState.Sent -> "Sent"
-    ChatSendState.Delivered -> "Delivered"
-    ChatSendState.Read -> "Read"
-    ChatSendState.Failed -> "Not sent"
+    ChatSendState.Sending -> str(S.dd_legend_sending)
+    ChatSendState.Queued -> str(S.desktop_chat_waiting_to_send_offline)
+    ChatSendState.Sent -> str(S.cs_sent)
+    ChatSendState.Delivered -> str(S.delivered)
+    ChatSendState.Read -> str(S.read)
+    ChatSendState.Failed -> str(S.dm_nda_status_not_sent)
 }
 
 /** The file a message carries: name on a click target that fetches it. */

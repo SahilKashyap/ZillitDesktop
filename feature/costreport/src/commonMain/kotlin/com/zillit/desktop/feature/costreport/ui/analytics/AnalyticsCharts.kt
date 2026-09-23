@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.analytics.ForecastView
 import kotlin.math.PI
 import kotlin.math.abs
@@ -348,7 +350,7 @@ internal fun TrendChart(
             budget?.let {
                 val by = frame.y(it)
                 drawDashedAcross(frame, by, colors.ink3)
-                val caption = "Budget ${format(it)}"
+                val caption = str(S.desktop_br_budget_in_currency, format(it))
                 label(text, caption, text.axisBold, colors.ink2, frame.left + frame.width, by - 5.dp.toPx(), Anchor.End)
             }
             series.forEach { drawTrendSeries(it, frame, colors.surface) }
@@ -602,7 +604,7 @@ internal fun ProjectionChart(
             drawDashedAcross(frame, by, colors.ink3)
             label(
                 text,
-                "Budget ${view.budgetText}",
+                str(S.desktop_br_budget_in_currency, view.budgetText),
                 text.marker,
                 colors.ink2,
                 frame.left + 6.dp.toPx(),
@@ -634,7 +636,13 @@ private fun projectionTip(
     return ChartTip(
         anchor = Offset(frame.x(index), frame.y(value)),
         label = view.labels.getOrNull(index),
-        rows = listOf(ChartTipRow(color, if (forecast) "Forecast" else "Actual", format(value))),
+        rows = listOf(
+            ChartTipRow(
+                color,
+                if (forecast) str(S.desktop_cr_forecast) else str(S.desktop_cr_actual),
+                format(value),
+            ),
+        ),
     )
 }
 
@@ -677,13 +685,20 @@ private fun DrawScope.drawProjectionLines(
             pathEffect = dashes(4.dp, 4.dp),
         )
         drawMarker(Offset(x, actual.last().y), 4.5.dp, colors.amber, colors.surface)
-        label(text, "TODAY · W${view.currentWeek}", text.today, colors.amber, x + 7.dp.toPx(), frame.top + 12.dp.toPx())
+        label(
+            text,
+            str(S.desktop_cr_today_week, view.currentWeek),
+            text.today,
+            colors.amber,
+            x + 7.dp.toPx(),
+            frame.top + 12.dp.toPx(),
+        )
     }
     view.projection.lastOrNull()?.let { efc ->
         val point = Offset(frame.x(end), frame.y(efc))
         drawMarker(point, 4.5.dp, color, colors.surface)
         val baseline = if (efc >= view.budget) point.y - 8.dp.toPx() else point.y + 16.dp.toPx()
-        label(text, "EFC ${view.efcText}", text.markerBig, color, point.x + 6.dp.toPx(), baseline)
+        label(text, str(S.desktop_cr_efc_value, view.efcText), text.markerBig, color, point.x + 6.dp.toPx(), baseline)
     }
 }
 

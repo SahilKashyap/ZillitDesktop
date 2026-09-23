@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.ui.TaxToast
 import com.zillit.desktop.feature.taxfiling.ui.TaxToastTone
 import kotlinx.coroutines.delay
@@ -98,7 +100,7 @@ internal fun MtdToast(toast: TaxToast?, onDismiss: () -> Unit, modifier: Modifie
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Dismiss",
+                    contentDescription = str(S.sync_action_dismiss),
                     onClick = onDismiss,
                     tint = palette.onToast,
                     size = 26.dp,

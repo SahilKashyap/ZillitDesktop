@@ -54,6 +54,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.ui.BuilderEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoUiState
@@ -62,10 +64,10 @@ import com.zillit.desktop.feature.dealmemo.ui.builder.BuilderSection
 import com.zillit.desktop.feature.dealmemo.ui.builder.BuilderState
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
+import kotlin.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * The one-page builder (`DMTemplateBuilderPage.jsx`): a frosted header with
@@ -138,7 +140,7 @@ private fun Crumb(builder: BuilderState, onEvent: (DealMemoEvent) -> Unit) {
     val (source, hovered) = rememberHover()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ZillitText(
-            text = "DEAL MEMOS",
+            text = str(S.dm_hub_eyebrow),
             style = DmType.sans(11.sp, FontWeight.Bold, 0.08.em),
             color = p.cta,
             modifier = Modifier
@@ -149,9 +151,9 @@ private fun Crumb(builder: BuilderState, onEvent: (DealMemoEvent) -> Unit) {
         )
         ZillitText(text = "/", style = DmType.sans(12.5.sp), color = p.placeholder)
         val crumb = when {
-            mode.deal -> builder.dealReference ?: "New Deal Memo"
-            mode.templateId != null -> "Edit Deal Setup"
-            else -> "New Deal Setup"
+            mode.deal -> builder.dealReference ?: str(S.dm_quick_new_title)
+            mode.templateId != null -> str(S.desktop_dm_edit_deal_setup)
+            else -> str(S.desktop_dm_new_deal_setup)
         }
         ZillitText(
             text = buildAnnotatedString {
@@ -175,12 +177,15 @@ private fun AutosaveReadout(builder: BuilderState) {
     val p = bp
     val autosave = builder.autosave
     val text = when (autosave.status) {
-        AutosaveStatus.Saving -> "Saving…"
-        AutosaveStatus.Pending -> "Unsaved changes"
-        AutosaveStatus.Error -> "Not saved — will retry"
+        AutosaveStatus.Saving -> str(S.dm_nda_saving)
+        AutosaveStatus.Pending -> str(S.dm_nda_unsaved)
+        AutosaveStatus.Error -> str(S.desktop_dm_not_saved_will_retry)
         AutosaveStatus.Saved -> autosave.savedAt?.let { at ->
             val time = Instant.fromEpochMilliseconds(at).toLocalDateTime(TimeZone.currentSystemDefault())
-            "Saved ${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}"
+            str(
+                S.dm_quick_status_saved,
+                "${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}",
+            )
         }
         AutosaveStatus.Idle -> null
     } ?: return
@@ -198,9 +203,9 @@ private fun DealActions(builder: BuilderState, onEvent: (DealMemoEvent) -> Unit)
     val p = bp
     HeaderButton(
         text = when {
-            builder.saving -> "Saving…"
-            builder.dealId != null -> "Save"
-            else -> "Save as Draft"
+            builder.saving -> str(S.dm_nda_saving)
+            builder.dealId != null -> str(S.dm_save)
+            else -> str(S.dm_quick_save_draft)
         },
         background = p.chipBg,
         hover = p.chipHover,
@@ -210,7 +215,7 @@ private fun DealActions(builder: BuilderState, onEvent: (DealMemoEvent) -> Unit)
         onClick = { onEvent(BuilderEvent.Save) },
     )
     HeaderButton(
-        text = if (builder.submitting) "Issuing…" else "Issue Memo",
+        text = if (builder.submitting) str(S.dm_quick_issuing) else str(S.dm_quick_issue),
         background = p.green,
         hover = p.greenHover,
         ink = Color.White,
@@ -227,10 +232,10 @@ private fun SetupAction(builder: BuilderState, onEvent: (DealMemoEvent) -> Unit)
     if (editing && builder.dirtyTick == 0 && !builder.savingTemplate) return
     HeaderButton(
         text = when {
-            editing && builder.savingTemplate -> "Updating…"
-            editing -> "Update Setup"
-            builder.savingTemplate -> "Saving…"
-            else -> "Save Setup"
+            editing && builder.savingTemplate -> str(S.desktop_dm_updating)
+            editing -> str(S.dm_builder_update)
+            builder.savingTemplate -> str(S.dm_nda_saving)
+            else -> str(S.dm_builder_save)
         },
         background = p.cta,
         hover = p.ctaHover,
@@ -382,13 +387,12 @@ private fun IntroBand() {
             .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
         ZillitText(
-            text = "A deal setup is a starting point for crew deal memos",
+            text = str(S.dm_builder_intro_title),
             style = DmType.sans(14.sp, FontWeight.Bold),
             color = p.title,
         )
         ZillitText(
-            text = "It holds the agreement, role defaults, rates, allowances and conditions a new memo begins with — " +
-                "so raising one is a matter of picking the crew member.",
+            text = str(S.dm_builder_intro_body),
             style = DmType.sans(14.sp).copy(lineHeight = 22.sp),
             color = p.ink2,
             modifier = Modifier.padding(top = 4.dp),
@@ -396,18 +400,21 @@ private fun IntroBand() {
         Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Bullet(
                 buildAnnotatedString {
-                    append("Keep one for ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = p.title)) { append("Union") }
-                    append(" and one for ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = p.title)) { append("Non-Union") }
-                    append(". With both saved you pick which to start from each time you create a deal memo.")
+                    append(str(S.desktop_dm_keep_one_for) + " ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = p.title)) {
+                        append(str(S.dm_label_union))
+                    }
+                    append(" " + str(S.desktop_dm_and_one_for) + " ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = p.title)) {
+                        append(str(S.dm_create_non_union))
+                    }
+                    append(str(S.desktop_dm_setup_intro_tail))
                 },
             )
             Bullet(
                 buildAnnotatedString {
                     append(
-                        "Add a separate setup per production entity when their terms differ — there is no limit on " +
-                            "how many you keep.",
+                        str(S.dm_builder_intro_2),
                     )
                 },
             )
@@ -435,9 +442,8 @@ private fun GroupBand(group: String) {
     val p = bp
     val (title, note) = when (group) {
         "nonunion" ->
-            "Non-Union Pay Rules" to "These rules and their day types apply to non-union work on this project."
-        else -> "Global Deal Memo Setup" to "The sections below are the project’s global Deal Memo Setup — saved " +
-            "once for the whole project. You can still change any of them for an individual deal while creating it."
+            str(S.dm_builder_band_nonunion) to str(S.dm_builder_band_nonunion_note)
+        else -> str(S.dm_builder_band_global) to str(S.desktop_dm_the_sections_below_are_the_projects_global)
     }
     Spacer(Modifier.height(40.dp))
     Box(Modifier.fillMaxWidth().height(7.dp).background(p.band)) {
@@ -462,7 +468,7 @@ private fun GroupBand(group: String) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ZillitText(
-                text = "Note:",
+                text = str(S.note),
                 style = DmType.sans(14.sp, FontWeight.Bold).copy(lineHeight = 21.sp),
                 color = p.noteInk,
             )
@@ -517,13 +523,13 @@ private fun SectionFrame(
                     modifier = Modifier.weight(1f).padding(bottom = 8.dp),
                 )
                 if (mode.deal && section.collapsible) {
-                    EditChip(if (collapsed) "Show" else "Hide", ChipTone.Plain) {
+                    EditChip(if (collapsed) str(S.dm_quick_show) else str(S.dm_quick_hide), ChipTone.Plain) {
                         onEvent(BuilderEvent.ToggleCollapse(section.id))
                     }
                 }
                 if (mode.deal && !section.noEdit) {
                     EditChip(
-                        text = if (editing) "Done" else "Edit",
+                        text = if (editing) str(S.dm_quick_done) else str(S.dm_nda_edit),
                         tone = when {
                             editing -> ChipTone.Editing
                             flagged != null -> ChipTone.Flagged
@@ -596,12 +602,12 @@ private fun RequiredBanner(fields: List<String>) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ZillitText(
-            text = "Required:",
+            text = str(S.desktop_dm_required_colon),
             style = DmType.sans(12.sp, FontWeight.Bold).copy(lineHeight = 18.sp),
             color = p.redInk,
         )
         ZillitText(
-            text = if (fields.isEmpty()) "Complete this section" else fields.joinToString(", "),
+            text = if (fields.isEmpty()) str(S.desktop_dm_complete_this_section) else fields.joinToString(", "),
             style = DmType.sans(12.sp).copy(lineHeight = 18.sp),
             color = p.redInk,
             modifier = Modifier.weight(1f),

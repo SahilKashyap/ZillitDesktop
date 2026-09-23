@@ -9,6 +9,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
 import com.zillit.desktop.feature.externalusers.domain.ExternalUserBucket
 import com.zillit.desktop.feature.externalusers.domain.ExternalUsersRepository
@@ -87,7 +89,7 @@ internal fun ZillitResult<ApiEnvelope>.refuseStatusZero(): ZillitResult<ApiEnvel
         is ZillitResult.Success ->
             if (data.status == 0) {
                 ZillitResult.Failure(
-                    ZillitError.Validation(data.message ?: "The server refused the change."),
+                    ZillitError.Validation(data.message ?: str(S.desktop_server_refused_the_change)),
                 )
             } else {
                 this

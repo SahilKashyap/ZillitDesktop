@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The crew list's own service calls — the units host, plus the production record for the letterhead. */
 interface CrewListRepository {
@@ -109,7 +111,7 @@ interface CrewListHost {
         /** A host with nothing behind it — tests and previews. */
         val None: CrewListHost = object : CrewListHost {
             private fun <T> unavailable(): ZillitResult<T> =
-                ZillitResult.Failure(ZillitError.Storage(userMessage = "Unavailable here."))
+                ZillitResult.Failure(ZillitError.Storage(userMessage = str(S.desktop_unavailable_here)))
 
             override suspend fun fetchPdf(pdf: CrewListPdf): ZillitResult<ByteArray> = unavailable()
             override suspend fun renderPages(pdf: ByteArray, widthPx: Int): ZillitResult<List<CrewPdfPage>> =

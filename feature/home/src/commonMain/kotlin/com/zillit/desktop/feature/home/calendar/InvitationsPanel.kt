@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Received invitations — the web's `RecivedEvents` modal, as a card over the
@@ -44,8 +46,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 @Composable
 internal fun InvitationsPanel(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> Unit) {
     ZillitDialogShell(
-        title = "Invitations",
-        subtitle = "Answers the organisers are waiting on.",
+        title = str(S.desktop_cal_invitations),
+        subtitle = str(S.desktop_cal_invitations_subtitle),
         icon = ZillitIcons.Calendar,
         visible = state.invitationsOpen,
         onDismiss = { onEvent(CalendarEvent2Event.HideInvitations) },
@@ -66,7 +68,7 @@ internal fun InvitationsPanel(state: CalendarUiState, onEvent: (CalendarEvent2Ev
         }
 
         when {
-            state.invitationsBusy && state.invitations.isEmpty() -> EmptyLine("Loading…")
+            state.invitationsBusy && state.invitations.isEmpty() -> EmptyLine(str(S.ah_loading))
             state.invitations.isEmpty() -> EmptyLine(state.invitationStatus.emptyLine())
             else -> {
                 val inviteState = rememberLazyListState()
@@ -82,7 +84,7 @@ internal fun InvitationsPanel(state: CalendarUiState, onEvent: (CalendarEvent2Ev
                     if (state.invitationsCursor != null) {
                         item {
                             ZillitButton(
-                                text = if (state.invitationsBusy) "Loading…" else "Load more",
+                                text = if (state.invitationsBusy) str(S.ah_loading) else str(S.load_more),
                                 variant = ButtonVariant.Tertiary,
                                 size = ButtonSize.Small,
                                 enabled = !state.invitationsBusy,
@@ -109,7 +111,7 @@ private fun StatusTab(status: InvitationStatus, selected: Boolean, onClick: () -
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = status.label,
+            text = str(status.label),
             style = ZillitTheme.typography.labelSmall,
             color = if (selected) ZillitTheme.colors.accent else ZillitTheme.colors.textPrimary,
         )
@@ -139,7 +141,7 @@ private fun InvitationRow(
         ) {
             event?.let { Box(Modifier.size(EVENT_DOT).clip(CircleShape).background(it.tint())) }
             ZillitText(
-                text = event?.title ?: "This event no longer exists",
+                text = event?.title ?: str(S.desktop_cal_event_no_longer_exists),
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = if (event != null) colors.textPrimary else colors.textMuted,
                 maxLines = 1,
@@ -155,7 +157,7 @@ private fun InvitationRow(
             )
             it.creatorName?.let { name ->
                 ZillitText(
-                    text = "Invited by $name",
+                    text = str(S.desktop_cal_invited_by, name),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textSecondary,
                 )
@@ -164,7 +166,7 @@ private fun InvitationRow(
 
         invitation.rejectionReason?.takeIf { it.isNotBlank() }?.let { reason ->
             ZillitText(
-                text = "Declined: $reason",
+                text = str(S.desktop_cal_declined_reason, reason),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -179,8 +181,8 @@ private fun InvitationRow(
         if (invitation.status == InvitationStatus.Pending && event != null) {
             val now = state.today.startOfDayMillis(state.zone)
             when {
-                event.isCancelled -> AnswerNote("This event has been cancelled.")
-                event.hasFinished(now) -> AnswerNote("This event has expired.")
+                event.isCancelled -> AnswerNote(str(S.desktop_cal_event_cancelled))
+                event.hasFinished(now) -> AnswerNote(str(S.desktop_cal_event_expired))
                 else -> AnswerButtons(invitation, enabled = !state.invitationsBusy, onEvent)
             }
         }
@@ -209,14 +211,14 @@ private fun AnswerButtons(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
     ) {
         ZillitButton(
-            text = "Decline",
+            text = str(S.decline),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             enabled = enabled,
             onClick = { onEvent(CalendarEvent2Event.AnswerInvitation(invitation, accept = false)) },
         )
         ZillitButton(
-            text = "Accept",
+            text = str(S.accept),
             size = ButtonSize.Small,
             enabled = enabled,
             onClick = { onEvent(CalendarEvent2Event.AnswerInvitation(invitation, accept = true)) },
@@ -245,8 +247,8 @@ internal fun DeclineReasonDialog(
     var reason by remember(current?.id) { mutableStateOf("") }
 
     ZillitDialogShell(
-        title = "Decline \"${current?.event?.title ?: "this event"}\"?",
-        subtitle = "A short note helps the organiser plan around you.",
+        title = str(S.desktop_cal_decline_event_title, current?.event?.title ?: str(S.this_event)),
+        subtitle = str(S.desktop_cal_decline_subtitle),
         visible = declining != null,
         onDismiss = { onEvent(CalendarEvent2Event.CancelDecline) },
         width = PANEL_WIDTH,
@@ -254,7 +256,7 @@ internal fun DeclineReasonDialog(
         ZillitTextField(
             value = reason,
             onValueChange = { reason = it },
-            placeholder = "Reason (optional) — the organiser will see it",
+            placeholder = str(S.desktop_cal_decline_reason_placeholder),
             modifier = Modifier.fillMaxWidth(),
         )
         Row(
@@ -262,13 +264,13 @@ internal fun DeclineReasonDialog(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 onClick = { onEvent(CalendarEvent2Event.CancelDecline) },
             )
             ZillitButton(
-                text = "Decline",
+                text = str(S.decline),
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 enabled = !busy,
@@ -289,10 +291,10 @@ private fun EmptyLine(text: String) {
 }
 
 private fun InvitationStatus.emptyLine(): String = when (this) {
-    InvitationStatus.Pending -> "Nothing waiting for an answer."
-    InvitationStatus.Accepted -> "No accepted invitations."
-    InvitationStatus.Rejected -> "No declined invitations."
-    InvitationStatus.Expired -> "No expired invitations."
+    InvitationStatus.Pending -> str(S.desktop_cal_no_pending_invitations)
+    InvitationStatus.Accepted -> str(S.desktop_cal_no_accepted_invitations)
+    InvitationStatus.Rejected -> str(S.desktop_cal_no_declined_invitations)
+    InvitationStatus.Expired -> str(S.desktop_cal_no_expired_invitations)
 }
 
 private val PANEL_WIDTH = 420.dp

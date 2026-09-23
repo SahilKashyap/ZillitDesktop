@@ -13,6 +13,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.PortalExpiry
 import com.zillit.desktop.feature.bankrec.domain.PortalLinkDraft
@@ -39,14 +41,18 @@ internal fun PortalLinkDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> 
     fun edit(next: PortalLinkDraft) = onEvent(BankRecEvent.EditPortalDraft(next))
 
     ZillitDialogShell(
-        title = if (draft.isEdit) "Edit Portal Link" else "Generate Guarantor / Broadcaster Portal Link",
+        title = if (draft.isEdit) {
+            str(S.desktop_br_edit_portal_link)
+        } else {
+            str(S.desktop_br_generate_portal_link)
+        },
         onDismiss = { if (!draft.saving) onEvent(BankRecEvent.DismissPortalDraft) },
         visible = state.portal.draft != null,
         icon = BankRecIcons.Share,
         width = 600.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(BankRecEvent.DismissPortalDraft) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !draft.saving,
@@ -54,10 +60,10 @@ internal fun PortalLinkDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> 
             ZillitTooltip(problem.orEmpty()) {
                 ZillitButton(
                     text = when {
-                        draft.saving && draft.isEdit -> "Saving…"
-                        draft.saving -> "Generating…"
-                        draft.isEdit -> "Save Changes"
-                        else -> "Generate Link & Send Email"
+                        draft.saving && draft.isEdit -> str(S.ah_saving)
+                        draft.saving -> str(S.drive_generating)
+                        draft.isEdit -> str(S.dm_setup_save)
+                        else -> str(S.desktop_br_generate_link_send_email)
                     },
                     onClick = { onEvent(BankRecEvent.SavePortalLink) },
                     leadingIcon = BankRecIcons.Share,
@@ -69,27 +75,27 @@ internal fun PortalLinkDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> 
     ) {
         FieldPair(
             left = {
-                Field("Recipient Name") {
+                Field(str(S.dd_recipient_name)) {
                     ZillitTextField(
                         value = draft.recipientName,
                         onValueChange = { edit(draft.copy(recipientName = it)) },
-                        placeholder = "e.g. James Whitford",
+                        placeholder = str(S.desktop_br_recipient_name_hint),
                     )
                 }
             },
             right = {
-                Field("Email Address") {
+                Field(str(S.hint_email)) {
                     ZillitTextField(
                         value = draft.recipientEmail,
                         onValueChange = { edit(draft.copy(recipientEmail = it.trim())) },
-                        placeholder = "name@organisation.com",
+                        placeholder = str(S.desktop_br_recipient_email_hint),
                     )
                 }
             },
         )
         FieldPair(
             left = {
-                Field("Organisation Type") {
+                Field(str(S.desktop_organisation_type)) {
                     ZillitSelect(
                         value = draft.orgType,
                         options = PortalOrgType.entries,
@@ -100,16 +106,20 @@ internal fun PortalLinkDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> 
                 }
             },
             right = {
-                Field("Period") {
+                Field(str(S.cr_meta_period)) {
                     ZillitSelect(
                         value = draft.periodId,
                         options = listOf("") + state.periods.map { it.id },
                         onSelect = { edit(draft.copy(periodId = it)) },
                         label = { id ->
                             state.period(id)?.let { period ->
-                                val status = if (period.isOpen) " (in progress)" else " (complete)"
-                                BankRecFormat.periodLabel(period) + status
-                            } ?: "Select period…"
+                                val month = BankRecFormat.periodLabel(period)
+                                if (period.isOpen) {
+                                    str(S.desktop_br_period_in_progress, month)
+                                } else {
+                                    str(S.desktop_br_period_complete, month)
+                                }
+                            } ?: str(S.desktop_br_select_period)
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -117,19 +127,23 @@ internal fun PortalLinkDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> 
             },
         )
         if (state.bankAccounts.size > 1) {
-            Field("Bank Account") {
+            Field(str(S.dm_pay_card_bank)) {
                 ZillitSelect(
                     value = draft.bankAccountId,
                     options = listOf("") + state.bankAccounts.map { it.id },
                     onSelect = { edit(draft.copy(bankAccountId = it)) },
                     label = { id ->
-                        if (id.isBlank()) "All accounts" else state.account(id)?.displayName?.ifBlank { null } ?: "Bank"
+                        if (id.isBlank()) {
+                            str(S.desktop_all_accounts)
+                        } else {
+                            state.account(id)?.displayName?.ifBlank { null } ?: str(S.desktop_bank)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
-        Field("What can they see?") {
+        Field(str(S.desktop_br_what_can_they_see)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PortalPermission.entries.forEach { permission ->
                     ZillitCheckbox(
@@ -145,7 +159,7 @@ internal fun PortalLinkDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> 
         }
         FieldPair(
             left = {
-                Field("Link Expiry") {
+                Field(str(S.desktop_br_link_expiry)) {
                     ZillitSelect(
                         value = draft.expiry,
                         options = PortalExpiry.entries,
@@ -156,7 +170,7 @@ internal fun PortalLinkDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> 
                 }
             },
             right = {
-                Field("Notify me when viewed") {
+                Field(str(S.desktop_br_notify_when_viewed)) {
                     ZillitSelect(
                         value = draft.notifyOnView,
                         options = PortalNotify.entries,

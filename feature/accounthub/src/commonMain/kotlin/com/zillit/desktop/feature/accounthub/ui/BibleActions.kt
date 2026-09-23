@@ -7,6 +7,8 @@ import com.zillit.desktop.feature.accounthub.domain.BibleFormat
 import com.zillit.desktop.feature.accounthub.domain.BiblePeriod
 import com.zillit.desktop.feature.accounthub.domain.ExportFormat
 import com.zillit.desktop.feature.accounthub.domain.HubExportReport
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 
@@ -185,7 +187,7 @@ internal class BibleActions(
                     val name = "${HubExportReport.Bible.fileStem}_$stamp.${format.extension}"
                     when (val saved = files.saveAndOpen(name, bytes.data)) {
                         is ZillitResult.Failure -> vm.report(saved.error)
-                        is ZillitResult.Success -> vm.update { copy(notice = "Exported $name.") }
+                        is ZillitResult.Success -> vm.update { copy(notice = str(S.desktop_exported_file, name)) }
                     }
                 }
             }
@@ -201,6 +203,6 @@ internal class BibleActions(
 
     private companion object {
         /** The web's words when a run fails without a message of its own. */
-        const val RUN_FAILED = "Failed to run Bible Report"
+        val RUN_FAILED: String get() = str(S.desktop_hub_failed_to_run_bible_report)
     }
 }

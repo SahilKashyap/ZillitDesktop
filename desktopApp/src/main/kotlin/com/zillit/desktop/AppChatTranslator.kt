@@ -6,6 +6,8 @@ import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.chat.domain.ChatMessage
@@ -141,5 +143,5 @@ private fun String.escapeHtml(): String =
     replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
 /** The web's `email_id_not_available` (`utils/language/en.js:6608`). */
-private const val EMAIL_NOT_AVAILABLE = "Email-ID is not available"
+private val EMAIL_NOT_AVAILABLE: String get() = str(S.desktop_email_id_not_available)
 private const val EMAIL_TOOL_ROUTE = "/email"

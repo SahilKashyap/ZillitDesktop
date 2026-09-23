@@ -40,12 +40,15 @@ import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.permissions.gatedClick
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.CsvContact
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.ui.CsvImportState
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistUiState
+import com.zillit.desktop.feature.documentdistribution.ui.plural
 
 /**
  * Distribution lists — the web's `PresetManagerModal`: an overview of the
@@ -76,10 +79,13 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         Column(Modifier.weight(1f)) {
-            ZillitText(text = "Distribution lists", style = ZillitTheme.typography.titleMedium)
+            ZillitText(text = str(S.dd_lists), style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "${state.lists.size} custom list" + (if (state.lists.size == 1) "" else "s") +
-                    " · smart lists update themselves",
+                text = plural(
+                    state.lists.size,
+                    S.desktop_docdist_custom_lists_summary_one,
+                    S.desktop_docdist_custom_lists_summary,
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textSecondary,
             )
@@ -87,11 +93,11 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
         ZillitSearchField(
             value = state.listsSearch,
             onValueChange = { onEvent(DocDistEvent.SearchLists(it)) },
-            placeholder = "Search for a list",
+            placeholder = str(S.desktop_docdist_search_for_a_list),
             modifier = Modifier.width(SEARCH_WIDTH.dp),
         )
         ZillitButton(
-            text = "New list",
+            text = str(S.dd_new_list),
             onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                 DocDistEvent.NewListRow(state.newListName == null),
             ) },
@@ -107,16 +113,16 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitIconButton(ZillitIcons.Close, "Cancel", { onEvent(DocDistEvent.NewListRow(false)) })
+            ZillitIconButton(ZillitIcons.Close, str(S.cancel), { onEvent(DocDistEvent.NewListRow(false)) })
             ZillitTextField(
                 value = name,
                 onValueChange = { onEvent(DocDistEvent.EditNewListName(it)) },
-                placeholder = "Enter a list name",
+                placeholder = str(S.desktop_docdist_enter_list_name),
                 onImeAction = { onEvent(DocDistEvent.CreateListInline) },
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Create",
+                text = str(S.create),
                 onClick = { onEvent(DocDistEvent.CreateListInline) },
                 enabled = name.isNotBlank(),
                 loading = state.creatingList,
@@ -124,7 +130,12 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
             )
         }
     }
-    ZillitSectionCard(title = "Smart lists", icon = ZillitIcons.Siren, meta = "Automatically updated", padded = false) {
+    ZillitSectionCard(
+        title = str(S.dd_smart_lists_header),
+        icon = ZillitIcons.Siren,
+        meta = str(S.dd_auto_updated),
+        padded = false,
+    ) {
         HoverRow(
             onClick = { onEvent(
                 DocDistEvent.Open(com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination.AddressBook),
@@ -133,16 +144,16 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
         ) {
             ZillitIcon(icon = ZillitIcons.Users, tint = c.accent)
             ZillitText(
-                text = "All contacts",
+                text = str(S.dd_all_contacts),
                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.weight(1f),
             )
             ZillitText(
-                text = "${state.contacts.size} " + if (state.contacts.size == 1) "person" else "people",
+                text = plural(state.contacts.size, S.desktop_docdist_one_person, S.dd_n_people),
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textSecondary,
             )
-            ZillitTooltip("Open the address book") { ZillitIcon(
+            ZillitTooltip(str(S.desktop_docdist_open_address_book)) { ZillitIcon(
                 icon = ZillitIcons.Settings,
                 tint = c.textMuted,
                 size = 16.dp,
@@ -150,9 +161,9 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
         }
     }
     ZillitSectionCard(
-        title = "Custom lists",
+        title = str(S.dd_custom_lists_header),
         icon = ZillitIcons.Mail,
-        meta = "Manage your own lists",
+        meta = str(S.dd_custom_lists_subtitle),
         padded = false,
         modifier = Modifier.weight(1f),
     ) {
@@ -162,7 +173,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
             loading = state.loading,
             onRowClick = { onEvent(DocDistEvent.OpenList(it.id)) },
             columns = listOf(
-                TableColumn(header = "List name", width = ColumnWidth.Weight(2f)) { list ->
+                TableColumn(header = str(S.dd_history_save_list_hint), width = ColumnWidth.Weight(2f)) { list ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -175,35 +186,49 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListsOverview(
                         )
                     }
                 },
-                textColumn("Recipients", ColumnWidth.Fixed(RECIPIENTS_COLUMN.dp)) { "${it.recipients.size} people" },
-                textColumn("Last updated on", ColumnWidth.Fixed(UPDATED_COLUMN.dp), muted = true) {
+                textColumn(
+                    str(S.recipients),
+                    ColumnWidth.Fixed(RECIPIENTS_COLUMN.dp),
+                ) { str(S.dd_n_people, it.recipients.size) },
+                textColumn(str(S.desktop_docdist_last_updated_on), ColumnWidth.Fixed(UPDATED_COLUMN.dp), muted = true) {
                     EpochDate.dateTime(it.updatedAt).ifBlank { "—" }
                 },
                 TableColumn(header = "", width = ColumnWidth.Fixed(ACTIONS_COLUMN.dp)) { list ->
                     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                        ZillitTooltip(if (canDownload) "Download as CSV" else "No download rights") {
+                        val downloadHint = if (canDownload) {
+                            str(S.desktop_docdist_download_as_csv)
+                        } else {
+                            str(S.dd_export_no_rights)
+                        }
+                        ZillitTooltip(downloadHint) {
                             if (state.exportingListId == list.id) ZillitSpinner(size = 16.dp)
                             else ZillitIconButton(
                                 ZillitIcons.Download,
-                                "Export ${list.name}",
+                                str(S.desktop_docdist_export_named, list.name),
                                 gatedClick(canDownload, { onEvent(askDownload) }) { onEvent(
                                     DocDistEvent.ExportList(list.id),
                                 ) },
                             )
                         }
-                        ZillitTooltip("Open") { ZillitIconButton(
+                        ZillitTooltip(str(S.dd_action_open)) { ZillitIconButton(
                             ZillitIcons.Settings,
-                            "Open ${list.name}",
+                            str(S.desktop_drive_open_item, list.name),
                             { onEvent(DocDistEvent.OpenList(list.id)) },
                         ) }
                     }
                 },
             ),
-            emptyTitle = if (state.listsSearch.isNotBlank()) "No matches" else "No custom lists yet",
+            emptyTitle = str(
+                if (state.listsSearch.isNotBlank()) {
+                    S.dm_picker_empty
+                } else {
+                    S.desktop_docdist_no_custom_lists_yet
+                },
+            ),
             emptyMessage = if (state.listsSearch.isNotBlank()) {
                 null
             } else {
-                "Create one to save a set of recipients for the next send."
+                str(S.desktop_docdist_no_custom_lists_hint)
             },
         )
     }
@@ -224,16 +249,16 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListDetail(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitButton(
-            text = "Back",
+            text = str(S.back),
             onClick = { onEvent(DocDistEvent.CloseList) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.ArrowLeft,
         )
-        ZillitStatusPill(label = "Custom list", tone = StatusTone.Pending)
+        ZillitStatusPill(label = str(S.desktop_docdist_custom_list), tone = StatusTone.Pending)
         Box(Modifier.weight(1f))
         ZillitButton(
-            text = "Remove this list",
+            text = str(S.desktop_docdist_remove_this_list),
             onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                 DocDistEvent.ConfirmRemoveList(detail.listId),
             ) },
@@ -242,7 +267,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListDetail(
             leadingIcon = ZillitIcons.Trash,
         )
         ZillitButton(
-            text = "Share some documents",
+            text = str(S.desktop_docdist_share_some_documents),
             onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                 DocDistEvent.ComposeWithList(detail.listId),
             ) },
@@ -251,17 +276,17 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListDetail(
             enabled = detail.recipients.isNotEmpty(),
         )
     }
-    FieldLabel("List name")
+    FieldLabel(str(S.dd_history_save_list_hint))
     ZillitTextField(
         value = detail.name,
         onValueChange = { onEvent(DocDistEvent.EditListName(it)) },
-        placeholder = "List name",
+        placeholder = str(S.dd_history_save_list_hint),
         readOnly = !canPost,
     )
     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
         ZillitSectionCard(
             modifier = Modifier.width(FORM_WIDTH.dp),
-            title = "Add a recipient",
+            title = str(S.dd_add_recipient),
             icon = ZillitIcons.UserPlus,
         ) {
             RecipientForm(
@@ -274,22 +299,22 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListDetail(
                 onPick = { onEvent(DocDistEvent.PickListContact(it)) },
                 onAdd = { onEvent(DocDistEvent.AddListRecipient) },
             )
-            FieldLabel("Import a file (.csv)", Modifier.padding(top = ZillitTheme.spacing.md))
+            FieldLabel(str(S.desktop_docdist_import_a_csv_file), Modifier.padding(top = ZillitTheme.spacing.md))
             ZillitText(
-                text = "Columns: name, email, job",
+                text = str(S.desktop_docdist_csv_columns),
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textMuted,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitButton(
-                    text = "Browse…",
+                    text = str(S.desktop_docdist_browse),
                     onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.PickCsv) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Upload,
                 )
                 ZillitButton(
-                    text = "Download template",
+                    text = str(S.dd_csv_download_template),
                     onClick = { onEvent(DocDistEvent.DownloadCsvTemplate) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -297,7 +322,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListDetail(
             }
             Box(Modifier.weight(1f))
             ZillitButton(
-                text = "Save changes",
+                text = str(S.dd_action_save_changes),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.SaveList) },
                 loading = detail.saving,
                 modifier = Modifier.fillMaxWidth(),
@@ -305,7 +330,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.ListDetail(
         }
         ZillitSectionCard(
             modifier = Modifier.weight(1f),
-            title = "Recipients",
+            title = str(S.recipients),
             icon = ZillitIcons.Users,
             padded = false,
             action = { ZillitBadge(count = detail.recipients.size, background = c.accent, cap = null) },
@@ -333,7 +358,7 @@ internal fun RecipientForm(
         ZillitTextField(
             value = email,
             onValueChange = { onChange(it, name, job) },
-            placeholder = "Search address book or type an email",
+            placeholder = str(S.desktop_docdist_search_address_book_or_email),
             leadingIcon = ZillitIcons.Search,
             enabled = enabled,
             onImeAction = onAdd,
@@ -376,19 +401,19 @@ internal fun RecipientForm(
         ZillitTextField(
             value = name,
             onValueChange = { onChange(email, it, job) },
-            placeholder = "Name",
+            placeholder = str(S.name),
             enabled = enabled,
             onImeAction = onAdd,
         )
         ZillitTextField(
             value = job,
             onValueChange = { onChange(email, name, it) },
-            placeholder = "Job",
+            placeholder = str(S.dd_field_job),
             enabled = enabled,
             onImeAction = onAdd,
         )
         ZillitButton(
-            text = "Add to the list",
+            text = str(S.dd_add_to_list),
             onClick = onAdd,
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Add,
@@ -404,21 +429,21 @@ internal fun RecipientsTable(recipients: List<Recipient>, canRemove: Boolean, on
         rows = recipients.sortedBy { it.name.ifBlank { it.email }.lowercase() },
         key = { it.email },
         columns = listOf(
-            textColumn("Email", ColumnWidth.Weight(2f)) { it.email },
-            textColumn("Name", ColumnWidth.Weight(1.4f)) { it.name.ifBlank { "—" } },
-            textColumn("Job", ColumnWidth.Weight(1f), muted = true) { it.jobTitle.ifBlank { "—" } },
+            textColumn(str(S.email), ColumnWidth.Weight(2f)) { it.email },
+            textColumn(str(S.name), ColumnWidth.Weight(1.4f)) { it.name.ifBlank { "—" } },
+            textColumn(str(S.dd_field_job), ColumnWidth.Weight(1f), muted = true) { it.jobTitle.ifBlank { "—" } },
             TableColumn(header = "", width = ColumnWidth.Fixed(ROW_ACTION.dp)) { r ->
                 ZillitIconButton(
                     ZillitIcons.Trash,
-                    "Remove ${r.email}",
+                    str(S.bs_chip_remove, r.email),
                     { onRemove(r.email) },
                     enabled = canRemove,
                     tint = ZillitTheme.colors.danger,
                 )
             },
         ),
-        emptyTitle = "No recipients yet",
-        emptyMessage = "Add some on the left, or import a CSV.",
+        emptyTitle = str(S.desktop_docdist_no_recipients_yet),
+        emptyMessage = str(S.desktop_docdist_add_recipients_hint),
     )
 }
 
@@ -428,20 +453,24 @@ private fun CsvImportDialog(csv: CsvImportState?, onEvent: (DocDistEvent) -> Uni
     val c = ZillitTheme.colors
     val count = csv?.importable?.size ?: 0
     ZillitDialogShell(
-        title = "Import recipients",
-        subtitle = csv?.fileName?.let { "From $it · expected columns: name, email, job" },
+        title = str(S.dd_csv_import_title),
+        subtitle = csv?.fileName?.let { str(S.desktop_docdist_csv_from_file, it) },
         visible = csv != null,
         onDismiss = { onEvent(DocDistEvent.CancelCsv) },
         icon = ZillitIcons.Upload,
         width = 600.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DocDistEvent.CancelCsv) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (count > 0) "Add $count contact" + (if (count == 1) "" else "s") else "Add contacts",
+                text = if (count > 0) plural(
+                    count,
+                    S.desktop_docdist_add_one_contact,
+                    S.dd_csv_add_n,
+                ) else str(S.dd_csv_add_none),
                 onClick = { onEvent(DocDistEvent.ConfirmCsv) },
                 enabled = count > 0,
             )
@@ -449,7 +478,7 @@ private fun CsvImportDialog(csv: CsvImportState?, onEvent: (DocDistEvent) -> Uni
     ) {
         csv?.rows?.forEach { row -> CsvRow(row) }
         ZillitText(
-            text = "Single-column files are treated as emails. Google & Outlook contact exports are also supported.",
+            text = str(S.desktop_docdist_csv_import_hint),
             style = ZillitTheme.typography.bodySmall,
             color = c.textMuted,
         )
@@ -460,8 +489,8 @@ private fun CsvImportDialog(csv: CsvImportState?, onEvent: (DocDistEvent) -> Uni
 private fun CsvRow(row: CsvContact) {
     val c = ZillitTheme.colors
     val (icon, tint, badge) = when {
-        !row.valid -> Triple(ZillitIcons.Close, c.danger, "invalid email")
-        row.duplicate -> Triple(ZillitIcons.Check, c.warning, "duplicate")
+        !row.valid -> Triple(ZillitIcons.Close, c.danger, str(S.desktop_docdist_csv_invalid_email))
+        row.duplicate -> Triple(ZillitIcons.Check, c.warning, str(S.dd_csv_status_duplicate))
         else -> Triple(ZillitIcons.Check, c.success, null)
     }
     HoverRow(padding = ZillitTheme.spacing.sm) {
@@ -469,7 +498,7 @@ private fun CsvRow(row: CsvContact) {
         Column(Modifier.weight(1f)) {
             if (row.name.isNotBlank()) ZillitText(text = row.name, style = ZillitTheme.typography.label, maxLines = 1)
             ZillitText(
-                text = row.email.ifBlank { "(empty)" },
+                text = row.email.ifBlank { str(S.desktop_docdist_csv_empty_email) },
                 style = ZillitTheme.typography.bodySmall,
                 color = c.textSecondary,
                 maxLines = 1,
@@ -485,19 +514,19 @@ private fun CsvRow(row: CsvContact) {
 internal fun ListEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     val editor = state.listEditor
     ZillitDialogShell(
-        title = "Create distribution list",
+        title = str(S.dd_create_distribution_list),
         visible = editor != null,
         onDismiss = { onEvent(DocDistEvent.CloseListEditor) },
         icon = ZillitIcons.Users,
         width = 640.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DocDistEvent.CloseListEditor) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Create list",
+                text = str(S.dd_create_list),
                 onClick = { onEvent(DocDistEvent.SaveListEditor) },
                 loading = editor?.saving == true,
                 enabled = editor?.name?.isNotBlank() == true && editor.recipients.isNotEmpty(),
@@ -505,19 +534,19 @@ internal fun ListEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> 
         },
     ) {
         if (editor == null) return@ZillitDialogShell
-        FieldLabel("Distribution list name *")
+        FieldLabel(str(S.desktop_docdist_list_name_required_label))
         ZillitTextField(
             value = editor.name,
             onValueChange = { onEvent(DocDistEvent.EditListEditor(name = it)) },
-            placeholder = "e.g. Production team, Cast leads",
+            placeholder = str(S.desktop_docdist_list_name_example),
         )
-        FieldLabel("Description")
+        FieldLabel(str(S.description))
         ZillitTextField(
             value = editor.description,
             onValueChange = { onEvent(DocDistEvent.EditListEditor(description = it)) },
-            placeholder = "What this list is for",
+            placeholder = str(S.desktop_docdist_what_this_list_is_for),
         )
-        FieldLabel("Add recipients")
+        FieldLabel(str(S.docusign_section_add_recipients))
         RecipientForm(
             email = editor.emailInput,
             name = editor.nameInput,
@@ -530,14 +559,14 @@ internal fun ListEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> 
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitButton(
-                text = "Import from CSV",
+                text = str(S.dd_import_from_csv),
                 onClick = { onEvent(DocDistEvent.PickCsvForListEditor) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.File,
             )
             ZillitButton(
-                text = "Download template",
+                text = str(S.dd_csv_download_template),
                 onClick = { onEvent(DocDistEvent.DownloadCsvTemplate) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

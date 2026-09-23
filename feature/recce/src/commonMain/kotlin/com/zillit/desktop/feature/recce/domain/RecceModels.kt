@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.recce.domain
 
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A recce: one location-scout day — a date, a rendezvous, an ordered run
@@ -40,13 +42,16 @@ data class Recce(
         }
 
     /** "Published · v2" or "Draft" — the web's `StatusTag`. */
-    val statusLabel: String get() = if (isPublished) "Published · v${version.coerceAtLeast(1)}" else "Draft"
+    val statusLabel: String get() =
+        if (isPublished) str(S.recce_status_published, "v${version.coerceAtLeast(1)}") else str(S.recce_status_draft)
 }
 
-enum class RecceStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Published("published", "Published"),
+enum class RecceStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.recce_status_draft),
+    Published("published", S.cs_published),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(value: String?): RecceStatus =
@@ -58,13 +63,16 @@ enum class RecceStatus(val wire: String, val label: String) {
  * What a stop is for. The wire carries the label itself, capitalised;
  * [Rendezvous] and [Start] share the brand colour, [End] is the green flag.
  */
-enum class StopKind(val wire: String) {
-    Rendezvous("Rendezvous"),
-    Start("Start"),
-    Continue("Continue"),
-    Lunch("Lunch"),
-    End("End"),
+enum class StopKind(val wire: String, private val labelKey: String) {
+    Rendezvous("Rendezvous", S.recce_label_rendezvous),
+    Start("Start", S.start),
+    Continue("Continue", S.continue_text),
+    Lunch("Lunch", S.desktop_recce_stop_lunch),
+    End("End", S.end),
     ;
+
+    /** What the reader sees for the kind; [wire] is what the server stores. */
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(value: String?): StopKind =
@@ -168,7 +176,7 @@ data class RecceViewer(
         const val TOOL_IDENTIFIER = "recce_tool"
 
         /** What an admin reads in the request message — the web's tool label. */
-        const val MODULE_LABEL = "Recce"
+        val MODULE_LABEL: String get() = str(S.recce_title)
 
         fun from(permissions: ProjectPermissions, userId: String): RecceViewer {
             val access = permissions.access(TOOL_IDENTIFIER)

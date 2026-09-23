@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardDates
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
@@ -80,6 +82,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.money
  * destination, so there is one table and one detail pane rather than six of
  * each.
  */
+@Suppress("LongMethod") // One page, laid out in one place; the sweep's wrapped calls added the lines.
 @Composable
 fun ReceiptQueuePage(
     state: CardUiState,
@@ -112,7 +115,11 @@ fun ReceiptQueuePage(
             ZillitSectionCard(
                 title = state.destination.label,
                 icon = ZillitIcons.Receipt,
-                meta = "${rows.size} row${if (rows.size == 1) "" else "s"}",
+                meta = if (rows.size == 1) {
+                    str(S.desktop_card_row_count_one, rows.size)
+                } else {
+                    str(S.desktop_n_rows, rows.size)
+                },
                 padded = false,
                 modifier = Modifier.weight(QUEUE_WEIGHT).fillMaxHeight(),
             ) {
@@ -134,15 +141,15 @@ fun ReceiptQueuePage(
             }
 
             ZillitSectionCard(
-                title = "Receipt",
+                title = str(S.desktop_receipt),
                 icon = ZillitIcons.Eye,
                 padded = false,
                 modifier = Modifier.weight(DETAIL_WEIGHT).fillMaxHeight(),
             ) {
                 if (selected == null) {
                     ZillitEmptyState(
-                        title = "Pick a receipt",
-                        message = "Its match, coding and history show here.",
+                        title = str(S.desktop_card_pick_a_receipt),
+                        message = str(S.desktop_card_pick_receipt_hint),
                         icon = ZillitIcons.Eye,
                     )
                 } else {
@@ -169,7 +176,7 @@ private fun QueueHeader(
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(CardEvent.Search(it)) },
-            placeholder = "Search by merchant, holder or description",
+            placeholder = str(S.desktop_card_search_receipts),
             modifier = Modifier.width(SEARCH_WIDTH),
         )
         val statuses = state.receipts.map { it.status }.distinct()
@@ -179,13 +186,13 @@ private fun QueueHeader(
                 options = listOf(ALL_STATUSES) + statuses.map { it.wire },
                 onSelect = { onEvent(CardEvent.FilterStatus(it)) },
                 label = { wire ->
-                    if (wire == ALL_STATUSES) "All statuses" else CardWorkflowStatus.from(wire).label
+                    if (wire == ALL_STATUSES) str(S.desktop_all_statuses) else CardWorkflowStatus.from(wire).label
                 },
                 modifier = Modifier.width(FILTER_WIDTH),
             )
         }
         ZillitText(
-            text = "$count showing",
+            text = str(S.desktop_card_showing_count, count),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
             modifier = Modifier.weight(1f),
@@ -195,20 +202,20 @@ private fun QueueHeader(
         // accident waiting for a mis-click.
         if (bulkable && state.selection.isNotEmpty()) {
             ZillitText(
-                text = "${state.selection.size} selected",
+                text = str(S.dd_n_selected, state.selection.size),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
             ZillitButton(
-                text = "Approve selected",
+                text = str(S.desktop_approve_selected),
                 onClick = {
                     onEvent(
                         CardEvent.Ask(
                             CardPrompt.Confirm(
                                 CardConfirmAction.BulkApprove,
                                 "",
-                                "Approve ${state.selection.size} receipt(s)",
-                                "They move on to the accounts team together.",
+                                str(S.desktop_card_approve_receipts_count, state.selection.size),
+                                str(S.desktop_card_approve_bulk_note),
                             ),
                         ),
                     )
@@ -217,15 +224,15 @@ private fun QueueHeader(
                 enabled = !state.busy,
             )
             ZillitButton(
-                text = "Reject selected",
+                text = str(S.desktop_card_reject_selected),
                 onClick = {
                     onEvent(
                         CardEvent.Ask(
                             CardPrompt.Confirm(
                                 CardConfirmAction.BulkReject,
                                 "",
-                                "Reject ${state.selection.size} receipt(s)",
-                                "Each goes back to the person who uploaded it.",
+                                str(S.desktop_card_reject_receipts_count, state.selection.size),
+                                str(S.desktop_card_reject_bulk_note),
                             ),
                         ),
                     )
@@ -235,7 +242,7 @@ private fun QueueHeader(
                 enabled = !state.busy,
             )
             ZillitButton(
-                text = "Clear",
+                text = str(S.ah_clear),
                 onClick = { onEvent(CardEvent.ClearSelection) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -258,22 +265,24 @@ private fun InboxTools(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     if (unmatched == 0) return
 
     ZillitNotice(
-        text = "$unmatched receipt(s) are not tied to a statement line. " +
-            "Running the matcher again over ${latest.filename ?: "the latest statement"} may find them.",
+        text = str(
+            S.desktop_card_unmatched_note,
+            unmatched,
+            latest.filename ?: str(S.desktop_card_latest_statement),
+        ),
         tone = StatusTone.Pending,
         icon = ZillitIcons.Reload,
         action = {
             ZillitButton(
-                text = "Re-run matching",
+                text = str(S.desktop_card_rerun_matching),
                 onClick = {
                     onEvent(
                         CardEvent.Ask(
                             CardPrompt.Confirm(
                                 CardConfirmAction.RerunMatching,
                                 latest.id,
-                                "Re-run matching",
-                                "Every unmatched receipt is compared against this statement again. " +
-                                    "Matches already confirmed are left alone.",
+                                str(S.desktop_card_rerun_matching),
+                                str(S.desktop_card_rerun_matching_note),
                             ),
                         ),
                     )
@@ -301,15 +310,15 @@ private fun UploadPanel(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val card = state.myCard
 
     ZillitSectionCard(
-        title = "Upload receipts",
+        title = str(S.ah_upload_receipts),
         icon = ZillitIcons.Upload,
-        meta = "${money(headroom.available, card?.currency)} available",
+        meta = str(S.desktop_card_available_amount, money(headroom.available, card?.currency)),
         // Collapsed, the card is its own heading: a section body with nothing
         // in it reads as a panel that failed to load.
         padded = expanded || headroom.exhausted,
         action = {
             ZillitButton(
-                text = if (expanded) "Hide" else "Add receipts",
+                text = if (expanded) str(S.hide) else str(S.desktop_card_add_receipts),
                 onClick = { expanded = !expanded },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -319,13 +328,12 @@ private fun UploadPanel(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     ) {
         if (headroom.exhausted) {
             ZillitNotice(
-                text = "This card's limit is fully committed, so nothing further can be uploaded against it. " +
-                    "Request a top-up first.",
+                text = str(S.desktop_card_limit_committed_upload),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
                 action = {
                     ZillitButton(
-                        text = "Card Extension",
+                        text = str(S.ah_card_extension),
                         onClick = { onEvent(CardEvent.Open(CardDestination.CardExtension)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -356,8 +364,11 @@ private fun UploadPanel(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         val over = headroom.batchExceeds(state.draftTotal)
         if (over) {
             ZillitNotice(
-                text = "This batch totals ${money(state.draftTotal, card?.currency)}, over the " +
-                    "${money(headroom.available, card?.currency)} still available on the card.",
+                text = str(
+                    S.desktop_card_batch_over_available,
+                    money(state.draftTotal, card?.currency),
+                    money(headroom.available, card?.currency),
+                ),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
             )
@@ -368,20 +379,24 @@ private fun UploadPanel(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                text = "Add another",
+                text = str(S.desktop_dm_add_another),
                 onClick = { onEvent(CardEvent.AddDraftReceipt) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
             )
             ZillitText(
-                text = "${state.draft.size} receipt(s) · ${money(state.draftTotal, card?.currency)}",
+                text = str(
+                    S.desktop_card_draft_summary,
+                    state.draft.size,
+                    money(state.draftTotal, card?.currency),
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Upload ${state.draft.size} receipt(s)",
+                text = str(S.desktop_card_upload_receipts_count, state.draft.size),
                 onClick = { onEvent(CardEvent.SubmitDraftReceipts) },
                 leadingIcon = ZillitIcons.Send,
                 loading = state.busy,
@@ -427,13 +442,13 @@ private fun DraftRow(
             ZillitDateField(
                 value = receipt.date.asIsoDate(),
                 onValueChange = { onChange(receipt.copy(date = it.asEpochMillis())) },
-                label = if (index == 0) "Date" else null,
+                label = if (index == 0) str(S.date) else null,
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = receipt.amount,
                 onValueChange = { onChange(receipt.copy(amount = it.sanitisedAmount())) },
-                label = if (index == 0) "Amount" else null,
+                label = if (index == 0) str(S.amount) else null,
                 placeholder = "0.00",
                 keyboardType = KeyboardType.Decimal,
                 trailingContent = currency?.takeIf { it.isNotBlank() }?.let { code ->
@@ -466,14 +481,14 @@ private fun DraftRow(
             ZillitTextField(
                 value = receipt.description,
                 onValueChange = { onChange(receipt.copy(description = it)) },
-                label = if (index == 0) "Merchant or description" else null,
-                placeholder = "What did you buy?",
+                label = if (index == 0) str(S.desktop_card_merchant_or_description) else null,
+                placeholder = str(S.desktop_card_what_did_you_buy),
                 modifier = Modifier.weight(DESCRIPTION_FIELD),
             )
             Column(modifier = Modifier.weight(1f)) {
                 if (index == 0) {
                     ZillitText(
-                        text = "Category",
+                        text = str(S.av_category),
                         style = ZillitTheme.typography.label,
                         color = ZillitTheme.colors.textSecondary,
                     )
@@ -494,8 +509,8 @@ private fun DraftRow(
             onClear = onClearAttachment,
             enabled = canAttach,
             busy = uploading,
-            label = "Attach the receipt",
-            disabledHint = "No file picker is available in this build, so receipts cannot be uploaded here.",
+            label = str(S.desktop_card_attach_the_receipt),
+            disabledHint = str(S.desktop_card_no_picker_receipts),
         )
 
         Row(
@@ -505,15 +520,19 @@ private fun DraftRow(
             ZillitSwitch(
                 checked = receipt.urgent,
                 onCheckedChange = { onChange(receipt.copy(urgent = it)) },
-                label = "Urgent",
+                label = str(S.ah_topup_filter_urgent),
             )
             ZillitSwitch(
                 checked = receipt.requestTopUp,
                 onCheckedChange = { onChange(receipt.copy(requestTopUp = it)) },
-                label = "Request a top-up with it",
+                label = str(S.desktop_card_request_topup_with_it),
             )
             ZillitButton(
-                text = if (codingOpen) "Hide budget coding" else "Budget coding (optional)",
+                text = if (codingOpen) {
+                    str(S.desktop_card_hide_budget_coding)
+                } else {
+                    str(S.desktop_card_budget_coding_optional)
+                },
                 onClick = { codingOpen = !codingOpen },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -529,20 +548,20 @@ private fun DraftRow(
                 ZillitTextField(
                     value = receipt.costCode,
                     onValueChange = { onChange(receipt.copy(costCode = it)) },
-                    label = "Cost code",
+                    label = str(S.desktop_card_cost_code),
                     placeholder = "4100",
                     modifier = Modifier.weight(1f),
                 )
                 ZillitTextField(
                     value = receipt.episode,
                     onValueChange = { onChange(receipt.copy(episode = it)) },
-                    label = "Episode",
+                    label = str(S.episode),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitTextField(
                     value = receipt.codedDescription,
                     onValueChange = { onChange(receipt.copy(codedDescription = it)) },
-                    label = "Coding note",
+                    label = str(S.desktop_card_coding_note),
                     modifier = Modifier.weight(DESCRIPTION_FIELD),
                 )
             }
@@ -563,7 +582,7 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = receipt.description.ifBlank { receipt.merchant ?: "Receipt" },
+                    text = receipt.description.ifBlank { receipt.merchant ?: str(S.desktop_receipt) },
                     style = ZillitTheme.typography.titleMedium,
                 )
                 ZillitText(
@@ -580,9 +599,9 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
                 // The document is what the figures are being checked against,
                 // so it sits with them rather than among the decide actions.
                 text = if (key.endsWith(".pdf", ignoreCase = true)) {
-                    "Open receipt (PDF)"
+                    str(S.desktop_card_open_receipt_pdf)
                 } else {
-                    "View receipt"
+                    str(S.desktop_card_view_receipt)
                 },
                 onClick = { onEvent(CardEvent.ViewReceipt(key)) },
                 variant = ButtonVariant.Secondary,
@@ -598,7 +617,7 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
                 modifier = Modifier.weight(1f),
             )
             if (receipt.urgent) {
-                ZillitStatusPill(label = "Urgent", tone = StatusTone.Escalated, dot = true)
+                ZillitStatusPill(label = str(S.ah_topup_filter_urgent), tone = StatusTone.Escalated, dot = true)
             }
         }
 
@@ -620,7 +639,7 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
 
         if (state.receiptHistory.isNotEmpty()) {
             ZillitDivider()
-            FieldGroupLabel("History")
+            FieldGroupLabel(str(S.history))
             CardHistoryTrail(entries = state.receiptHistory)
         }
     }
@@ -630,20 +649,20 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
 private fun ExceptionFlags(state: CardUiState, receipt: CardReceipt, onEvent: (CardEvent) -> Unit) {
     if (receipt.duplicateScore != null && !receipt.duplicateDismissed) {
         ZillitNotice(
-            text = "Possible duplicate — ${receipt.duplicateScore}% similar to another receipt.",
+            text = str(S.desktop_card_possible_duplicate, receipt.duplicateScore),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Warning,
             action = {
                 ZillitButton(
-                    text = "Not a duplicate",
+                    text = str(S.desktop_card_not_a_duplicate),
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.DismissDuplicate,
                                     receipt.id,
-                                    "Dismiss the duplicate flag",
-                                    "The receipt continues through the workflow as normal.",
+                                    str(S.desktop_card_dismiss_duplicate_flag),
+                                    str(S.desktop_card_duplicate_dismiss_note),
                                 ),
                             ),
                         )
@@ -657,7 +676,7 @@ private fun ExceptionFlags(state: CardUiState, receipt: CardReceipt, onEvent: (C
     }
     if (receipt.personalScore != null && !receipt.personalDismissed) {
         ZillitNotice(
-            text = "Looks like personal spend — ${receipt.personalScore}% confidence.",
+            text = str(S.desktop_card_looks_personal, receipt.personalScore),
             tone = StatusTone.Escalated,
             icon = ZillitIcons.Warning,
             action = {
@@ -665,15 +684,15 @@ private fun ExceptionFlags(state: CardUiState, receipt: CardReceipt, onEvent: (C
                 // without it: a wrong suspicion the accountant cannot clear
                 // sits on the receipt for the life of the production.
                 ZillitButton(
-                    text = "Not personal",
+                    text = str(S.desktop_card_not_personal),
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.DismissPersonal,
                                     receipt.id,
-                                    "Clear the personal-spend flag",
-                                    "The receipt is treated as project spend and continues as normal.",
+                                    str(S.desktop_card_clear_personal_flag),
+                                    str(S.desktop_card_personal_clear_note),
                                 ),
                             ),
                         )
@@ -700,7 +719,7 @@ private fun ExceptionFlags(state: CardUiState, receipt: CardReceipt, onEvent: (C
 private fun MatchSection(state: CardUiState, receipt: CardReceipt, onEvent: (CardEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(text = "Statement match", style = ZillitTheme.typography.titleSmall)
+            ZillitText(text = str(S.desktop_card_statement_match), style = ZillitTheme.typography.titleSmall)
             Row(modifier = Modifier.weight(1f)) {}
             MatchStatusPill(receipt.matchStatus, receipt.matchScore)
         }
@@ -726,15 +745,15 @@ private fun MatchSection(state: CardUiState, receipt: CardReceipt, onEvent: (Car
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 ) {
                     ZillitButton(
-                        text = "Confirm match",
+                        text = str(S.desktop_card_confirm_match),
                         onClick = {
                             onEvent(
                                 CardEvent.Ask(
                                     CardPrompt.Confirm(
                                         CardConfirmAction.ConfirmMatch,
                                         receipt.id,
-                                        "Confirm this match",
-                                        "The receipt and the statement line are treated as reconciled.",
+                                        str(S.desktop_card_confirm_this_match),
+                                        str(S.desktop_card_confirm_match_note),
                                     ),
                                 ),
                             )
@@ -743,15 +762,15 @@ private fun MatchSection(state: CardUiState, receipt: CardReceipt, onEvent: (Car
                         enabled = !state.busy,
                     )
                     ZillitButton(
-                        text = "Unmatch",
+                        text = str(S.desktop_card_unmatch),
                         onClick = {
                             onEvent(
                                 CardEvent.Ask(
                                     CardPrompt.Confirm(
                                         CardConfirmAction.UnmatchReceipt,
                                         receipt.id,
-                                        "Remove this match",
-                                        "The receipt returns to the unreconciled pile.",
+                                        str(S.desktop_card_remove_this_match),
+                                        str(S.desktop_card_unmatch_note),
                                     ),
                                 ),
                             )
@@ -765,16 +784,15 @@ private fun MatchSection(state: CardUiState, receipt: CardReceipt, onEvent: (Car
                     // Only reachable here: the accountant is looking at the
                     // line the charge actually landed on.
                     ZillitButton(
-                        text = "Flag the charge personal",
+                        text = str(S.desktop_card_flag_charge_personal),
                         onClick = {
                             onEvent(
                                 CardEvent.Ask(
                                     CardPrompt.Confirm(
                                         CardConfirmAction.FlagTransactionPersonal,
                                         receipt.transactionId,
-                                        "Flag the statement line as personal",
-                                        "The charge leaves the project's workflow, the receipt follows it, " +
-                                            "and the holder's committed limit is released.",
+                                        str(S.desktop_card_flag_line_personal),
+                                        str(S.desktop_card_flag_line_personal_note),
                                     ),
                                 ),
                             )
@@ -787,7 +805,7 @@ private fun MatchSection(state: CardUiState, receipt: CardReceipt, onEvent: (Car
             }
         } else if (state.matchCandidates.isEmpty()) {
             ZillitText(
-                text = "No statement line suggested for this receipt yet.",
+                text = str(S.desktop_card_no_suggested_line),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -813,7 +831,7 @@ private fun CandidateRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = candidate.merchant.ifBlank { "Statement line" },
+                text = candidate.merchant.ifBlank { str(S.desktop_card_statement_line) },
                 style = ZillitTheme.typography.bodyMedium,
                 maxLines = 1,
             )
@@ -825,7 +843,7 @@ private fun CandidateRow(
             )
         }
         ZillitButton(
-            text = "Match",
+            text = str(S.desktop_match),
             onClick = { onEvent(CardEvent.MatchReceipt(receipt.id, candidate.id)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -854,13 +872,13 @@ private fun CodingSection(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
     val editable = (ownReceipt || state.destination in CODING_DESTINATIONS) && !receipt.status.isPosted
     if (!editable) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            FieldGroupLabel("Coding")
+            FieldGroupLabel(str(S.desktop_card_coding))
             ZillitText(
                 text = listOfNotNull(
                     receipt.nominalCode?.takeIf { it.isNotBlank() },
-                    receipt.episode?.takeIf { it.isNotBlank() }?.let { "episode $it" },
+                    receipt.episode?.takeIf { it.isNotBlank() }?.let { str(S.desktop_card_episode_value, it) },
                     receipt.codeDescription?.takeIf { it.isNotBlank() },
-                ).joinToString(" · ").ifBlank { "Not coded yet." },
+                ).joinToString(" · ").ifBlank { str(S.desktop_card_not_coded_yet) },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -871,7 +889,7 @@ private fun CodingSection(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
     val draft = state.coding?.takeIf { it.receiptId == receipt.id } ?: CodingDraft.of(receipt)
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        FieldGroupLabel("Coding")
+        FieldGroupLabel(str(S.desktop_card_coding))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -879,21 +897,21 @@ private fun CodingSection(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
             ZillitTextField(
                 value = draft.nominalCode,
                 onValueChange = { onEvent(CardEvent.EditCoding(draft.copy(nominalCode = it))) },
-                label = "Nominal code",
+                label = str(S.ah_lbl_nominal_code),
                 placeholder = "4100",
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = draft.episode,
                 onValueChange = { onEvent(CardEvent.EditCoding(draft.copy(episode = it))) },
-                label = "Episode",
+                label = str(S.episode),
                 modifier = Modifier.weight(1f),
             )
         }
         ZillitTextField(
             value = draft.codeDescription,
             onValueChange = { onEvent(CardEvent.EditCoding(draft.copy(codeDescription = it))) },
-            label = "Coding note",
+            label = str(S.desktop_card_coding_note),
             modifier = Modifier.fillMaxWidth(),
         )
         FlowRow(
@@ -905,7 +923,7 @@ private fun CodingSection(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
                 // One button on a holder's own receipt, three on a
                 // coordinator's queue: a holder has nothing to add after the
                 // code, so there is no half-finished state to save.
-                text = if (ownReceipt) "Save coding" else "Save draft",
+                text = if (ownReceipt) str(S.desktop_card_save_coding) else str(S.ah_save_draft),
                 onClick = { onEvent(CardEvent.SaveCodingDraft) },
                 variant = if (ownReceipt) ButtonVariant.Secondary else ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -913,7 +931,7 @@ private fun CodingSection(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
             )
             if (ownReceipt) return@FlowRow
             ZillitButton(
-                text = "Save and send",
+                text = str(S.desktop_card_save_and_send),
                 onClick = { onEvent(CardEvent.SubmitCoding) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -924,7 +942,7 @@ private fun CodingSection(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
             // next screen, which is two clicks to say one thing.
             if (state.viewer.isApprover) {
                 ZillitButton(
-                    text = "Code and approve",
+                    text = str(S.desktop_card_code_and_approve),
                     onClick = { onEvent(CardEvent.ApproveAndSubmitCoding) },
                     size = ButtonSize.Small,
                     enabled = draft.coded && !state.busy,
@@ -943,25 +961,25 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
             CardDestination.ApprovalQueue -> {
                 if (state.viewer.isApprover) {
                     add(
-                        Action("Approve", ButtonVariant.Primary) {
+                        Action(str(S.approve), ButtonVariant.Primary) {
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.ApproveReceipt,
                                     receipt.id,
-                                    "Approve this receipt",
-                                    "${money(receipt.amount, receipt.currency)} moves on to be posted.",
+                                    str(S.desktop_card_approve_this_receipt),
+                                    str(S.desktop_card_moves_on_to_post, money(receipt.amount, receipt.currency)),
                                 ),
                             )
                         },
                     )
                     add(
-                        Action("Reject", ButtonVariant.Danger) {
+                        Action(str(S.reject), ButtonVariant.Danger) {
                             CardEvent.Ask(
                                 CardPrompt.WithReason(
                                     CardReasonAction.RejectReceipt,
                                     receipt.id,
-                                    "Reject this receipt",
-                                    "Why it is being refused",
+                                    str(S.desktop_card_reject_this_receipt),
+                                    str(S.desktop_timecard_reject_label),
                                 ),
                             )
                         },
@@ -969,13 +987,13 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                 }
                 if (state.viewer.isAccountant && state.viewer.metadata.canOverride) {
                     add(
-                        Action("Override", ButtonVariant.Secondary) {
+                        Action(str(S.dm_nom_table_override), ButtonVariant.Secondary) {
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.OverrideReceipt,
                                     receipt.id,
-                                    "Override the approval chain",
-                                    "The receipt skips its remaining approvers. This is recorded against your name.",
+                                    str(S.desktop_card_override_chain),
+                                    str(S.desktop_card_override_receipt_note),
                                 ),
                             )
                         },
@@ -989,31 +1007,33 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                         // Straight to the editor: splitting is a task, not a
                         // decision, and a confirmation in front of it would ask
                         // a question with only one sensible answer.
-                        Action("Split across codes", ButtonVariant.Secondary) {
+                        Action(str(S.desktop_card_split_across_codes), ButtonVariant.Secondary) {
                             CardEvent.OpenSplits(receipt.id)
                         },
                     )
                     add(
-                        Action("Post", ButtonVariant.Primary) {
+                        Action(str(S.txt_post), ButtonVariant.Primary) {
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.PostReceipt,
                                     receipt.id,
-                                    "Post this receipt",
-                                    "${money(receipt.amount, receipt.currency)} goes to the ledger. " +
-                                        "This cannot be undone here.",
+                                    str(S.desktop_card_post_this_receipt),
+                                    str(
+                                        S.desktop_card_goes_to_ledger_undone,
+                                        money(receipt.amount, receipt.currency),
+                                    ),
                                 ),
                             )
                         },
                     )
                     add(
-                        Action("Flag personal", ButtonVariant.Tertiary) {
+                        Action(str(S.ah_flag_personal), ButtonVariant.Tertiary) {
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.FlagPersonal,
                                     receipt.id,
-                                    "Flag as personal spend",
-                                    "It leaves the project's expense workflow and the holder is charged back.",
+                                    str(S.desktop_card_flag_as_personal_spend),
+                                    str(S.desktop_card_flag_personal_note),
                                 ),
                             )
                         },
@@ -1026,13 +1046,13 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                     receipt.status == CardWorkflowStatus.Imported
                 ) {
                     add(
-                        Action("Send for approval", ButtonVariant.Primary) {
+                        Action(str(S.av_send_for_approval), ButtonVariant.Primary) {
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.SubmitReceiptForApproval,
                                     receipt.id,
-                                    "Send this for approval",
-                                    "It goes to whoever approves your card spend.",
+                                    str(S.desktop_card_send_this_for_approval),
+                                    str(S.desktop_card_send_approval_note),
                                 ),
                             )
                         },
@@ -1040,13 +1060,13 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                 }
                 if (!receipt.status.isPosted) {
                     add(
-                        Action("Delete", ButtonVariant.Danger) {
+                        Action(str(S.delete), ButtonVariant.Danger) {
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.DeleteReceipt,
                                     receipt.id,
-                                    "Delete this receipt",
-                                    "The upload and its document are removed. This cannot be undone.",
+                                    str(S.desktop_card_delete_this_receipt),
+                                    str(S.desktop_card_delete_receipt_note),
                                 ),
                             )
                         },
@@ -1061,9 +1081,9 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
     if (actions.isEmpty()) {
         ZillitText(
             text = if (state.destination == CardDestination.History) {
-                "This receipt is posted. Its trail below is the record of how it got here."
+                str(S.desktop_card_receipt_posted_trail)
             } else {
-                "Nothing to do on this receipt from here."
+                str(S.desktop_card_nothing_to_do_receipt)
             },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
@@ -1124,31 +1144,35 @@ private fun receiptColumns(
             ),
         )
     }
-    add(textColumn("Description", ColumnWidth.Weight(1.6f)) { it.description.ifBlank { it.merchant ?: "Receipt" } })
+    add(
+        textColumn(str(S.description), ColumnWidth.Weight(1.6f)) {
+            it.description.ifBlank { it.merchant ?: str(S.desktop_receipt) }
+        },
+    )
     // Every row on My Transactions belongs to the person reading it.
     if (state.destination != CardDestination.MyTransactions) {
         add(
             TableColumn(
-                header = "Holder",
+                header = str(S.ah_holder),
                 width = ColumnWidth.Weight(1.1f),
                 cell = { PersonCell(state.personName(it.holderId, it.holderName), userId = it.holderId) },
             ),
         )
     }
-    add(textColumn("Amount", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
+    add(textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
     // Date comes off in a narrow table. Inside the Account Hub the hub's
     // sidebar, the tool's own and the detail pane leave this about five
     // hundred points, and the column pushed off the end was the status — which
     // is the one thing a queue is scanned for. The pane states the date.
     if (!narrow) {
-        add(textColumn("Date", ColumnWidth.Weight(1f), muted = true) { date(it.date) })
+        add(textColumn(str(S.date), ColumnWidth.Weight(1f), muted = true) { date(it.date) })
     }
     if (state.destination == CardDestination.History) {
-        add(textColumn("Code", ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: "—" })
+        add(textColumn(str(S.code), ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: "—" })
     }
     add(
         TableColumn(
-            header = "Status",
+            header = str(S.status),
             width = ColumnWidth.Fixed(STATUS_COLUMN),
             cell = { row ->
                 // The inbox reads in reconciliation vocabulary, everywhere else
@@ -1194,7 +1218,7 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             ZillitSearchField(
                 value = state.search,
                 onValueChange = { onEvent(CardEvent.Search(it)) },
-                placeholder = "Search by merchant or holder",
+                placeholder = str(S.desktop_card_search_transactions),
                 modifier = Modifier.width(SEARCH_WIDTH),
             )
             val statuses = state.transactions.map { it.status }.distinct()
@@ -1204,29 +1228,32 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                     options = listOf(ALL_STATUSES) + statuses.map { it.wire },
                     onSelect = { onEvent(CardEvent.FilterStatus(it)) },
                     label = { wire ->
-                        if (wire == ALL_STATUSES) "All statuses" else CardWorkflowStatus.from(wire).label
+                        if (wire == ALL_STATUSES) str(S.desktop_all_statuses) else CardWorkflowStatus.from(wire).label
                     },
                     modifier = Modifier.width(FILTER_WIDTH),
                 )
             }
             ZillitText(
-                text = "${rows.size} transaction${if (rows.size == 1) "" else "s"}",
+                text = if (rows.size == 1) {
+                    str(S.desktop_card_transaction_count_one, rows.size)
+                } else {
+                    str(S.desktop_card_transactions_count, rows.size)
+                },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
             if (state.viewer.isAccountant && state.selection.isNotEmpty()) {
                 ZillitButton(
-                    text = "Delete ${state.selection.size} selected",
+                    text = str(S.desktop_card_delete_selected_count, state.selection.size),
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.BulkDeleteTransactions,
                                     "",
-                                    "Delete ${state.selection.size} statement line(s)",
-                                    "Any receipt matched to one returns to the inbox rather than being " +
-                                        "deleted with it. This cannot be undone.",
+                                    str(S.desktop_card_delete_lines_count, state.selection.size),
+                                    str(S.desktop_card_delete_lines_note),
                                 ),
                             ),
                         )
@@ -1236,7 +1263,7 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                     enabled = !state.busy,
                 )
                 ZillitButton(
-                    text = "Clear",
+                    text = str(S.ah_clear),
                     onClick = { onEvent(CardEvent.ClearSelection) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -1249,7 +1276,7 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             ZillitSectionCard(
-                title = "All transactions",
+                title = str(S.ah_all_transactions),
                 icon = ZillitIcons.Ledger,
                 meta = money(rows.sumOf { it.amount }, rows.firstOrNull()?.currency),
                 padded = false,
@@ -1262,21 +1289,21 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                     loading = state.loading,
                     onRowClick = { onEvent(CardEvent.SelectTransaction(it.id)) },
                     isSelected = { it.id == state.selectedTransactionId },
-                    emptyTitle = "No transactions",
-                    emptyMessage = "Statement lines appear here once a statement is imported.",
+                    emptyTitle = str(S.desktop_card_no_transactions),
+                    emptyMessage = str(S.desktop_card_transactions_empty),
                 )
             }
 
             ZillitSectionCard(
-                title = "Transaction",
+                title = str(S.desktop_card_transaction),
                 icon = ZillitIcons.Eye,
                 padded = false,
                 modifier = Modifier.weight(DETAIL_WEIGHT).fillMaxHeight(),
             ) {
                 if (selected == null) {
                     ZillitEmptyState(
-                        title = "Pick a transaction",
-                        message = "Its coding, its match and what can be done with it show here.",
+                        title = str(S.desktop_card_pick_a_transaction),
+                        message = str(S.desktop_card_pick_transaction_hint),
                         icon = ZillitIcons.Ledger,
                     )
                 } else {
@@ -1303,7 +1330,9 @@ private fun TransactionDetail(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = transaction.merchant.ifBlank { transaction.description ?: "Statement line" },
+                    text = transaction.merchant.ifBlank {
+                        transaction.description ?: str(S.desktop_card_statement_line)
+                    },
                     style = ZillitTheme.typography.titleMedium,
                 )
                 ZillitText(
@@ -1327,27 +1356,27 @@ private fun TransactionDetail(
 
         if (transaction.personal) {
             ZillitNotice(
-                text = "Flagged as personal spend. It has left the project's expense workflow.",
+                text = str(S.desktop_card_flagged_personal_note),
                 tone = StatusTone.Escalated,
                 icon = ZillitIcons.Warning,
             )
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            FieldGroupLabel("Coding")
+            FieldGroupLabel(str(S.desktop_card_coding))
             ZillitText(
                 text = listOfNotNull(
                     transaction.nominalCode?.takeIf { it.isNotBlank() },
-                    transaction.episode?.takeIf { it.isNotBlank() }?.let { "episode $it" },
+                    transaction.episode?.takeIf { it.isNotBlank() }?.let { str(S.desktop_card_episode_value, it) },
                     transaction.codeDescription?.takeIf { it.isNotBlank() },
-                ).joinToString(" · ").ifBlank { "Not coded yet." },
+                ).joinToString(" · ").ifBlank { str(S.desktop_card_not_coded_yet) },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            FieldGroupLabel("Reconciliation")
+            FieldGroupLabel(str(S.desktop_card_reconciliation))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1355,9 +1384,9 @@ private fun TransactionDetail(
                 MatchStatusPill(transaction.matchStatus, null)
                 ZillitText(
                     text = if (transaction.receiptId != null) {
-                        "A receipt is attached to this line."
+                        str(S.desktop_card_receipt_attached)
                     } else {
-                        "No receipt has been matched to this line yet."
+                        str(S.desktop_card_no_receipt_matched)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
@@ -1375,15 +1404,18 @@ private fun TransactionDetail(
         ) {
             if (!transaction.status.isPosted && !transaction.personal) {
                 ZillitButton(
-                    text = "Post",
+                    text = str(S.txt_post),
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.PostTransaction,
                                     transaction.id,
-                                    "Post this transaction",
-                                    "${money(transaction.amount, transaction.currency)} goes to the ledger.",
+                                    str(S.desktop_card_post_this_transaction),
+                                    str(
+                                        S.desktop_card_goes_to_ledger,
+                                        money(transaction.amount, transaction.currency),
+                                    ),
                                 ),
                             ),
                         )
@@ -1392,16 +1424,15 @@ private fun TransactionDetail(
                     enabled = !state.busy,
                 )
                 ZillitButton(
-                    text = "Flag personal",
+                    text = str(S.ah_flag_personal),
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.FlagTransactionPersonal,
                                     transaction.id,
-                                    "Flag this charge as personal",
-                                    "It leaves the project's workflow, a matched receipt follows it, " +
-                                        "and the holder's committed limit is released.",
+                                    str(S.desktop_card_flag_this_charge_personal),
+                                    str(S.desktop_card_flag_transaction_note),
                                 ),
                             ),
                         )
@@ -1412,16 +1443,15 @@ private fun TransactionDetail(
                 )
             }
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 onClick = {
                     onEvent(
                         CardEvent.Ask(
                             CardPrompt.Confirm(
                                 CardConfirmAction.DeleteTransaction,
                                 transaction.id,
-                                "Delete this statement line",
-                                "A receipt matched to it returns to the inbox rather than being deleted " +
-                                    "with it. This cannot be undone.",
+                                str(S.desktop_card_delete_this_line),
+                                str(S.desktop_card_delete_line_note),
                             ),
                         ),
                     )
@@ -1454,25 +1484,25 @@ private fun transactionColumns(
             ),
         )
     }
-    add(textColumn("Merchant", ColumnWidth.Weight(1.6f)) { it.merchant.ifBlank { it.description ?: "—" } })
+    add(textColumn(str(S.ah_merchant), ColumnWidth.Weight(1.6f)) { it.merchant.ifBlank { it.description ?: "—" } })
     add(
-        textColumn("Card", ColumnWidth.Weight(0.9f), muted = true) {
+        textColumn(str(S.ah_my_cards), ColumnWidth.Weight(0.9f), muted = true) {
             it.cardLastFour?.let { last -> "•••• $last" } ?: "—"
         },
     )
     add(
         TableColumn(
-            header = "Holder",
+            header = str(S.ah_holder),
             width = ColumnWidth.Weight(1.1f),
             cell = { PersonCell(state.personName(it.holderId, it.holderName), userId = it.holderId) },
         ),
     )
-    add(textColumn("Amount", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
-    add(textColumn("Date", ColumnWidth.Weight(1f), muted = true) { date(it.date) })
-    add(textColumn("Code", ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: "—" })
+    add(textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
+    add(textColumn(str(S.date), ColumnWidth.Weight(1f), muted = true) { date(it.date) })
+    add(textColumn(str(S.code), ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: "—" })
     add(
         TableColumn(
-            header = "Status",
+            header = str(S.status),
             width = ColumnWidth.Fixed(STATUS_COLUMN),
             cell = { WorkflowStatusPill(it.status) },
         ),
@@ -1517,19 +1547,19 @@ private fun String.sanitisedAmount(): String {
 }
 
 private fun CardUiState.emptyTitle(): String = when {
-    search.isNotBlank() -> "Nothing matches that search"
-    destination == CardDestination.History -> "Nothing posted yet"
-    else -> "Nothing waiting"
+    search.isNotBlank() -> str(S.dm_nda_empty_search)
+    destination == CardDestination.History -> str(S.desktop_board_nothing_posted_yet)
+    else -> str(S.desktop_nothing_waiting)
 }
 
 private fun CardUiState.emptyMessage(): String? = when {
-    search.isNotBlank() -> "Clear the search to see the whole queue."
-    destination == CardDestination.ReceiptInbox -> "Receipts land here as cardholders upload them."
-    destination == CardDestination.PendingCoding -> "Receipts needing a nominal code appear here."
-    destination == CardDestination.CodingQueue -> "Receipts your department has to code appear here."
-    destination == CardDestination.ApprovalQueue -> "Receipts routed to you for approval appear here."
-    destination == CardDestination.MyTransactions -> "Upload a receipt to get started."
-    destination == CardDestination.History -> "Posted receipts are kept here for the life of the production."
+    search.isNotBlank() -> str(S.desktop_card_clear_search_hint)
+    destination == CardDestination.ReceiptInbox -> str(S.desktop_card_inbox_empty)
+    destination == CardDestination.PendingCoding -> str(S.desktop_card_pending_coding_empty)
+    destination == CardDestination.CodingQueue -> str(S.desktop_card_coding_queue_empty)
+    destination == CardDestination.ApprovalQueue -> str(S.desktop_card_receipt_approval_empty)
+    destination == CardDestination.MyTransactions -> str(S.desktop_card_upload_to_start)
+    destination == CardDestination.History -> str(S.desktop_card_history_empty)
     else -> null
 }
 

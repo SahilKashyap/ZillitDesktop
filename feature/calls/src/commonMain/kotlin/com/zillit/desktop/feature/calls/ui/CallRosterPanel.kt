@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallStatus
 
@@ -63,7 +65,7 @@ fun CallRosterPanel(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "In call · $connected",
+            text = str(S.desktop_call_in_call_count, connected),
             style = ZillitTheme.typography.titleSmall,
             color = colors.textPrimary,
         )
@@ -100,16 +102,16 @@ private fun RosterRow(tile: CallTile, state: CallUiState?, onEvent: (CallEvent) 
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
                 ZillitText(
-                    text = if (tile.isSelf) "You" else tile.name,
+                    text = if (tile.isSelf) str(S.you) else tile.name,
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textPrimary,
                     maxLines = 1,
                 )
-                if (tile.isGuest) ZillitTag("Guest", tone = TagTone.Neutral)
+                if (tile.isGuest) ZillitTag(str(S.txt_badge_guest), tone = TagTone.Neutral)
             }
             ZillitText(
                 text = when {
-                    onHold -> "On hold"
+                    onHold -> str(S.desktop_call_on_hold)
                     tile.designation.isNotBlank() && tile.presence == CallStatus.InCall -> tile.designation
                     else -> tile.presenceWord
                 },
@@ -131,7 +133,7 @@ private fun RosterBadges(tile: CallTile, state: CallUiState?) {
         // Amber, against the grey of their own mute below: the web's local badges are amber too.
         ZillitIcon(
             icon = ZillitIcons.MicOff,
-            contentDescription = "Muted for you",
+            contentDescription = str(S.desktop_call_muted_for_you),
             tint = colors.warning,
             size = ROW_ICON,
         )
@@ -139,13 +141,18 @@ private fun RosterBadges(tile: CallTile, state: CallUiState?) {
     if (state != null && tile.userId in state.line3.hidden) {
         ZillitIcon(
             icon = ZillitIcons.Eye,
-            contentDescription = "Video hidden by you",
+            contentDescription = str(S.desktop_call_video_hidden_by_you),
             tint = colors.warning,
             size = ROW_ICON,
         )
     }
     if (tile.hand) {
-        ZillitIcon(icon = ZillitIcons.Hand, contentDescription = "Hand raised", tint = colors.warning, size = ROW_ICON)
+        ZillitIcon(
+            icon = ZillitIcons.Hand,
+            contentDescription = str(S.desktop_call_hand_raised),
+            tint = colors.warning,
+            size = ROW_ICON,
+        )
     }
     if (tile.media?.speaking == true) {
         Box(
@@ -156,7 +163,12 @@ private fun RosterBadges(tile: CallTile, state: CallUiState?) {
         )
     }
     if (tile.media?.audioMuted == true) {
-        ZillitIcon(icon = ZillitIcons.MicOff, contentDescription = "Muted", tint = colors.textMuted, size = ROW_ICON)
+        ZillitIcon(
+            icon = ZillitIcons.MicOff,
+            contentDescription = str(S.desktop_muted),
+            tint = colors.textMuted,
+            size = ROW_ICON,
+        )
     }
     tile.media?.quality?.takeIf { it.isTrouble }?.let { NetworkPip(quality = it) }
 }
@@ -167,7 +179,7 @@ private fun RosterActions(tile: CallTile, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
     when {
         tile.presence == CallStatus.Ringing -> ZillitText(
-            text = "Cancel",
+            text = str(S.cancel),
             style = ZillitTheme.typography.labelSmall,
             color = colors.accent,
             modifier = Modifier.clickable { onEvent(CallEvent.CancelInvite(tile.userId)) },
@@ -176,7 +188,7 @@ private fun RosterActions(tile: CallTile, onEvent: (CallEvent) -> Unit) {
             Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleRosterMenu(tile.userId)) }) {
                 ZillitIcon(
                     icon = ZillitIcons.MoreHorizontal,
-                    contentDescription = "Options",
+                    contentDescription = str(S.options),
                     tint = colors.textMuted,
                     size = ROW_ICON,
                 )
@@ -202,16 +214,25 @@ private fun RosterMenu(tile: CallTile, state: CallUiState, onEvent: (CallEvent) 
     ) {
         val hidden = id in state.line3.hidden
         val deafened = id in state.line3.deafened
-        MenuRow(if (hidden) "Watch" else "Don't watch") { pick(CallEvent.SetWatch(id, hidden)) }
-        MenuRow(if (deafened) "Unmute for myself" else "Mute for myself") { pick(CallEvent.SetListen(id, deafened)) }
-        if (tile.media?.audioMuted != true) MenuRow("Mute for everyone") { pick(CallEvent.MuteForEveryone(id)) }
+        MenuRow(if (hidden) str(S.desktop_call_watch) else str(S.desktop_call_dont_watch)) {
+            pick(CallEvent.SetWatch(id, hidden))
+        }
+        val listenLabel = if (deafened) str(S.desktop_call_unmute_for_myself) else str(S.desktop_call_mute_for_myself)
+        MenuRow(listenLabel) {
+            pick(CallEvent.SetListen(id, deafened))
+        }
+        if (tile.media?.audioMuted != true) {
+            MenuRow(str(S.desktop_call_mute_for_everyone)) { pick(CallEvent.MuteForEveryone(id)) }
+        }
         if (tile.media?.videoOn == true) {
-            MenuRow("Stop camera for everyone") { pick(CallEvent.StopCameraForEveryone(id)) }
+            MenuRow(str(S.desktop_call_stop_camera_for_everyone)) { pick(CallEvent.StopCameraForEveryone(id)) }
         }
         if (state.isHost) {
             val blocked = state.line3.isChatBlocked(id)
-            MenuRow(if (blocked) "Unblock chat" else "Block from chat") { pick(CallEvent.BlockChat(id, !blocked)) }
-            MenuRow("Remove from call", danger = true) { pick(CallEvent.RemoveFromCall(id)) }
+            MenuRow(if (blocked) str(S.desktop_call_unblock_chat) else str(S.desktop_call_block_from_chat)) {
+                pick(CallEvent.BlockChat(id, !blocked))
+            }
+            MenuRow(str(S.desktop_call_remove_from_call), danger = true) { pick(CallEvent.RemoveFromCall(id)) }
         }
     }
 }
@@ -232,13 +253,13 @@ private fun MenuRow(label: String, danger: Boolean = false, onClick: () -> Unit)
 
 private val CallTile.presenceWord: String
     get() = when (presence) {
-        CallStatus.Ringing -> "Ringing…"
-        CallStatus.InCall -> if (media == null) "In call" else "Connected"
-        CallStatus.Caller -> "Calling"
-        CallStatus.Declined -> "Declined"
-        CallStatus.NotAnswered -> "No answer"
-        CallStatus.Left -> "Left"
-        CallStatus.Ended -> "Ended"
+        CallStatus.Ringing -> str(S.txt_ringing)
+        CallStatus.InCall -> if (media == null) str(S.txt_badge_in_call) else str(S.connected)
+        CallStatus.Caller -> str(S.desktop_call_calling)
+        CallStatus.Declined -> str(S.declined_events)
+        CallStatus.NotAnswered -> str(S.desktop_no_answer)
+        CallStatus.Left -> str(S.left)
+        CallStatus.Ended -> str(S.desktop_call_ended_status)
     }
 
 val ROSTER_WIDTH = 280.dp

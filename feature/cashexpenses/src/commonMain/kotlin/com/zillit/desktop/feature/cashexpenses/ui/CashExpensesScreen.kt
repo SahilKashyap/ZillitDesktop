@@ -25,6 +25,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.ui.pages.ActiveFloatsPage
@@ -139,16 +141,16 @@ private fun CashHeader(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitPageHeader(
-            eyebrow = "Finance",
-            title = "Cash Expenses",
+            eyebrow = str(S.desktop_finance),
+            title = str(S.desktop_ce_tool_title),
             description = if (state.viewer.isAccountant) {
-                "Petty cash floats, out-of-pocket claims, receipt auditing and cash reconciliation."
+                str(S.desktop_ce_accountant_subtitle)
             } else {
-                "Request a float, submit your receipts, and follow what happens to them."
+                str(S.desktop_ce_holder_subtitle)
             },
             actions = {
                 ZillitButton(
-                    text = "Refresh",
+                    text = str(S.refresh_text),
                     onClick = { onEvent(CashEvent.Refresh) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,

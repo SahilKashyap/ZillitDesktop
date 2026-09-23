@@ -35,6 +35,8 @@ import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.calls.ui.headerTitle
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The video call, out of the main window: a small always-on-top window the OS
@@ -71,7 +73,7 @@ internal fun ApplicationScope.CallWindow(
     Window(
         onCloseRequest = { calls.onEvent(CallEvent.TogglePip) },
         state = windowState,
-        title = state.headerTitle.ifBlank { "Zillit call" },
+        title = state.headerTitle.ifBlank { str(S.desktop_zillit_call) },
         // Only the thumbnail floats. A full call window that forced itself
         // over everything would be the one thing nobody could get out of the
         // way while reading the document they joined the call to discuss.
@@ -157,7 +159,7 @@ private fun PipControls(state: com.zillit.desktop.feature.calls.ui.CallUiState, 
     if (state.pipCompact) {
         ZillitIconButton(
             icon = ZillitIcons.Maximize,
-            contentDescription = "Back to the full call window",
+            contentDescription = str(S.desktop_back_to_call_window),
             onClick = { calls.onEvent(CallEvent.ToggleCallCompact) },
             tint = colors.textPrimary,
             size = PIP_BUTTON,
@@ -181,14 +183,14 @@ private fun PipControls(state: com.zillit.desktop.feature.calls.ui.CallUiState, 
     }
     ZillitIconButton(
         icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
-        contentDescription = if (state.micMuted) "Unmute" else "Mute",
+        contentDescription = if (state.micMuted) str(S.desktop_unmute) else str(S.desktop_mute),
         onClick = { calls.onEvent(CallEvent.ToggleMic) },
         tint = if (state.micMuted) colors.danger else colors.textPrimary,
         size = PIP_BUTTON,
     )
     ZillitIconButton(
         icon = ZillitIcons.PhoneDown,
-        contentDescription = "End call",
+        contentDescription = str(S.desktop_end_call),
         onClick = { calls.onEvent(CallEvent.HangUp) },
         tint = colors.danger,
         size = PIP_BUTTON,
@@ -197,7 +199,7 @@ private fun PipControls(state: com.zillit.desktop.feature.calls.ui.CallUiState, 
         icon = ZillitIcons.Restore,
         // Named for where it goes, because the button above it also
         // brings the call back and the two used to read identically.
-        contentDescription = "Move the call into the Zillit window",
+        contentDescription = str(S.desktop_move_call_into_window),
         onClick = { calls.onEvent(CallEvent.TogglePip) },
         tint = colors.textPrimary,
         size = PIP_BUTTON,

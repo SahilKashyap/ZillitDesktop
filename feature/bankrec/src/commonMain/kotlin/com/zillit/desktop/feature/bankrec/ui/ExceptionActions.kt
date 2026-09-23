@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankException
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.ExceptionStatus
@@ -46,7 +48,7 @@ internal class ExceptionActions(private val vm: BankRecViewModel) {
                     exceptions = exceptions.map { if (it.id == id) it.copy(status = status) else it },
                 )
             }
-            vm.notify("Exception marked ${status.label.lowercase()}.")
+            vm.notify(str(S.desktop_br_exception_marked, status.label.lowercase()))
             vm.loadExceptions()
         }, { error ->
             edit { copy(acting = null) }
@@ -81,11 +83,11 @@ internal class ExceptionActions(private val vm: BankRecViewModel) {
         if (dialog.saving) return
         val form = dialog.form
         lockProblem(form.effectiveDate, vm.ui.lookups.lockedThrough)?.let { return vm.refuse(it) }
-        if (form.amountValue == null) return vm.refuse("Enter the amount to add.")
+        if (form.amountValue == null) return vm.refuse(str(S.desktop_br_enter_amount))
         edit { copy(quickAdd = dialog.copy(saving = true)) }
         vm.runResult({ vm.repo.quickAddException(dialog.exceptionId, form, fromWorkspace = false) }, {
             edit { copy(quickAdd = null) }
-            vm.notify("Entry added to the Zillit ledger.")
+            vm.notify(str(S.desktop_br_entry_added))
             vm.loadExceptions()
             vm.loadPeriods()
             vm.workspaceActions.refresh()
@@ -98,7 +100,7 @@ internal class ExceptionActions(private val vm: BankRecViewModel) {
     /** One period's exceptions as a PDF — the route takes a single period, so "all" cannot export. */
     private fun export() {
         val periodId = resolvePeriodChoice(page.periodChoice, vm.ui.openPeriods)
-        if (periodId == ALL_PERIODS) return vm.refuse("Select a single period to export.")
+        if (periodId == ALL_PERIODS) return vm.refuse(str(S.desktop_br_select_single_period))
         if (page.exporting) return
         edit { copy(exporting = true) }
         vm.launchWork {

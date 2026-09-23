@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.FraudRule
 
 /**
@@ -63,7 +65,7 @@ internal class RulesActions(private val vm: BankRecViewModel) {
         edit { copy(savingMatch = true) }
         vm.runResult({ vm.repo.saveAutoMatchRules(rules) }, {
             edit { copy(savingMatch = false, saved = saved.copy(autoMatch = rules)) }
-            vm.notify("Auto-match rules saved.")
+            vm.notify(str(S.desktop_br_match_rules_saved))
         }, { error ->
             edit { copy(savingMatch = false) }
             vm.report(error)
@@ -76,7 +78,7 @@ internal class RulesActions(private val vm: BankRecViewModel) {
         edit { copy(savingFraud = true) }
         vm.runResult({ vm.repo.saveFraudRules(rules) }, {
             edit { copy(savingFraud = false, saved = saved.copy(fraud = rules)) }
-            vm.notify("Fraud detection thresholds saved.")
+            vm.notify(str(S.desktop_br_fraud_rules_saved))
         }, { error ->
             edit { copy(savingFraud = false) }
             vm.report(error)

@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.BoxMapping
 import com.zillit.desktop.feature.taxfiling.domain.TaxDates
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
@@ -83,8 +85,7 @@ internal fun BoxFields(
                 dates = { DatesField(box, mapping, enabled = !zero, edit = edit) },
             )
             ZillitText(
-                text = "Codes, layers, tags and date range combine (AND) to select this box’s ledger entries " +
-                    "within the obligation period.",
+                text = str(S.desktop_tax_box_fields_hint),
                 style = mtdText(12.sp),
                 color = palette.muted,
                 modifier = Modifier.padding(top = 12.dp),
@@ -94,7 +95,7 @@ internal fun BoxFields(
         ZillitCheckbox(
             checked = zero,
             onCheckedChange = { edit(mapping.copy(markZero = it)) },
-            label = "Mark zero — force this box to 0 (ignore the ledger)",
+            label = str(S.desktop_tax_mark_zero),
         )
     }
 }
@@ -125,7 +126,7 @@ private fun FieldGrid(
 @Composable
 private fun CodesField(mapping: BoxMapping, state: TaxFilingUiState, enabled: Boolean, edit: (BoxMapping) -> Unit) {
     val lookups = state.lookups
-    MtdFieldLabel("Ledger codes")
+    MtdFieldLabel(str(S.desktop_tax_ledger_codes))
     MtdCodeInput(
         codes = lookups.coa,
         onCommit = { code -> if (code !in mapping.codes) edit(mapping.copy(codes = mapping.codes + code)) },
@@ -169,7 +170,7 @@ private fun CodeChip(code: String, onRemove: (() -> Unit)?) {
         if (onRemove != null) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove code $code",
+                contentDescription = str(S.desktop_tax_remove_code, code),
                 onClick = onRemove,
                 tint = palette.muted,
                 size = 20.dp,
@@ -192,7 +193,7 @@ private fun LayersField(
     onOpenLayers: () -> Unit,
 ) {
     val palette = mtdPalette()
-    MtdFieldLabel("Layers")
+    MtdFieldLabel(str(S.desktop_layers))
     val dash = palette.border2
     Row(
         modifier = Modifier
@@ -239,12 +240,12 @@ private fun LayersField(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagsField(mapping: BoxMapping, state: TaxFilingUiState, enabled: Boolean, edit: (BoxMapping) -> Unit) {
-    MtdFieldLabel("Tags")
+    MtdFieldLabel(str(S.drive_tags))
     MtdDropdown(
         value = null,
         options = state.lookups.assetTags.filterNot { it in mapping.tags }.map { MtdOption(it, it) },
         onChange = { tag -> if (tag != null && tag !in mapping.tags) edit(mapping.copy(tags = mapping.tags + tag)) },
-        placeholder = "Add tags…",
+        placeholder = str(S.desktop_tax_add_tags),
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -268,12 +269,12 @@ private fun TagsField(mapping: BoxMapping, state: TaxFilingUiState, enabled: Boo
 @Composable
 private fun DatesField(box: VatBox, mapping: BoxMapping, enabled: Boolean, edit: (BoxMapping) -> Unit) {
     val palette = mtdPalette()
-    MtdFieldLabel("Date range", hint = "(optional)")
+    MtdFieldLabel(str(S.cs_date_range), hint = str(S.desktop_optional_tail))
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         ZillitDateField(
             value = mapping.fromDate,
             onValueChange = { edit(mapping.copy(fromDate = it)) },
-            placeholder = "From",
+            placeholder = str(S.fromText),
             errorText = invalidDate(mapping.fromDate),
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
@@ -281,7 +282,7 @@ private fun DatesField(box: VatBox, mapping: BoxMapping, enabled: Boolean, edit:
         ZillitDateField(
             value = mapping.toDate,
             onValueChange = { edit(mapping.copy(toDate = it)) },
-            placeholder = "To",
+            placeholder = str(S.toText),
             errorText = invalidDate(mapping.toDate),
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
@@ -289,12 +290,12 @@ private fun DatesField(box: VatBox, mapping: BoxMapping, enabled: Boolean, edit:
     }
     if (mapping.hasDateRange && enabled) {
         ZillitText(
-            text = "clear",
+            text = str(S.desktop_tax_clear_lower),
             style = mtdText(12.5.sp, FontWeight.SemiBold),
             color = palette.ink3,
             modifier = Modifier
                 .padding(top = 6.dp)
-                .clickable(role = Role.Button, onClickLabel = "Clear box ${box.number} date range") {
+                .clickable(role = Role.Button, onClickLabel = str(S.desktop_tax_clear_box_range, box.number)) {
                     edit(mapping.copy(fromDate = "", toDate = ""))
                 },
         )
@@ -302,7 +303,7 @@ private fun DatesField(box: VatBox, mapping: BoxMapping, enabled: Boolean, edit:
 }
 
 private fun invalidDate(text: String): String? =
-    "Use YYYY-MM-DD".takeIf { text.isNotBlank() && !TaxDates.isValid(text) }
+    str(S.desktop_tax_use_yyyy_mm_dd).takeIf { text.isNotBlank() && !TaxDates.isValid(text) }
 
 private val FOUR_ACROSS = 720.dp
 private const val DIMMED = 0.42f

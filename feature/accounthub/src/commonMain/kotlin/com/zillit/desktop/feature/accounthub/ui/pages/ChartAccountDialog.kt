@@ -16,6 +16,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
 import com.zillit.desktop.feature.accounthub.domain.CoaAccount
 import com.zillit.desktop.feature.accounthub.domain.CoaCostType
@@ -49,15 +51,15 @@ internal fun ChartAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEv
         width = DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AccountHubEvent.DismissAccountForm) },
                 variant = ButtonVariant.Secondary,
             )
             ZillitButton(
                 text = when {
-                    form?.saving == true -> "Saving…"
-                    form?.isEdit == true -> "Save changes"
-                    else -> "Create"
+                    form?.saving == true -> str(S.ah_saving)
+                    form?.isEdit == true -> str(S.dm_setup_save)
+                    else -> str(S.create)
                 },
                 onClick = { onEvent(AccountHubEvent.SaveAccount) },
                 loading = form?.saving == true,
@@ -67,7 +69,7 @@ internal fun ChartAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEv
     ) {
         if (form == null) return@ZillitDialogShell
 
-        FormField("Line type", required = true) {
+        FormField(str(S.desktop_line_type), required = true) {
             ZillitSelect(
                 value = form.lineType,
                 options = CoaLineType.entries,
@@ -78,8 +80,7 @@ internal fun ChartAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEv
             )
             if (form.structureLocked) {
                 Hint(
-                    "Imported from a budget — its line type is fixed. To restructure, deactivate + create a new " +
-                        "row manually.",
+                    str(S.desktop_hub_imported_from_a_budget_its_line_type_is_fixed_to),
                 )
             }
             val children = form.editing?.let { ChartOfAccounts.childCount(rows, it.id) } ?: 0
@@ -93,11 +94,15 @@ internal fun ChartAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEv
 
         CodeAndClass(form, rows, onEvent)
 
-        FormField("Display name") {
+        FormField(str(S.av_display_name)) {
             ZillitTextField(
                 value = form.name,
                 onValueChange = { onEvent(AccountHubEvent.SetAccountName(it)) },
-                placeholder = if (form.lineType == CoaLineType.Header) "Above the Line" else "Script Writing Fees",
+                placeholder = if (form.lineType == CoaLineType.Header) {
+                    str(S.desktop_above_the_line)
+                } else {
+                    str(S.desktop_script_writing_fees)
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -124,7 +129,7 @@ internal fun ChartAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEv
 @Composable
 private fun CodeAndClass(form: AccountForm, rows: List<CoaAccount>, onEvent: (AccountHubEvent) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-        FormField("Nominal / Account code", required = true, modifier = Modifier.weight(1f)) {
+        FormField(str(S.desktop_nominal_account_code), required = true, modifier = Modifier.weight(1f)) {
             ZillitTextField(
                 value = form.code,
                 onValueChange = { onEvent(AccountHubEvent.SetAccountCode(it)) },
@@ -134,9 +139,9 @@ private fun CodeAndClass(form: AccountForm, rows: List<CoaAccount>, onEvent: (Ac
             )
             // "Required" waits for a keystroke; a taken code is said at once.
             form.codeError(rows)?.takeIf { form.code.isNotEmpty() }?.let { Hint(it, error = true) }
-            if (form.isEdit) Hint("Code is immutable — clone to a new code if needed.")
+            if (form.isEdit) Hint(str(S.desktop_hub_code_is_immutable_clone_to_a_new_code_if_needed))
         }
-        FormField("Cost type", required = true, modifier = Modifier.weight(1f)) {
+        FormField(str(S.desktop_cost_type), required = true, modifier = Modifier.weight(1f)) {
             ZillitSelect(
                 value = form.costType,
                 options = CoaCostType.entries,
@@ -176,7 +181,7 @@ private fun ParentField(form: AccountForm, state: AccountHubUiState, onEvent: (A
         when {
             problem != null && form.parentId != null -> Hint(problem, error = true)
             form.structureLocked ->
-                Hint("Parent is fixed on an imported row. To re-parent, deactivate + create a new row.")
+                Hint(str(S.desktop_hub_parent_is_fixed_on_an_imported_row_to_re_parent))
             !form.isEdit && options.isEmpty() ->
                 Hint("No ${expected.tagLabel.lowercase()} rows exist yet — this will be created without a parent.")
         }

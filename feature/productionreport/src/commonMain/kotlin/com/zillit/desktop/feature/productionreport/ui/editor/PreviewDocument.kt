@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.CellKind
 import com.zillit.desktop.feature.productionreport.domain.EditorSelection
 import com.zillit.desktop.feature.productionreport.domain.InsertKind
@@ -107,7 +109,7 @@ internal fun PreviewDocument(
         Disclaimer()
         if (document.rows.isEmpty()) {
             Text(
-                "No sections to preview",
+                str(S.desktop_no_sections_to_preview),
                 style = reportText(14.sp, lineHeight = 20.sp),
                 color = doc.meta,
                 textAlign = TextAlign.Center,
@@ -211,9 +213,9 @@ private fun Modifier.dottedStart(color: Color): Modifier = drawBehind {
 private fun TitleBar(shared: SharedHeader, document: SheetPayload, selected: Boolean, onSelect: () -> Unit) {
     val doc = docColors()
     val label = when (shared.reportType.lowercase()) {
-        "wrap" -> "WRAP REPORT"
-        "ad" -> "AD REPORT"
-        else -> "PRODUCTION REPORT"
+        "wrap" -> str(S.desktop_wrap_report_upper)
+        "ad" -> str(S.desktop_ad_report_upper)
+        else -> str(S.desktop_production_report_upper)
     }
     val dayType = shared.dayType.trim()
     val left = if (shared.shootDayNumber.isNotBlank() || shared.totalDays.isNotBlank()) {
@@ -225,8 +227,8 @@ private fun TitleBar(shared: SharedHeader, document: SheetPayload, selected: Boo
     val script = sharedText(shared, "currentScript").ifBlank { fieldFromRows(document, "Current Script") }
     val schedule = sharedText(shared, "currentSchedule").ifBlank { fieldFromRows(document, "Current Schedule") }
     val strip = listOfNotNull(
-        script.takeIf { it.isNotBlank() }?.let { "Current Script: $it" },
-        schedule.takeIf { it.isNotBlank() }?.let { "Current Schedule: $it" },
+        script.takeIf { it.isNotBlank() }?.let { str(S.desktop_pr_current_script, it) },
+        schedule.takeIf { it.isNotBlank() }?.let { str(S.desktop_pr_current_schedule, it) },
     ).joinToString(" / ")
     Column(Modifier.fillMaxWidth()) {
         if (strip.isNotEmpty()) {
@@ -290,10 +292,7 @@ private fun fieldFromRows(document: SheetPayload, field: String): String {
 private fun Disclaimer() {
     val doc = docColors()
     Text(
-        "This Document is highly confidential. Personal information must not be disclosed to any " +
-            "unauthorized person(s) and must be kept securely. Therefore please ensure it is not left in " +
-            "a place where it could be taken by a third party. All production reports are to be " +
-            "shredded on disposal.",
+        str(S.desktop_pr_disclaimer),
         style = reportText(9.sp, lineHeight = 12.sp),
         color = doc.disclaimer,
         textAlign = TextAlign.Center,
@@ -322,12 +321,12 @@ private fun PageBreakDivider(onRemove: () -> Unit) {
             },
         )
         Text(
-            "PAGE BREAK",
+            str(S.desktop_page_break_upper),
             style = reportText(10.sp, FontWeight.SemiBold, 14.sp),
             color = accent,
             modifier = Modifier.align(Alignment.Center).background(doc.page).padding(horizontal = 8.dp),
         )
-        ZillitTooltip("Remove page break") {
+        ZillitTooltip(str(S.desktop_remove_page_break)) {
             Box(
                 Modifier
                     .align(Alignment.CenterEnd)
@@ -339,7 +338,7 @@ private fun PageBreakDivider(onRemove: () -> Unit) {
             ) {
                 Icon(
                     ZillitIcons.Close,
-                    contentDescription = "Remove page break",
+                    contentDescription = str(S.desktop_remove_page_break),
                     tint = accent,
                     modifier = Modifier.size(11.dp),
                 )
@@ -417,7 +416,7 @@ private const val REVEAL_MS = 150
 
 @Composable
 private fun PlusButton(modifier: Modifier, onClick: () -> Unit) {
-    ZillitTooltip("Insert section") {
+    ZillitTooltip(str(S.desktop_insert_section)) {
         Box(
             modifier
                 .size(18.dp)
@@ -429,7 +428,7 @@ private fun PlusButton(modifier: Modifier, onClick: () -> Unit) {
         ) {
             Icon(
                 ZillitIcons.Add,
-                contentDescription = "Insert section",
+                contentDescription = str(S.desktop_insert_section),
                 tint = Color.White,
                 modifier = Modifier.size(12.dp),
             )

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.home.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -95,8 +97,8 @@ private fun Long.toLocalDate(zone: TimeZone) =
 private fun kotlinx.datetime.LocalDate.label(today: kotlinx.datetime.LocalDate): String {
     val daysAgo = today.toEpochDays() - toEpochDays()  // Long in kotlinx-datetime 0.8
     return when (daysAgo) {
-        0L -> "Today"
-        1L -> "Yesterday"
+        0L -> str(S.today)
+        1L -> str(S.yesterday)
         else -> "${day.pad()} ${month.name.lowercase().replaceFirstChar { it.uppercase() }} $year"
     }
 }

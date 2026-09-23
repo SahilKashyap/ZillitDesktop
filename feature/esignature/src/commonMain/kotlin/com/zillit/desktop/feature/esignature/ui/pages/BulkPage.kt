@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.BulkJob
 import com.zillit.desktop.feature.esignature.domain.BulkJobRow
 import com.zillit.desktop.feature.esignature.domain.EsignFormat
@@ -61,9 +63,9 @@ internal fun BulkPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                ZillitText("Bulk sends", style = ZillitTheme.typography.titleMedium)
+                ZillitText(str(S.docusign_bulk_title), style = ZillitTheme.typography.titleMedium)
                 ZillitText(
-                    "One template, a CSV of people, one envelope per row. Running jobs refresh every few seconds.",
+                    str(S.desktop_ds_one_template_a_csv_of_people_one_envelope),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -79,12 +81,12 @@ internal fun BulkPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 ZillitEmptyState(
-                    title = "No bulk sends yet",
-                    message = "Open Templates and choose Bulk send on any template to start one.",
+                    title = str(S.docusign_bulk_empty_title),
+                    message = str(S.desktop_ds_open_templates_and_choose_bulk_send_on_any),
                     icon = ZillitIcons.Send,
                     action = {
                         ZillitButton(
-                            "Go to templates",
+                            str(S.desktop_ds_go_to_templates),
                             onClick = { onEvent(EsignEvent.SwitchSurface(EsignSurface.Templates)) },
                             size = ButtonSize.Small,
                         )
@@ -114,7 +116,7 @@ internal fun BulkPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                             contentAlignment = Alignment.Center,
                         ) {
                             ZillitText(
-                                "Select a job to see every row.",
+                                str(S.desktop_ds_select_a_job_to_see_every_row),
                                 style = ZillitTheme.typography.bodySmall,
                                 color = colors.textMuted,
                             )
@@ -177,7 +179,7 @@ private fun JobCard(job: BulkJob, selected: Boolean, busy: Boolean, onEvent: (Es
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitButton(
-                    "Remind outstanding",
+                    str(S.docusign_bulk_remind),
                     onClick = { onEvent(EsignEvent.RemindOutstanding(job.id)) },
                     size = ButtonSize.Small,
                     variant = ButtonVariant.Secondary,
@@ -234,7 +236,7 @@ private fun JobRows(job: BulkJob, loading: Boolean, onEvent: (EsignEvent) -> Uni
         if (job.rows.isEmpty() && !loading) {
             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 ZillitText(
-                    "Rows are not available for this job yet.",
+                    str(S.desktop_ds_rows_are_not_available_for_this_job_yet),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -280,7 +282,7 @@ private fun RowLine(row: BulkJobRow, onEvent: (EsignEvent) -> Unit) {
             }
             Column(Modifier.weight(1f)) {
                 ZillitText(
-                    row.name.ifBlank { row.email.substringBefore('@').ifBlank { "Recipient" } },
+                    row.name.ifBlank { row.email.substringBefore('@').ifBlank { str(S.dm_nda_recipient_label) } },
                     style = ZillitTheme.typography.bodyMedium,
                     maxLines = 1,
                 )
@@ -315,7 +317,7 @@ private fun RowLine(row: BulkJobRow, onEvent: (EsignEvent) -> Unit) {
 private fun BulkSendDialog(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
     val send = state.bulk.send
     ZillitDialogShell(
-        title = "Bulk send",
+        title = str(S.docusign_bulk_send_title),
         subtitle = send?.template?.name,
         visible = send != null,
         onDismiss = { onEvent(EsignEvent.CancelBulkSend) },
@@ -325,26 +327,26 @@ private fun BulkSendDialog(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
         actions = {
             if (send != null) {
                 ZillitButton(
-                    "Cancel",
+                    str(S.cancel),
                     onClick = { onEvent(EsignEvent.CancelBulkSend) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
                 if (send.step > 1) ZillitButton(
-                    "Back",
+                    str(S.docusign_back),
                     onClick = { onEvent(EsignEvent.BulkStep(send.step - 1)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                 )
                 when (send.step) {
                     1 -> ZillitButton(
-                        "Choose CSV",
+                        str(S.desktop_ds_choose_csv),
                         onClick = { onEvent(EsignEvent.PickBulkCsv) },
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Upload,
                     )
                     2 -> ZillitButton(
-                        "Next",
+                        str(S.docusign_next),
                         onClick = { onEvent(EsignEvent.BulkStep(3)) },
                         size = ButtonSize.Small,
                         enabled = send.parsed?.hasRequiredColumns == true && send.validCount > 0 && !send.overCap,
@@ -377,7 +379,7 @@ private fun BulkSendDialog(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
 private fun Steps(step: Int) {
     val colors = ZillitTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Upload CSV", "Preview", "Confirm").forEachIndexed { i, label ->
+        listOf(str(S.desktop_ds_upload_csv), str(S.preview), str(S.confirm)).forEachIndexed { i, label ->
             val n = i + 1
             val active = n == step
             val done = n < step
@@ -421,7 +423,7 @@ private fun UploadStep(send: BulkSendState, onEvent: (EsignEvent) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             ZillitIcon(ZillitIcons.Upload, tint = colors.accent, size = 26.dp)
-            ZillitText(send.fileName.ifBlank { "Choose a CSV" }, style = ZillitTheme.typography.titleSmall)
+            ZillitText(send.fileName.ifBlank { str(S.desktop_choose_csv) }, style = ZillitTheme.typography.titleSmall)
             ZillitText(
                 "One row per recipient · up to $BULK_ROW_CAP rows",
                 style = ZillitTheme.typography.bodySmall,
@@ -430,8 +432,7 @@ private fun UploadStep(send: BulkSendState, onEvent: (EsignEvent) -> Unit) {
         }
         BlockTitle("CSV format")
         ZillitText(
-            "Required columns: name, email. Any other column whose header matches one of the template's field " +
-                "labels pre-fills that field. Comma, semicolon and tab separators are all read.",
+            str(S.desktop_ds_csv_required_columns_hint),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textSecondary,
         )
@@ -457,7 +458,7 @@ private fun PreviewStep(send: BulkSendState) {
     val parsed = send.parsed
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (parsed == null) {
-            ZillitText("Nothing parsed yet.", color = colors.textMuted)
+            ZillitText(str(S.desktop_ds_nothing_parsed_yet), color = colors.textMuted)
             return
         }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -470,9 +471,9 @@ private fun PreviewStep(send: BulkSendState) {
             Check(
                 parsed.hasRequiredColumns,
                 if (parsed.hasRequiredColumns) {
-                    "Required columns present (name, email)"
+                    str(S.desktop_ds_required_columns_present_name_email)
                 } else {
-                    "Missing a name or email column"
+                    str(S.desktop_ds_missing_a_name_or_email_column)
                 },
             )
             Check(
@@ -514,7 +515,7 @@ private fun PreviewStep(send: BulkSendState) {
                         maxLines = 1,
                     )
                     ZillitStatusPill(
-                        label = if (ok) "OK" else "Skip",
+                        label = if (ok) str(S.docusign_ok) else str(S.skip),
                         tone = if (ok) StatusTone.Done else StatusTone.Rejected,
                     )
                 }
@@ -548,25 +549,23 @@ private fun ConfirmStep(send: BulkSendState, onEvent: (EsignEvent) -> Unit) {
         ZillitTextField(
             value = send.batchName,
             onValueChange = { onEvent(EsignEvent.EditBatchName(it)) },
-            label = "Batch name (optional)",
+            label = str(S.docusign_bulk_batch_name_label),
             placeholder = "${send.template.name} · ${EsignFormat.today()}",
-            helperText = "Shown on the Bulk Sends dashboard.",
+            helperText = str(S.desktop_ds_shown_on_the_bulk_sends_dashboard),
         )
         Box(Modifier.fillMaxWidth().clip(ZillitTheme.shapes.medium).background(colors.surfaceSunken).padding(12.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ZillitText(
-                    "${send.validCount} envelope${if (send.validCount == 1) "" else "s"} will be created from " +
-                        "“${send.template.name}” and sent immediately.",
+                    str(S.desktop_ds_bulk_confirm_count, send.validCount, send.template.name),
                     style = ZillitTheme.typography.bodyMedium,
                 )
                 if (send.invalidCount > 0) ZillitText(
-                    "${send.invalidCount} row${if (send.invalidCount == 1) "" else "s"} skipped for a missing name " +
-                        "or invalid email.",
+                    str(S.desktop_ds_bulk_skipped_count, send.invalidCount),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.warning,
                 )
                 ZillitText(
-                    "Each recipient gets their own envelope, notification and audit trail.",
+                    str(S.desktop_ds_each_recipient_gets_their_own_envelope_notification_and),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )

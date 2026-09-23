@@ -53,6 +53,8 @@ import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.LocalDriveCompact
 import com.zillit.desktop.feature.drive.ui.LocalDriveNow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The list view — `DriveTable.jsx`.
@@ -115,13 +117,19 @@ private fun TableHeader(
                 enabled = rows.isNotEmpty(),
             )
         }
-        SortableHeader("Name", DriveSortColumn.Name, state, onEvent, Modifier.weight(NAME_WEIGHT))
+        SortableHeader(str(S.name), DriveSortColumn.Name, state, onEvent, Modifier.weight(NAME_WEIGHT))
         if (!compact) {
-            SortableHeader("Date modified", DriveSortColumn.Modified, state, onEvent, Modifier.width(DATE_WIDTH))
-            HeaderLabel("Description", Modifier.weight(DESCRIPTION_WEIGHT))
-            HeaderLabel("Sharing", Modifier.width(SHARING_WIDTH))
+            SortableHeader(
+                str(S.drive_sort_date_modified),
+                DriveSortColumn.Modified,
+                state,
+                onEvent,
+                Modifier.width(DATE_WIDTH),
+            )
+            HeaderLabel(str(S.description), Modifier.weight(DESCRIPTION_WEIGHT))
+            HeaderLabel(str(S.sharing), Modifier.width(SHARING_WIDTH))
         }
-        SortableHeader("Size", DriveSortColumn.Size, state, onEvent, Modifier.width(SIZE_WIDTH))
+        SortableHeader(str(S.drive_sort_size), DriveSortColumn.Size, state, onEvent, Modifier.width(SIZE_WIDTH))
         Box(Modifier.width(if (compact) ACTIONS_WIDTH_COMPACT else ACTIONS_WIDTH))
     }
 }
@@ -305,7 +313,11 @@ private fun NameCell(
         if (state.viewer.isSharedWithMe(item)) SharedWithYouMark()
         ZillitIconButton(
             icon = if (starred) ZillitIcons.StarFilled else ZillitIcons.StarOutline,
-            contentDescription = if (starred) "Remove from favourites" else "Add to favourites",
+            contentDescription = if (starred) {
+                str(S.desktop_remove_from_favourites)
+            } else {
+                str(S.desktop_add_to_favourites)
+            },
             onClick = { onEvent(DriveEvent.ToggleFavourite(item.ref)) },
             tint = if (starred) colors.gold else colors.textMuted,
             size = STAR_SIZE,
@@ -322,7 +334,7 @@ private fun SizeCell(item: DriveItem, modifier: Modifier) {
     }
     val hint = if (item.isFolder) {
         val count = item.itemCount ?: 0
-        "$count file${if (count == 1) "" else "s"}"
+        if (count == 1) str(S.desktop_drive_contains_one_file) else str(S.drive_count_file_plural, count)
     } else {
         text
     }
@@ -355,19 +367,19 @@ private fun RowScope.RowActions(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!item.isFolder && !compact) {
-            ZillitTooltip(text = "Open") {
+            ZillitTooltip(text = str(S.drive_btn_open)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Eye,
-                    contentDescription = "Open ${item.name}",
+                    contentDescription = str(S.desktop_drive_open_item, item.name),
                     onClick = { onEvent(DriveEvent.Preview(item)) },
                 )
             }
         }
         if (state.viewer.may(DriveAction.Delete, item) && !compact) {
-            ZillitTooltip(text = "Delete") {
+            ZillitTooltip(text = str(S.delete)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete ${item.name}",
+                    contentDescription = str(S.desktop_delete_named, item.name),
                     onClick = { onEvent(DriveEvent.RequestDelete(listOf(item.ref))) },
                     tint = colors.danger,
                 )
@@ -376,7 +388,7 @@ private fun RowScope.RowActions(
         var anchor by remember { mutableStateOf(Offset.Zero) }
         ZillitIconButton(
             icon = ZillitIcons.MoreHorizontal,
-            contentDescription = "More actions for ${item.name}",
+            contentDescription = str(S.desktop_drive_more_actions_for, item.name),
             onClick = { onEvent(DriveEvent.OpenMenu(item, anchor.x, anchor.y + MENU_DROP)) },
             modifier = Modifier.onGloballyPositioned { anchor = it.positionInRoot() },
         )

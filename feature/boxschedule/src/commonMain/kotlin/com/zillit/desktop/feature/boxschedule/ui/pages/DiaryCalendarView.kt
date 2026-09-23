@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.CalendarMode
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
@@ -138,8 +140,8 @@ private fun CalendarHeader(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent
                 onSelect = { onEvent(PageEvent.SetCalendarMode(it)) },
             )
             DefaultViewMenu(
-                buttonText = "Set as Default",
-                description = "This view will load first every time you open the Calendar.",
+                buttonText = str(S.bs_set_default),
+                description = str(S.dv_calendar_desc),
                 options = CalendarMode.entries,
                 current = page.defaultCalendarMode,
                 label = { "${it.label} View" },
@@ -159,7 +161,7 @@ private fun CalendarHeader(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent
         NavArrow(ZillitIcons.ChevronRight, DiaryCommand.Next.label) { onEvent(PageEvent.Step(forward = true)) }
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
             ZillitButton(
-                text = "Today",
+                text = str(S.today),
                 onClick = { onEvent(PageEvent.Today) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -476,7 +478,7 @@ private fun DayFocus(state: BoxScheduleUiState, data: CalendarData, onEvent: (Bo
         if (events.isNotEmpty()) DayFocusEvents(events, dayKey, date, notes.size, state, onEvent)
         if (notes.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Caption("Notes")
+                Caption(str(S.notes))
                 notes.forEach { note -> NoteCard(note) { onEvent(DayEvent.ViewEntry(note.listKey)) } }
             }
         }
@@ -495,7 +497,7 @@ private fun DayFocusSchedules(
     onEvent: (BoxScheduleEvent) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Caption("Schedules on this day")
+        Caption(str(S.dd_schedules))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             schedules.forEach { block ->
                 ScheduleTag(block, dayKey, state, large = true) {
@@ -510,12 +512,12 @@ private fun DayFocusSchedules(
 private fun NothingOnDay(past: Boolean) {
     Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         ZillitText(
-            "Nothing scheduled on this day",
+            str(S.dd_empty),
             style = ZillitTheme.typography.titleSmall,
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitText(
-            text = if (past) "This date is in the past." else "Add a schedule or event to get started.",
+            text = if (past) str(S.dd_past) else str(S.dd_add_prompt),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -527,7 +529,7 @@ private fun DayFocusActions(dayKey: Long, hasAny: Boolean, canCreate: Boolean, o
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (hasAny) {
             ZillitButton(
-                "View Full Details",
+                str(S.dd_view_details),
                 onClick = { onEvent(DayEvent.OpenDay(dayKey)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -535,14 +537,14 @@ private fun DayFocusActions(dayKey: Long, hasAny: Boolean, canCreate: Boolean, o
         }
         if (canCreate) {
             ZillitButton(
-                text = "Add Schedule",
+                text = str(S.dd_add_schedule),
                 onClick = { onEvent(ScheduleEvent.NewSchedule(dayKey)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Calendar,
             )
             ZillitButton(
-                text = "Add Event",
+                text = str(S.add_event),
                 onClick = { onEvent(EntryEvent.NewEntry(DiaryKind.Event, dayKey)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -569,8 +571,8 @@ private fun DayFocusHeader(date: LocalDate, today: Boolean, past: Boolean) {
                 color = colors.textMuted,
             )
             when {
-                today -> StatusTag("TODAY", colors.success)
-                past -> StatusTag("PAST", colors.textMuted)
+                today -> StatusTag(str(S.desktop_bs_today_upper), colors.success)
+                past -> StatusTag(str(S.desktop_bs_past_upper), colors.textMuted)
             }
         }
     }
@@ -602,7 +604,7 @@ private fun DayFocusEvents(
     val over = events.size > MAX_DAY_EVENTS + 1
     val shown = if (over) events.take(MAX_DAY_EVENTS) else events
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Caption("Events")
+        Caption(str(S.dd_events))
         shown.forEach { event -> EventCard(event, state) { onEvent(DayEvent.ViewEntry(event.listKey)) } }
         if (over) {
             MoreEventsPopover(
@@ -685,7 +687,7 @@ internal fun NoteCard(note: DiaryEvent, onClick: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         ZillitText(
-            note.title.ifBlank { "Untitled note" },
+            note.title.ifBlank { str(S.desktop_bs_untitled_note) },
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
         )
         if (note.body.isNotBlank()) {
@@ -699,7 +701,7 @@ internal fun NoteCard(note: DiaryEvent, onClick: () -> Unit) {
     }
 }
 
-private val WEEKDAYS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+private val WEEKDAYS = listOf(str(S.mon), str(S.tue), str(S.wed), str(S.thu), str(S.fri), str(S.sat), str(S.sun))
 private val TITLE_WIDTH = 300.dp
 private val MONTH_CELL_MIN = 112.dp
 private val WEEK_CELL_MIN = 200.dp

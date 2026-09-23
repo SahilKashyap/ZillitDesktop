@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A reminder that has come due.
  *
@@ -96,10 +99,10 @@ fun DueReminder.headline(nowMillis: Long): String {
     val hours = ceilDiv(minutes, MINUTES_PER_HOUR)
 
     return when {
-        minutes <= 0 -> "Starting now"
-        minutes < MINUTES_PER_HOUR -> "Starts in ${plural(minutes, "minute")}"
-        hours < HOURS_PER_DAY -> "Starts in ${plural(hours, "hour")}"
-        else -> "Starts in ${plural(ceilDiv(hours, HOURS_PER_DAY), "day")}"
+        minutes <= 0 -> str(S.desktop_cal_starting_now)
+        minutes < MINUTES_PER_HOUR -> plural(minutes, S.desktop_cal_starts_in_minute, S.desktop_cal_starts_in_minutes)
+        hours < HOURS_PER_DAY -> plural(hours, S.desktop_cal_starts_in_hour, S.desktop_cal_starts_in_hours)
+        else -> plural(ceilDiv(hours, HOURS_PER_DAY), S.desktop_cal_starts_in_day, S.desktop_cal_starts_in_days)
     }
 }
 
@@ -112,8 +115,8 @@ fun DueReminder.headline(nowMillis: Long): String {
 val DueReminder.body: String
     get() = if (location.isNullOrBlank()) eventTitle else "$eventTitle · $location"
 
-private fun plural(count: Long, noun: String): String =
-    if (count == 1L) "1 $noun" else "$count ${noun}s"
+private fun plural(count: Long, one: String, many: String): String =
+    if (count == 1L) str(one) else str(many, count)
 
 /** Rounds away from zero, so a part-minute still counts as a minute. */
 private fun ceilDiv(value: Long, by: Long): Long = (value + by - 1) / by

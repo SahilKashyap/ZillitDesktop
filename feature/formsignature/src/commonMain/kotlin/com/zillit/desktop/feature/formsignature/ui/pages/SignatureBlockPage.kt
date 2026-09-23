@@ -50,6 +50,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.SignatureBlock
 import com.zillit.desktop.feature.formsignature.domain.StrokePoint
 import com.zillit.desktop.feature.formsignature.ui.DrawState
@@ -77,14 +79,14 @@ internal fun SignatureBlockPage(state: FormSignatureUiState, onEvent: (FormSigna
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                "The marks that sign for you. Signing a document stamps these into the PDF.",
+                str(S.desktop_fs_marks_intro),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
             if (signatures.signature == null) {
                 ZillitButton(
-                    text = "Add Signature",
+                    text = str(S.add_signature),
                     onClick = { onEvent(FormSignatureEvent.StartDraw(isSignature = true)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Add,
@@ -92,7 +94,7 @@ internal fun SignatureBlockPage(state: FormSignatureUiState, onEvent: (FormSigna
             }
             if (signatures.initials == null) {
                 ZillitButton(
-                    text = "Add Initials",
+                    text = str(S.txt_add_initials),
                     onClick = { onEvent(FormSignatureEvent.StartDraw(isSignature = false)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Add,
@@ -104,8 +106,8 @@ internal fun SignatureBlockPage(state: FormSignatureUiState, onEvent: (FormSigna
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
             signatures.blocks.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 ZillitEmptyState(
-                    title = "No Data Found",
-                    message = "Add a signature and initials to sign documents with.",
+                    title = str(S.no_data_found),
+                    message = str(S.desktop_fs_no_marks_hint),
                     icon = ZillitIcons.Signature,
                 )
             }
@@ -135,7 +137,7 @@ private fun BlockCard(block: SignatureBlock, image: ByteArray?, onEvent: (FormSi
             val bitmap = remember(block.id, image?.size) { image?.let(::decodeImageBitmap) }
             when {
                 image == null -> ZillitSpinner()
-                bitmap == null -> ZillitText("The stored image could not be shown.", color = colors.textSecondary)
+                bitmap == null -> ZillitText(str(S.desktop_fs_stored_image_not_shown), color = colors.textSecondary)
                 else -> Image(
                     bitmap = bitmap,
                     contentDescription = block.name,
@@ -145,7 +147,7 @@ private fun BlockCard(block: SignatureBlock, image: ByteArray?, onEvent: (FormSi
             }
             Box(Modifier.align(Alignment.TopEnd)) {
                 ZillitTag(
-                    label = if (block.isSignature) "Signature" else "Initials",
+                    label = if (block.isSignature) str(S.signature_txt) else str(S.docusign_saved_sig_initials),
                     tone = if (block.isSignature) TagTone.Info else TagTone.Success,
                 )
             }
@@ -153,7 +155,7 @@ private fun BlockCard(block: SignatureBlock, image: ByteArray?, onEvent: (FormSi
         Column(Modifier.padding(ZillitTheme.spacing.lg), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ZillitText(block.name.ifBlank { "—" }, style = ZillitTheme.typography.titleMedium, maxLines = 1)
             ZillitText(
-                "Created: ${formDate(block.createdOn)}",
+                str(S.desktop_fs_created_on, formDate(block.createdOn)),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
             )
@@ -163,14 +165,14 @@ private fun BlockCard(block: SignatureBlock, image: ByteArray?, onEvent: (FormSi
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             ZillitButton(
-                text = "Edit",
+                text = str(S.edit),
                 onClick = { onEvent(FormSignatureEvent.StartDraw(block.isSignature, block.id)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Edit,
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 onClick = { onEvent(FormSignatureEvent.AskDeleteSignature(block.id)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -201,13 +203,13 @@ internal fun DrawSignaturePage(draw: DrawState, onEvent: (FormSignatureEvent) ->
                     onValueChange = { name ->
                         if (name.length <= NAME_MAX) onEvent(FormSignatureEvent.EditDraw(draw.copy(name = name)))
                     },
-                    label = if (draw.isSignature) "Signature Name" else "Initials Name",
-                    placeholder = if (draw.isSignature) "Signature Name" else "Initials Name",
+                    label = if (draw.isSignature) str(S.signature_name) else str(S.desktop_fs_initials_name),
+                    placeholder = if (draw.isSignature) str(S.signature_name) else str(S.desktop_fs_initials_name),
                 )
             }
             ZillitSectionCard {
                 ZillitText(
-                    if (draw.isSignature) "Draw Signature Here" else "Draw Initials here",
+                    if (draw.isSignature) str(S.draw_signature_here) else str(S.desktop_fs_draw_initials_here),
                     style = ZillitTheme.typography.titleSmall,
                     modifier = Modifier.padding(bottom = ZillitTheme.spacing.sm),
                 )
@@ -215,14 +217,18 @@ internal fun DrawSignaturePage(draw: DrawState, onEvent: (FormSignatureEvent) ->
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
                 ZillitButton(
-                    text = "Clear",
+                    text = str(S.clear_label),
                     onClick = { onEvent(FormSignatureEvent.ClearDraw) },
                     variant = ButtonVariant.Secondary,
                     enabled = !draw.saving,
                     modifier = Modifier.weight(1f),
                 )
                 ZillitButton(
-                    text = if (draw.isSignature) "Save Signature" else "Save Initials",
+                    text = if (draw.isSignature) {
+                        str(S.docusign_saved_sig_save_signature_title)
+                    } else {
+                        str(S.docusign_saved_sig_save_initial_title)
+                    },
                     onClick = { onEvent(FormSignatureEvent.SubmitDraw) },
                     loading = draw.saving,
                     leadingIcon = ZillitIcons.Save,
@@ -302,7 +308,7 @@ internal fun DrawingPad(draw: DrawState, onEvent: (FormSignatureEvent) -> Unit) 
         if (!draw.hasInk && current.isEmpty()) {
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 ZillitText(
-                    if (draw.isSignature) "Draw Signature Here" else "Draw Initials here",
+                    if (draw.isSignature) str(S.draw_signature_here) else str(S.desktop_fs_draw_initials_here),
                     style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
                     color = Color(0xFF3B82F6),
                     textAlign = TextAlign.Center,
@@ -310,9 +316,9 @@ internal fun DrawingPad(draw: DrawState, onEvent: (FormSignatureEvent) -> Unit) 
                 Spacer(Modifier.height(4.dp))
                 ZillitText(
                     if (draw.isSignature) {
-                        "Click and drag to create your signature"
+                        str(S.desktop_fs_drag_to_create_signature)
                     } else {
-                        "Click and drag to create your initials"
+                        str(S.desktop_fs_drag_to_create_initials)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,

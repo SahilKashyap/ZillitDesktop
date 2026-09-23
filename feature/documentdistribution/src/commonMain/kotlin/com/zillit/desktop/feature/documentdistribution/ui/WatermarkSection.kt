@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.FileKind
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
@@ -91,7 +93,7 @@ internal class WatermarkSection(
         if (vm.refusesDownload()) return
         library.prepare(library::resolveSelection) { documents ->
             val stampable = documents.filter { it.isWatermarkable }
-            if (stampable.isEmpty()) return@prepare vm.fail("No watermarkable files in the selection")
+            if (stampable.isEmpty()) return@prepare vm.fail(str(S.desktop_docdist_no_watermarkable_files))
             vm.update {
                 copy(
                     watermarkBatch = WatermarkBatchState(
@@ -133,7 +135,7 @@ internal class WatermarkSection(
         val (email, name) = if (isValidEmail(typed.email)) typed.email to typed.name else {
             val parts = batch.recipientInput.split(',').map { it.trim() }
             val address = parts.firstOrNull { isValidEmail(it) }
-            if (address == null) return vm.fail("\"${batch.recipientInput.trim()}\" is not a valid email")
+            if (address == null) return vm.fail(str(S.desktop_docdist_not_a_valid_email, batch.recipientInput.trim()))
             address to parts.firstOrNull { it != address }.orEmpty()
         }
         addRecipient(Recipient(email = email, name = name.ifBlank { email.substringBefore('@') }))
@@ -149,7 +151,7 @@ internal class WatermarkSection(
     private fun addRecipient(recipient: Recipient) {
         val batch = vm.state.watermarkBatch ?: return
         if (batch.recipients.any { it.email.equals(recipient.email, ignoreCase = true) }) return vm.notice(
-            "Already in the list",
+            str(S.desktop_docdist_already_in_the_list),
         )
         editBatch { copy(recipients = recipients + recipient) }
     }
@@ -165,9 +167,9 @@ internal class WatermarkSection(
             .filter { isValidEmail(it.email) && it.email.lowercase() !in taken }
             .map { it.copy(name = it.name.ifBlank { it.email.substringBefore('@') }) }
         editBatch { copy(listMenuOpen = false) }
-        if (additions.isEmpty()) return vm.notice("Everyone in \"${list.name}\" is already added")
+        if (additions.isEmpty()) return vm.notice(str(S.desktop_docdist_everyone_already_added, list.name))
         editBatch { copy(recipients = recipients + additions) }
-        vm.notice("Added ${additions.size} from \"${list.name}\"")
+        vm.notice(str(S.desktop_docdist_added_n_from_list, additions.size, list.name))
     }
 
     fun confirmBatch() {
@@ -185,7 +187,13 @@ internal class WatermarkSection(
                 is ZillitResult.Success -> {
                     vm.update { copy(watermarkBatch = null) }
                     library.saveAndOpen("watermarked_${vm.today()}.zip", zip.data)
-                    vm.notice("Downloaded ${plural(recipients.size, "watermarked bundle")}")
+                    vm.notice(
+                        plural(
+                            recipients.size,
+                            S.desktop_docdist_downloaded_one_bundle,
+                            S.desktop_docdist_downloaded_bundles,
+                        ),
+                    )
                 }
                 is ZillitResult.Failure -> {
                     editBatch { copy(downloading = false) }

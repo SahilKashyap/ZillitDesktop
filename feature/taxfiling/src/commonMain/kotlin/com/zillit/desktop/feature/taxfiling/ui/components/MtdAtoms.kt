@@ -41,6 +41,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /*
  * The filing surface's small pieces — the web's `mtd-ui.jsx` — in Compose.
@@ -212,7 +214,7 @@ internal fun MtdTagChip(
         if (onRemove != null) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove $text",
+                contentDescription = str(S.bs_chip_remove, text),
                 onClick = onRemove,
                 tint = ink,
                 size = 18.dp,
@@ -328,7 +330,7 @@ internal fun MtdBoxBadge(number: Int, modifier: Modifier = Modifier, highlight: 
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ZillitText(
-            text = "BOX",
+            text = str(S.desktop_tax_box_caps),
             style = mtdText(7.5.sp, FontWeight.Bold, tracking = 0.08.em, lineHeight = 9.sp),
             color = if (highlight) palette.accentText else palette.muted,
         )

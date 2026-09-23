@@ -44,6 +44,8 @@ import com.zillit.desktop.feature.drive.domain.relativeTime
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.LocalDriveNow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Activity Log drawer — `ActivityLogDrawer.jsx`: filter chips, then the
@@ -55,7 +57,7 @@ import com.zillit.desktop.feature.drive.ui.LocalDriveNow
 internal fun ActivityLogSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val log = state.activityLog
     DriveSideSheet(
-        title = "Activity log",
+        title = str(S.desktop_drive_activity_log),
         subtitle = if (log.items.isNotEmpty() && log.total > 0) "${log.items.size} / ${log.total}" else null,
         visible = log.open,
         onDismiss = { onEvent(DriveEvent.CloseActivityLog) },
@@ -64,7 +66,7 @@ internal fun ActivityLogSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit
         headerTrailing = {
             ZillitIconButton(
                 icon = ZillitIcons.Reload,
-                contentDescription = "Refresh",
+                contentDescription = str(S.refresh_text),
                 onClick = { onEvent(DriveEvent.RefreshActivity) },
             )
         },
@@ -93,7 +95,11 @@ internal fun ActivityLogSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit
                     contentAlignment = Alignment.Center,
                 ) {
                     ZillitText(
-                        text = if (log.items.isEmpty()) "No activity yet" else "Nothing in this filter",
+                        text = if (log.items.isEmpty()) {
+                            str(S.drive_no_activity_yet)
+                        } else {
+                            str(S.desktop_drive_nothing_in_filter)
+                        },
                         style = ZillitTheme.typography.bodyMedium,
                         color = ZillitTheme.colors.textMuted,
                     )
@@ -117,13 +123,13 @@ internal fun ActivityLogSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit
                             when {
                                 log.loadingMore -> ZillitSpinner()
                                 log.hasMore -> ZillitText(
-                                    text = "Scroll for more",
+                                    text = str(S.desktop_drive_scroll_for_more),
                                     style = ZillitTheme.typography.labelSmall,
                                     color = ZillitTheme.colors.textMuted,
                                 )
 
                                 else -> ZillitText(
-                                    text = "No more activity",
+                                    text = str(S.desktop_drive_no_more_activity),
                                     style = ZillitTheme.typography.labelSmall,
                                     color = ZillitTheme.colors.textMuted,
                                 )
@@ -147,8 +153,9 @@ private fun FilterBar(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        FILTERS.forEach { (category, label) ->
+        FILTERS.forEach { (category, labelKey) ->
             val count = log.count(category)
+            val label = str(labelKey)
             ZillitChoiceChip(
                 label = if (count > 0) "$label · $count" else label,
                 selected = log.filter == category,
@@ -270,14 +277,14 @@ private data class DayBucket(val key: String, val label: String)
 
 /** Today / Yesterday / This week / This month / a month name — the web's `dayBucket`. */
 private fun dayBucket(millis: Long, now: Long): DayBucket {
-    if (millis <= 0 || now <= 0) return DayBucket("undated", "Earlier")
+    if (millis <= 0 || now <= 0) return DayBucket("undated", str(S.desktop_drive_bucket_earlier))
     val age = now - millis
     return when {
-        EpochDate.date(millis) == EpochDate.date(now) -> DayBucket("today", "Today")
-        EpochDate.date(millis) == EpochDate.date(now - DAY_MS) -> DayBucket("yesterday", "Yesterday")
-        age < WEEK_MS -> DayBucket("this_week", "This week")
-        age < 2 * WEEK_MS -> DayBucket("last_week", "Last week")
-        age < MONTH_MS -> DayBucket("this_month", "This month")
+        EpochDate.date(millis) == EpochDate.date(now) -> DayBucket("today", str(S.today))
+        EpochDate.date(millis) == EpochDate.date(now - DAY_MS) -> DayBucket("yesterday", str(S.yesterday))
+        age < WEEK_MS -> DayBucket("this_week", str(S.desktop_drive_bucket_this_week))
+        age < 2 * WEEK_MS -> DayBucket("last_week", str(S.desktop_drive_bucket_last_week))
+        age < MONTH_MS -> DayBucket("this_month", str(S.desktop_drive_bucket_this_month))
         // `04 Aug, 2026` → "Aug 2026": one bucket per older month.
         else -> EpochDate.isoDate(millis).take(MONTH_KEY).let { key ->
             DayBucket(key, EpochDate.date(millis).substringAfter(' ').replace(",", ""))
@@ -286,9 +293,9 @@ private fun dayBucket(millis: Long, now: Long): DayBucket {
 }
 
 private val FILTERS = listOf<Pair<ActivityCategory?, String>>(
-    null to "All",
-    ActivityCategory.Files to "Files",
-    ActivityCategory.Folders to "Folders",
+    null to S.all,
+    ActivityCategory.Files to S.drive_kind_files,
+    ActivityCategory.Folders to S.folders,
 )
 private val GLYPH_DISC = 32.dp
 private val META_AVATAR = 20.dp

@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.invoices.ui
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.LinkedPo
 import com.zillit.desktop.feature.invoices.domain.PoSuggestions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The side-by-side review a pre-approval row opens — the web's
@@ -43,7 +45,7 @@ data class ReviewOverlay(
     /** A held invoice is released from the queue, not overridden from here — the web's `isOnHold`. */
     val isOnHold: Boolean get() = invoice.status == com.zillit.desktop.feature.invoices.domain.InvoiceStatus.Held
 
-    fun nameOf(userId: String): String = names[userId] ?: userId.ifBlank { "Unknown" }
+    fun nameOf(userId: String): String = names[userId] ?: userId.ifBlank { str(S.desktop_unknown) }
 }
 
 /**

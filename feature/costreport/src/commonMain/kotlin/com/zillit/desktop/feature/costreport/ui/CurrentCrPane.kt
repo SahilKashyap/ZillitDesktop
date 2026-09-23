@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CrCompany
 import com.zillit.desktop.feature.costreport.domain.CrCurrency
@@ -62,14 +64,13 @@ internal fun CurrentCrPane(state: CostReportUiState, onEvent: (CostReportEvent) 
                 tone = StatusTone.Rejected,
                 modifier = Modifier.padding(24.dp),
                 action = {
-                    ZillitButton(text = "Retry", onClick = { onEvent(CostReportEvent.Refresh) },
+                    ZillitButton(text = str(S.retry), onClick = { onEvent(CostReportEvent.Refresh) },
                         variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
                 },
             )
             current.unavailable -> ZillitEmptyState(
-                title = "Cost report is unavailable",
-                message = "The accountant needs to upload Chart of Accounts and a Budget for this project " +
-                    "before the cost report can run.",
+                title = str(S.desktop_cr_unavailable),
+                message = str(S.desktop_cr_unavailable_detail),
                 icon = ZillitIcons.BarChart,
             )
             else -> {
@@ -83,7 +84,7 @@ internal fun CurrentCrPane(state: CostReportUiState, onEvent: (CostReportEvent) 
                                 tone = StatusTone.Rejected,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                                 action = {
-                                    ZillitButton(text = "Retry", onClick = { onEvent(CostReportEvent.Refresh) },
+                                    ZillitButton(text = str(S.retry), onClick = { onEvent(CostReportEvent.Refresh) },
                                         variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
                                 },
                             )
@@ -92,7 +93,7 @@ internal fun CurrentCrPane(state: CostReportUiState, onEvent: (CostReportEvent) 
                     }
                     CrLoaderOverlay(
                         visible = state.referenceLoading || current.phase != null,
-                        message = current.phase ?: "Loading…",
+                        message = current.phase ?: str(S.ah_loading),
                     )
                 }
             }
@@ -105,9 +106,9 @@ internal fun CurrentCrPane(state: CostReportUiState, onEvent: (CostReportEvent) 
 private fun FilterBar(state: CostReportUiState, onEvent: (CostReportEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val current = state.current
-    val allCompanies = CrCompany(id = "", name = "All companies")
+    val allCompanies = CrCompany(id = "", name = str(S.cr_all_companies))
     val companies = listOf(allCompanies) + current.companies
-    val liveBudget = BudgetVersion(id = "", version = "", label = "Live budget", status = "")
+    val liveBudget = BudgetVersion(id = "", version = "", label = str(S.cr_live_budget), status = "")
     val budgets = current.budgets.ifEmpty { listOf(liveBudget) }
     val currencies = state.currencyChoices
     Row(
@@ -118,7 +119,7 @@ private fun FilterBar(state: CostReportUiState, onEvent: (CostReportEvent) -> Un
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InlineFilter("Company") {
+        InlineFilter(str(S.company)) {
             ZillitSelect(
                 value = current.selectedCompany ?: allCompanies,
                 options = companies,
@@ -127,7 +128,7 @@ private fun FilterBar(state: CostReportUiState, onEvent: (CostReportEvent) -> Un
                 modifier = Modifier.width(SELECT_WIDTH),
             )
         }
-        InlineFilter("Budget") {
+        InlineFilter(str(S.budget_text)) {
             ZillitSelect(
                 value = current.selectedBudget ?: budgets.first(),
                 options = budgets,
@@ -137,7 +138,7 @@ private fun FilterBar(state: CostReportUiState, onEvent: (CostReportEvent) -> Un
             )
         }
         if (currencies.isNotEmpty()) {
-            InlineFilter("Currency") {
+            InlineFilter(str(S.asset_currency)) {
                 ZillitSelect(
                     value = currencies.firstOrNull { it.code.equals(current.currencyCode, ignoreCase = true) }
                         ?: currencies.first(),
@@ -186,7 +187,7 @@ private fun LiveHeading(state: CostReportUiState, onEvent: (CostReportEvent) -> 
         trailing = {
             if (state.sourceStale) {
                 ZillitButton(
-                    text = "Source data updated · Refresh",
+                    text = str(S.desktop_cr_source_updated),
                     onClick = { onEvent(CostReportEvent.Refresh) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -210,7 +211,7 @@ internal fun CrReportHeading(
     val colors = ZillitTheme.colors
     val subtitle = remember(projectName, todayMs, weekLabel) {
         listOfNotNull(
-            projectName.ifBlank { "Project" },
+            projectName.ifBlank { str(S.dm_step2_external_off) },
             todayMs?.let { com.zillit.desktop.feature.costreport.domain.CrDates.weekdayDate(it).replace(",", "") },
             weekLabel,
         ).joinToString(" · ")
@@ -222,7 +223,7 @@ internal fun CrReportHeading(
     ) {
         Column {
             ZillitText(
-                "Current Cost Report",
+                str(S.desktop_cr_current_cost_report),
                 style = ZillitTheme.typography.titleLarge.copy(fontSize = 19.sp, fontWeight = FontWeight.ExtraBold),
             )
             ZillitText(subtitle, style = ZillitTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1)
@@ -230,7 +231,7 @@ internal fun CrReportHeading(
         ZillitSearchField(
             value = query,
             onValueChange = onQuery,
-            placeholder = "Find code or name",
+            placeholder = str(S.desktop_cr_find_code_or_name),
             modifier = Modifier.width(SEARCH_WIDTH),
         )
         Box(Modifier.weight(1f))

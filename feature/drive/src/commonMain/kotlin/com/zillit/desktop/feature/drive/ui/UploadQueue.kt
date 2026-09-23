@@ -9,6 +9,8 @@ import com.zillit.desktop.feature.drive.domain.UploadState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The background uploads — the web's `useFileUpload` plus the folder-tree
@@ -46,7 +48,7 @@ internal class UploadQueue(
      */
     fun enqueue(files: List<PickedFile>, target: UploadTarget) {
         if (!vm.state.value.viewer.canCreate) {
-            vm.reportFailure("You do not have permission to upload to this drive.")
+            vm.reportFailure(str(S.desktop_drive_no_upload_permission))
             return
         }
         val accepted = files.filter { file ->
@@ -67,7 +69,13 @@ internal class UploadQueue(
         }
         vm.update { copy(uploads = uploads + rows, operationsExpanded = true) }
         if (accepted.isNotEmpty()) {
-            vm.notice("Started uploading ${accepted.size} file" + if (accepted.size == 1) "" else "s")
+            vm.notice(
+                if (accepted.size == 1) {
+                    str(S.desktop_drive_started_uploading_one)
+                } else {
+                    str(S.desktop_drive_started_uploading_many, accepted.size)
+                },
+            )
         }
 
         vm.run {
@@ -118,8 +126,11 @@ internal class UploadQueue(
         }
         if (failures > 0) {
             vm.reportFailure(
-                "$failures folder" + (if (failures == 1) "" else "s") +
-                    " could not be created — those files will be placed at the destination root.",
+                if (failures == 1) {
+                    str(S.desktop_drive_folders_not_created_one)
+                } else {
+                    str(S.desktop_drive_folders_not_created_many, failures)
+                },
             )
         }
         return ids.filterKeys { it.isNotEmpty() }
@@ -147,7 +158,9 @@ internal class UploadQueue(
                 // background upload must not yank the listing out from
                 // under someone browsing elsewhere.
                 if (settled is UploadState.Done && !vm.state.value.showTrash) vm.loadListing()
-                if (settled is UploadState.Failed) vm.reportFailure("Upload failed: ${file.name} — ${settled.reason}")
+                if (settled is UploadState.Failed) {
+                    vm.reportFailure(str(S.desktop_drive_upload_failed, file.name, settled.reason))
+                }
             }
         }
     }

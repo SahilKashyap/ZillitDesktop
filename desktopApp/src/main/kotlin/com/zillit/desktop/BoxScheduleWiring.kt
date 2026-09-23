@@ -10,6 +10,8 @@ import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.data.BoxScheduleRepositoryImpl
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleHost
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleViewer
@@ -81,7 +83,7 @@ private fun AppGraph.Ready.diaryDirectory(): DiaryDirectory = object : DiaryDire
 
     override suspend fun departments(): ZillitResult<List<DiaryDepartment>> {
         val projectId = projectContext?.context?.value?.project?.projectId
-            ?: return ZillitResult.Failure(ZillitError.Validation("No project is open."))
+            ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_no_project_is_open)))
         return projectRepository.departments(projectId).map { rows ->
             rows.map { DiaryDepartment(id = it.id, name = Labels.translate(it.name)) }
         }
@@ -135,7 +137,7 @@ private suspend fun printDiaryPage(html: String): ZillitResult<Unit> = withConte
         openSavedFile(page.absolutePath)
     }.fold(
         onSuccess = { ZillitResult.Success(Unit) },
-        onFailure = { ZillitResult.Failure(ZillitError.Storage(it.message, "Could not prepare the page to print.")) },
+        onFailure = { ZillitResult.Failure(ZillitError.Storage(it.message, str(S.desktop_print_page_not_prepared))) },
     )
 }
 

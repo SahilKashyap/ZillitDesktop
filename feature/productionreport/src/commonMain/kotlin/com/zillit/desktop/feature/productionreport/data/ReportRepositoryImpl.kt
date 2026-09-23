@@ -8,6 +8,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ApprovalDecision
 import com.zillit.desktop.feature.productionreport.domain.MetadataUpdate
 import com.zillit.desktop.feature.productionreport.domain.ReminderRequest
@@ -284,7 +286,7 @@ class ReportRepositoryImpl(
             "$base/production-reports/$id/comments",
             body = buildJsonObject {
                 put("author_id", idOrNull(author?.userId.orEmpty()))
-                put("author_name", author?.fullName?.ifBlank { null } ?: "Unknown")
+                put("author_name", author?.fullName?.ifBlank { null } ?: str(S.desktop_unknown))
                 put("author_role", author?.designation.orEmpty())
                 put("text", text)
             },

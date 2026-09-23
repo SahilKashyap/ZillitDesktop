@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Invoice Entry — the third stage, where an approved invoice is coded and
  * posted to the ledger.
@@ -10,13 +13,15 @@ package com.zillit.desktop.feature.invoices.domain
  * touch what is assigned to them, and that has to hold for the row click, the
  * tick box and select-all alike.
  */
-enum class EntryFilter(val label: String) {
-    All("All"),
-    AssignedToMe("Assigned to Me"),
-    Unassigned("Unassigned"),
-    Ready("Ready to Post"),
-    NeedsReview("Needs Review"),
+enum class EntryFilter(private val labelKey: String) {
+    All(S.all),
+    AssignedToMe(S.desktop_assigned_to_me),
+    Unassigned(S.unassigned),
+    Ready(S.ah_ready_to_post),
+    NeedsReview(S.desktop_needs_review),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun keeps(invoice: Invoice, viewerId: String): Boolean = when (this) {
         All -> true
@@ -28,11 +33,14 @@ enum class EntryFilter(val label: String) {
 }
 
 /** The entry queue's sort box. */
-enum class EntrySort(val label: String) {
-    Default("Sort: Default"),
-    AmountHighLow("Amount High-Low"),
-    AmountLowHigh("Amount Low-High"),
-    VendorAZ("Vendor A-Z"),
+enum class EntrySort(private val labelKey: String) {
+    Default(S.desktop_sort_default),
+    AmountHighLow(S.desktop_amount_high_low),
+    AmountLowHigh(S.desktop_amount_low_high),
+    VendorAZ(S.ah_sort_vendor_asc),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -68,13 +76,15 @@ class InvoiceDirectory(
 )
 
 /** The reasons the web offers for handing an invoice on; "Other" asks for words. */
-enum class AssignmentReason(val wire: String, val label: String) {
-    Complex("Complex Invoice - Needs Senior Review", "Complex invoice - Needs senior review"),
-    Workload("Workload Balancing", "Workload balancing"),
-    Cover("Holiday/Absence Cover", "Holiday/absence cover"),
-    Escalation("Accountant Escalation", "Accountant escalation"),
-    Other("", "Other (custom reason)"),
+enum class AssignmentReason(val wire: String, private val labelKey: String) {
+    Complex("Complex Invoice - Needs Senior Review", S.desktop_inv_reason_complex),
+    Workload("Workload Balancing", S.desktop_inv_reason_workload),
+    Cover("Holiday/Absence Cover", S.desktop_inv_reason_cover),
+    Escalation("Accountant Escalation", S.desktop_inv_reason_escalation),
+    Other("", S.desktop_other_custom_reason),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun needsNotes(): Boolean = this == Other
 }

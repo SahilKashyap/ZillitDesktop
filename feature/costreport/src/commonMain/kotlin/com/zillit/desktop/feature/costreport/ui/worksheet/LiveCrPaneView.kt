@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrSort
 import com.zillit.desktop.feature.costreport.domain.CrTableSpec
 import com.zillit.desktop.feature.costreport.domain.buildWorksheetTable
@@ -56,7 +58,7 @@ internal fun LiveCrPaneView(
         PaneFilterRow(state, WorksheetPane.Live, onEvent, nowMillis)
         Box(Modifier.fillMaxWidth().weight(1f)) {
             if (state.reference.metaMissing) {
-                Unavailable("Live CR is unavailable", state.reference.metaMissingMessage)
+                Unavailable(str(S.desktop_cr_live_unavailable), state.reference.metaMissingMessage)
                 return@Box
             }
             Column(Modifier.fillMaxSize()) {

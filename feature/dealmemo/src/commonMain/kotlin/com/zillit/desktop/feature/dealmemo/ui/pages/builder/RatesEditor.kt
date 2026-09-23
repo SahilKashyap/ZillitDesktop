@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderSeeds
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DgaFee
@@ -109,7 +111,7 @@ internal class RatesView(state: DealMemoUiState, builder: BuilderState) {
     /** `Short label · Band X · Designation`. */
     val scaleLabel: String = listOfNotNull(
         agreement?.get("short_label")?.takeIf(Js::truthy)?.let(Js::text),
-        form.text("pactBand").takeIf { it.isNotEmpty() }?.let { "Band ${it.uppercase()}" },
+        form.text("pactBand").takeIf { it.isNotEmpty() }?.let { str(S.desktop_dm_band_x, it.uppercase()) },
         designationName,
     ).joinToString(" · ")
 }
@@ -154,22 +156,22 @@ private fun PictureFee(view: RatesView, ops: FormOps) {
     val p = bp
     BuilderAlert(
         text = bold(
-            "Picture Deal",
-            " — Enter a single all-in fee for the entire production. No phase breakdowns or OT calculation.",
+            str(S.desktop_dm_deal_type_picture_deal),
+            " " + str(S.desktop_dm_picture_deal_note),
         ),
         modifier = Modifier.padding(bottom = 16.dp),
     )
-    CardBlock(title = "Picture Fee") {
+    CardBlock(title = str(S.dm_rates_card_picture)) {
         Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             ZillitText(
-                text = "TOTAL PRODUCTION FEE (ALL-IN)",
+                text = str(S.dm_rates_picture_fee),
                 style = DmType.display(11.sp, FontWeight.Bold, 0.4.sp),
                 color = p.ink2,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
             PictureFeeInput(view.form["pictureFee"]) { ops.set("pictureFee", it) }
             ZillitText(
-                text = "Payable across the full production schedule",
+                text = str(S.desktop_dm_payable_across_the_full_production_schedule),
                 style = DmType.sans(11.sp),
                 color = p.muted,
                 modifier = Modifier.padding(top = 6.dp),
@@ -225,21 +227,23 @@ private fun BuyOutRate(view: RatesView, ops: FormOps) {
     val mode = form.text("buyoutRateMode").ifEmpty { "weekly" }
     BuilderAlert(
         text = buildAnnotatedString {
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Buy-Out Deal") }
-            append(" — Flat fee covers all hours worked. ")
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("No overtime will be generated.") }
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(str(S.desktop_dm_buy_out_deal)) }
+            append(" " + str(S.desktop_dm_buyout_deal_note) + " ")
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(str(S.desktop_dm_no_overtime_will_be_generated))
+            }
         },
         modifier = Modifier.padding(bottom = 16.dp),
     )
-    CardBlock(title = "Buy-Out Rate") {
+    CardBlock(title = str(S.dm_rates_buyout_rate)) {
         BuilderGrid(columns = 3) {
             cell {
-                Field("Currency", hint = LOCKED_CURRENCY) {
+                Field(str(S.dm_step2_bank_currency), hint = LOCKED_CURRENCY) {
                     CurrencySelect(view.settings, form.text("currency"), form, enabled = false) {}
                 }
             }
             cell {
-                Field("Rate Basis", hint = "Which buy-out rate(s) to enter") {
+                Field(str(S.dm_rates_buyout_basis), hint = str(S.dm_rates_buyout_basis_helper)) {
                     NativeSelect(
                         value = mode,
                         options = BUYOUT_MODES,
@@ -268,20 +272,20 @@ private fun BuyOutRate(view: RatesView, ops: FormOps) {
             }
             if (mode != "daily") {
                 cell {
-                    Field("Buy-Out Rate (weekly)", hint = "All hours included — no OT") {
+                    Field(str(S.dm_rates_buyout_rate_weekly), hint = str(S.dm_rates_buyout_rate_helper)) {
                         CalcInput(form["buyoutRate"], { ops.set("buyoutRate", it) })
                     }
                 }
             }
             if (mode != "weekly") {
                 cell {
-                    Field("Daily Rate", hint = "All hours included — no OT") {
+                    Field(str(S.dm_rates_buyout_daily_rate), hint = str(S.dm_rates_buyout_rate_helper)) {
                         CalcInput(form["buyoutDailyRate"], { ops.set("buyoutDailyRate", it) })
                     }
                 }
             }
             cell {
-                Field("Covers (hrs/day assumed)") {
+                Field(str(S.dm_rates_buyout_covers)) {
                     NativeSelect(
                         value = form.text("buyoutCovers").ifEmpty { "10" },
                         options = COVERS,
@@ -300,23 +304,25 @@ private fun RateEntryCard(view: RatesView, ops: FormOps, onEvent: (DealMemoEvent
     val p = bp
     val form = view.form
     CardBlock(
-        title = "Rate Entry",
+        title = str(S.dm_rates_card_rate_entry),
         headerTrailing = {
-            ZillitText(text = "Prep / Shoot / Wrap rates", style = DmType.sans(11.sp), color = p.ink2)
+            ZillitText(text = str(S.dm_rates_card_rate_entry_hint), style = DmType.sans(11.sp), color = p.ink2)
             BuilderSwitch(
                 checked = form.flag("phaseRatesOn"),
                 onChange = { ops.set("phaseRatesOn", !form.flag("phaseRatesOn")) },
             )
         },
     ) {
-        LoadingCover(view.loading, "Resolving rate for ${view.designationName ?: "designation"}…") {
+        LoadingCover(
+            view.loading,
+            str(S.desktop_dm_resolving_rate_for, view.designationName ?: str(S.desktop_dm_designation_fallback_word)),
+        ) {
             Column {
                 CurrencyRow(view, ops)
                 val payment = form.text("paymentCurrency")
                 if (payment.isNotEmpty() && payment != form.text("currency")) {
                     BuilderAlert(
-                        text = "Payment currency differs from contract currency. An FX conversion will apply — " +
-                            "confirm the settlement rate with the finance team.",
+                        text = str(S.dm_rates_fx_mismatch_warning),
                         modifier = Modifier.padding(bottom = 12.dp),
                     )
                 }
@@ -340,18 +346,18 @@ private fun CurrencyRow(view: RatesView, ops: FormOps) {
     BuilderGrid(columns = 2, modifier = Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.Top) {
         cell {
             Column {
-                FieldLabel("Contract Currency")
+                FieldLabel(str(S.dm_rates_currency))
                 CurrencySelect(view.settings, form.text("currency"), form, enabled = false) {}
                 HintText(LOCKED_CURRENCY, Modifier.padding(top = 6.dp))
             }
         }
         cell {
             Column {
-                FieldLabel("Payment Currency")
+                FieldLabel(str(S.dm_rates_payment_currency))
                 CurrencySelect(view.settings, form.text("paymentCurrency"), form, enabled = true) {
                     ops.set("paymentCurrency", it.orEmpty())
                 }
-                HintText("Currency in which the crew member is paid", Modifier.padding(top = 6.dp))
+                HintText(str(S.dm_rates_payment_currency_hint), Modifier.padding(top = 6.dp))
             }
         }
     }
@@ -374,7 +380,7 @@ private fun CurrencySelect(
         options = options,
         selectedKey = selected.ifEmpty { null },
         onPick = onPick,
-        placeholder = "Select project currency…",
+        placeholder = str(S.desktop_dm_select_project_currency),
         enabled = enabled,
         clearable = enabled,
         dropdownWidth = 300.dp,
@@ -395,7 +401,9 @@ private fun CurrencyMonogram(text: String) {
 }
 
 /** The published scale: the agreement, band and role, the card's status, and each tier's figure. */
-@Suppress("CyclomaticComplexMethod")
+// One @Suppress, not two: a second annotation of the same type is ignored,
+// which is why the length finding survived the first attempt.
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ScaleBox(view: RatesView) {
@@ -420,7 +428,11 @@ private fun ScaleBox(view: RatesView) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            ZillitText(text = "Union scale", style = DmType.display(12.sp, FontWeight.Bold), color = p.gold)
+            ZillitText(
+                text = str(S.dm_rates_union_scale),
+                style = DmType.display(12.sp, FontWeight.Bold),
+                color = p.gold,
+            )
             if (view.scaleLabel.isNotEmpty()) {
                 ZillitText(text = view.scaleLabel, style = DmType.sans(12.sp), color = p.muted)
             }
@@ -428,19 +440,21 @@ private fun ScaleBox(view: RatesView) {
             dayType?.let { ZillitText(text = it, style = DmType.sans(12.sp), color = p.muted) }
             if (view.effective.usedUnionFallback) {
                 ZillitText(
-                    text = if (view.resolvedRate != null) "· union default fills gaps" else "· from union defaults",
+                    text = if (view.resolvedRate != null) str(S.desktop_dm_union_default_fills_gaps) else str(
+                        S.desktop_dm_from_union_defaults,
+                    ),
                     style = DmType.sans(12.sp).copy(fontStyle = FontStyle.Italic),
                     color = p.muted,
                 )
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            view.hourlyText?.let { TierFigure("Hourly", it, null) }
-            view.dailyText?.let { TierFigure("Daily", it, view.effective.daily?.hours) }
-            view.weeklyText?.let { TierFigure("Weekly", it, view.effective.weekly?.hours) }
+            view.hourlyText?.let { TierFigure(str(S.desktop_dm_hourly), it, null) }
+            view.dailyText?.let { TierFigure(str(S.dm_rates_buyout_mode_daily), it, view.effective.daily?.hours) }
+            view.weeklyText?.let { TierFigure(str(S.dm_rates_buyout_mode_weekly), it, view.effective.weekly?.hours) }
             if (!anyTier) {
                 ZillitText(
-                    text = "No rate available — rate is freely negotiable.",
+                    text = str(S.dm_rates_no_rate_inline),
                     style = DmType.sans(12.sp).copy(fontStyle = FontStyle.Italic),
                     color = p.muted,
                 )
@@ -511,11 +525,8 @@ private fun ScaleState(view: RatesView) {
     when {
         view.missingBand && designation -> BuilderAlert(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Budget Band required.") }
-                append(
-                    " ${view.otLabel} publishes separate scales per Band — pick one in Step 1 (Territory & Union) " +
-                        "and the rate will resolve automatically.",
-                )
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(str(S.desktop_dm_budget_band_required)) }
+                append(" " + str(S.desktop_dm_budget_band_required_note, view.otLabel))
             },
             modifier = Modifier.padding(bottom = 12.dp),
         )
@@ -525,14 +536,16 @@ private fun ScaleState(view: RatesView) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ZillitSpinner(size = 12.dp, color = p.cta)
-            ZillitText(text = "Resolving scale rate…", style = DmType.sans(11.sp), color = p.muted)
+            ZillitText(text = str(S.desktop_dm_resolving_scale_rate), style = DmType.sans(11.sp), color = p.muted)
         }
         !view.loading && view.resolvedRate == null && designation && !view.missingBand &&
             view.hourlyText == null && view.dailyText == null && view.weeklyText == null &&
             view.effective.status.isNullOrEmpty() && view.effective.dayType.isNullOrEmpty() -> {
-            val band = form.text("pactBand").takeIf { it.isNotEmpty() }?.let { " · Band ${it.uppercase()}" }.orEmpty()
+            val band = form.text("pactBand").takeIf { it.isNotEmpty() }
+                ?.let { " " + str(S.desktop_dm_band_suffix, it.uppercase()) }
+                .orEmpty()
             ZillitText(
-                text = "No rate available under ${view.otLabel}$band — rate is freely negotiable.",
+                text = str(S.desktop_dm_no_rate_under_label, view.otLabel + band),
                 style = DmType.sans(11.sp).copy(fontStyle = FontStyle.Italic),
                 color = p.muted,
                 modifier = Modifier.padding(bottom = 12.dp).padding(horizontal = 12.dp, vertical = 8.dp),
@@ -549,7 +562,7 @@ private fun ScheduleSelector(view: RatesView, ops: FormOps) {
     val p = bp
     Column(Modifier.padding(bottom = 14.dp)) {
         ZillitText(
-            text = "WORK SCHEDULE",
+            text = str(S.desktop_dm_work_schedule),
             style = DmType.sans(10.sp, FontWeight.Bold, 0.05.em),
             color = p.muted,
             modifier = Modifier.padding(bottom = 6.dp),
@@ -602,21 +615,33 @@ private fun AgreedRates(view: RatesView, onEvent: (DealMemoEvent) -> Unit) {
     BuilderGrid(columns = 2, modifier = Modifier.padding(bottom = 14.dp)) {
         cell {
             Column {
-                RateLabel("Day Rate (Agreed)", view.effective.daily?.hours, "weekly auto-calculates (×$days)")
+                RateLabel(
+                    str(S.desktop_dm_day_rate_agreed),
+                    view.effective.daily?.hours,
+                    str(S.desktop_dm_weekly_auto_calculates, days),
+                )
                 CalcInput(
                     value = form["dayRate"],
                     onCommit = { onEvent(BuilderEvent.DayRate(it)) },
-                    placeholder = view.effective.daily?.min?.let { "e.g. ${Js.text(it)}" } ?: "e.g. 780.00",
+                    placeholder = view.effective.daily?.min?.let { str(S.desktop_dm_eg_value, Js.text(it)) } ?: str(
+                        S.dm_rates_day_rate_hint,
+                    ),
                 )
             }
         }
         cell {
             Column {
-                RateLabel("Weekly Rate", view.effective.weekly?.hours, "daily auto-calculates (÷$days)")
+                RateLabel(
+                    str(S.dm_rates_weekly_rate),
+                    view.effective.weekly?.hours,
+                    str(S.desktop_dm_daily_auto_calculates, days),
+                )
                 CalcInput(
                     value = form["weeklyRate"],
                     onCommit = { onEvent(BuilderEvent.WeeklyRate(it)) },
-                    placeholder = view.effective.weekly?.min?.let { "e.g. ${Js.text(it)}" } ?: "e.g. 3900.00",
+                    placeholder = view.effective.weekly?.min?.let { str(S.desktop_dm_eg_value, Js.text(it)) } ?: str(
+                        S.dm_rates_weekly_rate_hint,
+                    ),
                 )
             }
         }
@@ -650,13 +675,13 @@ private fun BasicHours(view: RatesView, ops: FormOps) {
     if (view.effective.daily?.hours != null || view.nonUnion) return
     BuilderGrid(columns = 2, modifier = Modifier.padding(bottom = 14.dp)) {
         cell {
-            Field("Basic Working Hours / Day", hint = "Standard contracted hours per working day") {
+            Field(str(S.dm_rates_basic_hrs_day), hint = str(S.desktop_dm_standard_contracted_hours_per_working_day)) {
                 BuilderInput(
                     value = view.form.text("basicWorkingHoursPerDay"),
                     onValueChange = { typed ->
                         ops.set("basicWorkingHoursPerDay", typed.filter { it.isDigit() || it == '.' })
                     },
-                    placeholder = "e.g. 10",
+                    placeholder = str(S.dm_rates_basic_hrs_day_hint),
                 )
             }
         }
@@ -679,7 +704,7 @@ private fun ManualOverride(onEvent: (DealMemoEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "Rates manually overridden — differs from published scale",
+            text = str(S.desktop_dm_rates_manually_overridden_differs_from_published_scale),
             style = DmType.sans(10.sp).copy(fontStyle = FontStyle.Italic),
             color = p.muted,
             modifier = Modifier.weight(1f),
@@ -694,7 +719,11 @@ private fun ManualOverride(onEvent: (DealMemoEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             ZillitIcon(ZillitIcons.Reload, size = 10.dp, tint = p.gold)
-            ZillitText(text = "Reset to scale", style = DmType.display(10.sp, FontWeight.SemiBold), color = p.gold)
+            ZillitText(
+                text = str(S.dm_rates_reset_to_scale),
+                style = DmType.display(10.sp, FontWeight.SemiBold),
+                color = p.gold,
+            )
         }
     }
 }
@@ -719,7 +748,7 @@ private fun ConstraintsBar(view: RatesView) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         ZillitText(
-            text = "AGREEMENT CONSTRAINTS",
+            text = str(S.dm_rates_card_constraints),
             style = DmType.display(10.sp, FontWeight.SemiBold, 0.4.sp),
             color = p.muted,
         )
@@ -742,17 +771,17 @@ private fun PhaseRates(view: RatesView, ops: FormOps) {
     val form = view.form
     val phases = listOf(
         Triple(
-            "Prep Day Rate",
+            str(S.desktop_dm_prep_day_rate),
             "prepRate",
             BuilderSeeds.inclusiveDays(form.text("schedPrepStart"), form.text("schedPrepEnd")),
         ),
         Triple(
-            "Shoot Day Rate",
+            str(S.desktop_dm_shoot_day_rate),
             "shootRate",
             BuilderSeeds.inclusiveDays(form.text("schedShootStart"), form.text("schedShootEnd")),
         ),
         Triple(
-            "Wrap Day Rate",
+            str(S.desktop_dm_wrap_day_rate),
             "wrapRate",
             BuilderSeeds.inclusiveDays(form.text("schedWrapStart"), form.text("schedWrapEnd")),
         ),
@@ -760,7 +789,7 @@ private fun PhaseRates(view: RatesView, ops: FormOps) {
     val total = phases.sumOf { (_, key, days) -> RateResolve.number(form[key]) * days }
     Column(Modifier.padding(bottom = 14.dp)) {
         ZillitText(
-            text = "Phase-Specific Rates",
+            text = str(S.desktop_dm_phase_specific_rates),
             style = DmType.sans(11.sp, FontWeight.SemiBold),
             color = p.ink2,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -773,7 +802,7 @@ private fun PhaseRates(view: RatesView, ops: FormOps) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Total Phase Labour (ex. OT/allow.)",
+                text = str(S.desktop_dm_total_phase_labour_ex_ot_allow),
                 style = DmType.sans(12.sp, FontWeight.SemiBold),
                 color = p.ink2,
                 modifier = Modifier.weight(1f),
@@ -811,7 +840,11 @@ private fun PhaseRow(
         ZillitText(text = label, style = DmType.sans(11.sp), color = p.ink2, modifier = Modifier.weight(1f))
         CalcInput(value, onCommit, modifier = Modifier.width(128.dp), height = 32.dp, textSize = 12.5f, mono = true)
         ZillitText(
-            text = "× $days days = $sym${RateFormat.groupAmountAuto(RateResolve.number(value) * days)}",
+            text = str(
+                S.desktop_dm_times_days_equals,
+                days,
+                "$sym${RateFormat.groupAmountAuto(RateResolve.number(value) * days)}",
+            ),
             style = DmType.sans(10.sp),
             color = p.muted,
             textAlign = TextAlign.End,
@@ -831,7 +864,7 @@ private fun HolidayPayBlock(view: RatesView, hp: HolidayPayItem, ops: FormOps) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "Holiday Pay (HP) Treatment",
+                text = str(S.desktop_dm_holiday_pay_hp_treatment),
                 style = DmType.sans(11.sp, FontWeight.SemiBold),
                 color = p.ink2,
                 modifier = Modifier.weight(1f),
@@ -844,11 +877,14 @@ private fun HolidayPayBlock(view: RatesView, hp: HolidayPayItem, ops: FormOps) {
         val sym = view.sym
         BuilderAlert(
             text = if (inclusive) {
-                "HP included within the agreed day rate (÷${Js.toFixed(1 + hp.rate, HP_DIVISOR_DIGITS)}). Base rate: " +
-                    "$sym${RateFormat.groupAmount(base)}/day · HP element: $sym${RateFormat.groupAmount(element)}/day"
+                str(
+                    S.desktop_dm_hp_alert_inclusive,
+                    Js.toFixed(1 + hp.rate, HP_DIVISOR_DIGITS),
+                    "$sym${RateFormat.groupAmount(base)}",
+                    "$sym${RateFormat.groupAmount(element)}",
+                )
             } else {
-                "HP will be added on top of the day rate at ${hp.percentText}%. Total with HP: " +
-                    "$sym${RateFormat.groupAmount(day * (1 + hp.rate))}/day"
+                str(S.desktop_dm_hp_on_top_note, hp.percentText, "$sym${RateFormat.groupAmount(day * (1 + hp.rate))}")
             },
             modifier = Modifier.padding(top = 10.dp),
         )
@@ -900,8 +936,8 @@ private data class SummaryLine(val label: String, val value: String, val teal: B
 
 @Composable
 private fun RateSummaryCard(view: RatesView) {
-    CardBlock(title = "Rate Summary") {
-        LoadingCover(view.loading, "Resolving scale rate…") {
+    CardBlock(title = str(S.dm_rates_card_summary)) {
+        LoadingCover(view.loading, str(S.desktop_dm_resolving_scale_rate)) {
             val lines = summaryLines(view)
             Column {
                 lines.forEachIndexed { index, line -> SummaryRow(line, last = index == lines.lastIndex) }
@@ -921,38 +957,40 @@ private fun summaryLines(view: RatesView): List<SummaryLine> = buildList {
     val dayTyped = Js.truthy(form["dayRate"])
     add(
         SummaryLine(
-            "Agreed Day Rate",
+            str(S.dm_rates_summary_day),
             if (dayTyped) "$sym${AgreementFormat.groupAmount(form["dayRate"])}" else "$sym—",
-            min = view.effective.daily?.min?.let { "min $sym${AgreementFormat.groupAmount(it)}" },
+            min = view.effective.daily?.min
+                ?.let { str(S.desktop_dm_min_amount, "$sym${AgreementFormat.groupAmount(it)}") },
         ),
     )
     val day = view.dayRate
     if (hp != null && dayTyped && view.hpMode == "incl") {
         val base = day / (1 + rate)
-        add(SummaryLine("Base Rate (ex HP)", money(base), teal = true))
-        add(SummaryLine("HP Element ($pct%)", money(day - base), teal = true))
+        add(SummaryLine(str(S.desktop_dm_base_rate_ex_hp), money(base), teal = true))
+        add(SummaryLine(str(S.desktop_dm_hp_element_pct, pct), money(day - base), teal = true))
     }
     if (hp != null && dayTyped && view.hpMode == "excl") {
-        add(SummaryLine("HP Element ($pct%, on top)", money(day * rate), teal = true))
-        add(SummaryLine("Total Day Rate (with HP)", money(day + day * rate), teal = true))
+        add(SummaryLine(str(S.desktop_dm_hp_element_pct_on_top, pct), money(day * rate), teal = true))
+        add(SummaryLine(str(S.desktop_dm_total_day_rate_with_hp), money(day + day * rate), teal = true))
     }
     val weeklyTyped = Js.truthy(form["weeklyRate"])
     add(
         SummaryLine(
-            "Weekly (5-day basis)",
+            str(S.dm_rates_summary_weekly),
             if (weeklyTyped) "$sym${AgreementFormat.groupAmount(form["weeklyRate"])}" else "$sym—",
-            min = view.effective.weekly?.min?.let { "min $sym${AgreementFormat.groupAmount(it)}" },
+            min = view.effective.weekly?.min
+                ?.let { str(S.desktop_dm_min_amount, "$sym${AgreementFormat.groupAmount(it)}") },
         ),
     )
     val weekly = RateResolve.number(form["weeklyRate"])
     if (hp != null && weeklyTyped && view.hpMode == "incl") {
         val base = weekly / (1 + rate)
-        add(SummaryLine("Weekly Base (ex HP)", money(base), teal = true))
-        add(SummaryLine("Weekly HP Element ($pct%)", money(weekly - base), teal = true))
+        add(SummaryLine(str(S.desktop_dm_weekly_base_ex_hp), money(base), teal = true))
+        add(SummaryLine(str(S.desktop_dm_weekly_hp_element_pct, pct), money(weekly - base), teal = true))
     }
     if (hp != null && weeklyTyped && view.hpMode == "excl") {
-        add(SummaryLine("Weekly HP Element ($pct%, on top)", money(weekly * rate), teal = true))
-        add(SummaryLine("Total Weekly Rate (with HP)", money(weekly + weekly * rate), teal = true))
+        add(SummaryLine(str(S.desktop_dm_weekly_hp_element_pct_on_top, pct), money(weekly * rate), teal = true))
+        add(SummaryLine(str(S.desktop_dm_total_weekly_rate_with_hp), money(weekly + weekly * rate), teal = true))
     }
 }
 
@@ -988,21 +1026,26 @@ private fun DgaCard(view: RatesView, dga: DgaFee, ops: FormOps) {
     val form = view.form
     val weeks = dga.ppWeeks
     val fee = RateResolve.number(form["dgaWeeklyFee"])
-    CardBlock(title = "DGA Production Fee", tag = "Principal Photography Only", tone = BuilderTone.Purple) {
+    CardBlock(
+        title = str(S.dm_rates_card_dga),
+        tag = str(S.desktop_dm_principal_photography_only),
+        tone = BuilderTone.Purple,
+    ) {
         BuilderAlert(
             text = buildAnnotatedString {
-                append("Production fee is a ")
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("separate weekly payment") }
-                append(
-                    " during Principal Photography only — not subject to HP or OT. COA applies to weekly salary only.",
-                )
+                append(str(S.desktop_dm_production_fee_is_a) + " ")
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(str(S.desktop_dm_separate_weekly_payment)) }
+                append(" " + str(S.desktop_dm_production_fee_note_tail))
                 dga.note?.let { withStyle(SpanStyle(fontSize = 10.sp, color = p.muted)) { append("\n$it") } }
             },
             modifier = Modifier.padding(bottom = 16.dp),
         )
         BuilderGrid(columns = 3, modifier = Modifier.padding(bottom = 12.dp)) {
             cell {
-                Field("Weekly Production Fee", hint = "Auto-filled from EP Paymaster 2025-26") {
+                Field(
+                    str(S.desktop_dm_weekly_production_fee),
+                    hint = str(S.desktop_dm_auto_filled_from_ep_paymaster_2025_26),
+                ) {
                     CalcInput(
                         form["dgaWeeklyFee"],
                         { ops.set("dgaWeeklyFee", it) },
@@ -1011,12 +1054,12 @@ private fun DgaCard(view: RatesView, dga: DgaFee, ops: FormOps) {
                 }
             }
             cell {
-                Field("PP Weeks", hint = "${dga.shootDays} shoot days ÷ 5") {
+                Field(str(S.desktop_dm_pp_weeks), hint = str(S.desktop_dm_shoot_days_div_5, dga.shootDays)) {
                     ValueBox(if (weeks > 0) weeks.toString() else RateFormat.DASH)
                 }
             }
             cell {
-                Field("Total PP Fee") {
+                Field(str(S.desktop_dm_total_pp_fee)) {
                     val shown = if (weeks > 0 && Js.truthy(form["dgaWeeklyFee"])) {
                         "$${RateTables.localeAmount(fee * weeks)}"
                     } else {
@@ -1050,13 +1093,17 @@ private fun DgaTotals(view: RatesView, weeks: Int, fee: Double) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         TotalLine(
-            "PP Salary ($weeks wks × ${view.sym}${AgreementFormat.groupAmount(view.form["weeklyRate"])})",
+            str(
+                S.desktop_dm_pp_salary_line,
+                weeks,
+                "${view.sym}${AgreementFormat.groupAmount(view.form["weeklyRate"])}",
+            ),
             "$${RateTables.localeAmount(salary)}",
             p.ink,
         )
-        TotalLine("PP Production Fee", "$${RateTables.localeAmount(production)}", p.purpleInk)
+        TotalLine(str(S.desktop_dm_pp_production_fee), "$${RateTables.localeAmount(production)}", p.purpleInk)
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.purpleRing))
-        TotalLine("Total PP Compensation", "$${RateTables.localeAmount(total)}", p.gold, strong = true)
+        TotalLine(str(S.desktop_dm_total_pp_compensation), "$${RateTables.localeAmount(total)}", p.gold, strong = true)
     }
 }
 
@@ -1080,6 +1127,7 @@ private fun TotalLine(label: String, value: String, valueColor: Color, strong: B
 
 /** Completion of Assignment: the agreement's bases as radio cards, and the amount the chosen one pays. */
 @Composable
+@Suppress("LongMethod") // Layout in one place; the sweep's wrapped calls added the lines.
 private fun CoaBlock(view: RatesView, ops: FormOps) {
     val p = bp
     val form = view.form
@@ -1087,7 +1135,7 @@ private fun CoaBlock(view: RatesView, ops: FormOps) {
     Column(Modifier.fillMaxWidth()) {
         Rule(p.tableRule)
         ZillitText(
-            text = "Completion of Assignment (COA)",
+            text = str(S.desktop_dm_completion_of_assignment_coa),
             style = DmType.sans(11.sp, FontWeight.SemiBold),
             color = p.ink2,
             modifier = Modifier.padding(top = 16.dp, bottom = 12.dp),
@@ -1099,8 +1147,12 @@ private fun CoaBlock(view: RatesView, ops: FormOps) {
             }
         }
         if (basis == "negotiated") {
-            Field("Negotiated COA Amount", modifier = Modifier.padding(bottom = 12.dp)) {
-                CalcInput(form["dgaNegotiatedCOA"], { ops.set("dgaNegotiatedCOA", it) }, placeholder = "e.g. 4500.00")
+            Field(str(S.dm_rates_dga_negotiated_coa), modifier = Modifier.padding(bottom = 12.dp)) {
+                CalcInput(
+                    form["dgaNegotiatedCOA"],
+                    { ops.set("dgaNegotiatedCOA", it) },
+                    placeholder = str(S.desktop_dm_e_g_4500_00),
+                )
             }
         }
         if (basis.isNotEmpty() && basis != "none" && Js.truthy(form["weeklyRate"])) {
@@ -1112,7 +1164,9 @@ private fun CoaBlock(view: RatesView, ops: FormOps) {
             val shape = RoundedCornerShape(5.dp)
             ZillitText(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = p.ink2, fontSize = 11.sp)) { append("COA Amount: ") }
+                    withStyle(SpanStyle(color = p.ink2, fontSize = 11.sp)) {
+                        append(str(S.desktop_dm_coa_amount_colon) + " ")
+                    }
                     withStyle(
                         SpanStyle(
                             color = p.purpleInk,
@@ -1259,16 +1313,23 @@ private fun currencyOptions(settings: ProjectSettingsView, ensure: List<String>)
     }
 }
 
-private const val LOCKED_CURRENCY = "Locked — set by the union agreement territory (project default for non-union)"
-private val BUYOUT_MODES =
-    listOf(PickOption("weekly", "Weekly"), PickOption("daily", "Daily"), PickOption("both", "Both"))
-private val COVERS = listOf(
-    PickOption("8", "8 hrs/day"),
-    PickOption("10", "10 hrs/day"),
-    PickOption("12", "12 hrs/day"),
-    PickOption("unlimited", "Unlimited"),
+private val LOCKED_CURRENCY: String get() = str(S.desktop_dm_locked_set_by_the_union_agreement_territory)
+private val BUYOUT_MODES get() =
+    listOf(
+        PickOption("weekly", str(S.dm_rates_buyout_mode_weekly)),
+        PickOption("daily", str(S.dm_rates_buyout_mode_daily)),
+        PickOption("both", str(S.dm_rates_buyout_mode_both)),
+    )
+private val COVERS get() = listOf(
+    PickOption("8", str(S.desktop_dm_hrs_per_day, 8)),
+    PickOption("10", str(S.desktop_dm_hrs_per_day, 10)),
+    PickOption("12", str(S.desktop_dm_hrs_per_day, 12)),
+    PickOption("unlimited", str(S.dm_rates_buyout_covers_unlimited)),
 )
-private val HP_MODES = listOf("excl" to "Exclusive (added on top)", "incl" to "Inclusive (within rate)")
+private val HP_MODES get() = listOf(
+    "excl" to str(S.desktop_dm_exclusive_added_on_top),
+    "incl" to str(S.desktop_dm_inclusive_within_rate),
+)
 private const val HP_DIVISOR_DIGITS = 4
 private const val VEIL_ALPHA = 0.7f
 private const val HOVER_ALPHA = 0.8f

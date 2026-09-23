@@ -55,6 +55,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
 import com.zillit.desktop.feature.externalusers.domain.ExternalUserBucket
 import com.zillit.desktop.feature.externalusers.domain.Gender
@@ -73,7 +75,7 @@ fun ExternalUsersScreen(
 ) {
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         when {
-            state.viewer.isBlocked -> Centred("You don't have access to External Users.")
+            state.viewer.isBlocked -> Centred(str(S.desktop_eu_no_access))
             else -> Page(state, onEvent)
         }
 
@@ -101,11 +103,16 @@ private fun Page(state: ExternalUsersUiState, onEvent: (ExternalUsersEvent) -> U
             when {
                 state.isLoading && state.users.isEmpty() -> SkeletonGrid()
                 state.visible.isEmpty() -> ZillitEmptyState(
-                    title = if (state.query.isBlank()) "No data found" else "No users match “${state.query.trim()}”",
+                    title = if (state.query.isBlank()) {
+                        str(S.no_data_found)
+                    } else {
+                        str(S.desktop_eu_no_users_match, state.query.trim())
+                    },
                     message = when {
-                        state.query.isNotBlank() -> "Search reaches the name only — try another spelling."
-                        state.bucket != ExternalUserBucket.All -> "No ${state.bucket.label.lowercase()} contacts yet."
-                        else -> "Contacts added here are available to mail, distribution and e-signature."
+                        state.query.isNotBlank() -> str(S.desktop_eu_search_reaches_name_only)
+                        state.bucket != ExternalUserBucket.All ->
+                            str(S.desktop_eu_no_bucket_contacts_yet, state.bucket.label.lowercase())
+                        else -> str(S.desktop_eu_contacts_available_to)
                     },
                     icon = ZillitIcons.Users,
                 )
@@ -135,13 +142,13 @@ private fun Header(state: ExternalUsersUiState, onEvent: (ExternalUsersEvent) ->
             ZillitSearchField(
                 value = state.query,
                 onValueChange = { onEvent(ExternalUsersEvent.Search(it)) },
-                placeholder = "Search by user name",
+                placeholder = str(S.search_by_user_name),
                 modifier = Modifier.width(SEARCH_WIDTH),
             )
             // Shown to everyone: without posting rights the press is answered
             // by ExternalUsersViewModel.guardPost, which offers to ask an admin.
             ZillitButton(
-                text = "Add User",
+                text = str(S.desktop_eu_add_user),
                 leadingIcon = ZillitIcons.Add,
                 onClick = { onEvent(ExternalUsersEvent.New) },
             )
@@ -162,14 +169,16 @@ private fun Title(state: ExternalUsersUiState) {
             .clip(ZillitTheme.shapes.small)
             .background(colors.accent),
     )
-    ZillitText(text = "External Users", style = ZillitTheme.typography.titleLarge)
+    ZillitText(text = str(S.external_invitees), style = ZillitTheme.typography.titleLarge)
     if (state.users.isNotEmpty()) {
         val count = state.users.size
         ZillitText(
             text = if (state.query.isNotBlank()) {
-                "${state.visible.size} of $count"
+                str(S.docusign_field_of, state.visible.size, count)
+            } else if (count == 1) {
+                str(S.desktop_contact_count_one, count)
             } else {
-                "$count contact${if (count == 1) "" else "s"}"
+                str(S.desktop_contact_count_other, count)
             },
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
@@ -189,7 +198,7 @@ private fun TypeFilter(selected: ExternalUserBucket, onPick: (ExternalUserBucket
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = "Type",
+            text = str(S.type),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.padding(end = ZillitTheme.spacing.xs),
@@ -278,13 +287,13 @@ private fun UserCard(
             Modifier.padding(horizontal = CARD_PADDING, vertical = ZillitTheme.spacing.md),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
-            FactRow("Email") {
+            FactRow(str(S.email)) {
                 EmailLink(user.email, onEvent)
             }
-            FactRow("Contact Number") {
+            FactRow(str(S.contact_number)) {
                 PhoneValue(user.phoneLine)
             }
-            FactRow("Created By") {
+            FactRow(str(S.created_by_new)) {
                 ZillitText(
                     text = creator?.let { who ->
                         who.fullName + who.designation.takeIf { it.isNotBlank() }
@@ -350,10 +359,10 @@ private fun CardHead(user: ExternalUser, mayEdit: Boolean, onEvent: (ExternalUse
         if (mayEdit) {
             // Always composed, as on the web: the edit and delete squares
             // live in the card head, never behind a hover.
-            HeadAction(ZillitIcons.Edit, "Edit ${user.fullName}", danger = false) {
+            HeadAction(ZillitIcons.Edit, str(S.desktop_edit_named, user.fullName), danger = false) {
                 onEvent(ExternalUsersEvent.Edit(user))
             }
-            HeadAction(ZillitIcons.Trash, "Delete ${user.fullName}", danger = true) {
+            HeadAction(ZillitIcons.Trash, str(S.desktop_delete_named, user.fullName), danger = true) {
                 onEvent(ExternalUsersEvent.Delete(user))
             }
         }
@@ -410,7 +419,7 @@ private fun CardFoot(user: ExternalUser, onEvent: (ExternalUsersEvent) -> Unit) 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "View more details",
+            text = str(S.click_for_more_details),
             style = ZillitTheme.typography.label,
             color = if (hovered) colors.accentHover else colors.accentText,
         )
@@ -445,12 +454,12 @@ private fun FactRow(label: String, value: @Composable () -> Unit) {
 internal fun EmailLink(address: String, onEvent: (ExternalUsersEvent) -> Unit) {
     val colors = ZillitTheme.colors
     if (address.isBlank()) {
-        ZillitText(text = "N/A", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+        ZillitText(text = str(S.na), style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
         return
     }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    ZillitTooltip("Write an email") {
+    ZillitTooltip(str(S.desktop_write_an_email)) {
         ZillitText(
             text = address,
             style = ZillitTheme.typography.bodyMedium.copy(
@@ -477,7 +486,7 @@ internal fun EmailLink(address: String, onEvent: (ExternalUsersEvent) -> Unit) {
 internal fun PhoneValue(line: String) {
     val colors = ZillitTheme.colors
     if (line.isBlank()) {
-        ZillitText(text = "N/A", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+        ZillitText(text = str(S.na), style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
         return
     }
     ZillitTooltip(GSM_NOTE) {
@@ -519,7 +528,7 @@ private fun SkeletonGrid() {
 @Composable
 private fun DeleteConfirm(doomed: ExternalUser, onEvent: (ExternalUsersEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Are you sure to delete?",
+        title = str(S.desktop_are_you_sure_to_delete),
         subtitle = doomed.fullName,
         icon = ZillitIcons.Trash,
         visible = true,
@@ -527,19 +536,19 @@ private fun DeleteConfirm(doomed: ExternalUser, onEvent: (ExternalUsersEvent) ->
         onDismiss = { onEvent(ExternalUsersEvent.CancelDelete) },
         actions = {
             ZillitButton(
-                text = "No",
+                text = str(S.no),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(ExternalUsersEvent.CancelDelete) },
             )
             ZillitButton(
-                text = "Yes",
+                text = str(S.yes),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(ExternalUsersEvent.ConfirmDelete) },
             )
         },
     ) {
         ZillitText(
-            text = "The contact is removed from this production's directory.",
+            text = str(S.desktop_eu_contact_removed_from_directory),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -557,7 +566,7 @@ private fun Centred(text: String) {
     }
 }
 
-internal const val GSM_NOTE = "You can call GSM contacts through the mobile app"
+internal val GSM_NOTE: String get() = str(S.desktop_eu_gsm_note)
 
 private val PAGE_GUTTER = 24.dp
 private val SEARCH_WIDTH = 260.dp

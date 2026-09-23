@@ -23,6 +23,8 @@ import com.zillit.desktop.core.media.EditableImageCanvas
 import com.zillit.desktop.core.media.ImageEditState
 import com.zillit.desktop.core.media.PenToolbar
 import com.zillit.desktop.core.media.encodeImageJpeg
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatMessage
@@ -67,8 +69,8 @@ internal fun ChatImageReplyDialog(
     val captionOverLimit = ChatComposerRules.bodyTooLong(caption.trim())
 
     ZillitDialogShell(
-        title = "Image Reply",
-        subtitle = "Draw on the picture and send it back to the thread.",
+        title = str(S.image_reply),
+        subtitle = str(S.desktop_chat_image_reply_subtitle),
         icon = ZillitIcons.Photo,
         visible = target != null,
         onDismiss = onDismiss,
@@ -80,9 +82,9 @@ internal fun ChatImageReplyDialog(
         scrollable = false,
         actions = {
             Spacer(Modifier.weight(1f))
-            ZillitButton(text = "Cancel", onClick = onDismiss, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.cancel), onClick = onDismiss, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = if (posting) "Sending…" else "Send",
+                text = if (posting) str(S.dm_nda_sending) else str(S.send),
                 enabled = editor.working != null && !posting && !captionOverLimit,
                 onClick = {
                     val composited = editor.render(measurer) ?: return@ZillitButton
@@ -102,7 +104,7 @@ internal fun ChatImageReplyDialog(
         ZillitTextField(
             value = caption,
             onValueChange = { caption = it },
-            placeholder = "Add a caption…",
+            placeholder = str(S.desktop_media_add_caption),
             singleLine = false,
             maxLength = ChatComposerRules.MAX_BODY_CHARS,
             modifier = Modifier.fillMaxWidth(),

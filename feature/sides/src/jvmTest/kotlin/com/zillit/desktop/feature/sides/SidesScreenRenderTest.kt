@@ -106,7 +106,7 @@ class SidesScreenRenderTest {
         compose(SidesUiState(viewer = viewer, destination = SidesDestination.Scripts, scripts = scripts)) {
             onNodeWithText("Ep 2").assertExists()
             onNodeWithText("No script file yet — add pages or upload a file").assertExists()
-            onNodeWithText("more").assertExists()
+            onNodeWithText("More").assertExists()
             onNodeWithText("Current").assertExists()
         }
         compose(SidesUiState(viewer = viewer, destination = SidesDestination.Scripts)) {
@@ -135,7 +135,7 @@ class SidesScreenRenderTest {
         )
         compose(SidesUiState(viewer = viewer, generate = form)) {
             onNodeWithText("Generate Sides").assertExists()
-            onNodeWithText("CURRENT").assertExists()
+            onNodeWithText("Current").assertExists()
             onNodeWithText("No scenes detected — include the entire PDF").assertExists()
             onNodeWithText("Sides will be ordered as: 2, 1").assertExists()
             onNodeWithText("2 scenes selected").assertExists()

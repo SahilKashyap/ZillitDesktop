@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.addashboard.data
 
 import com.zillit.desktop.core.common.CurrencyCodeSerializer
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.addashboard.domain.AdDayStatus
 import com.zillit.desktop.feature.addashboard.domain.AdShootDay
 import com.zillit.desktop.feature.addashboard.domain.Artiste
@@ -57,8 +59,8 @@ internal data class ArtisteDto(
         return Artiste(
             id = resolved,
             name = when {
-                external -> typed.ifBlank { "Unnamed" }
-                else -> crewName ?: typed.ifBlank { "Unknown user" }
+                external -> typed.ifBlank { str(S.desktop_unnamed) }
+                else -> crewName ?: typed.ifBlank { str(S.unkone_user) }
             },
             userId = userId,
             isExternal = external,

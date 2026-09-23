@@ -112,7 +112,7 @@ class ContinuityScreenRenderTest {
             ),
             dark = false,
         ) {
-            onNodeWithText("Department list continuity").assertExists()
+            onNodeWithText("Department List Continuity").assertExists()
             onNodeWithText("Camera Department").assertExists()
         }
     }
@@ -224,8 +224,8 @@ class ContinuityScreenRenderTest {
             dark = false,
         ) {
             onNodeWithText("Add Scene Details").assertExists()
-            onNodeWithText("Add more details").assertExists()
-            onNodeWithText("Episode No").assertExists()
+            onNodeWithText("Add More Details").assertExists()
+            onNodeWithText("Episode no.").assertExists()
             // The form rule it broke sits inside the dialog, where the scrim cannot dim it.
             onNodeWithText("Fill the Scene Number").assertExists()
         }

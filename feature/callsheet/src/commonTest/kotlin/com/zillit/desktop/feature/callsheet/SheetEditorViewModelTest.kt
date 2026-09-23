@@ -1,8 +1,12 @@
 package com.zillit.desktop.feature.callsheet
 
 import com.zillit.desktop.feature.callsheet.domain.SheetBadges
+import com.zillit.desktop.feature.callsheet.domain.BadgeKind
 import com.zillit.desktop.feature.callsheet.domain.BadgeLeaf
+import com.zillit.desktop.feature.callsheet.domain.BadgeSurface
 import com.zillit.desktop.feature.callsheet.domain.EditorSelection
+import com.zillit.desktop.feature.callsheet.domain.SheetPayload
+import com.zillit.desktop.feature.callsheet.domain.SharedHeader
 import com.zillit.desktop.feature.callsheet.domain.InsertKind
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
 import com.zillit.desktop.feature.callsheet.domain.MetadataUpdate
@@ -117,6 +121,71 @@ class SheetEditorViewModelTest {
         }
 
     @Test
+    fun `removing every approver writes an emptied list, but a fresh document never clears the default`() =
+        runTest(dispatcher) {
+            val sheet = Samples.row("r1", "Day 1")
+            repository.details["r1"] = CallSheetDetail(
+                sheet,
+                Samples.document().copy(shared = SharedHeader(approverIds = listOf("u2"), approverIdsStated = true)),
+            )
+            repository.metadata = SheetMetadata(finalApproverIds = listOf("u2"))
+            val vm = harness.start(this)
+
+            vm.onEvent(ListEvent.Edit(sheet))
+            settle()
+            assertEquals(listOf("u2"), vm.editor().initialApproverIds)
+            vm.onEvent(DocumentEvent.ToggleApprover("u2"))
+            assertTrue(vm.editor().document.shared.approverIds.isEmpty())
+            vm.onEvent(EditorEvent.Save)
+            settle()
+            assertEquals(
+                emptyList<String>(),
+                repository.metadataWrites.single().finalApproverIds,
+                "ZL-21468: the removal reaches the merging PUT",
+            )
+            assertTrue(vm.currentState.metadata.finalApproverIds.isEmpty())
+
+            repository.metadataWrites.clear()
+            repository.metadata = SheetMetadata(totalDays = "50")
+            vm.onEvent(EditorEvent.Back)
+            settle()
+            vm.onEvent(DialogEvent.CreateTemplate)
+            settle()
+            assertTrue(vm.editor().isNew && vm.editor().document.shared.approverIds.isEmpty())
+            vm.onEvent(EditorEvent.SaveAs)
+            vm.onEvent(DialogEvent.EditDraftName("Day 2"))
+            vm.onEvent(DialogEvent.ConfirmDraftName)
+            settle()
+            assertEquals(1, repository.created.size)
+            assertTrue(
+                repository.metadataWrites.all { it.finalApproverIds == null },
+                "a template's empty list is no statement of intent",
+            )
+        }
+
+    @Test
+    fun `Save as Template is create-only - an existing sheet neither offers nor honours it`() = runTest(dispatcher) {
+        val sheet = Samples.row("r1", "Day 1")
+        repository.details["r1"] = CallSheetDetail(sheet, Samples.document())
+        val vm = harness.start(this)
+
+        vm.onEvent(ListEvent.Edit(sheet))
+        settle()
+        assertFalse(vm.editor().offersSaveAsTemplate, "ZL-21539")
+        assertNull(vm.editor().template, "editing a sheet never holds a template to update")
+        vm.onEvent(EditorEvent.SaveAsTemplate)
+        settle()
+        assertNotNull(vm.currentState.editor, "nothing saved, nothing closed")
+        assertTrue(toasts.none { it.message.startsWith("Saved as") })
+
+        vm.onEvent(EditorEvent.Back)
+        settle()
+        vm.onEvent(DialogEvent.CreateTemplate)
+        settle()
+        assertTrue(vm.editor().offersSaveAsTemplate, "a new document may become a template")
+    }
+
+    @Test
     fun `a locked sheet never opens in the editor`() = runTest(dispatcher) {
         val vm = harness.start(this)
         repository.detailRequests.clear()
@@ -181,13 +250,17 @@ class SheetEditorViewModelTest {
     fun `the thread adds, edits and deletes, and a read-only thread never sends`() = runTest(dispatcher) {
         val sheet = Samples.row("r1", "Day 1")
         repository.thread += SheetComment("c1", authorId = "me", authorName = "Author", text = "First")
-        harness.badges.leaves.value = listOf(BadgeLeaf(SheetBadges.UNIT_COMMENT, level1 = "drafts", level3 = "r1"))
+        harness.badges.leaves.value = listOf(BadgeLeaf(SheetBadges.UNIT_DRAFTS, level2 = "comment", level3 = "r1"))
         val vm = harness.start(this)
         settle()
 
         vm.onEvent(ListEvent.OpenComments(sheet, readOnly = false))
         settle()
-        assertEquals(listOf("r1"), harness.badges.threadsRead, "opening an unread thread reads its badge")
+        assertEquals(
+            listOf(BadgeRead(BadgeSurface.Drafts, BadgeKind.Comment, "r1")),
+            harness.badges.reads,
+            "opening an unread thread reads its comment badge, on its surface",
+        )
         assertEquals(listOf("First"), vm.thread().comments.map { it.text })
 
         vm.onEvent(DialogEvent.EditCommentDraft("  Second  "))

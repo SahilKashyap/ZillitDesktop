@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.sos.ui
 
+import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.feature.sos.domain.ExternalContactDraft
 import com.zillit.desktop.feature.sos.domain.IsdCode
 import com.zillit.desktop.feature.sos.domain.SosAlert
@@ -11,8 +12,8 @@ import com.zillit.desktop.feature.sos.domain.SosViewer
 
 /** The receiver list's two halves — the web's two tabs (`SOS.jsx:528`, `:601`). */
 enum class SosContactTab(val id: String, val label: String) {
-    Member("member", "Member"),
-    Outsider("outsider", "Outsider"),
+    Member("member", S.member),
+    Outsider("outsider", S.outsider),
     ;
 
     companion object {

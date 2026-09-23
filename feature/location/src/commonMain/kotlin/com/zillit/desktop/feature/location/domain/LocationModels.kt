@@ -1,17 +1,21 @@
 package com.zillit.desktop.feature.location.domain
 
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Location tool — the scouting library: photos, videos and links of
  * places, filed under a location name / scene / episode and moved through
  * three shortlists. NOT the Map (pins) tool, which shares only the word.
  */
-enum class LocationStatus(val wire: String, val label: String) {
-    Selected("selected", "Selected"),
-    Shortlisted("shortlisted", "Shortlisted"),
-    Published("published", "Published"),
+enum class LocationStatus(val wire: String, private val labelKey: String) {
+    Selected("selected", S.selected),
+    Shortlisted("shortlisted", S.desktop_shortlisted),
+    Published("published", S.cs_published),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Where a record can still be moved to from here. */
     val movesTo: List<LocationStatus>
@@ -28,7 +32,11 @@ enum class LocationStatus(val wire: String, val label: String) {
 }
 
 /** How the folder grid groups the flat list. */
-enum class GroupBy(val label: String) { LocationName("Location"), SceneNo("Scene"), EpisodeNo("Episode") }
+enum class GroupBy(private val labelKey: String) {
+    LocationName(S.location), SceneNo(S.scene), EpisodeNo(S.episode);
+
+    val label: String get() = str(labelKey)
+}
 
 /** One row of `location-info` — the folder source. camelCase on the wire, unlike everything else. */
 data class LocationInfo(
@@ -48,10 +56,10 @@ data class LocationInfo(
 data class LocationPick(val location: String, val scene: String, val episode: String = "") {
     val title: String
         get() = buildString {
-            append(location.ifBlank { "Not Assigned" })
-            append(" · Sc ")
-            append(scene.ifBlank { "Not Assigned" })
-            if (episode.isNotBlank()) append(" · Ep $episode")
+            append(location.ifBlank { str(S.not_assigned) })
+            append(" · ")
+            append(str(S.desktop_scene_abbrev, scene.ifBlank { str(S.not_assigned) }))
+            if (episode.isNotBlank()) append(" · " + str(S.desktop_episode_abbrev_list, episode))
         }
 }
 
@@ -65,7 +73,7 @@ data class LocationFolder(
     val lastUpdateMs: Long,
 ) {
     /** "Not Assigned" on the tile when the key is blank. */
-    val title: String get() = key.ifBlank { "Not Assigned" }
+    val title: String get() = key.ifBlank { str(S.not_assigned) }
 }
 
 data class MediaAttachment(

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.crewlist.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 /**
  * One member's pending changes for the crew list only — never saved to their
  * profile. Null leaves a field as the roster has it; an empty string blanks
@@ -96,19 +98,19 @@ object PhoneRules {
             number.isEmpty() && code.isEmpty() -> null
             code.isEmpty() -> PhoneProblem(
                 PhoneField.CountryCode,
-                text("please_select_your_country_code", "Please select your country code"),
+                text("please_select_your_country_code", str(S.desktop_please_select_your_country_code)),
             )
             number.isEmpty() -> PhoneProblem(
                 PhoneField.Number,
-                text("required_phone_number", "Phone Number is required. Please enter a phone number."),
+                text("required_phone_number", str(S.desktop_cl_phone_required)),
             )
             number.length < MIN_DIGITS -> PhoneProblem(
                 PhoneField.Number,
-                text("min_length_phone_number", "Phone Number must be at least 5 characters long."),
+                text("min_length_phone_number", str(S.desktop_cl_phone_min_length)),
             )
             number.length > MAX_DIGITS -> PhoneProblem(
                 PhoneField.Number,
-                text("max_length_phone_number", "Phone Number must be no more than 20 characters long."),
+                text("max_length_phone_number", str(S.desktop_cl_phone_max_length)),
             )
             else -> null
         }

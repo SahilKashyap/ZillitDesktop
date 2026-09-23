@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.callsheet.domain.BadgeLeaf
 import com.zillit.desktop.feature.callsheet.domain.ApprovalDecision
 import com.zillit.desktop.feature.callsheet.domain.ApprovalRequest
 import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
+import com.zillit.desktop.feature.callsheet.domain.BadgeKind
+import com.zillit.desktop.feature.callsheet.domain.BadgeSurface
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDetail
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
@@ -16,9 +18,11 @@ import com.zillit.desktop.feature.callsheet.domain.SheetMetadata
 import com.zillit.desktop.feature.callsheet.domain.SheetPayload
 import com.zillit.desktop.feature.callsheet.domain.SheetQuery
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
+import com.zillit.desktop.feature.callsheet.domain.UnitMessage
 import com.zillit.desktop.feature.callsheet.ui.ConfirmAction
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
 import com.zillit.desktop.feature.callsheet.ui.ListEvent
+import com.zillit.desktop.feature.callsheet.ui.PublishChoice
 import com.zillit.desktop.feature.callsheet.ui.PublishDestination
 import com.zillit.desktop.feature.callsheet.ui.PublishStep
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
@@ -99,10 +103,11 @@ class SheetWorkflowViewModelTest {
                 emptyList()
             }
         }
+        repository.metadata = SheetMetadata(finalApproverIds = listOf("me"), internalReceiverIds = listOf("me"))
         val vm = harness.start(this, Samples.author.copy(canPost = false))
         val state = vm.currentState
         assertEquals("Drafts Call Sheet", state.toolTitle)
-        assertEquals(listOf(SheetTab.Drafts, SheetTab.Approvals, SheetTab.Published), state.tabs)
+        assertEquals(listOf(SheetTab.Drafts, SheetTab.Approvals), state.tabs, "never Published for a viewer")
         assertEquals(SheetTab.Approvals, state.activeTab)
         assertEquals(ApprovalSection.Received, state.activeSection)
         assertEquals(listOf("r1"), state.lists.received.rows.map { it.id })
@@ -114,10 +119,58 @@ class SheetWorkflowViewModelTest {
     }
 
     @Test
-    fun `a viewer nobody asked to sign has no Approvals tab`() = runTest(dispatcher) {
+    fun `a viewer gets only the tabs the metadata names them on, and none when it names nobody`() =
+        runTest(dispatcher) {
+            val nobody = harness.start(this, Samples.author.copy(canPost = false))
+            assertEquals(emptyList<SheetTab>(), nobody.currentState.tabs, "named by neither list → no tabs")
+            assertTrue(
+                repository.queries.none { CallSheetStatus.Draft in it.statuses },
+                "nothing is fetched for a hidden tab",
+            )
+
+            val receiverHarness = SheetHarness(dispatcher)
+            receiverHarness.repository.metadata = SheetMetadata(internalReceiverIds = listOf("me"))
+            val receiver = receiverHarness.start(this, Samples.author.copy(canPost = false))
+            assertEquals(listOf(SheetTab.Drafts), receiver.currentState.tabs)
+            assertEquals(SheetTab.Drafts, receiver.currentState.activeTab, "lands on the first tab they have")
+        }
+
+    @Test
+    fun `a FAILED metadata read fails a viewer's tabs open`() = runTest(dispatcher) {
+        repository.metadataAnswer = ZillitResult.Failure(ZillitError.Http(status = 500, serverMessage = "down"))
         val vm = harness.start(this, Samples.author.copy(canPost = false))
-        assertEquals(listOf(SheetTab.Drafts, SheetTab.Published), vm.currentState.tabs)
-        assertEquals(SheetTab.Drafts, vm.currentState.activeTab)
+        assertTrue(vm.currentState.metadataFailed)
+        assertEquals(listOf(SheetTab.Drafts, SheetTab.Approvals), vm.currentState.tabs)
+        assertEquals(SheetTab.Approvals, vm.currentState.activeTab)
+    }
+
+    @Test
+    fun `Sent is the project's signature phase, never scoped by creator`() = runTest(dispatcher) {
+        repository.rows = drafts()
+        val vm = harness.start(this)
+        vm.onEvent(ListEvent.OpenTab(SheetTab.Approvals))
+        vm.onEvent(ListEvent.OpenSection(ApprovalSection.Sent))
+        settle()
+        val sent = repository.queries.single { CallSheetStatus.PendingApproval in it.statuses }
+        assertEquals(Samples.PROJECT, sent.projectId)
+        assertNull(sent.createdById, "a second author must see a colleague's sent sheet")
+        assertNull(sent.approverId)
+    }
+
+    @Test
+    fun `the delete confirm stays open, busy, until the request settles`() = runTest(dispatcher) {
+        repository.rows = drafts("r1")
+        val vm = harness.start(this)
+        vm.onEvent(ListEvent.Delete(Samples.row("r1", "Day 1")))
+        vm.onEvent(DialogEvent.Confirm)
+        assertIs<SheetDialog.Confirm>(vm.currentState.dialog, "held open through the request")
+        assertTrue(vm.currentState.busy)
+        vm.onEvent(DialogEvent.Confirm)
+        vm.onEvent(DialogEvent.Dismiss)
+        settle()
+        assertEquals(listOf("r1"), repository.deleted, "one request, whatever the clicks")
+        assertNull(vm.currentState.dialog)
+        assertFalse(vm.currentState.busy)
     }
 
     @Test
@@ -239,17 +292,33 @@ class SheetWorkflowViewModelTest {
     fun `approving without a signature acts on my request id, then the row leaves Received`() =
         runTest(dispatcher) {
             repository.rows = { query -> if (query.approverId == "me") listOf(awaitingMySignature()) else emptyList() }
+            repository.metadata = SheetMetadata(finalApproverIds = listOf("me"))
             val vm = harness.start(this, Samples.author.copy(canPost = false))
             assertEquals(listOf("r1"), vm.currentState.lists.received.rows.map { it.id })
 
             vm.onEvent(WorkflowEvent.OpenApprove(awaitingMySignature()))
-            assertIs<SheetDialog.Approve>(vm.currentState.dialog)
+            assertFalse(assertIs<SheetDialog.Approve>(vm.currentState.dialog).sign, "ZL-21512: the chooser comes first")
             vm.onEvent(WorkflowEvent.ApproveWithoutSignature)
             settle()
             val expected: List<Pair<String, ApprovalDecision>> = listOf("q1" to ApprovalDecision.WithoutSignature)
             assertEquals(expected, repository.approvals)
             assertEquals("Approved!", toasts.last().message)
             assertNull(vm.currentState.dialog)
+        }
+
+    @Test
+    fun `once signing was chosen the unsigned outcome is no longer on offer, and the pad needs a signature`() =
+        runTest(dispatcher) {
+            repository.rows = { query -> if (query.approverId == "me") listOf(awaitingMySignature()) else emptyList() }
+            val vm = harness.start(this, Samples.author.copy(canPost = false))
+            vm.onEvent(WorkflowEvent.OpenApprove(awaitingMySignature()))
+            vm.onEvent(WorkflowEvent.ChooseSignature)
+            assertTrue(assertIs<SheetDialog.Approve>(vm.currentState.dialog).sign)
+            vm.onEvent(WorkflowEvent.ApproveWithoutSignature)
+            vm.onEvent(WorkflowEvent.ApproveWithSignature)
+            settle()
+            assertTrue(repository.approvals.isEmpty(), "locked to the choice, and nothing drawn yet")
+            assertIs<SheetDialog.Approve>(vm.currentState.dialog)
         }
 
     @Test
@@ -260,6 +329,7 @@ class SheetWorkflowViewModelTest {
         val vm = harness.start(this, Samples.author.copy(canPost = false))
 
         vm.onEvent(WorkflowEvent.OpenApprove(awaitingMySignature()))
+        vm.onEvent(WorkflowEvent.ChooseSignature)
         vm.onEvent(WorkflowEvent.UseSignature(byteArrayOf(9)))
         vm.onEvent(WorkflowEvent.ApproveWithSignature)
         settle()
@@ -276,7 +346,8 @@ class SheetWorkflowViewModelTest {
     }
 
     @Test
-    fun `a reminder goes to the current round's pending approvers, without a role`() = runTest(dispatcher) {
+    fun `a reminder goes to the current round's pending approvers, signed with my id and designation key`() =
+        runTest(dispatcher) {
         repository.rows = drafts()
         val vm = harness.start(this)
         val sheet = Samples.row(
@@ -297,6 +368,8 @@ class SheetWorkflowViewModelTest {
         assertEquals(listOf("u3"), request.assigneeIds, "only the newest round is reminded")
         assertEquals("Please review and approve this call sheet.", request.message)
         assertEquals("me", request.sentById)
+        assertEquals("me", request.sentBy, "sent_by is the member ID, never the name")
+        assertEquals("2nd AD", request.sentByRole, "the designation key, the text when the crew row has none")
         assertEquals("Reminder sent!", toasts.last().message)
     }
 
@@ -312,7 +385,9 @@ class SheetWorkflowViewModelTest {
             assertEquals(PublishStep.Destination, publish.step)
             vm.onEvent(WorkflowEvent.ContinuePublish)
             assertEquals(PublishStep.Type, assertIs<SheetDialog.Publish>(vm.currentState.dialog).step)
-            vm.onEvent(WorkflowEvent.PickContinuation(true))
+            vm.onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.Replace))
+            assertNull(assertIs<SheetDialog.Publish>(vm.currentState.dialog).choice, "nothing to swap: no Replace")
+            vm.onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.Continuation))
             vm.onEvent(WorkflowEvent.EditPublishNotes(" Call time moved "))
             vm.onEvent(WorkflowEvent.ConfirmPublish)
             settle()
@@ -320,16 +395,74 @@ class SheetWorkflowViewModelTest {
             assertEquals(listOf("r1" to true), repository.publishes)
             assertEquals(listOf("Call time moved"), repository.publishNotes)
             assertEquals(listOf("CallSheet_r1.pdf" to false), harness.publishing.unitPosts)
+            assertEquals(listOf<String?>(null), harness.publishing.replaceChatIds)
             assertNull(vm.currentState.dialog)
             assertEquals("Published!", toasts.last().message)
 
             vm.onEvent(WorkflowEvent.OpenPublish(approved))
             vm.onEvent(WorkflowEvent.ContinuePublish)
-            vm.onEvent(WorkflowEvent.PickContinuation(false))
+            vm.onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.New))
             vm.onEvent(WorkflowEvent.ConfirmPublish)
             settle()
             assertEquals("CallSheet_r1.pdf" to true, harness.publishing.unitPosts.last(), "New replaces")
         }
+
+    @Test
+    fun `Replace offers the unit's live documents, newest first, and retires only the one picked`() =
+        runTest(dispatcher) {
+            repository.rows = drafts()
+            harness.publishing.unitMessages = ZillitResult.Success(
+                listOf(
+                    UnitMessage("m1", isDocument = true, hasMedia = true, name = "Day 1.pdf", createdMs = 10),
+                    UnitMessage("m2", isDocument = true, hasMedia = true, name = "Day 2.pdf", createdMs = 20),
+                    UnitMessage("m3", isDocument = true, hasMedia = true, archived = true, createdMs = 30),
+                ),
+            )
+            val vm = harness.start(this)
+            val approved = Samples.row("r1", "Day 1", status = CallSheetStatus.ApprovedForPublish)
+
+            vm.onEvent(WorkflowEvent.OpenPublish(approved))
+            settle()
+            val publish = assertIs<SheetDialog.Publish>(vm.currentState.dialog)
+            assertEquals(listOf("m2", "m1"), publish.replaceTargets.map { it.chatId }, "read on OPEN, archived out")
+            assertEquals("m2", publish.replaceChatId, "seeded with the newest")
+            vm.onEvent(WorkflowEvent.ContinuePublish)
+            vm.onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.Replace))
+            vm.onEvent(WorkflowEvent.PickReplaceTarget("m9"))
+            val picked = assertIs<SheetDialog.Publish>(vm.currentState.dialog).replaceChatId
+            assertEquals("m2", picked, "unknown ids are ignored")
+            vm.onEvent(WorkflowEvent.PickReplaceTarget("m1"))
+            vm.onEvent(WorkflowEvent.ConfirmPublish)
+            settle()
+
+            assertEquals(listOf("r1" to false), repository.publishes, "the publish call knows CONTINUATION or NEW")
+            assertEquals(
+                listOf("CallSheet_r1.pdf" to false),
+                harness.publishing.unitPosts,
+                "the wipe flag follows the choice",
+            )
+            assertEquals(listOf<String?>("m1"), harness.publishing.replaceChatIds)
+        }
+
+    @Test
+    fun `a Replace whose target vanished is said, and the sheet stays published`() = runTest(dispatcher) {
+        repository.rows = drafts()
+        harness.publishing.unitMessages = ZillitResult.Success(
+            listOf(UnitMessage("m1", isDocument = true, hasMedia = true, name = "Day 1.pdf", createdMs = 10)),
+        )
+        harness.publishing.unitPostAnswer =
+            ZillitResult.Failure(ZillitError.Http(status = 400, serverMessage = "unit_chat_replace_target_not_found"))
+        val vm = harness.start(this)
+        vm.onEvent(WorkflowEvent.OpenPublish(Samples.row("r1", "Day 1", status = CallSheetStatus.ApprovedForPublish)))
+        settle()
+        vm.onEvent(WorkflowEvent.ContinuePublish)
+        vm.onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.Replace))
+        vm.onEvent(WorkflowEvent.ConfirmPublish)
+        settle()
+        assertEquals(listOf("r1" to false), repository.publishes)
+        assertEquals("That document no longer exists — nothing was replaced.", toasts.last().message)
+        assertTrue(toasts.last().isError)
+    }
 
     @Test
     fun `publishing to Document Distribution alone never calls publish`() = runTest(dispatcher) {
@@ -378,30 +511,130 @@ class SheetWorkflowViewModelTest {
     }
 
     @Test
-    fun `opening a thread reads its badge, and the approvals sections clear their units on entry`() =
+    fun `badges are read per sheet and kind on the list on screen, never unit-wide`() = runTest(dispatcher) {
+        repository.rows = drafts("r1")
+        harness.badges.leaves.value = listOf(
+            BadgeLeaf(SheetBadges.UNIT_DRAFTS, level2 = "comment", level3 = "r1"),
+            BadgeLeaf(SheetBadges.UNIT_DRAFTS, level2 = "report", level3 = "r1", unread = 2),
+            BadgeLeaf(SheetBadges.UNIT_APPROVAL, level1 = "sent", level2 = "report", level3 = "r2"),
+        )
+        val vm = harness.start(this)
+        settle()
+        assertEquals(1, vm.currentState.unreadComments("r1"))
+        assertEquals(2, vm.currentState.unreadReports("r1"))
+        assertEquals(0, vm.currentState.unreadReports("r2"), "another surface's rows do not show here")
+        assertEquals(3, vm.currentState.tabBadge(SheetTab.Drafts))
+        assertEquals(1, vm.currentState.tabBadge(SheetTab.Approvals))
+
+        vm.onEvent(ListEvent.OpenComments(Samples.row("r1", "Day 1"), readOnly = false))
+        settle()
+        assertEquals(listOf(BadgeRead(BadgeSurface.Drafts, BadgeKind.Comment, "r1")), harness.badges.reads)
+        vm.onEvent(DialogEvent.Dismiss)
+        vm.onEvent(ListEvent.View(Samples.row("r1", "Day 1")))
+        settle()
+        assertEquals(BadgeRead(BadgeSurface.Drafts, BadgeKind.Report, "r1"), harness.badges.reads.last())
+        vm.onEvent(ListEvent.View(Samples.row("r3", "Day 3")))
+        settle()
+        assertEquals(2, harness.badges.reads.size, "a row without a badge sends no read")
+    }
+
+    @Test
+    fun `opening a sheet from Sent also clears its Received leaves when Received is hidden`() = runTest(dispatcher) {
+        repository.rows = drafts()
+        harness.badges.leaves.value = listOf(
+            BadgeLeaf(SheetBadges.UNIT_APPROVAL, level1 = "sent", level2 = "report", level3 = "r1"),
+            BadgeLeaf(SheetBadges.UNIT_APPROVAL, level1 = "received", level2 = "report", level3 = "r1"),
+        )
+        val vm = harness.start(this)
+        vm.onEvent(ListEvent.OpenTab(SheetTab.Approvals))
+        vm.onEvent(ListEvent.OpenSection(ApprovalSection.Sent))
+        settle()
+        assertEquals(listOf(ApprovalSection.Sent, ApprovalSection.Finalized), vm.currentState.sections)
+        vm.onEvent(ListEvent.View(Samples.row("r1", "Day 1")))
+        settle()
+        assertEquals(
+            listOf(
+                BadgeRead(BadgeSurface.Sent, BadgeKind.Report, "r1"),
+                BadgeRead(BadgeSurface.Received, BadgeKind.Report, "r1"),
+            ),
+            harness.badges.reads,
+        )
+    }
+
+    @Test
+    fun `Published drains on entry per leaf, and at app level for a viewer who has no Published tab`() =
         runTest(dispatcher) {
-            repository.rows = drafts("r1")
-            harness.badges.leaves.value = listOf(BadgeLeaf(SheetBadges.UNIT_COMMENT, level1 = "drafts", level3 = "r1"))
-            val vm = harness.start(this)
+            repository.rows = drafts()
+            harness.badges.leaves.value = listOf(
+                BadgeLeaf(SheetBadges.UNIT_PUBLISHED, level2 = "report", level3 = "p1"),
+                BadgeLeaf(SheetBadges.UNIT_PUBLISHED, level2 = "comment", level3 = "p2"),
+            )
+            val poster = harness.start(this)
+            assertTrue(harness.badges.reads.isEmpty(), "a poster's tab is not drained before it is drawn")
+            poster.onEvent(ListEvent.OpenTab(SheetTab.Published))
             settle()
-            assertEquals(1, vm.currentState.unreadComments("r1"))
-            vm.onEvent(ListEvent.OpenComments(Samples.row("r1", "Day 1"), readOnly = false))
+            assertEquals(
+                setOf(
+                    BadgeRead(BadgeSurface.Published, BadgeKind.Report, "p1"),
+                    BadgeRead(BadgeSurface.Published, BadgeKind.Comment, "p2"),
+                ),
+                harness.badges.reads.toSet(),
+            )
+            harness.badges.reads.clear()
+            val landed = BadgeLeaf(SheetBadges.UNIT_PUBLISHED, level2 = "report", level3 = "p3")
+            harness.badges.leaves.value = listOf(landed)
             settle()
-            assertEquals(listOf("r1"), harness.badges.threadsRead)
-            assertTrue(harness.badges.unitsRead.isEmpty())
-            assertEquals(SheetBadges.TOOL, "call_sheet_label")
+            val p3 = BadgeRead(BadgeSurface.Published, BadgeKind.Report, "p3")
+            assertEquals(listOf(p3), harness.badges.reads, "a badge landing while open is read too")
+
+            val viewerHarness = SheetHarness(dispatcher)
+            viewerHarness.repository.metadata = SheetMetadata(internalReceiverIds = listOf("me"))
+            viewerHarness.badges.leaves.value =
+                listOf(BadgeLeaf(SheetBadges.UNIT_PUBLISHED, level2 = "report", level3 = "p1"))
+            val viewer = viewerHarness.start(this, Samples.author.copy(canPost = false))
+            assertEquals(listOf(SheetTab.Drafts), viewer.currentState.tabs)
+            val p1 = BadgeRead(BadgeSurface.Published, BadgeKind.Report, "p1")
+            assertEquals(listOf(p1), viewerHarness.badges.reads, "drained at app level, tab or not")
         }
 
     @Test
-    fun `chat with the creator opens their thread through the host`() = runTest(dispatcher) {
-        repository.rows = drafts()
-        val vm = harness.start(this)
-        vm.onEvent(ListEvent.ChatWithCreator(awaitingMySignature()))
-        val picker = assertIs<SheetDialog.ChatPicker>(vm.currentState.dialog)
-        assertEquals(listOf("u2"), picker.userIds)
-        vm.onEvent(ListEvent.ChatWith("u2"))
-        assertEquals(listOf("u2" to "Uma"), harness.chats)
-        assertNull(vm.currentState.dialog)
+    fun `anyone who sees a row may send it for chat until it locks, poster or not`() = runTest(dispatcher) {
+        repository.rows = { query -> if (query.approverId == "me") listOf(awaitingMySignature()) else emptyList() }
+        repository.metadata = SheetMetadata(finalApproverIds = listOf("me"))
+        val vm = harness.start(this, Samples.author.copy(canPost = false))
+        vm.onEvent(WorkflowEvent.OpenSendForChat(awaitingMySignature()))
+        assertIs<SheetDialog.ChatSend>(vm.currentState.dialog)
+        vm.onEvent(DialogEvent.Dismiss)
+        val locked = Samples.row("r2", "Day 2", status = CallSheetStatus.ApprovedForPublish)
+        vm.onEvent(WorkflowEvent.OpenSendForChat(locked))
+        assertNull(vm.currentState.dialog, "not once final-approved")
+    }
+
+    @Test
+    fun `everyone reads a thread, only the creator and the internal recipients may post`() = runTest(dispatcher) {
+        repository.rows = { query -> if (query.approverId == "me") listOf(awaitingMySignature()) else emptyList() }
+        repository.metadata = SheetMetadata(finalApproverIds = listOf("me"))
+        val vm = harness.start(this, Samples.author.copy(canPost = false))
+        vm.onEvent(ListEvent.OpenComments(awaitingMySignature(), readOnly = false))
+        settle()
+        assertTrue(assertIs<SheetDialog.Comments>(vm.currentState.dialog).readOnly, "u2's sheet, and I am no recipient")
+        vm.onEvent(DialogEvent.EditCommentDraft("Not mine"))
+        vm.onEvent(DialogEvent.SendComment)
+        settle()
+        assertTrue(repository.commentAdds.isEmpty())
+
+        vm.onEvent(DialogEvent.Dismiss)
+        vm.onEvent(ListEvent.OpenComments(Samples.row("r5", "Mine", createdById = "me"), readOnly = false))
+        settle()
+        assertFalse(assertIs<SheetDialog.Comments>(vm.currentState.dialog).readOnly, "the creator writes")
+
+        val recipientHarness = SheetHarness(dispatcher)
+        recipientHarness.repository.metadata =
+            SheetMetadata(finalApproverIds = listOf("me"), internalReceiverIds = listOf("me"))
+        val recipient = recipientHarness.start(this, Samples.author.copy(canPost = false))
+        recipient.onEvent(ListEvent.OpenComments(awaitingMySignature(), readOnly = false))
+        settle()
+        assertFalse(assertIs<SheetDialog.Comments>(recipient.currentState.dialog).readOnly, "a recipient writes")
     }
 
     @Test
@@ -410,7 +643,7 @@ class SheetWorkflowViewModelTest {
         val vm = harness.start(this)
         vm.onEvent(WorkflowEvent.OpenPublish(Samples.row("r1", "Day 1", status = CallSheetStatus.ApprovedForPublish)))
         vm.onEvent(WorkflowEvent.ContinuePublish)
-        vm.onEvent(WorkflowEvent.PickContinuation(false))
+        vm.onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.New))
         vm.onEvent(WorkflowEvent.ConfirmPublish)
         vm.onEvent(WorkflowEvent.ConfirmPublish)
         vm.onEvent(DialogEvent.Dismiss)

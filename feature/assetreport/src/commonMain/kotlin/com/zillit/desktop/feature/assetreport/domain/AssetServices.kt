@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.assetreport.domain
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The register's own service: the line feed, the per-line record, and the vendors that name them. */
 interface AssetRepository {
@@ -144,7 +146,7 @@ interface AssetFiles {
     companion object {
         val None: AssetFiles = object : AssetFiles {
             private val missing = ZillitResult.Failure(
-                ZillitError.Storage(userMessage = "File storage is unavailable here."),
+                ZillitError.Storage(userMessage = str(S.desktop_file_storage_unavailable)),
             )
 
             override suspend fun pick(onTooLarge: (String, Long) -> Unit): List<PickedAssetFile> = emptyList()
@@ -156,9 +158,18 @@ interface AssetFiles {
 }
 
 /** The server-rendered register, as the web's shared export menu offers it. */
-enum class AssetExportFormat(val wire: String, val label: String, val purpose: String, val badge: String) {
-    Pdf("pdf", "Export PDF", "Formatted document, print-ready", "PDF"),
-    Excel("xlsx", "Export Excel", "Editable spreadsheet with live data", "XLSX"),
+enum class AssetExportFormat(
+    val wire: String,
+    private val labelKey: String,
+    private val purposeKey: String,
+    val badge: String,
+) {
+    Pdf("pdf", S.recce_export_pdf, S.desktop_hub_formatted_document_print_ready, "PDF"),
+    Excel("xlsx", S.desktop_dm_export_excel, S.desktop_hub_editable_spreadsheet_with_live_data, "XLSX"),
+    ;
+
+    val label: String get() = str(labelKey)
+    val purpose: String get() = str(purposeKey)
 }
 
 /** Runs the export and lands the file — bytes are the host's business. */
@@ -189,7 +200,7 @@ object AssetFileRules {
         val typeOk = contentType.trim().lowercase() in ALLOWED_TYPES || extensionOf(name) in ALLOWED_EXTENSIONS
         return when {
             !typeOk -> "$name: unsupported file type. Only images and PDFs are allowed."
-            sizeBytes > MAX_BYTES -> "$name: exceeds the ${MAX_MEGABYTES}MB per-file limit."
+            sizeBytes > MAX_BYTES -> str(S.desktop_asset_too_big, name, MAX_MEGABYTES)
             else -> null
         }
     }

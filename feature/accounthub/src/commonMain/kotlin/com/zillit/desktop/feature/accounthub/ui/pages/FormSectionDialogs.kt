@@ -16,6 +16,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.DiscardIntent
 import com.zillit.desktop.feature.accounthub.ui.FormConfigState
@@ -38,35 +40,35 @@ private fun AddSectionDialog(config: FormConfigState, onEvent: (AccountHubEvent)
     val focus = remember { FocusRequester() }
     LaunchedEffect(composer != null) { if (composer != null) runCatching { focus.requestFocus() } }
     ZillitDialogShell(
-        title = "Add Section",
+        title = str(S.desktop_add_section),
         subtitle = shown?.afterKey?.let { key -> config.template.section(key)?.label?.let { "After $it" } }
-            ?: "At the top of the form",
+            ?: str(S.desktop_hub_at_the_top_of_the_form),
         icon = ZillitIcons.Add,
         visible = composer != null,
         onDismiss = { onEvent(AccountHubEvent.DismissFormSection) },
         width = DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AccountHubEvent.DismissFormSection) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Add Section",
+                text = str(S.desktop_add_section),
                 onClick = { onEvent(AccountHubEvent.AddFormSection) },
                 enabled = shown?.isReady == true,
             )
         },
     ) {
         ZillitText(
-            text = "Enter a name for the new section",
+            text = str(S.desktop_hub_enter_a_name_for_the_new_section),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitTextField(
             value = shown?.name.orEmpty(),
             onValueChange = { onEvent(AccountHubEvent.EditFormSectionName(it)) },
-            placeholder = "e.g. Additional Info",
+            placeholder = str(S.desktop_hub_e_g_additional_info),
             imeAction = ImeAction.Done,
             onImeAction = { onEvent(AccountHubEvent.AddFormSection) },
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
@@ -80,10 +82,10 @@ private fun DeleteSectionDialog(config: FormConfigState, onEvent: (AccountHubEve
     val section = rememberLatestNonNull(config.removingSection)
     HubConfirmDialog(
         visible = config.removingSection != null,
-        title = "Delete Section",
+        title = str(S.desktop_delete_section),
         message = "Are you sure you want to delete \"${section?.label.orEmpty()}\"? All fields in this section " +
             "will be removed. This action cannot be undone.",
-        confirmLabel = "Delete",
+        confirmLabel = str(S.delete),
         onConfirm = { onEvent(AccountHubEvent.ConfirmRemoveFormSection) },
         onDismiss = { onEvent(AccountHubEvent.DismissRemoveFormSection) },
     )
@@ -100,10 +102,10 @@ private fun DeleteSectionDialog(config: FormConfigState, onEvent: (AccountHubEve
 private fun ResetTemplateDialog(config: FormConfigState, onEvent: (AccountHubEvent) -> Unit) {
     HubConfirmDialog(
         visible = config.confirmingReset,
-        title = "Reset to defaults?",
+        title = str(S.desktop_reset_to_defaults_2),
         message = "The ${config.module.label} form goes back to the system defaults for everyone on this " +
             "production. Custom fields, removed fields and the order you set are all lost. This can't be undone.",
-        confirmLabel = "Reset to defaults",
+        confirmLabel = str(S.desktop_reset_to_defaults),
         loading = config.resetting,
         onConfirm = { onEvent(AccountHubEvent.ConfirmResetFormTemplate) },
         onDismiss = { onEvent(AccountHubEvent.DismissResetFormTemplate) },
@@ -117,15 +119,15 @@ private fun DiscardChangesDialog(config: FormConfigState, onEvent: (AccountHubEv
     val module = config.module.label
     HubConfirmDialog(
         visible = config.discard != null,
-        title = "Discard unsaved changes?",
+        title = str(S.desktop_discard_unsaved_changes),
         message = when (intent) {
             is DiscardIntent.Switch ->
                 "Your changes to the $module form haven't been saved. Discard them and open " +
                     "${intent.module.label}?"
             else -> "Your changes to the $module form haven't been saved. Discard them and go back to the saved form?"
         },
-        confirmLabel = "Discard",
-        cancelLabel = "Keep editing",
+        confirmLabel = str(S.ah_discard),
+        cancelLabel = str(S.ah_keep_editing),
         onConfirm = { onEvent(AccountHubEvent.ConfirmDiscardFormChanges) },
         onDismiss = { onEvent(AccountHubEvent.DismissDiscardFormChanges) },
     )

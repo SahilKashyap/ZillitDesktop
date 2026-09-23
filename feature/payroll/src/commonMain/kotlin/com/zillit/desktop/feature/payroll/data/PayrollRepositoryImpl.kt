@@ -33,6 +33,8 @@ import kotlinx.serialization.json.JsonTransformingSerializer
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The payroll service's weekly surface.
@@ -345,7 +347,7 @@ internal data class BankAccountDto(
             id = identifier,
             name = name?.takeIf { it.isNotBlank() }
                 ?: accountName?.takeIf { it.isNotBlank() }
-                ?: "Account $identifier",
+                ?: str(S.desktop_account_fallback, identifier),
             accountNumber = accountNumber?.takeIf { it.isNotBlank() },
             currency = currency.currencyCode(),
         )

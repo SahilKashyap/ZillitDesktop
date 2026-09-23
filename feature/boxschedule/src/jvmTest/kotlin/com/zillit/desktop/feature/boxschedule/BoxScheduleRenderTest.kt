@@ -135,7 +135,8 @@ class BoxScheduleRenderTest {
         val events = mutableListOf<BoxScheduleEvent>()
         val create = ScheduleForm.create(null)
         val show = page(DiarySamples.state(overlays = DiaryOverlays(scheduleForm = create)), events)
-        onNodeWithText("Select schedule type").performClick()
+        // "Select Schedule Type" is Android's wording for select_page_type; only the capitals are new.
+        onNodeWithText("Select Schedule Type").performClick()
         waitForIdle()
         // The legend and the calendar behind the drawer say Travel too; the menu's row is drawn last.
         onAllNodesWithText("Travel").onLast().performClick()

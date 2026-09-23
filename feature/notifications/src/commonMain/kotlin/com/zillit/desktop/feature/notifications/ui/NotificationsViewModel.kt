@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.notifications.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import com.zillit.desktop.core.localization.localised
@@ -146,9 +148,9 @@ class NotificationsViewModel(
                         }
                     }
                     val notice = if (confirm is NotificationsConfirm.DeleteAll) {
-                        "All notifications deleted"
+                        str(S.desktop_all_notifications_deleted)
                     } else {
-                        "Notification deleted"
+                        str(S.desktop_notification_deleted)
                     }
                     sendEffect(NotificationsEffect.Notice(notice))
                 }

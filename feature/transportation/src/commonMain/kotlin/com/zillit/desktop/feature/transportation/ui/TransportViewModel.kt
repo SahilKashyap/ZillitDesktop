@@ -25,6 +25,8 @@ import com.zillit.desktop.feature.transportation.domain.VehicleDraft
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.conflate
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Transportation: pickup requests, vehicles, permanent allocations, drivers,
@@ -213,7 +215,7 @@ class TransportViewModel(
             is TransportEvent.UnassignTempDriver -> setState {
                 copy(confirm = TransportConfirm.UnassignTempDriver(event.user))
             }
-            is TransportEvent.LicenceReminder -> run("Licence reminder sent") {
+            is TransportEvent.LicenceReminder -> run(str(S.desktop_transport_licence_reminder_sent)) {
                 repository.pendingDocumentReminder(event.userId, "license", null)
             }
             is TransportEvent.OpenDocumentReminder -> setState { copy(reminder = ReminderEditor(event.userId)) }
@@ -224,7 +226,12 @@ class TransportViewModel(
             is TransportEvent.TempDriversChanged -> setState { copy(tempDrivers = event.dialog) }
             is TransportEvent.ToggleTempDriver -> toggleTempDriver(event.user, event.on)
             TransportEvent.CloseTempDrivers -> setState { copy(tempDrivers = null) }
-            is TransportEvent.DecideLicence -> run(if (event.approved) "Licence approved" else "Licence rejected") {
+            is TransportEvent.DecideLicence -> run(
+                str(
+                    if (event.approved) S.desktop_transport_licence_approved
+                    else S.desktop_transport_licence_rejected,
+                ),
+            ) {
                 repository.decideLicenceRequest(event.requestId, event.approved)
             }
 
@@ -402,7 +409,7 @@ class TransportViewModel(
             s.raise?.pickupYmd.orEmpty()
         }
         if (!forOpenTrip && date.isBlank()) {
-            setState { copy(error = "Pick the pickup date first") }
+            setState { copy(error = str(S.desktop_transport_pick_pickup_date_first)) }
             return
         }
         val editor = when {
@@ -421,14 +428,14 @@ class TransportViewModel(
 
     /** What stops a passenger being added, in the order the web checks. */
     private fun passengerProblem(passenger: TripPassenger?): String? = when {
-        passenger == null -> "The pickup needs a date (YYYY-MM-DD) and a time (HH:mm)"
-        passenger.pickup.address.isBlank() -> "Pick a pickup location"
-        passenger.dropOff.address.isBlank() -> "Pick a drop-off location"
-        passenger.pickupMs < nowMillis() -> "The pickup time is in the past"
+        passenger == null -> str(S.desktop_transport_pickup_needs_date_time)
+        passenger.pickup.address.isBlank() -> str(S.desktop_transport_pick_pickup_location)
+        passenger.dropOff.address.isBlank() -> str(S.desktop_transport_pick_dropoff_location)
+        passenger.pickupMs < nowMillis() -> str(S.desktop_transport_pickup_time_in_past)
         // The server refuses a place without coordinates (406, "passengers
         // required"); the web always has them because its picker is a map.
         !passenger.pickup.hasCoordinates || !passenger.dropOff.hasCoordinates ->
-            "Pickup and drop-off need latitude and longitude (from Google Maps)"
+            str(S.desktop_transport_places_need_coordinates)
         else -> null
     }
 
@@ -436,13 +443,13 @@ class TransportViewModel(
         val s = state.value
         val editor = s.passengerDialog ?: return
         val user = s.crew.firstOrNull { it.userId == editor.userId } ?: run {
-            setState { copy(error = "Pick a passenger") }
+            setState { copy(error = str(S.desktop_transport_pick_passenger)) }
             return
         }
         val passenger = editor.toPassenger(user)
         val problem = passengerProblem(passenger)
         if (passenger == null || problem != null) {
-            setState { copy(error = problem ?: "Cannot add this passenger") }
+            setState { copy(error = problem ?: str(S.desktop_transport_cannot_add_passenger)) }
             return
         }
         val replaced = editor.editingUserId ?: passenger.userId
@@ -493,11 +500,11 @@ class TransportViewModel(
     private fun raiseProblem(editor: RaiseEditor, coordinator: Boolean, vehicles: List<Vehicle>): String? {
         val seats = vehicles.firstOrNull { it.id == editor.vehicleId }?.seats ?: Int.MAX_VALUE
         return when {
-            editor.passengers.isEmpty() -> "Add at least one passenger"
-            coordinator && editor.vehicleId == null -> "Assign a vehicle"
-            coordinator && editor.driverId == null -> "Assign a driver"
-            coordinator && seats < editor.passengers.size -> "The vehicle has too few seats for these passengers"
-            editor.passengers.any { it.pickupMs <= nowMillis() } -> "A pickup time is in the past"
+            editor.passengers.isEmpty() -> str(S.desktop_transport_add_at_least_one_passenger)
+            coordinator && editor.vehicleId == null -> str(S.desktop_transport_assign_vehicle_required)
+            coordinator && editor.driverId == null -> str(S.desktop_transport_assign_driver_required)
+            coordinator && seats < editor.passengers.size -> str(S.desktop_transport_too_few_seats)
+            editor.passengers.any { it.pickupMs <= nowMillis() } -> str(S.desktop_transport_a_pickup_time_in_past)
             else -> null
         }
     }
@@ -526,7 +533,7 @@ class TransportViewModel(
                             tripStatus = if (coordinator) TripStatus.Assigned else TripStatus.Pending,
                         )
                     }
-                    sendEffect(TransportEffect.Notice("Pickup request raised"))
+                    sendEffect(TransportEffect.Notice(str(S.desktop_transport_request_raised)))
                     loadTrips()
                     reloadCrewAndVehicles()
                 }
@@ -549,11 +556,11 @@ class TransportViewModel(
     private fun tripProblem(open: TripView, action: TripAction): String? {
         val rejecting = action == TripAction.Reject || action == TripAction.Cancel
         return when {
-            open.passengers.isEmpty() && !rejecting -> "Add at least one passenger"
+            open.passengers.isEmpty() && !rejecting -> str(S.desktop_transport_add_at_least_one_passenger)
             !rejecting && open.driverId != null && open.passengers.any { it.userId == open.driverId } ->
-                "Driver and passengers cannot be the same"
-            action == TripAction.Approve && open.vehicleId == null -> "Assign a vehicle"
-            action == TripAction.Approve && open.driverId == null -> "Assign a driver"
+                str(S.desktop_transport_driver_passenger_same)
+            action == TripAction.Approve && open.vehicleId == null -> str(S.desktop_transport_assign_vehicle_required)
+            action == TripAction.Approve && open.driverId == null -> str(S.desktop_transport_assign_driver_required)
             else -> null
         }
     }
@@ -594,17 +601,17 @@ class TransportViewModel(
     }
 
     private fun TripAction.notice() = when (this) {
-        TripAction.Approve -> "Request approved"
-        TripAction.Reject -> "Request rejected"
-        TripAction.Start -> "Trip started"
-        TripAction.End -> "Trip completed"
-        TripAction.Cancel -> "Trip cancelled"
-        TripAction.Update -> "Request updated"
+        TripAction.Approve -> str(S.desktop_transport_request_approved)
+        TripAction.Reject -> str(S.desktop_transport_request_rejected)
+        TripAction.Start -> str(S.desktop_transport_trip_started)
+        TripAction.End -> str(S.desktop_transport_trip_completed)
+        TripAction.Cancel -> str(S.desktop_transport_trip_cancelled)
+        TripAction.Update -> str(S.desktop_transport_request_updated)
     }
 
     private fun sendReminder() {
         val open = state.value.openTrip ?: return
-        run("Reminder sent") { repository.sendReminder(open.trip.id) }
+        run(str(S.docusign_resend_success)) { repository.sendReminder(open.trip.id) }
     }
 
     /**
@@ -617,7 +624,7 @@ class TransportViewModel(
         val url = open.trip.driverLocation?.mapsUrl
             ?: state.value.user(open.driverId)?.lastLocation?.mapsUrl
         if (url == null) {
-            setState { copy(error = "The driver has not reported a location yet") }
+            setState { copy(error = str(S.desktop_transport_driver_no_location)) }
         } else {
             sendEffect(TransportEffect.OpenLink(url))
         }
@@ -628,7 +635,7 @@ class TransportViewModel(
     private fun submitPeoplePicker() {
         val picker = state.value.peoplePicker ?: return
         if (picker.chosen.isEmpty()) {
-            setState { copy(error = "Pick at least one person") }
+            setState { copy(error = str(S.av_validation_pick_one)) }
             return
         }
         val ids = picker.chosen.toList()
@@ -751,7 +758,7 @@ class TransportViewModel(
     private fun addVehicleImages() {
         val editor = state.value.vehicleEditor ?: return
         if (editor.attachments.size >= VehicleDraft.IMAGES_MAX) {
-            setState { copy(error = "At most ${VehicleDraft.IMAGES_MAX} images") }
+            setState { copy(error = str(S.desktop_transport_at_most_images, VehicleDraft.IMAGES_MAX)) }
             return
         }
         setState { copy(vehicleEditor = editor.copy(uploading = true)) }
@@ -767,7 +774,7 @@ class TransportViewModel(
                         )
                     },
                     error = if (picked.size > VehicleDraft.IMAGES_MAX - editor.attachments.size) {
-                        "At most ${VehicleDraft.IMAGES_MAX} images"
+                        str(S.desktop_transport_at_most_images, VehicleDraft.IMAGES_MAX)
                     } else {
                         error
                     },
@@ -800,9 +807,9 @@ class TransportViewModel(
                     sendEffect(
                         TransportEffect.Notice(
                             when {
-                                tempDriver != null -> "Temporary driver added with their vehicle"
-                                id == null -> "Vehicle added"
-                                else -> "Vehicle updated"
+                                tempDriver != null -> str(S.desktop_transport_temp_driver_added_with_vehicle)
+                                id == null -> str(S.desktop_transport_vehicle_added)
+                                else -> str(S.desktop_transport_vehicle_updated)
                             },
                         ),
                     )
@@ -814,7 +821,7 @@ class TransportViewModel(
 
     private fun deleteVehicles(ids: List<String>) {
         setState { copy(vehicleSelection = null, vehicleDetails = null) }
-        run("Vehicle removed") { repository.deleteVehicles(ids) }
+        run(str(S.desktop_transport_vehicle_removed)) { repository.deleteVehicles(ids) }
     }
 
     private fun submitVehicleDriver() {
@@ -828,7 +835,7 @@ class TransportViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(vehicleDetails = details.copy(busy = false, pendingDriverId = null)) }
-                    sendEffect(TransportEffect.Notice("Driver assigned"))
+                    sendEffect(TransportEffect.Notice(str(S.desktop_transport_driver_assigned)))
                     reloadCrewAndVehicles()
                 }
             }
@@ -873,7 +880,11 @@ class TransportViewModel(
                     error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, permanentEditor = null, permanentTab = status) }
-                    sendEffect(TransportEffect.Notice(if (asDraft) "Draft saved" else "Allocation saved"))
+                    sendEffect(
+                        TransportEffect.Notice(
+                            str(if (asDraft) S.ah_draft_saved_msg else S.desktop_transport_allocation_saved),
+                        ),
+                    )
                     loadPermanent()
                     reloadCrewAndVehicles()
                 }
@@ -894,7 +905,12 @@ class TransportViewModel(
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(
-                        TransportEffect.Notice(if (on) "You manage this driver now" else "Managed by the project"),
+                        TransportEffect.Notice(
+                            str(
+                                if (on) S.desktop_transport_you_manage_driver
+                                else S.desktop_transport_managed_by_project,
+                            ),
+                        ),
                     )
                     loadPermanent()
                 }
@@ -933,7 +949,7 @@ class TransportViewModel(
         val editor = state.value.driverDetails ?: return
         val room = DriverDetailsUpdate.DOCUMENTS_MAX - editor.documents.size
         if (room <= 0) {
-            setState { copy(error = "At most ${DriverDetailsUpdate.DOCUMENTS_MAX} documents") }
+            setState { copy(error = str(S.desktop_transport_at_most_documents, DriverDetailsUpdate.DOCUMENTS_MAX)) }
             return
         }
         setState { copy(driverDetails = editor.copy(uploading = true)) }
@@ -947,7 +963,11 @@ class TransportViewModel(
                             documents = current.documents + picked.take(room).map { it.stored },
                         )
                     },
-                    error = if (picked.size > room) "At most ${DriverDetailsUpdate.DOCUMENTS_MAX} documents" else error,
+                    error = if (picked.size > room) {
+                        str(S.desktop_transport_at_most_documents, DriverDetailsUpdate.DOCUMENTS_MAX)
+                    } else {
+                        error
+                    },
                 )
             }
         }
@@ -959,7 +979,7 @@ class TransportViewModel(
         val update = editor.toUpdate()
         val problem = update.problem() ?: if (!editor.self && s.viewer.isCoordinator && editor.vehicleId == null) {
             // The coordinator's save is the vehicle assignment; the web refuses one without it.
-            "Assign a vehicle"
+            str(S.desktop_transport_assign_vehicle_required)
         } else {
             null
         }
@@ -977,7 +997,7 @@ class TransportViewModel(
                     setState {
                         copy(busy = false, driverDetails = if (editor.self) editor.copy(saving = false) else null)
                     }
-                    sendEffect(TransportEffect.Notice("Details updated"))
+                    sendEffect(TransportEffect.Notice(str(S.desktop_transport_details_updated)))
                     if (editor.self && (editor.licencePictures.isNotEmpty() || editor.documents.isNotEmpty())) {
                         onSegmentViewed(TransportUiState.DRIVER_REMINDER_BADGE)
                     }
@@ -990,7 +1010,7 @@ class TransportViewModel(
     private fun sendDocumentReminder() {
         val reminder = state.value.reminder ?: return
         if (reminder.message.isBlank()) {
-            setState { copy(error = "Enter the names of the documents you need") }
+            setState { copy(error = str(S.desktop_transport_enter_document_names)) }
             return
         }
         setState { copy(reminder = reminder.copy(sending = true)) }
@@ -1001,7 +1021,7 @@ class TransportViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(reminder = null) }
-                    sendEffect(TransportEffect.Notice("Document reminder sent"))
+                    sendEffect(TransportEffect.Notice(str(S.desktop_transport_document_reminder_sent)))
                 }
             }
         }
@@ -1034,7 +1054,8 @@ class TransportViewModel(
                 )
             }
         } else {
-            run("Temporary driver added") { repository.updateDriver(user.userId, isTempDriver = true) }
+            run(str(S.desktop_transport_temp_driver_added)) { repository.updateDriver(user.userId,
+                isTempDriver = true) }
         }
     }
 
@@ -1048,7 +1069,7 @@ class TransportViewModel(
                     val private = user.vehicleId?.let { id -> state.value.vehicle(id) }?.takeIf { it.isPrivate }
                     if (private != null) repository.deleteVehicles(listOf(private.id))
                     setState { copy(busy = false) }
-                    sendEffect(TransportEffect.Notice("Temporary driver removed"))
+                    sendEffect(TransportEffect.Notice(str(S.desktop_transport_temp_driver_removed)))
                     reloadCrewAndVehicles()
                 }
             }
@@ -1062,10 +1083,11 @@ class TransportViewModel(
         setState { copy(confirm = null) }
         when (confirm) {
             is TransportConfirm.DeleteVehicles -> deleteVehicles(confirm.ids)
-            is TransportConfirm.UnassignPermanent -> run("Allocation ended") {
+            is TransportConfirm.UnassignPermanent -> run(str(S.desktop_transport_allocation_ended)) {
                 repository.unassignPermanent(confirm.trip)
             }
-            is TransportConfirm.DeletePermanent -> run("Draft deleted") { repository.deletePermanent(confirm.trip.id) }
+            is TransportConfirm.DeletePermanent ->
+                run(str(S.desktop_email_draft_deleted)) { repository.deletePermanent(confirm.trip.id) }
             is TransportConfirm.ChangePrivateDriver -> setState { copy(driverPicker = confirm.target) }
             is TransportConfirm.TempDriverVehicle -> makeTempDriver(confirm.user, withVehicle = true)
             is TransportConfirm.UnassignTempDriver -> unassignTempDriver(confirm.user)

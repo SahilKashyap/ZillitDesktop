@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -37,7 +39,7 @@ class DistributionToolProvider(
 ) : ToolProvider {
 
     override val path: String = DISTRIBUTION_PATH
-    override val title: String = "Distribution List"
+    override val title: String get() = str(S.distributon_list)
     override val icon = ZillitToolIcons.IcDistribution
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(1200.dp, 800.dp)

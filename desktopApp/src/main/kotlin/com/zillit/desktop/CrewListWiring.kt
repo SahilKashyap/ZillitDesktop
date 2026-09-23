@@ -15,6 +15,8 @@ import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.IsdCountries
 import com.zillit.desktop.feature.crewlist.data.CrewListRepositoryImpl
 import com.zillit.desktop.feature.crewlist.domain.CompanyLogo
@@ -124,7 +126,7 @@ private suspend fun AppGraph.Ready.crewRawPost(
     }.fold(
         onSuccess = { ZillitResult.Success(it) },
         onFailure = { thrown ->
-            ZillitResult.Failure(ZillitError.Validation(thrown.message ?: "The preview could not be rendered."))
+            ZillitResult.Failure(ZillitError.Validation(thrown.message ?: str(S.desktop_preview_not_rendered)))
         },
     )
 }

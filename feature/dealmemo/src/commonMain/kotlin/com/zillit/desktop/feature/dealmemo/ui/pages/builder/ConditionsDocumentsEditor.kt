@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderDocuments
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.rates.Js
@@ -70,11 +72,10 @@ internal fun ConditionsDocumentsEditor(
 @Composable
 private fun ConditionsCard(form: DealForm, ops: FormOps) {
     val conditions = conditionTexts(form)
-    CardBlock(title = "Conditions") {
+    CardBlock(title = str(S.dm_ds_card_conditions)) {
         if (conditions.isEmpty()) {
             EmptyNote(
-                "No custom conditions added. Click + to add one (e.g. “Travel out of London paid at agreed rate”, " +
-                    "“Non-compete during principal photography”).",
+                str(S.desktop_dm_no_custom_conditions_added_click_to_add),
                 Modifier.padding(bottom = 14.dp),
             )
         } else {
@@ -89,10 +90,10 @@ private fun ConditionsCard(form: DealForm, ops: FormOps) {
                             onValueChange = { value ->
                                 ops.edit { it.with("customConditions", replaceAt(conditionTexts(it), index, value)) }
                             },
-                            placeholder = "Condition…",
+                            placeholder = str(S.dm_cond_input_hint),
                             modifier = Modifier.weight(1f),
                         )
-                        SquareRemove(tooltip = "Remove") {
+                        SquareRemove(tooltip = str(S.dm_rules_remove)) {
                             ops.edit {
                                 it.with(
                                     "customConditions",
@@ -108,7 +109,7 @@ private fun ConditionsCard(form: DealForm, ops: FormOps) {
                 }
             }
         }
-        AddRowButton("Add Condition") {
+        AddRowButton(str(S.desktop_email_rule_add_condition)) {
             ops.edit {
                 it.with("customConditions", JsonArray(conditionTexts(it).map { JsonPrimitive(it) } + JsonPrimitive("")))
             }
@@ -125,20 +126,20 @@ private fun WorkLocationCard(builder: BuilderState, ops: FormOps) {
     if (!(distant is JsonPrimitive && !distant.isString && distant.content == "true")) return
     val onDistant = form.flag("distantLocation")
     val tag = when {
-        onDistant -> "Distant Location"
+        onDistant -> str(S.desktop_dm_distant_location)
         else -> when (form.text("workLocationType")) {
-            "on-location" -> "On Location"
-            "remote" -> "Remote"
-            "mixed" -> "Mixed"
-            else -> "Studio / Local"
+            "on-location" -> str(S.desktop_dm_on_location)
+            "remote" -> str(S.desktop_dm_remote)
+            "mixed" -> str(S.desktop_dm_mixed)
+            else -> str(S.desktop_dm_studio_local)
         }
     }
-    CardBlock(title = "Work Location", tag = tag, tone = BuilderTone.Teal) {
+    CardBlock(title = str(S.dm_cond_card_location), tag = tag, tone = BuilderTone.Teal) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 14.dp)) {
             listOf(
-                "studio" to "Studio / Local",
-                "on-location" to "On Location",
-                "mixed" to "Mixed",
+                "studio" to str(S.desktop_dm_studio_local),
+                "on-location" to str(S.desktop_dm_on_location),
+                "mixed" to str(S.desktop_dm_mixed),
             ).forEach { (id, label) ->
                 ChoiceChip(
                     label,
@@ -150,17 +151,16 @@ private fun WorkLocationCard(builder: BuilderState, ops: FormOps) {
         }
         if (form.text("union") in TRAVEL_ZONE_AGREEMENTS) {
             Field(
-                "Travel Zone Election",
+                str(S.desktop_dm_travel_zone_election),
                 required = true,
-                hint = "Clause 8.3 — mandatory on deal memo. One option must be elected per Worker for the duration " +
-                    "of the engagement.",
+                hint = str(S.desktop_dm_clause_8_3_mandatory_on_deal_memo),
                 modifier = Modifier.padding(bottom = 8.dp),
             ) {
                 NativeSelect(
                     value = form.text("travelZone"),
                     options = listOf(
-                        PickOption("30mile", "30 Mile Radius (Clause 8.3a)"),
-                        PickOption("m25", "Within M25 (Clause 8.3b — Production Base within M25 only)"),
+                        PickOption("30mile", str(S.desktop_dm_thirty_mile_radius_option)),
+                        PickOption("m25", str(S.desktop_dm_within_m25_clause_8_3b_production_base)),
                     ),
                     onPick = { ops.set("travelZone", it) },
                     menuWidth = 420.dp,
@@ -168,16 +168,15 @@ private fun WorkLocationCard(builder: BuilderState, ops: FormOps) {
             }
         }
         ToggleRow(
-            title = "Distant location applies to this engagement",
-            sub = "Over 50 road miles from Production Base",
+            title = str(S.dm_cond_distant_location),
+            sub = str(S.dm_cond_distant_hint),
             checked = onDistant,
             onChange = { ops.set("distantLocation", it) },
         )
         if (onDistant) {
             Rule(bp.hairline, Modifier.padding(vertical = 10.dp))
             BuilderAlert(
-                "Distant location provisions apply. Per-diem and accommodation rates are configured as allowance " +
-                    "rows on the Allowances step and are paid in addition to the agreed deal rate.",
+                str(S.desktop_dm_distant_location_provisions_apply_per_diem_and),
             )
         }
     }
@@ -188,18 +187,17 @@ private fun AgreementDocumentsCard(state: DealMemoUiState, builder: BuilderState
     val rows = state.projectSettings.view.agreementDocuments
     val documents = builder.form.objects("documents")
     val policy = builder.form.obj("psSignRequired")
-    CardBlock(title = "Additional Documents") {
+    CardBlock(title = str(S.dm_docs_title)) {
         when {
             !state.projectSettings.loaded -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ZillitSpinner(size = 14.dp, color = bp.cta)
-                ZillitText(text = "Loading templates…", style = DmType.sans(12.5.sp), color = bp.muted)
+                ZillitText(text = str(S.dm_nda_loading_templates), style = DmType.sans(12.5.sp), color = bp.muted)
             }
             rows.isEmpty() -> EmptyNote(
-                "No agreement templates configured in Production Setup yet. Upload them under Production Setup → " +
-                    "Agreements Documents to surface them here.",
+                str(S.desktop_dm_no_agreement_templates_configured_in_production_setup),
             )
             else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 rows.forEach { row ->
@@ -272,12 +270,15 @@ private fun AgreementRow(row: JsonObject, attached: Boolean, signRequired: Boole
             SignToggle(signRequired) { onEvent(BuilderEvent.SetAgreementSignRequired(id, it)) }
         }
         if (text(flat["media"]).isNotEmpty()) {
-            RowButton("View", RowButtonTone.Neutral) { onEvent(BuilderEvent.ViewAgreement(id)) }
+            RowButton(str(S.dm_docs_view), RowButtonTone.Neutral) { onEvent(BuilderEvent.ViewAgreement(id)) }
         }
         if (attached) {
-            RowButton("✕ Remove", RowButtonTone.Danger) { onEvent(BuilderEvent.DetachAgreement(id)) }
+            RowButton(str(S.desktop_dm_remove_x), RowButtonTone.Danger) { onEvent(BuilderEvent.DetachAgreement(id)) }
         } else {
-            RowButton("+ Attach", RowButtonTone.Primary) { onEvent(BuilderEvent.AttachAgreement(id)) }
+            RowButton(
+                str(S.desktop_dm_attach_plus),
+                RowButtonTone.Primary,
+            ) { onEvent(BuilderEvent.AttachAgreement(id)) }
         }
     }
 }
@@ -285,7 +286,7 @@ private fun AgreementRow(row: JsonObject, attached: Boolean, signRequired: Boole
 @Composable
 private fun UploadCard(onEvent: (DealMemoEvent) -> Unit) {
     val p = bp
-    CardBlock(title = "Upload Custom Document") {
+    CardBlock(title = str(S.dm_docs_card_upload)) {
         val (source, hovered) = rememberHover()
         val shape = RoundedCornerShape(12.dp)
         Column(
@@ -309,9 +310,13 @@ private fun UploadCard(onEvent: (DealMemoEvent) -> Unit) {
                     .border(1.dp, p.hairline, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) { ZillitIcon(ZillitIcons.Paperclip, size = 18.dp, tint = if (hovered) p.sectionLabel else p.muted) }
-            ZillitText(text = "Drop PDFs here", style = DmType.sans(14.sp, FontWeight.Bold), color = p.ink)
             ZillitText(
-                text = "or click to browse — max 20MB per file. Files upload when you Save or Issue this deal memo.",
+                text = str(S.desktop_dm_drop_pdfs_here),
+                style = DmType.sans(14.sp, FontWeight.Bold),
+                color = p.ink,
+            )
+            ZillitText(
+                text = str(S.desktop_dm_or_click_to_browse_max_20mb_per),
                 style = DmType.sans(12.sp),
                 color = p.muted,
             )
@@ -326,7 +331,11 @@ private fun UploadCard(onEvent: (DealMemoEvent) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 ZillitIcon(ZillitIcons.Upload, size = 12.dp, tint = p.ink2)
-                ZillitText(text = "Browse Files", style = DmType.sans(12.5.sp, FontWeight.Bold), color = p.ink2)
+                ZillitText(
+                    text = str(S.dm_docs_upload_browse),
+                    style = DmType.sans(12.5.sp, FontWeight.Bold),
+                    color = p.ink2,
+                )
             }
         }
     }
@@ -338,7 +347,7 @@ private fun CustomDocumentsCard(builder: BuilderState, ops: FormOps, onEvent: (D
     val p = bp
     val custom = builder.form.objects("documents").filter { text(it["source"]) != BuilderDocuments.SOURCE_PS }
     if (custom.isEmpty()) return
-    CardBlock(title = "Attached Custom Documents", tone = BuilderTone.Blue) {
+    CardBlock(title = str(S.desktop_dm_attached_custom_documents), tone = BuilderTone.Blue) {
         custom.forEachIndexed { index, doc ->
             val id = text(doc["id"])
             val attachment = doc["attachment"] as? JsonObject
@@ -361,7 +370,7 @@ private fun CustomDocumentsCard(builder: BuilderState, ops: FormOps, onEvent: (D
                                 it.withDocument(id) { row -> JsonObject(row + ("title" to JsonPrimitive(value))) }
                             }
                         },
-                        placeholder = "Document title",
+                        placeholder = str(S.desktop_dm_document_title),
                         height = 32.dp,
                         textSize = 12.5f,
                     )
@@ -372,7 +381,7 @@ private fun CustomDocumentsCard(builder: BuilderState, ops: FormOps, onEvent: (D
                                 it.withDocument(id) { row -> JsonObject(row + ("description" to JsonPrimitive(value))) }
                             }
                         },
-                        placeholder = "Description (optional)",
+                        placeholder = str(S.sides_description_hint),
                         height = 32.dp,
                         textSize = 12.5f,
                     )
@@ -388,9 +397,9 @@ private fun CustomDocumentsCard(builder: BuilderState, ops: FormOps, onEvent: (D
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false),
                         )
-                        Pill("Custom", p.tile, Color(0xFF6B7280))
+                        Pill(str(S.custom), p.tile, Color(0xFF6B7280))
                         if (attachment == null && file != null) {
-                            Pill("Uploads on save", Color(0xFFFEF3C7), Color(0xFFB45309))
+                            Pill(str(S.desktop_dm_uploads_on_save), Color(0xFFFEF3C7), Color(0xFFB45309))
                         }
                     }
                     SignToggle(!isFalse(doc["signRequired"])) { required ->
@@ -400,9 +409,17 @@ private fun CustomDocumentsCard(builder: BuilderState, ops: FormOps, onEvent: (D
                     }
                 }
                 if (attachment != null || file != null) {
-                    RowButton("View", RowButtonTone.Neutral, height = 28.dp) { onEvent(BuilderEvent.ViewDocument(id)) }
+                    RowButton(
+                        str(S.dm_docs_view),
+                        RowButtonTone.Neutral,
+                        height = 28.dp,
+                    ) { onEvent(BuilderEvent.ViewDocument(id)) }
                 }
-                RemoveButton(tooltip = "Remove", size = 28.dp, onClick = { ops.edit { it.withDocument(id) { null } } })
+                RemoveButton(
+                    tooltip = str(S.dm_rules_remove),
+                    size = 28.dp,
+                    onClick = { ops.edit { it.withDocument(id) { null } } },
+                )
             }
         }
     }
@@ -417,9 +434,13 @@ private fun SignToggle(required: Boolean, onChange: (Boolean) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         BuilderSwitch(required, onChange)
-        ZillitText(text = "Crew sign required", style = DmType.sans(11.5.sp, FontWeight.SemiBold), color = p.ink2)
         ZillitText(
-            text = if (required) "— must be signed before Send for Approval" else "— informational only",
+            text = str(S.desktop_dm_crew_sign_required),
+            style = DmType.sans(11.5.sp, FontWeight.SemiBold),
+            color = p.ink2,
+        )
+        ZillitText(
+            text = if (required) str(S.desktop_dm_must_be_signed_before_send) else str(S.desktop_dm_informational_only),
             style = DmType.sans(11.sp),
             color = p.muted,
         )

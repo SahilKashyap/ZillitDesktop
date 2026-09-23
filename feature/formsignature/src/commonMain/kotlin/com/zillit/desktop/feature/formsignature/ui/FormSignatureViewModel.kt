@@ -8,6 +8,8 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureBadges
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureHost
@@ -270,7 +272,7 @@ class FormSignatureViewModel(
         launchResult(
             block = { repository.selfAssign(formId) },
             onSuccess = { message ->
-                sendEffect(FormSignatureEffect.Notice(message.ifBlank { "Added to My Downloads." }))
+                sendEffect(FormSignatureEffect.Notice(message.ifBlank { str(S.desktop_fs_added_to_my_downloads) }))
             },
             onError = { sendEffect(FormSignatureEffect.Failed(it.localised())) },
         )
@@ -301,15 +303,15 @@ class FormSignatureViewModel(
         val form = currentState.uploadForm ?: return
         val bytes = form.fileBytes
         if (form.name.isBlank()) {
-            sendEffect(FormSignatureEffect.Failed("Please enter Document Name"))
+            sendEffect(FormSignatureEffect.Failed(str(S.please_enter_doc_name)))
             return
         }
         if (bytes == null) {
-            sendEffect(FormSignatureEffect.Failed("Please upload the Document"))
+            sendEffect(FormSignatureEffect.Failed(str(S.desktop_fs_please_upload_the_document)))
             return
         }
         if (form.extension !in ALLOWED_UPLOADS) {
-            sendEffect(FormSignatureEffect.Failed("Please select a PDF or Word document"))
+            sendEffect(FormSignatureEffect.Failed(str(S.desktop_fs_select_pdf_or_word)))
             return
         }
         setState { copy(uploadForm = form.copy(uploading = true)) }
@@ -330,7 +332,7 @@ class FormSignatureViewModel(
                         }
                         is ZillitResult.Success -> {
                             setState { copy(uploadForm = null) }
-                            sendEffect(FormSignatureEffect.Notice("Document uploaded."))
+                            sendEffect(FormSignatureEffect.Notice(str(S.desktop_fs_document_uploaded)))
                             loadStandardForms()
                         }
                     }
@@ -360,7 +362,7 @@ class FormSignatureViewModel(
 
     private fun openChat() {
         val unit = currentState.chat.unit ?: run {
-            sendEffect(FormSignatureEffect.Failed("No unit given for discussion"))
+            sendEffect(FormSignatureEffect.Failed(str(S.desktop_fs_no_unit_for_discussion)))
             return
         }
         setState { copy(screen = FormSignScreen.Chat, chat = chat.copy(receiver = null)) }
@@ -393,14 +395,14 @@ class FormSignatureViewModel(
                     setState {
                         copy(standard = standard.copy(rows = standard.rows.filterNot { it.id == confirm.formId }))
                     }
-                    sendEffect(FormSignatureEffect.Notice("Document deleted."))
+                    sendEffect(FormSignatureEffect.Notice(str(S.desktop_fs_document_deleted)))
                 },
                 onError = { sendEffect(FormSignatureEffect.Failed(it.localised())) },
             )
             is ConfirmState.DeleteDocument -> launchResult(
                 block = { repository.deleteDocument(confirm.documentId) },
                 onSuccess = {
-                    sendEffect(FormSignatureEffect.Notice("Document deleted."))
+                    sendEffect(FormSignatureEffect.Notice(str(S.desktop_fs_document_deleted)))
                     loadDocuments()
                 },
                 onError = { sendEffect(FormSignatureEffect.Failed(it.localised())) },

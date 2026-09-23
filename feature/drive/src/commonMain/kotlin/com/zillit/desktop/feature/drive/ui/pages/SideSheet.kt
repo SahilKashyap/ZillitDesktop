@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A drawer sliding in from the right — the web's antd `Drawer`, which every
@@ -130,7 +132,7 @@ internal fun DriveSideSheet(
                         }
                     }
                     headerTrailing?.invoke(this)
-                    ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Close", onClick = onDismiss)
+                    ZillitIconButton(icon = ZillitIcons.Close, contentDescription = str(S.close), onClick = onDismiss)
                 }
                 ZillitDivider()
                 if (scrollable) {

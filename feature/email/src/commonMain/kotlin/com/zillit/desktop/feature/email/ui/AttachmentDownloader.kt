@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.email.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.AttachmentStore
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailRepository
@@ -67,7 +69,7 @@ class AttachmentDownloader(
             is ZillitResult.Success -> {
                 val bytes = decodeAttachment(fetched.data, decodeBase64)
                 if (bytes == null) {
-                    set(attachment.id, AttachmentDownload.Failed("The file was empty."))
+                    set(attachment.id, AttachmentDownload.Failed(str(S.desktop_email_attachment_file_empty)))
                     return
                 }
                 when (val saved = target.save(attachment.fileName, bytes)) {

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.dealmemo.ui.preview
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealPdfKind
 import com.zillit.desktop.feature.dealmemo.domain.DealSignTarget
@@ -129,10 +131,9 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
         val entry = library.entries.firstOrNull { it.id == library.selectedId }
         when {
             entry == null ->
-                vm.toast("No signature was selected. Please pick one, or draw a new one.", DealToastTone.Error)
+                vm.toast(str(S.desktop_dm_no_signature_was_selected_please_pick_one), DealToastTone.Error)
             entry.png == null -> vm.toast(
-                "That signature can't be opened from storage — its file reference is incomplete. Please draw a new " +
-                    "one.",
+                str(S.desktop_dm_that_signature_cant_be_opened_from_storage),
                 DealToastTone.Error,
             )
             else -> capture(entry.png)
@@ -163,7 +164,7 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
     private suspend fun finishNew(png: ByteArray?, save: Boolean) {
         if (png == null) {
             updateLibrary { copy(working = false) }
-            vm.toast("No signature was selected. Please pick one, or draw a new one.", DealToastTone.Error)
+            vm.toast(str(S.desktop_dm_no_signature_was_selected_please_pick_one), DealToastTone.Error)
             return
         }
         if (save) vm.store?.saveSignature(png)?.let { result ->
@@ -177,7 +178,7 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
         vm.work {
             val image = withContext(vm.workDispatcher) { vm.pdf.image(png) }
             if (image == null) {
-                vm.toast("Couldn't download that signature. Please try again, or draw a new one.", DealToastTone.Error)
+                vm.toast(str(S.desktop_dm_couldnt_download_that_signature_please_try_again), DealToastTone.Error)
                 return@work
             }
             val aspect = if (image.width > 0) image.height.toFloat() / image.width else DEFAULT_ASPECT
@@ -245,7 +246,9 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
         deal: DealDoc,
         surface: SignSurface,
     ): ZillitResult<Pair<SignSource, List<DealPdfPage>>> {
-        val store = vm.store ?: return ZillitResult.Failure(ZillitError.Validation("Documents can't be signed here."))
+        val store = vm.store ?: return ZillitResult.Failure(
+            ZillitError.Validation(str(S.desktop_dm_documents_cant_be_signed_here)),
+        )
         val stored = storedAttachment(deal, surface)
         val (attachment, fromStored) = if (stored != null) {
             stored to true
@@ -265,7 +268,9 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
             is ZillitResult.Failure -> return rendered
         }
         if (pages.isEmpty()) {
-            return ZillitResult.Failure(ZillitError.Validation("Couldn’t load this document for signing."))
+            return ZillitResult.Failure(
+                ZillitError.Validation(str(S.desktop_dm_couldnt_load_this_document_for_signing_2)),
+            )
         }
         val source = SignSource(
             bytes = bytes,
@@ -312,8 +317,7 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
             when (outcome) {
                 SignOutcome.Stale -> {
                     vm.toast(
-                        "This document changed while you were signing — it has been reloaded. Please place your " +
-                            "signature again.",
+                        str(S.desktop_dm_this_document_changed_while_you_were_signing),
                         DealToastTone.Error,
                     )
                     updateSigner { copy(busy = false) }
@@ -345,11 +349,13 @@ internal class SigningActions(private val vm: DealMemoViewModel, private val pag
             is ZillitResult.Success -> stamped.data
             is ZillitResult.Failure -> return SignOutcome.Failed(stamped.error)
         }
-        val store = vm.store ?: return SignOutcome.Failed(ZillitError.Validation("Documents can't be signed here."))
+        val store = vm.store ?: return SignOutcome.Failed(
+            ZillitError.Validation(str(S.desktop_dm_documents_cant_be_signed_here)),
+        )
         val uploaded = when (val result = store.upload(source.name, PDF_MIME, flattened)) {
             is ZillitResult.Success -> result.data.takeIf { !it.media.isNullOrEmpty() }
                 ?: return SignOutcome.Failed(
-                    ZillitError.Validation("Signed document upload failed — please try again."),
+                    ZillitError.Validation(str(S.desktop_dm_signed_document_upload_failed_please_try_again)),
                 )
             is ZillitResult.Failure -> return SignOutcome.Failed(result.error)
         }

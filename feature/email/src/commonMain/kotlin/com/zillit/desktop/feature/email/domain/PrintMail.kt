@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A conversation as a print-ready page — the web's `handlePrint`
  * (`EmailDetailToolbar.jsx`), message by message, oldest first: a subject
@@ -10,15 +13,15 @@ package com.zillit.desktop.feature.email.domain
  * the host only has to know how to put HTML in front of a printer.
  */
 fun printableHtml(subject: String, messages: List<EmailMessage>, printScriptNonce: String? = null): String {
-    val title = subject.ifBlank { "(no subject)" }
+    val title = subject.ifBlank { str(S.no_subject_parenthesis) }
     val blocks = messages.sortedBy { it.receivedAtMillis }.joinToString("") { message ->
         buildString {
             append("<div class=\"email-block\">")
-            metaLine("From", message.from)
-            metaLine("To", message.to.joinToString(", "))
-            if (message.cc.isNotEmpty()) metaLine("Cc", message.cc.joinToString(", "))
-            if (message.bcc.isNotEmpty()) metaLine("Bcc", message.bcc.joinToString(", "))
-            metaLine("Date", mailFullTimeLabel(message.receivedAtMillis))
+            metaLine(str(S.fromText), message.from)
+            metaLine(str(S.toText), message.to.joinToString(", "))
+            if (message.cc.isNotEmpty()) metaLine(str(S.txtCC), message.cc.joinToString(", "))
+            if (message.bcc.isNotEmpty()) metaLine(str(S.txtBCC), message.bcc.joinToString(", "))
+            metaLine(str(S.date), mailFullTimeLabel(message.receivedAtMillis))
             append("<div class=\"body\">")
             val body = if (message.isHtml) {
                 message.body.withoutScripts()

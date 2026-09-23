@@ -36,6 +36,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.ui.dialogs.BankRecDialogs
 import com.zillit.desktop.feature.bankrec.ui.pages.ExceptionsPage
 import com.zillit.desktop.feature.bankrec.ui.pages.FraudAlertsPage
@@ -123,14 +125,14 @@ private fun ModuleHeader(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit)
     val colors = ZillitTheme.colors
     Column(Modifier.fillMaxWidth().background(colors.canvas)) {
         ZillitPageHeader(
-            eyebrow = "Management",
-            title = "Bank Reconciliation",
-            description = "Match bank statements to ledger entries and manage reconciliation periods.",
+            eyebrow = str(S.desktop_management),
+            title = str(S.desktop_bank_reconciliation),
+            description = str(S.desktop_br_page_description),
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 10.dp),
             actions = {
                 ZillitIconButton(
                     icon = ZillitIcons.Reload,
-                    contentDescription = "Refresh",
+                    contentDescription = str(S.refresh_text),
                     onClick = { onEvent(BankRecEvent.Refresh) },
                 )
             },

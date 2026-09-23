@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Over the preview: the file's name and size on the left; on the right
@@ -59,14 +61,14 @@ internal fun PreviewToolbar(session: MediaPreviewSession, measurer: TextMeasurer
         if (edit != null) {
             val loaded = edit.working != null
             ZillitButton(
-                text = "Rotate",
+                text = str(S.desktop_rotate),
                 onClick = { edit.rotate(measurer) },
                 enabled = loaded,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Edit",
+                text = str(S.edit),
                 onClick = { session.tool = EditTool.Draw },
                 enabled = loaded,
                 leadingIcon = ZillitIcons.Edit,
@@ -76,7 +78,7 @@ internal fun PreviewToolbar(session: MediaPreviewSession, measurer: TextMeasurer
         }
         if (session.items.size > 1) {
             ZillitButton(
-                text = "Remove",
+                text = str(S.remove),
                 onClick = session::removeCurrent,
                 leadingIcon = ZillitIcons.Trash,
                 variant = ButtonVariant.Danger,

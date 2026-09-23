@@ -21,6 +21,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.DeletionSchedule
 import com.zillit.desktop.feature.settings.admin.domain.UnitKind
@@ -40,24 +42,23 @@ import com.zillit.desktop.feature.settings.admin.ui.NameKind
 fun ProductionNamePage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.ProductionName.title,
-        description = "What this project is called everywhere in Zillit.",
+        description = str(S.desktop_edit_project_name_detail),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
     ) {
-        ZillitSectionCard(title = "Name") {
+        ZillitSectionCard(title = str(S.name)) {
             ZillitText(
-                text = state.productionName.ifBlank { "Not set" },
+                text = state.productionName.ifBlank { str(S.dm_gpr_not_set) },
                 style = ZillitTheme.typography.titleMedium,
             )
             ZillitText(
-                text = "Everyone on the project sees this, and it heads every document " +
-                    "the project sends out.",
+                text = str(S.desktop_name_everyone_sees),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
             ZillitButton(
-                text = "Change name",
+                text = str(S.desktop_change_name),
                 onClick = { onEvent(AdminEvent.OpenProductionName) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
@@ -80,52 +81,52 @@ fun CompanyDetailsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBac
 
     AdminPage(
         title = AdminDestination.CompanyDetails.title,
-        description = "Printed at the head of the crew list and the documents this project sends.",
+        description = str(S.desktop_company_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
         action = {
             ZillitButton(
-                text = "Edit details",
+                text = str(S.txt_edit_details),
                 onClick = { onEvent(AdminEvent.OpenCompany) },
                 size = ButtonSize.Small,
             )
         },
     ) {
-        ZillitSectionCard(title = "Crew list header") {
+        ZillitSectionCard(title = str(S.desktop_crew_list_header)) {
             if (company.name.isBlank() && company.address.isBlank()) {
                 ZillitText(
-                    text = "Nothing set. The crew list is printed without a company header.",
+                    text = str(S.desktop_no_company_header),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
             } else {
                 ZillitText(
-                    text = company.name.ifBlank { "Unnamed company" },
+                    text = company.name.ifBlank { str(S.desktop_unnamed_company) },
                     style = ZillitTheme.typography.titleMedium,
                 )
-                HeaderLine("Address", company.address)
+                HeaderLine(str(S.address), company.address)
                 HeaderLine(
-                    "Phone",
+                    str(S.phone),
                     listOf(company.countryCode, company.phone)
                         .filter { it.isNotBlank() }
                         .joinToString(" "),
                 )
-                HeaderLine("Email", company.email)
-                HeaderLine("Company number", company.companyNumber)
-                HeaderLine("Registered address", company.registeredAddress)
+                HeaderLine(str(S.email), company.email)
+                HeaderLine(str(S.company_number), company.companyNumber)
+                HeaderLine(str(S.company_registered_address), company.registeredAddress)
                 company.customFields.forEach { field -> HeaderLine(field.label, field.value) }
             }
         }
 
-        ZillitSectionCard(title = "Logo") {
+        ZillitSectionCard(title = str(S.desktop_logo)) {
             if (company.hasLogo) {
                 ZillitText(
-                    text = "A logo is set and printed above the company name.",
+                    text = str(S.desktop_logo_is_set),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
-                RemoveButton("Remove logo") {
+                RemoveButton(str(S.desktop_remove_logo)) {
                     onEvent(AdminEvent.Ask(AdminConfirmation.ClearCompanyLogo()))
                 }
             } else {
@@ -134,8 +135,7 @@ fun CompanyDetailsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBac
                 // pipeline, which the phone and web clients have and this one
                 // does not yet.
                 ZillitNotice(
-                    text = "No logo set. Uploading one is done on the phone or web app for now; " +
-                        "this page can show and remove it.",
+                    text = str(S.desktop_no_logo_set),
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Info,
                 )
@@ -162,33 +162,32 @@ private fun HeaderLine(label: String, value: String) {
 fun WatermarkPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.Watermark.title,
-        description = "Stamped across documents this project sends out.",
+        description = str(S.desktop_watermark_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
     ) {
-        ZillitSectionCard(title = "Current watermark") {
+        ZillitSectionCard(title = str(S.desktop_current_watermark)) {
             if (state.watermarkUrl.isNullOrBlank()) {
                 ZillitText(
-                    text = "No watermark. Documents go out unstamped.",
+                    text = str(S.desktop_no_watermark),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
             } else {
                 ZillitText(
-                    text = "A watermark is set and stamped on every document this project sends.",
+                    text = str(S.desktop_watermark_is_set),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
-                RemoveButton("Remove watermark") {
+                RemoveButton(str(S.desktop_remove_watermark)) {
                     onEvent(AdminEvent.Ask(AdminConfirmation.ClearWatermark()))
                 }
             }
         }
 
         ZillitNotice(
-            text = "Uploading a new watermark is done on the phone or web app for now; " +
-                "this page can show and remove the one that is set.",
+            text = str(S.desktop_watermark_upload_elsewhere),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Info,
         )
@@ -218,20 +217,17 @@ fun UnitsPage(
             // Not shooting units. `home/unit` is the dashboard — bulletin,
             // calendar, call sheet — and calling them units is the server's
             // word, not the reader's.
-            UnitKind.Home ->
-                "The sections of this project's dashboard, and who can see each one."
-            UnitKind.Remote ->
-                "A unit shooting away from the main project, with its own board and call sheets."
-            UnitKind.Shooting ->
-                "Main, second and splinter units. Crew attach themselves to one when they join."
+            UnitKind.Home -> str(S.desktop_home_units_page_description)
+            UnitKind.Remote -> str(S.desktop_remote_units_detail)
+            UnitKind.Shooting -> str(S.desktop_shooting_units_detail)
         },
         state = state,
         onEvent = onEvent,
         onBack = onBack,
-        search = "Search units",
+        search = str(S.desktop_search_units),
         action = {
             ZillitButton(
-                text = "New unit",
+                text = str(S.desktop_new_unit),
                 onClick = { onEvent(AdminEvent.OpenName(NameKind.Unit)) },
                 size = ButtonSize.Small,
             )
@@ -241,10 +237,10 @@ fun UnitsPage(
             val rows = state.unitsMatching
             when {
                 rows.isEmpty() && state.hasLoaded && state.query.isNotBlank() ->
-                    EmptyRow("No unit matches “${state.query}”.")
+                    EmptyRow(str(S.desktop_no_unit_matches, state.query))
 
                 rows.isEmpty() && state.hasLoaded ->
-                    EmptyRow("This project has no ${destination.title.lowercase()} yet.")
+                    EmptyRow(str(S.desktop_no_units_yet, destination.title.lowercase()))
 
                 else -> rows.forEachIndexed { index, unit ->
                     if (index > 0) RowRule()
@@ -257,8 +253,7 @@ fun UnitsPage(
             // Not an omission on this client. The server offers no update or
             // delete route for remote units, and neither does any other client.
             ZillitNotice(
-                text = "Remote units can be added but not renamed or removed. " +
-                    "That is true on every Zillit app.",
+                text = str(S.desktop_remote_units_fixed),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )
@@ -280,7 +275,7 @@ private fun UnitRow(unit: AdminUnit, onEvent: (AdminEvent) -> Unit) {
             maxLines = 1,
         )
 
-        if (unit.locked) ZillitTag("Built in", tone = TagTone.Neutral)
+        if (unit.locked) ZillitTag(str(S.desktop_built_in), tone = TagTone.Neutral)
 
         // Only the dashboard sections have a switch — `home/unit/visibility`.
         // The other two kinds have no such route.
@@ -288,13 +283,13 @@ private fun UnitRow(unit: AdminUnit, onEvent: (AdminEvent) -> Unit) {
             ZillitCheckbox(
                 checked = unit.enabled,
                 onCheckedChange = { onEvent(AdminEvent.UnitEnabledChanged(unit.id, it)) },
-                label = "In use",
+                label = str(S.desktop_in_use),
             )
         }
 
         if (unit.kind != UnitKind.Remote && unit.isRemovable) {
             ZillitButton(
-                text = "Rename",
+                text = str(S.rename),
                 onClick = {
                     onEvent(
                         AdminEvent.OpenName(
@@ -307,7 +302,7 @@ private fun UnitRow(unit: AdminUnit, onEvent: (AdminEvent) -> Unit) {
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
             )
-            RemoveButton("Delete") {
+            RemoveButton(str(S.delete)) {
                 onEvent(
                     AdminEvent.Ask(
                         AdminConfirmation.RemoveUnit(unit.kind, unit.id, unit.name.localised()),
@@ -331,7 +326,7 @@ private fun UnitRow(unit: AdminUnit, onEvent: (AdminEvent) -> Unit) {
 fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.DeleteProduction.title,
-        description = "Removes the project and everything in it, for everyone on it.",
+        description = str(S.desktop_delete_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -339,13 +334,13 @@ fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onB
         if (state.deletion.isScheduled) {
             ZillitNotice(
                 text = state.deletion.hours
-                    ?.let { "This project is scheduled for deletion in $it hours." }
-                    ?: "This project is scheduled for deletion.",
+                    ?.let { str(S.desktop_scheduled_for_deletion_in_hours, it) }
+                    ?: str(S.desktop_scheduled_for_deletion),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
                 action = {
                     ZillitButton(
-                        text = "Call it off",
+                        text = str(S.desktop_call_it_off),
                         onClick = { onEvent(AdminEvent.CancelDeletion) },
                         size = ButtonSize.Small,
                         enabled = !state.isSaving,
@@ -355,33 +350,33 @@ fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onB
             return@AdminPage
         }
 
-        ZillitSectionCard(title = "What goes") {
+        ZillitSectionCard(title = str(S.desktop_what_goes)) {
             ZillitText(
-                text = "Every notice, document, timecard, expense and message on " +
-                    "“${state.productionName.ifBlank { "this production" }}”, for everyone on it. " +
-                    "Crew lose access the moment it happens.",
+                text = str(
+                    S.desktop_what_goes_body,
+                    state.productionName.ifBlank { str(S.desktop_this_production_lower) },
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
             ZillitText(
-                text = "Deletion is scheduled, not immediate. It can be called off from this " +
-                    "page until the delay is up — after that it cannot.",
+                text = str(S.desktop_deletion_scheduled_not_immediate),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
         }
 
-        ZillitSectionCard(title = "Schedule it") {
+        ZillitSectionCard(title = str(S.desktop_schedule_it)) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 DeletionSchedule.OFFERED_HOURS.forEach { hours ->
                     ZillitButton(
-                        text = "In $hours hours",
+                        text = str(S.desktop_in_n_hours, hours),
                         onClick = {
                             onEvent(
                                 AdminEvent.Ask(
                                     AdminConfirmation.DeleteProduction(
                                         hours = hours,
-                                        name = state.productionName.ifBlank { "this project" },
+                                        name = state.productionName.ifBlank { str(S.desktop_this_project) },
                                     ),
                                 ),
                             )

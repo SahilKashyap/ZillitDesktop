@@ -19,6 +19,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.approvalCount
@@ -38,6 +40,7 @@ import com.zillit.desktop.feature.callsheet.ui.components.CardLink
 import com.zillit.desktop.feature.callsheet.ui.components.CardTabItem
 import com.zillit.desktop.feature.callsheet.ui.components.CardTabs
 import com.zillit.desktop.feature.callsheet.ui.components.CscIconButton
+import com.zillit.desktop.feature.callsheet.ui.components.InlineCount
 import com.zillit.desktop.feature.callsheet.ui.components.MenuEntry
 import com.zillit.desktop.feature.callsheet.ui.components.MetaCell
 import com.zillit.desktop.feature.callsheet.ui.components.SheetEmptyState
@@ -97,7 +100,7 @@ internal fun ApprovalsPage(state: SheetUiState, onEvent: (SheetEvent) -> Unit, n
 @Composable
 private fun SentSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowMillis: Long, cards: Boolean) {
     val list = state.lists.sent
-    ListFrame(list, "No sent approvals.", "Loading sent approvals…", onEvent) { rows ->
+    ListFrame(list, str(S.desktop_no_sent_approvals), str(S.desktop_loading_sent_approvals), onEvent) { rows ->
         if (cards) {
             CardGrid(rows) { row, modifier ->
                 val entries = sentMenu(state, row, onEvent)
@@ -110,8 +113,9 @@ private fun SentSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowM
                     approvals = if (row.approvalsIncluded) CardApprovals(approved, total, null) else null,
                     links = cardLinks(entries, listOf("view", "history")) +
                         statusLink(state, row, onEvent) +
-                        cardLinks(entries, listOf("comment", "chat", "docdist")),
+                        cardLinks(entries, listOf("comment", "sendChat", "docdist")),
                     pills = cardPills(entries, listOf("approve", "edit", "remind", "signature", "delete")),
+                    reportBadge = state.unreadReports(row.id),
                     modifier = modifier,
                 )
             }
@@ -132,7 +136,7 @@ private fun SentSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowM
                         if (commentAllowed(row.status, unread)) {
                             CscIconButton(
                                 icon = SheetIcons.Comment,
-                                description = "Comments",
+                                description = str(S.cs_comments),
                                 onClick = { onEvent(ListEvent.OpenComments(row, readOnly = false)) },
                                 badge = unread,
                             )
@@ -140,9 +144,9 @@ private fun SentSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowM
                     }
                     6 -> ApprovalLink(
                         text = when {
-                            state.statusLoadingId == row.id -> "Loading…"
+                            state.statusLoadingId == row.id -> str(S.cs_loading)
                             row.approvalsIncluded -> approvedText(row)
-                            else -> "View status"
+                            else -> str(S.desktop_view_status)
                         },
                         enabled = state.statusLoadingId == null,
                     ) { onEvent(ListEvent.OpenApprovalStatus(row)) }
@@ -154,7 +158,7 @@ private fun SentSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowM
 }
 
 private fun statusLink(state: SheetUiState, row: CallSheetSummary, onEvent: (SheetEvent) -> Unit) = CardLink(
-    label = if (state.statusLoadingId == row.id) "Loading…" else "Approval status",
+    label = if (state.statusLoadingId == row.id) str(S.cs_loading) else str(S.desktop_approval_status_lower),
     enabled = state.statusLoadingId == null,
     onClick = { onEvent(ListEvent.OpenApprovalStatus(row)) },
 )
@@ -164,7 +168,7 @@ private fun statusLink(state: SheetUiState, row: CallSheetSummary, onEvent: (She
 @Composable
 private fun ReceivedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowMillis: Long, cards: Boolean) {
     val list = state.lists.received
-    ListFrame(list, "No received approvals.", "Loading received approvals…", onEvent) { rows ->
+    ListFrame(list, str(S.desktop_no_received_approvals), str(S.desktop_loading_received_approvals), onEvent) { rows ->
         if (cards) {
             CardGrid(rows) { row, modifier ->
                 val entries = receivedMenu(state, row, onEvent)
@@ -175,8 +179,9 @@ private fun ReceivedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, 
                     creatorDesignation = state.member(row.createdById)?.designation.orEmpty(),
                     nowMillis = nowMillis,
                     approvals = if (isInternalOnly(row, state.me)) null else CardApprovals(approved, total, null),
-                    links = cardLinks(entries, listOf("view", "history", "comment", "chat", "reminder")),
+                    links = cardLinks(entries, listOf("view", "history", "comment", "sendChat", "reminder")),
                     pills = cardPills(entries, listOf("reject", "approve")),
+                    reportBadge = state.unreadReports(row.id),
                     modifier = modifier,
                 )
             }
@@ -205,7 +210,7 @@ private fun ReceivedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, 
 @Composable
 private fun FinalizedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowMillis: Long, cards: Boolean) {
     val list = state.lists.finalized
-    ListFrame(list, "No finalized call sheets.", "Loading finalized call sheets…", onEvent) { rows ->
+    ListFrame(list, str(S.desktop_cs_no_finalized), str(S.desktop_cs_loading_finalized), onEvent) { rows ->
         if (cards) {
             CardGrid(rows) { row, modifier ->
                 val entries = finalizedMenu(state, row, onEvent)
@@ -217,6 +222,7 @@ private fun FinalizedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit,
                     approvals = null,
                     links = cardLinks(entries, listOf("view", "history", "comment")),
                     pills = cardPills(entries, listOf("publish")),
+                    reportBadge = state.unreadReports(row.id),
                     modifier = modifier,
                 )
             }
@@ -239,20 +245,24 @@ private fun FinalizedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit,
 // Shared pieces --------------------------------------------------------------------------------------------------
 
 private fun approvalColumns(approval: Boolean): List<TableColumn> = listOfNotNull(
-    TableColumn("S.No", width = 72.dp),
-    TableColumn("Day", width = 100.dp),
-    TableColumn("Created By", weight = 1f),
-    TableColumn("Created At", width = 180.dp),
-    TableColumn("Updated At", width = 180.dp),
-    TableColumn("Status", width = if (approval) 220.dp else 190.dp),
-    TableColumn("Approval", width = 130.dp).takeIf { approval },
-    TableColumn("Actions", width = 84.dp, alignment = Alignment.End),
+    TableColumn(str(S.desktop_s_no), width = 72.dp),
+    TableColumn(str(S.bs_day), width = 100.dp),
+    TableColumn(str(S.cs_created_by), weight = 1f),
+    TableColumn(str(S.ah_lbl_created_at), width = 180.dp),
+    TableColumn(str(S.ah_lbl_updated_at), width = 180.dp),
+    TableColumn(str(S.status), width = if (approval) 220.dp else 190.dp),
+    TableColumn(str(S.ah_step_approval), width = 130.dp).takeIf { approval },
+    TableColumn(str(S.cs_draft_actions), width = 84.dp, alignment = Alignment.End),
 )
 
 @Composable
 private fun CommonCell(state: SheetUiState, row: CallSheetSummary, column: Int) {
     when (column) {
-        0 -> MetaCell(row.serialNo.ifBlank { "-" })
+        // The unread REPORT number beside the serial — a comment count sits on the kebab instead.
+        0 -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            MetaCell(row.serialNo.ifBlank { "-" })
+            InlineCount(state.unreadReports(row.id))
+        }
         1 -> MetaCell(shootDayLabel(row.shared))
         2 -> CreatorCell(state, row)
         3 -> MetaCell(formatDateTime(row.createdOn))
@@ -265,7 +275,7 @@ private fun creatorName(state: SheetUiState, row: CallSheetSummary): String =
 
 private fun approvedText(row: CallSheetSummary): String {
     val (approved, total) = approvalCount(row.status, row.approvals)
-    return "$approved/$total approved"
+    return str(S.av_approval_progress, approved, total)
 }
 
 /** `.wa-approval-link`: 12 px underlined blue. */

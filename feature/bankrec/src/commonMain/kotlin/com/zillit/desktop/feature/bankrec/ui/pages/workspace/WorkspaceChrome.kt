@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.PanelTotal
 import com.zillit.desktop.feature.bankrec.domain.WorkspaceFilter
@@ -75,30 +77,30 @@ internal fun ExpandedBar(view: WorkspaceView, loading: Boolean, onEvent: (BankRe
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        ZillitTooltip("Back to Bank Reconciliation (Esc)") {
+        ZillitTooltip(str(S.desktop_br_back_to_bank_rec_esc)) {
             ZillitIconButton(
                 icon = ZillitIcons.ChevronLeft,
-                contentDescription = "Back to Bank Reconciliation",
+                contentDescription = str(S.desktop_br_back_to_bank_rec),
                 onClick = { onEvent(BankRecEvent.SetWorkspaceExpanded(false)) },
             )
         }
         Column(Modifier.weight(1f)) {
-            ZillitText("ACCOUNTING · BANK RECONCILIATION", style = eyebrow(10.sp), color = colors.textMuted)
+            ZillitText(str(S.desktop_br_accounting_eyebrow), style = eyebrow(10.sp), color = colors.textMuted)
             ZillitText(
                 text = if (loading) {
-                    "Loading…"
+                    str(S.ah_loading)
                 } else {
                     listOfNotNull(
                         view.account?.displayName?.ifBlank { null },
                         view.period?.let(BankRecFormat::periodLabel),
-                    ).joinToString(" · ").ifBlank { "Workspace" }
+                    ).joinToString(" · ").ifBlank { str(S.desktop_workspace) }
                 },
                 style = titleStyle(16.sp),
                 maxLines = 1,
             )
         }
         ZillitButton(
-            text = "Exit full screen",
+            text = str(S.desktop_br_exit_full_screen),
             onClick = { onEvent(BankRecEvent.SetWorkspaceExpanded(false)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -172,22 +174,30 @@ private fun RowScope.FilterGroup(state: BankRecUiState, view: WorkspaceView, onE
         modifier = Modifier.weight(1f, fill = false),
     )
     Spacer(Modifier.width(4.dp))
-    FilterPill("All ${counts.all}", BrTone.Green, ws.filter == WorkspaceFilter.All) {
+    FilterPill(str(S.desktop_br_filter_all, counts.all), BrTone.Green, ws.filter == WorkspaceFilter.All) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.All))
     }
-    FilterPill("Unmatched ${counts.unmatched}", BrTone.Red, ws.filter == WorkspaceFilter.Unmatched) {
+    FilterPill(
+        str(S.desktop_br_filter_unmatched, counts.unmatched),
+        BrTone.Red,
+        ws.filter == WorkspaceFilter.Unmatched,
+    ) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Unmatched))
     }
-    FilterPill("Suggested ${counts.suggested}", BrTone.Amber, ws.filter == WorkspaceFilter.Suggested) {
+    FilterPill(
+        str(S.desktop_br_filter_suggested, counts.suggested),
+        BrTone.Amber,
+        ws.filter == WorkspaceFilter.Suggested,
+    ) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Suggested))
     }
     FilterPill(
-        "\u26a0 Fraud ${counts.fraud}",
+        "\u26a0 " + str(S.desktop_br_filter_fraud, counts.fraud),
         BrTone.Red,
         ws.filter == WorkspaceFilter.Fraud,
         pulse = counts.fraud > 0,
     ) { onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Fraud)) }
-    FilterPill("FX ${counts.fx}", BrTone.Teal, ws.filter == WorkspaceFilter.Fx) {
+    FilterPill(str(S.desktop_br_filter_fx, counts.fx), BrTone.Teal, ws.filter == WorkspaceFilter.Fx) {
         onEvent(BankRecEvent.FilterWorkspace(WorkspaceFilter.Fx))
     }
 }
@@ -196,23 +206,35 @@ private fun RowScope.FilterGroup(state: BankRecUiState, view: WorkspaceView, onE
 private fun ActionGroup(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
     val ws = state.workspace
     ZillitButton(
-        text = if (ws.rerunning) "Matching\u2026" else "Re-run Auto-Match",
+        text = if (ws.rerunning) str(S.desktop_matching_ellipsis) else str(S.desktop_br_rerun_auto_match),
         onClick = { onEvent(BankRecEvent.RerunAutoMatch) },
         variant = ButtonVariant.Secondary,
         size = ButtonSize.Small,
         leadingIcon = BankRecIcons.Bolt,
         enabled = !ws.rerunning,
     )
-    ZillitButton(text = "Sign Off", onClick = { onEvent(BankRecEvent.OpenSignOff) }, size = ButtonSize.Small)
+    ZillitButton(
+        text = str(S.desktop_br_sign_off),
+        onClick = { onEvent(BankRecEvent.OpenSignOff) },
+        size = ButtonSize.Small,
+    )
     ToggleSquare(
         icon = if (ws.expanded) BankRecIcons.Compress else BankRecIcons.Expand,
         active = ws.expanded,
-        tooltip = if (ws.expanded) "Exit expanded view (Esc)" else "Expand workspace",
+        tooltip = if (ws.expanded) {
+            str(S.desktop_br_exit_expanded_view)
+        } else {
+            str(S.desktop_br_expand_workspace)
+        },
     ) { onEvent(BankRecEvent.SetWorkspaceExpanded(!ws.expanded)) }
     ToggleSquare(
         icon = BankRecIcons.Menu,
         active = ws.showQuickEntry,
-        tooltip = if (ws.showQuickEntry) "Hide Quick Entry panel" else "Show Quick Entry panel",
+        tooltip = if (ws.showQuickEntry) {
+            str(S.desktop_br_hide_quick_entry)
+        } else {
+            str(S.desktop_br_show_quick_entry)
+        },
     ) { onEvent(BankRecEvent.ToggleQuickEntry) }
 }
 
@@ -285,12 +307,12 @@ internal fun BalanceBar(state: BankRecUiState, view: WorkspaceView, onEvent: () 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Balance("Opening Bank", BankRecFormat.plainMoney(period.openingBank, view.statementCurrency))
+        Balance(str(S.desktop_br_opening_bank), BankRecFormat.plainMoney(period.openingBank, view.statementCurrency))
         ZillitText("→", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
-        Balance("Closing Bank", BankRecFormat.plainMoney(period.closingBank, view.statementCurrency))
+        Balance(str(S.desktop_br_closing_bank), BankRecFormat.plainMoney(period.closingBank, view.statementCurrency))
         ZillitText("|", style = ZillitTheme.typography.bodySmall, color = colors.border)
         Balance(
-            "Closing Zillit",
+            str(S.desktop_br_closing_zillit),
             BankRecFormat.plainMoney(state.workspace.closingZillit ?: period.closingZillit, state.projectCurrency),
         )
         Spacer(Modifier.weight(1f))
@@ -311,7 +333,11 @@ internal fun BalanceBar(state: BankRecUiState, view: WorkspaceView, onEvent: () 
                     modifier = Modifier.alpha(pulseAlpha()),
                 )
                 ZillitText(
-                    "$fraud fraud flag${if (fraud == 1) "" else "s"} need review ›",
+                    if (fraud == 1) {
+                        str(S.desktop_br_fraud_flag_needs_review_one, fraud)
+                    } else {
+                        str(S.desktop_br_fraud_flag_needs_review_many, fraud)
+                    },
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                     color = colors.danger,
                 )
@@ -377,13 +403,13 @@ internal fun SummaryBar(view: WorkspaceView) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SummaryCount(colors.success, "Matched", counts.matched)
-        SummaryCount(colors.warning, "Suggested", counts.suggested)
-        SummaryCount(colors.danger, "Unmatched", counts.unmatched)
-        SummaryCount(colors.danger, "Fraud flags", counts.fraud, pulse = counts.fraud > 0)
-        SummaryCount(colors.teal, "FX", counts.fx)
+        SummaryCount(colors.success, str(S.desktop_matched), counts.matched)
+        SummaryCount(colors.warning, str(S.desktop_suggested), counts.suggested)
+        SummaryCount(colors.danger, str(S.desktop_dm_unmatched), counts.unmatched)
+        SummaryCount(colors.danger, str(S.desktop_fraud_flags), counts.fraud, pulse = counts.fraud > 0)
+        SummaryCount(colors.teal, str(S.desktop_fx), counts.fx)
         Spacer(Modifier.weight(1f))
-        ZillitText("DIFFERENCE", style = eyebrow(10.sp), color = colors.textMuted)
+        ZillitText(str(S.ah_difference_upper), style = eyebrow(10.sp), color = colors.textMuted)
         val difference = view.difference
         val text = (if (difference < 0) "-" else if (difference > 0) "+" else "") +
             BankRecFormat.compactMoney(kotlin.math.abs(difference), view.projectCurrency)

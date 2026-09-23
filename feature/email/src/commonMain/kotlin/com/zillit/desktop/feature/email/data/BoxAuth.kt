@@ -10,6 +10,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -54,7 +56,7 @@ private fun ZillitResult<String>.flatMapBlank(): ZillitResult<String> = when (th
         ZillitResult.Failure(
             ZillitError.Storage(
                 technical = "box/auth returned no access_token",
-                userMessage = "Could not reach this project's file storage.",
+                userMessage = str(S.desktop_email_storage_unreachable),
             ),
         )
     } else {

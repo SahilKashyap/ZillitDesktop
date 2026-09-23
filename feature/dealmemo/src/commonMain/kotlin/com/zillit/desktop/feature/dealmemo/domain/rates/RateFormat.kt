@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.rates
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -35,13 +37,14 @@ object RateFormat {
         "MXN" to "$", "BRL" to "R$", "KRW" to "₩", "RUB" to "₽", "TRY" to "₺", "ILS" to "₪",
     )
 
-    private val PRODUCTION_TYPE_LABELS = mapOf(
-        "feature" to "Feature",
-        "television" to "Television",
-        "commercial" to "Commercial",
-        "documentary" to "Documentary",
-        "music" to "Music",
-    )
+    private val PRODUCTION_TYPE_LABELS: Map<String, String>
+        get() = mapOf(
+            "feature" to str(S.desktop_prod_type_feature),
+            "television" to str(S.desktop_prod_type_television),
+            "commercial" to str(S.desktop_prod_type_commercial),
+            "documentary" to str(S.desktop_prod_type_documentary),
+            "music" to str(S.desktop_prod_type_music),
+        )
 
     /** `currencySymbol(code)`: the symbol, else the bare code upper-cased, else nothing. */
     fun currencySymbol(code: String?): String {

@@ -8,6 +8,8 @@ import com.zillit.desktop.core.common.onSuccess
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.livekit.Line3CallState
 import com.zillit.desktop.feature.calls.data.livekit.Line3InCall
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
@@ -212,7 +214,7 @@ class CallCoordinator(
     fun sendReaction(emoji: String) {
         if (_session.value?.provider == CallProvider.LiveKit) {
             if (line3InCall.reactionsRestricted) {
-                line3InCall.lockedNote("reactions")
+                line3InCall.lockedNote(S.desktop_call_host_disabled_reactions)
                 return
             }
             line3InCall.react(emoji, now())
@@ -225,11 +227,11 @@ class CallCoordinator(
     fun sendInCallMessage(text: String) {
         if (_session.value?.provider == CallProvider.LiveKit) {
             if (line3InCall.chatRestricted) {
-                line3InCall.lockedNote("chat")
+                line3InCall.lockedNote(S.desktop_call_host_disabled_chat)
                 return
             }
             if (line3InCall.selfChatBlocked()) {
-                _notices.tryEmit("The host blocked you from chat")
+                _notices.tryEmit(str(S.desktop_call_host_blocked_you_from_chat))
                 return
             }
         }
@@ -382,7 +384,7 @@ class CallCoordinator(
         val line = line3 ?: return
         val me = line.identityNow() ?: return
         val info = _activeCalls.value.firstOrNull { it.callId == callId } ?: run {
-            _toasts.tryEmit("That call has ended")
+            _toasts.tryEmit(str(S.desktop_call_that_call_has_ended))
             return
         }
         val callerName = info.callerName.ifBlank { info.inCallUsers.firstOrNull()?.second.orEmpty() }
@@ -902,7 +904,7 @@ class CallCoordinator(
     fun toggleHand() {
         if (_phase.value != CallPhase.InCall) return
         if (line3InCall.handsRestricted) {
-            line3InCall.lockedNote("raising hands")
+            line3InCall.lockedNote(S.desktop_call_host_disabled_raising_hands)
             return
         }
         val raised = !_handRaised.value
@@ -926,7 +928,7 @@ class CallCoordinator(
         if (_phase.value != CallPhase.InCall) return
         if (_media.value.selfSharing) return
         if (line3InCall.shareRestricted) {
-            line3InCall.lockedNote("screen sharing")
+            line3InCall.lockedNote(S.desktop_call_host_disabled_screen_sharing)
             return
         }
         scope.launch { engine.startScreenShare(sourceId) }
@@ -1011,7 +1013,7 @@ class CallCoordinator(
         val session = _session.value ?: return
         when {
             session.provider != CallProvider.LiveKit -> recorder.toggle(session)
-            line3InCall.recordingRestricted -> line3InCall.lockedNote("call recording")
+            line3InCall.recordingRestricted -> line3InCall.lockedNote(S.desktop_call_host_disabled_call_recording)
             else -> recorder.toggle(session) { on -> markLine3Recording(session, on) }
         }
     }
@@ -1029,9 +1031,9 @@ class CallCoordinator(
             val word = (outcome.error as? ZillitError.Http)?.serverMessage
             _notices.tryEmit(
                 if (word == "already_recording") {
-                    "Someone is already recording this call"
+                    str(S.desktop_call_someone_already_recording)
                 } else {
-                    "Couldn't start recording"
+                    str(S.desktop_call_couldnt_start_recording)
                 },
             )
         }
@@ -1477,7 +1479,7 @@ class CallCoordinator(
      * just told the path of should still be there when they go looking.
      */
     private fun onRecordingSaved(event: CallEngineEvent.RecordingSaved) {
-        _toasts.tryEmit("Recording saved to ${event.path}")
+        _toasts.tryEmit(str(S.desktop_call_recording_saved_to, event.path))
         val sender = share ?: return
         // The call the recording belongs to, which by now may not be the live
         // one — see CallRecordingControl.recordedSession.
@@ -1485,7 +1487,7 @@ class CallCoordinator(
         val targets = recordingTargets(session, selfUserId())
         if (targets.isEmpty()) {
             ZillitLog.w(TAG) { "recording not sent: no chat recipient on ${session.callUuid}" }
-            _toasts.tryEmit("Recording saved, but there was nobody to send it to.")
+            _toasts.tryEmit(str(S.desktop_call_recording_nobody_to_send))
             return
         }
         scope.launch {
@@ -1497,10 +1499,10 @@ class CallCoordinator(
                 ),
                 targets,
             ).onSuccess {
-                _toasts.tryEmit("Recording sent to chat.")
+                _toasts.tryEmit(str(S.desktop_call_recording_sent_to_chat))
             }.onFailure { error ->
                 ZillitLog.w(TAG) { "recording not sent: $error" }
-                _toasts.tryEmit("Recording saved, but sending it to chat failed.")
+                _toasts.tryEmit(str(S.desktop_call_recording_send_failed))
             }
         }
     }
@@ -1899,7 +1901,7 @@ class CallCoordinator(
         callerUserId: String,
     ) {
         val line = line3 ?: run {
-            fail("Line 3 is not configured on this install")
+            fail(str(S.desktop_call_line3_not_configured))
             return
         }
         val me = callerUserId.ifBlank { selfUserId().orEmpty() }
@@ -1956,7 +1958,7 @@ class CallCoordinator(
     /** Answers a Line 3 ring: the accept on the line's wire, then the room it hands back. */
     private fun acceptLine3(current: CallSession) {
         val line = line3 ?: run {
-            fail("Line 3 is not configured on this install")
+            fail(str(S.desktop_call_line3_not_configured))
             return
         }
         scope.launch {
@@ -2011,7 +2013,9 @@ class CallCoordinator(
             _secondCall.value?.let { waiting ->
                 if (callId.matches(waiting)) {
                     dismissSecondCall()
-                    if (why == LiveKitDismissal.Cancelled) _toasts.tryEmit("Missed call from ${waiting.callerName}")
+                    if (why == LiveKitDismissal.Cancelled) {
+                        _toasts.tryEmit(str(S.desktop_call_missed_call_from, waiting.callerName))
+                    }
                     return
                 }
             }
@@ -2035,13 +2039,15 @@ class CallCoordinator(
             when {
                 // A cancel while this device was ringing is a missed call, named.
                 why == LiveKitDismissal.Cancelled && _phase.value == CallPhase.Incoming ->
-                    _toasts.tryEmit("Missed call from ${current.callerName.ifBlank { "someone" }}")
+                    _toasts.tryEmit(
+                        str(S.desktop_call_missed_call_from, current.callerName.ifBlank { str(S.history_someone) }),
+                    )
                 why == LiveKitDismissal.Removed ->
                     _toasts.tryEmit(
                         if (byName.isNotBlank()) {
-                            "$byName removed you from the call"
+                            str(S.desktop_call_name_removed_you, byName)
                         } else {
-                            "You were removed from the call"
+                            str(S.desktop_call_you_were_removed)
                         },
                     )
             }

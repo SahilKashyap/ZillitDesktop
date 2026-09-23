@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.cashexpenses.domain
 
 import com.zillit.desktop.core.forms.CustomFieldGroup
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Everything the cash module asks the server for.
@@ -217,13 +219,13 @@ data class NewClaimBatch(
      */
     @Suppress("ReturnCount") // One rule per return; combining them loses which rule failed.
     fun validationError(): String? {
-        if (receipts.isEmpty()) return "Add at least one receipt."
+        if (receipts.isEmpty()) return str(S.desktop_ce_add_one_receipt)
         if (receipts.any { it.description.isBlank() || (it.amount.trim().toDoubleOrNull() ?: 0.0) <= 0 }) {
-            return "Each receipt must have a description and an amount."
+            return str(S.desktop_ce_receipt_needs_description_amount)
         }
-        if (receipts.any { it.date == null }) return "Each receipt must have a date of purchase."
+        if (receipts.any { it.date == null }) return str(S.desktop_ce_receipt_needs_date)
         if (receipts.any { it.attachmentKey.isNullOrBlank() }) {
-            return "Each receipt must have an attachment — upload the receipt image or PDF."
+            return str(S.desktop_ce_receipt_needs_attachment)
         }
         return null
     }

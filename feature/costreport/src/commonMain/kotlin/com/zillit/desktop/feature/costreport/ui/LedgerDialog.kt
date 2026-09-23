@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrDates
 import com.zillit.desktop.feature.costreport.domain.CrFormat
 import com.zillit.desktop.feature.costreport.domain.CrNominal
@@ -70,7 +72,7 @@ internal fun LedgerDialog(view: LedgerView, onClose: () -> Unit) {
         width = DIALOG_WIDTH,
         scrollable = false,
         actions = {
-            ZillitButton(text = "Close", onClick = onClose, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.close), onClick = onClose, variant = ButtonVariant.Tertiary)
         },
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -90,14 +92,14 @@ internal fun LedgerDialog(view: LedgerView, onClose: () -> Unit) {
             ) {
                 ZillitSpinner()
                 ZillitText(
-                    "Loading account activity…",
+                    str(S.desktop_cr_loading_activity),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
             result == null || result.items.isEmpty() -> if (view.error == null) {
                 ZillitText(
-                    text = "No entries found",
+                    text = str(S.desktop_cr_no_entries_found),
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textMuted,
                 )
@@ -107,8 +109,14 @@ internal fun LedgerDialog(view: LedgerView, onClose: () -> Unit) {
         result?.let {
             val count = it.count.takeIf { n -> n > 0 } ?: it.items.size
             ZillitText(
-                text = "$count line item${if (count == 1) "" else "s"} · Total: " +
-                    CrFormat.money(it.total.takeIf { t -> t != 0.0 } ?: it.items.sumOf { i -> i.amount }, view.symbol),
+                text = str(
+                    if (count == 1) S.desktop_cr_line_item_one else S.desktop_cr_line_item_many,
+                    count,
+                    CrFormat.money(
+                        it.total.takeIf { t -> t != 0.0 } ?: it.items.sumOf { i -> i.amount },
+                        view.symbol,
+                    ),
+                ),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -165,14 +173,14 @@ private fun LedgerHeaderRow() {
         modifier = Modifier.fillMaxWidth().background(colors.surfaceSunken).padding(vertical = ZillitTheme.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Cell("Date", DATE_WIDTH, style, colors.textMuted)
-        Cell("Ref", REF_WIDTH, style, colors.textMuted)
-        Cell("Type", TYPE_WIDTH, style, colors.textMuted)
-        ZillitText(text = "Description", style = style, color = colors.textMuted, maxLines = 1,
+        Cell(str(S.date), DATE_WIDTH, style, colors.textMuted)
+        Cell(str(S.desktop_ref), REF_WIDTH, style, colors.textMuted)
+        Cell(str(S.type), TYPE_WIDTH, style, colors.textMuted)
+        ZillitText(text = str(S.description), style = style, color = colors.textMuted, maxLines = 1,
             modifier = Modifier.weight(1f).padding(horizontal = ZillitTheme.spacing.xs))
-        Cell("Supplier / Crew", PARTY_WIDTH, style, colors.textMuted)
-        Cell("Code", CODE_WIDTH, style, colors.textMuted)
-        Cell("Amount", AMOUNT_WIDTH, style, colors.textMuted, TextAlign.End)
+        Cell(str(S.desktop_cr_supplier_crew), PARTY_WIDTH, style, colors.textMuted)
+        Cell(str(S.code), CODE_WIDTH, style, colors.textMuted)
+        Cell(str(S.amount), AMOUNT_WIDTH, style, colors.textMuted, TextAlign.End)
     }
 }
 
@@ -185,8 +193,12 @@ private fun GroupRow(label: String, count: Int, total: Double, symbol: String) {
         ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitText(text = "$label · $count item${if (count == 1) "" else "s"}", style = ZillitTheme.typography.label,
-            color = colors.accentText, modifier = Modifier.weight(1f))
+        ZillitText(
+            text = str(if (count == 1) S.desktop_cr_item_one else S.desktop_cr_item_many, label, count),
+            style = ZillitTheme.typography.label,
+            color = colors.accentText,
+            modifier = Modifier.weight(1f),
+        )
         ZillitText(
             text = CrFormat.money(total, symbol),
             style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.SemiBold),

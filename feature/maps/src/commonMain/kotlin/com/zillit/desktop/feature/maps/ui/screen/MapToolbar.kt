@@ -37,6 +37,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.ui.MapEvent
 import com.zillit.desktop.feature.maps.ui.MapPanel
 import com.zillit.desktop.feature.maps.ui.MapUiState
@@ -51,6 +53,7 @@ import com.zillit.desktop.feature.maps.ui.MapUiState
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+@Suppress("LongMethod") // The toolbar's controls, one after another.
 internal fun MapToolbar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val background = if (colors.isDark) {
@@ -100,14 +103,14 @@ internal fun MapToolbar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
             }
         } else {
             ZillitText(
-                text = "Map",
+                text = str(S.map),
                 style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
                 color = Color.White,
                 modifier = Modifier.weight(1f),
             )
         }
         ToolbarPill(
-            text = "How To Use Map",
+            text = str(S.desktop_map_how_to_use_map),
             icon = MapIcons.HelpCircle,
             onClick = { onEvent(MapEvent.Toolbar.ShowGuide) },
         )
@@ -117,27 +120,27 @@ internal fun MapToolbar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ControlPills(state: MapUiState, onEvent: (MapEvent) -> Unit) {
-    ToolbarPill("Fit All", ZillitIcons.Maximize, onClick = { onEvent(MapEvent.Toolbar.FitAll) })
+    ToolbarPill(str(S.desktop_map_fit_all), ZillitIcons.Maximize, onClick = { onEvent(MapEvent.Toolbar.FitAll) })
     ToolbarPill(
-        "Search",
+        str(S.search),
         ZillitIcons.Search,
         active = state.search != null,
         onClick = { onEvent(MapEvent.Toolbar.ToggleSearch) },
     )
     ToolbarPill(
-        if (state.typeFilters.isEmpty()) "Filter" else "Filter (${state.typeFilters.size})",
+        if (state.typeFilters.isEmpty()) str(S.filter) else str(S.desktop_map_filter_n, state.typeFilters.size),
         ZillitIcons.Filter,
         active = state.filterOpen || state.typeFilters.isNotEmpty(),
         onClick = { onEvent(MapEvent.Toolbar.ToggleFilter) },
     )
     ToolbarPill(
-        if (state.pinMode) "Cancel" else "Pin Location",
+        if (state.pinMode) str(S.cancel) else str(S.pin_location_txt),
         if (state.pinMode) ZillitIcons.Close else ZillitIcons.Add,
         danger = state.pinMode,
         onClick = { onEvent(MapEvent.Toolbar.TogglePinMode) },
     )
     ToolbarPill(
-        "List View",
+        str(S.av_list_view),
         MapIcons.List,
         active = state.listView != null,
         count = state.locations.size.takeIf { it > 0 },
@@ -145,7 +148,7 @@ private fun ControlPills(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     )
     val zone = state.activeZone
     ToolbarPill(
-        if (zone != null) "Zone: ${zone.displayName}" else "Studio Zone",
+        if (zone != null) str(S.desktop_map_zone_named, zone.displayName) else str(S.studio_zone_txt),
         if (zone != null) MapIcons.Target else MapIcons.List,
         active = state.topPanel == MapPanel.ZoneList || zone != null,
         count = state.zones.size.takeIf { it > 0 },
@@ -154,7 +157,7 @@ private fun ControlPills(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     )
     // Client req L: "LOC Types" names what it manages.
     ToolbarPill(
-        "LOC Types",
+        str(S.desktop_map_loc_types),
         ZillitIcons.Settings,
         active = state.topPanel == MapPanel.Types,
         onClick = { onEvent(MapEvent.Toolbar.ToggleTypes) },
@@ -165,9 +168,13 @@ private fun ControlPills(state: MapUiState, onEvent: (MapEvent) -> Unit) {
 private fun countLabel(state: MapUiState): String {
     val total = state.locations.size
     val shown = state.filteredLocations.size
-    val noun = if (total == 1) "location" else "locations"
     val narrowed = state.typeFilters.isNotEmpty() || !state.search?.query.isNullOrBlank()
-    return if (narrowed) "$shown / $total $noun" else "$shown $noun"
+    return when {
+        narrowed && total == 1 -> str(S.desktop_map_count_narrowed_one, shown, total)
+        narrowed -> str(S.desktop_map_count_narrowed_other, shown, total)
+        total == 1 -> str(S.desktop_map_count_location_one, shown)
+        else -> str(S.recce_locations_count, shown)
+    }
 }
 
 @Composable
@@ -184,7 +191,12 @@ private fun BackButton(onClick: () -> Unit) {
             .clickable(interactionSource = source, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        ZillitIcon(icon = ZillitIcons.ArrowLeft, contentDescription = "Back to Film Tools", tint = MapColors.Brand, size = 18.dp)
+        ZillitIcon(
+            icon = ZillitIcons.ArrowLeft,
+            contentDescription = str(S.desktop_hub_back_to_film_tools),
+            tint = MapColors.Brand,
+            size = 18.dp,
+        )
     }
 }
 
@@ -194,6 +206,7 @@ private fun BackButton(onClick: () -> Unit) {
  * each state has to contrast with it rather than with white.
  */
 @Composable
+@Suppress("CyclomaticComplexMethod") // One pill; its states are read in place.
 internal fun ToolbarPill(
     text: String,
     icon: ImageVector,
@@ -262,16 +275,16 @@ internal fun PinModeBanner(state: MapUiState, onEvent: (MapEvent) -> Unit) {
         ZillitIcon(icon = MapIcons.MapPin, tint = accent, size = 15.dp)
         ZillitText(
             text = if (zone != null) {
-                "Click inside \"${zone.displayName}\" to place a pin (restricted to zone)"
+                str(S.desktop_map_click_inside_zone, zone.displayName)
             } else {
-                "Click on the map to place a pin"
+                str(S.desktop_map_click_to_place_pin)
             },
             style = labelBold(13.sp, FontWeight.Medium),
             color = accent,
             modifier = Modifier.weight(1f),
         )
         ZillitText(
-            text = "Drag a saved pin to move it",
+            text = str(S.desktop_map_drag_pin_to_move),
             style = ZillitTheme.typography.bodySmall,
             color = accent.copy(alpha = 0.75f),
         )
@@ -287,7 +300,8 @@ internal fun PinModeBanner(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 .clickable(interactionSource = source, indication = null) { onEvent(MapEvent.Bars.ExitPinMode) },
             contentAlignment = Alignment.Center,
         ) {
-            ZillitIcon(icon = ZillitIcons.Close, contentDescription = "Exit pin mode", tint = accent, size = 14.dp)
+            ZillitIcon(icon = ZillitIcons.Close, contentDescription = str(S.desktop_map_exit_pin_mode), tint = accent,
+                size = 14.dp)
         }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(accent.copy(alpha = 0.25f)))

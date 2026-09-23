@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.sides.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.CallSheetRef
 import com.zillit.desktop.feature.sides.domain.ManualPlan
 import com.zillit.desktop.feature.sides.domain.PageSelection
@@ -16,9 +18,12 @@ import com.zillit.desktop.feature.sides.domain.SidesViewer
 import com.zillit.desktop.feature.sides.domain.VersionScenes
 
 /** The tool's two segments — the web's `Sides | Script` header switch. */
-enum class SidesDestination(val label: String) {
-    Sides("Sides"),
-    Scripts("Script"),
+enum class SidesDestination(private val labelKey: String) {
+    Sides(S.txt_sides),
+    Scripts(S.sides_tab_script),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The sides list's two presentations — the web's persisted list/table toggle. */
@@ -162,9 +167,10 @@ data class GenerateState(
     /** The viewer's info popover: scenes and pages, one row each. */
     val selectionInfo: List<Pair<String, String>>
         get() = buildList {
-            if (resultScenes.isNotEmpty()) add("Scenes" to resultScenes.joinToString(", "))
+            if (resultScenes.isNotEmpty()) add(str(S.av_scenes) to resultScenes.joinToString(", "))
             resultPages.forEach { page ->
-                add("Page ${page.number}" to page.scenes.joinToString(", ").ifBlank { "Whole PDF" })
+                val scenes = page.scenes.joinToString(", ").ifBlank { str(S.desktop_sides_whole_pdf) }
+                add(str(S.desktop_page_n, page.number) to scenes)
             }
         }
 }
@@ -220,9 +226,26 @@ data class AutoState(
 
 // ── Dialogs ───────────────────────────────────────────────────────────────
 
-enum class DocKind(val title: String, val noun: String) {
-    CallSheet("Add Call Sheet", "call sheet"),
-    Schedule("Add Schedule", "schedule"),
+enum class DocKind(
+    private val titleKey: String,
+    private val dropHintKey: String,
+    private val titlePlaceholderKey: String,
+) {
+    CallSheet(
+        S.desktop_sides_add_call_sheet,
+        S.desktop_sides_drop_call_sheet_hint,
+        S.desktop_sides_call_sheet_title_placeholder,
+    ),
+    Schedule(S.dd_add_schedule, S.desktop_sides_drop_schedule_hint, S.desktop_sides_schedule_title_placeholder),
+    ;
+
+    val title: String get() = str(titleKey)
+
+    /** The drop zone's hint — "Drag & drop a call sheet PDF, or click to browse · PDF only". */
+    val dropHint: String get() = str(dropHintKey)
+
+    /** The title field's placeholder — "Call sheet title". */
+    val titlePlaceholder: String get() = str(titlePlaceholderKey)
 }
 
 enum class ConfirmKind { Sides, Script, Page, CallSheet, Schedule }

@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.plural
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -15,14 +18,19 @@ import kotlin.time.Instant
 object DiaryFormat {
 
     private val MONTHS = listOf(
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December",
+        S.desktop_month_full_january, S.desktop_month_full_february, S.desktop_month_full_march,
+        S.desktop_month_full_april, S.desktop_month_short_may, S.desktop_month_full_june,
+        S.desktop_month_full_july, S.desktop_month_full_august, S.desktop_month_full_september,
+        S.desktop_month_full_october, S.desktop_month_full_november, S.desktop_month_full_december,
     )
-    private val WEEKDAYS = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    private val WEEKDAYS = listOf(
+        S.day_monday, S.day_tuesday, S.day_wednesday, S.day_thursday,
+        S.day_friday, S.day_saturday, S.day_sunday,
+    )
 
-    fun monthName(date: LocalDate): String = MONTHS[date.month.ordinal]
+    fun monthName(date: LocalDate): String = str(MONTHS[date.month.ordinal])
     fun monthShort(date: LocalDate): String = monthName(date).take(ABBREVIATION)
-    fun weekday(date: LocalDate): String = WEEKDAYS[date.dayOfWeek.ordinal]
+    fun weekday(date: LocalDate): String = str(WEEKDAYS[date.dayOfWeek.ordinal])
     fun weekdayShort(date: LocalDate): String = weekday(date).take(ABBREVIATION)
 
     /** `MMMM YYYY` — "September 2026". */
@@ -83,7 +91,7 @@ object DiaryFormat {
 
     /** "Full Day", "9:00 AM – 10:00 AM", or just the start. */
     fun timeRange(event: DiaryEvent, zone: TimeZone): String = when {
-        event.fullDay -> "Full Day"
+        event.fullDay -> str(S.full_day)
         event.startDateTime > 0 && event.endDateTime > 0 ->
             "${time(event.startDateTime, zone)} – ${time(event.endDateTime, zone)}"
         event.startDateTime > 0 -> time(event.startDateTime, zone)
@@ -105,7 +113,7 @@ object DiaryFormat {
      */
     fun spanLabel(block: ScheduleBlock, zone: TimeZone): String {
         val count = block.calendarDays.size.coerceAtLeast(1)
-        if (block.calendarDays.isEmpty()) return "$count day(s)"
+        if (block.calendarDays.isEmpty()) return plural(S.bs_day_count, count)
         val start = date(block.firstDay, zone)
         val end = date(block.lastDay, zone)
         val range = when {
@@ -113,7 +121,7 @@ object DiaryFormat {
             start.year == end.year -> "${monthDay(start)} – ${mediumDate(end)}"
             else -> "${mediumDate(start)} – ${mediumDate(end)}"
         }
-        return "$count day(s) · $range"
+        return "${plural(S.bs_day_count, count)} · $range"
     }
 
     /** "Sep 4 – Sep 18, 2026", or the one long date for a single day. */
@@ -125,47 +133,61 @@ object DiaryFormat {
 
     /** "Daily until Sep 30, 2026". */
     fun repeatLine(event: DiaryEvent, zone: TimeZone): String {
-        val cadence = event.repeatStatus.replaceFirstChar { it.uppercase() }
-        return if (event.repeatEndDate > 0) "$cadence until ${mediumDate(event.repeatEndDate, zone)}" else cadence
+        val cadence = REPEATS.firstOrNull { it.first == event.repeatStatus && it.first != "none" }
+            ?.let { str(it.second) }
+            ?: event.repeatStatus.replaceFirstChar { it.uppercase() }
+        return if (event.repeatEndDate > 0) {
+            str(S.desktop_bs_repeat_until, cadence, mediumDate(event.repeatEndDate, zone))
+        } else {
+            cadence
+        }
     }
 
     fun callTypeLabel(callType: String): String = when (callType) {
-        "meet_in_person" -> "Meet In Person"
-        "meet_in_person_call" -> "Meet in Person & Call"
-        "audio" -> "Audio Call"
-        "video" -> "Video Call"
+        "meet_in_person" -> str(S.meet_in_person)
+        "meet_in_person_call" -> str(S.meet_in_person_call)
+        "audio" -> str(S.audio_call)
+        "video" -> str(S.video_call)
         else -> callType.split('_').joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
     }
 
     /** The shorter badge on a schedule's event row. */
     fun callBadge(callType: String): String = when (callType) {
-        "meet_in_person" -> "In Person"
-        "meet_in_person_call" -> "In Person & Call"
-        "audio" -> "Audio Call"
-        else -> "Video Call"
+        "meet_in_person" -> str(S.desktop_bs_call_badge_in_person)
+        "meet_in_person_call" -> str(S.desktop_bs_call_badge_in_person_call)
+        "audio" -> str(S.audio_call)
+        else -> str(S.video_call)
     }
 
-    fun reminderLabel(reminder: String): String = REMINDERS.firstOrNull { it.first == reminder }?.second
+    fun reminderLabel(reminder: String): String = REMINDERS.firstOrNull { it.first == reminder }?.let { str(it.second) }
         ?: reminder.replace('_', ' ')
 
+    /** Wire value to the catalogue key of its label — read with `str(it.second)`. */
     val REMINDERS = listOf(
-        "none" to "No reminder",
-        "at_time" to "At the time of event",
-        "5min" to "5 minutes before",
-        "15min" to "15 minutes before",
-        "30min" to "30 minutes before",
-        "1hr" to "1 hour before",
-        "1day" to "1 day before",
+        "none" to S.ce_no_reminder,
+        "at_time" to S.desktop_bs_reminder_at_time,
+        "5min" to S.ce_5min,
+        "15min" to S.ce_15min,
+        "30min" to S.ce_30min,
+        "1hr" to S.ce_1hr,
+        "1day" to S.ce_1day,
     )
 
+    /** Wire value to the catalogue key of its label — read with `str(it.second)`. */
     val CALL_TYPES = listOf(
-        "meet_in_person" to "Meet In Person",
-        "meet_in_person_call" to "Meet in Person & Call",
-        "audio" to "Audio Call",
-        "video" to "Video Call",
+        "meet_in_person" to S.meet_in_person,
+        "meet_in_person_call" to S.meet_in_person_call,
+        "audio" to S.audio_call,
+        "video" to S.video_call,
     )
 
-    val REPEATS = listOf("none" to "No repeat", "daily" to "Daily", "weekly" to "Weekly", "monthly" to "Monthly")
+    /** Wire value to the catalogue key of its label — read with `str(it.second)`. */
+    val REPEATS = listOf(
+        "none" to S.ce_no_repeat,
+        "daily" to S.daily,
+        "weekly" to S.ce_weekly,
+        "monthly" to S.ce_monthly,
+    )
 
     /** The web's short list, with the machine's own zone added when it is not on it. */
     val TIMEZONES = listOf(

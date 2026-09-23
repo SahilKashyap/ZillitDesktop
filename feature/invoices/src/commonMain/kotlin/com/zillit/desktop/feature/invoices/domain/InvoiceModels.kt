@@ -1,27 +1,32 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Where an invoice sits in the accounts-payable pipeline. `Unknown` keeps a
  * status the server adds later from crashing a list; [raw] survives on the
  * invoice so it can still be shown.
  */
-enum class InvoiceStatus(val wire: String, val label: String) {
-    Inbox("inbox", "Inbox"),
-    Matching("matching", "Matching"),
-    Approval("approval", "Pending"),
-    Entry("entry", "In Entry"),
-    ReadyToPay("ready_to_pay", "Ready to Pay"),
-    Paid("paid", "Paid"),
-    Held("held", "On Hold"),
-    Disputed("disputed", "Disputed"),
-    Approved("approved", "Approved"),
-    Rejected("rejected", "Rejected"),
-    Cancelled("cancelled", "Cancelled"),
-    Override("override", "Override"),
-    Posted("posted", "Posted"),
-    UnderReview("under_review", "Under Review"),
-    Unknown("", "Unknown"),
+enum class InvoiceStatus(val wire: String, private val labelKey: String) {
+    Inbox("inbox", S.inbox_text),
+    Matching("matching", S.desktop_matching),
+    Approval("approval", S.pending),
+    Entry("entry", S.desktop_in_entry),
+    ReadyToPay("ready_to_pay", S.desktop_ready_to_pay),
+    Paid("paid", S.desktop_paid),
+    Held("held", S.desktop_call_on_hold),
+    Disputed("disputed", S.desktop_disputed),
+    Approved("approved", S.approved),
+    Rejected("rejected", S.rejected),
+    Cancelled("cancelled", S.cancelled),
+    Override("override", S.dm_nom_table_override),
+    Posted("posted", S.ah_step_posted),
+    UnderReview("under_review", S.ah_under_review),
+    Unknown("", S.desktop_unknown),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): InvoiceStatus {
@@ -32,11 +37,13 @@ enum class InvoiceStatus(val wire: String, val label: String) {
 }
 
 /** The separate approval flag; absent on the wire means pending. */
-enum class ApprovalStatus(val wire: String, val label: String) {
-    Pending("pending", "Pending"),
-    Approved("approved", "Approved"),
-    Rejected("rejected", "Rejected"),
+enum class ApprovalStatus(val wire: String, private val labelKey: String) {
+    Pending("pending", S.pending),
+    Approved("approved", S.approved),
+    Rejected("rejected", S.rejected),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): ApprovalStatus =
@@ -49,14 +56,16 @@ enum class ApprovalStatus(val wire: String, val label: String) {
  * the PO/approval chain and are released with Override & Pay; `faster` counts
  * as urgent for the override buttons only.
  */
-enum class PayMethod(val wire: String, val label: String) {
-    Bacs("bacs", "BACS"),
-    Wire("wire", "Wire"),
-    Cheque("cheque", "Cheque"),
-    Faster("faster", "Faster Payment"),
-    DirectDebit("direct_debit", "Direct Debit"),
-    AlreadyPaid("already_paid", "Already Paid"),
+enum class PayMethod(val wire: String, private val labelKey: String) {
+    Bacs("bacs", S.ah_run_card_method_bacs),
+    Wire("wire", S.ah_run_card_method_wire),
+    Cheque("cheque", S.ah_run_card_method_cheque),
+    Faster("faster", S.desktop_faster_payment),
+    DirectDebit("direct_debit", S.desktop_direct_debit),
+    AlreadyPaid("already_paid", S.desktop_already_paid),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Wire or cheque: off the approval chain, an "urgent" request. */
     val isUrgent: Boolean get() = this == Wire || this == Cheque
@@ -306,14 +315,14 @@ data class Invoice(
     val displayNumber: String get() = invoiceNumber.ifBlank { reference }.ifBlank { "—" }
 
     val statusLabel: String
-        get() = if (status == InvoiceStatus.Unknown) statusRaw.ifBlank { "Unknown" } else status.label
+        get() = if (status == InvoiceStatus.Unknown) statusRaw.ifBlank { str(S.desktop_unknown) } else status.label
 
     val hasPo: Boolean get() = linkedPos.isNotEmpty() || poId.isNotBlank() || poNumber.isNotBlank()
 
     /** The PO column: "N POs", the number, or a truncated id; null = no PO. */
     val poLabel: String?
         get() = when {
-            linkedPos.size > 1 -> "${linkedPos.size} POs"
+            linkedPos.size > 1 -> str(S.desktop_po_count_pos, linkedPos.size)
             linkedPos.size == 1 -> linkedPos.first().poNumber.ifBlank {
                 poNumber }.ifBlank { "PO-" + linkedPos.first().poId.take(PO_ID_CHARS)
             }
@@ -356,8 +365,12 @@ data class PickedInvoiceFile(val name: String, val contentType: String, val byte
 }
 
 /** What the department's Upload Invoice sheet offers. */
-enum class UploadType(val wire: String, val label: String, val hint: String) {
-    Po("po", "Against Purchase Order", "Goes to Accounts for PO matching"),
-    Cheque("cheque", "Cheque Request", "Urgent — released by Accounts with Override & Pay"),
-    Wire("wire", "Wire Request", "Urgent — requires override approval"),
+enum class UploadType(val wire: String, private val labelKey: String, private val hintKey: String) {
+    Po("po", S.desktop_against_purchase_order, S.desktop_inv_goes_to_accounts_for_matching),
+    Cheque("cheque", S.desktop_cheque_request, S.desktop_inv_cheque_request_hint),
+    Wire("wire", S.desktop_wire_request, S.desktop_inv_wire_request_hint),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 }

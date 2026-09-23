@@ -36,6 +36,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.ui.PickedDoc
 import com.zillit.desktop.feature.sides.ui.SidesDialog
@@ -68,26 +70,26 @@ internal fun SidesDialogs(dialog: SidesDialog?, onEvent: (SidesEvent) -> Unit) {
 @Composable
 private fun AddScriptDialog(dialog: SidesDialog.AddScript, onEvent: (SidesEvent) -> Unit) {
     FormDialog(
-        title = "Add Script",
+        title = str(S.sides_add_script),
         busy = dialog.busy,
-        submitLabel = "Add Script",
+        submitLabel = str(S.sides_add_script),
         submitEnabled = dialog.title.isNotBlank(),
         onEvent = onEvent,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FieldLabel("Script name")
+            FieldLabel(str(S.sides_script_name_hint))
             ZillitTextField(
                 value = dialog.title,
                 onValueChange = { onEvent(SidesEvent.DialogTitle(it)) },
-                placeholder = "e.g. Episode 101",
+                placeholder = str(S.desktop_sides_script_name_example),
                 enabled = !dialog.busy,
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FieldLabel("Script file (PDF or .fdx)", optional = true)
+            FieldLabel(str(S.desktop_sides_script_file_label), optional = true)
             DropZone(
                 file = dialog.file,
-                hint = "PDF or Final Draft (.fdx) — optional, you can add a file or pages later",
+                hint = str(S.desktop_sides_script_file_hint),
                 enabled = !dialog.busy,
                 onEvent = onEvent,
             )
@@ -101,23 +103,23 @@ private fun AddScriptDialog(dialog: SidesDialog.AddScript, onEvent: (SidesEvent)
 private fun PageEditorDialog(dialog: SidesDialog.PageEditor, onEvent: (SidesEvent) -> Unit) {
     val colors = ZillitTheme.colors
     FormDialog(
-        title = if (dialog.isEdit) "Edit Page" else "Add Page",
+        title = if (dialog.isEdit) str(S.sides_edit_page) else str(S.desktop_sides_add_page),
         busy = dialog.busy,
-        submitLabel = if (dialog.isEdit) "Save" else "Add Page",
+        submitLabel = if (dialog.isEdit) str(S.save) else str(S.desktop_sides_add_page),
         submitEnabled = true,
         onEvent = onEvent,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FieldLabel("Scene No. (title)")
+            FieldLabel(str(S.desktop_sides_scene_no_title))
             ZillitTextField(
                 value = dialog.sceneNumber,
                 onValueChange = { onEvent(SidesEvent.DialogSceneNumber(it)) },
-                placeholder = "e.g. 12A",
+                placeholder = str(S.desktop_sides_scene_no_example),
                 enabled = !dialog.busy,
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FieldLabel("Color")
+            FieldLabel(str(S.color))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -141,26 +143,26 @@ private fun PageEditorDialog(dialog: SidesDialog.PageEditor, onEvent: (SidesEven
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FieldLabel("Description", optional = true)
+            FieldLabel(str(S.description), optional = true)
             ZillitTextField(
                 value = dialog.description,
                 onValueChange = { onEvent(SidesEvent.DialogDescription(it)) },
-                placeholder = "Short note",
+                placeholder = str(S.desktop_short_note),
                 enabled = !dialog.busy,
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             FieldLabel(
                 if (dialog.isEdit) {
-                    "PDF or Final Draft (.fdx) — leave empty to keep current"
+                    str(S.desktop_sides_pick_file_keep_current)
                 } else {
-                    "PDF or Final Draft (.fdx)"
+                    str(S.sides_pick_file)
                 },
             )
-            DropZone(file = dialog.file, hint = "PDF or Final Draft (.fdx)", enabled = !dialog.busy, onEvent = onEvent)
+            DropZone(file = dialog.file, hint = str(S.sides_pick_file), enabled = !dialog.busy, onEvent = onEvent)
             if (dialog.isEdit && dialog.file == null && dialog.currentFileName.isNotBlank()) {
                 ZillitText(
-                    text = "Current file: ${dialog.currentFileName}",
+                    text = str(S.desktop_current_file, dialog.currentFileName),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )
@@ -181,16 +183,16 @@ private fun UploadDocDialog(dialog: SidesDialog.UploadDoc, onEvent: (SidesEvent)
     ) {
         DropZone(
             file = dialog.file,
-            hint = "Drag & drop a ${dialog.kind.noun} PDF, or click to browse · PDF only",
+            hint = dialog.kind.dropHint,
             enabled = !dialog.busy,
             onEvent = onEvent,
         )
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FieldLabel("Title")
+            FieldLabel(str(S.title))
             ZillitTextField(
                 value = dialog.title,
                 onValueChange = { onEvent(SidesEvent.DialogTitle(it)) },
-                placeholder = "${dialog.kind.noun.replaceFirstChar { it.uppercase() }} title",
+                placeholder = dialog.kind.titlePlaceholder,
                 enabled = !dialog.busy,
             )
         }
@@ -214,7 +216,7 @@ private fun FormDialog(
         width = 500.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(SidesEvent.DialogDismiss) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -259,7 +261,7 @@ internal fun DropZone(file: PickedDoc?, hint: String, enabled: Boolean, onEvent:
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             ZillitIcon(icon = ZillitIcons.Inbox, tint = colors.accent, size = 28.dp)
-            ZillitText("Drag & drop, or click to browse", style = ZillitTheme.typography.bodyMedium)
+            ZillitText(str(S.desktop_drop_or_browse), style = ZillitTheme.typography.bodyMedium)
             ZillitText(hint, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
         }
         if (file != null) {
@@ -287,7 +289,7 @@ internal fun DropZone(file: PickedDoc?, hint: String, enabled: Boolean, onEvent:
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Remove selected file",
+                    contentDescription = str(S.desktop_remove_selected_file),
                     onClick = { onEvent(SidesEvent.DialogClearFile) },
                     enabled = enabled,
                     tint = colors.textMuted,

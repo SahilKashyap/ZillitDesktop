@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui.builder
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealTemplate
 import com.zillit.desktop.feature.dealmemo.domain.SavedRecord
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderSeeds
@@ -26,12 +28,12 @@ import com.zillit.desktop.feature.dealmemo.ui.RulesEvent
 import com.zillit.desktop.feature.dealmemo.ui.SetupGroup
 import com.zillit.desktop.feature.dealmemo.ui.SetupPageEvent
 import com.zillit.desktop.feature.dealmemo.ui.preview.RulesEditorState
+import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlin.random.Random
 
 /**
  * One visit to a builder page: its state, its seeds, its autosave and its
@@ -333,7 +335,7 @@ internal class BuilderSession(
         if (templateId == null) return
         val form = groupSetups()?.firstOrNull { it.id == templateId }?.form
         if (form == null || form.isEmpty()) {
-            vm.toast("This setup has nothing saved to use.", DealToastTone.Error)
+            vm.toast(str(S.desktop_dm_this_setup_has_nothing_saved_to_use), DealToastTone.Error)
             return
         }
         apply(DealHydration.stripForUse(form))

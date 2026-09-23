@@ -41,6 +41,8 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.home.ui.BoardToolProvider
 import com.zillit.desktop.feature.home.ui.HomeBoardContext
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.post
@@ -162,7 +164,7 @@ internal suspend fun pickFormFile(kind: PickKind): Pair<String, ByteArray>? = wi
         PickKind.PdfOnly -> setOf("pdf")
         PickKind.PdfOrWord -> setOf("pdf", "doc", "docx")
     }
-    val title = if (kind == PickKind.PdfOnly) "Choose a PDF" else "Choose a document"
+    val title = if (kind == PickKind.PdfOnly) str(S.desktop_choose_pdf) else str(S.desktop_choose_document)
     val dialog = FileDialog(null as Frame?, title, FileDialog.LOAD)
     dialog.setFilenameFilter { _, name -> name.substringAfterLast('.', "").lowercase() in allowed }
     dialog.isVisible = true
@@ -257,7 +259,7 @@ internal fun AppGraph.Ready.formSignatureHost(): FormSignatureHost = object : Fo
         onFailure = { thrown ->
             ZillitLog.w(FORM_SIGN_TAG) { "convert-to/pdf failed: ${thrown::class.simpleName}" }
             ZillitResult.Failure(
-                ZillitError.Validation(thrown.message ?: "The document could not be converted to PDF."),
+                ZillitError.Validation(thrown.message ?: str(S.desktop_convert_to_pdf_failed)),
             )
         },
     )
@@ -366,7 +368,7 @@ internal fun AppGraph.Ready.formSignatureChatFeed(
                     HomeUnit(
                         id = it.id,
                         identifier = FormSignatureViewer.TOOL_IDENTIFIER,
-                        unitName = it.name.ifBlank { "Discussion" },
+                        unitName = it.name.ifBlank { str(S.discussion_text) },
                         canView = true,
                         canPost = true,
                         canDownload = access.canDownload || permissions().isAdmin,
@@ -382,8 +384,7 @@ internal fun AppGraph.Ready.formSignatureChatFeed(
             val state = viewModel.currentState
             val unit = state.chat.unit
             if (unit != null && unit.answers(state.currentUserId) && state.chat.receiver == null) {
-                "If you want to send a new message to a User, first make a selection from ‘Select User’. " +
-                    "And if you want to reply to any message click on arrow and select ‘Reply’"
+                str(S.desktop_fs_chat_select_user_hint)
             } else {
                 null
             }
@@ -435,7 +436,7 @@ internal fun formSignatureChatBoard(
 ): @Composable (WorkspaceRoute, WindowNavigator) -> Unit {
     val provider = BoardToolProvider(
         path = "${com.zillit.desktop.feature.formsignature.ui.FORM_SIGNATURE_PATH}/chat",
-        title = "Discussion",
+        title = str(S.discussion_text),
         icon = ZillitIcons.Chat,
         feedViewModel = feed,
         board = board,

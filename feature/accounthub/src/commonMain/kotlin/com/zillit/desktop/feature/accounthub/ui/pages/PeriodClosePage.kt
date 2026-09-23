@@ -49,6 +49,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.CashCloseDashboard
 import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
 import com.zillit.desktop.feature.accounthub.domain.ClosingReport
@@ -110,11 +112,11 @@ private fun Rail(active: PeriodCloseTab, onEvent: (AccountHubEvent) -> Unit) {
     ) {
         ZillitIconButton(
             icon = ZillitIcons.ArrowLeft,
-            contentDescription = "Back to Account Hub",
+            contentDescription = str(S.desktop_hub_back_to_account_hub),
             onClick = { onEvent(AccountHubEvent.Back) },
         )
         MonoLabel(
-            "Period Close",
+            str(S.desktop_period_close),
             modifier = Modifier.padding(
                 start = ZillitTheme.spacing.sm,
                 top = ZillitTheme.spacing.sm,
@@ -188,20 +190,22 @@ private fun RowScope.CloseForm(state: AccountHubUiState, onEvent: (AccountHubEve
                         ZillitIcon(icon = ZillitIcons.Shield, tint = colors.accentText, size = 17.dp)
                     }
                     Column {
-                        ZillitText(text = "Close Accounting Period", style = ZillitTheme.typography.titleLarge)
-                        FieldHint("Advance the lock so everything on or before the close date becomes read-only " +
-                            "across all modules.")
+                        ZillitText(
+                            text = str(S.desktop_close_accounting_period),
+                            style = ZillitTheme.typography.titleLarge,
+                        )
+                        FieldHint(str(S.desktop_hub_advance_the_lock_so_everything_on_or_before_the_close))
                     }
                 }
                 SubCard {
-                    MonoLabel("Last closed period")
+                    MonoLabel(str(S.desktop_last_closed_period))
                     when {
                         close.loading && lock.lockedThrough.isBlank() -> Row(
                             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             ZillitSpinner()
-                            FieldHint("Loading…")
+                            FieldHint(str(S.loading_))
                         }
                         lock.isClosed -> ZillitText(
                             text = IsoDate
@@ -209,37 +213,37 @@ private fun RowScope.CloseForm(state: AccountHubUiState, onEvent: (AccountHubEve
                             style = ZillitTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
                         )
                         else -> ZillitText(
-                            text = "No period locked yet",
+                            text = str(S.desktop_hub_no_period_locked_yet),
                             style = ZillitTheme.typography.titleSmall,
                             color = colors.textSecondary,
                         )
                     }
-                    FieldHint("Locked through this date (inclusive).")
+                    FieldHint(str(S.desktop_hub_locked_through_this_date_inclusive))
                 }
                 SubCard {
-                    MonoLabel("Close through date")
+                    MonoLabel(str(S.desktop_close_through_date))
                     DateField(
                         value = close.closeDateText,
                         onValueChange = { onEvent(AccountHubEvent.EditCloseDate(it)) },
                         min = minDate,
                         enabled = state.viewer.canActAsAccountant,
                         errorText =
-                            if (close.closeDateText.isNotBlank() && !afterLock) "Must be after the last closed date."
-                            else null,
+                            if (close.closeDateText.isNotBlank() && !afterLock) {
+                                str(S.desktop_hub_must_be_after_the_last_closed_date)
+                            } else {
+                                null
+                            },
                     )
-                    FieldHint("Must be after the last closed date. The server resolves this to the cost-report " +
-                        "week and locks through its week-ending.")
+                    FieldHint(str(S.desktop_hub_must_be_after_the_last_closed_date_the_server_resolves))
                 }
                 ZillitNotice(
-                    text = "If any transaction in this period is still unposted, the close will be rejected. Post " +
-                        "those documents first, or " +
-                        "move their dates past the close date, then try again.",
+                    text = str(S.desktop_hub_if_any_transaction_in_this_period_is_still_unposted_the),
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Warning,
                 )
                 if (!state.viewer.canActAsAccountant) {
                     ZillitNotice(
-                        text = "Closing a period is the accounts department's, and an admin is not exempt.",
+                        text = str(S.desktop_hub_closing_a_period_is_the_accounts_departments_and_an_admin),
                         tone = StatusTone.Neutral,
                         icon = ZillitIcons.Info,
                     )
@@ -266,15 +270,15 @@ private fun RowScope.CloseForm(state: AccountHubUiState, onEvent: (AccountHubEve
                 ) {
                     FieldHint(
                         when {
-                            !state.viewer.canActAsAccountant -> "Read-only for your role."
-                            target == null -> "Pick a date to close through."
-                            !afterLock -> "That date is on or before the last closed period."
+                            !state.viewer.canActAsAccountant -> str(S.desktop_hub_read_only_for_your_role)
+                            target == null -> str(S.desktop_hub_pick_a_date_to_close_through)
+                            !afterLock -> str(S.desktop_hub_that_date_is_on_or_before_the_last_closed_period)
                             else -> "Everything on or before ${EpochDate.date(target)} becomes read-only."
                         },
                         Modifier.weight(1f),
                     )
                     ZillitButton(
-                        text = if (close.closing) "Closing…" else "Close Period",
+                        text = if (close.closing) str(S.desktop_closing) else str(S.desktop_close_period),
                         onClick = {
                             target?.let { onEvent(
                                 AccountHubEvent.ProposePeriodClose(it + DAY_MILLIS - 1),
@@ -302,12 +306,12 @@ private fun ConfirmDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
     val pending = close.pendingCloseMillis
     HubConfirmDialog(
         visible = pending != null,
-        title = "Close this period?",
+        title = str(S.desktop_close_this_period),
         message = "Every transaction dated on or before " +
             "${EpochDate.date(pending).ifBlank { "that date" }} becomes read-only, in every module. " +
             "There is no way to reopen it." + (if (close.lock.isClosed) " Currently closed through " +
                 "${close.lock.lockedThrough}." else ""),
-        confirmLabel = "Close Period",
+        confirmLabel = str(S.desktop_close_period),
         loading = close.closing,
         onConfirm = { onEvent(AccountHubEvent.ConfirmPeriodClose) },
         onDismiss = { onEvent(AccountHubEvent.CancelPeriodClose) },
@@ -332,13 +336,13 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             ZillitPageHeader(
-                eyebrow = "Management",
-                title = "Weekly Close Command Centre",
-                description = "Cash position, commitments, and weekly close checklist.",
+                eyebrow = str(S.desktop_management),
+                title = str(S.desktop_hub_weekly_close_command_centre),
+                description = str(S.desktop_hub_cash_position_commitments_and_weekly_close_checklist),
             )
             if (!loading && cash.loaded && dash.isEmpty) {
                 ZillitNotice(
-                    text = "The cash-close analytics returned nothing for this production yet.",
+                    text = str(S.desktop_hub_the_cash_close_analytics_returned_nothing_for_this_production_yet),
                     tone = StatusTone.Neutral,
                     icon = ZillitIcons.Info,
                 )
@@ -348,7 +352,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                 // read as a stray letter at the head of the panel. The web
                 // uses a flag here — a clock is this set's nearest honest
                 // equivalent, and the panel's own target is a deadline.
-                title = "Weekly Close Progress",
+                title = str(S.desktop_weekly_close_progress),
                 icon = ZillitIcons.Clock,
                 right = { ZillitText(
                     text = if (loading) "…" else "$done / $total",
@@ -366,7 +370,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         FieldHint("$pct% complete")
                         FieldHint("${(total - done).coerceAtLeast(0)} items remaining")
-                        FieldHint("Target: Friday 5pm")
+                        FieldHint(str(S.desktop_target_friday_5pm))
                     }
                 }
             }
@@ -375,33 +379,33 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             ) {
                 Panel(
-                    title = "Cash Flow Forecast",
+                    title = str(S.desktop_cash_flow_forecast),
                     icon = ZillitIcons.Wallet,
-                    right = { Pill("12 WEEK VIEW", tone = StatusTone.Done) },
+                    right = { Pill(str(S.desktop_12_week_view), tone = StatusTone.Done) },
                     modifier = Modifier.weight(1f),
                 ) {
                     if (loading) ZillitSkeletonBar(modifier = Modifier.fillMaxWidth().height(CHART_HEIGHT))
                     else Waterfall(dash)
                 }
                 Panel(
-                    title = "Commitment Burn Rate",
+                    title = str(S.desktop_commitment_burn_rate),
                     icon = ZillitIcons.Siren,
-                    right = { Pill("BY DEPARTMENT", tone = StatusTone.Pending) },
+                    right = { Pill(str(S.desktop_by_department), tone = StatusTone.Pending) },
                     modifier = Modifier.weight(1f),
                 ) {
-                    FieldHint("PO commitment drawdown by week. Darker = higher spend that week.")
+                    FieldHint(str(S.desktop_hub_po_commitment_drawdown_by_week_darker_higher_spend_that_week))
                     if (loading) repeat(HEAT_SKELETONS) {
                         ZillitSkeletonBar(modifier = Modifier.fillMaxWidth().height(HEAT_CELL))
                     }
                     else Heatmap(dash)
-                    FieldHint("Values in £000s · Darker cells = higher commitment drawdown that week")
+                    FieldHint(str(S.desktop_hub_values_in_000s_darker_cells_higher_commitment_drawdown_that_week))
                 }
             }
             Panel(
-                title = "Weekly Close Checklist",
+                title = str(S.desktop_weekly_close_checklist),
                 icon = ZillitIcons.Check,
                 right = { ZillitButton(
-                    text = "Reset All",
+                    text = str(S.desktop_reset_all),
                     onClick = { onEvent(AccountHubEvent.ResetChecklist) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -419,7 +423,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                 // that resets nothing.
                 if (!loading && dash.checklist.isEmpty()) {
                     ZillitText(
-                        text = "No checklist for this week yet.",
+                        text = str(S.desktop_hub_no_checklist_for_this_week_yet),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textMuted,
                         modifier = Modifier.padding(
@@ -455,7 +459,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                             if (item.meta.isNotBlank()) FieldHint(item.meta)
                         }
                         Pill(
-                            if (isDone) "Done" else item.badge.ifBlank { "Pending" },
+                            if (isDone) str(S.ah_done) else item.badge.ifBlank { str(S.pending) },
                             tone = if (isDone) StatusTone.Done else toneOf(item.badgeTone),
                         )
                     }
@@ -466,7 +470,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             ) {
                 Panel(
-                    title = "Supplier Reconciliation Status",
+                    title = str(S.desktop_supplier_reconciliation_status),
                     icon = ZillitIcons.Search,
                     padded = false,
                     modifier = Modifier.weight(1f),
@@ -477,7 +481,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                         )
                     }
                     if (!loading && dash.recon.isEmpty()) FieldHint(
-                        "No supplier reconciliations reported.",
+                        str(S.desktop_hub_no_supplier_reconciliations_reported),
                         Modifier.padding(ZillitTheme.spacing.lg),
                     )
                     dash.recon.forEachIndexed { index, row ->
@@ -511,14 +515,14 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                     }
                 }
                 Panel(
-                    title = "Upcoming Commitments (Next 4 Weeks)",
+                    title = str(S.desktop_hub_upcoming_commitments_next_4_weeks_paren),
                     icon = ZillitIcons.Calendar,
                     modifier = Modifier.weight(1f),
                 ) {
                     if (loading) repeat(RECON_SKELETONS) {
                         ZillitSkeletonBar(modifier = Modifier.fillMaxWidth().height(8.dp))
                     }
-                    if (!loading && dash.weeks.isEmpty()) FieldHint("No upcoming commitments reported.")
+                    if (!loading && dash.weeks.isEmpty()) FieldHint(str(S.desktop_hub_no_upcoming_commitments_reported))
                     dash.weeks.forEach { week ->
                         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -585,7 +589,7 @@ private fun Panel(
 private fun Waterfall(dash: CashCloseDashboard) {
     val colors = ZillitTheme.colors
     if (dash.waterfall.isEmpty()) {
-        FieldHint("No forecast reported.")
+        FieldHint(str(S.desktop_no_forecast_reported))
         return
     }
     Row(
@@ -619,9 +623,9 @@ private fun Waterfall(dash: CashCloseDashboard) {
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-        Legend(colors.teal, "Cash in")
-        Legend(colors.danger, "Cash out")
-        Legend(colors.accent, "Net position")
+        Legend(colors.teal, str(S.desktop_cash_in))
+        Legend(colors.danger, str(S.desktop_cash_out))
+        Legend(colors.accent, str(S.desktop_net_position))
     }
 }
 
@@ -640,7 +644,7 @@ private fun Legend(color: Color, label: String) {
 @Composable
 private fun Heatmap(dash: CashCloseDashboard) {
     if (dash.heatRows.isEmpty()) {
-        FieldHint("No commitment drawdown reported.")
+        FieldHint(str(S.desktop_hub_no_commitment_drawdown_reported))
         return
     }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -736,7 +740,10 @@ private fun RowScope.PublishView(state: AccountHubUiState, onEvent: (AccountHubE
                         ZillitIcon(icon = ZillitIcons.Send, tint = colors.textOnAccent, size = 20.dp)
                     }
                     Column {
-                        ZillitText(text = "Publish Closing Package", style = ZillitTheme.typography.titleLarge)
+                        ZillitText(
+                            text = str(S.desktop_publish_closing_package),
+                            style = ZillitTheme.typography.titleLarge,
+                        )
                         FieldHint("Bundle period-close reports and send them to recipients. Add a package per " +
                             "audience.")
                     }
@@ -745,7 +752,7 @@ private fun RowScope.PublishView(state: AccountHubUiState, onEvent: (AccountHubE
                     index, pkg -> PackageCard(index, pkg, publish.packages.size > 1, state, onEvent)
                 }
                 ZillitButton(
-                    text = "Add package",
+                    text = str(S.desktop_add_package),
                     onClick = { onEvent(AccountHubEvent.AddPackage) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Add,
@@ -781,9 +788,9 @@ private fun RowScope.PublishView(state: AccountHubUiState, onEvent: (AccountHubE
                     val valid = publish.validPackages.size
                     ZillitButton(
                         text = when {
-                            publish.publishing -> "Publishing…"
+                            publish.publishing -> str(S.desktop_publishing)
                             valid > 0 -> "Publish ($valid)"
-                            else -> "Publish"
+                            else -> str(S.publish)
                         },
                         onClick = { onEvent(AccountHubEvent.PublishPackages) },
                         leadingIcon = ZillitIcons.Send,
@@ -847,7 +854,7 @@ private fun PackageCard(
             )
         }
 
-        MonoLabel("Recipients")
+        MonoLabel(str(S.recipients))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -858,7 +865,7 @@ private fun PackageCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Add recipients…",
+                text = str(S.docusign_section_add_recipients),
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textSecondary,
                 modifier = Modifier.weight(1f),
@@ -881,10 +888,13 @@ private fun PackageCard(
                 ZillitSearchField(
                     value = publish.menuQuery,
                     onValueChange = { onEvent(AccountHubEvent.SearchPackageMenu(it)) },
-                    placeholder = "Search team members…",
+                    placeholder = str(S.drive_search_team_members),
                     modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.sm),
                 )
-                if (matches.isEmpty()) FieldHint("No team members", Modifier.padding(ZillitTheme.spacing.md))
+                if (matches.isEmpty()) FieldHint(
+                    str(S.desktop_no_team_members),
+                    Modifier.padding(ZillitTheme.spacing.md),
+                )
                 ZillitScrollColumn(modifier = Modifier.fillMaxWidth().height(MENU_HEIGHT)) {
                     matches.forEach { person ->
                         val on = person.id in pkg.userIds
@@ -897,10 +907,12 @@ private fun PackageCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                         ) {
-                            ZillitAvatar(name = person.name.ifBlank { "Unnamed" }, userId = person.id, size = 30.dp)
+                            ZillitAvatar(name = person.name.ifBlank { str(S.desktop_unnamed) },
+                                userId = person.id,
+                                size = 30.dp)
                             Column(modifier = Modifier.weight(1f)) {
                                 ZillitText(
-                                    text = person.name.ifBlank { "Unnamed" },
+                                    text = person.name.ifBlank { str(S.desktop_unnamed) },
                                     style = ZillitTheme.typography.bodyMedium,
                                 )
                                 if (person.roleLabel.isNotBlank()) FieldHint(person.roleLabel)
@@ -934,7 +946,7 @@ private fun PackageCard(
             }
         }
 
-        MonoLabel("External emails")
+        MonoLabel(str(S.desktop_external_emails))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -949,7 +961,7 @@ private fun PackageCard(
                 onImeAction = { onEvent(AccountHubEvent.AddPackageEmail(pkg.id)) },
             )
             ZillitButton(
-                text = "Add",
+                text = str(S.add),
                 onClick = { onEvent(AccountHubEvent.AddPackageEmail(pkg.id)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -968,9 +980,13 @@ private fun PackageCard(
         }
 
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            MonoLabel("Reports", Modifier.weight(1f))
+            MonoLabel(str(S.reports), Modifier.weight(1f))
             ZillitButton(
-                text = if (pkg.reports.size == ClosingReport.entries.size) "Clear all" else "Select all",
+                text = if (pkg.reports.size == ClosingReport.entries.size) {
+                    str(S.docusign_initials_clear_all)
+                } else {
+                    str(S.dd_select_all)
+                },
                 onClick = { onEvent(AccountHubEvent.TogglePackageAllReports(pkg.id)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.ui.builder
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.AllowanceConversion
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BureauRow
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
@@ -67,30 +69,32 @@ data class BuilderSection(
 
         /** `DEAL_SECTIONS`, render order — Crew Personal Details sits after Allowances. */
         fun dealSections(accountant: Boolean): List<BuilderSection> = listOfNotNull(
-            BuilderSection(DealValidators.TERRITORY, "Territory & Union", collapsible = true, noEdit = true),
-            BuilderSection(DealValidators.CREW, "Crew Details"),
-            BuilderSection(DealValidators.EMPLOYMENT, "Employee Status"),
-            BuilderSection(DealValidators.DEAL, "Deal Structure"),
-            BuilderSection(DealValidators.RATES, "Rates & Compensation"),
-            BuilderSection(DealValidators.ALLOWANCES, "Allowances & Rentals"),
+            BuilderSection(DealValidators.TERRITORY, str(S.dm_quick_sec_territory), collapsible = true, noEdit = true),
+            BuilderSection(DealValidators.CREW, str(S.dm_crew_step_crew)),
+            BuilderSection(DealValidators.EMPLOYMENT, str(S.dm_quick_sec_employment)),
+            BuilderSection(DealValidators.DEAL, str(S.dm_ds_title)),
+            BuilderSection(DealValidators.RATES, str(S.dm_rates_title)),
+            BuilderSection(DealValidators.ALLOWANCES, str(S.dm_allow_title)),
             BuilderSection(
                 DealValidators.PERSONAL,
-                "Crew Personal Details",
-                note = "Mandatory fields for the crew to enter are marked with an asterisk *, edit to change them.",
+                str(S.dm_quick_sec_personal),
+                note = str(S.dm_quick_personal_note),
             ),
-            BuilderSection(CONDITIONS, "Conditions & Documents"),
-            BuilderSection(DealValidators.NOMINAL, "Nominal Coding").takeIf { accountant },
-            BuilderSection(PAYROLL, "Payroll Start Form").takeIf { accountant },
+            BuilderSection(CONDITIONS, str(S.dm_cond_title)),
+            BuilderSection(DealValidators.NOMINAL, str(S.dm_nom_title)).takeIf { accountant },
+            BuilderSection(PAYROLL, str(S.dm_pay_title)).takeIf { accountant },
         )
 
         /** A setup page: Territory & Union, the non-union rules while non-union, then the Global sections. */
         fun setupSections(union: String): List<BuilderSection> = buildList {
-            add(BuilderSection(DealValidators.TERRITORY, "Territory & Union"))
-            if (isNonUnionId(union)) add(BuilderSection(NON_UNION_RULES, "Non-Union Pay Rules", group = "nonunion"))
-            add(BuilderSection(SCHEDULE, "Production Schedule", group = "global"))
-            add(BuilderSection(ALLOWANCES, "Allowances & Rentals", group = "global"))
-            add(BuilderSection(CONDITIONS, "Conditions & Documents", group = "global"))
-            add(BuilderSection(PAYROLL, "Payroll Bureau", group = "global"))
+            add(BuilderSection(DealValidators.TERRITORY, str(S.dm_quick_sec_territory)))
+            if (isNonUnionId(union)) add(
+                BuilderSection(NON_UNION_RULES, str(S.dm_builder_band_nonunion), group = "nonunion"),
+            )
+            add(BuilderSection(SCHEDULE, str(S.desktop_production_schedule), group = "global"))
+            add(BuilderSection(ALLOWANCES, str(S.dm_allow_title), group = "global"))
+            add(BuilderSection(CONDITIONS, str(S.dm_cond_title), group = "global"))
+            add(BuilderSection(PAYROLL, str(S.desktop_payroll_bureau), group = "global"))
         }
     }
 }

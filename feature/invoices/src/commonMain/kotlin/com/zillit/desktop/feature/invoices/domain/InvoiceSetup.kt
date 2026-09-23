@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The module's own settings document — the web's `SettingsPage.jsx` over
@@ -69,8 +71,8 @@ data class InvoiceTeamRow(
 
     /** "Unlimited", "Submit Only" or the figure — the web's posting-limit cell. */
     fun limitLabel(currency: String): String = when {
-        isUnlimited -> "Unlimited"
-        isSubmitOnly -> "Submit Only"
+        isUnlimited -> str(S.drive_link_views_unlimited)
+        isSubmitOnly -> str(S.desktop_submit_only)
         else -> Money.format(postingLimit ?: 0.0, currency)
     }
 
@@ -89,37 +91,41 @@ data class InvoiceTeamRow(
 data class RunAuthLevel(val tier: Int = 1, val userIds: List<String> = emptyList())
 
 /** The six alerts the web offers, in its order, with its wording. */
-enum class InvoiceAlert(val wire: String, val label: String, val hint: String) {
+enum class InvoiceAlert(val wire: String, private val labelKey: String, private val hintKey: String) {
     InvoiceOverdue(
         "invoice_overdue",
-        "Invoice overdue notifications",
-        "Get notified when an invoice passes its due date without being paid.",
+        S.desktop_invoice_overdue_notifications,
+        S.desktop_hub_get_notified_when_an_invoice_passes_its_due_date_without,
     ),
     ApprovalSlaBreach(
         "approval_sla_breach",
-        "Approval SLA breach warnings",
-        "Alert when an invoice sits in the approval queue beyond the SLA window.",
+        S.desktop_hub_approval_sla_breach_warnings,
+        S.desktop_hub_alert_when_an_invoice_sits_in_the_approval_queue_beyond,
     ),
     DuplicateDetection(
         "duplicate_detection",
-        "Duplicate invoice detection",
-        "Flag invoices that appear to be duplicates based on vendor and amount.",
+        S.desktop_duplicate_invoice_detection,
+        S.desktop_hub_flag_invoices_that_appear_to_be_duplicates_based_on_vendor,
     ),
     OverPoFlagging(
         "over_po_flagging",
-        "Over-PO flagging alerts",
-        "Warn when an invoice amount exceeds the linked purchase order value.",
+        S.desktop_hub_over_po_flagging_alerts,
+        S.desktop_hub_warn_when_an_invoice_amount_exceeds_the_linked_purchase_order,
     ),
     NoPoOverride(
         "no_po_override",
-        "No-PO override notifications",
-        "Notify when an invoice is approved without a linked purchase order.",
+        S.desktop_hub_no_po_override_notifications,
+        S.desktop_hub_notify_when_an_invoice_is_approved_without_a_linked_purchase,
     ),
     DailyApSummary(
         "daily_ap_summary",
-        "Daily AP summary email",
-        "Receive a morning summary of pending invoices and payment run status.",
+        S.desktop_hub_daily_ap_summary_email,
+        S.desktop_hub_receive_a_morning_summary_of_pending_invoices_and_payment_run,
     ),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 }
 
 /**
@@ -147,11 +153,18 @@ data class InvoiceAssignmentRule(
     /** "2 depts | 1 vendor | ≥ £500", or what the web says when nothing is set. */
     fun summary(currency: String): String {
         val parts = mutableListOf<String>()
-        if (departments.isNotEmpty()) parts += "${departments.size} dept${if (departments.size > 1) "s" else ""}"
-        if (vendors.isNotEmpty()) parts += "${vendors.size} vendor${if (vendors.size > 1) "s" else ""}"
-        if (nominalCodes.isNotEmpty()) parts += "${nominalCodes.size} nominal"
+        if (departments.isNotEmpty()) {
+            // The web inflects the noun; an explicit one/many pair keeps that in every language.
+            val key = if (departments.size == 1) S.desktop_dept_count_one else S.desktop_dept_count_other
+            parts += str(key, departments.size)
+        }
+        if (vendors.isNotEmpty()) {
+            val key = if (vendors.size == 1) S.desktop_vendor_count_one else S.ah_run_detail_summary_vendors
+            parts += str(key, vendors.size)
+        }
+        if (nominalCodes.isNotEmpty()) parts += str(S.desktop_n_nominal, nominalCodes.size)
         amountMinValue?.let { parts += "≥ ${Money.format(it, currency)}" }
-        return if (parts.isEmpty()) "No condition set" else parts.joinToString(" | ")
+        return if (parts.isEmpty()) str(S.desktop_no_condition_set) else parts.joinToString(" | ")
     }
 
     companion object {

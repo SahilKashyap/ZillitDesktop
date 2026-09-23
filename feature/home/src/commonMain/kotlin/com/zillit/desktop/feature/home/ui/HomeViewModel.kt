@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.OfflineSupport
 import com.zillit.desktop.feature.home.data.ToolsOfflineCopy
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -89,7 +91,7 @@ data class ToolSection(val title: String, val tools: List<ToolPresentation>, val
  * `"Ungrouped"` — and on a production that leaves `group_identifier` blank it
  * is the biggest heading on the page, so it is worth spelling the same way.
  */
-const val UNGROUPED_TOOLS = "Ungrouped"
+val UNGROUPED_TOOLS: String get() = str(S.ungrouped)
 
 /**
  * The groups in the user's chosen order, then the rest in the production's:

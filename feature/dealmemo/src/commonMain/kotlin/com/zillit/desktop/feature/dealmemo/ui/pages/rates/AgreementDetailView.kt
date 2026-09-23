@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.rates.AgreementDocument
 import com.zillit.desktop.feature.dealmemo.domain.rates.AgreementFormat
@@ -66,8 +68,9 @@ internal fun AgreementDetailView(state: DealMemoUiState, onEvent: (DealMemoEvent
     val territoryId = rates.territoryId
     val backLabel = when (rates.agreementOrigin) {
         AgreementOrigin.AgreementsList ->
-            territoryId?.let { "Agreements — ${TerritoryCatalogue.label(it) ?: it.uppercase()}" } ?: "Agreements"
-        AgreementOrigin.Branch, null -> rates.branch?.name ?: "Back"
+            territoryId?.let { str(S.dm_gpr_agreements_for, TerritoryCatalogue.label(it) ?: it.uppercase()) }
+                ?: str(S.desktop_dm_agreements)
+        AgreementOrigin.Branch, null -> rates.branch?.name ?: str(S.dm_wizard_back)
     }
     ZillitScrollColumn(
         modifier = Modifier.fillMaxSize(),
@@ -79,7 +82,7 @@ internal fun AgreementDetailView(state: DealMemoUiState, onEvent: (DealMemoEvent
             rates.agreementLoading -> AgreementSkeleton()
             doc == null -> if (rates.agreementFailed) {
                 ZillitText(
-                    text = "This agreement could not be loaded.",
+                    text = str(S.desktop_dm_this_agreement_could_not_be_loaded),
                     style = DmType.sans(12.5.sp),
                     color = dm.ink3,
                     modifier = Modifier.padding(vertical = 24.dp),
@@ -94,11 +97,11 @@ internal fun AgreementDetailView(state: DealMemoUiState, onEvent: (DealMemoEvent
 private fun ColumnScope.AgreementBody(state: DealMemoUiState, doc: AgreementDocument) {
     AgreementHeader(doc)
     BasicSchedule(doc)
-    RuleCard(doc, "overtimes", "Overtimes", ZillitIcons.Clock, withTrigger = true)
-    RuleCard(doc, "premiums", "Premiums", ZillitIcons.StarOutline, withTrigger = true)
-    RuleCard(doc, "turnaround", "Turnaround", DmIcons.Swap, withTrigger = true)
-    RuleCard(doc, "allowances", "Allowances", DmIcons.Gift, withTrigger = false)
-    RuleCard(doc, "rentals", "Rentals", DmIcons.Database, withTrigger = false)
+    RuleCard(doc, "overtimes", str(S.dm_rates_overtimes), ZillitIcons.Clock, withTrigger = true)
+    RuleCard(doc, "premiums", str(S.dm_rates_premiums), ZillitIcons.StarOutline, withTrigger = true)
+    RuleCard(doc, "turnaround", str(S.desktop_turnaround), DmIcons.Swap, withTrigger = true)
+    RuleCard(doc, "allowances", str(S.dm_section_allowances), DmIcons.Gift, withTrigger = false)
+    RuleCard(doc, "rentals", str(S.dm_allow_card_rentals), DmIcons.Database, withTrigger = false)
     val territoryStatuses = state.rates.empStatuses[doc.territory?.lowercase()].orEmpty()
     Fringes(doc, territoryStatuses)
     ScaleMinimums(doc, state)
@@ -146,17 +149,17 @@ private fun BasicSchedule(doc: AgreementDocument) {
     )
     val range = AgreementFormat.effectiveRange(DocRead.epoch(brd, "effective_from"), DocRead.epoch(brd, "effective_to"))
     val tiers = listOf(
-        "Hourly" to "hourly",
-        "Daily" to "daily",
-        "Weekly" to "weekly",
-        "Flat" to "flat_rate",
+        str(S.desktop_dm_hourly) to "hourly",
+        str(S.dm_rates_buyout_mode_daily) to "daily",
+        str(S.dm_rates_buyout_mode_weekly) to "weekly",
+        str(S.desktop_dm_flat) to "flat_rate",
     ).mapNotNull { (label, key) ->
         DocRead.obj(brd, key)?.let { RateFormat.formatTier(tierFrom(it), currency) }?.let { label to it }
     }
-    LegacyCard(icon = DmIcons.Dollar, title = "Basic rate schedule") {
+    LegacyCard(icon = DmIcons.Dollar, title = str(S.desktop_dm_basic_rate_schedule)) {
         val nothingPublished = parts.isEmpty() && range.isEmpty() && tiers.isEmpty()
         if (brd == null || nothingPublished) {
-            MutedNote("No published schedule.")
+            MutedNote(str(S.desktop_dm_no_published_schedule))
             return@LegacyCard
         }
         Column(
@@ -169,7 +172,7 @@ private fun BasicSchedule(doc: AgreementDocument) {
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     ZillitIcon(ZillitIcons.Clock, size = 12.dp, tint = GRAY_500)
-                    ZillitText(text = "Schedule", style = DmType.sans(11.sp), color = GRAY_500)
+                    ZillitText(text = str(S.schedule), style = DmType.sans(11.sp), color = GRAY_500)
                     ZillitText(
                         text = parts.joinToString(" · "),
                         style = DmType.sans(11.sp, FontWeight.SemiBold),
@@ -189,7 +192,7 @@ private fun TierLine(tiers: List<Pair<String, String>>) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ZillitIcon(DmIcons.Dollar, size = 12.dp, tint = GRAY_500)
-            ZillitText(text = "Agreement rates", style = DmType.sans(11.sp), color = GRAY_500)
+            ZillitText(text = str(S.desktop_dm_agreement_rates), style = DmType.sans(11.sp), color = GRAY_500)
         }
         tiers.forEach { (label, value) ->
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -235,18 +238,18 @@ private fun RuleCard(
 @Composable
 private fun RowsTable(rows: List<JsonObject>, currency: String?, withTrigger: Boolean) {
     if (rows.isEmpty()) {
-        MutedNote("No rows defined.")
+        MutedNote(str(S.dm_gpr_no_rows))
         return
     }
     val hasBasis = rows.any { Js.truthy(it["basis"]) }
     val hasCap = rows.any { !Js.isNullish(it["min"]) || !Js.isNullish(it["max"]) }
     Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
     Row(Modifier.fillMaxWidth().background(legacyGray50())) {
-        HeaderCell("Period", 1.6f)
-        if (withTrigger) HeaderCell("Trigger", 1.5f)
-        HeaderCell("Rate", 1.2f)
-        if (hasBasis) HeaderCell("Basis", 0.9f)
-        if (hasCap) HeaderCell("Cap", 1f)
+        HeaderCell(str(S.cr_meta_period), 1.6f)
+        if (withTrigger) HeaderCell(str(S.desktop_dm_trigger), 1.5f)
+        HeaderCell(str(S.dm_allow_rate), 1.2f)
+        if (hasBasis) HeaderCell(str(S.dm_rule_basis), 0.9f)
+        if (hasCap) HeaderCell(str(S.dm_allow_cap_type), 1f)
     }
     rows.forEach { row ->
         Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
@@ -292,7 +295,7 @@ private fun RowsTable(rows: List<JsonObject>, currency: String?, withTrigger: Bo
                         color = Color(0xFF374151).dark(Color(0xFFD1D5DB)),
                         maxLines = 1,
                     )
-                    if (Js.truthy(row["is_gold_time"])) DmBadge("Gold Time", DmTone.Amber)
+                    if (Js.truthy(row["is_gold_time"])) DmBadge(str(S.desktop_dm_gold_time), DmTone.Amber)
                 }
             }
             if (hasBasis) {
@@ -345,12 +348,12 @@ private fun Fringes(
     val fringes = doc.block("fringes")?.takeIf { it.isNotEmpty() } ?: return
     val map = doc.block("fringe_map")
     val statuses = doc.empStatuses.ifEmpty { territoryStatuses }
-    LegacyCard(icon = DmIcons.Dollar, title = "Fringe packages") {
+    LegacyCard(icon = DmIcons.Dollar, title = str(S.desktop_dm_fringe_packages)) {
         if (map != null) {
-            SubHeader("Status → package mapping")
+            SubHeader(str(S.desktop_dm_status_package_mapping))
             Row(Modifier.fillMaxWidth().background(legacyGray50())) {
-                HeaderCell("Employment status", 1f)
-                HeaderCell("Fringe package", 1f)
+                HeaderCell(str(S.dm_quick_sec_employment_sub), 1f)
+                HeaderCell(str(S.desktop_dm_fringe_package), 1f)
             }
             map.entries.forEach { (statusId, pkg) ->
                 Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
@@ -401,16 +404,16 @@ private fun Fringes(
 @Composable
 private fun FringeItems(items: List<JsonObject>) {
     if (items.isEmpty()) {
-        MutedNote("No items.")
+        MutedNote(str(S.desktop_dm_no_items))
         return
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
     Row(Modifier.fillMaxWidth().background(legacyGray50())) {
-        HeaderCell("Item", 1.6f)
-        HeaderCell("Value", 0.8f, end = true)
-        HeaderCell("Percentage", 0.8f, end = true)
-        HeaderCell("Flat", 0.8f, end = true)
-        HeaderCell("Basis", 1f)
+        HeaderCell(str(S.desktop_dm_item), 1.6f)
+        HeaderCell(str(S.dm_step2_bank_addl_value_hint), 0.8f, end = true)
+        HeaderCell(str(S.desktop_dm_percentage), 0.8f, end = true)
+        HeaderCell(str(S.desktop_dm_flat), 0.8f, end = true)
+        HeaderCell(str(S.dm_rule_basis), 1f)
     }
     items.forEach { item ->
         Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
@@ -428,7 +431,7 @@ private fun FringeItems(items: List<JsonObject>) {
                     )
                     val hpOnly = DocRead.flag(item, "hp_excl_only") ||
                         DocRead.text(item, "note")?.contains("[hp_excl_only") == true
-                    if (hpOnly) DmBadge("HP excl. only", DmTone.Amber)
+                    if (hpOnly) DmBadge(str(S.desktop_dm_hp_excl_only), DmTone.Amber)
                 }
             }
             val raw = item["raw_value"]
@@ -473,11 +476,11 @@ private fun RowScope.NumberCell(text: String, weight: Float, strong: Boolean = f
 @Composable
 private fun ScaleMinimums(doc: AgreementDocument, state: DealMemoUiState) {
     val scale = doc.block("scale") ?: return
-    LegacyCard(icon = DmIcons.Dollar, title = "Scale minimums") {
+    LegacyCard(icon = DmIcons.Dollar, title = str(S.desktop_dm_scale_minimums)) {
         Row(Modifier.fillMaxWidth().background(legacyGray50())) {
-            HeaderCell("Position", 1.6f)
-            HeaderCell("Weekly", 1f, end = true)
-            HeaderCell("Prod fee / wk", 1f, end = true)
+            HeaderCell(str(S.desktop_dm_position), 1.6f)
+            HeaderCell(str(S.dm_rates_buyout_mode_weekly), 1f, end = true)
+            HeaderCell(str(S.desktop_dm_prod_fee_wk), 1f, end = true)
         }
         scale.entries.forEach { (role, value) ->
             val entry = value as? JsonObject
@@ -518,7 +521,7 @@ private fun PerDiem(doc: AgreementDocument) {
             PER_DIEM.containsMatchIn(DocRead.text(row, "label").orEmpty())
     }
     if (rows.isEmpty()) return
-    LegacyCard(icon = ZillitIcons.Info, title = "Per diem") {
+    LegacyCard(icon = ZillitIcons.Info, title = str(S.desktop_dm_per_diem)) {
         rows.forEachIndexed { index, row ->
             if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
             Row(
@@ -526,7 +529,7 @@ private fun PerDiem(doc: AgreementDocument) {
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 ZillitText(
-                    text = DocRead.text(row, "label") ?: "Rate ${index + 1}",
+                    text = DocRead.text(row, "label") ?: str(S.desktop_dm_rate_n, index + 1),
                     style = DmType.sans(12.sp),
                     color = GRAY_400,
                     modifier = Modifier.width(144.dp),
@@ -553,14 +556,14 @@ private fun PerDiem(doc: AgreementDocument) {
 @Composable
 private fun DistantLocation(doc: AgreementDocument) {
     val distant = doc.block("distant_location")?.takeIf { DocRead.flag(it, "applicable") } ?: return
-    LegacyCard(icon = ZillitIcons.Pin, title = "Distant location") {
+    LegacyCard(icon = ZillitIcons.Pin, title = str(S.desktop_dm_distant_location_lower)) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             DocRead.text(distant, "legal_warning")?.let { WarningBox(it) }
-            DocRead.text(distant, "resident_note")?.let { LabelledText("Resident location", it) }
-            DocRead.text(distant, "overseas_note")?.let { LabelledText("Overseas location", it) }
+            DocRead.text(distant, "resident_note")?.let { LabelledText(str(S.desktop_dm_resident_location), it) }
+            DocRead.text(distant, "overseas_note")?.let { LabelledText(str(S.desktop_dm_overseas_location), it) }
             DocRead.text(distant, "travel_note")?.let {
                 ZillitText(text = it, style = DmType.sans(12.sp), color = Color(0xFF4B5563).dark(Color(0xFF9CA3AF)))
             }
@@ -569,13 +572,18 @@ private fun DistantLocation(doc: AgreementDocument) {
             }
             DocRead.text(distant, "idle_days_note")?.let {
                 val applicable = DocRead.flag(distant, "idle_days_applicable")
-                LabelledText(if (applicable) "Idle days — applicable" else "Idle days — not applicable", it)
+                val idleLabel = if (applicable) {
+                    str(S.desktop_dm_idle_days_applicable)
+                } else {
+                    str(S.desktop_dm_idle_days_not_applicable)
+                }
+                LabelledText(idleLabel, it)
             }
         }
         val zones = DocRead.objects(distant["travel_zones"])
         if (zones.isNotEmpty()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
-            SectionLabel("Travel zones")
+            SectionLabel(str(S.desktop_dm_travel_zones))
             zones.forEachIndexed { index, zone ->
                 if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
                 TravelZone(zone)
@@ -584,7 +592,7 @@ private fun DistantLocation(doc: AgreementDocument) {
         val rows = DocRead.objects(distant["rows"])
         if (rows.isNotEmpty()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
-            SectionLabel("Distant-specific rows")
+            SectionLabel(str(S.desktop_dm_distant_specific_rows))
             RowsTable(rows, doc.currency, withTrigger = true)
         }
     }
@@ -600,7 +608,7 @@ private fun TravelZone(zone: JsonObject) {
                 color = legacyInk800(),
             )
             DocRead.text(zone, "clause")?.let { DmBadge(it, DmTone.Gray) }
-            if (DocRead.flag(zone, "default")) DmBadge("Default", DmTone.Green)
+            if (DocRead.flag(zone, "default")) DmBadge(str(S.desktop_email_format_default), DmTone.Green)
         }
         DocRead.text(zone, "desc")?.let {
             ZillitText(text = it, style = DmType.sans(12.sp), color = GRAY_500, modifier = Modifier.padding(top = 2.dp))
@@ -619,12 +627,12 @@ private fun TravelZone(zone: JsonObject) {
 @Composable
 private fun PactBands(doc: AgreementDocument) {
     val pact = doc.block("pact") ?: return
-    LegacyCard(icon = DmIcons.Apartment, title = "PACT budget bands") {
+    LegacyCard(icon = DmIcons.Apartment, title = str(S.desktop_dm_pact_budget_bands)) {
         Row(Modifier.fillMaxWidth().background(legacyGray50())) {
-            HeaderCell("Band", 1.2f)
-            HeaderCell("Budget threshold", 1.2f)
-            HeaderCell("OT rates", 1f)
-            HeaderCell("Bank holiday", 1f)
+            HeaderCell(str(S.desktop_dm_band), 1.2f)
+            HeaderCell(str(S.desktop_dm_budget_threshold), 1.2f)
+            HeaderCell(str(S.desktop_dm_ot_rates), 1f)
+            HeaderCell(str(S.desktop_bank_holiday), 1f)
         }
         DocRead.objects(pact["bands"]).forEach { band ->
             Box(Modifier.fillMaxWidth().height(1.dp).background(legacyGray100()))
@@ -677,7 +685,7 @@ private fun PactBands(doc: AgreementDocument) {
 @Composable
 private fun DgaDetails(doc: AgreementDocument) {
     val dga = doc.block("dga") ?: return
-    LegacyCard(icon = ZillitIcons.Info, title = "DGA details") {
+    LegacyCard(icon = ZillitIcons.Info, title = str(S.desktop_dm_dga_details)) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -685,7 +693,7 @@ private fun DgaDetails(doc: AgreementDocument) {
             val bases = DocRead.objects(dga["coa_basis"])
             if (dga["coa_basis"] != null && dga["coa_basis"] !is JsonNull) {
                 Column {
-                    SmallCaps("Completion of assignment bases")
+                    SmallCaps(str(S.desktop_dm_completion_of_assignment_bases))
                     Spacer(Modifier.height(6.dp))
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -698,15 +706,18 @@ private fun DgaDetails(doc: AgreementDocument) {
             DocRead.obj(dga, "distant_allowance")?.let { allowance ->
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     ZillitText(
-                        text = "Distant allowance",
+                        text = str(S.desktop_dm_distant_allowance),
                         style = DmType.sans(12.sp),
                         color = GRAY_400,
                         modifier = Modifier.width(144.dp),
                     )
                     val amount = allowance["daily"]?.takeUnless(Js::isNullish) ?: allowance["amount"]
                     ZillitText(
-                        text = "$${AgreementFormat.groupAmount(amount)}/day from " +
-                            "${Js.text(allowance["effective_from"])}",
+                        text = str(
+                            S.desktop_dm_amount_per_day_from,
+                            "$${AgreementFormat.groupAmount(amount)}",
+                            Js.text(allowance["effective_from"]),
+                        ),
                         style = DmType.sans(12.sp, FontWeight.Medium),
                         color = legacyInk800(),
                     )

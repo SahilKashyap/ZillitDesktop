@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BibleAccountTypes
 import com.zillit.desktop.feature.accounthub.domain.BibleFilters
 import com.zillit.desktop.feature.accounthub.domain.BibleFormat
@@ -116,7 +118,7 @@ private fun Header(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit,
             )
         }
         ZillitButton(
-            text = if (bible.loading) "Running…" else "Run Report",
+            text = if (bible.loading) str(S.desktop_running) else str(S.desktop_run_report),
             onClick = { onEvent(AccountHubEvent.RunBibleReport) },
             leadingIcon = ZillitIcons.Search,
             loading = bible.loading,
@@ -155,10 +157,10 @@ private fun Title(onEvent: (AccountHubEvent) -> Unit, modifier: Modifier) {
                     .padding(vertical = 1.dp),
             )
             ZillitText(text = "/", style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
-            ZillitText(text = "Bible Report", style = ZillitTheme.typography.titleSmall, maxLines = 1)
+            ZillitText(text = str(S.desktop_bible_report), style = ZillitTheme.typography.titleSmall, maxLines = 1)
         }
         ZillitText(
-            text = "Every posted transaction, grouped by the account it posted to.",
+            text = str(S.desktop_hub_every_posted_transaction_grouped_by_the_account_it_posted_to),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
             maxLines = 1,
@@ -198,7 +200,11 @@ private fun BackChip(onClick: () -> Unit) {
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        ZillitIcon(icon = ZillitIcons.ArrowLeft, contentDescription = "Back to Account Hub", size = 16.dp)
+        ZillitIcon(
+            icon = ZillitIcons.ArrowLeft,
+            contentDescription = str(S.desktop_hub_back_to_account_hub),
+            size = 16.dp,
+        )
     }
 }
 
@@ -224,7 +230,7 @@ private fun FilterBar(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Un
         horizontalArrangement = Arrangement.spacedBy(FILTER_GAP),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        FilterCell("Period") {
+        FilterCell(str(S.cr_meta_period)) {
             ZillitSegmented(
                 options = PeriodMode.entries.map { ZillitTab(it.name, it.label) },
                 activeId = filters.periodMode.name,
@@ -250,55 +256,55 @@ private fun FilterBar(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Un
                 CurrentPeriodLabel(state)
             }
         }
-        FilterCell("Account") {
+        FilterCell(str(S.ah_account_label)) {
             ZillitTextField(
                 value = filters.accountStart,
                 onValueChange = { edit(filters.copy(accountStart = it)) },
-                placeholder = "From",
+                placeholder = str(S.fromText),
                 modifier = Modifier.width(CODE_WIDTH),
             )
             RangeArrow()
             ZillitTextField(
                 value = filters.accountEnd,
                 onValueChange = { edit(filters.copy(accountEnd = it)) },
-                placeholder = "To",
+                placeholder = str(S.toText),
                 modifier = Modifier.width(CODE_WIDTH),
             )
         }
-        FilterCell("Account Type") {
+        FilterCell(str(S.desktop_account_type)) {
             FilterMultiSelect(
                 selected = filters.accountTypes,
                 options = BibleAccountTypes,
                 key = FilterOption::value,
                 label = FilterOption::label,
                 onChange = { edit(filters.copy(accountTypes = it)) },
-                placeholder = "All types",
+                placeholder = str(S.bs_all_types),
                 modifier = Modifier.width(SELECT_WIDTH),
             )
         }
-        FilterCell("Source") {
+        FilterCell(str(S.av_source)) {
             FilterMultiSelect(
                 selected = filters.sources,
                 options = LedgerSource.entries,
                 key = LedgerSource::wire,
                 label = LedgerSource::label,
                 onChange = { edit(filters.copy(sources = it)) },
-                placeholder = "All sources",
+                placeholder = str(S.desktop_all_sources),
                 modifier = Modifier.width(SELECT_WIDTH),
             )
         }
-        FilterCell("Company") {
+        FilterCell(str(S.company)) {
             FilterMultiSelect<Company>(
                 selected = filters.companyIds,
                 options = state.setup.companies.saved,
                 key = { it.id },
                 label = { it.name.ifBlank { it.legalName } },
                 onChange = { edit(filters.copy(companyIds = it)) },
-                placeholder = "All companies",
+                placeholder = str(S.cr_all_companies),
                 modifier = Modifier.width(SELECT_WIDTH),
             )
         }
-        FilterCell("Vendor") {
+        FilterCell(str(S.ah_lbl_vendor)) {
             val vendors = bible.vendors
             FilterSelect<Vendor>(
                 value = vendors.firstOrNull { it.id == filters.vendorId },
@@ -306,7 +312,7 @@ private fun FilterBar(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Un
                 key = { it.id },
                 label = { it.display },
                 onSelect = { edit(filters.copy(vendorId = it?.id.orEmpty())) },
-                placeholder = "All vendors",
+                placeholder = str(S.desktop_all_vendors),
                 searchText = { "${it.display} ${vendorSubline(it)}" },
                 popupWidth = VENDOR_POPUP_WIDTH,
                 rowHeight = VENDOR_ROW_HEIGHT,
@@ -314,29 +320,29 @@ private fun FilterBar(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Un
                 modifier = Modifier.width(SELECT_WIDTH),
             )
         }
-        FilterCell("Tax") {
+        FilterCell(str(S.ah_lbl_vat)) {
             FilterMultiSelect(
                 selected = filters.taxes,
                 options = bibleTaxOptions(state.setup.taxTypes.saved),
                 key = FilterOption::value,
                 label = FilterOption::label,
                 onChange = { edit(filters.copy(taxes = it)) },
-                placeholder = "All tax types",
+                placeholder = str(S.desktop_all_tax_types),
                 modifier = Modifier.width(SELECT_WIDTH),
             )
         }
-        FilterCell("Tags") {
+        FilterCell(str(S.drive_tags)) {
             FilterMultiSelect<String>(
                 selected = filters.tags,
                 options = state.setup.assetTags.saved,
                 key = { it },
                 label = { it },
                 onChange = { edit(filters.copy(tags = it)) },
-                placeholder = "All tags",
+                placeholder = str(S.desktop_all_tags),
                 modifier = Modifier.width(SELECT_WIDTH),
             )
         }
-        FilterCell("Currency") {
+        FilterCell(str(S.asset_currency)) {
             val currencies = bibleCurrencies(state)
             FilterSelect<ProjectCurrency>(
                 value = currencies.firstOrNull { it.code == filters.currency },
@@ -344,13 +350,13 @@ private fun FilterBar(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Un
                 key = { it.code },
                 label = { if (it.symbol.isNotBlank()) "${it.code} (${it.symbol})" else it.code },
                 onSelect = { picked -> picked?.let { edit(filters.copy(currency = it.code)) } },
-                placeholder = "Currency",
+                placeholder = str(S.asset_currency),
                 clearable = false,
                 searchText = { "${it.code} ${it.name}" },
                 modifier = Modifier.width(CURRENCY_WIDTH),
             )
         }
-        FilterCell("Open POs") {
+        FilterCell(str(S.desktop_open_pos)) {
             OpenPosToggle(
                 included = filters.includeOpenPurchaseOrders,
                 onToggle = { edit(filters.copy(includeOpenPurchaseOrders = !filters.includeOpenPurchaseOrders)) },
@@ -417,7 +423,7 @@ private fun OpenPosToggle(included: Boolean, onToggle: () -> Unit) {
                 .background(if (included) colors.warning else colors.textMuted),
         )
         ZillitText(
-            text = if (included) "Included" else "Excluded",
+            text = if (included) str(S.desktop_included) else str(S.excluded),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
             color = if (included) colors.warning else colors.textSecondary,
         )
@@ -573,7 +579,7 @@ private fun ColumnScope.Loading() {
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitSpinner(size = 28.dp)
-            FieldHint("Aggregating transactions…")
+            FieldHint(str(S.desktop_aggregating_transactions))
         }
     }
 }
@@ -618,13 +624,12 @@ private fun ColumnScope.PreRunCard() {
                 ZillitIcon(icon = ZillitIcons.File, tint = colors.accentText, size = 22.dp)
             }
             ZillitText(
-                text = "Set filters and run the report",
+                text = str(S.desktop_hub_set_filters_and_run_the_report),
                 style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
                 modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
             )
             ZillitText(
-                text = "Every PO, invoice, card receipt, cash claim and payroll line grouped by account code — " +
-                    "the production closeout Bible.",
+                text = str(S.desktop_hub_every_po_invoice_card_receipt_cash_claim_and_payroll_line),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
                 textAlign = TextAlign.Center,
@@ -641,7 +646,7 @@ private fun ColumnScope.NoResults() {
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitIcon(icon = ZillitIcons.Search, tint = ZillitTheme.colors.textMuted, size = 22.dp)
-            FieldHint("No transactions found for the selected filters.")
+            FieldHint(str(S.desktop_hub_no_transactions_found_for_the_selected_filters))
         }
     }
 }

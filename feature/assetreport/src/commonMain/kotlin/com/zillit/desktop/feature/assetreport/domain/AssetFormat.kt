@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.assetreport.domain
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
@@ -9,7 +11,20 @@ import kotlin.time.Instant
 /** How the register writes its figures and days — the web's `fmtAmount`, `fmtDate` and `fmtRange`. */
 object AssetFormat {
 
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val MONTHS = listOf(
+        S.desktop_month_short_jan,
+        S.desktop_month_short_feb,
+        S.desktop_month_short_mar,
+        S.desktop_month_short_apr,
+        S.desktop_month_short_may,
+        S.desktop_month_short_jun,
+        S.desktop_month_short_jul,
+        S.desktop_month_short_aug,
+        S.desktop_month_short_sep,
+        S.desktop_month_short_oct,
+        S.desktop_month_short_nov,
+        S.desktop_month_short_dec,
+    )
 
     /** `£1,234.50` — the picked currency's symbol, en-GB grouping, always two decimals. */
     fun money(amount: Double, symbol: String): String {
@@ -22,7 +37,7 @@ object AssetFormat {
     fun date(millis: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (millis == null) return ""
         val day = Instant.fromEpochMilliseconds(millis).toLocalDateTime(zone).date
-        return "${day.day} ${MONTHS[day.month.ordinal]} ${day.year}"
+        return "${day.day} ${str(MONTHS[day.month.ordinal])} ${day.year}"
     }
 
     /** `1 Sep 2026 – 30 Sep 2026`, or whichever end is known. */

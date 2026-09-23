@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.settings.admin.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
@@ -162,8 +164,8 @@ sealed interface AdminForm {
 
         val title: String
             get() = when {
-                isRename -> "Rename ${kind.noun}"
-                else -> "New ${kind.noun}"
+                isRename -> str(kind.renameTitleKey)
+                else -> str(kind.newTitleKey)
             }
     }
 
@@ -212,11 +214,16 @@ sealed interface AdminForm {
 }
 
 /** What a [AdminForm.Name] is naming, for the wording and the call. */
-enum class NameKind(val noun: String) {
-    Department("department"),
-    JobTitle("job title"),
-    ToolGroup("tool group"),
-    Unit("unit"),
+enum class NameKind(
+    val renameTitleKey: String,
+    val newTitleKey: String,
+    /** The three-character rule, said for this kind of name. */
+    val nameTooShortKey: String,
+) {
+    Department(S.desktop_rename_department, S.desktop_new_department, S.desktop_department_name_too_short),
+    JobTitle(S.desktop_rename_job_title, S.desktop_new_job_title, S.desktop_job_title_name_too_short),
+    ToolGroup(S.desktop_rename_tool_group, S.desktop_new_tool_group, S.desktop_tool_group_name_too_short),
+    Unit(S.desktop_rename_unit, S.desktop_new_unit, S.desktop_unit_name_too_short),
 }
 
 /**
@@ -233,11 +240,9 @@ sealed interface AdminConfirmation {
     val confirmLabel: String
 
     data class RemoveDepartment(val id: String, val name: String) : AdminConfirmation {
-        override val title = "Delete this department?"
-        override val message =
-            "“$name” goes from this project. Crew filed under it keep their job title " +
-                "but lose their department until someone gives them a new one."
-        override val confirmLabel = "Delete department"
+        override val title: String get() = str(S.desktop_delete_this_department)
+        override val message: String get() = str(S.desktop_delete_department_message, name)
+        override val confirmLabel: String get() = str(S.desktop_delete_department)
     }
 
     data class RemoveJobTitle(
@@ -245,59 +250,53 @@ sealed interface AdminConfirmation {
         val id: String,
         val name: String,
     ) : AdminConfirmation {
-        override val title = "Delete this job title?"
-        override val message = "“$name” stops being offered when crew join or change department."
-        override val confirmLabel = "Delete job title"
+        override val title: String get() = str(S.desktop_delete_this_job_title)
+        override val message: String get() = str(S.desktop_delete_job_title_message, name)
+        override val confirmLabel: String get() = str(S.desktop_delete_job_title)
     }
 
     data class RemoveToolGroup(val id: String, val name: String) : AdminConfirmation {
-        override val title = "Delete this group?"
-        override val message = "“$name” goes from the Film Tools grid. The tools themselves stay."
-        override val confirmLabel = "Delete group"
+        override val title: String get() = str(S.desktop_delete_this_group)
+        override val message: String get() = str(S.desktop_delete_group_message, name)
+        override val confirmLabel: String get() = str(S.mtg_delete_group_title)
     }
 
     data class RemoveUnit(val kind: UnitKind, val id: String, val name: String) : AdminConfirmation {
-        override val title = "Delete this unit?"
-        override val message =
-            "“$name” goes from this project. Crew attached to it stop receiving its " +
-                "call sheets and notices."
-        override val confirmLabel = "Delete unit"
+        override val title: String get() = str(S.desktop_delete_this_unit)
+        override val message: String get() = str(S.desktop_delete_unit_message, name)
+        override val confirmLabel: String get() = str(S.desktop_delete_unit)
     }
 
     data class RemoveSos(val id: String, val name: String) : AdminConfirmation {
-        override val title = "Remove this recipient?"
-        override val message = "$name stops being alerted when someone on this project raises an SOS."
-        override val confirmLabel = "Remove"
+        override val title: String get() = str(S.desktop_remove_this_recipient)
+        override val message: String get() = str(S.desktop_remove_recipient_message, name)
+        override val confirmLabel: String get() = str(S.remove)
     }
 
     data class RemoveFromCrew(val userId: String, val deviceId: String, val name: String) :
         AdminConfirmation {
-        override val title = "Take this person off the project?"
-        override val message =
-            "$name loses access to everything on it. They can be put back from this page, " +
-                "and nothing they posted is deleted."
-        override val confirmLabel = "Remove from crew"
+        override val title: String get() = str(S.desktop_remove_from_crew_title)
+        override val message: String get() = str(S.desktop_remove_from_crew_message, name)
+        override val confirmLabel: String get() = str(S.desktop_remove_from_crew)
     }
 
     /** Granting is asked about; revoking is not. Both phone clients agree. */
     data class GrantAdmin(val userId: String, val name: String) : AdminConfirmation {
-        override val title = "Make this person an administrator?"
-        override val message =
-            "$name will be able to change everything on this page — crew, departments, " +
-                "permissions — and to delete the project."
-        override val confirmLabel = "Grant admin rights"
+        override val title: String get() = str(S.desktop_grant_admin_title)
+        override val message: String get() = str(S.desktop_grant_admin_message, name)
+        override val confirmLabel: String get() = str(S.desktop_grant_admin_rights)
     }
 
     data class ClearWatermark(val nothing: Unit = Unit) : AdminConfirmation {
-        override val title = "Remove the watermark?"
-        override val message = "Documents this project sends out stop being stamped."
-        override val confirmLabel = "Remove watermark"
+        override val title: String get() = str(S.desktop_remove_watermark_title)
+        override val message: String get() = str(S.desktop_remove_watermark_message)
+        override val confirmLabel: String get() = str(S.desktop_remove_watermark)
     }
 
     data class ClearCompanyLogo(val nothing: Unit = Unit) : AdminConfirmation {
-        override val title = "Remove the company logo?"
-        override val message = "The crew list header keeps its text and loses the image."
-        override val confirmLabel = "Remove logo"
+        override val title: String get() = str(S.desktop_remove_logo_title)
+        override val message: String get() = str(S.desktop_remove_logo_message)
+        override val confirmLabel: String get() = str(S.desktop_remove_logo)
     }
 
     /**
@@ -307,12 +306,9 @@ sealed interface AdminConfirmation {
      * visible and the deletion can be called off until it elapses.
      */
     data class DeleteProduction(val hours: Int, val name: String) : AdminConfirmation {
-        override val title = "Delete this project in $hours hours?"
-        override val message =
-            "Everything on “$name” goes, for everyone on it — every notice, document, " +
-                "timecard and message. It can be called off from this page until the " +
-                "$hours hours are up. After that it cannot."
-        override val confirmLabel = "Schedule deletion"
+        override val title: String get() = str(S.desktop_delete_project_in_hours_title, hours)
+        override val message: String get() = str(S.desktop_delete_project_message, name, hours)
+        override val confirmLabel: String get() = str(S.desktop_schedule_deletion)
     }
 }
 

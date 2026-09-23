@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.email.rules
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * An inbox rule — the web's `email_v2/emailRules` and Android's
  * `EmailRule`, on the same wire (`/v2/email-rules`): when a message matching
@@ -23,11 +26,11 @@ data class EmailRule(
     /** Why the rule cannot be saved, or null. Mirrors Android's `RuleValidationIssue`. */
     val validationIssue: String?
         get() = when {
-            name.isBlank() -> "Give the rule a name."
-            name.length > NAME_MAX_LENGTH -> "The name is too long."
-            conditions.isEmpty() -> "Add at least one condition."
-            conditions.any { !it.isValid } -> "Every condition with a value needs one."
-            actions.isEmpty() -> "Add at least one action."
+            name.isBlank() -> str(S.desktop_email_rule_name_required)
+            name.length > NAME_MAX_LENGTH -> str(S.desktop_email_rule_name_too_long)
+            conditions.isEmpty() -> str(S.desktop_email_rule_condition_required)
+            conditions.any { !it.isValid } -> str(S.desktop_email_rule_condition_value_required)
+            actions.isEmpty() -> str(S.desktop_email_rule_action_required)
             actions.any { !it.isValid } -> actions.first { !it.isValid }.invalidReason
             else -> null
         }
@@ -36,7 +39,7 @@ data class EmailRule(
 
     /** One line that says what the rule does — Android's `RuleSummary`. */
     fun summary(): String {
-        val joiner = if (matchType == RuleMatchType.All) " and " else " or "
+        val joiner = " ${str(if (matchType == RuleMatchType.All) S.email_rule_joiner_and else S.email_rule_joiner_or)} "
         val whenPart = conditions.joinToString(joiner) { it.describe() }
         val thenPart = actions.joinToString(", ") { it.describe() }
         return "$whenPart → $thenPart"
@@ -48,10 +51,12 @@ data class EmailRule(
     }
 }
 
-enum class RuleMatchType(val wire: String, val label: String) {
-    All("all", "All conditions"),
-    Any("any", "Any condition"),
+enum class RuleMatchType(val wire: String, private val labelKey: String) {
+    All("all", S.desktop_email_rule_all_conditions),
+    Any("any", S.desktop_email_rule_any_condition),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(raw: String?): RuleMatchType =
@@ -59,16 +64,18 @@ enum class RuleMatchType(val wire: String, val label: String) {
     }
 }
 
-enum class ConditionOperator(val wire: String, val label: String) {
-    Is("is", "is"),
-    IsNot("is_not", "is not"),
-    Contains("contains", "contains"),
-    NotContains("not_contains", "does not contain"),
-    StartsWith("starts_with", "starts with"),
-    EndsWith("ends_with", "ends with"),
-    IsTrue("is_true", "is true"),
-    IsFalse("is_false", "is false"),
+enum class ConditionOperator(val wire: String, private val labelKey: String) {
+    Is("is", S.email_rule_op_is),
+    IsNot("is_not", S.email_rule_op_is_not),
+    Contains("contains", S.email_rule_op_contains),
+    NotContains("not_contains", S.email_rule_op_not_contains),
+    StartsWith("starts_with", S.email_rule_op_starts_with),
+    EndsWith("ends_with", S.email_rule_op_ends_with),
+    IsTrue("is_true", S.desktop_email_rule_op_is_true),
+    IsFalse("is_false", S.desktop_email_rule_op_is_false),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         val TEXT: List<ConditionOperator> = listOf(Is, IsNot, Contains, NotContains, StartsWith, EndsWith)
@@ -79,23 +86,25 @@ enum class ConditionOperator(val wire: String, val label: String) {
 /** What a condition looks at; the operators it takes; whether it needs a value. The web's `CONDITION_FIELDS`. */
 enum class ConditionField(
     val wire: String,
-    val label: String,
+    private val labelKey: String,
     val operators: List<ConditionOperator>,
     val needsValue: Boolean,
 ) {
-    Always("always", "Any email (no filter)", listOf(ConditionOperator.IsTrue), needsValue = false),
-    From("from", "From", ConditionOperator.TEXT, needsValue = true),
-    FromDomain("from_domain", "From domain", ConditionOperator.TEXT, needsValue = true),
-    Subject("subject", "Subject", ConditionOperator.TEXT, needsValue = true),
-    Body("body", "Body", ConditionOperator.TEXT, needsValue = true),
-    SubjectOrBody("subject_or_body", "Subject or body", ConditionOperator.TEXT, needsValue = true),
+    Always("always", S.email_rule_field_always, listOf(ConditionOperator.IsTrue), needsValue = false),
+    From("from", S.email_rule_field_from, ConditionOperator.TEXT, needsValue = true),
+    FromDomain("from_domain", S.desktop_email_rule_field_from_domain, ConditionOperator.TEXT, needsValue = true),
+    Subject("subject", S.email_rule_field_subject, ConditionOperator.TEXT, needsValue = true),
+    Body("body", S.email_rule_field_body, ConditionOperator.TEXT, needsValue = true),
+    SubjectOrBody("subject_or_body", S.email_rule_field_subject_or_body, ConditionOperator.TEXT, needsValue = true),
     HasAttachment(
         "has_attachment",
-        "Has attachment",
+        S.email_rule_field_has_attachment,
         listOf(ConditionOperator.IsTrue, ConditionOperator.IsFalse),
         needsValue = false,
     ),
     ;
+
+    val label: String get() = str(labelKey)
 
     val defaultOperator: ConditionOperator get() = operators.first()
 
@@ -120,18 +129,20 @@ data class RuleCondition(
         )
 
     fun describe(): String = when {
-        field == ConditionField.Always -> "any email"
-        field.needsValue -> "${field.label.lowercase()} ${operator.label} \"$value\""
-        else -> "${field.label.lowercase()} ${operator.label}"
+        field == ConditionField.Always -> str(S.desktop_email_rule_summary_any_email)
+        field.needsValue -> "${field.label.lowercase()} ${operator.label.lowercase()} \"$value\""
+        else -> "${field.label.lowercase()} ${operator.label.lowercase()}"
     }
 }
 
-enum class RuleActionType(val wire: String, val label: String) {
-    SaveAttachmentsToDrive("save_attachments_to_drive", "Save attachments to Drive"),
-    MoveToFolder("move_to_folder", "Move to folder"),
-    ForwardTo("forward_to", "Forward to"),
-    MarkRead("mark_read", "Mark as read"),
+enum class RuleActionType(val wire: String, private val labelKey: String) {
+    SaveAttachmentsToDrive("save_attachments_to_drive", S.email_rule_action_save_to_drive),
+    MoveToFolder("move_to_folder", S.move_to_folder),
+    ForwardTo("forward_to", S.desktop_email_forward_to),
+    MarkRead("mark_read", S.email_rule_action_mark_read),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(raw: String?): RuleActionType? = entries.firstOrNull { it.wire.equals(raw, ignoreCase = true) }
@@ -156,13 +167,13 @@ sealed interface RuleAction {
         override val type = RuleActionType.SaveAttachmentsToDrive
         override val invalidReason: String?
             get() = when {
-                driveFolderId.isBlank() -> "Pick the Drive folder to save attachments to."
-                extensions.size > MAX_EXTENSIONS -> "Too many file types; keep it to $MAX_EXTENSIONS."
-                maxSizeBytes !in 0..MAX_ATTACHMENT_SIZE_BYTES -> "The size limit is out of range."
+                driveFolderId.isBlank() -> str(S.desktop_email_rule_pick_drive_folder)
+                extensions.size > MAX_EXTENSIONS -> str(S.desktop_email_rule_too_many_file_types, MAX_EXTENSIONS)
+                maxSizeBytes !in 0..MAX_ATTACHMENT_SIZE_BYTES -> str(S.desktop_email_rule_size_out_of_range)
                 else -> null
             }
         override val isValid: Boolean get() = invalidReason == null
-        override fun describe(): String = "save attachments to Drive" +
+        override fun describe(): String = str(S.email_rule_action_save_to_drive) +
             driveFolderName.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
 
         companion object {
@@ -182,13 +193,13 @@ sealed interface RuleAction {
         override val type = RuleActionType.MoveToFolder
         override val invalidReason: String?
             get() = when {
-                folderName.isBlank() -> "Pick the folder to move messages to."
+                folderName.isBlank() -> str(S.desktop_email_rule_pick_folder)
                 folderName.uppercase() in MOVE_EXCLUDED_FOLDERS ->
-                    "Messages cannot be moved into ${folderName.uppercase()}."
+                    str(S.desktop_email_rule_cannot_move_into, folderName.uppercase())
                 else -> null
             }
         override val isValid: Boolean get() = invalidReason == null
-        override fun describe(): String = "move to $folderName"
+        override fun describe(): String = str(S.email_rule_summary_move_to, folderName)
 
         companion object {
             /** The web's `MOVE_EXCLUDED_FOLDERS`: system folders a rule may not move into. */
@@ -199,9 +210,9 @@ sealed interface RuleAction {
     data class ForwardTo(val email: String = "") : RuleAction {
         override val type = RuleActionType.ForwardTo
         override val invalidReason: String?
-            get() = if (EMAIL.matches(email.trim())) null else "Enter the address to forward to."
+            get() = if (EMAIL.matches(email.trim())) null else str(S.desktop_email_rule_forward_address_required)
         override val isValid: Boolean get() = invalidReason == null
-        override fun describe(): String = "forward to ${email.trim()}"
+        override fun describe(): String = str(S.email_rule_summary_forward_to, email.trim())
 
         companion object {
             private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
@@ -212,7 +223,7 @@ sealed interface RuleAction {
         override val type = RuleActionType.MarkRead
         override val invalidReason: String? = null
         override val isValid: Boolean = true
-        override fun describe(): String = "mark as read"
+        override fun describe(): String = str(S.email_rule_action_mark_read)
     }
 
     companion object {
@@ -231,12 +242,14 @@ fun selectableMoveFolders(folderNames: List<String>): List<String> =
         .filter { it.isNotBlank() && it.uppercase() !in RuleAction.MoveToFolder.MOVE_EXCLUDED_FOLDERS }
         .distinct()
 
-enum class ExecutionStatus(val wire: String, val label: String) {
-    Pending("pending", "Pending"),
-    Success("success", "Done"),
-    Partial("partial", "Partly done"),
-    Failed("failed", "Failed"),
+enum class ExecutionStatus(val wire: String, private val labelKey: String) {
+    Pending("pending", S.email_rule_exec_pending),
+    Success("success", S.done_text),
+    Partial("partial", S.email_rule_exec_partial),
+    Failed("failed", S.email_rule_exec_failed),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(raw: String?): ExecutionStatus =

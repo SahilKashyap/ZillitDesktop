@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.ui.AnalyticsRange
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import androidx.compose.runtime.setValue
@@ -60,7 +62,7 @@ fun AnalyticsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val analytics = state.analytics
     val range = state.analyticsRange
     val currency = state.currency
-    val period = if (range.isAllTime) "All time" else "Selected period"
+    val period = if (range.isAllTime) str(S.desktop_all_time) else str(S.desktop_card_selected_period)
 
     ScrollingPage {
         PeriodPicker(state, onEvent)
@@ -72,14 +74,14 @@ fun AnalyticsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             BreakdownCard(
-                title = "By category",
+                title = str(S.desktop_card_by_category),
                 slices = analytics?.byCategory.orEmpty(),
                 currency = currency,
                 tone = StatusTone.Progress,
                 modifier = Modifier.weight(1f),
             )
             BreakdownCard(
-                title = "By cardholder",
+                title = str(S.desktop_card_by_cardholder),
                 slices = analytics?.byHolder.orEmpty(),
                 currency = currency,
                 tone = StatusTone.Done,
@@ -88,7 +90,7 @@ fun AnalyticsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         }
 
         BreakdownCard(
-            title = "By month",
+            title = str(S.desktop_card_by_month),
             slices = analytics?.byMonth.orEmpty(),
             currency = currency,
             tone = StatusTone.Escalated,
@@ -105,24 +107,24 @@ private fun AnalyticsTotals(analytics: CardAnalytics?, currency: String?, period
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitStatTile(
-            label = "Total spend",
+            label = str(S.ah_total_spend),
             value = money(analytics?.totalSpend, currency),
-            sub = "$period · every card",
+            sub = str(S.desktop_card_period_every_card, period),
             icon = ZillitIcons.BarChart,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Transactions",
+            label = str(S.ah_transactions),
             value = analytics?.transactionCount?.toString() ?: "—",
-            sub = "Statement lines",
+            sub = str(S.desktop_card_statement_lines),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Ledger,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Average",
+            label = str(S.desktop_card_average),
             value = money(analytics?.averageTransaction, currency),
-            sub = "Per transaction",
+            sub = str(S.desktop_card_per_transaction),
             icon = ZillitIcons.Receipt,
             modifier = Modifier.weight(1f),
         )
@@ -144,7 +146,7 @@ private fun PeriodPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     var to by remember(state.analyticsRange) { mutableStateOf(state.analyticsRange.to) }
     val pending = from != state.analyticsRange.from || to != state.analyticsRange.to
 
-    ZillitSectionCard(title = "Period", icon = ZillitIcons.Calendar) {
+    ZillitSectionCard(title = str(S.cr_meta_period), icon = ZillitIcons.Calendar) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -153,17 +155,17 @@ private fun PeriodPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             ZillitDateField(
                 value = from,
                 onValueChange = { from = it },
-                label = "From",
+                label = str(S.fromText),
                 modifier = Modifier.weight(1f),
             )
             ZillitDateField(
                 value = to,
                 onValueChange = { to = it },
-                label = "To",
+                label = str(S.toText),
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Apply",
+                text = str(S.dm_filter_apply),
                 onClick = { onEvent(CardEvent.SetAnalyticsRange(AnalyticsRange(from, to))) },
                 size = ButtonSize.Small,
                 enabled = pending && !state.loading,
@@ -171,7 +173,7 @@ private fun PeriodPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             )
             if (!state.analyticsRange.isAllTime || pending) {
                 ZillitButton(
-                    text = "All time",
+                    text = str(S.desktop_all_time),
                     onClick = {
                         from = ""
                         to = ""
@@ -196,8 +198,8 @@ private fun BreakdownCard(
     ZillitSectionCard(title = title, icon = ZillitIcons.BarChart, modifier = modifier) {
         if (slices.isEmpty()) {
             ZillitEmptyState(
-                title = "No spend in this period",
-                message = "Bars appear as transactions are imported and coded.",
+                title = str(S.desktop_card_no_spend_in_period),
+                message = str(S.desktop_card_bars_appear_hint),
             )
             return@ZillitSectionCard
         }
@@ -209,7 +211,7 @@ private fun BreakdownCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ZillitText(
-                        text = slice.label.ifBlank { "Unlabelled" },
+                        text = slice.label.ifBlank { str(S.desktop_card_unlabelled) },
                         style = ZillitTheme.typography.bodyMedium,
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
@@ -240,16 +242,16 @@ fun AlertsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     FixedPage {
         if (open > 0) {
             ZillitNotice(
-                text = "$open alert(s) open. Resolving one records why, so the next person does not re-investigate.",
+                text = str(S.desktop_card_alerts_open_note, open),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Bell,
             )
         }
 
         ZillitSectionCard(
-            title = "Smart alerts",
+            title = str(S.desktop_card_smart_alerts),
             icon = ZillitIcons.Bell,
-            meta = "${rows.size} total",
+            meta = str(S.desktop_card_total_count, rows.size),
             padded = false,
             modifier = Modifier.weight(1f),
         ) {
@@ -258,8 +260,8 @@ fun AlertsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 columns = alertColumns(state, onEvent),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "Nothing flagged",
-                emptyMessage = "Duplicate receipts, personal spend and limit breaches are raised here.",
+                emptyTitle = str(S.desktop_card_nothing_flagged),
+                emptyMessage = str(S.desktop_card_alerts_empty),
             )
         }
     }
@@ -270,12 +272,12 @@ private fun alertColumns(
     state: CardUiState,
     onEvent: (CardEvent) -> Unit,
 ): List<TableColumn<CardAlert>> = listOf(
-    textColumn("Alert", ColumnWidth.Weight(2f)) { it.title.ifBlank { it.type ?: "Alert" } },
-    textColumn("Detail", ColumnWidth.Weight(2f), muted = true) { it.description ?: "—" },
-    textColumn("At stake", ColumnWidth.Weight(1f), numeric = true) { money(it.savings, null) },
-    textColumn("Raised", ColumnWidth.Weight(1f), muted = true) { date(it.at) },
+    textColumn(str(S.alert), ColumnWidth.Weight(2f)) { it.title.ifBlank { it.type ?: str(S.alert) } },
+    textColumn(str(S.desktop_detail), ColumnWidth.Weight(2f), muted = true) { it.description ?: "—" },
+    textColumn(str(S.desktop_card_at_stake), ColumnWidth.Weight(1f), numeric = true) { money(it.savings, null) },
+    textColumn(str(S.desktop_card_raised), ColumnWidth.Weight(1f), muted = true) { date(it.at) },
     TableColumn(
-        header = "Severity",
+        header = str(S.desktop_card_severity),
         width = ColumnWidth.Fixed(SEVERITY_COLUMN),
         cell = { row -> ZillitStatusPill(row.severity.label, tone = row.severity.tone, dot = true) },
     ),
@@ -290,15 +292,15 @@ private fun alertColumns(
                     // it two accountants investigate the same alert and the
                     // second one finds out when they compare notes.
                     ZillitButton(
-                        text = "Investigate",
+                        text = str(S.desktop_card_investigate),
                         onClick = {
                             onEvent(
                                 CardEvent.Ask(
                                     CardPrompt.Confirm(
                                         CardConfirmAction.InvestigateAlert,
                                         row.id,
-                                        "Mark this alert as being investigated",
-                                        "It stays open and is recorded as yours to look into.",
+                                        str(S.desktop_card_mark_investigating),
+                                        str(S.desktop_card_investigate_note),
                                     ),
                                 ),
                             )
@@ -308,15 +310,15 @@ private fun alertColumns(
                         enabled = !state.busy,
                     )
                     ZillitButton(
-                        text = "Resolve",
+                        text = str(S.desktop_resolve),
                         onClick = {
                             onEvent(
                                 CardEvent.Ask(
                                     CardPrompt.WithReason(
                                         CardReasonAction.ResolveAlert,
                                         row.id,
-                                        "Resolve this alert",
-                                        "What was found",
+                                        str(S.desktop_card_resolve_this_alert),
+                                        str(S.desktop_card_what_was_found),
                                     ),
                                 ),
                             )
@@ -325,15 +327,15 @@ private fun alertColumns(
                         enabled = !state.busy,
                     )
                     ZillitButton(
-                        text = "Dismiss",
+                        text = str(S.sync_action_dismiss),
                         onClick = {
                             onEvent(
                                 CardEvent.Ask(
                                     CardPrompt.Confirm(
                                         CardConfirmAction.DismissAlert,
                                         row.id,
-                                        "Dismiss this alert",
-                                        "It closes without an explanation recorded.",
+                                        str(S.desktop_card_dismiss_this_alert),
+                                        str(S.desktop_card_dismiss_alert_note),
                                     ),
                                 ),
                             )
@@ -345,7 +347,7 @@ private fun alertColumns(
                 }
             } else {
                 ZillitStatusPill(
-                    label = row.status.replaceFirstChar { it.uppercase() }.ifBlank { "Closed" },
+                    label = row.status.replaceFirstChar { it.uppercase() }.ifBlank { str(S.ah_status_closed) },
                     tone = StatusTone.Neutral,
                 )
             }

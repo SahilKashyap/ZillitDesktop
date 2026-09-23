@@ -24,6 +24,11 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
+import com.zillit.desktop.core.strings.AppLanguage
+import com.zillit.desktop.core.strings.BundledCatalogSource
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.Strings
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -49,11 +54,14 @@ class AppShellTest {
      * these tests to a product decision about which tools are on the rail.
      */
     private val testRailItems = listOf(
-        RailItem("home", "Home", ZillitIcons.Home, WorkspaceRoute.Home),
-        RailItem("tools", "Film Tools", ZillitIcons.Tools, WorkspaceRoute.Tool("/film-tools")),
-        RailItem("email", "Email", ZillitIcons.Mail, WorkspaceRoute.Tool("/email")),
-        RailItem("transport", "Transport", ZillitIcons.Transport, WorkspaceRoute.Tool("/transportation")),
+        RailItem("home", S.home, ZillitIcons.Home, WorkspaceRoute.Home),
+        RailItem("tools", S.desktop_film_tools, ZillitIcons.Tools, WorkspaceRoute.Tool("/film-tools")),
+        RailItem("email", S.email, ZillitIcons.Mail, WorkspaceRoute.Tool("/email")),
+        RailItem("transport", S.txt_transportation, ZillitIcons.Transport, WorkspaceRoute.Tool("/transportation")),
     )
+
+    @AfterTest
+    fun restoreEnglish() = Strings.reset()
 
     @Test
     fun `frame renders its regions`() = runComposeUiTest {
@@ -110,6 +118,49 @@ class AppShellTest {
 
         onNodeWithContentDescription("Following system theme").performClick()
         onNodeWithContentDescription("Light theme").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the language menu lists every shipped language and writes the choice`() = runComposeUiTest {
+        var chosen: String? = null
+        setShell(onLanguageChange = { chosen = it })
+
+        onNodeWithContentDescription("Language").performClick()
+
+        onNodeWithText("Follow the system language").assertIsDisplayed()
+        onNodeWithText("Français").assertIsDisplayed()
+        onNodeWithText("日本語").assertIsDisplayed()
+        onNodeWithText("Français").performClick()
+
+        assertEquals("fr", chosen)
+    }
+
+    @Test
+    fun `system is a real choice in the language menu`() = runComposeUiTest {
+        var chosen: String? = "fr"
+        setShell(language = "fr", onLanguageChange = { chosen = it })
+
+        onNodeWithContentDescription("Language").performClick()
+        onNodeWithText("Follow the system language").performClick()
+
+        assertEquals("", chosen)
+    }
+
+    @Test
+    fun `the frame redraws in the installed language`() = runComposeUiTest {
+        setShell(onSignOut = {})
+        onNodeWithContentDescription("Home").assertIsDisplayed()
+
+        val source = BundledCatalogSource()
+        val french = source.load(AppLanguage.byCode("fr")!!)!!.over(source.load(AppLanguage.English)!!)
+        runOnUiThread { Strings.install(french) }
+        waitForIdle()
+
+        // The rail's labels are keys resolved at draw, so nothing was rebuilt.
+        onNodeWithContentDescription("Accueil").assertIsDisplayed()
+        onNodeWithContentDescription("Se déconnecter").assertIsDisplayed()
+        // Desktop-only text comes from desktop-fr.xml.
+        onNodeWithText("Aucun projet sélectionné").assertIsDisplayed()
     }
 
     @Test
@@ -183,7 +234,7 @@ class AppShellTest {
         mainClock.advanceTimeBy(railSettleMillis)
 
         onNodeWithText("Film Tools").assertIsDisplayed()
-        onNodeWithText("Transport").assertIsDisplayed()
+        onNodeWithText("Transportation").assertIsDisplayed()
     }
 
     /** Logout is all the rail's foot holds, and it asks before it fires. */
@@ -246,6 +297,8 @@ class AppShellTest {
 
     private fun ComposeUiTest.setShell(
         initialMode: ThemeMode = ThemeMode.System,
+        language: String = "",
+        onLanguageChange: (String) -> Unit = {},
         onSwitchProject: () -> Unit = {},
         onSignOut: (() -> Unit)? = null,
         notificationsRoute: WorkspaceRoute? = null,
@@ -273,6 +326,8 @@ class AppShellTest {
                     registry = registry,
                     themeMode = mode,
                     onThemeModeChange = { mode = it },
+                    language = language,
+                    onLanguageChange = onLanguageChange,
                     onSwitchProject = onSwitchProject,
                     railItems = testRailItems,
                     onSignOut = onSignOut,

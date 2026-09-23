@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.LocationType
 import com.zillit.desktop.feature.maps.domain.TYPE_ICON_OPTIONS
 import com.zillit.desktop.feature.maps.ui.MapEvent
@@ -51,6 +53,7 @@ import com.zillit.desktop.feature.maps.ui.TypeFormState
 
 /** The LOC Types panel (`headers/HeaderManagerPanel.jsx`). */
 @Composable
+@Suppress("CyclomaticComplexMethod", "LongMethod") // One panel, read top to bottom.
 internal fun TypesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     val panel = state.typesPanel
     val colors = ZillitTheme.colors
@@ -59,12 +62,20 @@ internal fun TypesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
         header = {
             HeroHeader(
                 accent = MapColors.Brand,
-                title = "Location Types",
-                subtitle = "Manage the categories used to classify your map locations.",
+                title = str(S.desktop_map_location_types),
+                subtitle = str(S.desktop_map_types_subtitle),
                 onClose = { onEvent(MapEvent.Toolbar.ToggleTypes) },
                 trailing = {
-                    HeroChip("${state.types.size} ${if (state.types.size == 1) "Type" else "Types"}", MapIcons.Layers)
-                    HeroPillButton("Add Type", onClick = { onEvent(MapEvent.Types.New) }, icon = ZillitIcons.Add)
+                    HeroChip(
+                        if (state.types.size == 1) {
+                            str(S.desktop_map_type_count_one, state.types.size)
+                        } else {
+                            str(S.desktop_map_type_count_other, state.types.size)
+                        },
+                        MapIcons.Layers,
+                    )
+                    HeroPillButton(str(S.desktop_map_add_type), onClick = { onEvent(MapEvent.Types.New) },
+                        icon = ZillitIcons.Add)
                 },
             )
         },
@@ -94,13 +105,25 @@ internal fun TypesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                         .padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconChip(MapIcons.Layers, MapColors.Brand, softOf(MapColors.Brand), size = 28.dp, iconSize = 14.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        IconChip(
+                            MapIcons.Layers,
+                            MapColors.Brand,
+                            softOf(MapColors.Brand),
+                            size = 28.dp,
+                            iconSize = 14.dp,
+                        )
                         ZillitText(
                             text = if (editingId != null) {
-                                "Edit Type — ${state.types.firstOrNull { it.id == editingId }?.name ?: form.name}"
+                                str(
+                                    S.desktop_map_edit_type_named,
+                                    state.types.firstOrNull { it.id == editingId }?.name ?: form.name,
+                                )
                             } else {
-                                "New Type"
+                                str(S.desktop_map_new_type)
                             },
                             style = ZillitTheme.typography.titleSmall,
                             color = colors.textPrimary,
@@ -112,7 +135,7 @@ internal fun TypesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 }
             }
             if (state.types.isNotEmpty()) {
-                PanelFilter(panel.filter, "Filter by type or subtype...") { onEvent(MapEvent.Types.Filter(it)) }
+                PanelFilter(panel.filter, str(S.desktop_map_filter_types)) { onEvent(MapEvent.Types.Filter(it)) }
             }
             Column(
                 modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp),
@@ -122,16 +145,20 @@ internal fun TypesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                     shown.isEmpty() && query.isNotEmpty() -> EmptyBlock(
                         icon = ZillitIcons.Search,
                         accent = colors.textMuted,
-                        title = "No types match \"${panel.filter}\"",
-                        message = "Try a different search term",
+                        title = str(S.desktop_map_no_types_match, panel.filter),
+                        message = str(S.desktop_map_try_different_search),
                     )
                     state.types.isEmpty() && form == null -> EmptyBlock(
                         icon = MapIcons.Tag,
                         accent = MapColors.Brand,
-                        title = "No location types yet",
-                        message = "Create types like Hotel, Parking, Shooting to categorize your locations.",
+                        title = str(S.desktop_map_no_types_yet),
+                        message = str(S.desktop_map_no_types_msg),
                         action = {
-                            ZillitButton(text = "Add First Type", onClick = { onEvent(MapEvent.Types.New) }, leadingIcon = ZillitIcons.Add)
+                            ZillitButton(
+                                text = str(S.desktop_map_add_first_type),
+                                onClick = { onEvent(MapEvent.Types.New) },
+                                leadingIcon = ZillitIcons.Add,
+                            )
                         },
                     )
                     else -> shown.forEach { type ->
@@ -170,35 +197,55 @@ private fun TypeRow(state: MapUiState, type: LocationType, editing: Boolean, onE
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         TypeGlyph(style, size = 32.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ZillitText(
-                    text = type.name,
-                    style = labelBold(14.sp),
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (editing) SmallTag("EDITING", MapColors.Brand)
-            }
-            if (type.subTypes.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    type.subTypes.take(MAX_SUBTYPE_CHIPS).forEach { SubTypeChip(it) }
-                    if (type.subTypes.size > MAX_SUBTYPE_CHIPS) {
-                        ZillitText(
-                            text = "+${type.subTypes.size - MAX_SUBTYPE_CHIPS}",
-                            style = labelBold(10.sp, FontWeight.Medium),
-                            color = colors.textMuted,
-                            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(colors.surfaceSunken).padding(horizontal = 6.dp),
-                        )
-                    }
-                }
-            }
-        }
+        TypeSummary(type, editing, Modifier.weight(1f))
         if (!editing) {
-            CardAction(onClick = { onEvent(MapEvent.Types.Edit(type.id)) }, icon = ZillitIcons.Edit, tone = ActionTone.Accent)
-            CardAction(onClick = { onEvent(MapEvent.Types.Delete(type.id)) }, icon = ZillitIcons.Trash, tone = ActionTone.Danger)
+            CardAction(
+                onClick = { onEvent(MapEvent.Types.Edit(type.id)) },
+                icon = ZillitIcons.Edit,
+                tone = ActionTone.Accent,
+            )
+            CardAction(
+                onClick = { onEvent(MapEvent.Types.Delete(type.id)) },
+                icon = ZillitIcons.Trash,
+                tone = ActionTone.Danger,
+            )
+        }
+    }
+}
+
+/** A type's name and its sub-type chips — the middle of [TypeRow]. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TypeSummary(type: LocationType, editing: Boolean, modifier: Modifier = Modifier) {
+    val colors = ZillitTheme.colors
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ZillitText(
+                text = type.name,
+                style = labelBold(14.sp),
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (editing) SmallTag(str(S.desktop_editing), MapColors.Brand)
+        }
+        if (type.subTypes.isEmpty()) return@Column
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            type.subTypes.take(MAX_SUBTYPE_CHIPS).forEach { SubTypeChip(it) }
+            if (type.subTypes.size > MAX_SUBTYPE_CHIPS) {
+                ZillitText(
+                    text = "+${type.subTypes.size - MAX_SUBTYPE_CHIPS}",
+                    style = labelBold(10.sp, FontWeight.Medium),
+                    color = colors.textMuted,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                        .background(colors.surfaceSunken)
+                        .padding(horizontal = 6.dp),
+                )
+            }
         }
     }
 }
@@ -206,7 +253,9 @@ private fun TypeRow(state: MapUiState, type: LocationType, editing: Boolean, onE
 @Composable
 internal fun SubTypeChip(text: String) {
     Row(
-        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(softOf(MapColors.Brand)).padding(horizontal = 6.dp, vertical = 1.dp),
+        modifier = Modifier.clip(RoundedCornerShape(4.dp))
+            .background(softOf(MapColors.Brand))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -218,19 +267,25 @@ internal fun SubTypeChip(text: String) {
 /** `headers/HeaderForm.jsx` — name, icon, sub-types — for the panel card and the New Type dialog. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+@Suppress("LongMethod") // A form; each field is one line of it.
 internal fun TypeFormFields(form: TypeFormState, onEvent: (MapEvent) -> Unit, showActions: Boolean = true) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ZillitText(text = "Type Name *", style = labelBold(12.sp, FontWeight.Medium), color = colors.textSecondary)
+        ZillitText(
+            text = str(S.tm_type_name_hint) + " *",
+            style = labelBold(12.sp, FontWeight.Medium),
+            color = colors.textSecondary,
+        )
         ZillitTextField(
             value = form.name,
             onValueChange = { onEvent(MapEvent.Types.Name(it)) },
-            placeholder = "e.g. Hotel, Parking, Shooting",
+            placeholder = str(S.desktop_map_type_name_hint),
             modifier = Modifier.fillMaxWidth(),
         )
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ZillitText(text = "Icon", style = labelBold(12.sp, FontWeight.Medium), color = colors.textSecondary)
+        ZillitText(text = str(S.desktop_map_icon), style = labelBold(12.sp, FontWeight.Medium),
+            color = colors.textSecondary)
         val (source, hovered) = rememberHover()
         Row(
             modifier = Modifier
@@ -249,11 +304,24 @@ internal fun TypeFormFields(form: TypeFormState, onEvent: (MapEvent) -> Unit, sh
         ) {
             if (form.icon.isNotBlank()) {
                 ZillitText(text = form.icon, style = TextStyle(fontSize = 20.sp))
-                ZillitText(text = "Change icon", style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary, modifier = Modifier.weight(1f))
-                CardAction(onClick = { onEvent(MapEvent.Types.Icon("")) }, icon = ZillitIcons.Close, tone = ActionTone.Danger)
+                ZillitText(
+                    text = str(S.desktop_map_change_icon),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.textSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                CardAction(
+                    onClick = { onEvent(MapEvent.Types.Icon("")) },
+                    icon = ZillitIcons.Close,
+                    tone = ActionTone.Danger,
+                )
             } else {
                 ZillitIcon(icon = MapIcons.Smile, tint = colors.textMuted, size = 16.dp)
-                ZillitText(text = "Choose an icon...", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+                ZillitText(
+                    text = str(S.desktop_map_choose_icon),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
             }
         }
         if (form.iconPickerOpen) {
@@ -268,19 +336,26 @@ internal fun TypeFormFields(form: TypeFormState, onEvent: (MapEvent) -> Unit, sh
                 horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                TYPE_ICON_OPTIONS.forEach { option -> EmojiCell(option, selected = option == form.icon) { onEvent(MapEvent.Types.Icon(option)) } }
+                TYPE_ICON_OPTIONS.forEach { option ->
+                    EmojiCell(option, selected = option == form.icon) { onEvent(MapEvent.Types.Icon(option)) }
+                }
             }
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ZillitText(text = "Subtypes", style = labelBold(12.sp, FontWeight.Medium), color = colors.textSecondary)
+        ZillitText(
+            text = str(S.desktop_map_subtypes),
+            style = labelBold(12.sp, FontWeight.Medium),
+            color = colors.textSecondary,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             ZillitTextField(
                 value = form.newSubType,
                 onValueChange = { onEvent(MapEvent.Types.NewSubType(it)) },
-                placeholder = "Add a subtype...",
+                placeholder = str(S.desktop_map_add_subtype),
                 modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.NumPadEnter)) {
+                    val enterKey = event.key == Key.Enter || event.key == Key.NumPadEnter
+                    if (event.type == KeyEventType.KeyDown && enterKey) {
                         onEvent(MapEvent.Types.AddSubType)
                         true
                     } else {
@@ -289,7 +364,7 @@ internal fun TypeFormFields(form: TypeFormState, onEvent: (MapEvent) -> Unit, sh
                 },
             )
             ZillitButton(
-                text = "Add",
+                text = str(S.add),
                 onClick = { onEvent(MapEvent.Types.AddSubType) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Add,
@@ -306,17 +381,31 @@ internal fun TypeFormFields(form: TypeFormState, onEvent: (MapEvent) -> Unit, sh
                     .padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ZillitText(text = sub, style = ZillitTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
-                CardAction(onClick = { onEvent(MapEvent.Types.RemoveSubType(index)) }, icon = ZillitIcons.Close, tone = ActionTone.Danger)
+                ZillitText(
+                    text = sub,
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                CardAction(
+                    onClick = { onEvent(MapEvent.Types.RemoveSubType(index)) },
+                    icon = ZillitIcons.Close,
+                    tone = ActionTone.Danger,
+                )
             }
         }
     }
     if (showActions) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-            ZillitButton(text = "Cancel", onClick = { onEvent(MapEvent.Types.Cancel) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
             ZillitButton(
-                text = if (form.editId != null) "Update" else "Create",
+                text = str(S.cancel),
+                onClick = { onEvent(MapEvent.Types.Cancel) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
+            ZillitButton(
+                text = if (form.editId != null) str(S.update) else str(S.create),
                 onClick = { onEvent(MapEvent.Types.Save) },
                 leadingIcon = ZillitIcons.Check,
                 size = ButtonSize.Small,

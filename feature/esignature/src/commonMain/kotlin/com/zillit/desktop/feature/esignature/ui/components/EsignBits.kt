@@ -54,6 +54,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.Envelope
 import com.zillit.desktop.feature.esignature.domain.EnvelopeRecipient
 import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
@@ -108,8 +110,8 @@ internal fun DeliveryPill(envelope: Envelope) {
     val total = envelope.signers.size
     val seen = envelope.seenCount
     val (label, tone) = when {
-        total > 0 && seen == total -> "Seen by all" to StatusTone.Done
-        seen == 0 -> "Awaiting view" to StatusTone.Pending
+        total > 0 && seen == total -> str(S.desktop_ds_seen_by_all) to StatusTone.Done
+        seen == 0 -> str(S.desktop_ds_awaiting_view) to StatusTone.Pending
         else -> "Seen by $seen/$total" to StatusTone.Progress
     }
     ZillitStatusPill(label = label, tone = tone, dot = true)
@@ -129,7 +131,7 @@ internal fun SignedProgress(envelope: Envelope, modifier: Modifier = Modifier) {
         ) {
             Box(Modifier.size(8.dp).clip(CircleShape).border(1.dp, colors.textMuted, CircleShape))
             ZillitText(
-                text = "Awaiting",
+                text = str(S.ds_sent_filter_awaiting),
                 style = ZillitTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
                 color = colors.textMuted,
             )
@@ -330,7 +332,7 @@ internal fun LayoutToggle(isCard: Boolean, onChange: (Boolean) -> Unit) {
     ) {
         listOf(false to ZillitIcons.LayoutTabs, true to ZillitIcons.Grid).forEach { (card, icon) ->
             val active = card == isCard
-            ZillitTooltip(if (card) "Card view" else "List view") {
+            ZillitTooltip(if (card) str(S.av_card_view) else str(S.av_list_view)) {
                 Box(
                     modifier = Modifier
                         .background(if (active) colors.accent else Color.Transparent)
@@ -413,7 +415,7 @@ internal fun ConfirmDialog(
         width = 440.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = onDismiss,
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

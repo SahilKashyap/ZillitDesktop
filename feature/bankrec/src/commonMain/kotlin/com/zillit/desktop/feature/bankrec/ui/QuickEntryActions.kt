@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.FxPosting
 import com.zillit.desktop.feature.bankrec.domain.QuickAddForm
@@ -98,9 +100,9 @@ internal class QuickEntryActions(private val vm: BankRecViewModel) {
         if (entry.adding) return
         val exceptionId = txn.exceptionId
         val refusal = when {
-            exceptionId.isBlank() -> "This line has no exception to post through. Match it to a ledger entry instead."
+            exceptionId.isBlank() -> str(S.desktop_br_no_exception_to_post)
             else -> lockProblem(form.effectiveDate, vm.ui.lookups.lockedThrough)
-                ?: "Enter the amount to add.".takeIf { form.amountValue == null }
+                ?: str(S.desktop_br_enter_amount).takeIf { form.amountValue == null }
         }
         if (refusal != null) return vm.refuse(refusal)
         edit { copy(adding = true) }
@@ -119,7 +121,7 @@ internal class QuickEntryActions(private val vm: BankRecViewModel) {
                     ),
                 )
             }
-            vm.notify("Added to the ledger and matched.")
+            vm.notify(str(S.desktop_br_added_and_matched))
             vm.workspaceActions.refresh()
             vm.loadPeriods()
             vm.loadExceptions()
@@ -188,7 +190,7 @@ internal fun amountText(value: Double): String {
 internal fun lockProblem(effectiveDate: String, lockedThrough: String?): String? {
     val locked = lockedThrough?.takeIf { it.isNotBlank() } ?: return null
     val date = effectiveDate.trim().ifBlank { return null }
-    return if (date <= locked) "The effective date must be after $locked, when the cost report was locked." else null
+    return if (date <= locked) str(S.desktop_br_effective_after_lock, locked) else null
 }
 
 private const val CENTS = 100L

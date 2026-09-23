@@ -30,6 +30,8 @@ import com.zillit.desktop.feature.saportal.ui.pages.QueryDialog
 import com.zillit.desktop.feature.saportal.ui.pages.SignDialog
 import com.zillit.desktop.feature.saportal.ui.pages.VoucherDialog
 import com.zillit.desktop.feature.saportal.ui.pages.VouchersPage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The supporting artiste's portal.
@@ -42,8 +44,8 @@ import com.zillit.desktop.feature.saportal.ui.pages.VouchersPage
 fun SaPortalScreen(state: SaUiState, onEvent: (SaEvent) -> Unit) {
     if (state.viewer.isBlocked) {
         ZillitEmptyState(
-            title = "No access",
-            message = "This project has not given you the artiste portal.",
+            title = str(S.dd_publish_no_access_badge),
+            message = str(S.desktop_sa_no_access_message),
             icon = ZillitIcons.Shield,
         )
         return
@@ -51,12 +53,12 @@ fun SaPortalScreen(state: SaUiState, onEvent: (SaEvent) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         ZillitPageHeader(
-            title = "My work",
-            eyebrow = "Supporting artiste",
+            title = str(S.desktop_sa_my_work),
+            eyebrow = str(S.desktop_sa_supporting_artiste),
             description = state.viewer.displayName.takeIf { it.isNotBlank() },
             actions = {
                 ZillitButton(
-                    text = "Refresh",
+                    text = str(S.refresh_text),
                     onClick = { onEvent(SaEvent.Refresh) },
                     variant = ButtonVariant.Tertiary,
                     loading = state.loading,
@@ -69,9 +71,8 @@ fun SaPortalScreen(state: SaUiState, onEvent: (SaEvent) -> Unit) {
         // stops a support call.
         if (state.notAnArtiste) {
             ZillitEmptyState(
-                title = "You are not booked as an artiste here",
-                message = "This portal is for supporting artistes. If you think that is wrong, " +
-                    "ask the AD department to add you to the project's artiste list.",
+                title = str(S.desktop_sa_not_booked_title),
+                message = str(S.desktop_sa_not_booked_message),
                 icon = ZillitIcons.Users,
             )
             return@Column
@@ -94,7 +95,9 @@ fun SaPortalScreen(state: SaUiState, onEvent: (SaEvent) -> Unit) {
 @Composable
 private fun ColumnScope.PortalBody(state: SaUiState, onEvent: (SaEvent) -> Unit) {
     ZillitTabStrip(
-        tabs = SaDestination.entries.map { ZillitTab(it.slug, it.label, count = it.badgeKey?.let(state.unread::get) ?: 0) },
+        tabs = SaDestination.entries.map {
+            ZillitTab(it.slug, it.label, count = it.badgeKey?.let(state.unread::get) ?: 0)
+        },
         activeId = state.destination.slug,
         onSelect = { slug ->
             SaDestination.entries.firstOrNull { it.slug == slug }

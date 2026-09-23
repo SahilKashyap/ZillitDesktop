@@ -22,6 +22,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.BankTransaction
 import com.zillit.desktop.feature.bankrec.domain.LedgerEntry
@@ -71,9 +73,9 @@ internal fun BankLinesTable(rows: List<BankTransaction>, accountCurrency: String
         key = { it.id },
         rowPadding = 8.dp,
         minWeightWidth = 140.dp,
-        empty = { EmptyLines("No transactions") },
+        empty = { EmptyLines(str(S.desktop_card_no_transactions)) },
         columns = listOf(
-            BrColumn("Date", width = DATE_WIDTH) { txn ->
+            BrColumn(str(S.date), width = DATE_WIDTH) { txn ->
                 ZillitText(
                     BankRecFormat.statementDay(txn.transactionDateMillis),
                     style = mono(11.sp),
@@ -81,19 +83,19 @@ internal fun BankLinesTable(rows: List<BankTransaction>, accountCurrency: String
                     maxLines = 1,
                 )
             },
-            BrColumn("Description") { txn ->
+            BrColumn(str(S.description)) { txn ->
                 TwoLine(txn.displayName.ifBlank { BankRecFormat.DASH }, txn.reference)
             },
-            BrColumn("Debit", width = 92.dp, align = BrAlign.End) { txn ->
+            BrColumn(str(S.desktop_debit), width = 92.dp, align = BrAlign.End) { txn ->
                 val code = txn.amountCurrency(accountCurrency)
                 val debit = txn.debit.takeIf { it > 0 }?.let { if (detail) it else -it }
                 Figure(debit?.let { BankRecFormat.money(it, code) }, colors.textPrimary)
             },
-            BrColumn("Credit", width = 92.dp, align = BrAlign.End) { txn ->
+            BrColumn(str(S.desktop_credit), width = 92.dp, align = BrAlign.End) { txn ->
                 val code = txn.amountCurrency(accountCurrency)
                 Figure(if (txn.credit > 0) BankRecFormat.money(txn.credit, code) else null, colors.success)
             },
-            BrColumn("Status", width = 76.dp, align = BrAlign.Center) { txn ->
+            BrColumn(str(S.status), width = 76.dp, align = BrAlign.Center) { txn ->
                 BrBadge(txn.status.label, txn.status.tone)
             },
         ),
@@ -113,9 +115,9 @@ internal fun LedgerLinesTable(rows: List<LedgerEntry>, projectCurrency: String, 
         key = { it.id.ifBlank { it.entityId } },
         rowPadding = 8.dp,
         minWeightWidth = 140.dp,
-        empty = { EmptyLines("No ledger entries") },
+        empty = { EmptyLines(str(S.desktop_br_no_ledger_entries)) },
         columns = listOf(
-            BrColumn("Date", width = DATE_WIDTH) { entry ->
+            BrColumn(str(S.date), width = DATE_WIDTH) { entry ->
                 ZillitText(
                     BankRecFormat.statementDay(entry.displayDateMillis),
                     style = mono(11.sp),
@@ -123,18 +125,18 @@ internal fun LedgerLinesTable(rows: List<LedgerEntry>, projectCurrency: String, 
                     maxLines = 1,
                 )
             },
-            BrColumn("Title") { entry ->
+            BrColumn(str(S.title)) { entry ->
                 // The row's own reading of its name — an invoice is its supplier,
                 // a quick entry its title — rather than a field an invoice lacks.
                 TwoLine(entry.displayName, entry.ledgerDescription.joinToString(" · "))
             },
-            BrColumn("Debit", width = 92.dp, align = BrAlign.End) { entry ->
+            BrColumn(str(S.desktop_debit), width = 92.dp, align = BrAlign.End) { entry ->
                 val code = entry.currency ?: projectCurrency
                 // An invoice is money out by its gross; a posting by its debit.
                 val out = entry.debit?.takeIf { it > 0 } ?: entry.grossAmount?.takeIf { it > 0 }
                 Figure(out?.let { BankRecFormat.money(if (detail) it else -it, code) }, colors.textPrimary)
             },
-            BrColumn("Credit", width = 92.dp, align = BrAlign.End) { entry ->
+            BrColumn(str(S.desktop_credit), width = 92.dp, align = BrAlign.End) { entry ->
                 val credit = entry.credit?.takeIf { it > 0 }
                 Figure(credit?.let { BankRecFormat.money(it, entry.currency ?: projectCurrency) }, colors.success)
             },

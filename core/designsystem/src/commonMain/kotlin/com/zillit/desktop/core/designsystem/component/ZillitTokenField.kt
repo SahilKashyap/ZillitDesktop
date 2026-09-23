@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A field holding a list of tokens as chips, with whatever is being typed
@@ -350,12 +352,12 @@ private fun TokenChip(label: String, valid: Boolean, onRemove: () -> Unit) {
             modifier = Modifier
                 .size(CHIP_CIRCLE)
                 .clip(CircleShape)
-                .clickable(onClickLabel = "Remove $label", onClick = onRemove),
+                .clickable(onClickLabel = str(S.bs_chip_remove, label), onClick = onRemove),
             contentAlignment = Alignment.Center,
         ) {
             ZillitIcon(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove $label",
+                contentDescription = str(S.bs_chip_remove, label),
                 tint = if (valid) colors.textMuted else colors.danger,
                 size = CHIP_CLOSE,
             )
@@ -368,7 +370,7 @@ private fun TokenChip(label: String, valid: Boolean, onRemove: () -> Unit) {
 private fun FoldChip(count: Int, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     ZillitText(
-        text = "+$count more",
+        text = str(S.desktop_n_more, count),
         style = ZillitTheme.typography.labelSmall,
         color = colors.textSecondary,
         modifier = Modifier

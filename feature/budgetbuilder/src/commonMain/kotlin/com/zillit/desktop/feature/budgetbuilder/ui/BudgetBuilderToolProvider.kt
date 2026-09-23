@@ -9,6 +9,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -31,7 +33,7 @@ class BudgetBuilderToolProvider(
 ) : ToolProvider {
 
     override val path: String = BUDGET_BUILDER_PATH
-    override val title: String = "Budget Builder"
+    override val title: String get() = str(S.desktop_bb_title)
     override val icon = ZillitIcons.BarChart
 
     @Composable

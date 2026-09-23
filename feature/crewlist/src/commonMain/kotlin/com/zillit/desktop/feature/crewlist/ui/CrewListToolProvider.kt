@@ -19,6 +19,8 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The Crew List as a workspace tool, at the catalogue's route. */
 class CrewListToolProvider(
@@ -39,7 +41,7 @@ class CrewListToolProvider(
 ) : ToolProvider {
 
     override val path: String = CREW_LIST_PATH
-    override val title: String = "Crew List"
+    override val title: String get() = str(S.generate_crew_list)
     override val icon = ZillitToolIcons.CrewList
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(1200.dp, 800.dp)

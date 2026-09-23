@@ -15,6 +15,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The line under the top bar that says a newer build exists.
@@ -55,12 +57,13 @@ internal fun UpdateBanner(
     val tone = if (notice.mandatory) StatusTone.Rejected else StatusTone.Progress
     val accent = if (notice.mandatory) colors.danger else colors.info
 
-    val installed = notice.installedVersion?.takeIf { it.isNotBlank() }?.let { " You have $it." }.orEmpty()
+    val installed = notice.installedVersion?.takeIf { it.isNotBlank() }
+        ?.let { " " + str(S.desktop_update_installed, it) }.orEmpty()
     ZillitNotice(
         text = if (notice.mandatory) {
-            "Zillit must be updated to continue. Version ${notice.latestVersion} is required.$installed"
+            str(S.desktop_update_required, notice.latestVersion) + installed
         } else {
-            "Version ${notice.latestVersion} is available.$installed"
+            str(S.desktop_update_available, notice.latestVersion) + installed
         },
         tone = tone,
         icon = ZillitIcons.Download,
@@ -77,7 +80,7 @@ internal fun UpdateBanner(
                     // The URL came out of a remote console, so nothing here may
                     // hand it to the OS directly.
                     ZillitButton(
-                        text = "Download",
+                        text = str(S.download),
                         onClick = { onDownload(url) },
                         size = ButtonSize.Small,
                         variant = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Secondary,
@@ -88,7 +91,7 @@ internal fun UpdateBanner(
                 if (!notice.mandatory) {
                     ZillitIconButton(
                         icon = ZillitIcons.Close,
-                        contentDescription = "Dismiss update notice",
+                        contentDescription = str(S.desktop_dismiss_update),
                         onClick = onDismiss,
                         tint = accent,
                     )

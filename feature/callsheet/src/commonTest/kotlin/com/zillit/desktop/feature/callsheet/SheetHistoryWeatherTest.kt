@@ -80,8 +80,9 @@ class SheetHistoryWeatherTest {
             ),
         )
         val entries = SheetHistory.entries(detail, members = emptyList())
+        // "Reminder sent" is Android's wording for the shared key, kept over the desktop's old capital S.
         assertEquals(
-            listOf("Reminder Sent", "Reminder Sent", "Approved", "Sent for Signature", "Updated", "Created"),
+            listOf("Reminder sent", "Reminder sent", "Approved", "Sent for Signature", "Updated", "Created"),
             entries.map { it.action },
         )
         assertEquals("v2", entries[2].revisionText)

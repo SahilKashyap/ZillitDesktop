@@ -48,6 +48,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.plural
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.PageColour
@@ -85,9 +88,9 @@ internal fun ScriptDialogs(
     state.counts?.let { DodCountsDialog(state, onEvent, resolveUser) }
     state.confirmDelete?.let { document ->
         ConfirmDialog(
-            title = "Delete page",
-            body = "Are you sure you want to delete \"${document.scriptName()}\"? It moves to the history.",
-            confirm = "Yes",
+            title = str(S.desktop_delete_page),
+            body = str(S.desktop_dist_delete_confirm_body_long, document.scriptName()),
+            confirm = str(S.yes),
             danger = true,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmDelete) },
@@ -102,9 +105,9 @@ internal fun ScriptDialogs(
             document.episode.ifBlank { document.sceneNumber }.ifBlank { null },
         )
         ConfirmDialog(
-            title = "Publish to Doc Distribution",
-            body = "File \"${document.scriptName()}\" under ${path.joinToString(" / ")}?",
-            confirm = "Publish",
+            title = str(S.dd_publish_to_distribution),
+            body = str(S.desktop_dist_publish_confirm_body, document.scriptName(), path.joinToString(" / ")),
+            confirm = str(S.publish),
             danger = false,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmPublish) },
@@ -141,11 +144,11 @@ private fun PagesDialog(
     }
     val count = open.documents.size
     ZillitDialogShell(
-        title = "Pages",
-        subtitle = "Scene No : ${open.folder.key.ifBlank { "—" }}" + when {
-            !live -> "  ·  Deleted pages"
+        title = str(S.pages),
+        subtitle = str(S.desktop_script_scene_no_value, open.folder.key.ifBlank { "—" }) + when {
+            !live -> "  ·  " + str(S.desktop_dist_deleted_pages)
             count == 0 -> ""
-            else -> "  ·  $count page${if (count == 1) "" else "s"}"
+            else -> "  ·  " + plural(S.docusign_template_detail_doc_pages, count)
         },
         icon = ZillitIcons.Folder,
         onDismiss = { onEvent(DistributionEvent.CloseFolder) },
@@ -155,14 +158,14 @@ private fun PagesDialog(
         actions = {
             if (live) {
                 ZillitButton(
-                    text = "Upload here",
+                    text = str(S.desktop_location_upload_here),
                     onClick = { onEvent(DistributionEvent.PickPdf()) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Paperclip,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CloseFolder) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -181,8 +184,8 @@ private fun PagesDialog(
                 state.loading && open.documents.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
                 open.documents.isEmpty() -> ZillitEmptyState(
-                    title = "No data found",
-                    message = if (live) "Upload a page here to start this scene." else null,
+                    title = str(S.no_data_found),
+                    message = if (live) str(S.desktop_sched_scene_empty_message) else null,
                     icon = ZillitIcons.File,
                 )
                 else -> LazyColumn(
@@ -226,7 +229,7 @@ internal fun ScriptDocumentCard(
 ) {
     val colors = ZillitTheme.colors
     val page = state.isFolderTab
-    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { "Unknown user" }
+    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { str(S.unkone_user) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -239,14 +242,16 @@ internal fun ScriptDocumentCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
-            Ribbon(text = "Uploaded On: ${DistributionDates.dateTime(document.createdMs)}")
+            Ribbon(text = str(S.desktop_script_uploaded_on_colon, DistributionDates.dateTime(document.createdMs)))
             Row(
                 modifier = Modifier.padding(ZillitTheme.spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (document.replaced) ZillitStatusPill(label = "Replaced", tone = StatusTone.Neutral)
-                if (document.deleted) ZillitStatusPill(label = "Deleted", tone = StatusTone.Rejected)
+                if (document.replaced) {
+                    ZillitStatusPill(label = str(S.desktop_dist_replaced_pill), tone = StatusTone.Neutral)
+                }
+                if (document.deleted) ZillitStatusPill(label = str(S.drive_deleted_default), tone = StatusTone.Rejected)
                 ScriptMoreMenu(state, document, onEvent)
             }
         }
@@ -265,19 +270,25 @@ internal fun ScriptDocumentCard(
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                 if (page) {
-                    Fact(label = "Uploaded By", value = uploader)
-                    if (state.viewer.isTelevision) Fact(label = "Episode", value = document.episode.ifBlank { "—" })
-                    Fact(label = "Scene number", value = document.sceneNumber.ifBlank { "—" })
-                    if (document.pageNumber.isNotBlank()) Fact(label = "Page Number", value = document.pageNumber)
-                    val pageDate = DistributionDates.date(document.userSelectedDateMs).ifBlank { "—" }
-                    Fact(label = "Page Date", value = pageDate)
-                } else {
-                    if (state.viewer.isTelevision) Fact(label = "Episode", value = document.episode.ifBlank { "—" })
-                    if (document.dateMs > 0) {
-                        Fact(label = "Script Date", value = DistributionDates.date(document.dateMs))
+                    Fact(label = str(S.txt_uploaded_by), value = uploader)
+                    if (state.viewer.isTelevision) {
+                        Fact(label = str(S.episode), value = document.episode.ifBlank { "—" })
                     }
-                    if (document.name.isNotBlank()) Fact(label = "Script Name", value = document.name)
-                    Fact(label = "Uploaded By", value = uploader)
+                    Fact(label = str(S.txt_scene_number), value = document.sceneNumber.ifBlank { "—" })
+                    if (document.pageNumber.isNotBlank()) {
+                        Fact(label = str(S.desktop_dist_page_number), value = document.pageNumber)
+                    }
+                    val pageDate = DistributionDates.date(document.userSelectedDateMs).ifBlank { "—" }
+                    Fact(label = str(S.page_date), value = pageDate)
+                } else {
+                    if (state.viewer.isTelevision) {
+                        Fact(label = str(S.episode), value = document.episode.ifBlank { "—" })
+                    }
+                    if (document.dateMs > 0) {
+                        Fact(label = str(S.desktop_script_date_label), value = DistributionDates.date(document.dateMs))
+                    }
+                    if (document.name.isNotBlank()) Fact(label = str(S.script_name), value = document.name)
+                    Fact(label = str(S.txt_uploaded_by), value = uploader)
                 }
                 // A listing row may carry no attachment on the wire; only a
                 // name or size that is actually known earns the line.
@@ -330,52 +341,52 @@ private fun ScriptMoreMenu(state: DistributionUiState, document: DistDocument, o
         ) {
             ZillitIcon(icon = ZillitIcons.Paperclip, tint = colors.textOnAccent, size = FACT_ICON)
             ZillitText(
-                text = "More +",
+                text = str(S.desktop_script_more_pill),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textOnAccent,
             )
         }
         val entries = buildList {
             add(
-                ZillitMenuEntry.Action("View", ZillitIcons.Eye, ZillitMenuTone.Primary) {
+                ZillitMenuEntry.Action(str(S.view), ZillitIcons.Eye, ZillitMenuTone.Primary) {
                     onEvent(DistributionEvent.View(document))
                 },
             )
             if (live && state.viewer.mayPublish) {
                 add(
-                    ZillitMenuEntry.Action("Publish to Doc Distribution", ZillitIcons.Send, ZillitMenuTone.Info) {
+                    ZillitMenuEntry.Action(str(S.dd_publish_to_distribution), ZillitIcons.Send, ZillitMenuTone.Info) {
                         onEvent(DistributionEvent.Publish(document))
                     },
                 )
             }
             if (live && !page && state.viewer.mayPost) {
                 add(
-                    ZillitMenuEntry.Action("Replace", ZillitIcons.Upload, ZillitMenuTone.Approve) {
+                    ZillitMenuEntry.Action(str(S.replace), ZillitIcons.Upload, ZillitMenuTone.Approve) {
                         onEvent(DistributionEvent.PickPdf(replaces = document))
                     },
                 )
             }
             if (live && page) {
                 add(
-                    ZillitMenuEntry.Action("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) {
+                    ZillitMenuEntry.Action(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) {
                         onEvent(DistributionEvent.Delete(document))
                     },
                 )
             }
             add(
-                ZillitMenuEntry.Action("Download", ZillitIcons.Download, ZillitMenuTone.Neutral) {
+                ZillitMenuEntry.Action(str(S.download), ZillitIcons.Download, ZillitMenuTone.Neutral) {
                     onEvent(DistributionEvent.Download(document))
                 },
             )
             if (live && state.viewer.isAdmin) {
                 add(ZillitMenuEntry.Divider)
                 add(
-                    ZillitMenuEntry.Action("Download Count", ZillitIcons.BarChart, ZillitMenuTone.Neutral) {
+                    ZillitMenuEntry.Action(str(S.download_count), ZillitIcons.BarChart, ZillitMenuTone.Neutral) {
                         onEvent(DistributionEvent.ShowCounts(document, downloads = true))
                     },
                 )
                 add(
-                    ZillitMenuEntry.Action("View Count", ZillitIcons.Users, ZillitMenuTone.Neutral) {
+                    ZillitMenuEntry.Action(str(S.view_count), ZillitIcons.Users, ZillitMenuTone.Neutral) {
                         onEvent(DistributionEvent.ShowCounts(document, downloads = false))
                     },
                 )
@@ -425,14 +436,14 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
     val ready = !editor.saving && !episodeMissing && (!page || replacing || sceneProblem == null)
     ZillitDialogShell(
         title = when {
-            page -> "Upload page"
-            replacing -> "Replace full script"
-            else -> "Upload full script"
+            page -> str(S.upload_page)
+            replacing -> str(S.desktop_script_replace_full_script)
+            else -> str(S.desktop_script_upload_full_script)
         },
         subtitle = when {
-            page -> "Filed under its scene number"
-            replacing -> "The current script moves to the history"
-            else -> "The crew sees one current copy"
+            page -> str(S.desktop_script_filed_under_scene)
+            replacing -> str(S.desktop_script_current_moves_to_history)
+            else -> str(S.desktop_script_crew_sees_one_copy)
         },
         icon = ZillitIcons.Upload,
         onDismiss = { onEvent(DistributionEvent.CancelUpload) },
@@ -440,12 +451,12 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
         width = UPLOAD_DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CancelUpload) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (replacing && !page) "Replace" else "Upload",
+                text = if (replacing && !page) str(S.replace) else str(S.upload),
                 onClick = { onEvent(DistributionEvent.SubmitUpload) },
                 leadingIcon = ZillitIcons.Upload,
                 loading = editor.saving,
@@ -471,7 +482,7 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
                 contentAlignment = Alignment.Center,
             ) {
                 ZillitText(
-                    text = "PDF",
+                    text = str(S.av_pdf),
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = colors.danger,
                 )
@@ -483,12 +494,14 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
                     maxLines = 1,
                 )
                 ZillitText(
-                    text = "File size: ${formatBytes(editor.bytes.size.toString())}",
+                    text = str(S.desktop_dist_file_size, formatBytes(editor.bytes.size.toString())),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
-            if (replacing && !page) ZillitStatusPill(label = "Replaces the current script", tone = StatusTone.Pending)
+            if (replacing && !page) {
+                ZillitStatusPill(label = str(S.desktop_script_replaces_current), tone = StatusTone.Pending)
+            }
         }
 
         if (page) {
@@ -496,14 +509,14 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
                 ZillitTextField(
                     value = editor.sceneNumber,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(sceneNumber = it)) },
-                    label = "Scene number *",
-                    placeholder = "12 or 12A",
+                    label = str(S.desktop_dist_scene_number_required_star),
+                    placeholder = str(S.desktop_dist_scene_placeholder),
                     // Blank is not yet a mistake — the disabled Upload says so; a typed
                     // scene that breaks the rule is.
                     errorText = if (!replacing && editor.sceneNumber.isNotBlank()) sceneProblem else null,
                     helperText = when {
-                        replacing -> "Kept from the page being replaced."
-                        editor.sceneNumber.isBlank() -> "Starts with a number, up to 15 characters."
+                        replacing -> str(S.desktop_script_scene_kept_from_replaced)
+                        editor.sceneNumber.isBlank() -> str(S.desktop_script_scene_helper)
                         else -> null
                     },
                     enabled = !replacing,
@@ -512,7 +525,7 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
                 ZillitTextField(
                     value = editor.pageNumber,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(pageNumber = it)) },
-                    label = "Page Number (Optional)",
+                    label = str(S.desktop_dist_page_number_optional_caps),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -522,16 +535,20 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
             ZillitDateField(
                 value = editor.dateYmd,
                 onValueChange = { onEvent(DistributionEvent.UploadChanged(dateYmd = it)) },
-                label = if (page) "Page date (Optional)" else "Script date (Optional)",
+                label = if (page) {
+                    str(S.desktop_dist_page_date_optional_caps)
+                } else {
+                    str(S.desktop_dist_script_date_optional_caps)
+                },
                 modifier = Modifier.weight(1f),
             )
             if (state.viewer.isTelevision) {
                 ZillitTextField(
                     value = editor.episode,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(episode = it)) },
-                    label = if (episodeRequired) "Episode number *" else "Episode number",
-                    placeholder = "1 or 1,2",
-                    helperText = if (episodeRequired) "Required on a television production." else null,
+                    label = if (episodeRequired) str(S.dd_publish_episode_hint) else str(S.txt_episode_number),
+                    placeholder = str(S.desktop_dist_episode_placeholder),
+                    helperText = if (episodeRequired) str(S.desktop_dist_required_on_television) else null,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -540,7 +557,7 @@ private fun ScriptUploadDialog(state: DistributionUiState, onEvent: (Distributio
         if (page) {
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitText(
-                    text = "Select a color (Optional)",
+                    text = str(S.desktop_script_select_colour_optional),
                     style = ZillitTheme.typography.label,
                     color = colors.textSecondary,
                 )
@@ -567,17 +584,19 @@ internal fun DistDocument.scriptName(): String =
     fileName()
         ?: name.ifBlank { null }
         ?: sceneNumber.ifBlank { null }?.let { scene ->
-            "scene $scene" + pageNumber.ifBlank { null }?.let { " page $it" }.orEmpty()
+            pageNumber.ifBlank { null }
+                ?.let { str(S.desktop_script_name_scene_page, scene, it) }
+                ?: str(S.desktop_script_name_scene, scene)
         }
-        ?: "Document"
+        ?: str(S.document)
 
 /** The web's `validatSceneNo` plus its `required` rule, as the field's error line. */
 internal fun sceneProblem(scene: String): String? {
     val trimmed = scene.trim()
     return when {
-        trimmed.isEmpty() -> "Scene number is required"
-        !trimmed.first().isDigit() -> "Scene Number should start with a number"
-        trimmed.length > MAX_SCENE -> "Scene Number not greater than $MAX_SCENE characters"
+        trimmed.isEmpty() -> str(S.dd_publish_scene_number_required)
+        !trimmed.first().isDigit() -> str(S.desktop_script_scene_start_with_number)
+        trimmed.length > MAX_SCENE -> str(S.desktop_script_scene_not_greater_than, MAX_SCENE)
         else -> null
     }
 }

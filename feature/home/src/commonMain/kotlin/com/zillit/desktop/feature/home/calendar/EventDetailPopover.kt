@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * One event, in full.
@@ -130,9 +132,9 @@ private fun DetailHeader(detail: EventDetailState, onEvent: (CalendarEvent2Event
             )
 
             val tags = listOfNotNull(
-                "Cancelled".takeIf { event.isCancelled },
-                "Repeats".takeIf { event.isRecurring },
-                "Finished".takeIf { detail.hasFinished && !event.isCancelled },
+                str(S.cancelled).takeIf { event.isCancelled },
+                str(S.desktop_cal_repeats).takeIf { event.isRecurring },
+                str(S.desktop_cal_finished).takeIf { detail.hasFinished && !event.isCancelled },
             )
             if (tags.isNotEmpty()) {
                 ZillitText(
@@ -145,7 +147,7 @@ private fun DetailHeader(detail: EventDetailState, onEvent: (CalendarEvent2Event
 
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close",
+            contentDescription = str(S.close),
             onClick = { onEvent(CalendarEvent2Event.CloseDetail) },
             modifier = Modifier.offset(y = (-4).dp)
         )
@@ -168,27 +170,27 @@ private fun DetailRows(
     )
 
     durationLabel(event.startMillis, event.endMillis).takeIf { it.isNotBlank() }?.let { duration ->
-        InfoRow(icon = ZillitIcons.Reload, primary = duration, secondary = "Duration")
+        InfoRow(icon = ZillitIcons.Reload, primary = duration, secondary = str(S.desktop_cal_duration))
     }
 
     event.location?.takeIf { it.isNotBlank() }?.let { location ->
-        InfoRow(icon = ZillitIcons.Info, primary = location, secondary = "Location")
+        InfoRow(icon = ZillitIcons.Info, primary = location, secondary = str(S.location))
     }
 
     if (event.hasCall) {
-        val label = event.callType?.label ?: "Call"
+        val label = event.callType?.label?.let { str(it) } ?: str(S.call)
         if (joinable) {
             // The room is the event's own; everyone invited walks into the
             // same one rather than ringing each other.
             ZillitButton(
-                text = "Join call",
+                text = str(S.join_call),
                 onClick = { onJoin?.invoke(event) },
                 variant = ButtonVariant.Primary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Phone,
             )
         } else {
-            InfoRow(icon = ZillitIcons.Monitor, primary = label, secondary = "No call to join")
+            InfoRow(icon = ZillitIcons.Monitor, primary = label, secondary = str(S.desktop_cal_no_call_to_join))
         }
     }
 
@@ -196,19 +198,19 @@ private fun DetailRows(
         InfoRow(
             icon = ZillitIcons.Info,
             primary = reminderLabel(event.reminderMinutes),
-            secondary = "Reminder",
+            secondary = str(S.reminder),
         )
     }
 
     event.creatorName?.takeIf { it.isNotBlank() }?.let { creator ->
-        InfoRow(icon = ZillitIcons.User, primary = creator, secondary = "Created by")
+        InfoRow(icon = ZillitIcons.User, primary = creator, secondary = str(S.cs_created_by))
     }
 
     if (event.invitedCount > 0) {
         InfoRow(
             icon = ZillitIcons.User,
-            primary = "${event.invitedCount} invited",
-            secondary = "Invitees",
+            primary = str(S.desktop_cal_invited_count, event.invitedCount),
+            secondary = str(S.invitees),
         )
     }
 
@@ -296,7 +298,7 @@ private fun ActionButtons(detail: EventDetailState, onEvent: (CalendarEvent2Even
             // someone who has accepted is a button that does nothing.
             if (detail.event.inviteStatus != InviteStatus.Accepted) {
                 ZillitButton(
-                    text = "Accept",
+                    text = str(S.accept),
                     size = ButtonSize.Small,
                     loading = detail.isBusy,
                     onClick = { onEvent(CalendarEvent2Event.RespondToInvite(accept = true)) },
@@ -304,7 +306,7 @@ private fun ActionButtons(detail: EventDetailState, onEvent: (CalendarEvent2Even
             }
             if (detail.event.inviteStatus != InviteStatus.Rejected) {
                 ZillitButton(
-                    text = "Decline",
+                    text = str(S.decline),
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                     loading = detail.isBusy,
@@ -315,13 +317,13 @@ private fun ActionButtons(detail: EventDetailState, onEvent: (CalendarEvent2Even
 
         if (detail.permissions.canManage) {
             ZillitButton(
-                text = "Edit",
+                text = str(S.edit),
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 onClick = { onEvent(CalendarEvent2Event.OpenForm(detail.event)) },
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 loading = detail.isBusy,

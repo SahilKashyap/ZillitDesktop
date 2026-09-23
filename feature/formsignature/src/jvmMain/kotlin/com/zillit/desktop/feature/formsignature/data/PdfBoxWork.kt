@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.formsignature.data
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.PdfPageImage
 import com.zillit.desktop.feature.formsignature.domain.PdfWork
 import com.zillit.desktop.feature.formsignature.domain.PlacedStamp
@@ -63,7 +65,7 @@ class PdfBoxWork : PdfWork {
         onFailure = { thrown ->
             ZillitResult.Failure(
                 ZillitError.Validation(
-                    "This document could not be opened as a PDF (${thrown::class.simpleName}).",
+                    str(S.desktop_fs_pdf_open_failed_reason, thrown::class.simpleName),
                 ),
             )
         },
@@ -94,7 +96,7 @@ class PdfBoxWork : PdfWork {
         onFailure = { thrown ->
             ZillitResult.Failure(
                 ZillitError.Validation(
-                    thrown.message ?: "This page could not be rendered (${thrown::class.simpleName}).",
+                    thrown.message ?: str(S.desktop_fs_page_render_failed_reason, thrown::class.simpleName),
                 ),
             )
         },
@@ -104,7 +106,7 @@ class PdfBoxWork : PdfWork {
         Loader.loadPDF(pdf).use { it.numberOfPages }
     }.fold(
         onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Validation("This document could not be opened as a PDF.")) },
+        onFailure = { ZillitResult.Failure(ZillitError.Validation(str(S.desktop_dm_pdf_open_failed))) },
     )
 
     override fun imageSize(png: ByteArray): ZillitResult<Pair<Int, Int>> = runCatching {
@@ -112,7 +114,7 @@ class PdfBoxWork : PdfWork {
         image.width to image.height
     }.fold(
         onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Validation("The signature image could not be read.")) },
+        onFailure = { ZillitResult.Failure(ZillitError.Validation(str(S.desktop_fs_signature_image_unreadable))) },
     )
 
     override fun stamp(
@@ -150,7 +152,7 @@ class PdfBoxWork : PdfWork {
         onFailure = { thrown ->
             ZillitResult.Failure(
                 ZillitError.Validation(
-                    "The signature could not be applied (${thrown::class.simpleName}).",
+                    str(S.desktop_fs_signature_apply_failed_reason, thrown::class.simpleName),
                 ),
             )
         },
@@ -196,7 +198,7 @@ class PdfBoxWork : PdfWork {
         onFailure = { thrown ->
             ZillitResult.Failure(
                 ZillitError.Validation(
-                    thrown.message ?: "The signature could not be drawn (${thrown::class.simpleName}).",
+                    thrown.message ?: str(S.desktop_fs_signature_draw_failed_reason, thrown::class.simpleName),
                 ),
             )
         },

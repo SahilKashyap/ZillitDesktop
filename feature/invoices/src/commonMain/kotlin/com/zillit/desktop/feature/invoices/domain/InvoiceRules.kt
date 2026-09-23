@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** How a pill reads and colours. Kept UI-agnostic so the rules are testable. */
 enum class BadgeTone { Neutral, Pending, Approved, Rejected, Override }
 
@@ -17,17 +20,19 @@ data class InvoiceBadge(val label: String, val tone: BadgeTone)
  * The first entry is its placeholder, so a reason is a real choice; the last
  * demands the notes that explain it.
  */
-enum class HoldReason(val label: String) {
-    AdjustmentRequired("Invoice Adjustment Required"),
-    AwaitingCreditNote("Awaiting Credit Note"),
+enum class HoldReason(private val labelKey: String) {
+    AdjustmentRequired(S.desktop_hold_invoice_adjustment_required),
+    AwaitingCreditNote(S.desktop_hold_awaiting_credit_note),
     PoAmendmentNeeded("PO Amendment Needed"),
-    QueryingAmount("Querying Amount with Vendor"),
-    MissingDocumentation("Missing Supporting Documentation"),
-    TaxQuery("Tax Query"),
-    DuplicateCheck("Duplicate Invoice Check"),
-    AwaitingHodConfirmation("Awaiting HoD Confirmation"),
-    Other("Other (specify in notes)"),
+    QueryingAmount(S.desktop_hold_querying_amount_with_vendor),
+    MissingDocumentation(S.desktop_hold_missing_supporting_documentation),
+    TaxQuery(S.desktop_hold_tax_query),
+    DuplicateCheck(S.desktop_hold_duplicate_invoice_check),
+    AwaitingHodConfirmation(S.desktop_hold_awaiting_hod_confirmation),
+    Other(S.desktop_other_specify_in_notes),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** The web refuses "Other" with nothing written down. */
     fun needsNotes(): Boolean = this == Other
@@ -38,27 +43,31 @@ object InvoiceRules {
     /** The "Approval" column of the department tables. */
     fun approvalBadge(invoice: Invoice, tiers: List<ResolvedTier>): InvoiceBadge = when {
         invoice.payMethod.isUrgent -> urgentBadge(invoice)
-        invoice.isApproved -> InvoiceBadge("Approved", BadgeTone.Approved)
-        invoice.isRejected -> InvoiceBadge("Rejected", BadgeTone.Rejected)
+        invoice.isApproved -> InvoiceBadge(str(S.approved), BadgeTone.Approved)
+        invoice.isRejected -> InvoiceBadge(str(S.rejected), BadgeTone.Rejected)
         invoice.status == InvoiceStatus.Approval && tiers.isNotEmpty() ->
-            InvoiceBadge("Pending (${invoice.approvedCount}/${tiers.size})", BadgeTone.Pending)
-        else -> InvoiceBadge("Pending", BadgeTone.Neutral)
+            InvoiceBadge(str(S.ah_status_pending_progress, invoice.approvedCount, tiers.size), BadgeTone.Pending)
+        else -> InvoiceBadge(str(S.pending), BadgeTone.Neutral)
     }
 
     /** The accountant Approval Queue's variant: override rows read as such. */
     fun queueBadge(invoice: Invoice, tiers: List<ResolvedTier>): InvoiceBadge = when {
         invoice.status == InvoiceStatus.Override && invoice.payMethod.isUrgent -> urgentBadge(invoice)
-        invoice.status == InvoiceStatus.Override -> InvoiceBadge("Override", BadgeTone.Override)
+        invoice.status == InvoiceStatus.Override -> InvoiceBadge(str(S.dm_nom_table_override), BadgeTone.Override)
         invoice.payMethod.isUrgent -> urgentBadge(invoice)
-        invoice.isApproved -> InvoiceBadge("Approved", BadgeTone.Approved)
-        invoice.isRejected -> InvoiceBadge("Rejected", BadgeTone.Rejected)
-        else -> InvoiceBadge("Pending (${invoice.approvedCount}/${tiers.size})", BadgeTone.Pending)
+        invoice.isApproved -> InvoiceBadge(str(S.approved), BadgeTone.Approved)
+        invoice.isRejected -> InvoiceBadge(str(S.rejected), BadgeTone.Rejected)
+        else -> InvoiceBadge(str(S.ah_status_pending_progress, invoice.approvedCount, tiers.size), BadgeTone.Pending)
     }
 
     fun urgentBadge(invoice: Invoice): InvoiceBadge {
-        val request = if (invoice.payMethod == PayMethod.Cheque) "Cheque Request" else "Urgent Wire Request"
-        val prefix = if (invoice.hasPo) "" else "No PO · "
-        return InvoiceBadge(prefix + request, BadgeTone.Rejected)
+        val request = if (invoice.payMethod == PayMethod.Cheque) {
+            str(S.desktop_cheque_request)
+        } else {
+            str(S.desktop_urgent_wire_request)
+        }
+        val label = if (invoice.hasPo) request else str(S.desktop_inv_no_po_request, request)
+        return InvoiceBadge(label, BadgeTone.Rejected)
     }
 
     /** Department view: only my own, still-pending uploads. */

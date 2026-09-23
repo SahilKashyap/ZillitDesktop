@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.invoices.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The keys the invoices screen answers — the web's sidebar footer, wired.
  *
@@ -7,16 +10,18 @@ package com.zillit.desktop.feature.invoices.ui
  * the screen only decides *when* to consult it (never while a text field or a
  * dialog has the keyboard).
  */
-enum class InvoiceShortcut(val key: String, val label: String) {
+enum class InvoiceShortcut(val key: String, private val labelKey: String) {
     /** Puts the cursor in the page's search box. */
-    Search("/", "Search"),
+    Search("/", S.search),
 
     /** Enters an invoice, or uploads one, depending on who is looking. */
-    New("N", "New"),
+    New("N", S.continue_new),
 
     /** Lists these keys. */
-    Help("?", "Help"),
+    Help("?", S.desktop_help),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /**

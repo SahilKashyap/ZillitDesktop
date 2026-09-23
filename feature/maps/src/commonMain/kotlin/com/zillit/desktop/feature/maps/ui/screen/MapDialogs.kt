@@ -37,6 +37,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.BoundaryActionKind
 import com.zillit.desktop.feature.maps.domain.toFixed
 import com.zillit.desktop.feature.maps.ui.AddCityState
@@ -46,6 +48,7 @@ import com.zillit.desktop.feature.maps.ui.ShareState
 
 /** Whichever modal is open. The map surface has already stepped aside for it. */
 @Composable
+@Suppress("LongMethod") // One branch per dialog; the list is the catalogue.
 internal fun MapDialogHost(dialog: MapDialog?, onEvent: (MapEvent) -> Unit) {
     val dismiss = { onEvent(MapEvent.Dialogs.Dismiss) }
     when (dialog) {
@@ -58,7 +61,12 @@ internal fun MapDialogHost(dialog: MapDialog?, onEvent: (MapEvent) -> Unit) {
             icon = if (dialog.danger) MapIcons.AlertTriangle else null,
             width = 440.dp,
             actions = {
-                ZillitButton(text = "Cancel", onClick = dismiss, variant = ButtonVariant.Secondary, enabled = !dialog.busy)
+                ZillitButton(
+                    text = str(S.cancel),
+                    onClick = dismiss,
+                    variant = ButtonVariant.Secondary,
+                    enabled = !dialog.busy,
+                )
                 ZillitButton(
                     text = dialog.confirmLabel,
                     onClick = { onEvent(MapEvent.Dialogs.Confirm) },
@@ -67,19 +75,27 @@ internal fun MapDialogHost(dialog: MapDialog?, onEvent: (MapEvent) -> Unit) {
                 )
             },
         ) {
-            ZillitText(text = dialog.message, style = ZillitTheme.typography.bodyLarge, color = ZillitTheme.colors.textSecondary)
+            ZillitText(
+                text = dialog.message,
+                style = ZillitTheme.typography.bodyLarge,
+                color = ZillitTheme.colors.textSecondary,
+            )
         }
         is MapDialog.AddCity -> AddCityDialog(dialog.state, onEvent)
         is MapDialog.NewType -> ZillitDialogShell(
-            title = "New Type",
+            title = str(S.desktop_map_new_type),
             onDismiss = dismiss,
             visible = true,
             icon = MapIcons.Layers,
             width = 480.dp,
             actions = {
-                ZillitButton(text = "Cancel", onClick = { onEvent(MapEvent.Types.Cancel) }, variant = ButtonVariant.Secondary)
                 ZillitButton(
-                    text = "Create",
+                    text = str(S.cancel),
+                    onClick = { onEvent(MapEvent.Types.Cancel) },
+                    variant = ButtonVariant.Secondary,
+                )
+                ZillitButton(
+                    text = str(S.create),
                     onClick = { onEvent(MapEvent.Types.Save) },
                     leadingIcon = ZillitIcons.Check,
                     loading = dialog.form.saving,
@@ -92,18 +108,21 @@ internal fun MapDialogHost(dialog: MapDialog?, onEvent: (MapEvent) -> Unit) {
             }
         }
         is MapDialog.AddressOutside -> ZillitDialogShell(
-            title = "Outside ${dialog.areaName}",
+            title = str(S.desktop_map_outside_area, dialog.areaName),
             onDismiss = dismiss,
             visible = true,
             icon = MapIcons.AlertTriangle,
             width = 420.dp,
             actions = {
-                ZillitButton(text = "Cancel", onClick = dismiss, variant = ButtonVariant.Secondary)
-                ZillitButton(text = "Use Anyway", onClick = { onEvent(MapEvent.LocationForm.UseAddressAnyway) })
+                ZillitButton(text = str(S.cancel), onClick = dismiss, variant = ButtonVariant.Secondary)
+                ZillitButton(
+                    text = str(S.desktop_map_use_anyway),
+                    onClick = { onEvent(MapEvent.LocationForm.UseAddressAnyway) },
+                )
             },
         ) {
             ZillitText(
-                text = "This address is outside ${dialog.areaName}. Do you want to use it anyway?",
+                text = str(S.desktop_map_address_outside, dialog.areaName),
                 style = ZillitTheme.typography.bodyLarge,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -135,13 +154,21 @@ private fun BoundaryDialog(dialog: MapDialog.Boundary, onEvent: (MapEvent) -> Un
                     ZillitButton(
                         text = action.label,
                         onClick = { onEvent(MapEvent.Dialogs.Boundary(action.choice)) },
-                        variant = if (action.kind == BoundaryActionKind.Primary) ButtonVariant.Primary else ButtonVariant.Secondary,
+                        variant = if (action.kind == BoundaryActionKind.Primary) {
+                            ButtonVariant.Primary
+                        } else {
+                            ButtonVariant.Secondary
+                        },
                     )
                 }
             }
         },
     ) {
-        ZillitText(text = prompt.message, style = ZillitTheme.typography.bodyLarge, color = ZillitTheme.colors.textSecondary)
+        ZillitText(
+            text = prompt.message,
+            style = ZillitTheme.typography.bodyLarge,
+            color = ZillitTheme.colors.textSecondary,
+        )
         prompt.address?.let { AddressBox(it) }
         if (prompt.stacked) {
             Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -174,7 +201,12 @@ private fun AddressBox(address: String) {
             .padding(10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ZillitIcon(icon = MapIcons.MapPin, tint = colors.textMuted, size = 15.dp, modifier = Modifier.padding(top = 1.dp))
+        ZillitIcon(
+            icon = MapIcons.MapPin,
+            tint = colors.textMuted,
+            size = 15.dp,
+            modifier = Modifier.padding(top = 1.dp),
+        )
         ZillitText(text = address, style = ZillitTheme.typography.bodyMedium, color = colors.textPrimary)
     }
 }
@@ -186,18 +218,23 @@ private fun AddressBox(address: String) {
  * (req B).
  */
 @Composable
+@Suppress("LongMethod") // A form; read top to bottom.
 private fun AddCityDialog(state: AddCityState, onEvent: (MapEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "Add City",
+        title = str(S.desktop_map_add_city),
         onDismiss = { onEvent(MapEvent.Cities.AddCancel) },
         visible = true,
         icon = MapIcons.MapPin,
         width = 560.dp,
         actions = {
-            ZillitButton(text = "Cancel", onClick = { onEvent(MapEvent.Cities.AddCancel) }, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = if (state.saving) "Saving..." else "Add City",
+                text = str(S.cancel),
+                onClick = { onEvent(MapEvent.Cities.AddCancel) },
+                variant = ButtonVariant.Secondary,
+            )
+            ZillitButton(
+                text = if (state.saving) str(S.ah_saving) else str(S.desktop_map_add_city),
                 onClick = { onEvent(MapEvent.Cities.AddSave) },
                 loading = state.saving,
                 enabled = !state.saving && state.name.isNotBlank(),
@@ -207,15 +244,19 @@ private fun AddCityDialog(state: AddCityState, onEvent: (MapEvent) -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ZillitIcon(icon = MapIcons.MapPin, tint = MapColors.Info, size = 15.dp)
-                ZillitText(text = "City", style = ZillitTheme.typography.titleSmall, color = colors.textPrimary)
+                ZillitText(text = str(S.city), style = ZillitTheme.typography.titleSmall, color = colors.textPrimary)
             }
             if (!state.prefilled) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ZillitText(text = "SEARCH CITY *", style = labelBold(11.sp), color = colors.textSecondary)
+                    ZillitText(
+                        text = str(S.desktop_weather_search_city) + " *",
+                        style = labelBold(11.sp),
+                        color = colors.textSecondary,
+                    )
                     ZillitTextField(
                         value = state.query,
                         onValueChange = { onEvent(MapEvent.Cities.AddQuery(it)) },
-                        placeholder = "Search for a city...",
+                        placeholder = str(S.desktop_map_search_for_city),
                         leadingIcon = ZillitIcons.Search,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -223,16 +264,25 @@ private fun AddCityDialog(state: AddCityState, onEvent: (MapEvent) -> Unit) {
                 }
             }
             if (state.name.isNotBlank()) {
-                SoftBanner(accent = MapColors.Info, icon = MapIcons.MapPin, title = state.name, body = state.description)
+                SoftBanner(
+                    accent = MapColors.Info,
+                    icon = MapIcons.MapPin,
+                    title = state.name,
+                    body = state.description,
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ZillitText(text = "LATITUDE", style = labelBold(11.sp), color = colors.textSecondary)
-                    ReadOnlyBox(state.point?.let { toFixed(it.lat, 6) }.orEmpty(), "Auto-filled")
+                    ZillitText(text = str(S.desktop_latitude), style = labelBold(11.sp), color = colors.textSecondary)
+                    ReadOnlyBox(state.point?.let { toFixed(it.lat, 6) }.orEmpty(), str(S.desktop_map_auto_filled))
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ZillitText(text = "LONGITUDE", style = labelBold(11.sp), color = colors.textSecondary)
-                    ReadOnlyBox(state.point?.let { toFixed(it.lng, 6) }.orEmpty(), "Auto-filled")
+                    ZillitText(
+                        text = str(S.desktop_longitude),
+                        style = labelBold(11.sp),
+                        color = colors.textSecondary,
+                    )
+                    ReadOnlyBox(state.point?.let { toFixed(it.lng, 6) }.orEmpty(), str(S.desktop_map_auto_filled))
                 }
             }
         }
@@ -244,6 +294,7 @@ private fun AddCityDialog(state: AddCityState, onEvent: (MapEvent) -> Unit) {
  * from here — people in this production, the clipboard, or Google Maps.
  */
 @Composable
+@Suppress("LongMethod") // A form; read top to bottom.
 private fun ShareDialog(state: ShareState, onEvent: (MapEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
@@ -251,19 +302,28 @@ private fun ShareDialog(state: ShareState, onEvent: (MapEvent) -> Unit) {
         onDismiss = { onEvent(MapEvent.Dialogs.Dismiss) },
         visible = true,
         icon = MapIcons.Share,
-        subtitle = "Share",
+        subtitle = str(S.share),
         width = 520.dp,
         actions = {
-            ZillitButton(text = "Copy text", onClick = { onEvent(MapEvent.Dialogs.ShareCopy) }, variant = ButtonVariant.Tertiary, leadingIcon = MapIcons.Copy)
             ZillitButton(
-                text = "Open in Google Maps",
+                text = str(S.desktop_map_copy_text),
+                onClick = { onEvent(MapEvent.Dialogs.ShareCopy) },
+                variant = ButtonVariant.Tertiary,
+                leadingIcon = MapIcons.Copy,
+            )
+            ZillitButton(
+                text = str(S.recce_open_in_maps),
                 onClick = { onEvent(MapEvent.Dialogs.ShareOpenMaps) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = MapIcons.Map,
             )
             if (state.people.isNotEmpty()) {
                 ZillitButton(
-                    text = if (state.selected.isEmpty()) "Send" else "Send (${state.selected.size})",
+                    text = if (state.selected.isEmpty()) {
+                        str(S.send)
+                    } else {
+                        str(S.desktop_send_n, state.selected.size)
+                    },
                     onClick = { onEvent(MapEvent.Dialogs.ShareSend) },
                     leadingIcon = ZillitIcons.Send,
                     enabled = state.selected.isNotEmpty() && !state.sending,
@@ -284,11 +344,15 @@ private fun ShareDialog(state: ShareState, onEvent: (MapEvent) -> Unit) {
                 ZillitText(text = state.text, style = ZillitTheme.typography.bodyMedium, color = colors.textPrimary)
             }
             if (state.people.isNotEmpty()) {
-                ZillitText(text = "SEND IN ZILLIT", style = labelBold(11.sp), color = colors.textSecondary)
+                ZillitText(
+                    text = str(S.desktop_map_send_in_zillit),
+                    style = labelBold(11.sp),
+                    color = colors.textSecondary,
+                )
                 ZillitTextField(
                     value = state.query,
                     onValueChange = { onEvent(MapEvent.Dialogs.ShareQuery(it)) },
-                    placeholder = "Search people...",
+                    placeholder = str(S.dd_history_sender_picker_search_hint),
                     leadingIcon = ZillitIcons.Search,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -320,7 +384,12 @@ private fun ShareDialog(state: ShareState, onEvent: (MapEvent) -> Unit) {
                                 onCheckedChange = { onEvent(MapEvent.Dialogs.ShareToggle(person.userId)) },
                             )
                             Column(Modifier.weight(1f)) {
-                                ZillitText(text = person.name, style = labelBold(13.sp, FontWeight.Medium), color = colors.textPrimary, maxLines = 1)
+                                ZillitText(
+                                    text = person.name,
+                                    style = labelBold(13.sp, FontWeight.Medium),
+                                    color = colors.textPrimary,
+                                    maxLines = 1,
+                                )
                                 if (person.designation.isNotBlank()) {
                                     ZillitText(
                                         text = person.designation,
@@ -342,7 +411,7 @@ private fun ShareDialog(state: ShareState, onEvent: (MapEvent) -> Unit) {
 @Composable
 private fun PhotoDialog(dialog: MapDialog.Photo, onEvent: (MapEvent) -> Unit) {
     ZillitDialogShell(
-        title = dialog.attachment?.name?.ifBlank { null } ?: dialog.added?.photo?.name ?: "Photo",
+        title = dialog.attachment?.name?.ifBlank { null } ?: dialog.added?.photo?.name ?: str(S.photo),
         onDismiss = { onEvent(MapEvent.Dialogs.Dismiss) },
         visible = true,
         icon = MapIcons.Camera,
@@ -354,10 +423,18 @@ private fun PhotoDialog(dialog: MapDialog.Photo, onEvent: (MapEvent) -> Unit) {
         val added = dialog.added
         Box(Modifier.fillMaxWidth().height(600.dp).clip(RoundedCornerShape(10.dp))) {
             when {
-                attachment != null -> AsyncPicture(key = "full:${attachment.media}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit) {
+                attachment != null -> AsyncPicture(
+                    key = "full:${attachment.media}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                ) {
                     photo(attachment, preview = false)
                 }
-                added != null -> AsyncPicture(key = "full:${added.key}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit) {
+                added != null -> AsyncPicture(
+                    key = "full:${added.key}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                ) {
                     decode(added.photo)
                 }
             }

@@ -5,6 +5,8 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.core.network.headersFor
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budgetbuilder.server.BudgetBuilderGateway
 import java.awt.Dimension
 import java.awt.event.WindowAdapter
@@ -73,14 +75,14 @@ internal object BudgetBuilderWindow {
         val web = services[ZillitService.BudgetBuilderWeb]
         val api = services[ZillitService.BudgetBuilder]
         if (web == null || api == null) {
-            onUnavailable("Budget Builder isn’t configured for this environment.")
+            onUnavailable(str(S.desktop_budget_builder_not_configured))
             return
         }
 
         scope.launch {
             val client = KcefRuntime.client()
             if (client == null) {
-                onUnavailable("This build has no embedded browser, so Budget Builder cannot open here.")
+                onUnavailable(str(S.desktop_no_embedded_browser_budget_builder))
                 return@launch
             }
             val url = runCatching { gatewayFor(ready, web, api).start() }
@@ -89,7 +91,7 @@ internal object BudgetBuilderWindow {
                 }
                 .getOrNull()
             if (url == null) {
-                onUnavailable("Budget Builder's local gateway could not start.")
+                onUnavailable(str(S.desktop_budget_builder_gateway_failed))
                 return@launch
             }
             withContext(Dispatchers.Main) { show(client, url) }
@@ -120,7 +122,7 @@ internal object BudgetBuilderWindow {
         )
 
         val browser: CefBrowser = client.createBrowser(url, CefRendering.DEFAULT, false)
-        val window = JFrame("Budget Builder — Zillit")
+        val window = JFrame(str(S.desktop_budget_builder_window_title))
         window.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
         window.contentPane.add(browser.uiComponent)
         window.minimumSize = Dimension(MIN_WIDTH, MIN_HEIGHT)

@@ -1,7 +1,6 @@
 package com.zillit.desktop.feature.productionreport.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -19,6 +18,7 @@ import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.productionreport.domain.ReportKind
+import com.zillit.desktop.feature.productionreport.domain.reportToolName
 
 /**
  * Production Report — or the AD / Wrap report, which share the engine — as a
@@ -34,12 +34,10 @@ class ProductionReportToolProvider(
      * route and navigator; null leaves the manager alone.
      */
     private val chat: (@Composable (route: WorkspaceRoute, navigator: WindowNavigator) -> Unit)? = null,
-    /** Opens a one-to-one chat from this window — "Chat with Approver" / "Chat with Creator". */
-    private val openChat: ((navigator: WindowNavigator, userId: String, fullName: String) -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = viewModel.kind.path
-    override val title: String = viewModel.kind.title
+    override val title: String get() = viewModel.kind.title
     override val icon = when (viewModel.kind) {
         ReportKind.Ad -> ZillitToolIcons.AdDashboard
         else -> ZillitToolIcons.ProductionReport
@@ -54,15 +52,10 @@ class ProductionReportToolProvider(
         var toast by remember { mutableStateOf<ReportEffect.Toast?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
-        DisposableEffect(viewModel, navigator) {
-            openChat?.let { open ->
-                viewModel.attachChat { userId, fullName ->
-                    open(navigator, userId, fullName)
-                    true
-                }
-            }
-            onDispose { viewModel.attachChat(null) }
-        }
+        // Tool name by rights (BE, Sep 2026): the window title follows the in-tool header —
+        // "Production Report Creation" for posting users, "Production Report" for viewers.
+        val windowTitle = if (viewModel.kind == ReportKind.Production) reportToolName(state.isPoster) else title
+        LaunchedEffect(navigator, windowTitle) { navigator.setTitle(windowTitle) }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

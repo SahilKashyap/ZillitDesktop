@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.esignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.Envelope
 import com.zillit.desktop.feature.esignature.domain.EnvelopeScope
 import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
@@ -116,7 +118,7 @@ internal class ListsFlow(private val store: EsignStore) {
         if (store.refusesPost()) return
         store.runTask {
             store.orFail { store.repository.deleteDraft(id) } ?: return@runTask
-            store.notice("Draft deleted.")
+            store.notice(str(S.desktop_email_draft_deleted))
             if (store.current.page == EsignPageKind.Editor && store.current.editor?.envelopeId == id) {
                 store.update { copy(editor = null, page = EsignPageKind.Lists) }
             }

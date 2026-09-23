@@ -310,7 +310,7 @@ class DraftTest {
     fun `a draft with nothing in it shows placeholders rather than blanks`() = runTest {
         val summary = EmailDraft(id = "d").toSummary()
 
-        assertEquals("(no subject)", summary.subject)
+        assertEquals("(No Subject)", summary.subject)
         assertEquals("(no recipient)", summary.from)
     }
 

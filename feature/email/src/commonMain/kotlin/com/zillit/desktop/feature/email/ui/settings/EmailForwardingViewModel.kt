@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.email.ui.settings
 
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailForwarding
 import com.zillit.desktop.feature.email.domain.EmailForwardingRepository
 import com.zillit.desktop.feature.email.domain.looksLikeAddress
@@ -78,14 +80,21 @@ class EmailForwardingViewModel(
         val address = currentState.address.trim()
         if (!address.looksLikeAddress()) {
             // Android's `R.string.valid_email` (GeneralSettingsActivity.kt:128-129).
-            setState { copy(inputError = "Please enter a valid email") }
+            setState { copy(inputError = str(S.desktop_please_enter_a_valid_email)) }
             return
         }
         setState { copy(isSaving = true, error = null, info = null) }
         launchResult(
             block = { repository.save(address) },
             onSuccess = { saved ->
-                setState { copy(isSaving = false, saved = saved, address = saved.address, info = "Forwarding saved") }
+                setState {
+                    copy(
+                        isSaving = false,
+                        saved = saved,
+                        address = saved.address,
+                        info = str(S.desktop_email_forwarding_saved),
+                    )
+                }
             },
             onError = { setState { copy(isSaving = false, error = it.localised()) } },
         )
@@ -96,7 +105,9 @@ class EmailForwardingViewModel(
         launchResult(
             block = { repository.remove() },
             onSuccess = {
-                setState { copy(isSaving = false, saved = null, address = "", info = "Forwarding removed") }
+                setState {
+                    copy(isSaving = false, saved = null, address = "", info = str(S.desktop_email_forwarding_removed))
+                }
             },
             onError = { setState { copy(isSaving = false, error = it.localised()) } },
         )

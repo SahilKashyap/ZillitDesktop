@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
 import kotlinx.datetime.DatePeriod
@@ -102,7 +104,7 @@ internal fun DiaryDateField(
     onPick: (LocalDate?) -> Unit,
     today: LocalDate,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select date",
+    placeholder: String = str(S.hint_date),
     format: (LocalDate) -> String = DiaryFormat::mediumDate,
     enabled: Boolean = true,
     clearable: Boolean = false,
@@ -129,7 +131,7 @@ internal fun DiaryDateField(
             if (clearable && enabled && value != null) {
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Clear date",
+                    contentDescription = str(S.desktop_clear_date),
                     onClick = { onPick(null) },
                     size = 20.dp,
                 )
@@ -174,7 +176,7 @@ internal fun MonthPicker(
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitIconButton(
                 icon = ZillitIcons.ChevronLeft,
-                contentDescription = "Previous month",
+                contentDescription = str(S.desktop_previous_month),
                 onClick = { month = month.plus(DatePeriod(months = -1)) },
             )
             ZillitText(
@@ -185,7 +187,7 @@ internal fun MonthPicker(
             )
             ZillitIconButton(
                 icon = ZillitIcons.ChevronRight,
-                contentDescription = "Next month",
+                contentDescription = str(S.next_month),
                 onClick = { month = month.plus(DatePeriod(months = 1)) },
             )
         }
@@ -293,7 +295,7 @@ internal fun DiaryTimeField(
     value: LocalTime?,
     onPick: (LocalTime?) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select time",
+    placeholder: String = str(S.hint_scheduled_time),
     error: Boolean = false,
     enabled: Boolean = true,
 ) {
@@ -388,13 +390,13 @@ internal fun <T> DiaryDropdown(
     onSelect: (T) -> Unit,
     label: (T) -> String,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select",
+    placeholder: String = str(S.select),
     leading: (@Composable (T) -> Unit)? = null,
     searchable: Boolean = false,
     onClear: (() -> Unit)? = null,
     error: Boolean = false,
     enabled: Boolean = true,
-    emptyText: String = "Nothing to choose from",
+    emptyText: String = str(S.desktop_nothing_to_choose_from),
     menuWidth: Dp = MENU_WIDTH,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -413,7 +415,7 @@ internal fun <T> DiaryDropdown(
             if (onClear != null && selected != null && enabled) {
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Clear",
+                    contentDescription = str(S.ah_clear),
                     onClick = onClear,
                     size = 20.dp,
                 )
@@ -459,7 +461,7 @@ private fun <T> ChoiceMenu(
             ZillitTextField(
                 value = query,
                 onValueChange = onQuery,
-                placeholder = "Search…",
+                placeholder = str(S.search),
                 leadingIcon = ZillitIcons.Search,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             )
@@ -468,7 +470,7 @@ private fun <T> ChoiceMenu(
         val shown = options.filter { needle.isEmpty() || label(it).contains(needle, ignoreCase = true) }
         if (shown.isEmpty()) {
             ZillitText(
-                text = if (options.isEmpty()) emptyText else "No matches",
+                text = if (options.isEmpty()) emptyText else str(S.dm_picker_empty),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 modifier = Modifier.padding(12.dp),
@@ -598,7 +600,7 @@ internal fun ColorPickerButton(
                         modifier = Modifier.weight(1f),
                     )
                     ZillitButton(
-                        text = "Use",
+                        text = str(S.recce_use),
                         onClick = {
                             val hex = if (typed.startsWith("#")) typed else "#$typed"
                             if (hexColor(hex) != null) {

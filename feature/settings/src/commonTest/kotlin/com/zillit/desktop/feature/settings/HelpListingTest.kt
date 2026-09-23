@@ -18,7 +18,7 @@ class HelpListingTest {
     @Test
     fun `the cards are the phones' cards, in their order`() {
         assertEquals(
-            listOf("FAQs", "Privacy Policy", "Terms of Use", "Contact Us"),
+            listOf("FAQs", "Privacy Policy", "Terms of Use", "Contact us"),
             HELP_ENTRIES.map { it.title },
         )
     }
@@ -50,7 +50,7 @@ class HelpListingTest {
     @Test
     fun `contact us is the only card with no link, and the only callable one`() {
         val contact = HELP_ENTRIES.single { it.url == null }
-        assertEquals("Contact Us", contact.title)
+        assertEquals("Contact us", contact.title)
         assertTrue(contact.callable)
         assertTrue(HELP_ENTRIES.filter { it.callable }.size == 1)
     }

@@ -58,7 +58,10 @@ class MapScreenRenderTest {
         )
     }
 
-    private fun ComposeUiTest.open(initial: MapUiState, events: MutableList<MapEvent> = mutableListOf()): (MapUiState) -> Unit {
+    private fun ComposeUiTest.open(
+        initial: MapUiState,
+        events: MutableList<MapEvent> = mutableListOf(),
+    ): (MapUiState) -> Unit {
         var state by mutableStateOf(initial)
         setContent { ZillitTheme(animateThemeChange = false) { MapScreen(state, events::add) } }
         waitForIdle()
@@ -77,7 +80,17 @@ class MapScreenRenderTest {
     fun `the toolbar offers every control, and presses reach the view model`() = runComposeUiTest {
         val events = mutableListOf<MapEvent>()
         open(base, events)
-        shows("Mumbai", "4 locations", "Fit All", "Search", "Filter", "Pin Location", "List View", "Zone: Andheri Zone", "LOC Types")
+        shows(
+            "Mumbai",
+            "4 locations",
+            "Fit All",
+            "Search",
+            "Filter",
+            "Pin Location",
+            "List View",
+            "Zone: Andheri Zone",
+            "LOC Types",
+        )
 
         click("Fit All")
         click("Pin Location")
@@ -137,7 +150,7 @@ class MapScreenRenderTest {
         val pune = here.copy(currentPlace = hyderabad.copy(name = "Pune"))
         set(base.copy(panels = listOf(MapPanel.Cities), citiesPanel = pune))
         assertTrue(
-            onAllNodesWithText("Current Location", substring = true).fetchSemanticsNodes().isEmpty(),
+            onAllNodesWithText("Current location", substring = true).fetchSemanticsNodes().isEmpty(),
             "a city already added is not offered",
         )
     }
@@ -159,7 +172,8 @@ class MapScreenRenderTest {
         val show = open(base.copy(panels = listOf(MapPanel.LocationForm), locationForm = form))
         shows("Edit Location", "Basic Information", "Location Details", "Budget", "Update Location")
 
-        show(base.copy(panels = listOf(MapPanel.LocationForm), locationForm = form.copy(editId = null, typeMenuOpen = true)))
+        val open = form.copy(editId = null, typeMenuOpen = true)
+        show(base.copy(panels = listOf(MapPanel.LocationForm), locationForm = open))
         shows("New Location", "Base Camp", "Shooting", "Save Location")
 
         show(base.copy(listView = ListViewState(), panels = listOf(MapPanel.LocationDetail("l3"))))
@@ -169,7 +183,15 @@ class MapScreenRenderTest {
     @Test
     fun `the zone list, form and details`() = runComposeUiTest {
         val show = open(base.copy(panels = listOf(MapPanel.ZoneList)))
-        shows("Studio Zones", "2 Zones", "Add Zone", "MG Road & Link Road Zone", "30 mi radius", "12.5 mi radius", "Clear Zone")
+        shows(
+            "Studio Zones",
+            "2 Zones",
+            "Add Zone",
+            "MG Road & Link Road Zone",
+            "30 mi radius",
+            "12.5 mi radius",
+            "Clear Zone",
+        )
 
         val form = ZoneFormState(
             cityId = "mumbai",
@@ -196,7 +218,9 @@ class MapScreenRenderTest {
         open(
             base.copy(
                 panels = listOf(MapPanel.Types),
-                typesPanel = TypesPanelState(form = TypeFormState(name = "Warehouse", subTypes = listOf("Props"), iconPickerOpen = true)),
+                typesPanel = TypesPanelState(
+                    form = TypeFormState(name = "Warehouse", subTypes = listOf("Props"), iconPickerOpen = true),
+                ),
             ),
         )
         shows("Location Types", "4 Types", "New Type", "Props", "Base Camp", "Tents", "Parking")
@@ -205,7 +229,12 @@ class MapScreenRenderTest {
     @Test
     fun `the dialogs`() = runComposeUiTest {
         val events = mutableListOf<MapEvent>()
-        val outside = buildBoundaryPrompt(BoundaryStatus.OutsideCity, BoundaryMode.Add, cityName = "Mumbai", address = "Lonavala")!!
+        val outside = buildBoundaryPrompt(
+            BoundaryStatus.OutsideCity,
+            BoundaryMode.Add,
+            cityName = "Mumbai",
+            address = "Lonavala",
+        )!!
         val show = open(base.copy(dialog = MapDialog.Boundary(outside)), events)
         shows("Outside Mumbai", "Lonavala", "Pin Location in the Same City")
         click("Create Another City & Pin Location")
@@ -214,7 +243,10 @@ class MapScreenRenderTest {
         show(
             base.copy(
                 dialog = MapDialog.AddCity(
-                    AddCityState(query = "Hyder", suggestions = listOf(PlacePrediction("p1", "Hyderabad, Telangana", "Hyderabad", "Telangana"))),
+                    AddCityState(
+                        query = "Hyder",
+                        suggestions = listOf(PlacePrediction("p1", "Hyderabad, Telangana", "Hyderabad", "Telangana")),
+                    ),
                 ),
             ),
         )
@@ -223,19 +255,29 @@ class MapScreenRenderTest {
         show(
             base.copy(
                 dialog = MapDialog.Share(
-                    ShareState("Taj Lands End", "📍 Taj Lands End", "https://maps", listOf(SharePerson("u2", "Amy Rao", "Driver")), setOf("u2")),
+                    ShareState(
+                        "Taj Lands End",
+                        "📍 Taj Lands End",
+                        "https://maps",
+                        listOf(SharePerson("u2", "Amy Rao", "Driver")),
+                        setOf("u2"),
+                    ),
                 ),
             ),
         )
         shows("Send in Zillit", "Amy Rao", "Copy text", "Open in Google Maps", "Send (1)")
 
-        show(base.copy(dialog = MapDialog.Confirm("Delete City", "Are you sure?", "Delete", true, ConfirmAction.DeleteCity("mumbai"))))
+        val confirm = MapDialog.Confirm(
+            "Delete City", "Are you sure?", "Delete", true, ConfirmAction.DeleteCity("mumbai"),
+        )
+        show(base.copy(dialog = confirm))
         shows("Delete City", "Are you sure?")
 
         show(base.copy(dialog = MapDialog.NewType(TypeFormState(name = "Warehouse", iconPickerOpen = true))))
         shows("New Type", "Create")
 
-        show(base.copy(dialog = MapDialog.AddressOutside("Mumbai", AddressPick("Lonavala", "Lonavala, MH", LatLng(18.75, 73.4)))))
+        val pick = AddressPick("Lonavala", "Lonavala, MH", LatLng(18.75, 73.4))
+        show(base.copy(dialog = MapDialog.AddressOutside("Mumbai", pick)))
         shows("Outside Mumbai", "Lonavala, MH", "Use Anyway")
 
         show(base.copy(dialog = MapDialog.Photo(MapFixtures.photo, null)))

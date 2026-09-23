@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.HtmlText
 
@@ -53,7 +55,7 @@ internal class TemplatesSection(private val vm: VmScope) {
 
     fun save() {
         val editor = vm.state.templateEditor ?: return
-        if (editor.name.isBlank()) return vm.fail("Template name is required")
+        if (editor.name.isBlank()) return vm.fail(str(S.ah_template_name_required))
         if (vm.refusesWrite()) return
         val template = EmailTemplate(
             id = editor.templateId,
@@ -67,7 +69,7 @@ internal class TemplatesSection(private val vm: VmScope) {
             when (val result = vm.repository.saveTemplate(template)) {
                 is ZillitResult.Success -> {
                     vm.update { copy(templateEditor = null) }
-                    vm.notice(if (editor.isNew) "Template saved" else "Template updated")
+                    vm.notice(str(if (editor.isNew) S.docusign_template_saved else S.cs_update_template_saved))
                     // The composer's picker lists these; a fresh copy either way.
                     (vm.repository.templates() as? ZillitResult.Success)?.let { t ->
                         vm.update { copy(templates = t.data) }
@@ -87,9 +89,9 @@ internal class TemplatesSection(private val vm: VmScope) {
         vm.update {
             copy(
                 prompt = DocDistPrompt(
-                    title = "Delete template \"${template.name}\"?",
-                    message = "This template will be permanently deleted.",
-                    confirmLabel = "Delete",
+                    title = str(S.desktop_docdist_delete_template_title, template.name),
+                    message = str(S.desktop_docdist_delete_template_message),
+                    confirmLabel = str(S.delete),
                     event = DocDistEvent.DeleteTemplate(templateId),
                 ),
             )
@@ -101,7 +103,7 @@ internal class TemplatesSection(private val vm: VmScope) {
         vm.run {
             vm.onSuccess(vm.repository.deleteTemplate(templateId)) {
                 vm.update { copy(templates = templates.filterNot { it.id == templateId }) }
-                vm.notice("Template deleted")
+                vm.notice(str(S.dd_template_deleted))
             }
         }
     }

@@ -46,12 +46,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.CellKind
 import com.zillit.desktop.feature.productionreport.domain.PageCell
 import com.zillit.desktop.feature.productionreport.domain.ReportTime
 import com.zillit.desktop.feature.productionreport.domain.SheetPayload
 import com.zillit.desktop.feature.productionreport.domain.StockTemplate
-import com.zillit.desktop.feature.productionreport.domain.templateSectionTitles
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
 import com.zillit.desktop.feature.productionreport.ui.ReportDialog
 import com.zillit.desktop.feature.productionreport.ui.ReportEvent
@@ -78,7 +79,7 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
     val pickable = templates.indices.filter { it != createOwn }
     val chosen = templates.getOrNull(dialog.selected)
     ReportModal(
-        title = "Choose a Production Report Template",
+        title = str(S.desktop_pr_choose_template),
         onClose = { onEvent(DialogEvent.Dismiss) },
         modifier = Modifier.fillMaxHeight(PICKER_HEIGHT),
         width = 1080.dp,
@@ -88,17 +89,15 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.width(230.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Pick a starting layout. Every section stays editable after it opens.",
+                    str(S.desktop_template_picker_hint),
                     style = reportText(12.sp, lineHeight = 17.sp),
                     color = colors.textTertiary,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
                 var lastTap by remember { mutableStateOf<Pair<Int, TimeSource.Monotonic.ValueTimeMark>?>(null) }
                 pickable.forEach { index ->
-                    val template = templates[index]
                     TemplateOption(
                         label = labelFor(templates, index),
-                        sections = templateSectionTitles(template.payload).size,
                         selected = index == dialog.selected,
                     ) {
                         val previous = lastTap
@@ -140,11 +139,11 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
                     if (chosen != null) {
                         TemplateMiniPreview(
                             chosen.payload,
-                            pageTitle = "PRODUCTION REPORT",
+                            pageTitle = str(S.desktop_production_report_upper),
                             Modifier.widthIn(max = 820.dp),
                         )
                     } else {
-                        Text("No template to preview.", style = reportText(13.sp), color = colors.textMuted)
+                        Text(str(S.desktop_no_template_to_preview), style = reportText(13.sp), color = colors.textMuted)
                     }
                 }
                 ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
@@ -155,7 +154,7 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
         ) {
             ReportButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.Dismiss) },
                 kind = ButtonKind.Outline,
                 fontSize = 12.sp,
@@ -179,8 +178,9 @@ private const val DOUBLE_TAP_MS = 400
 private fun labelFor(templates: List<StockTemplate>, index: Int): String =
     templates.getOrNull(index)?.displayName?.ifBlank { null } ?: "Template ${index + 1}"
 
+/** One radio row per layout — the name alone; the section count the web dropped is not shown. */
 @Composable
-private fun TemplateOption(label: String, sections: Int, selected: Boolean, onClick: () -> Unit) {
+private fun TemplateOption(label: String, selected: Boolean, onClick: () -> Unit) {
     val colors = ReportTheme.colors
     val (source, hovered) = rememberHover()
     val border by animateColorAsState(
@@ -221,21 +221,14 @@ private fun TemplateOption(label: String, sections: Int, selected: Boolean, onCl
         ) {
             if (selected) Box(Modifier.size(5.dp).clip(CircleShape).background(Color.White))
         }
-        Column(Modifier.weight(1f)) {
-            Text(
-                label,
-                style = reportText(13.sp, FontWeight.SemiBold, 16.sp),
-                color = colors.textPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                if (sections == 1) "1 section" else "$sections sections",
-                style = reportText(10.sp, lineHeight = 13.sp),
-                color = colors.textMuted,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
+        Text(
+            label,
+            style = reportText(13.sp, FontWeight.SemiBold, 16.sp),
+            color = colors.textPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -256,7 +249,11 @@ internal fun TemplateMiniPreview(payload: SheetPayload, pageTitle: String, modif
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (rows.isEmpty()) {
-            Text("This template has no sections yet.", style = reportText(12.sp), color = Color(0xFF98A2B3))
+            Text(
+                            str(S.desktop_template_has_no_sections),
+                            style = reportText(12.sp),
+                            color = Color(0xFF98A2B3),
+                        )
             return@Column
         }
         if (pageTitle.isNotBlank()) {
@@ -309,7 +306,11 @@ private fun PageBreakLine() {
             .padding(top = 4.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Text("PAGE BREAK", style = reportText(10.sp, FontWeight.Medium).copy(letterSpacing = 0.5.sp), color = dash)
+        Text(
+            str(S.desktop_page_break_upper),
+            style = reportText(10.sp, FontWeight.Medium).copy(letterSpacing = 0.5.sp),
+            color = dash,
+        )
     }
 }
 

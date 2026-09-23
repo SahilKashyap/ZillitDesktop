@@ -58,6 +58,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailFolder
@@ -114,7 +116,7 @@ internal fun ReadingPane(
             state.isLoadingThread && state.thread.isEmpty() -> Centred { ZillitSpinner() }
             state.thread.isEmpty() -> Centred {
                 ZillitText(
-                    text = "This message could not be opened.",
+                    text = str(S.desktop_email_message_unopenable),
                     style = ZillitTheme.typography.bodyMedium,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -142,7 +144,7 @@ private fun NoSelection() {
                 size = EMPTY_ICON,
             )
             ZillitText(
-                text = "No email has been selected",
+                text = str(S.desktop_email_none_selected),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -171,10 +173,10 @@ private fun DetailToolbar(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
     ) {
         ReplyVerbs(newest, onEvent, enabled = !ticked, showLabels = true)
         Spacer(Modifier.weight(1f))
-        ZillitTooltip("Delete") {
+        ZillitTooltip(str(S.delete)) {
             ZillitIconButton(
                 icon = ZillitIcons.Trash,
-                contentDescription = "Delete",
+                contentDescription = str(S.delete),
                 onClick = { onEvent(if (ticked) EmailEvent.DeleteSelected else EmailEvent.DeleteOpen) },
                 modifier = Modifier.testTag(DETAIL_DELETE_TAG),
             )
@@ -184,25 +186,26 @@ private fun DetailToolbar(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
                 onEvent(if (ticked) EmailEvent.MoveSelected(folder) else EmailEvent.MoveOpen(folder))
             }
         }
-        ZillitTooltip(if (state.conversationView && state.thread.size > 1) "Print All" else "Print") {
+        val printAll = state.conversationView && state.thread.size > 1
+        ZillitTooltip(str(if (printAll) S.desktop_email_print_all else S.print)) {
             ZillitIconButton(
                 icon = ZillitIcons.Print,
-                contentDescription = "Print",
+                contentDescription = str(S.print),
                 onClick = { onEvent(EmailEvent.Print()) },
                 modifier = Modifier.testTag(DETAIL_PRINT_TAG),
             )
         }
-        ZillitTooltip("Popout") {
+        ZillitTooltip(str(S.desktop_popout)) {
             ZillitIconButton(
                 icon = ZillitIcons.Detach,
-                contentDescription = "Popout",
+                contentDescription = str(S.desktop_popout),
                 onClick = { onEvent(EmailEvent.PopOut) },
                 modifier = Modifier.testTag(DETAIL_POPOUT_TAG),
             )
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close message",
+            contentDescription = str(S.desktop_email_close_message),
             onClick = { onEvent(EmailEvent.CloseMessage) },
         )
     }
@@ -213,9 +216,9 @@ private fun DetailToolbar(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
 @Composable
 private fun ReplyVerbs(message: EmailMessage, onEvent: (EmailEvent) -> Unit, enabled: Boolean, showLabels: Boolean) {
     listOf(
-        Triple("Reply", ZillitIcons.Reply, ComposeMode.Reply),
-        Triple("Reply all", ZillitIcons.ReplyAll, ComposeMode.ReplyAll),
-        Triple("Forward", ZillitIcons.Forward, ComposeMode.Forward),
+        Triple(str(S.reply), ZillitIcons.Reply, ComposeMode.Reply),
+        Triple(str(S.reply_all), ZillitIcons.ReplyAll, ComposeMode.ReplyAll),
+        Triple(str(S.forward), ZillitIcons.Forward, ComposeMode.Forward),
     ).forEach { (label, icon, mode) ->
         ZillitButton(
             text = label,
@@ -256,7 +259,7 @@ internal fun MessageTrail(
     ) {
         item(key = "subject") {
             ZillitText(
-                text = newest.subject.ifBlank { "(no subject)" },
+                text = newest.subject.ifBlank { str(S.no_subject_parenthesis) },
                 style = ZillitTheme.typography.titleLarge,
                 maxLines = 3,
                 modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xs),
@@ -356,7 +359,11 @@ private fun OpenMessage(message: EmailMessage, hooks: ReadingPaneHooks, onEvent:
         if (files.isNotEmpty()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
             ZillitText(
-                text = "${files.size} ${if (files.size == 1) "Attachment" else "Attachments"}",
+                text = if (files.size == 1) {
+                    str(S.desktop_email_one_attachment)
+                } else {
+                    str(S.dd_attachments_line, files.size)
+                },
                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textSecondary,
             )
@@ -444,19 +451,19 @@ private fun HeaderActions(
     hooks: ReadingPaneHooks,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        ZillitTooltip("Reply") {
+        ZillitTooltip(str(S.reply)) {
             ZillitIconButton(
                 icon = ZillitIcons.Reply,
-                contentDescription = "Reply",
+                contentDescription = str(S.reply),
                 onClick = { onEvent(EmailEvent.Compose(ComposeMode.Reply, message)) },
                 size = HEADER_BUTTON,
             )
         }
         if (canDelete) {
-            ZillitTooltip("Delete this message") {
+            ZillitTooltip(str(S.desktop_email_delete_this_message)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete this message",
+                    contentDescription = str(S.desktop_email_delete_this_message),
                     tint = ZillitTheme.colors.danger,
                     onClick = { onEvent(EmailEvent.DeleteOne(message)) },
                     size = HEADER_BUTTON,
@@ -478,7 +485,7 @@ private fun MessageMenu(message: EmailMessage, onEvent: (EmailEvent) -> Unit, ho
     Box {
         ZillitIconButton(
             icon = ZillitIcons.MoreVertical,
-            contentDescription = "More",
+            contentDescription = str(S.more),
             onClick = { open = true },
             size = HEADER_BUTTON,
             modifier = Modifier.testTag("trail-menu-${message.id}"),
@@ -489,15 +496,15 @@ private fun MessageMenu(message: EmailMessage, onEvent: (EmailEvent) -> Unit, ho
             entries = buildList {
                 fun compose(label: String, icon: ImageVector, mode: ComposeMode) =
                     ZillitMenuEntry.Action(label, icon) { onEvent(EmailEvent.Compose(mode, message)) }
-                add(compose("Reply", ZillitIcons.Reply, ComposeMode.Reply))
-                add(compose("Reply all", ZillitIcons.ReplyAll, ComposeMode.ReplyAll))
-                add(compose("Forward", ZillitIcons.Forward, ComposeMode.Forward))
+                add(compose(str(S.reply), ZillitIcons.Reply, ComposeMode.Reply))
+                add(compose(str(S.reply_all), ZillitIcons.ReplyAll, ComposeMode.ReplyAll))
+                add(compose(str(S.forward), ZillitIcons.Forward, ComposeMode.Forward))
                 if (sent && hooks.readBy != null) {
                     add(ZillitMenuEntry.Divider)
-                    add(ZillitMenuEntry.Action("Read By User", ZillitIcons.Users) { readByOpen = true })
+                    add(ZillitMenuEntry.Action(str(S.read_by_user), ZillitIcons.Users) { readByOpen = true })
                 }
                 add(ZillitMenuEntry.Divider)
-                add(ZillitMenuEntry.Action("Print", ZillitIcons.Print) { onEvent(EmailEvent.Print(message)) })
+                add(ZillitMenuEntry.Action(str(S.print), ZillitIcons.Print) { onEvent(EmailEvent.Print(message)) })
             },
         )
         if (readByOpen) {
@@ -527,7 +534,7 @@ private fun DetailsCaret(message: EmailMessage, hooks: ReadingPaneHooks, onEvent
         ) {
             ZillitIcon(
                 ZillitIcons.ChevronDown,
-                contentDescription = "Details",
+                contentDescription = str(S.details),
                 tint = colors.textSecondary,
                 size = CARET,
             )
@@ -537,15 +544,15 @@ private fun DetailsCaret(message: EmailMessage, hooks: ReadingPaneHooks, onEvent
                 modifier = Modifier.widthIn(min = DETAILS_MIN, max = DETAILS_MAX).padding(ZillitTheme.spacing.md),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                DetailLine("From", listOf(message.from), hooks, onEvent)
+                DetailLine(str(S.fromText), listOf(message.from), hooks, onEvent)
                 if (!message.folderName.equals(EmailFolder.SENT, ignoreCase = true) && message.replyTo.isNotBlank()) {
-                    DetailLine("Reply-to", listOf(message.replyTo), hooks, onEvent)
+                    DetailLine(str(S.desktop_email_reply_to_label), listOf(message.replyTo), hooks, onEvent)
                 }
-                DetailLine("To", message.to, hooks, onEvent)
-                if (message.cc.isNotEmpty()) DetailLine("Cc", message.cc, hooks, onEvent)
-                if (message.bcc.isNotEmpty()) DetailLine("Bcc", message.bcc, hooks, onEvent)
-                DetailText("Date", mailFullTimeLabel(message.receivedAtMillis))
-                DetailText("Subject", message.subject.ifBlank { "(no subject)" })
+                DetailLine(str(S.toText), message.to, hooks, onEvent)
+                if (message.cc.isNotEmpty()) DetailLine(str(S.txtCC), message.cc, hooks, onEvent)
+                if (message.bcc.isNotEmpty()) DetailLine(str(S.txtBCC), message.bcc, hooks, onEvent)
+                DetailText(str(S.date), mailFullTimeLabel(message.receivedAtMillis))
+                DetailText(str(S.subject), message.subject.ifBlank { str(S.no_subject_parenthesis) })
             }
         }
     }
@@ -586,10 +593,10 @@ private fun DetailLine(label: String, addresses: List<String>, hooks: ReadingPan
                 ) {
                     ZillitText(text = raw, style = ZillitTheme.typography.bodySmall)
                     if (address.isNotBlank() && !hooks.isKnownAddress(address)) {
-                        ZillitTooltip("Add to Contacts") {
+                        ZillitTooltip(str(S.add_to_contacts_txt)) {
                             ZillitIconButton(
                                 icon = ZillitIcons.UserPlus,
-                                contentDescription = "Add to Contacts",
+                                contentDescription = str(S.add_to_contacts_txt),
                                 onClick = { onEvent(EmailEvent.AddToContacts(address)) },
                                 filled = true,
                                 size = HEADER_BUTTON,
@@ -755,8 +762,8 @@ private fun AttachmentChip(attachment: EmailAttachment, state: AttachmentDownloa
 
 private fun AttachmentDownload?.caption(attachment: EmailAttachment): String = when (this) {
     null -> attachment.readableSize
-    AttachmentDownload.InProgress -> "Downloading…"
-    is AttachmentDownload.Saved -> "Saved to ${path.parentDirectory()}"
+    AttachmentDownload.InProgress -> str(S.drive_detail_downloading)
+    is AttachmentDownload.Saved -> str(S.docusign_download_saved, path.parentDirectory())
     is AttachmentDownload.Failed -> reason
 }
 
@@ -775,17 +782,17 @@ private fun Centred(content: @Composable () -> Unit) {
 @Composable
 private fun ReadByDialog(readBy: MailReadBy?, onDismiss: () -> Unit) {
     ModalCard(onDismiss = onDismiss) {
-        ZillitText(text = "Read By User", style = ZillitTheme.typography.titleMedium)
+        ZillitText(text = str(S.read_by_user), style = ZillitTheme.typography.titleMedium)
         if (readBy == null) {
             Box(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg), contentAlignment = Alignment.Center) {
                 ZillitSpinner()
             }
         } else {
-            ReadByList("Read", readBy.read, showTime = true)
-            ReadByList("Unread", readBy.unread, showTime = false)
+            ReadByList(str(S.read), readBy.read, showTime = true)
+            ReadByList(str(S.unread_txt), readBy.unread, showTime = false)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            ZillitButton(text = "Close", variant = ButtonVariant.Tertiary, onClick = onDismiss)
+            ZillitButton(text = str(S.close), variant = ButtonVariant.Tertiary, onClick = onDismiss)
         }
     }
 }
@@ -795,12 +802,16 @@ private fun ReadByList(title: String, receipts: List<MailReadReceipt>, showTime:
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         ZillitText(
-            text = "$title (${receipts.size})",
+            text = str(S.desktop_email_title_with_count, title, receipts.size),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
             color = colors.textMuted,
         )
         if (receipts.isEmpty()) {
-            ZillitText(text = "Nobody yet", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+            ZillitText(
+                text = str(S.desktop_email_nobody_yet),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
         }
         receipts.forEach { receipt ->
             Row(

@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 private const val MINUTES_PER_HOUR = 60
 private const val MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR
 private const val CAMERA_INCREMENT = 15
@@ -34,80 +37,84 @@ enum class PayRuleField {
 @Suppress("LongParameterList") // A catalogue row; every field is data.
 enum class PayRuleTemplate(
     val id: String,
-    val group: String,
-    val label: String,
-    val helper: String,
+    private val groupKey: String,
+    private val labelKey: String,
+    private val helperKey: String,
     val field: PayRuleField,
     val defaultRateType: PayRateType,
     val defaultRateAmount: String,
     val defaultBasis: PayRateBasis,
 ) {
     OvertimeSixthDay(
-        "ot_6th", "Overtime", "Overtime on the 6th day",
-        "An hours threshold on the 6th consecutive worked day.",
+        "ot_6th", S.overtime, S.desktop_hub_overtime_on_the_6th_day,
+        S.desktop_hub_an_hours_threshold_on_the_6th_consecutive_worked_day,
         PayRuleField.Hours, PayRateType.Multiplier, "1.5", PayRateBasis.Hour,
     ),
     OvertimeSeventhDay(
-        "ot_7th", "Overtime", "Overtime on the 7th day",
-        "An hours threshold on the 7th consecutive worked day.",
+        "ot_7th", S.overtime, S.desktop_hub_overtime_on_the_7th_day,
+        S.desktop_hub_an_hours_threshold_on_the_7th_consecutive_worked_day,
         PayRuleField.Hours, PayRateType.Multiplier, "2", PayRateBasis.Hour,
     ),
     Overtime(
-        "ot", "Overtime", "Overtime after a number of hours",
-        "The plain hours threshold, on any shift.",
+        "ot", S.overtime, S.desktop_hub_overtime_after_a_number_of_hours,
+        S.desktop_hub_the_plain_hours_threshold_on_any_shift,
         PayRuleField.Hours, PayRateType.Multiplier, "1.5", PayRateBasis.Hour,
     ),
     CameraOvertime(
-        "camera_ot", "Overtime", "Camera overtime after a number of hours",
-        "As above, but for camera crew only.",
+        "camera_ot", S.overtime, S.desktop_hub_camera_overtime_after_a_number_of_hours,
+        S.desktop_hub_as_above_but_for_camera_crew_only,
         PayRuleField.Hours, PayRateType.Multiplier, "2", PayRateBasis.Hour,
     ),
     SixthDay(
-        "sixth_day", "Day premiums", "6th day",
-        "Fires on the 6th consecutive worked day, with no hours threshold.",
+        "sixth_day", S.desktop_day_premiums, S.desktop_6th_day,
+        S.desktop_hub_fires_on_the_6th_consecutive_worked_day_with_no_hours,
         PayRuleField.None, PayRateType.Multiplier, "1.5", PayRateBasis.Day,
     ),
     SeventhDay(
-        "seventh_day", "Day premiums", "7th day",
-        "Fires on the 7th consecutive worked day.",
+        "seventh_day", S.desktop_day_premiums, S.desktop_7th_day,
+        S.desktop_hub_fires_on_the_7th_consecutive_worked_day,
         PayRuleField.None, PayRateType.Multiplier, "2", PayRateBasis.Day,
     ),
     BankHoliday(
-        "bank_holiday", "Day premiums", "Holiday or weekend",
-        "Fires on the day kinds you choose.",
+        "bank_holiday", S.desktop_day_premiums, S.desktop_holiday_or_weekend,
+        S.desktop_hub_fires_on_the_day_kinds_you_choose,
         PayRuleField.DayKinds, PayRateType.Multiplier, "1.5", PayRateBasis.Day,
     ),
     PreDawn(
-        "pre_dawn", "Time premiums", "Pre-dawn or early call",
-        "Fires when the shift starts before a clock time.",
+        "pre_dawn", S.desktop_time_premiums, S.desktop_hub_pre_dawn_or_early_call,
+        S.desktop_hub_fires_when_the_shift_starts_before_a_clock_time,
         PayRuleField.Clock, PayRateType.Multiplier, "2", PayRateBasis.Hour,
     ),
     NightWorkEarlyCall(
-        "night_work_early", "Time premiums", "Night work — early unit call",
-        "The same condition as pre-dawn, usually paired with a flat amount per event.",
+        "night_work_early", S.desktop_time_premiums, S.desktop_hub_night_work_early_unit_call,
+        S.desktop_hub_the_same_condition_as_pre_dawn_usually_paired_with_a,
         PayRuleField.Clock, PayRateType.Flat, "25", PayRateBasis.Event,
     ),
     NightWork(
-        "night_work", "Time premiums", "Night work",
-        "Fires when work runs past a clock time.",
+        "night_work", S.desktop_time_premiums, S.desktop_night_work,
+        S.desktop_hub_fires_when_work_runs_past_a_clock_time,
         PayRuleField.Clock, PayRateType.Multiplier, "1.5", PayRateBasis.Hour,
     ),
     BrokenTurnaround(
-        "broken_turnaround", "Penalties", "Broken turnaround",
-        "Fires when the rest between shifts is shorter than this.",
+        "broken_turnaround", S.dm_rates_penalties, S.desktop_broken_turnaround,
+        S.desktop_hub_fires_when_the_rest_between_shifts_is_shorter_than_this,
         PayRuleField.Hours, PayRateType.Flat, "900", PayRateBasis.Event,
     ),
     MealPenalty(
-        "meal_penalty", "Penalties", "Meal penalty",
-        "Fires when a meal is not provided within this long of the call.",
+        "meal_penalty", S.dm_rates_penalties, S.desktop_meal_penalty,
+        S.desktop_hub_fires_when_a_meal_is_not_provided_within_this_long,
         PayRuleField.Hours, PayRateType.Flat, "9.5", PayRateBasis.Event,
     ),
     MealCurtailed(
-        "meal_curtailed", "Penalties", "Meal break curtailed",
-        "Fires when the break taken was shorter than the contract allows.",
+        "meal_curtailed", S.dm_rates_penalties, S.desktop_meal_break_curtailed,
+        S.desktop_hub_fires_when_the_break_taken_was_shorter_than_the_contract,
         PayRuleField.None, PayRateType.Multiplier, "2", PayRateBasis.Hour,
     ),
     ;
+
+    val group: String get() = str(groupKey)
+    val label: String get() = str(labelKey)
+    val helper: String get() = str(helperKey)
 
     /**
      * Whether [trigger] is this template's shape.

@@ -55,6 +55,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.rates.AgreementSummary
 import com.zillit.desktop.feature.dealmemo.domain.rates.Branch
@@ -93,7 +95,7 @@ internal fun TerritoryView(state: DealMemoUiState, onEvent: (DealMemoEvent) -> U
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 24.dp),
     ) {
-        BackLink("Union Config", onClick = { onEvent(RatesEvent.BackToWelcome) })
+        BackLink(str(S.desktop_dm_union_config), onClick = { onEvent(RatesEvent.BackToWelcome) })
         Row(
             modifier = Modifier.padding(bottom = 22.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -122,7 +124,7 @@ internal fun TerritoryView(state: DealMemoUiState, onEvent: (DealMemoEvent) -> U
         Row(modifier = Modifier.padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilterField(
                 value = rates.territoryFilter,
-                placeholder = "Filter unions or branches…",
+                placeholder = str(S.dm_gpr_filter_unions),
                 onValueChange = { onEvent(RatesEvent.TerritoryFilter(it)) },
                 modifier = Modifier.weight(1f),
             )
@@ -130,8 +132,8 @@ internal fun TerritoryView(state: DealMemoUiState, onEvent: (DealMemoEvent) -> U
         }
         when {
             rates.unionsLoading -> SectionsSkeleton()
-            rates.branches.isEmpty() -> CenteredNote("No unions published for this territory yet.")
-            sections.isEmpty() -> CenteredNote("No unions or branches match your filter.")
+            rates.branches.isEmpty() -> CenteredNote(str(S.dm_gpr_no_unions))
+            sections.isEmpty() -> CenteredNote(str(S.dm_gpr_no_union_match))
             else -> Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 sections.forEach { section -> UnionSectionBlock(section, onEvent) }
             }
@@ -221,7 +223,7 @@ internal fun TerritoryAgreementsView(rates: GlobalRatesState, onEvent: (DealMemo
                 contentAlignment = Alignment.Center,
             ) { ZillitIcon(DmIcons.Book, size = 18.dp, tint = AMBER) }
             Column {
-                ViewTitle("Agreements — $label")
+                ViewTitle(str(S.dm_gpr_agreements_for, label))
                 MetaRow(
                     listOf(id.uppercase() to true, GlobalRatesRules.count(rates.agreements.size, "agreement") to false),
                 )
@@ -229,15 +231,15 @@ internal fun TerritoryAgreementsView(rates: GlobalRatesState, onEvent: (DealMemo
         }
         FilterField(
             value = rates.agreementsFilter,
-            placeholder = "Filter agreements…",
+            placeholder = str(S.dm_gpr_filter_agreements),
             onValueChange = { onEvent(RatesEvent.AgreementsFilter(it)) },
             modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
         )
         val filtered = rates.filteredAgreements
         when {
             rates.agreementsLoading -> CardGridSkeleton(6)
-            rates.agreements.isEmpty() -> CenteredNote("No agreements registered for this territory yet.")
-            filtered.isEmpty() -> CenteredNote("No agreements match your filter.")
+            rates.agreements.isEmpty() -> CenteredNote(str(S.dm_gpr_no_agreements))
+            filtered.isEmpty() -> CenteredNote(str(S.dm_gpr_no_agreement_match))
             else -> CardGrid(
                 filtered,
                 columnsFor = { if (it >= 900.dp) 3 else if (it >= 560.dp) 2 else 1 },
@@ -309,12 +311,12 @@ internal fun BranchView(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit
             }
         }
         EmploymentStatusesPanel(branch.territory, rates.empStatuses[branch.territory?.lowercase()].orEmpty())
-        Panel(icon = ZillitIcons.Shield, title = "Agreements covering this union") {
+        Panel(icon = ZillitIcons.Shield, title = str(S.dm_gpr_agreements_covering)) {
             Box(Modifier.fillMaxWidth().padding(16.dp)) {
                 when {
                     rates.agreementsLoading -> CardGridSkeleton(4, twoUp = true)
                     rates.agreements.isEmpty() -> CenteredNote(
-                        "No CBAs currently cover this union in the config.",
+                        str(S.dm_gpr_no_cba),
                         italic = true,
                         vertical = 24.dp,
                     )
@@ -337,11 +339,11 @@ internal fun BranchView(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit
 
 @Composable
 private fun EmploymentStatusesPanel(territory: String?, statuses: List<EmpStatus>) {
-    val code = territory?.uppercase() ?: "territory"
-    Panel(icon = ZillitIcons.Users, title = "Employment statuses ($code)") {
+    val code = territory?.uppercase() ?: str(S.desktop_dm_territory_fallback_word)
+    Panel(icon = ZillitIcons.Users, title = str(S.desktop_dm_employment_statuses_code, code)) {
         if (statuses.isEmpty()) {
             ZillitText(
-                text = "No statuses defined for this territory.",
+                text = str(S.dm_gpr_no_statuses),
                 style = DmType.sans(12.5.sp),
                 color = dm.ink3,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
@@ -350,7 +352,7 @@ private fun EmploymentStatusesPanel(territory: String?, statuses: List<EmpStatus
         }
         Box(Modifier.fillMaxWidth().background(dm.soft).padding(horizontal = 20.dp, vertical = 12.dp)) {
             ZillitText(
-                text = "Territory-level defaults — derived from $code tax and labour law, not the CBA.",
+                text = str(S.dm_gpr_emp_statuses_note, code),
                 style = DmType.sans(12.sp).copy(fontStyle = FontStyle.Italic, lineHeight = 19.sp),
                 color = dm.ink3,
             )
@@ -366,7 +368,7 @@ private fun EmploymentStatusesPanel(territory: String?, statuses: List<EmpStatus
                 ) {
                     ZillitText(text = status.label, style = DmType.sans(14.sp, FontWeight.Bold), color = dm.ink)
                     status.badge?.let { DmBadge(it, badgeTone(status.alertClass)) }
-                    if (status.hpShown) DmBadge("HP shown", DmTone.Green)
+                    if (status.hpShown) DmBadge(str(S.desktop_dm_hp_shown), DmTone.Green)
                 }
                 status.sub?.let {
                     ZillitText(text = it, style = DmType.sans(12.5.sp).copy(lineHeight = 18.sp), color = dm.ink3)
@@ -387,7 +389,16 @@ private fun badgeTone(alertClass: String?): DmTone = when (alertClass) {
 // -- rate card -------------------------------------------------------------------------
 
 private val RATE_FIXED = listOf(220.dp, 110.dp, 150.dp, 80.dp)
-private val RATE_HEADERS = listOf("Designation", "Prod type", "Budget", "Exp", "Hourly", "Daily", "Weekly", "Flat")
+private val RATE_HEADERS get() = listOf(
+    str(S.dm_label_designation),
+    str(S.desktop_dm_prod_type),
+    str(S.budget_text),
+    str(S.desktop_dm_exp),
+    str(S.desktop_dm_hourly),
+    str(S.dm_rates_buyout_mode_daily),
+    str(S.dm_rates_buyout_mode_weekly),
+    str(S.desktop_dm_flat),
+)
 private val RATE_MIN_WIDTH = 1080.dp
 
 @Composable
@@ -397,11 +408,11 @@ private fun RateCardPanel(state: DealMemoUiState, branch: Branch) {
         GlobalRatesRules.rateSections(rates.rates, state.catalogue)
     }
     val fallback = GlobalRatesRules.fallbackCurrency(branch)
-    LegacyCard(icon = DmIcons.Dollar, title = "Rate card") {
+    LegacyCard(icon = DmIcons.Dollar, title = str(S.dm_gpr_rate_card)) {
         when {
             rates.ratesLoading -> RateSkeleton()
             sections.isEmpty() -> ZillitText(
-                text = "No rates published by this union yet.",
+                text = str(S.dm_gpr_no_rates),
                 style = DmType.sans(12.sp).copy(fontStyle = FontStyle.Italic),
                 color = Color(0xFF9CA3AF),
                 textAlign = TextAlign.Center,
@@ -455,7 +466,8 @@ private fun RateSection(section: RateDepartmentSection, fallback: String?) {
         val d = section.designations.size
         val r = section.rateCount
         ZillitText(
-            text = "$d designation${if (d == 1) "" else "s"} · $r rate${if (r == 1) "" else "s"}",
+            text = (if (d == 1) str(S.desktop_dm_one_designation) else str(S.desktop_dm_n_designations, d)) + " · " +
+                if (r == 1) str(S.desktop_dm_one_rate) else str(S.desktop_dm_n_rates, r),
             style = DmType.mono(10.sp, FontWeight.Normal),
             color = ink.copy(alpha = 0.7f),
             modifier = Modifier.padding(start = 8.dp),
@@ -487,7 +499,7 @@ private fun DesignationRows(group: RateDesignationGroup, fallback: String?) {
                 style = DmType.sans(12.sp, FontWeight.SemiBold).copy(lineHeight = 16.sp),
                 color = legacyInk800(),
             )
-            if (!group.matched) DmBadge("Unmatched", DmTone.Amber)
+            if (!group.matched) DmBadge(str(S.desktop_dm_unmatched), DmTone.Amber)
         }
         Box(Modifier.width(1.dp).fillMaxHeight().background(legacyGray100()))
         Column(Modifier.weight(1f)) {
@@ -709,7 +721,7 @@ private fun ViewAgreementsButton(onClick: () -> Unit) {
     ) {
         ZillitIcon(ZillitIcons.Shield, size = 14.dp, tint = AMBER)
         ZillitText(
-            text = "View Agreements",
+            text = str(S.dm_gpr_view_agreements),
             style = DmType.sans(13.5.sp, FontWeight.Bold),
             color = dm.ink,
             maxLines = 1,

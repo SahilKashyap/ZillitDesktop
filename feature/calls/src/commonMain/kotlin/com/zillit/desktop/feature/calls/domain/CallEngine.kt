@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.calls.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -425,7 +427,7 @@ class NoopCallEngine : CallEngine {
  * than draw a blank row.
  */
 data class MediaDevice(val id: String, val label: String) {
-    val displayName: String get() = label.ifBlank { "Unnamed device" }
+    val displayName: String get() = label.ifBlank { str(S.desktop_unnamed_device) }
 }
 
 /**

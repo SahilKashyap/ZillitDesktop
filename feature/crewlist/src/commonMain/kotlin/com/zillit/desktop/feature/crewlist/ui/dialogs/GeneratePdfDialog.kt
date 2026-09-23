@@ -37,6 +37,8 @@ import com.zillit.desktop.feature.crewlist.ui.GenerateAction
 import com.zillit.desktop.feature.crewlist.ui.components.CrewCopy
 import com.zillit.desktop.feature.crewlist.ui.components.CrewIcons
 import com.zillit.desktop.feature.crewlist.ui.components.crewPalette
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Generate PDF chooser (ZL-19847): the "(Not on Zillit)" question as an
@@ -57,40 +59,40 @@ internal fun GeneratePdfDialog(
     onDismiss: () -> Unit,
 ) {
     ZillitDialogShell(
-        title = copy.t("generate_pdf", "Generate PDF"),
+        title = copy.t("generate_pdf", str(S.generate_pdf)),
         icon = CrewIcons.Document,
         visible = visible,
         onDismiss = onDismiss,
         width = if (compact) 460.dp else 640.dp,
         actions = {
-            ZillitButton(text = copy.t("Cancel", "Cancel"), variant = ButtonVariant.Tertiary, onClick = onDismiss)
+            ZillitButton(text = copy.t("Cancel", str(S.cancel)), variant = ButtonVariant.Tertiary, onClick = onDismiss)
             if (compact) {
                 ZillitButton(
-                    text = copy.t("View", "View"),
+                    text = copy.t("View", str(S.view)),
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Eye,
                     onClick = { onRun(GenerateAction.View) },
                 )
                 ZillitButton(
-                    text = "Download",
+                    text = str(S.download),
                     leadingIcon = ZillitIcons.Download,
                     onClick = { onRun(GenerateAction.Download) },
                 )
             } else {
                 ZillitButton(
-                    text = copy.t("View", "View"),
+                    text = copy.t("View", str(S.view)),
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Eye,
                     onClick = { onRun(GenerateAction.View) },
                 )
                 ZillitButton(
-                    text = copy.t("publish_to_doc_distribution", "Publish to Doc Distribution"),
+                    text = copy.t("publish_to_doc_distribution", str(S.dd_publish_to_distribution)),
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Send,
                     onClick = { onRun(GenerateAction.Distribute) },
                 )
                 ZillitButton(
-                    text = copy.t("Publish", "Publish"),
+                    text = copy.t("Publish", str(S.publish)),
                     onClick = { onRun(GenerateAction.Publish) },
                 )
             }
@@ -100,8 +102,7 @@ internal fun GeneratePdfDialog(
         ZillitText(
             text = copy.t(
                 if (staffList) "crew_list_created_other_project" else "crew_list_created",
-                "The {tool_name} is rendered with your header layout and any edits. View it first, publish it to " +
-                    "Info, or file it in Document Distribution.",
+                str(S.desktop_cl_created_description),
             ),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
@@ -127,14 +128,14 @@ private fun ConsentBox(copy: CrewCopy, hide: Boolean, onChange: (Boolean) -> Uni
         ZillitText(
             text = copy.t(
                 "hide_external_user_label_description",
-                "Do you want to hide the “(Not on Zillit)” label next to external users in the generated document?",
+                str(S.desktop_cl_hide_external_label_description),
             ),
             style = ZillitTheme.typography.bodyMedium.copy(lineHeight = 19.5.sp),
             color = palette.consentInk,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            CrewRadio(label = copy.t("No", "No"), selected = !hide) { onChange(false) }
-            CrewRadio(label = copy.t("Yes", "Yes"), selected = hide) { onChange(true) }
+            CrewRadio(label = copy.t("No", str(S.no)), selected = !hide) { onChange(false) }
+            CrewRadio(label = copy.t("Yes", str(S.yes)), selected = hide) { onChange(true) }
         }
     }
 }

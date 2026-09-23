@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The picture, fitted to the space it is given, with the active tool over
@@ -56,7 +58,7 @@ fun EditableImageCanvas(
         val bitmap = edit.working
         if (bitmap == null) {
             ZillitText(
-                text = "Loading the picture…",
+                text = str(S.desktop_media_loading_picture),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )

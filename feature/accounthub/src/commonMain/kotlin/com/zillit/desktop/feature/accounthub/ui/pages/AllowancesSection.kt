@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AllowanceApplies
 import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
 import com.zillit.desktop.feature.accounthub.domain.EntitlementRow
@@ -64,10 +66,8 @@ internal fun AllowancesSection(
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Allowances & Rentals",
-        description = "Production-default allowances + equipment rentals. Pre-populates the deal-memo wizard's " +
-            "step 5 " +
-            "— crew can still override per memo.",
+        title = str(S.dm_allow_title),
+        description = str(S.desktop_hub_production_default_allowances_equipment_rentals_pre_populates_the_deal_memo),
         dirty = section.dirty,
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Allowances)) },
@@ -75,9 +75,9 @@ internal fun AllowancesSection(
         editable = editable,
         leftPanel = { AtAGlance(value) },
     ) {
-        SubCard(title = "Equipment Rentals / Box Rental", padded = false) {
+        SubCard(title = str(S.desktop_hub_equipment_rentals_box_rental), padded = false) {
             HeaderBand(rental = true)
-            if (value.rentals.isEmpty()) EmptyRow("No rentals yet — add the first one below.")
+            if (value.rentals.isEmpty()) EmptyRow(str(S.desktop_hub_no_rentals_yet_add_the_first_one_below))
             value.rentals.forEachIndexed { index, row ->
                 EntitlementRowFields(
                     row = row,
@@ -91,7 +91,7 @@ internal fun AllowancesSection(
             }
             if (editable) {
                 Box(Modifier.padding(ZillitTheme.spacing.md)) {
-                    GhostAddButton("Add custom rental", onClick = {
+                    GhostAddButton(str(S.dm_allow_add_dialog_title_rental), onClick = {
                         val added = value.rentals + newRow("rental", value.rentals.size, "week")
                         onEvent(edit(value.copy(rentals = added)))
                     })
@@ -99,9 +99,9 @@ internal fun AllowancesSection(
             }
         }
 
-        SubCard(title = "Allowances", padded = false) {
+        SubCard(title = str(S.allowances_label), padded = false) {
             HeaderBand(rental = false)
-            if (value.allowances.isEmpty()) EmptyRow("No allowances yet — add the first one below.")
+            if (value.allowances.isEmpty()) EmptyRow(str(S.desktop_hub_no_allowances_yet_add_the_first_one_below))
             value.allowances.forEachIndexed { index, row ->
                 EntitlementRowFields(
                     row = row,
@@ -117,7 +117,7 @@ internal fun AllowancesSection(
             }
             if (editable) {
                 Box(Modifier.padding(ZillitTheme.spacing.md)) {
-                    GhostAddButton("Add custom allowance", onClick = {
+                    GhostAddButton(str(S.dm_allow_add_dialog_title_allowance), onClick = {
                         val added = value.allowances + newRow("allow", value.allowances.size, "day")
                         onEvent(edit(value.copy(allowances = added)))
                     })
@@ -134,9 +134,9 @@ private fun AtAGlance(value: AllowancesRentals) {
         modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        MonoLabel("At a glance")
-        GlanceLine("Rentals", value.rentals.count { it.name.isNotBlank() })
-        GlanceLine("Allowances", value.allowances.count { it.name.isNotBlank() })
+        MonoLabel(str(S.desktop_at_a_glance))
+        GlanceLine(str(S.dm_allow_card_rentals), value.rentals.count { it.name.isNotBlank() })
+        GlanceLine(str(S.allowances_label), value.allowances.count { it.name.isNotBlank() })
     }
 }
 
@@ -179,11 +179,11 @@ private fun HeaderBand(rental: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderCell("Name", NAME_WEIGHT)
-        HeaderCell("Amount", AMOUNT_WEIGHT)
-        HeaderCell("Frequency", BASIS_WEIGHT)
-        HeaderCell("Applies to", APPLIES_WEIGHT)
-        if (rental) HeaderCell("Cap", CAP_WEIGHT)
+        HeaderCell(str(S.name), NAME_WEIGHT)
+        HeaderCell(str(S.amount), AMOUNT_WEIGHT)
+        HeaderCell(str(S.desktop_frequency), BASIS_WEIGHT)
+        HeaderCell(str(S.dm_allow_applies_to), APPLIES_WEIGHT)
+        if (rental) HeaderCell(str(S.dm_allow_cap_type), CAP_WEIGHT)
         MonoLabel("GL", modifier = Modifier.width(NOMINAL_WIDTH))
         Box(Modifier.width(REMOVE_WIDTH))
     }
@@ -228,7 +228,7 @@ private fun EntitlementRowFields(
         ZillitTextField(
             value = row.name,
             onValueChange = { onChange(row.copy(name = it)) },
-            placeholder = if (rental) "Rental name" else "Allowance name",
+            placeholder = if (rental) str(S.desktop_rental_name) else str(S.desktop_allowance_name),
             enabled = editable,
             modifier = Modifier.weight(NAME_WEIGHT),
         )
@@ -252,7 +252,7 @@ private fun EntitlementRowFields(
             },
             onSelect = { picked -> if (picked != null) onChange(row.copy(basis = picked)) },
             label = { PayBasis.labelFor(it) },
-            placeholder = "Frequency",
+            placeholder = str(S.desktop_frequency),
             searchable = false,
             enabled = editable,
             modifier = Modifier.weight(BASIS_WEIGHT),
@@ -266,7 +266,7 @@ private fun EntitlementRowFields(
             },
             onSelect = { picked -> if (picked != null) onChange(row.copy(appliesTo = picked)) },
             label = { wire -> appliesLabel(wire, rental) },
-            placeholder = "— applies to —",
+            placeholder = str(S.desktop_applies_to_dashes),
             searchable = false,
             enabled = editable,
             modifier = Modifier.weight(APPLIES_WEIGHT),
@@ -280,7 +280,7 @@ private fun EntitlementRowFields(
                     value = row.capped,
                     options = listOf(false, true),
                     onSelect = { picked -> if (picked != null) onChange(row.copy(capped = picked)) },
-                    label = { if (it) "Capped" else "Uncapped" },
+                    label = { if (it) str(S.desktop_capped) else str(S.desktop_uncapped) },
                     searchable = false,
                     enabled = editable,
                     modifier = Modifier.fillMaxWidth(),
@@ -289,7 +289,7 @@ private fun EntitlementRowFields(
                     CalcField(
                         value = row.capAmount,
                         onValueChange = { onChange(row.copy(capAmount = it)) },
-                        placeholder = "cap amount",
+                        placeholder = str(S.dm_allow_cap_amount),
                         enabled = editable,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -307,7 +307,11 @@ private fun EntitlementRowFields(
         )
         Box(Modifier.width(REMOVE_WIDTH), contentAlignment = Alignment.Center) {
             if (editable) {
-                ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Remove row", onClick = onRemove)
+                ZillitIconButton(
+                    icon = ZillitIcons.Close,
+                    contentDescription = str(S.desktop_remove_row),
+                    onClick = onRemove,
+                )
             }
         }
     }

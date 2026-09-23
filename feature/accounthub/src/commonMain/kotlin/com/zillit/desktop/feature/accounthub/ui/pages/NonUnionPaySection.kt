@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.NonUnionPay
 import com.zillit.desktop.feature.accounthub.domain.PayApplyMode
 import com.zillit.desktop.feature.accounthub.domain.PayDayKind
@@ -85,9 +87,8 @@ internal fun ColumnScope.NonUnionPaySection(state: AccountHubUiState, onEvent: (
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Non-Union Pay Breakdown",
-        description = "Overtime / premium / penalty rules for non-union productions. Same shape as union rate cards, " +
-            "so the OT engine reads either source uniformly.",
+        title = str(S.desktop_hub_non_union_pay_breakdown),
+        description = str(S.desktop_hub_overtime_premium_penalty_rules_for_non_union_productions_same_shape),
         dirty = section.dirty,
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.NonUnionPay)) },
@@ -97,12 +98,12 @@ internal fun ColumnScope.NonUnionPaySection(state: AccountHubUiState, onEvent: (
         ApplyScope(state, value, editable, onEvent)
         DayTypesEditor(state, onEvent)
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            FieldLabel("Rules", modifier = Modifier.weight(1f))
+            FieldLabel(str(S.desktop_rules), modifier = Modifier.weight(1f))
             // The web's editor offers this beside its grid: a union agreement's
             // tables dropped straight into the three lists, saved at once.
             if (editable) {
                 ZillitButton(
-                    text = "Import union rules",
+                    text = str(S.dm_rule_import_title),
                     onClick = { onEvent(AccountHubEvent.OpenRuleImport) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -141,21 +142,25 @@ private fun ImportRulesDialog(state: AccountHubUiState, onEvent: (AccountHubEven
     val dialog = state.setup.ruleImport
     val total = dialog?.total ?: 0
     ZillitDialogShell(
-        title = "Import union rules",
-        subtitle = "Copy an agreement's overtimes, premiums and penalties into this breakdown.",
+        title = str(S.dm_rule_import_title),
+        subtitle = str(S.desktop_hub_copy_an_agreements_overtimes_premiums_and_penalties_into_this_breakdown),
         visible = dialog != null,
         onDismiss = { onEvent(AccountHubEvent.DismissRuleImport) },
         icon = ZillitIcons.Download,
         width = IMPORT_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AccountHubEvent.DismissRuleImport) },
                 variant = ButtonVariant.Tertiary,
                 enabled = dialog?.importing != true,
             )
             ZillitButton(
-                text = if (total > 0) "Import $total rule${if (total == 1) "" else "s"}" else "Import",
+                text = if (total > 0) {
+                    "Import $total rule${if (total == 1) "" else "s"}"
+                } else {
+                    str(S.dm_rule_import_button)
+                },
                 onClick = { onEvent(AccountHubEvent.ConfirmRuleImport) },
                 enabled = total > 0 && dialog?.importing != true,
                 loading = dialog?.importing == true,
@@ -169,8 +174,8 @@ private fun ImportRulesDialog(state: AccountHubUiState, onEvent: (AccountHubEven
             label = { it.label },
             secondary = { it.id.uppercase() },
             onSelect = { picked -> if (picked != null) onEvent(AccountHubEvent.PickImportTerritory(picked.id)) },
-            placeholder = "Select a territory…",
-            fieldLabel = "Territory",
+            placeholder = str(S.dm_rule_import_territory_placeholder),
+            fieldLabel = str(S.dm_section_territory),
             modifier = Modifier.fillMaxWidth(),
         )
         HubSelect(
@@ -181,20 +186,21 @@ private fun ImportRulesDialog(state: AccountHubUiState, onEvent: (AccountHubEven
                 if (picked != null) onEvent(AccountHubEvent.PickImportAgreement(picked.identifier))
             },
             placeholder = when {
-                dialog.territory == null -> "Pick a territory first"
-                dialog.agreementsLoading -> "Loading agreements…"
-                dialog.agreements.isEmpty() -> "No agreements published for this territory"
-                else -> "Select an agreement…"
+                dialog.territory == null -> str(S.dm_rule_import_agreement_first)
+                dialog.agreementsLoading -> str(S.desktop_loading_agreements)
+                dialog.agreements.isEmpty() -> str(S.desktop_hub_no_agreements_published_for_this_territory)
+                else -> str(S.dm_rule_import_agreement_placeholder)
             },
-            fieldLabel = "Agreement",
+            fieldLabel = str(S.dm_rule_import_agreement),
             enabled = dialog.territory != null && dialog.agreements.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
         )
         when {
-            dialog.rulesLoading -> FieldHint("Reading the agreement's rule tables…")
-            dialog.rules == null -> FieldHint("The agreement's rules are previewed here before anything is imported.")
+            dialog.rulesLoading -> FieldHint(str(S.desktop_hub_reading_the_agreements_rule_tables))
+            dialog.rules == null ->
+                FieldHint(str(S.desktop_hub_the_agreements_rules_are_previewed_here_before_anything_is_imported))
             total == 0 -> ZillitNotice(
-                text = "This agreement publishes no overtime, premium or penalty rules.",
+                text = str(S.desktop_hub_this_agreement_publishes_no_overtime_premium_or_penalty_rules),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Info,
             )
@@ -218,7 +224,7 @@ private fun ImportRulesDialog(state: AccountHubUiState, onEvent: (AccountHubEven
             }
         }
         FieldHint(
-            "Imported rules are appended below the ones already here and saved straight away; each gets a fresh id.",
+            str(S.desktop_hub_imported_rules_are_appended_below_the_ones_already_here_and),
         )
     }
 }
@@ -244,18 +250,18 @@ private fun ApplyScope(
     val known = state.setup.departments
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         ScopeCard(
-            title = "All Departments / Crew",
-            subtitle = "Rules apply to every department",
+            title = str(S.desktop_all_departments_crew),
+            subtitle = str(S.desktop_hub_rules_apply_to_every_department),
             active = value.applyMode == PayApplyMode.All,
             enabled = editable,
             onClick = { onEvent(AccountHubEvent.ApplyPayToEveryone(true)) },
             modifier = Modifier.weight(1f),
         )
         ScopeCard(
-            title = "Select Department",
+            title = str(S.select_department),
             subtitle = when {
-                value.applyMode != PayApplyMode.Departments -> "Pick the departments these rules pay"
-                value.departmentIds.isEmpty() -> "No departments chosen"
+                value.applyMode != PayApplyMode.Departments -> str(S.desktop_hub_pick_the_departments_these_rules_pay)
+                value.departmentIds.isEmpty() -> str(S.desktop_no_departments_chosen)
                 else -> value.departmentIds.map { known[it] ?: it }.joinToString(", ")
             },
             active = value.applyMode == PayApplyMode.Departments,
@@ -268,11 +274,11 @@ private fun ApplyScope(
         )
     }
     if (value.applyMode == PayApplyMode.Unset) {
-        FieldHint("Nobody has chosen yet, which pays every department — the same as choosing everyone.")
+        FieldHint(str(S.desktop_hub_nobody_has_chosen_yet_which_pays_every_department_the_same))
     }
     if (value.appliesToNobody) {
         ZillitNotice(
-            text = "No department is chosen, so these rules pay nobody. Pick at least one, or apply them to everyone.",
+            text = str(S.desktop_hub_no_department_is_chosen_so_these_rules_pay_nobody_pick),
             tone = StatusTone.Rejected,
             icon = ZillitIcons.Warning,
         )
@@ -317,23 +323,23 @@ private fun DepartmentPickerDialog(state: AccountHubUiState, value: NonUnionPay,
         setup.departmentPickerSearch.isBlank() || (known[it] ?: it).contains(setup.departmentPickerSearch, true)
     }
     ZillitDialogShell(
-        title = "Select departments",
+        title = str(S.desktop_select_departments),
         subtitle = "${value.departmentIds.size} chosen",
         icon = ZillitIcons.Users,
         visible = setup.departmentPickerOpen,
         onDismiss = { onEvent(AccountHubEvent.ToggleDepartmentPicker(false)) },
         scrollable = false,
         actions = {
-            ZillitButton(text = "Done", onClick = { onEvent(AccountHubEvent.ToggleDepartmentPicker(false)) })
+            ZillitButton(text = str(S.ah_done), onClick = { onEvent(AccountHubEvent.ToggleDepartmentPicker(false)) })
         },
     ) {
         ZillitSearchField(
             value = setup.departmentPickerSearch,
             onValueChange = { onEvent(AccountHubEvent.SearchDepartmentPicker(it)) },
-            placeholder = "Search departments…",
+            placeholder = str(S.invitees_search_departments),
             modifier = Modifier.fillMaxWidth(),
         )
-        if (ids.isEmpty()) FieldHint("No departments to choose from on this production.")
+        if (ids.isEmpty()) FieldHint(str(S.desktop_hub_no_departments_to_choose_from_on_this_production))
         Column(modifier = Modifier.fillMaxWidth().heightIn(max = PICKER_LIST).verticalScroll(rememberScrollState())) {
             shown.forEach { id ->
                 ZillitCheckbox(
@@ -365,7 +371,8 @@ private fun RuleList(
         title = kind.label,
         hint = kind.helper,
         action = {
-            if (editable) GhostAddButton("Add rule", onClick = { onEvent(AccountHubEvent.ComposePayRule(kind, null)) })
+            if (editable) GhostAddButton(str(S.desktop_add_rule),
+                onClick = { onEvent(AccountHubEvent.ComposePayRule(kind, null)) })
         },
         padded = false,
     ) {
@@ -383,12 +390,12 @@ private fun RuleList(
                     if (editable && hovered) {
                         ZillitIconButton(
                             icon = ZillitIcons.Edit,
-                            contentDescription = "Edit rule",
+                            contentDescription = str(S.dm_rule_edit),
                             onClick = { onEvent(AccountHubEvent.ComposePayRule(kind, index)) },
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Remove rule",
+                            contentDescription = str(S.desktop_remove_rule),
                             onClick = { onEvent(AccountHubEvent.RemovePayRule(kind, index)) },
                             tint = ZillitTheme.colors.danger,
                         )
@@ -413,11 +420,11 @@ private fun RuleSummary(rule: PayRule, state: AccountHubUiState, modifier: Modif
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitText(
-                text = rule.label.ifBlank { "Unnamed rule" },
+                text = rule.label.ifBlank { str(S.desktop_unnamed_rule) },
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             )
             Pill(rateLabel(rule), tone = StatusTone.Pending)
-            if (rule.isEnhancement) Pill("Basic + OT on top", tone = StatusTone.Progress)
+            if (rule.isEnhancement) Pill(str(S.dm_rule_add_on_top), tone = StatusTone.Progress)
         }
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -447,8 +454,8 @@ private fun rateLabel(rule: PayRule): String = when (rule.rateType) {
 /** The condition in words — the web's `summarizeEntry`. */
 private fun summarise(rule: PayRule, template: PayRuleTemplate?): String {
     val trigger = rule.singleTrigger
-        ?: return if (rule.triggers.isEmpty()) "No condition" else "${rule.triggers.size} conditions (any)"
-    if (template == null) return "Custom condition"
+        ?: return if (rule.triggers.isEmpty()) str(S.desktop_no_condition) else "${rule.triggers.size} conditions (any)"
+    if (template == null) return str(S.desktop_custom_condition)
     val detail = when (template.field) {
         PayRuleField.Hours -> template.hoursFrom(trigger).takeIf { it.isNotBlank() }?.let { "$it hrs" }
         PayRuleField.Clock -> template.clockFrom(trigger).takeIf { it.isNotBlank() }
@@ -478,7 +485,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
     fun update(next: PayRule) = onEvent(AccountHubEvent.EditPayRule(next))
 
     ZillitDialogShell(
-        title = if (editor?.index == null) "Add rule" else "Edit rule",
+        title = if (editor?.index == null) str(S.desktop_add_rule) else str(S.dm_rule_edit),
         subtitle = editor?.kind?.label,
         icon = ZillitIcons.Ledger,
         visible = editor != null,
@@ -486,19 +493,19 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
         width = DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AccountHubEvent.DismissPayRule) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (editor?.index == null) "Add rule" else "Update rule",
+                text = if (editor?.index == null) str(S.desktop_add_rule) else str(S.desktop_update_rule),
                 onClick = { onEvent(AccountHubEvent.CommitPayRule) },
             )
         },
     ) {
         if (editor == null || rule == null || template == null) return@ZillitDialogShell
 
-        FieldLabel("Rule type", required = true)
+        FieldLabel(str(S.desktop_rule_type), required = true)
         HubSelect(
             value = template,
             options = PayRuleTemplate.entries.toList(),
@@ -529,8 +536,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
         FieldHint(template.helper)
         if (rule.triggers.size > 1) {
             ZillitNotice(
-                text = "This rule has several conditions (any of them fires it). Choosing a type above replaces " +
-                    "them with one.",
+                text = str(S.desktop_hub_this_rule_has_several_conditions_any_of_them_fires_it),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Info,
             )
@@ -543,7 +549,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             placeholder = template.label,
         )
 
-        FieldLabel("Rate type")
+        FieldLabel(str(S.dm_rule_rate_type))
         ZillitSegmented(
             options = PayRateType.entries.map { ZillitTab(it.wire, it.label) },
             activeId = rule.rateType.wire,
@@ -578,27 +584,27 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             options = dayTypes,
             label = { "${it.dayType} · ${it.label}".trimEnd(' ', '·') },
             onSelect = { update(rule.copy(dayType = it?.dayType.orEmpty())) },
-            placeholder = "Any day type",
-            fieldLabel = "Day type",
+            placeholder = str(S.desktop_any_day_type),
+            fieldLabel = str(S.dm_rule_day_type),
             clearable = true,
             searchable = false,
             modifier = Modifier.fillMaxWidth(),
         )
 
-        FieldLabel("Bill in increments")
-        FieldHint("Round matched windows up to a multiple of N minutes (15 = UK, 6 = US union).")
+        FieldLabel(str(S.desktop_bill_in_increments))
+        FieldHint(str(S.desktop_hub_round_matched_windows_up_to_a_multiple_of_n_minutes))
         ZillitTextField(
             value = rule.incrementMinutes?.toString().orEmpty(),
             onValueChange = { text ->
                 val minutes = text.filter { it.isDigit() }.toIntOrNull()
                 update(rule.withTriggerGates(minutes, rule.bdrMin, rule.bdrMax))
             },
-            placeholder = "Minutes — e.g. 15",
+            placeholder = str(S.desktop_hub_minutes_e_g_15),
         )
 
         ToggleRow(
             label = "Cap maximum payout",
-            hint = "Clip the computed payout to this ceiling per matched window.",
+            hint = str(S.desktop_hub_clip_the_computed_payout_to_this_ceiling_per_matched_window),
             checked = rule.capped,
             onCheckedChange = { update(rule.copy(capped = it)) },
         )
@@ -606,11 +612,11 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             CalcField(
                 value = rule.capAmount,
                 onValueChange = { update(rule.copy(capAmount = it)) },
-                placeholder = "Cap amount — e.g. 500",
+                placeholder = str(S.desktop_hub_cap_amount_e_g_500),
             )
         }
 
-        FieldLabel("For Min/Max Basic Daily Rate")
+        FieldLabel(str(S.desktop_hub_for_min_max_basic_daily_rate))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             CalcField(
                 value = rule.bdrMin?.let { it.asAmountText() }.orEmpty(),
@@ -619,7 +625,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
                     it.toDoubleOrNull(),
                     rule.bdrMax,
                 )) },
-                placeholder = "Min BDR",
+                placeholder = str(S.desktop_min_bdr),
                 modifier = Modifier.weight(1f),
             )
             CalcField(
@@ -629,14 +635,14 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
                     rule.bdrMin,
                     it.toDoubleOrNull(),
                 )) },
-                placeholder = "Max BDR",
+                placeholder = str(S.desktop_max_bdr),
                 modifier = Modifier.weight(1f),
             )
         }
 
         ToggleRow(
             label = "Basic + OT on Top",
-            hint = "Pay this amount over the basic rate rather than in place of it.",
+            hint = str(S.desktop_hub_pay_this_amount_over_the_basic_rate_rather_than_in),
             checked = rule.isEnhancement,
             onCheckedChange = { update(rule.copy(isEnhancement = it)) },
         )
@@ -653,7 +659,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             value = rule.note,
             onValueChange = { update(rule.copy(note = it)) },
             label = "Notes",
-            placeholder = "Statute reference, edge cases, etc.",
+            placeholder = str(S.desktop_hub_statute_reference_edge_cases_etc),
             singleLine = false,
         )
     }
@@ -682,7 +688,7 @@ private fun ConditionField(
             modifier = Modifier.width(FIELD_WIDTH),
         )
         PayRuleField.DayKinds -> {
-            FieldLabel("Day kinds")
+            FieldLabel(str(S.desktop_day_kinds))
             Column {
                 PayDayKind.entries.forEach { kind ->
                     ZillitCheckbox(

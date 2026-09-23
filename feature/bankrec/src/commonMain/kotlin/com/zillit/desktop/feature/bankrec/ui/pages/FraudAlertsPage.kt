@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.FraudAlert
 import com.zillit.desktop.feature.bankrec.domain.FraudStatus
@@ -53,31 +55,11 @@ import com.zillit.desktop.feature.bankrec.ui.components.titleStyle
 
 /** The five checks the web explains under the alerts, with the colour of their weight. */
 private val AUTO_CHECKS = listOf(
-    Triple(
-        "Mandate / bank detail changes",
-        "Flags any supplier whose bank details change close to a payment date.",
-        BrTone.Red,
-    ),
-    Triple(
-        "Split payment / threshold evasion",
-        "Detects payments split to fall below approval or reporting limits.",
-        BrTone.Red,
-    ),
-    Triple(
-        "Duplicate payments",
-        "Catches identical or near-identical amounts to the same supplier within a period.",
-        BrTone.Amber,
-    ),
-    Triple(
-        "New / unregistered suppliers",
-        "Highlights payments to suppliers not yet verified in the Zillit register.",
-        BrTone.Amber,
-    ),
-    Triple(
-        "Round number anomalies",
-        "Flags suspiciously round amounts that deviate from the supplier's invoice pattern.",
-        BrTone.Blue,
-    ),
+    Triple(S.desktop_br_check_mandate, S.desktop_br_check_mandate_desc, BrTone.Red),
+    Triple(S.desktop_br_check_split, S.desktop_br_check_split_desc, BrTone.Red),
+    Triple(S.desktop_br_check_duplicate, S.desktop_br_check_duplicate_desc, BrTone.Amber),
+    Triple(S.desktop_br_check_unregistered, S.desktop_br_check_unregistered_desc, BrTone.Amber),
+    Triple(S.desktop_br_check_round, S.desktop_br_check_round_desc, BrTone.Blue),
 )
 
 /**
@@ -94,10 +76,10 @@ fun ColumnScope.FraudAlertsPage(state: BankRecUiState, onEvent: (BankRecEvent) -
     val active = alerts.count { it.isActive }
 
     ActionRow {
-        BrBadge("$active Active", BrTone.Red)
+        BrBadge(str(S.desktop_br_n_active, active), BrTone.Red)
         PeriodFilter(state, page.periodChoice) { onEvent(BankRecEvent.SetFraudPeriod(it)) }
         ZillitButton(
-            text = "Audit Log",
+            text = str(S.desktop_audit_log),
             onClick = { onEvent(BankRecEvent.OpenAuditLog) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -109,9 +91,12 @@ fun ColumnScope.FraudAlertsPage(state: BankRecUiState, onEvent: (BankRecEvent) -
         BrBanner(
             tone = BrTone.Red,
             icon = ZillitIcons.Shield,
-            title = "Zillit AI has detected $active suspicious transaction${if (active == 1) "" else "s"}",
-            message = "Review each alert below. Escalate to finance or mark as investigated once reviewed. " +
-                "All actions are logged in the audit trail.",
+            title = if (active == 1) {
+                str(S.desktop_br_ai_detected_one, active)
+            } else {
+                str(S.desktop_br_ai_detected_many, active)
+            },
+            message = str(S.desktop_br_ai_detected_detail),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -120,7 +105,11 @@ fun ColumnScope.FraudAlertsPage(state: BankRecUiState, onEvent: (BankRecEvent) -
         !state.fraudLoading && !state.periodsLoading && state.openPeriods.isEmpty() ->
             NoActivePeriod(ZillitIcons.Shield)
         (state.fraudLoading || state.periodsLoading) && state.fraudAlerts.isEmpty() -> BrSkeletonRows(4)
-        alerts.isEmpty() -> BrEmpty(title = "No fraud alerts detected.", icon = ZillitIcons.Shield, tone = BrTone.Green)
+        alerts.isEmpty() -> BrEmpty(
+            title = str(S.desktop_br_no_fraud_alerts_detected),
+            icon = ZillitIcons.Shield,
+            tone = BrTone.Green,
+        )
         else -> alerts.forEach { alert -> AlertCard(alert, state, onEvent) }
     }
 
@@ -220,7 +209,11 @@ private fun AlertCard(alert: FraudAlert, state: BankRecUiState, onEvent: (BankRe
             )
             if (alert.canDismiss) {
                 ZillitButton(
-                    text = if (acting == AlertAction.Dismiss) "Dismissing…" else "Investigated — No Issue",
+                    text = if (acting == AlertAction.Dismiss) {
+                        str(S.desktop_br_dismissing)
+                    } else {
+                        str(S.desktop_br_audit_investigated_no_issue)
+                    },
                     onClick = { onEvent(BankRecEvent.DismissAlert(alert.id)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -229,7 +222,11 @@ private fun AlertCard(alert: FraudAlert, state: BankRecUiState, onEvent: (BankRe
             }
             if (alert.canEscalate) {
                 ZillitButton(
-                    text = if (acting == AlertAction.Escalate) "Escalating…" else "Escalate to Finance",
+                    text = if (acting == AlertAction.Escalate) {
+                        str(S.desktop_br_escalating)
+                    } else {
+                        str(S.desktop_br_escalate_to_finance)
+                    },
                     onClick = { onEvent(BankRecEvent.EscalateAlert(alert.id)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -251,7 +248,7 @@ private fun RiskCircle(score: Int, tone: BrTone) {
                 score.toString(),
                 style = titleStyle(19.sp).copy(fontWeight = FontWeight.ExtraBold, lineHeight = 20.sp),
             )
-            ZillitText("RISK", style = mono(7.sp), color = ZillitTheme.colors.textMuted)
+            ZillitText(str(S.desktop_risk), style = mono(7.sp), color = ZillitTheme.colors.textMuted)
         }
     }
 }
@@ -276,14 +273,18 @@ private fun SuggestedMatch(alert: FraudAlert, state: BankRecUiState) {
                 tint = colors.warning,
                 size = 12.dp,
             )
-            ZillitText("SUGGESTED MATCH", style = mono(10.5.sp, FontWeight.SemiBold), color = colors.warning)
+            ZillitText(
+                str(S.desktop_br_suggested_match_heading),
+                style = mono(10.5.sp, FontWeight.SemiBold),
+                color = colors.warning,
+            )
         }
         alert.invoices.forEach { invoice ->
             val currency = invoice.currency ?: state.projectCurrency
             ZillitText(
                 listOf(
                     invoice.invoiceNumber.ifBlank { BankRecFormat.DASH },
-                    invoice.supplierName.ifBlank { "Unknown" },
+                    invoice.supplierName.ifBlank { str(S.desktop_unknown) },
                     BankRecFormat.plainMoney(invoice.grossAmount, currency),
                     invoice.payMethod.takeIf { it.isNotBlank() }?.let { WorkspaceRows.payMethodCode(it).uppercase() }
                         ?: BankRecFormat.DASH,
@@ -304,17 +305,21 @@ private fun SuggestedMatch(alert: FraudAlert, state: BankRecUiState) {
                     BrDot(colors.success)
                     ZillitText(
                         listOfNotNull(
-                            "Registered Vendor: ${vendor.name}",
-                            vendor.sortCode.takeIf { it.isNotBlank() }?.let { "Sort: ${BankRecFormat.sortCode(it)}" },
-                            vendor.accountNumber.takeIf { it.isNotBlank() }?.let { "Acct: $it" },
+                            str(S.desktop_br_registered_vendor, vendor.name),
+                            vendor.sortCode.takeIf { it.isNotBlank() }
+                                ?.let { str(S.desktop_dm_sort_code_value, BankRecFormat.sortCode(it)) },
+                            vendor.accountNumber.takeIf { it.isNotBlank() }
+                                ?.let { str(S.desktop_br_account_short, it) },
                         ).joinToString("  ·  "),
                         style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     )
                 } else {
                     BrDot(colors.danger)
                     ZillitText(
-                        "${alert.transaction?.vendorName?.ifBlank { null } ?: "Unknown"} is not in the " +
-                            "approved supplier register.",
+                        str(
+                            S.desktop_br_not_in_supplier_register,
+                            alert.transaction?.vendorName?.ifBlank { null } ?: str(S.desktop_unknown),
+                        ),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.danger,
                     )
@@ -329,7 +334,7 @@ private fun AutoChecks() {
     val colors = ZillitTheme.colors
     BrCard(
         Modifier.fillMaxWidth(),
-        title = "What Zillit checks automatically",
+        title = str(S.desktop_br_what_zillit_checks),
         icon = ZillitIcons.Shield,
         padded = true,
     ) {
@@ -337,16 +342,20 @@ private fun AutoChecks() {
             columns = 3,
             minTile = 220.dp,
             gap = 14.dp,
-            tiles = AUTO_CHECKS.map { (title, description, tone) ->
+            tiles = AUTO_CHECKS.map { (titleKey, descriptionKey, tone) ->
                 { modifier ->
                     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.padding(top = 5.dp)) { BrDot(tone.fg()) }
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             ZillitText(
-                                title,
+                                str(titleKey),
                                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                             )
-                            ZillitText(description, style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+                            ZillitText(
+                                str(descriptionKey),
+                                style = ZillitTheme.typography.labelSmall,
+                                color = colors.textMuted,
+                            )
                         }
                     }
                 }

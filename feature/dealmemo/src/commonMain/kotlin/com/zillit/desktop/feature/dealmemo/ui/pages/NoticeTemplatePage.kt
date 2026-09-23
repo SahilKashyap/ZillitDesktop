@@ -56,6 +56,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.ui.BackSquare
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoUiState
@@ -69,12 +71,19 @@ import com.zillit.desktop.feature.dealmemo.ui.components.dm
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
 
 /** A placeholder the letter can carry, with the words and sample the editor shows for it. */
-private enum class Placeholder(val key: String, val label: String, val sample: String, val icon: ImageVector) {
-    CrewName("crew_name", "Crew name", "Jordan Avery", ZillitIcons.User),
-    ContractEnd("contract_end_date", "Contract end date", "12 Aug 2026", ZillitIcons.Calendar),
-    LastPayDay("last_pay_day", "Last pay day", "28 Aug 2026", ZillitIcons.CreditCard),
-    NoticePeriod("notice_period", "Notice period", "2-week", ZillitIcons.Clock),
+private enum class Placeholder(
+    val key: String,
+    private val labelKey: String,
+    val sample: String,
+    val icon: ImageVector,
+) {
+    CrewName("crew_name", S.dm_ph_crew_name, "Jordan Avery", ZillitIcons.User),
+    ContractEnd("contract_end_date", S.dm_ph_contract_end_date, "12 Aug 2026", ZillitIcons.Calendar),
+    LastPayDay("last_pay_day", S.dm_ph_last_pay_day, "28 Aug 2026", ZillitIcons.CreditCard),
+    NoticePeriod("notice_period", S.dm_ph_notice_period, "2-week", ZillitIcons.Clock),
     ;
+
+    val label: String get() = str(labelKey)
 
     val token: String get() = "{{$key}}"
 }
@@ -97,7 +106,7 @@ fun NoticeTemplatePage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit)
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ZillitSpinner(size = 16.dp, color = dm.ink3)
-                    ZillitText(text = "Loading…", style = DmType.sans(13.sp), color = dm.ink3)
+                    ZillitText(text = str(S.dm_loading), style = DmType.sans(13.sp), color = dm.ink3)
                 }
             }
         } else {
@@ -106,9 +115,9 @@ fun NoticeTemplatePage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit)
     }
     DmConfirm(
         visible = template.confirmReset,
-        title = "Reset to default wording?",
-        message = "Your edits will be replaced with the default notice wording.",
-        confirmLabel = "Reset",
+        title = str(S.dm_notice_template_reset_title),
+        message = str(S.dm_notice_template_reset_msg),
+        confirmLabel = str(S.dm_filter_reset),
         onConfirm = { onEvent(NoticeTemplateEvent.ConfirmReset) },
         onCancel = { onEvent(NoticeTemplateEvent.CancelReset) },
         kind = DmConfirmKind.Warning,
@@ -129,7 +138,11 @@ private fun TemplateHeader(state: DealMemoUiState, onEvent: (DealMemoEvent) -> U
         BackSquare(onClick = { onEvent(NoticeTemplateEvent.Close) }, size = 36)
         ZillitText(text = "CONTRACTS", style = DmType.sans(11.sp, FontWeight.Bold, 0.08.em), color = dm.accent)
         ZillitText(text = "/", style = DmType.sans(12.5.sp), color = dm.placeholder)
-        ZillitText(text = "Notice Template", style = DmType.sans(12.5.sp, FontWeight.SemiBold), color = dm.ink2)
+        ZillitText(
+            text = str(S.dm_notice_template_title),
+            style = DmType.sans(12.5.sp, FontWeight.SemiBold),
+            color = dm.ink2,
+        )
         Spacer(Modifier.weight(1f))
         if (!template.loading) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -139,7 +152,7 @@ private fun TemplateHeader(state: DealMemoUiState, onEvent: (DealMemoEvent) -> U
                     ),
                 )
                 ZillitText(
-                    text = if (template.dirty) "Unsaved changes" else "All changes saved",
+                    text = if (template.dirty) str(S.dm_nda_unsaved) else str(S.dm_notice_template_status_saved),
                     style = DmType.sans(12.5.sp, FontWeight.Medium),
                     color = if (template.dirty) dm.ink2 else dm.ink3,
                 )
@@ -188,11 +201,19 @@ private fun SaveTemplateButton(state: DealMemoUiState, onEvent: (DealMemoEvent) 
             template.justSaved -> ZillitIcon(ZillitIcons.Check, size = 15.dp, tint = Color.White)
             template.saving -> {
                 ZillitSpinner(size = 13.dp, color = Color.White)
-                ZillitText(text = "Saving…", style = DmType.sans(13.sp, FontWeight.SemiBold), color = Color.White)
+                ZillitText(
+                    text = str(S.dm_nda_saving),
+                    style = DmType.sans(13.sp, FontWeight.SemiBold),
+                    color = Color.White,
+                )
             }
             else -> {
                 ZillitIcon(ZillitIcons.Save, size = 15.dp, tint = Color.White)
-                ZillitText(text = "Save Template", style = DmType.sans(13.sp, FontWeight.SemiBold), color = Color.White)
+                ZillitText(
+                    text = str(S.dm_template_save),
+                    style = DmType.sans(13.sp, FontWeight.SemiBold),
+                    color = Color.White,
+                )
             }
         }
     }
@@ -209,14 +230,13 @@ private fun TemplateBody(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Uni
     Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(modifier = Modifier.widthIn(max = 1180.dp).fillMaxSize().padding(horizontal = 28.dp, vertical = 30.dp)) {
             ZillitText(
-                text = "Notice Template",
+                text = str(S.dm_notice_template_title),
                 style = DmType.sans(25.sp, FontWeight.ExtraBold, (-0.025).em),
                 color = dm.ink,
             )
             Spacer(Modifier.height(9.dp))
             ZillitText(
-                text = "This message is sent to crew when their end-of-contract notice goes out. Edit it below — " +
-                    "placeholders are filled in per deal at send time.",
+                text = str(S.dm_notice_template_subtitle),
                 style = DmType.sans(15.sp).copy(lineHeight = 23.sp),
                 color = dm.ink2,
                 modifier = Modifier.widthIn(max = 660.dp),
@@ -272,7 +292,7 @@ private fun AddPlaceholders(onPick: (Placeholder) -> Unit) {
         ) {
             ZillitIcon(ZillitIcons.Add, size = 13.dp, tint = EDITOR_AMBER_DEEP)
             ZillitText(
-                text = "Add Placeholders",
+                text = str(S.dm_nda_add_placeholders),
                 style = DmType.sans(12.5.sp, FontWeight.SemiBold),
                 color = EDITOR_AMBER_DEEP,
             )
@@ -379,12 +399,12 @@ private fun EditorToolbar(mode: NoticeTemplateMode, onEvent: (DealMemoEvent) -> 
             horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             SegmentTab(
-                "Edit Text",
+                str(S.dm_notice_template_tab_edit),
                 ZillitIcons.Edit,
                 mode == NoticeTemplateMode.Edit,
             ) { onEvent(NoticeTemplateEvent.SetMode(NoticeTemplateMode.Edit)) }
             SegmentTab(
-                "Preview",
+                str(S.dm_notice_template_tab_preview),
                 ZillitIcons.Eye,
                 mode == NoticeTemplateMode.Preview,
             ) { onEvent(NoticeTemplateEvent.SetMode(NoticeTemplateMode.Preview)) }
@@ -403,14 +423,14 @@ private fun EditorToolbar(mode: NoticeTemplateMode, onEvent: (DealMemoEvent) -> 
                             .background(EDITOR_AMBER.copy(alpha = 0.14f)),
                     )
                     ZillitText(
-                        text = "Showing example values",
+                        text = str(S.dm_notice_template_preview_note),
                         style = DmType.sans(12.sp, FontWeight.Medium),
                         color = EDITOR_AMBER_DEEP,
                     )
                 }
             }
-            ToolbarLink("Reset", ZillitIcons.Reload) { onEvent(NoticeTemplateEvent.AskReset) }
-            ToolbarLink("Close", ZillitIcons.Close) { onEvent(NoticeTemplateEvent.Close) }
+            ToolbarLink(str(S.dm_filter_reset), ZillitIcons.Reload) { onEvent(NoticeTemplateEvent.AskReset) }
+            ToolbarLink(str(S.dm_close), ZillitIcons.Close) { onEvent(NoticeTemplateEvent.Close) }
         }
     }
 }

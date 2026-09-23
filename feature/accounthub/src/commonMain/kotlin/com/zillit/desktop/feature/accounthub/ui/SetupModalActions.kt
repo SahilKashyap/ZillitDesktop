@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRules
 import com.zillit.desktop.feature.accounthub.domain.CoaLineType
@@ -111,7 +113,10 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
                 copy(
                     setup = setup.copy(
                         rulesLoading = false,
-                        modal = setup.modal?.copy(loading = false, loadError = "Failed to load settings"),
+                        modal = setup.modal?.copy(
+                            loading = false,
+                            loadError = str(S.desktop_hub_failed_to_load_settings),
+                        ),
                     ),
                 )
             }
@@ -142,6 +147,13 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         if (!vm.mayEdit()) return
         when (modal.modal) {
             SetupModal.PurchaseOrders -> {
+                // An inverted price range never leaves the modal — the same
+                // guard the PO module's Settings page applies before its PATCH.
+                val assetError = vm.setupState.setup.poSetup.edited.assetFilters.error
+                if (assetError != null) {
+                    vm.fail(assetError)
+                    return
+                }
                 if (vm.setupState.setup.poSetup.dirty) vm.onEvent(AccountHubEvent.SaveSection(SetupSection.PoSetup))
                 saveRules(PURCHASE_ORDERS, { poRules }, { copy(setup = setup.copy(poRules = it)) })
             }
@@ -197,7 +209,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
                     put(SectionEdit(
                         saved = next.toList(),
                         edited = next.toList(),
-                    )).copy(notice = "Assignment rules saved.")
+                    )).copy(notice = str(S.desktop_assignment_rules_saved))
                 }
             } else {
                 vm.update { put(setup.pick().copy(saving = false)) }
@@ -216,7 +228,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
     private fun commitMember() {
         val draft = vm.setupState.setup.invoiceMemberDraft ?: return
         if (draft.member.userId.isBlank()) {
-            vm.sendSideEffect(AccountHubEffect.Failed("Pick a team member."))
+            vm.sendSideEffect(AccountHubEffect.Failed(str(S.desktop_hub_pick_a_team_member)))
             return
         }
         vm.update {
@@ -347,7 +359,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
                         else rows + saved
                     copy(
                         setup = setup.copy(payrollGroups = next, payrollGroupDraft = null, payrollGroupSaving = false),
-                        notice = "Payroll group saved.",
+                        notice = str(S.desktop_payroll_group_saved),
                     )
                 }
                 loadPayrollGroups()
@@ -394,7 +406,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
                         payrollSettings = setup.payrollSettings.committed(settings),
                         payrollAccounts = null,
                     ),
-                    notice = "Payroll accounts saved.",
+                    notice = str(S.desktop_payroll_accounts_saved),
                 )
             }
             vm.chart.load()

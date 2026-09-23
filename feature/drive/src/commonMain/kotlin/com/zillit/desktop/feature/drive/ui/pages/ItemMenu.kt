@@ -38,6 +38,8 @@ import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import kotlin.math.roundToInt
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The pointer-anchored row menu — `getContextMenuItems`, opened by a
@@ -125,21 +127,22 @@ internal fun menuEntries(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
     val entries = mutableListOf<ZillitMenuEntry>()
 
     if (item.isFolder) {
-        entries += ZillitMenuEntry.Action("Open folder", ZillitIcons.Folder, ZillitMenuTone.Primary) {
+        val openFolder = str(S.desktop_drive_open_folder)
+        entries += ZillitMenuEntry.Action(openFolder, ZillitIcons.Folder, ZillitMenuTone.Primary) {
             onEvent(DriveEvent.OpenFolder(item.id))
         }
     } else {
-        entries += ZillitMenuEntry.Action("Preview", ZillitIcons.Eye, ZillitMenuTone.Primary) {
+        entries += ZillitMenuEntry.Action(str(S.preview), ZillitIcons.Eye, ZillitMenuTone.Primary) {
             onEvent(DriveEvent.Preview(item))
         }
         if (canDownload && !viewOnly) {
-            entries += ZillitMenuEntry.Action("Download", ZillitIcons.Download, ZillitMenuTone.Info) {
+            entries += ZillitMenuEntry.Action(str(S.download), ZillitIcons.Download, ZillitMenuTone.Info) {
                 onEvent(DriveEvent.Download(item))
             }
         }
         if (item.isEditableDocument && !viewOnly) {
             entries += ZillitMenuEntry.Action(
-                label = if (canEdit) "Open in editor" else "View in editor",
+                label = if (canEdit) str(S.desktop_drive_open_in_editor) else str(S.desktop_drive_view_in_editor),
                 icon = ZillitIcons.Edit,
                 tone = ZillitMenuTone.Info,
             ) { onEvent(DriveEvent.OpenInEditor(item, canEdit)) }
@@ -149,42 +152,46 @@ internal fun menuEntries(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
     if (!viewOnly) entries += ZillitMenuEntry.Divider
 
     if (canEdit && !viewOnly) {
-        entries += ZillitMenuEntry.Action("Edit info", ZillitIcons.Edit) { onEvent(DriveEvent.OpenEdit(item)) }
+        entries += ZillitMenuEntry.Action(str(S.drive_edit_info), ZillitIcons.Edit) {
+            onEvent(DriveEvent.OpenEdit(item))
+        }
     }
     if (canShare && !viewOnly) {
         entries += ZillitMenuEntry.Action(
-            label = if (item.isFolder) "Manage access" else "Share",
+            label = if (item.isFolder) str(S.drive_btn_manage_access) else str(S.share),
             icon = ZillitIcons.Users,
         ) { onEvent(DriveEvent.OpenShare(item)) }
     }
     if (!item.isFolder && canEdit) {
-        entries += ZillitMenuEntry.Action("Copy link", ZillitIcons.Link) { onEvent(DriveEvent.CopyLink(item)) }
+        entries += ZillitMenuEntry.Action(str(S.drive_menu_copy_link), ZillitIcons.Link) {
+            onEvent(DriveEvent.CopyLink(item))
+        }
     }
     if (canEdit && !viewOnly) {
-        entries += ZillitMenuEntry.Action("Move to…", ZillitIcons.ArrowRight) {
+        entries += ZillitMenuEntry.Action(str(S.drive_move_to_ellipsis), ZillitIcons.ArrowRight) {
             onEvent(DriveEvent.OpenMoveTo(listOf(item)))
         }
     }
     if (item.isFolder && !viewOnly && state.canCreateHere) {
-        entries += ZillitMenuEntry.Action("Request files", ZillitIcons.Inbox) {
+        entries += ZillitMenuEntry.Action(str(S.drive_request_files_title), ZillitIcons.Inbox) {
             onEvent(DriveEvent.OpenFileRequests(item))
         }
     }
 
     val starred = state.isFavourite(item)
     entries += ZillitMenuEntry.Action(
-        label = if (starred) "Remove from favourites" else "Add to favourites",
+        label = if (starred) str(S.desktop_remove_from_favourites) else str(S.desktop_add_to_favourites),
         icon = if (starred) ZillitIcons.StarFilled else ZillitIcons.StarOutline,
         tone = if (starred) ZillitMenuTone.Approve else ZillitMenuTone.Neutral,
     ) { onEvent(DriveEvent.ToggleFavourite(item.ref)) }
 
     if (!viewOnly) {
-        entries += ZillitMenuEntry.Action("Info", ZillitIcons.Info) { onEvent(DriveEvent.ShowDetails(item)) }
+        entries += ZillitMenuEntry.Action(str(S.info), ZillitIcons.Info) { onEvent(DriveEvent.ShowDetails(item)) }
     }
 
     if (canDelete && !viewOnly) {
         entries += ZillitMenuEntry.Divider
-        entries += ZillitMenuEntry.Action("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) {
+        entries += ZillitMenuEntry.Action(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) {
             onEvent(DriveEvent.RequestDelete(listOf(item.ref)))
         }
     }

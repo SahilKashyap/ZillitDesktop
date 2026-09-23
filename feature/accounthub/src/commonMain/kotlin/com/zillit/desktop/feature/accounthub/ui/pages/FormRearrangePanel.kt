@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.forms.FormField
 import com.zillit.desktop.core.forms.FormSection
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.FormConfigState
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
@@ -54,8 +56,12 @@ import com.zillit.desktop.feature.accounthub.ui.components.ReorderableColumn
 internal fun FormRearrangePanel(config: FormConfigState, onEvent: (AccountHubEvent) -> Unit, modifier: Modifier) {
     val picked = config.rearrangeSection?.let { config.template.section(it) }
     SidePanel(
-        title = picked?.label ?: "Rearrange",
-        subtitle = if (picked != null) "Drag fields to reorder" else "Drag sections to reorder, click to see fields",
+        title = picked?.label ?: str(S.desktop_rearrange),
+        subtitle = if (picked != null) {
+            str(S.desktop_hub_drag_fields_to_reorder)
+        } else {
+            str(S.desktop_hub_drag_sections_to_reorder_click_to_see_fields)
+        },
         onClose = { onEvent(AccountHubEvent.ToggleRearrange(false)) },
         modifier = modifier,
         above = if (picked == null) {
@@ -112,7 +118,7 @@ private fun SectionList(sections: List<FormSection>, onEvent: (AccountHubEvent) 
                 )
             }
             FormBadge(
-                if (section.systemDefault) "System" else "Custom",
+                if (section.systemDefault) str(S.desktop_language_system_short) else str(S.custom),
                 if (section.systemDefault) BadgeTone.System else BadgeTone.Custom,
             )
         }
@@ -123,7 +129,7 @@ private fun SectionList(sections: List<FormSection>, onEvent: (AccountHubEvent) 
 private fun FieldList(section: FormSection, onEvent: (AccountHubEvent) -> Unit) {
     val fields = section.visible
     if (fields.isEmpty()) {
-        FieldHint("Nothing in this section is on the form.", Modifier.padding(ZillitTheme.spacing.sm))
+        FieldHint(str(S.desktop_hub_nothing_in_this_section_is_on_the_form), Modifier.padding(ZillitTheme.spacing.sm))
         return
     }
     ReorderableColumn(
@@ -159,7 +165,7 @@ private fun FieldRow(
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
-        if (field.required) FormBadge("Required", BadgeTone.System)
+        if (field.required) FormBadge(str(S.docusign_prop_required), BadgeTone.System)
     }
 }
 
@@ -242,7 +248,11 @@ private fun BackToSections(onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         ZillitIcon(icon = ZillitIcons.ChevronLeft, tint = colors.textMuted, size = 10.dp)
-        ZillitText(text = "Sections", style = ZillitTheme.typography.labelSmall, color = colors.textSecondary)
+        ZillitText(
+            text = str(S.desktop_sections),
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textSecondary,
+        )
     }
 }
 

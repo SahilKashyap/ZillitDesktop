@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDates
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.NoticeRules
@@ -79,7 +81,7 @@ internal class NoticesActions(private val vm: DealMemoViewModel) {
         vm.work {
             when (val result = vm.repository.sendNotice(draft.deal.id, lastPayDay, draft.body)) {
                 is ZillitResult.Success -> {
-                    vm.toastSuccess(result.data, "Notice sent successfully.")
+                    vm.toastSuccess(result.data, str(S.desktop_dm_notice_sent_successfully))
                     edit { copy(send = null) }
                     reload()
                 }
@@ -122,9 +124,12 @@ internal class NoticesActions(private val vm: DealMemoViewModel) {
                 }
             }
             edit { copy(sendingAll = false, sendAll = null) }
-            if (sent > 0) vm.toastSuccess(lastMessage, "Notices sent successfully.")
+            if (sent > 0) vm.toastSuccess(lastMessage, str(S.desktop_dm_notices_sent_successfully))
             if (failed > 0) vm.toast(
-                "$failed notice${if (failed == 1) "" else "s"} failed to send",
+                if (failed == 1) str(S.desktop_dm_one_notice_failed_to_send) else str(
+                    S.desktop_dm_n_notices_failed_to_send,
+                    failed,
+                ),
                 DealToastTone.Error,
             )
             reload()

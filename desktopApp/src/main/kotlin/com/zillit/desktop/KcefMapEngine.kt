@@ -3,6 +3,8 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.feature.maps.data.MapCanvasWire
 import com.zillit.desktop.feature.maps.domain.MapCanvasHost
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -98,7 +100,7 @@ class KcefMapEngine(
             .onFailure { thrown -> ZillitLog.w(TAG) { "map page not extracted: ${thrown.message}" } }
             .getOrNull()
         if (page == null) {
-            fail("The map page could not be prepared.")
+            fail(str(S.desktop_map_page_not_prepared))
             return@withLock false
         }
         // On the EDT: this builds AWT components, and JCEF is unforgiving
@@ -113,10 +115,10 @@ class KcefMapEngine(
 
     private fun unavailableReason(): String = when (val failure = KcefRuntime.failure) {
         KcefRuntime.Failure.NoJcefRuntime ->
-            "This build has no embedded browser, so the map cannot be shown."
+            str(S.desktop_no_embedded_browser_map)
         is KcefRuntime.Failure.Broken ->
-            "The embedded browser could not start (${failure.reason})."
-        null -> "The embedded browser is unavailable."
+            str(S.desktop_embedded_browser_failed, failure.reason)
+        null -> str(S.desktop_browser_unavailable)
     }
 
     /** The host's own failures travel as the page's do, so the tool reads one stream. */
@@ -222,7 +224,7 @@ class KcefMapEngine(
             val key = runCatching { googleMapsKey() }.getOrNull()
             if (key.isNullOrBlank()) {
                 ZillitLog.w(TAG) { "no Google Maps key in remote config; map stays blank" }
-                fail("This project has no Google Maps key, so the map cannot load.")
+                fail(str(S.desktop_no_maps_key))
                 return@launch
             }
             run(target, MapCanvasWire.bootScript(key))

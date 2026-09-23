@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.ui.components.AccentSegmented
 import com.zillit.desktop.feature.esignature.ui.pages.BulkPage
 import com.zillit.desktop.feature.esignature.ui.pages.DetailPage
@@ -81,23 +83,23 @@ private fun ListsShell(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         ZillitPageHeader(
-            eyebrow = "Film Tools",
-            title = "E-Signature",
+            eyebrow = str(S.desktop_film_tools),
+            title = str(S.desktop_ds_e_signature),
             description = if (state.viewer.receiverOnly) {
-                "Review and sign documents sent to you."
+                str(S.docusign_receiver_subtitle)
             } else {
-                "Send documents for signature, track them, and sign what reaches you."
+                str(S.desktop_ds_send_documents_for_signature_track_them_and_sign)
             },
             actions = {
                 ZillitButton(
-                    text = "My saved signatures",
+                    text = str(S.docusign_my_saved_signatures),
                     onClick = { onEvent(EsignEvent.OpenMarks) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Edit,
                 )
                 ZillitButton(
-                    text = "Refresh",
+                    text = str(S.docusign_refresh),
                     onClick = { onEvent(EsignEvent.Refresh) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -109,7 +111,7 @@ private fun ListsShell(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
         )
         when {
             state.viewer.isBlocked -> ZillitNotice(
-                text = "You don’t have access to E-Signature on this project.",
+                text = str(S.desktop_ds_you_don_t_have_access_to_e_signature),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )

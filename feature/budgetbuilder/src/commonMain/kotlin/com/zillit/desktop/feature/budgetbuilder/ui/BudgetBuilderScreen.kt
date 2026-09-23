@@ -16,6 +16,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Budget Builder's launch page.
@@ -34,32 +36,28 @@ fun BudgetBuilderScreen(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEven
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         ZillitPageHeader(
-            eyebrow = "Film Tools",
-            title = "Budget Builder",
-            description = "Native film budget creation — chart of accounts, fringes, " +
-                "multi-currency, and a published version the Cost Report reads.",
+            eyebrow = str(S.desktop_film_tools),
+            title = str(S.desktop_bb_title),
+            description = str(S.desktop_bb_description),
         )
 
         when {
             !state.configured -> ZillitNotice(
                 // The web's wording for the same condition, kept identical so
                 // support hears one sentence, not two.
-                text = "Budget Builder isn’t configured for this environment.",
+                text = str(S.desktop_budget_builder_not_configured),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Warning,
             )
 
             state.viewer.isBlocked -> ZillitNotice(
-                text = "You don’t have access to Budget Builder on this project. " +
-                    "Access is granted per tool, by the project’s admin.",
+                text = str(S.desktop_bb_no_access),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )
 
             state.offline -> ZillitNotice(
-                text = "Budget Builder is a hosted application and needs a connection — " +
-                    "there is no offline copy of the budget on this computer. " +
-                    "It opens again as soon as you’re back online.",
+                text = str(S.desktop_bb_offline),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Warning,
             )
@@ -72,11 +70,11 @@ fun BudgetBuilderScreen(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEven
 @Composable
 private fun LaunchCard(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEvent) -> Unit) {
     ZillitSectionCard(
-        title = "The budget application",
+        title = str(S.desktop_bb_card_title),
         icon = ZillitIcons.BarChart,
         action = {
             ZillitButton(
-                text = "Open Budget Builder",
+                text = str(S.desktop_bb_open),
                 onClick = { onEvent(BudgetBuilderEvent.Open) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.BarChart,
@@ -85,15 +83,14 @@ private fun LaunchCard(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEvent
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitText(
-                text = "Opens in its own window. Your Zillit session is the identity — " +
-                    "there is no separate sign-in, and the budget belongs to this project.",
+                text = str(S.desktop_bb_opens_in_window),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.fillMaxWidth(),
             )
             if (state.viewer.ready && !state.viewer.canPost) {
                 ZillitText(
-                    text = "You hold view access only — the budget opens read-only.",
+                    text = str(S.desktop_bb_view_only),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                     modifier = Modifier.fillMaxWidth(),

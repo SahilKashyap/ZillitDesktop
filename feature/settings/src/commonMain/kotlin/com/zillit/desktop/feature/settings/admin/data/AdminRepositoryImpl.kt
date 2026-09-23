@@ -9,6 +9,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
@@ -368,7 +370,7 @@ class AdminRepositoryImpl(
             UnitKind.Shooting -> endpoints.joinedUnit(unitId)
             // No update route exists. The page withholds the action, so this
             // is unreachable rather than merely unimplemented.
-            UnitKind.Remote -> return unsupported("Remote units cannot be renamed.")
+            UnitKind.Remote -> return unsupported(str(S.desktop_remote_units_cannot_be_renamed))
         }
         return put(url, buildJsonObject { put("unit_name", name.trim()) })
     }
@@ -377,7 +379,7 @@ class AdminRepositoryImpl(
         val url = when (kind) {
             UnitKind.Home -> endpoints.shootingUnit(unitId)
             UnitKind.Shooting -> endpoints.joinedUnit(unitId)
-            UnitKind.Remote -> return unsupported("Remote units cannot be deleted.")
+            UnitKind.Remote -> return unsupported(str(S.desktop_remote_units_cannot_be_deleted))
         }
         return delete(url)
     }
@@ -495,7 +497,7 @@ class AdminRepositoryImpl(
             ZillitResult.Failure(
                 // The message is a translation key. Resolved at the point of
                 // display, where the label map is — see AdminViewModel.
-                ZillitError.Validation(message?.takeIf { it.isNotBlank() } ?: "This could not be saved."),
+                ZillitError.Validation(message?.takeIf { it.isNotBlank() } ?: str(S.desktop_could_not_be_saved)),
             )
         } else {
             ZillitResult.Success(Unit)
@@ -506,7 +508,7 @@ class AdminRepositoryImpl(
         block: suspend (String) -> ZillitResult<T>,
     ): ZillitResult<T> {
         val project = projectId()?.takeIf { it.isNotBlank() }
-            ?: return ZillitResult.Failure(ZillitError.Validation("No project is open."))
+            ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_no_project_is_open)))
         return block(project)
     }
 

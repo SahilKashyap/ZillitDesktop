@@ -10,6 +10,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import com.zillit.desktop.core.strings.Strings
 
 /**
  * The user's theme choice. `System` follows the OS appearance.
@@ -42,12 +45,19 @@ fun ZillitTheme(
     val colors = if (animateThemeChange) target.animated() else target
     val fonts = rememberZillitFonts()
 
+    // Layout direction follows the UI language rather than the OS: someone
+    // who switched the app to Arabic on an English machine expects the
+    // Arabic app, mirrored. Read here so every window — main, torn-off,
+    // widgets — gets it from the one theme they all wrap themselves in.
+    val direction = if (Strings.language.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+
     CompositionLocalProvider(
         LocalZillitColors provides colors,
         LocalZillitSpacing provides ZillitSpacing(),
         LocalZillitFonts provides fonts,
         LocalZillitTypography provides ZillitTypography(fonts),
         LocalZillitShapes provides ZillitShapes(),
+        LocalLayoutDirection provides direction,
     ) {
         MaterialTheme(
             colorScheme = colors.toMaterialScheme(),

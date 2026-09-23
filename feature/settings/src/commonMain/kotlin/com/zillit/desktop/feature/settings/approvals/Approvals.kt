@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.settings.approvals
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 
 /**
@@ -66,7 +68,7 @@ data class PendingApproval(
         get() = fullName.ifBlank {
             listOfNotNull(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")
                 .ifBlank { email.orEmpty() }
-                .ifBlank { "Someone with no name set" }
+                .ifBlank { str(S.desktop_someone_with_no_name) }
         }
 
     /**
@@ -109,10 +111,10 @@ data class PendingApproval(
     fun changesAgainst(known: KnownCrewMember?): List<ProfileChange> {
         if (known == null) return emptyList()
         return listOfNotNull(
-            change("Name", known.fullName, displayName),
+            change(str(S.name), known.fullName, displayName),
             // Both sides are translation keys; a name is the person's own text.
-            change("Department", known.department, departmentName, isKey = true),
-            change("Role", known.designation, designationName, isKey = true),
+            change(str(S.department), known.department, departmentName, isKey = true),
+            change(str(S.recce_field_role), known.designation, designationName, isKey = true),
         )
     }
 
@@ -132,7 +134,7 @@ data class PendingApproval(
         val shown: (String) -> String = if (isKey) { value -> value.localised() } else { value -> value }
         return ProfileChange(
             label = label,
-            from = before.takeIf { it.isNotBlank() }?.let(shown) ?: "Not set",
+            from = before.takeIf { it.isNotBlank() }?.let(shown) ?: str(S.dm_gpr_not_set),
             to = shown(after),
         )
     }

@@ -32,6 +32,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormRules
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormValues
@@ -79,17 +81,20 @@ internal fun UkPayrollFieldset(block: JsonObject, onPatch: (Map<String, JsonElem
 
     Column {
         Question(
-            title = "Tax code information",
-            sub = "A crew member arrives with a P45 or a starter statement — never both. If they have a P45, all " +
-                "four figures are needed together: the bureau can't tell which is missing from a partial one.",
+            title = str(S.desktop_dm_tax_code_information),
+            sub = str(S.desktop_dm_a_crew_member_arrives_with_a_p45),
             lead = true,
             first = true,
         ) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                RouteButton("No P45 — starter statement", route == UkPayroll.ROUTE_STATEMENT, Modifier.weight(1f)) {
+                RouteButton(
+                    str(S.desktop_dm_no_p45_starter_statement),
+                    route == UkPayroll.ROUTE_STATEMENT,
+                    Modifier.weight(1f),
+                ) {
                     pickRoute(UkPayroll.ROUTE_STATEMENT)
                 }
-                RouteButton("I have a P45", route == UkPayroll.ROUTE_P45, Modifier.weight(1f)) {
+                RouteButton(str(S.desktop_dm_i_have_a_p45), route == UkPayroll.ROUTE_P45, Modifier.weight(1f)) {
                     pickRoute(UkPayroll.ROUTE_P45)
                 }
             }
@@ -103,18 +108,16 @@ internal fun UkPayrollFieldset(block: JsonObject, onPatch: (Map<String, JsonElem
             }
         }
         Question(
-            title = "Student Loan",
-            sub = "Undergraduate plans only — a postgraduate loan is the separate question below, and repays " +
-                "alongside this one.",
+            title = str(S.dm_uk_sl_title),
+            sub = str(S.desktop_dm_undergraduate_plans_only_a_postgraduate_loan_is),
         ) {
             DeclarationRadio(UkPayroll.STUDENT_LOAN_PLANS, DocRead.text(block, "student_loan_plan")) {
                 onPatch(mapOf("student_loan_plan" to JsonPrimitive(it)))
             }
         }
         Question(
-            title = "Postgraduate Loan",
-            sub = "A postgraduate loan repays alongside an undergraduate plan — answer this even if a Student Loan " +
-                "plan is selected above.",
+            title = str(S.dm_uk_pg_title),
+            sub = str(S.desktop_dm_a_postgraduate_loan_repays_alongside_an_undergraduate),
         ) {
             DeclarationRadio(UkPayroll.PG_LOAN_PLANS, DocRead.text(block, "pg_loan")) {
                 onPatch(mapOf("pg_loan" to JsonPrimitive(it)))
@@ -125,8 +128,8 @@ internal fun UkPayrollFieldset(block: JsonObject, onPatch: (Map<String, JsonElem
                 val ni = DocRead.text(block, "ni_category").orEmpty()
                 Column {
                     WizLabel(
-                        "NI category",
-                        hint = "Optional — the payroll bureau derives this. Fill it only if it's known.",
+                        str(S.desktop_dm_ni_category),
+                        hint = str(S.desktop_dm_optional_the_payroll_bureau_derives_this_fill),
                     )
                     FormInput(
                         value = ni,
@@ -147,7 +150,7 @@ internal fun UkPayrollFieldset(block: JsonObject, onPatch: (Map<String, JsonElem
                 }
             }
         }
-        Question(title = "Pension (auto-enrolment)", sub = CrewFormValues.PENSION_NOTE) {
+        Question(title = str(S.desktop_dm_pension_auto_enrolment), sub = CrewFormValues.PENSION_NOTE) {
             val pension = DocRead.text(block, "pension_status") ?: UkPayroll.PENSION_DEFAULT
             DeclarationRadio(UkPayroll.PENSION_STATUSES, pension) {
                 onPatch(mapOf("pension_status" to JsonPrimitive(it)))
@@ -167,8 +170,8 @@ private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Un
     val paye = DocRead.text(block, "p45_previous_paye_ref").orEmpty()
     FormGrid {
         listOf(
-            "p45_previous_pay" to "Previous pay (£)",
-            "p45_previous_tax" to "Previous tax (£)",
+            "p45_previous_pay" to str(S.desktop_dm_previous_pay),
+            "p45_previous_tax" to str(S.desktop_dm_previous_tax),
         ).forEach { (key, label) ->
             half {
                 Column {
@@ -182,7 +185,7 @@ private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Un
         }
         half {
             Column {
-                WizLabel("Leaving date")
+                WizLabel(str(S.desktop_dm_leaving_date))
                 // UTC both ways — a local round-trip hands anyone west of Greenwich the day before.
                 DateInput(
                     millis = DocRead.epoch(block, "p45_leaving_date"),
@@ -193,7 +196,7 @@ private fun P45Grid(block: JsonObject, onPatch: (Map<String, JsonElement>) -> Un
         }
         half {
             Column {
-                WizLabel("Previous employer PAYE ref")
+                WizLabel(str(S.desktop_dm_previous_employer_paye_ref))
                 val invalid = !CrewFormRules.validPayeRef(paye)
                 FormInput(
                     value = paye,

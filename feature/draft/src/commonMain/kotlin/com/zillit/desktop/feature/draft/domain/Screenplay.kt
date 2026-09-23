@@ -1,20 +1,25 @@
 package com.zillit.desktop.feature.draft.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The eight paragraph kinds a screenplay is written in — Final Draft's
  * element list, in its order. The number is the ⌘/Ctrl shortcut.
  */
 @Suppress("MagicNumber") // The shortcut digits are the entries' own numbers.
-enum class ElementType(val label: String, val shortcut: Int, val fdxName: String) {
-    SceneHeading("Scene Heading", 1, "Scene Heading"),
-    Action("Action", 2, "Action"),
-    Character("Character", 3, "Character"),
-    Parenthetical("Parenthetical", 4, "Parenthetical"),
-    Dialogue("Dialogue", 5, "Dialogue"),
-    Transition("Transition", 6, "Transition"),
-    Shot("Shot", 7, "Shot"),
-    General("General", 8, "General"),
+enum class ElementType(private val labelKey: String, val shortcut: Int, val fdxName: String) {
+    SceneHeading(S.desktop_draft_scene_heading, 1, "Scene Heading"),
+    Action(S.txt_action, 2, "Action"),
+    Character(S.character, 3, "Character"),
+    Parenthetical(S.desktop_draft_parenthetical, 4, "Parenthetical"),
+    Dialogue(S.desktop_draft_dialogue, 5, "Dialogue"),
+    Transition(S.desktop_draft_transition, 6, "Transition"),
+    Shot(S.desktop_draft_shot, 7, "Shot"),
+    General(S.ce_note_type_general, 8, "General"),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Scene headings, characters, transitions and shots are typed in caps. */
     val isUppercase: Boolean

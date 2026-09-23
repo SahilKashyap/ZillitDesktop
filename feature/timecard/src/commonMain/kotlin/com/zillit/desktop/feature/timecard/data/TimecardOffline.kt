@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.timecard.data
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.RetryPolicy
 import com.zillit.desktop.core.sync.SyncContext
 import com.zillit.desktop.core.sync.SyncHandler
@@ -112,7 +114,7 @@ class TimecardSubmitHandler(
     }
 
     companion object {
-        const val NOT_SAVED_MESSAGE = "This week has not been saved on the server, so it cannot be submitted."
+        val NOT_SAVED_MESSAGE: String get() = str(S.desktop_timecard_not_saved_on_server)
     }
 }
 
@@ -134,7 +136,7 @@ fun SyncOperation.toLocalTimecard(
         id = LOCAL_WEEK_PREFIX + id,
         userId = queued.userId,
         // Only ever the person's own week; the crew list is not to hand offline.
-        crewName = "You",
+        crewName = str(S.you),
         departmentId = null,
         designation = null,
         weekStarting = draft.weekStarting,

@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.crewlist.domain.CrewMember
 import com.zillit.desktop.feature.crewlist.domain.CrewMemberRules
 import com.zillit.desktop.feature.crewlist.domain.MemberOverride
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Unit → Department → People, as the web draws the sheet: a dark unit band
@@ -50,14 +52,14 @@ internal fun CrewRoster(
     when {
         model.loading && model.units.isEmpty() -> RosterSkeleton(modifier)
         model.units.isEmpty() -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            ZillitEmptyState(title = copy.t("NoUsersFound", "No Users Found."), icon = ZillitIcons.Users)
+            ZillitEmptyState(title = copy.t("NoUsersFound", str(S.no_user_found)), icon = ZillitIcons.Users)
         }
         else -> {
             val headings = listOf(
-                copy.t("Po_contact", "Name"),
-                copy.t("Designation", "Designation"),
-                copy.t("Phone", "Phone"),
-                copy.t("poEmailLable", "Email"),
+                copy.t("Po_contact", str(S.name)),
+                copy.t("Designation", str(S.designation)),
+                copy.t("Phone", str(S.phone)),
+                copy.t("poEmailLable", str(S.email)),
             )
             // Faces already fetched, kept across recomposition so scrolling back never refetches.
             val faceCache = remember { mutableMapOf<String, ImageBitmap?>() }

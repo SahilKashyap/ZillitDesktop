@@ -9,6 +9,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.money
@@ -36,27 +38,31 @@ fun HistoryPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitStatTile(
-                label = "Posted to date",
+                label = str(S.desktop_card_posted_to_date),
                 value = money(posted.sumOf { it.amount }, currency),
-                sub = "${posted.size} receipt${if (posted.size == 1) "" else "s"}",
+                sub = if (posted.size == 1) {
+                    str(S.desktop_card_receipt_count_one, posted.size)
+                } else {
+                    str(S.desktop_card_receipt_count_other, posted.size)
+                },
                 tone = StatusTone.Done,
                 icon = ZillitIcons.Ledger,
                 modifier = Modifier.weight(1f),
             )
             ZillitStatTile(
-                label = "Cardholders",
+                label = str(S.desktop_card_cardholders),
                 value = holders.toString(),
-                sub = "With posted spend",
+                sub = str(S.desktop_card_with_posted_spend),
                 icon = ZillitIcons.Users,
                 modifier = Modifier.weight(1f),
             )
             ZillitStatTile(
-                label = "Average receipt",
+                label = str(S.desktop_card_average_receipt),
                 value = money(
                     posted.takeIf { it.isNotEmpty() }?.let { rows -> rows.sumOf { it.amount } / rows.size },
                     currency,
                 ),
-                sub = "Across everything posted",
+                sub = str(S.desktop_card_across_everything_posted),
                 icon = ZillitIcons.Receipt,
                 modifier = Modifier.weight(1f),
             )

@@ -9,6 +9,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -79,7 +81,7 @@ class FromToolPublisher(
     suspend fun publish(file: FromToolFile): ZillitResult<String> {
         if (!canPost()) {
             return ZillitResult.Failure(
-                ZillitError.Validation("You do not have permission to distribute to Document Distribution."),
+                ZillitError.Validation(str(S.desktop_docdist_no_distribute_permission)),
             )
         }
         // The two things the server hard-fails on, said before the round trip.
@@ -87,7 +89,7 @@ class FromToolPublisher(
             return ZillitResult.Failure(
                 ZillitError.Storage(
                     technical = "from-tool publish needs a file name with an extension",
-                    userMessage = "This file has no name to publish under.",
+                    userMessage = str(S.desktop_docdist_file_has_no_name),
                 ),
             )
         }
@@ -95,7 +97,7 @@ class FromToolPublisher(
             return ZillitResult.Failure(
                 ZillitError.Storage(
                     technical = "from-tool publish needs the storage key",
-                    userMessage = "This file is not in storage yet.",
+                    userMessage = str(S.desktop_docdist_file_not_in_storage),
                 ),
             )
         }

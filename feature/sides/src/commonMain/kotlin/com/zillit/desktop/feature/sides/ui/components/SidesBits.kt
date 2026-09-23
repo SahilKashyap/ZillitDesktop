@@ -56,6 +56,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.SceneInfo
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.ui.SidesDestination
@@ -214,8 +216,8 @@ internal fun LayoutToggle(layout: SidesLayout, onChange: (SidesLayout) -> Unit) 
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         listOf(
-            Triple(SidesLayout.List, "List view", ZillitIcons.LayoutTabs),
-            Triple(SidesLayout.Table, "Table view", ZillitIcons.Grid),
+            Triple(SidesLayout.List, str(S.av_list_view), ZillitIcons.LayoutTabs),
+            Triple(SidesLayout.Table, str(S.desktop_table_view), ZillitIcons.Grid),
         ).forEach { (value, label, icon) ->
             val on = value == layout
             Row(
@@ -270,7 +272,7 @@ internal fun FieldLabel(text: String, optional: Boolean = false) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         ZillitText(text, style = ZillitTheme.typography.titleSmall)
         if (optional) ZillitText(
-            "(optional)",
+            str(S.desktop_optional_tail),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -417,14 +419,28 @@ internal fun SceneNumberGrid(
 ) {
     val colors = ZillitTheme.colors
     if (scenes.isEmpty()) {
-        ZillitText("No scenes detected.", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+        ZillitText(
+            str(S.desktop_sides_no_scenes_detected),
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.textMuted,
+        )
         return
     }
     val pickedCount = scenes.count { it.sceneNumber in picked }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            LinkButton("Select all", icon = ZillitIcons.Check, onClick = { onSelectAll(scenes.map { it.sceneNumber }) })
-            LinkButton("Clear", icon = ZillitIcons.Close, onClick = onClear, muted = true, enabled = pickedCount > 0)
+            LinkButton(
+                str(S.dd_select_all),
+                icon = ZillitIcons.Check,
+                onClick = { onSelectAll(scenes.map { it.sceneNumber }) },
+            )
+            LinkButton(
+                str(S.ah_clear),
+                icon = ZillitIcons.Close,
+                onClick = onClear,
+                muted = true,
+                enabled = pickedCount > 0,
+            )
             if (pickedCount > 0) {
                 ZillitText(
                     "$pickedCount / ${scenes.size}",
@@ -474,7 +490,7 @@ internal fun SidesLoader(tip: String, modifier: Modifier = Modifier) {
 
 /** The `Generating…` pill on a row still rendering. */
 @Composable
-internal fun GeneratingPill(label: String = "Generating…") {
+internal fun GeneratingPill(label: String = str(S.drive_generating)) {
     val colors = ZillitTheme.colors
     Row(
         modifier = Modifier.clip(ZillitTheme.shapes.pill).background(colors.warningSoft).padding(
@@ -497,8 +513,8 @@ internal fun SidesConfirmDialog(
     busy: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
-    confirmLabel: String = "Delete",
-    busyLabel: String = "Deleting…",
+    confirmLabel: String = str(S.delete),
+    busyLabel: String = str(S.ah_deleting),
 ) {
     ZillitDialogShell(
         title = title,
@@ -509,7 +525,7 @@ internal fun SidesConfirmDialog(
         width = 420.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = onDismiss,
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

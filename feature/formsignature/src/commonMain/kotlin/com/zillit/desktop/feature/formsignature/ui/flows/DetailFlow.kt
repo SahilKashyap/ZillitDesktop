@@ -3,6 +3,8 @@
 package com.zillit.desktop.feature.formsignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureBadges
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureHost
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
@@ -68,7 +70,7 @@ internal class DetailFlow(
             DetailState(
                 source = if (mine) DetailSource.MyDownloads else DetailSource.LibraryAll,
                 documentId = form.id,
-                title = form.name.ifBlank { "Document" },
+                title = form.name.ifBlank { str(S.document) },
                 stored = form.current,
                 canSign = mine && !form.signedBy(me),
                 alreadySigned = form.signedBy(me),
@@ -83,7 +85,7 @@ internal class DetailFlow(
             DetailState(
                 source = DetailSource.ForSignature(tab),
                 documentId = document.id,
-                title = document.name.ifBlank { "Document" },
+                title = document.name.ifBlank { str(S.document) },
                 stored = document.current,
                 placeholderFlow = document.hasPlaceholders,
                 placeholders = document.pendingSpotsFor(me),
@@ -310,7 +312,7 @@ internal class DetailFlow(
                     store.fail(answer.error)
                 }
                 is ZillitResult.Success -> {
-                    store.notice("Document signed and sent.")
+                    store.notice(str(S.desktop_fs_document_signed_and_sent))
                     close(force = true)
                     onSigned()
                 }
@@ -329,7 +331,7 @@ internal class DetailFlow(
         store.launch {
             when (val saved = host.saveToDownloads(fileName, bytes)) {
                 is ZillitResult.Failure -> store.fail(saved.error)
-                is ZillitResult.Success -> store.notice("Saved to Downloads.")
+                is ZillitResult.Success -> store.notice(str(S.docusign_signing_attachment_saved))
             }
         }
     }
@@ -349,7 +351,7 @@ internal class DetailFlow(
         store.launch {
             when (val added = repository.selfAssign(detail.documentId)) {
                 is ZillitResult.Failure -> store.fail(added.error)
-                is ZillitResult.Success -> store.notice(added.data.ifBlank { "Added to My Downloads." })
+                is ZillitResult.Success -> store.notice(added.data.ifBlank { str(S.desktop_fs_added_to_my_downloads) })
             }
             store.update { copy(detail = detail.copy(transferring = false)) }
         }

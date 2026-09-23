@@ -4,6 +4,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sos.data.SosEndpoints
 import com.zillit.desktop.feature.sos.data.SOS_SYNC_EVENTS
 import com.zillit.desktop.feature.sos.domain.ExternalContactDraft
@@ -207,7 +209,7 @@ class SosViewModel(
     private fun openMap(alertId: String) {
         val url = currentState.alerts.firstOrNull { it.id == alertId }?.mapsUrl.orEmpty()
         if (url.isBlank()) {
-            sendEffect(SosEffect.Notice("This alert carries no location."))
+            sendEffect(SosEffect.Notice(str(S.desktop_sos_no_location)))
         } else {
             sendEffect(SosEffect.OpenLink(url))
         }
@@ -224,15 +226,15 @@ class SosViewModel(
     private fun callSender(alertId: String, video: Boolean) {
         val alert = currentState.alerts.firstOrNull { it.id == alertId } ?: return
         if (alert.senderId.isBlank() || alert.senderId == currentState.viewer.userId) {
-            sendEffect(SosEffect.Notice("This is your own alert."))
+            sendEffect(SosEffect.Notice(str(S.desktop_sos_own_alert)))
             return
         }
         val sender = crew().firstOrNull { it.userId == alert.senderId }
         when {
             sender == null || sender.hasLeft ->
-                sendEffect(SosEffect.Notice("They are no longer on this project."))
+                sendEffect(SosEffect.Notice(str(S.desktop_sos_no_longer_on_project)))
             sender.deviceId.isBlank() ->
-                sendEffect(SosEffect.Notice("They have no device to call."))
+                sendEffect(SosEffect.Notice(str(S.desktop_sos_no_device_to_call)))
             else -> sendEffect(
                 SosEffect.PlaceCall(
                     userId = sender.userId,
@@ -294,13 +296,13 @@ class SosViewModel(
         }
         when (confirm) {
             SosConfirm.SendAlert -> {
-                sendEffect(SosEffect.Notice("SOS sent to your receivers."))
+                sendEffect(SosEffect.Notice(str(S.desktop_sos_sent_notice)))
                 refresh()
             }
-            is SosConfirm.DeleteAlert -> sendEffect(SosEffect.Notice("Alert deleted."))
-            SosConfirm.DeleteAllAlerts -> sendEffect(SosEffect.Notice("All SOS alerts cleared."))
+            is SosConfirm.DeleteAlert -> sendEffect(SosEffect.Notice(str(S.desktop_sos_alert_deleted)))
+            SosConfirm.DeleteAllAlerts -> sendEffect(SosEffect.Notice(str(S.desktop_sos_all_alerts_cleared)))
             is SosConfirm.DeleteContact -> {
-                sendEffect(SosEffect.Notice("Receiver removed."))
+                sendEffect(SosEffect.Notice(str(S.desktop_sos_receiver_removed)))
                 loadContacts()
             }
         }
@@ -353,7 +355,7 @@ class SosViewModel(
             } else {
                 repository.createInternal(userId)
             }
-            afterContactWrite(result, saved = "Receiver added.")
+            afterContactWrite(result, saved = str(S.desktop_sos_receiver_added))
         }
     }
 
@@ -378,7 +380,7 @@ class SosViewModel(
             } else {
                 repository.createExternal(form.draft)
             }
-            afterContactWrite(result, saved = "Receiver saved.")
+            afterContactWrite(result, saved = str(S.desktop_sos_receiver_saved))
         }
     }
 

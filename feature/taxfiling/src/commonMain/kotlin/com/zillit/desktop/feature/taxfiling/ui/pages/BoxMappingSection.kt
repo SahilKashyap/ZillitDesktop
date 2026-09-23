@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.BoxMapping
 import com.zillit.desktop.feature.taxfiling.domain.TaxFormat
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
@@ -105,13 +107,12 @@ private fun MappingHeader(returnState: ReturnState, onEvent: (TaxFilingEvent) ->
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             ZillitText(
-                text = "Box mapping",
+                text = str(S.desktop_tax_box_mapping),
                 style = mtdText(16.5.sp, FontWeight.Bold, tracking = (-0.02).em),
                 color = palette.ink,
             )
             ZillitText(
-                text = "Map general-ledger codes, layers and tags to each VAT box. " +
-                    "Reused every period for this company.",
+                text = str(S.desktop_tax_box_mapping_subtitle),
                 style = mtdText(13.5.sp),
                 color = palette.ink3,
                 modifier = Modifier.widthIn(max = 520.dp),
@@ -119,14 +120,14 @@ private fun MappingHeader(returnState: ReturnState, onEvent: (TaxFilingEvent) ->
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MtdButton(
-                text = if (returnState.anyCollapsed) "Expand all" else "Collapse all",
+                text = if (returnState.anyCollapsed) str(S.ah_expand_all) else str(S.ah_collapse_all),
                 onClick = { onEvent(TaxFilingEvent.ToggleAllBoxes) },
                 variant = MtdButtonVariant.Ghost,
                 size = MtdButtonSize.Small,
                 icon = if (returnState.anyCollapsed) ZillitIcons.Expand else ZillitIcons.Collapse,
             )
             MtdButton(
-                text = if (returnState.savingMapping) "Saving…" else "Save mapping",
+                text = if (returnState.savingMapping) str(S.ah_saving) else str(S.desktop_tax_save_mapping),
                 onClick = { onEvent(TaxFilingEvent.SaveMapping) },
                 variant = MtdButtonVariant.Secondary,
                 size = MtdButtonSize.Small,
@@ -187,7 +188,11 @@ private fun BoxRowHeader(box: VatBox, mapping: BoxMapping, open: Boolean, value:
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 role = Role.Button,
-                onClickLabel = if (open) "Close box ${box.number}" else "Open box ${box.number}",
+                onClickLabel = if (open) {
+                    str(S.desktop_tax_close_box, box.number)
+                } else {
+                    str(S.desktop_tax_open_box, box.number)
+                },
                 onClick = onToggle,
             )
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -216,9 +221,9 @@ private fun BoxRowHeader(box: VatBox, mapping: BoxMapping, open: Boolean, value:
                 textAlign = TextAlign.End,
             )
             if (mapping.markZero) {
-                MtdPill(text = "Zero", tone = PillTone.Zero)
+                MtdPill(text = str(S.desktop_tax_zero), tone = PillTone.Zero)
             } else {
-                MtdPill(text = "Computed", tone = PillTone.Computed)
+                MtdPill(text = str(S.desktop_tax_computed), tone = PillTone.Computed)
             }
         }
         ZillitIcon(
@@ -242,13 +247,13 @@ private fun MappingSummary(mapping: BoxMapping) {
     val palette = mtdPalette()
     when {
         mapping.markZero -> ZillitText(
-            text = "Forced to £0 — ledger ignored",
+            text = str(S.desktop_tax_forced_zero),
             style = mtdText(12.5.sp, FontWeight.SemiBold),
             color = palette.amber,
             maxLines = 1,
         )
         mapping.codes.isEmpty() -> ZillitText(
-            text = "Not mapped — no ledger codes",
+            text = str(S.desktop_tax_not_mapped),
             style = mtdText(12.5.sp),
             color = palette.muted,
             maxLines = 1,
@@ -267,8 +272,12 @@ internal fun summaryLine(mapping: BoxMapping): String {
     val parts = mutableListOf<String>()
     val extra = mapping.codes.size - SUMMARY_CODES
     parts += mapping.codes.take(SUMMARY_CODES).joinToString(", ") + if (extra > 0) " +$extra" else ""
-    mapping.layers.size.takeIf { it > 0 }?.let { parts += "$it layer${if (it == 1) "" else "s"}" }
-    mapping.tags.size.takeIf { it > 0 }?.let { parts += "$it tag${if (it == 1) "" else "s"}" }
+    mapping.layers.size.takeIf { it > 0 }?.let {
+        parts += if (it == 1) str(S.desktop_tax_layer_one, it) else str(S.desktop_tax_layer_many, it)
+    }
+    mapping.tags.size.takeIf { it > 0 }?.let {
+        parts += if (it == 1) str(S.desktop_tax_tag_one, it) else str(S.desktop_tax_tag_many, it)
+    }
     return parts.joinToString("  ·  ")
 }
 
@@ -312,7 +321,7 @@ private fun AutoRow(box: VatBox, shown: VatReturn?) {
                 style = mtdText(if (net) 17.sp else 14.5.sp, FontWeight.Bold, mono = true, tracking = (-0.02).em),
                 color = if (net) palette.accentText else palette.ink,
             )
-            MtdPill(text = "Auto", tone = PillTone.Auto)
+            MtdPill(text = str(S.desktop_auto), tone = PillTone.Auto)
         }
         Spacer(Modifier.width(15.dp))
     }
@@ -347,7 +356,7 @@ internal fun DirectionLine(box: VatBox) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ZillitText(text = "DIRECTION", style = mtdEyebrow(), color = palette.muted)
+        ZillitText(text = str(S.desktop_tax_direction_caps), style = mtdEyebrow(), color = palette.muted)
         FormulaChip(text = box.direction)
     }
 }

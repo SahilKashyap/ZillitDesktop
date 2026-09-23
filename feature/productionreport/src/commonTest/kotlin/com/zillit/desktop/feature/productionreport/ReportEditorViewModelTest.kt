@@ -1,13 +1,26 @@
 package com.zillit.desktop.feature.productionreport
 
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
+import com.zillit.desktop.feature.productionreport.domain.BadgeLeaf
+import com.zillit.desktop.feature.productionreport.domain.BadgeSurface
+import com.zillit.desktop.feature.productionreport.domain.CallSheetForDay
+import com.zillit.desktop.feature.productionreport.domain.CellRow
+import com.zillit.desktop.feature.productionreport.domain.CellValue
+import com.zillit.desktop.feature.productionreport.domain.ColumnSpec
 import com.zillit.desktop.feature.productionreport.domain.EditorSelection
 import com.zillit.desktop.feature.productionreport.domain.InsertKind
 import com.zillit.desktop.feature.productionreport.domain.ManageTab
 import com.zillit.desktop.feature.productionreport.domain.MetadataUpdate
+import com.zillit.desktop.feature.productionreport.domain.PageCell
+import com.zillit.desktop.feature.productionreport.domain.PageRow
+import com.zillit.desktop.feature.productionreport.domain.ReportBadges
 import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
+import com.zillit.desktop.feature.productionreport.domain.ReportTime
+import com.zillit.desktop.feature.productionreport.domain.SharedHeader
 import com.zillit.desktop.feature.productionreport.domain.SheetMetadata
+import com.zillit.desktop.feature.productionreport.domain.SheetPayload
 import com.zillit.desktop.feature.productionreport.ui.ConfirmAction
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
 import com.zillit.desktop.feature.productionreport.ui.DocumentEvent
@@ -178,9 +191,16 @@ class ReportEditorViewModelTest {
         repository.thread += ReportComment("c1", authorId = "me", authorName = "Author", text = "First")
         val vm = harness.start(this)
 
+        harness.badges.live.emit(listOf(BadgeLeaf(ReportBadges.UNIT_DRAFTS, level2 = "comment", level3 = "r1")))
+        settle()
         vm.onEvent(ListEvent.OpenComments(report, readOnly = false))
         settle()
-        assertEquals(listOf("r1"), harness.badges.threadsRead, "opening a thread reads its badge")
+        assertEquals(
+            listOf(BadgeRead(BadgeSurface.Drafts, BadgeKind.Comment, "r1")),
+            harness.badges.reads,
+            "opening a thread reads its comment badge on this list",
+        )
+        assertFalse(vm.thread().readOnly, "the creator may post")
         assertEquals(listOf("First"), vm.thread().comments.map { it.text })
 
         vm.onEvent(DialogEvent.EditCommentDraft("  Second  "))
@@ -213,5 +233,215 @@ class ReportEditorViewModelTest {
         vm.onEvent(DialogEvent.SendComment)
         settle()
         assertEquals(1, repository.commentAdds.size)
+    }
+
+    @Test
+    fun `everyone reads a thread, only the creator or a comment recipient writes in it`() = runTest(dispatcher) {
+        val theirs = Samples.row("r1", "Day 1", ReportStatus.PendingApproval, createdById = "u2")
+        val vm = harness.start(this, Samples.viewer)
+
+        vm.onEvent(ListEvent.OpenComments(theirs, readOnly = false))
+        settle()
+        assertTrue(vm.thread().readOnly, "an approver reads the thread; the screen's answer is not trusted")
+        assertEquals("Only the report's creator and its comment recipients can post here.", vm.thread().closedNote)
+        vm.onEvent(DialogEvent.EditCommentDraft("Not mine"))
+        vm.onEvent(DialogEvent.SendComment)
+        settle()
+        assertTrue(repository.commentAdds.isEmpty())
+
+        vm.onEvent(DialogEvent.Dismiss)
+        repository.metadata = SheetMetadata(internalReceiverIds = listOf("me"))
+        vm.start()
+        settle()
+        vm.onEvent(ListEvent.OpenComments(theirs, readOnly = false))
+        settle()
+        assertFalse(vm.thread().readOnly, "a comment recipient may post on every report")
+    }
+
+    @Test
+    fun `an emptied approver list reaches the metadata write, a fresh template's empty list does not`() =
+        runTest(dispatcher) {
+            val report = Samples.row("r1", "Day 1")
+            repository.details["r1"] = ReportDetail(
+                report,
+                Samples.document().copy(shared = SharedHeader(approverIds = listOf("u2"))),
+            )
+            val vm = harness.start(this)
+
+            vm.onEvent(ListEvent.Edit(report))
+            settle()
+            assertEquals(listOf("u2"), vm.editor().initialApproverIds)
+            vm.onEvent(DocumentEvent.ToggleApprover("u2"))
+            vm.onEvent(EditorEvent.Save)
+            settle()
+            assertEquals(
+                MetadataUpdate(finalApproverIds = emptyList()),
+                repository.metadataWrites.single(),
+                "ZL-21468: the removal is written, not omitted",
+            )
+
+            repository.metadataWrites.clear()
+            vm.onEvent(DialogEvent.CreateTemplate)
+            settle()
+            assertTrue(vm.editor().document.shared.approverIds.isEmpty())
+            vm.onEvent(EditorEvent.SaveAs)
+            vm.onEvent(DialogEvent.EditDraftName("Day 2"))
+            vm.onEvent(DialogEvent.ConfirmDraftName)
+            settle()
+            assertTrue(
+                repository.metadataWrites.none { it.finalApproverIds != null },
+                "a fresh document's [] must not clear the project default",
+            )
+        }
+
+    @Test
+    fun `Save as Template is create-only, and editing a report is never a template session`() = runTest(dispatcher) {
+        val report = Samples.row("r1", "Day 1")
+        repository.details["r1"] = ReportDetail(report, Samples.document())
+        val vm = harness.start(this)
+
+        vm.onEvent(ListEvent.Edit(report))
+        settle()
+        assertNull(vm.editor().template, "no Update Template on an existing report")
+        vm.onEvent(EditorEvent.SaveAsTemplate)
+        settle()
+        assertEquals(0, repository.templateCreates, "the handler refuses, whatever the screen sent")
+        assertEquals("r1", vm.editor().reportId, "the editor stays open, its edits kept")
+
+        vm.onEvent(EditorEvent.Back)
+        vm.onEvent(DialogEvent.CreateTemplate)
+        settle()
+        vm.onEvent(EditorEvent.SaveAsTemplate)
+        settle()
+        assertEquals(1, repository.templateCreates)
+        assertNull(vm.currentState.editor)
+    }
+
+    private fun withCrewCall(value: String) = SheetPayload(
+        rows = listOf(
+            PageRow(
+                0,
+                cells = listOf(
+                    PageCell(
+                        order = 0,
+                        title = "Call Times",
+                        columns = listOf(ColumnSpec(label = "Field"), ColumnSpec(label = "Value")),
+                        rows = listOf(
+                            CellRow(0, listOf(CellValue("Crew Call"), CellValue(value))),
+                            CellRow(1, listOf(CellValue("Unit Wrap"), CellValue(""))),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    private fun ReportViewModel.crewCall(): String =
+        editor().document.rows.flatMap { it.cells }.flatMap { it.rows }
+            .first { it.values.firstOrNull()?.value == "Crew Call" }.values[1].value
+
+    @Test
+    fun `a new report takes the day's published call sheet's crew call, or says none was published`() =
+        runTest(dispatcher) {
+            repository.stock = listOf(
+                com.zillit.desktop.feature.productionreport.domain.StockTemplate("daily", "Daily", withCrewCall("")),
+            )
+            harness.callSheetForDay = CallSheetForDay.Found(
+                SheetPayload(
+                    rows = listOf(
+                        PageRow(
+                            0,
+                            cells = listOf(
+                                PageCell(
+                                    order = 0,
+                                    title = "Times",
+                                    columns = listOf(ColumnSpec(label = "Field"), ColumnSpec(label = "Value")),
+                                    rows = listOf(CellRow(0, listOf(CellValue("Unit Call"), CellValue("7:30")))),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val vm = harness.start(this)
+            vm.onEvent(DialogEvent.CreateTemplate)
+            settle()
+            assertEquals(
+                listOf(ReportTime.todayYmd(Samples.NOW)),
+                harness.callSheetDays,
+                "the report's shoot date, not the newest published sheet",
+            )
+            assertEquals("07:30", vm.crewCall())
+            assertFalse(vm.editor().dirty, "the merged document is the clean baseline")
+            assertNull(vm.currentState.dialog)
+
+            vm.onEvent(EditorEvent.Back)
+            harness.callSheetForDay = CallSheetForDay.None
+            vm.onEvent(DialogEvent.CreateTemplate)
+            settle()
+            assertEquals("", vm.crewCall())
+            val prompt = assertIs<ReportDialog.Confirm>(vm.currentState.dialog)
+            assertEquals(ConfirmAction.NoPublishedCallSheet, prompt.action)
+            assertEquals("No Published Call Sheet", prompt.title)
+
+            vm.onEvent(DialogEvent.Confirm)
+            vm.onEvent(EditorEvent.Back)
+            harness.callSheetForDay = CallSheetForDay.Unavailable
+            vm.onEvent(DialogEvent.CreateTemplate)
+            settle()
+            assertNull(vm.currentState.dialog, "a failed request says nothing about what is published")
+        }
+
+    @Test
+    fun `the header's sends follow the shared rule, check call times, then save and send`() = runTest(dispatcher) {
+        val report = Samples.row("r1", "Day 1")
+        repository.details["r1"] = ReportDetail(
+            report,
+            withCrewCall("").copy(shared = SharedHeader(approverIds = listOf("u2"))),
+        )
+        val vm = harness.start(this)
+        vm.onEvent(ListEvent.Edit(report))
+        settle()
+        assertTrue(vm.editor().sendActions.sendForSignature)
+        assertTrue(vm.editor().sendActions.sendForComments, "a draft may go for comments")
+
+        vm.onEvent(EditorEvent.SendForSignature)
+        settle()
+        assertEquals(ConfirmAction.MissingCallTimes, assertIs<ReportDialog.Confirm>(vm.currentState.dialog).action)
+        assertTrue(repository.revisions.isEmpty(), "checked before the save")
+        vm.onEvent(DialogEvent.Confirm)
+
+        vm.onEvent(EditorEvent.SendForComments)
+        assertTrue(assertIs<ReportDialog.SendPicker>(vm.currentState.dialog).fromEditor)
+        vm.onEvent(DialogEvent.Dismiss)
+
+        val filled = withCrewCall("06:30").let { doc ->
+            doc.copy(
+                shared = SharedHeader(approverIds = listOf("u2")),
+                rows = doc.rows.map { row ->
+                    row.copy(
+                        cells = row.cells.map { cell ->
+                            cell.copy(
+                                rows = cell.rows.map { line ->
+                                    line.copy(
+                                        values = line.values.map { v -> v.copy(value = v.value.ifBlank { "19:00" }) },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                },
+            )
+        }
+        repository.details["r1"] = ReportDetail(report, filled)
+        vm.onEvent(EditorEvent.Back)
+        vm.onEvent(ListEvent.Edit(report))
+        settle()
+        vm.onEvent(EditorEvent.SendForSignature)
+        settle()
+        assertEquals(listOf("r1"), repository.revisions, "the send saves first")
+        assertEquals("r1", repository.signatureSends.single().first)
+        assertNull(vm.currentState.editor)
+        assertEquals(ManageTab.Approvals, vm.currentState.tab)
     }
 }

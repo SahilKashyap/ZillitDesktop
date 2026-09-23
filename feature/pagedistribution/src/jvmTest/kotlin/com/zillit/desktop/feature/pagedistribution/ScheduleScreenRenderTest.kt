@@ -109,7 +109,7 @@ class ScheduleScreenRenderTest {
                 onNodeWithText("Aisha Khan (1st AD)").assertExists()
                 onNodeWithText("Replace PDF").assertExists()
                 onNodeWithText("More").performClick()
-                listOf("View", "Publish to Doc Distribution", "Replace", "Download", "Download count", "View count")
+                listOf("View", "Publish to Doc Distribution", "Replace", "Download", "Download Count", "View Count")
                     .forEach { onNodeWithText(it).assertExists() }
                 onAllNodesWithText("Delete").assertCountEquals(0)
             }
@@ -161,7 +161,7 @@ class ScheduleScreenRenderTest {
             onNodeWithText("Ben Ortiz (2nd AD)").assertExists()
             onNodeWithText("Uploaded on: ${DistributionDates.dateTime(page.createdMs)}").assertExists()
             onNodeWithText("More").performClick()
-            listOf("View", "Publish to Doc Distribution", "Delete", "Download", "Download count", "View count")
+            listOf("View", "Publish to Doc Distribution", "Delete", "Download", "Download Count", "View Count")
                 .forEach { onNodeWithText(it).assertExists() }
             onAllNodesWithText("Replace").assertCountEquals(0)
             onNodeWithText("Delete").performClick()
@@ -219,10 +219,10 @@ class ScheduleScreenRenderTest {
             }
             onNodeWithText("Upload pages").assertExists()
             onNodeWithText("Page colour (optional)").assertExists()
-            onNodeWithText("Pink").assertExists()
+            onNodeWithText("PINK").assertExists()
             onNodeWithText("Upload").performClick()
             onNodeWithText("Please select an option").assertIsDisplayed()
-            onNodeWithText("OK").performClick()
+            onNodeWithText("Ok").performClick()
             onNodeWithText("Please select an option before uploading.").assertExists()
             assertTrue(events.none { it is DistributionEvent.SubmitUpload })
             onNodeWithText("One Line Schedule Pages").performClick()
@@ -249,7 +249,7 @@ class ScheduleScreenRenderTest {
                 }
             }
             onNodeWithText("Upload").performClick()
-            onNodeWithText("Scene number is required").assertExists()
+            onNodeWithText("Scene number is required.").assertExists()
             onAllNodesWithText("Please select an option").assertCountEquals(0)
             assertTrue(events.isEmpty())
         }
@@ -278,7 +278,7 @@ class ScheduleScreenRenderTest {
             }
             onNodeWithText("Replace page").assertExists()
             onNodeWithText("Replace").performClick()
-            onNodeWithText("Page colour is Blue. Do you want to continue with Blue?").assertIsDisplayed()
+            onNodeWithText("Page colour is BLUE. Do you want to continue with BLUE?").assertIsDisplayed()
             onNodeWithText("Yes").performClick()
             assertEquals(listOf<DistributionEvent>(DistributionEvent.SubmitUpload), events)
         }
@@ -306,7 +306,7 @@ class ScheduleScreenRenderTest {
             }
             onNodeWithText("Replace full schedule").assertExists()
             onNodeWithText("Schedule date (optional)").assertExists()
-            onNodeWithText("Episode number").assertExists()
+            onNodeWithText("Episode Number").assertExists()
             onAllNodesWithText("Page colour (optional)").assertCountEquals(0)
             onNodeWithText("Replace").performClick()
             assertEquals(listOf<DistributionEvent>(DistributionEvent.SubmitUpload), events)
@@ -334,7 +334,7 @@ class ScheduleScreenRenderTest {
             onNodeWithText("More").performClick()
             onNodeWithText("View").assertExists()
             onNodeWithText("Download").assertExists()
-            listOf("Replace", "Publish to Doc Distribution", "Download count", "View count").forEach {
+            listOf("Replace", "Publish to Doc Distribution", "Download Count", "View Count").forEach {
                 onAllNodesWithText(it).assertCountEquals(0)
             }
             val notice = onAllNodesWithText("Records of deleted messages", substring = true)
@@ -354,7 +354,7 @@ class ScheduleScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("No data found").assertExists()
+            onNodeWithText("No Data found").assertExists()
             assertTrue(onAllNodesWithText("Upload PDF").fetchSemanticsNodes().size >= 2)
             onAllNodesWithText("Search by scene number").assertCountEquals(0)
         }

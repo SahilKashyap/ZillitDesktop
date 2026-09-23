@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.forms.FormModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.BuilderOrigin
@@ -110,9 +112,9 @@ private fun ModuleRail(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            ZillitText(text = "Modules", style = ZillitTheme.typography.titleMedium)
+            ZillitText(text = str(S.desktop_modules), style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "Form configuration",
+                text = str(S.desktop_form_configuration),
                 style = ZillitTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                 color = colors.textMuted,
             )
@@ -120,7 +122,7 @@ private fun ModuleRail(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
         ZillitSearchField(
             value = config.moduleSearch,
             onValueChange = { onEvent(AccountHubEvent.SearchFormModules(it)) },
-            placeholder = "Search modules…",
+            placeholder = str(S.desktop_search_modules),
             modifier = Modifier.fillMaxWidth(),
         )
         if (shown.isNotEmpty()) {
@@ -184,21 +186,21 @@ private fun PreviewView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
         FormHero(config.module)
         if (!state.viewer.canEdit) {
             ZillitNotice(
-                text = "Form configuration is read-only for you.",
+                text = str(S.desktop_hub_form_configuration_is_read_only_for_you),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Info,
             )
         }
         if (config.dirty) UnsavedBanner(config, canEdit = state.viewer.canEdit, onEvent = onEvent)
         when {
-            config.loading && config.template.sections.isEmpty() -> FormLoadingLine("Loading template...")
+            config.loading && config.template.sections.isEmpty() -> FormLoadingLine(str(S.dm_nda_loading_template))
             config.loadFailed && config.template.sections.isEmpty() -> ZillitNotice(
                 text = "Couldn't load the ${config.module.label} form.",
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
                 action = {
                     ZillitButton(
-                        text = "Retry",
+                        text = str(S.retry),
                         onClick = { onEvent(AccountHubEvent.ReloadFormTemplate) },
                         size = ButtonSize.Small,
                     )
@@ -284,7 +286,7 @@ private fun HeroTitle(module: FormModule, modifier: Modifier = Modifier) {
             )
             Column {
                 MonoLabel(MODULE_GROUP, color = colors.accentText)
-                ZillitText(text = "Forms Configuration", style = ZillitTheme.typography.displayLarge)
+                ZillitText(text = str(S.desktop_forms_configuration), style = ZillitTheme.typography.displayLarge)
             }
         }
         ZillitText(
@@ -324,21 +326,21 @@ private fun UnsavedBanner(config: FormConfigState, canEdit: Boolean, onEvent: (A
         ZillitIcon(icon = ZillitIcons.Warning, tint = colors.warning, size = 16.dp)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = "Unsaved changes",
+                text = str(S.cs_exit_title),
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             )
-            FieldHint("The preview shows your edits. Nobody else sees them until the form is saved.")
+            FieldHint(str(S.desktop_hub_the_preview_shows_your_edits_nobody_else_sees_them_until))
         }
         if (canEdit) {
             ZillitButton(
-                text = "Discard",
+                text = str(S.ah_discard),
                 onClick = { onEvent(AccountHubEvent.AskDiscardFormChanges) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 enabled = !config.busy,
             )
             ZillitButton(
-                text = if (config.saving) "Saving…" else "Save changes",
+                text = if (config.saving) str(S.ah_saving) else str(S.dm_setup_save),
                 onClick = { onEvent(AccountHubEvent.SaveFormTemplate) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Save,
@@ -380,10 +382,14 @@ private fun DefaultFormConfigCard(state: AccountHubUiState, onEvent: (AccountHub
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitText(text = "Default Form Configuration", style = ZillitTheme.typography.titleSmall)
-                ZillitText(text = "all submitters", style = APPROVAL_MONO, color = colors.textMuted)
+                ZillitText(text = str(S.desktop_default_form_configuration), style = ZillitTheme.typography.titleSmall)
+                ZillitText(text = str(S.desktop_all_submitters), style = APPROVAL_MONO, color = colors.textMuted)
                 Pill(
-                    if (config.customCount == 0) "Default" else "${config.customCount} Custom",
+                    if (config.customCount == 0) {
+                        str(S.desktop_email_format_default)
+                    } else {
+                        "${config.customCount} Custom"
+                    },
                     tone = StatusTone.Done,
                     dot = true,
                 )
@@ -392,7 +398,7 @@ private fun DefaultFormConfigCard(state: AccountHubUiState, onEvent: (AccountHub
                 text = buildAnnotatedString {
                     append("Baseline fields shown for every ${config.module.label} submission. Add custom fields per ")
                     append("section in ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Edit") }
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(str(S.edit)) }
                     append(" mode.")
                 },
                 style = ZillitTheme.typography.bodySmall,
@@ -405,7 +411,7 @@ private fun DefaultFormConfigCard(state: AccountHubUiState, onEvent: (AccountHub
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitButton(
-                    text = if (config.resetting) "Resetting…" else "Reset to Defaults",
+                    text = if (config.resetting) str(S.desktop_resetting) else str(S.desktop_reset_to_defaults),
                     onClick = { onEvent(AccountHubEvent.AskResetFormTemplate) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -414,7 +420,7 @@ private fun DefaultFormConfigCard(state: AccountHubUiState, onEvent: (AccountHub
                 )
                 if (state.viewer.canActAsAccountant) {
                     ZillitButton(
-                        text = "Set Approver Level",
+                        text = str(S.desktop_set_approver_level),
                         onClick = { onEvent(AccountHubEvent.OpenApproverScope(true)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -422,7 +428,7 @@ private fun DefaultFormConfigCard(state: AccountHubUiState, onEvent: (AccountHub
                     )
                 }
                 ZillitButton(
-                    text = "Edit",
+                    text = str(S.edit),
                     onClick = { onEvent(AccountHubEvent.EditForm(true)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Edit,
@@ -442,7 +448,7 @@ private fun SectionsDivider(sections: Int, fields: Int) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        MonoLabel("Sections")
+        MonoLabel(str(S.desktop_sections))
         Box(Modifier.weight(1f).height(1.dp).background(colors.border))
         ZillitText(
             text = buildAnnotatedString {

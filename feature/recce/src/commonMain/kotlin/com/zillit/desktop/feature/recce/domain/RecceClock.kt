@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.recce.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -52,12 +54,36 @@ object RecceClock {
         return "${t.hour.pad()}:${t.minute.pad()}"
     }
 
+    private val MONTHS = listOf(
+        S.desktop_month_full_january,
+        S.desktop_month_full_february,
+        S.desktop_month_full_march,
+        S.desktop_month_full_april,
+        S.desktop_month_short_may,
+        S.desktop_month_full_june,
+        S.desktop_month_full_july,
+        S.desktop_month_full_august,
+        S.desktop_month_full_september,
+        S.desktop_month_full_october,
+        S.desktop_month_full_november,
+        S.desktop_month_full_december,
+    )
+    private val WEEKDAYS = listOf(
+        S.day_monday,
+        S.day_tuesday,
+        S.day_wednesday,
+        S.day_thursday,
+        S.day_friday,
+        S.day_saturday,
+        S.day_sunday,
+    )
+
     /** "Fri, 6 Mar 2026" — the list's date column. */
     fun dateLabel(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (epochMs <= 0) return ""
         val d = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date
-        val dow = d.dayOfWeek.name.title().take(ABBREV)
-        val mon = d.month.name.title().take(ABBREV)
+        val dow = str(WEEKDAYS[d.dayOfWeek.ordinal]).take(ABBREV)
+        val mon = str(MONTHS[d.month.ordinal]).take(ABBREV)
         return "$dow, ${d.dayOfMonth} $mon ${d.year}"
     }
 
@@ -65,20 +91,23 @@ object RecceClock {
     fun shortDate(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (epochMs <= 0) return ""
         val d = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date
-        return "${d.dayOfMonth} ${d.month.name.title().take(ABBREV)}"
+        return "${d.dayOfMonth} ${str(MONTHS[d.month.ordinal]).take(ABBREV)}"
     }
 
     /** "Thursday" — under the list's date, the web's `fmtWeekday`. */
     fun weekday(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (epochMs <= 0) return ""
-        return Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date.dayOfWeek.name.title()
+        val day = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date.dayOfWeek
+        return str(WEEKDAYS[day.ordinal])
     }
 
     /** "Friday, 6th March 2026" — the detail header, the web's ordinal form. */
     fun longDateLabel(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (epochMs <= 0) return ""
         val d = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date
-        return "${d.dayOfWeek.name.title()}, ${ordinal(d.dayOfMonth)} ${d.month.name.title()} ${d.year}"
+        val dow = str(WEEKDAYS[d.dayOfWeek.ordinal])
+        val mon = str(MONTHS[d.month.ordinal])
+        return "$dow, ${ordinal(d.dayOfMonth)} $mon ${d.year}"
     }
 
     private fun parseDate(ymd: String): LocalDate? {
@@ -100,7 +129,6 @@ object RecceClock {
     }
 
     private fun Int.pad() = toString().padStart(2, '0')
-    private fun String.title() = lowercase().replaceFirstChar { it.uppercase() }
 
     private const val EPOCH_YEAR = 1970
     private const val YEAR = 1

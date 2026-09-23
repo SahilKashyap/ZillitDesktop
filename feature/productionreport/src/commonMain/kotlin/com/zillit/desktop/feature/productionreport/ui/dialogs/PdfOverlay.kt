@@ -46,6 +46,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.SheetPdfPage
 import com.zillit.desktop.feature.productionreport.ui.ListEvent
 import com.zillit.desktop.feature.productionreport.ui.PdfOverlay
@@ -91,9 +93,9 @@ private fun GeneratingCard() {
     ) {
         CircularProgressIndicator(color = colors.accent, strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
         Column {
-            Text("Generating PDF", style = reportText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
+            Text(str(S.av_pdf_generating), style = reportText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
             Text(
-                "Fetching the latest published version — this can take a few seconds…",
+                str(S.desktop_pr_rendering_pdf_hint),
                 style = reportText(12.sp),
                 color = colors.textTertiary,
                 modifier = Modifier.padding(top = 2.dp),
@@ -124,7 +126,11 @@ private fun ViewerCard(pdf: PdfOverlay, onEvent: (ReportEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Column(Modifier.weight(1f)) {
-                Text("PDF View", style = reportText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
+                Text(
+                    str(S.desktop_pdf_view),
+                    style = reportText(14.sp, FontWeight.SemiBold),
+                    color = colors.textPrimary,
+                )
                 Text(
                     pdf.title,
                     style = reportText(11.sp),
@@ -142,7 +148,7 @@ private fun ViewerCard(pdf: PdfOverlay, onEvent: (ReportEvent) -> Unit) {
             }
             ZoomControl(zoom, onZoom = { zoom = it })
             ReportButton(
-                "Download",
+                str(S.download),
                 { onEvent(ListEvent.DownloadPdf) },
                 kind = ButtonKind.Outline,
                 icon = ZillitIcons.Download,
@@ -161,7 +167,7 @@ private fun ViewerCard(pdf: PdfOverlay, onEvent: (ReportEvent) -> Unit) {
             val pageWidth = if (zoom == FIT) fitWidth else fitWidth * (zoom / 100f)
             if (pdf.pages.isEmpty()) {
                 Text(
-                    "This PDF has no pages.",
+                    str(S.desktop_this_pdf_has_no_pages),
                     style = reportText(13.sp),
                     color = colors.textMuted,
                     modifier = Modifier.align(Alignment.Center),
@@ -201,12 +207,12 @@ private fun ZoomControl(zoom: Int, onZoom: (Int) -> Unit) {
     ) {
         ReportIconButton(
             ReportIcons.Minus,
-            "Zoom out",
+            str(S.docusign_zoom_out),
             { onZoom(ZOOM_STEPS[(index - 1).coerceAtLeast(0)]) },
             enabled = index > 0,
         )
         Text(
-            if (zoom == FIT) "Fit" else "$zoom%",
+            if (zoom == FIT) str(S.desktop_fit) else "$zoom%",
             style = reportText(12.sp, FontWeight.Medium),
             color = colors.textSecondary,
             modifier = Modifier.width(40.dp).padding(horizontal = 2.dp),
@@ -214,7 +220,7 @@ private fun ZoomControl(zoom: Int, onZoom: (Int) -> Unit) {
         )
         ReportIconButton(
             ZillitIcons.Add,
-            "Zoom in",
+            str(S.docusign_zoom_in),
             { onZoom(ZOOM_STEPS[(index + 1).coerceAtMost(ZOOM_STEPS.lastIndex)]) },
             enabled = index < ZOOM_STEPS.lastIndex,
         )

@@ -37,6 +37,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.rememberAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.BankRecPerson
 import com.zillit.desktop.feature.bankrec.domain.ExceptionStatus
@@ -92,7 +94,7 @@ internal fun PortalPreviewCard(
         when {
             loading -> PreviewSkeleton()
             preview == null -> ZillitText(
-                "No period data available. Import a statement to see the preview.",
+                str(S.desktop_br_no_period_data),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -182,10 +184,10 @@ private fun HeaderBand(projectName: String, periodLabel: String, signedOff: Bool
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ZillitText("ZILLIT", style = titleStyle(14.sp).copy(letterSpacing = 0.08.em), color = ink)
+                ZillitText(str(S.app_name), style = titleStyle(14.sp).copy(letterSpacing = 0.08.em), color = ink)
                 ZillitText("|", style = ZillitTheme.typography.labelSmall, color = ink.copy(alpha = 0.35f))
                 ZillitText(
-                    "Bank Reconciliation Summary",
+                    str(S.desktop_br_reconciliation_summary),
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     color = ink.copy(alpha = 0.9f),
                 )
@@ -197,11 +199,21 @@ private fun HeaderBand(projectName: String, periodLabel: String, signedOff: Bool
                 maxLines = 1,
             )
         }
-        BandChip("READ-ONLY", ink.copy(alpha = 0.75f), ink.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+        BandChip(
+            str(S.desktop_read_only).uppercase(),
+            ink.copy(alpha = 0.75f),
+            ink.copy(alpha = 0.1f),
+            RoundedCornerShape(4.dp),
+        )
         if (signedOff) {
-            BandChip("SIGNED OFF ✓", ink, ink.copy(alpha = 0.2f), CircleShape)
+            BandChip(str(S.desktop_br_signed_off_tick), ink, ink.copy(alpha = 0.2f), CircleShape)
         } else {
-            BandChip("AWAITING SIGN-OFF", colors.warning, colors.warning.copy(alpha = 0.18f), CircleShape)
+            BandChip(
+                str(S.desktop_br_awaiting_sign_off),
+                colors.warning,
+                colors.warning.copy(alpha = 0.18f),
+                CircleShape,
+            )
         }
     }
 }
@@ -232,22 +244,27 @@ private fun DetailsGrid(preview: PortalPreview, state: BankRecUiState, projectNa
     val range = if (period.openingDateMillis != null && period.closingDateMillis != null) {
         "${BankRecFormat.day(period.openingDateMillis)} – ${BankRecFormat.day(period.closingDateMillis)}"
     } else {
-        "${period.totalTxns} transactions"
+        str(S.desktop_card_transactions_count, period.totalTxns)
     }
     val accountName = preview.bankAccountName.ifBlank { state.account(period.bankAccountId)?.displayName.orEmpty() }
     CellRow(
         listOf(
-            Triple("Production", projectName.ifBlank { BankRecFormat.DASH }, state.lookups.company.companyName),
             Triple(
-                "Bank Account",
+                str(S.production),
+                projectName.ifBlank { BankRecFormat.DASH },
+                state.lookups.company.companyName,
+            ),
+            Triple(
+                str(S.dm_pay_card_bank),
                 accountName.ifBlank { BankRecFormat.DASH },
                 preview.bankAccountHolder.ifBlank { preview.bankAccountCurrency }.ifBlank { BankRecFormat.DASH },
             ),
-            Triple("Period", BankRecFormat.fullPeriodLabel(period), range),
+            Triple(str(S.cr_meta_period), BankRecFormat.fullPeriodLabel(period), range),
             Triple(
-                "Prepared by",
+                str(S.desktop_br_prepared_by),
                 preparer?.name?.ifBlank { null } ?: BankRecFormat.DASH,
-                designationLabel(preparer?.designation.orEmpty()).ifBlank { "Production Accountant" },
+                designationLabel(preparer?.designation.orEmpty())
+                    .ifBlank { str(S.desktop_br_production_accountant) },
             ),
         ),
     )
@@ -313,25 +330,27 @@ private fun Balances(preview: PortalPreview, state: BankRecUiState, accountCurre
     val kpi = state.kpiFor(period)
     val difference = kpi.difference
     val differenceSub = when {
-        difference == null -> "No ${kpi.nativeCurrency ?: accountCurrency} rate in Project Currencies"
-        kpi.isReconciled -> "Fully reconciled"
-        else -> "${period.unmatchedCount} items pending resolution"
+        difference == null ->
+            str(S.desktop_br_no_rate_in_project_currencies, kpi.nativeCurrency ?: accountCurrency)
+
+        kpi.isReconciled -> str(S.desktop_br_fully_reconciled)
+        else -> str(S.desktop_br_items_pending, period.unmatchedCount)
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         BalanceCell(
-            "Opening Bank Balance",
+            str(S.desktop_br_opening_bank_balance),
             BankRecFormat.money(period.openingBank, accountCurrency),
             BankRecFormat.day(period.openingDateMillis),
         )
         VerticalRule()
         BalanceCell(
-            "Closing Bank Balance",
+            str(S.desktop_br_closing_bank_balance),
             BankRecFormat.money(period.closingBank, accountCurrency),
             BankRecFormat.day(period.closingDateMillis),
         )
         VerticalRule()
         BalanceCell(
-            "Unreconciled Difference",
+            str(S.desktop_br_unreconciled_difference),
             difference?.let { BankRecFormat.money(it, kpi.currency) } ?: BankRecFormat.DASH,
             differenceSub,
             valueColor = when {
@@ -366,7 +385,7 @@ private fun RecStatus(preview: PortalPreview) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         SectionTitle(
-            "Reconciliation Status — ${period.totalTxns} Bank Transactions",
+            str(S.desktop_br_rec_status_with_count, period.totalTxns),
             ZillitIcons.BarChart,
             colors.textSecondary,
             uppercase = true,
@@ -381,10 +400,10 @@ private fun RecStatus(preview: PortalPreview) {
             gap = 4.dp,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatusTile(period.matchedCount, "Matched", BrTone.Green)
-            StatusTile(period.suggestedCount, "Suggested match", BrTone.Amber)
-            StatusTile(period.unmatchedCount, "No Zillit entry", BrTone.Red)
-            StatusTile(period.fraudCount, "Fraud — under review", BrTone.Red)
+            StatusTile(period.matchedCount, str(S.desktop_matched), BrTone.Green)
+            StatusTile(period.suggestedCount, str(S.desktop_br_suggested_match_tile), BrTone.Amber)
+            StatusTile(period.unmatchedCount, str(S.desktop_br_no_zillit_entry), BrTone.Red)
+            StatusTile(period.fraudCount, str(S.desktop_br_fraud_under_review), BrTone.Red)
         }
     }
 }
@@ -413,13 +432,23 @@ internal fun RowScope.StatusTile(count: Int?, label: String, tone: BrTone) {
 
 // -- exceptions, fraud, FX -----------------------------------------------------------
 
+@Suppress("LongMethod") // One block, in one place; the sweep's wrapped calls added the lines.
 @Composable
 private fun ExceptionsNoted(preview: PortalPreview, state: BankRecUiState, accountCurrency: String) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SectionTitle("Exceptions Noted", BankRecIcons.Exclaim, colors.textPrimary, iconTint = colors.warning)
+        SectionTitle(
+            str(S.desktop_br_exceptions_noted),
+            BankRecIcons.Exclaim,
+            colors.textPrimary,
+            iconTint = colors.warning,
+        )
         if (preview.exceptions.isEmpty()) {
-            ZillitText("No exceptions noted", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_br_no_exceptions_noted),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
         }
         preview.exceptions.forEach { item ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -457,7 +486,7 @@ private fun ExceptionsNoted(preview: PortalPreview, state: BankRecUiState, accou
             ZillitDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ZillitText(
-                    "Subtotal",
+                    str(S.desktop_br_subtotal),
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     modifier = Modifier.weight(1f),
                 )
@@ -473,9 +502,13 @@ private fun ExceptionsNoted(preview: PortalPreview, state: BankRecUiState, accou
 private fun FraudAlerts(preview: PortalPreview) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle("Fraud Alerts", ZillitIcons.Shield, colors.danger)
+        SectionTitle(str(S.desktop_fraud_alerts), ZillitIcons.Shield, colors.danger)
         if (preview.fraudAlerts.isEmpty()) {
-            ZillitText("No fraud alerts", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_br_no_fraud_alerts),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
         }
         preview.fraudAlerts.forEach { alert ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -495,7 +528,7 @@ private fun FraudAlerts(preview: PortalPreview) {
                     }
                 }
                 ZillitText(
-                    alert.description.take(DESCRIPTION_LIMIT).ifBlank { "Under review." },
+                    alert.description.take(DESCRIPTION_LIMIT).ifBlank { str(S.desktop_br_under_review_full_stop) },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                     maxLines = 3,
@@ -510,10 +543,15 @@ private fun ForeignPayments(preview: PortalPreview, defaultCode: String) {
     val colors = ZillitTheme.colors
     val groups = preview.fxByCurrency
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle("Foreign Currency Payments", BankRecIcons.Swap, colors.textPrimary, iconTint = colors.teal)
+        SectionTitle(
+            str(S.desktop_br_foreign_currency_payments),
+            BankRecIcons.Swap,
+            colors.textPrimary,
+            iconTint = colors.teal,
+        )
         if (groups.isEmpty()) {
             ZillitText(
-                "No foreign currency payments in this period",
+                str(S.desktop_br_no_foreign_payments),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -529,26 +567,26 @@ private fun ForeignPayments(preview: PortalPreview, defaultCode: String) {
                 key = { it.currency },
                 rowPadding = 9.dp,
                 columns = listOf(
-                    BrColumn("Currency Paid", weight = 1.2f) { g ->
+                    BrColumn(str(S.desktop_br_currency_paid_column), weight = 1.2f) { g ->
                         ZillitText(
                             BankRecFormat.plainMoney(g.foreignTotal, g.currency),
                             style = mono(13.sp, FontWeight.SemiBold),
                             color = colors.teal,
                         )
                     },
-                    BrColumn("Bank Rate") { g ->
+                    BrColumn(str(S.desktop_bank_rate)) { g ->
                         ZillitText(BankRecFormat.rate(g.bankRate), style = figure, color = colors.textSecondary)
                     },
-                    BrColumn("Budget Rate") { g ->
+                    BrColumn(str(S.desktop_budget_rate)) { g ->
                         ZillitText(BankRecFormat.rate(g.budgetRate), style = figure, color = colors.textSecondary)
                     },
-                    BrColumn("$defaultCode Paid", weight = 1.2f) { g ->
+                    BrColumn(str(S.desktop_br_currency_paid, defaultCode), weight = 1.2f) { g ->
                         ZillitText(
                             BankRecFormat.money(g.paidTotal, defaultCode),
                             style = mono(13.sp, FontWeight.SemiBold),
                         )
                     },
-                    BrColumn("FX Variance", weight = 1.2f, align = BrAlign.End) { g ->
+                    BrColumn(str(S.desktop_fx_variance), weight = 1.2f, align = BrAlign.End) { g ->
                         ZillitText(
                             BankRecFormat.signedMoney(g.varianceTotal, defaultCode),
                             style = mono(13.sp, FontWeight.Bold),
@@ -565,7 +603,7 @@ private fun ForeignPayments(preview: PortalPreview, defaultCode: String) {
 private fun TransactionDetail(preview: PortalPreview, state: BankRecUiState, accountCurrency: String) {
     if (preview.transactions.isEmpty()) {
         ZillitText(
-            "No transaction data available",
+            str(S.desktop_br_no_transaction_data),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
             textAlign = TextAlign.Center,
@@ -578,13 +616,13 @@ private fun TransactionDetail(preview: PortalPreview, state: BankRecUiState, acc
         padded = false,
         left = {
             Column {
-                PanelHeading("Bank Transactions", preview.transactions.size, null)
+                PanelHeading(str(S.desktop_bank_transactions), preview.transactions.size, null)
                 BankLinesTable(preview.transactions, accountCurrency, detail = false)
             }
         },
         right = {
             Column {
-                PanelHeading("Ledger Entries", preview.ledgerEntries.size, null)
+                PanelHeading(str(S.desktop_ledger_entries), preview.ledgerEntries.size, null)
                 LedgerLinesTable(preview.ledgerEntries, state.projectCurrency, detail = false)
             }
         },
@@ -647,7 +685,10 @@ private fun SignOffNote(preview: PortalPreview) {
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ZillitText("Sign-off Note", style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+            ZillitText(
+                str(S.desktop_br_sign_off_note),
+                style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            )
             ZillitText(period.signOffNotes, style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
             ZillitText(byline, style = mono(10.5.sp, FontWeight.Medium), color = colors.textSecondary)
         }

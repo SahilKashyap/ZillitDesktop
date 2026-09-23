@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.cardexpenses.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardDetailsEdit
 import com.zillit.desktop.feature.cardexpenses.domain.CardRules
 import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
@@ -105,16 +107,19 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
             // the picker: a refusal after the form is filled in teaches people
             // to ignore the rule rather than ask for the existing card to be
             // closed.
-            val who = if (holderId == state.viewer.userId) "You already hold" else "This person already holds"
+            val status = blocking.status.label.lowercase()
             vm.fail(
-                "$who a ${blocking.status.label.lowercase()} card. " +
-                    "It has to be closed or suspended before a new one can be issued.",
+                if (holderId == state.viewer.userId) {
+                    str(S.desktop_card_you_already_hold_blocking, status)
+                } else {
+                    str(S.desktop_card_person_already_holds_blocking, status)
+                },
             )
             return
         }
 
         val person = state.people.firstOrNull { it.id == holderId }
-        vm.act("Card requested") {
+        vm.act(str(S.ah_card_requested_toast)) {
             vm.repo.requestCard(
                 NewCardRequest(
                     holderId = holderId,
@@ -144,8 +149,7 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
         val card = state.cards.firstOrNull { it.id == cardId } ?: return
         if (!CardRules.canEditRequest(card, state.viewer.userId, state.viewer.isAccountant)) {
             vm.fail(
-                "This card is past the request stage, so its details cannot be rewritten. " +
-                    "Correct the control code instead, or suspend the card.",
+                str(S.desktop_card_past_request_stage),
             )
             return
         }
@@ -160,7 +164,7 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
             vm.fail(invalid)
             return
         }
-        vm.act("Card details saved") {
+        vm.act(str(S.desktop_card_details_saved)) {
             vm.repo.updateCardDetails(
                 cardId = draft.cardId,
                 edit = CardDetailsEdit(
@@ -182,15 +186,15 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
     fun saveBsCode(cardId: String) {
         val code = vm.current.cardDetail?.bsControlCode?.trim().orEmpty()
         if (code.isEmpty()) {
-            vm.fail("A balance-sheet control code is required.")
+            vm.fail(str(S.desktop_card_control_code_required))
             return
         }
-        vm.act("Control code updated") { vm.repo.updateBsControlCode(cardId, code) }
+        vm.act(str(S.desktop_card_control_code_updated)) { vm.repo.updateBsControlCode(cardId, code) }
     }
 
     /** Deleting a card closes the drilldown, which is about to point at nothing. */
     fun delete(cardId: String) {
-        vm.act("Card request deleted") { vm.repo.deleteCard(cardId) }
+        vm.act(str(S.desktop_card_request_deleted)) { vm.repo.deleteCard(cardId) }
         vm.update { copy(selectedCardId = null, cardDetail = null, cardEdit = null) }
     }
 

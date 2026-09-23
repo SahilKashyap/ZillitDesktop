@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadges
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 
@@ -16,25 +18,30 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
  * [slug] matches the web's own surfaces so a deep link means the same thing on
  * both clients.
  */
-enum class DocDistDestination(val slug: String, val label: String) {
+enum class DocDistDestination(val slug: String, private val labelKey: String) {
 
     /** The date-grouped catalogue of folders and documents. The tool's home. */
-    Library("library", "Library"),
+    Library("library", S.library),
 
     /** What has been sent, and who has opened it. */
-    History("history", "History"),
+    History("history", S.history),
 
     /** Saved recipient sets — "presets" on the wire. */
-    Lists("lists", "Distribution Lists"),
+    Lists("lists", S.dd_lists),
 
     /** Everyone ever sent to on this production. */
-    AddressBook("contacts", "Address Book"),
+    AddressBook("contacts", S.desktop_address_book),
 
     /** Reusable subject + body pairs for the composer. */
-    Templates("templates", "Templates"),
+    Templates("templates", S.templates),
     ;
 
-    /** The units whose rows a section shows and reads on entry (`Library.jsx:150-153`); empty for the library itself. */
+    val label: String get() = str(labelKey)
+
+    /**
+     * The units whose rows a section shows and reads on entry (`Library.jsx:150-153`);
+     * empty for the library itself.
+     */
     val badgeUnits: List<String>
         get() = when (this) {
             History -> listOf(DocDistBadges.UNIT_PUBLICATION)

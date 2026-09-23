@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.SavedSignature
 import com.zillit.desktop.feature.esignature.domain.SignatureFont
 import com.zillit.desktop.feature.esignature.ui.PadMode
@@ -90,12 +92,16 @@ internal fun SignaturePad(
             ZillitCheckbox(
                 checked = pad.saveForLater,
                 onCheckedChange = onSaveForLater,
-                label = if (forSignature) "Save this signature for next time" else "Save these initials for next time",
+                label = if (forSignature) {
+                    str(S.desktop_ds_save_this_signature_for_next_time)
+                } else {
+                    str(S.desktop_ds_save_these_initials_for_next_time)
+                },
             )
         }
         if (pad.mode == PadMode.Draw) {
             ZillitText(
-                "Draw with the mouse or trackpad. Clear starts again.",
+                str(S.desktop_ds_draw_with_the_mouse_or_trackpad_clear_starts),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -121,9 +127,9 @@ private fun SavedMarks(
         ) {
             ZillitText(
                 if (forSignature) {
-                    "No saved signatures yet — draw or type one."
+                    str(S.desktop_ds_no_saved_signatures_yet_draw_or_type_one)
                 } else {
-                    "No saved initials yet — draw or type some."
+                    str(S.desktop_ds_no_saved_initials_yet_draw_or_type_some)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
@@ -150,14 +156,14 @@ private fun SavedMarks(
                 ) {
                     BytesImage(
                         images[mark.id],
-                        if (forSignature) "Signature" else "Initials",
+                        if (forSignature) str(S.txt_signature) else str(S.docusign_saved_sig_initials),
                         Modifier.fillMaxWidth().height(64.dp),
                     )
                 }
-                ZillitButton(text = "Use", onClick = { onUse(mark.id) }, size = ButtonSize.Small)
+                ZillitButton(text = str(S.docusign_template_use), onClick = { onUse(mark.id) }, size = ButtonSize.Small)
                 if (onDelete != null) {
                     ZillitButton(
-                        text = "Delete",
+                        text = str(S.delete),
                         onClick = { onDelete(mark.id) },
                         size = ButtonSize.Small,
                         variant = ButtonVariant.Tertiary,
@@ -232,7 +238,7 @@ private fun DrawSurface(
             }
             if (strokes.isNotEmpty()) {
                 ZillitButton(
-                    text = "Clear",
+                    text = str(S.txt_clear),
                     onClick = onClear,
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -250,8 +256,8 @@ private fun TypeSurface(pad: PadState, onTyped: (String) -> Unit, onFont: (Signa
         ZillitTextField(
             value = pad.typedName,
             onValueChange = onTyped,
-            placeholder = "Type your name",
-            label = "Name",
+            placeholder = str(S.desktop_ds_type_your_name),
+            label = str(S.name),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             SignatureFont.entries.forEach { font ->
@@ -278,7 +284,7 @@ private fun TypeSurface(pad: PadState, onTyped: (String) -> Unit, onFont: (Signa
             contentAlignment = Alignment.Center,
         ) {
             ZillitText(
-                text = pad.typedName.ifBlank { "Your name" },
+                text = pad.typedName.ifBlank { str(S.your_name) },
                 style = ZillitTheme.typography.displayLarge.copy(
                     fontFamily = FontFamily.Cursive,
                     fontStyle = FontStyle.Italic,
@@ -289,7 +295,7 @@ private fun TypeSurface(pad: PadState, onTyped: (String) -> Unit, onFont: (Signa
             )
         }
         ZillitText(
-            "The saved mark is set in the chosen script face — the preview shows the shape, not the exact font.",
+            str(S.desktop_ds_the_saved_mark_is_set_in_the_chosen),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
@@ -307,14 +313,14 @@ private fun UploadSurface(pad: PadState, onPick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             if (pad.uploadBytes != null) {
-                BytesImage(pad.uploadBytes, "Uploaded mark", Modifier.fillMaxWidth().padding(8.dp))
+                BytesImage(pad.uploadBytes, str(S.desktop_ds_uploaded_mark), Modifier.fillMaxWidth().padding(8.dp))
             } else {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     ZillitText(
-                        "Choose a PNG or JPG",
+                        str(S.desktop_ds_choose_a_png_or_jpg),
                         style = ZillitTheme.typography.bodyMedium,
                         color = colors.textSecondary,
                     )
@@ -331,7 +337,7 @@ private fun UploadSurface(pad: PadState, onPick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                text = if (pad.uploadBytes == null) "Choose image" else "Replace",
+                text = if (pad.uploadBytes == null) str(S.docusign_upload_choose_image) else str(S.replace),
                 onClick = onPick,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,

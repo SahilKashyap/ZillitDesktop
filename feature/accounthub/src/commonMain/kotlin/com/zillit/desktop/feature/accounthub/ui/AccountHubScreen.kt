@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadges
 import com.zillit.desktop.feature.accounthub.domain.HubItem
@@ -106,9 +108,8 @@ fun AccountHubScreen(
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         if (state.viewer.isBlocked) {
             ZillitEmptyState(
-                title = "No access to the Account Hub",
-                message = "An administrator has not granted you view rights for the Account " +
-                    "Hub on this project.",
+                title = str(S.desktop_hub_no_access_to_the_account_hub),
+                message = str(S.desktop_hub_an_administrator_has_not_granted_you_view_rights_for_the),
                 icon = ZillitIcons.Shield,
             )
             return@Box
@@ -175,13 +176,12 @@ private fun AccountHubBody(
         // already been opened in its own window (`HubNavigation.landingTool`),
         // so this says where that went rather than reading as a dead end.
         null -> ZillitEmptyState(
-            title = if (canEmbed) "Pick a tool" else "Your tools are open",
-            message = "The Account Hub's own screens are the accounts department's. " +
-                if (canEmbed) {
-                    "Yours are the rows on the left."
-                } else {
-                    "Yours open in their own windows — pick one on the left to bring it back."
-                },
+            title = if (canEmbed) str(S.desktop_pick_a_tool) else str(S.desktop_hub_your_tools_are_open),
+            message = if (canEmbed) {
+                str(S.desktop_hub_own_screens_are_the_accounts_departments_rows_on_left)
+            } else {
+                str(S.desktop_hub_own_screens_are_the_accounts_departments_own_windows)
+            },
             icon = ZillitIcons.Ledger,
         )
     }
@@ -222,11 +222,11 @@ private fun HubSidebar(
             ) {
                 ZillitIconButton(
                     icon = ZillitIcons.ArrowLeft,
-                    contentDescription = "Back to Film Tools",
+                    contentDescription = str(S.desktop_hub_back_to_film_tools),
                     onClick = { onEvent(AccountHubEvent.Back) },
                 )
                 ZillitText(
-                    text = "Account Hub",
+                    text = str(S.ah_account_hub),
                     style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                     maxLines = 1,
                 )
@@ -402,28 +402,28 @@ private fun SetupTourOverlay(state: AccountHubUiState, onEvent: (AccountHubEvent
     val step = tour.current
     ZillitDialogShell(
         title = if (tour.intro) SetupTourIntro.TITLE else step?.title.orEmpty(),
-        subtitle = if (tour.intro) null else "Step ${tour.index + 1} of ${tour.steps.size}",
+        subtitle = if (tour.intro) null else str(S.dm_wizard_step_label, tour.index + 1, tour.steps.size),
         icon = ZillitIcons.Info,
         visible = tour.open && (tour.intro || step != null),
         onDismiss = { onEvent(AccountHubEvent.TourClose) },
         actions = {
             if (!tour.intro && tour.index > 0) {
                 ZillitButton(
-                    text = "Back",
+                    text = str(S.back),
                     onClick = { onEvent(AccountHubEvent.TourBack) },
                     variant = ButtonVariant.Tertiary,
                 )
             }
             ZillitButton(
-                text = "Skip",
+                text = str(S.skip),
                 onClick = { onEvent(AccountHubEvent.TourClose) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
                 text = when {
-                    tour.intro -> "Next →"
-                    tour.isLast -> "Done"
-                    else -> "Next"
+                    tour.intro -> str(S.desktop_next_arrow)
+                    tour.isLast -> str(S.ah_done)
+                    else -> str(S.next)
                 },
                 onClick = { onEvent(AccountHubEvent.TourNext) },
             )
@@ -431,7 +431,13 @@ private fun SetupTourOverlay(state: AccountHubUiState, onEvent: (AccountHubEvent
     ) {
         if (tour.intro) {
             ZillitText(text = SetupTourIntro.BODY, style = ZillitTheme.typography.bodyMedium)
-            FieldHint("${tour.steps.size} thing${if (tour.steps.size == 1) "" else "s"} still need setting up.")
+            FieldHint(
+                if (tour.steps.size == 1) {
+                    str(S.desktop_hub_one_thing_still_needs_setting_up)
+                } else {
+                    str(S.desktop_hub_n_things_still_need_setting_up, tour.steps.size)
+                },
+            )
         } else if (step != null) {
             ZillitText(text = step.body, style = ZillitTheme.typography.bodyMedium)
             step.notes.forEach { (label, body) ->
@@ -442,9 +448,9 @@ private fun SetupTourOverlay(state: AccountHubUiState, onEvent: (AccountHubEvent
             }
             FieldHint(
                 when (step.target) {
-                    SetupTourTarget.Nav -> "Find it under Setup › Production Setup."
-                    SetupTourTarget.DealTab -> "Find it under Production Setup › Deal Memo Setup."
-                    SetupTourTarget.Chart -> "Find it under Configuration › Chart of Accounts."
+                    SetupTourTarget.Nav -> str(S.desktop_hub_find_it_under_setup_production_setup)
+                    SetupTourTarget.DealTab -> str(S.desktop_hub_find_it_under_production_setup_deal_memo_setup)
+                    SetupTourTarget.Chart -> str(S.desktop_hub_find_it_under_configuration_chart_of_accounts)
                 },
             )
             // The segmented indicator the web's tour draws under each step.

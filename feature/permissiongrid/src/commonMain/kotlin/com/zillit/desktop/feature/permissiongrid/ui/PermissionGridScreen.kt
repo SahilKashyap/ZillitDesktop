@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.permissiongrid.domain.AccessKind
 import com.zillit.desktop.feature.permissiongrid.domain.GridAxis
 import com.zillit.desktop.feature.permissiongrid.domain.GridCell
@@ -70,8 +72,8 @@ fun PermissionGridScreen(
         modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas),
     ) {
         ZillitPageHeader(
-            title = "Viewing & Posting Rights Grid",
-            description = "Who may see, post to and download from each tool on this project.",
+            title = str(S.desktop_pg_title),
+            description = str(S.desktop_pg_description),
         )
 
         Controls(state, onEvent)
@@ -87,14 +89,13 @@ fun PermissionGridScreen(
 
         if (!state.canEdit && state.viewer.ready && state.viewer.canView) {
             ZillitNotice(
-                text = "You can see this grid but not change it — posting rights on the " +
-                    "permission grid tool are what allow an edit.",
+                text = str(S.desktop_pg_read_only_notice),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
                 modifier = Modifier.padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
                 action = {
                     ZillitButton(
-                        text = "Ask an admin",
+                        text = str(S.desktop_ask_an_admin),
                         onClick = { onEvent(PermissionGridEvent.RequestPostingRights) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -113,12 +114,11 @@ fun PermissionGridScreen(
 @Composable
 private fun Body(state: PermissionGridUiState, onEvent: (PermissionGridEvent) -> Unit) {
     when {
-        !state.viewer.ready -> Centred("Checking your access…")
+        !state.viewer.ready -> Centred(str(S.desktop_pg_checking_access))
 
         !state.viewer.canView -> ZillitEmptyState(
-            title = "No access",
-            message = "You do not have viewing rights on the permission grid. " +
-                "A coordinator can grant them.",
+            title = str(S.dd_publish_no_access_badge),
+            message = str(S.desktop_pg_no_viewing_rights),
         )
 
         state.error != null -> ZillitErrorState(
@@ -126,14 +126,14 @@ private fun Body(state: PermissionGridUiState, onEvent: (PermissionGridEvent) ->
             onRetry = { onEvent(PermissionGridEvent.Reload) },
         )
 
-        state.isBusy && state.grid.rows.isEmpty() -> Centred("Loading the grid…")
+        state.isBusy && state.grid.rows.isEmpty() -> Centred(str(S.desktop_pg_loading_grid))
 
         state.grid.rows.isEmpty() -> ZillitEmptyState(
-            title = "Nothing to show",
-            message = "This project has no ${state.axis.label.lowercase()} to grant rights to.",
+            title = str(S.desktop_nothing_to_show),
+            message = str(S.desktop_pg_nothing_to_grant, state.axis.label.lowercase()),
         )
 
-        state.rows.isEmpty() -> Centred("No one matches \"${state.query.trim()}\".")
+        state.rows.isEmpty() -> Centred(str(S.desktop_no_one_matches_query, state.query.trim()))
 
         else -> Matrix(state, onEvent)
     }
@@ -169,7 +169,7 @@ private fun Controls(state: PermissionGridUiState, onEvent: (PermissionGridEvent
         ZillitSearchField(
             value = state.query,
             onValueChange = { onEvent(PermissionGridEvent.Search(it)) },
-            placeholder = "Search ${state.axis.label.lowercase()}…",
+            placeholder = str(S.desktop_search_axis_placeholder, state.axis.label.lowercase()),
             modifier = Modifier.width(SEARCH_WIDTH),
         )
     }
@@ -407,19 +407,25 @@ private fun Footer(state: PermissionGridUiState, onEvent: (PermissionGridEvent) 
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitText(
-            text = "${state.grid.total} ${state.axis.label.lowercase()} · page ${state.page} of ${state.lastPage}",
+            text = str(
+                S.desktop_pg_footer_count,
+                state.grid.total,
+                state.axis.label.lowercase(),
+                state.page,
+                state.lastPage,
+            ),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
         Spacer(Modifier.weight(1f))
         ZillitButton(
-            text = "Previous",
+            text = str(S.docusign_tour_prev),
             variant = ButtonVariant.Secondary,
             enabled = state.canGoBack && !state.isBusy,
             onClick = { onEvent(PermissionGridEvent.GoToPage(state.page - 1)) },
         )
         ZillitButton(
-            text = "Next",
+            text = str(S.next),
             variant = ButtonVariant.Secondary,
             enabled = state.canGoForward && !state.isBusy,
             onClick = { onEvent(PermissionGridEvent.GoToPage(state.page + 1)) },

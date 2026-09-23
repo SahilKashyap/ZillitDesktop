@@ -55,6 +55,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsFormat
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsModuleMeta
 
@@ -122,7 +124,11 @@ private fun AnalyticsHeader(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -
                 ZillitIcon(ZillitIcons.ChevronLeft, tint = colors.ink2, size = 15.dp)
             }
             Box(Modifier.padding(start = 2.dp).size(9.dp).background(colors.amber, RoundedCornerShape(3.dp)))
-            ZillitText("Analytics", style = AnalyticsType.text(14.5f, FontWeight.ExtraBold, -0.01f), color = colors.ink)
+            ZillitText(
+                str(S.analytics),
+                style = AnalyticsType.text(14.5f, FontWeight.ExtraBold, -0.01f),
+                color = colors.ink,
+            )
             Spacer(Modifier.weight(1f))
             FiltersButton(state, onEvent)
         }
@@ -146,7 +152,7 @@ private fun FiltersButton(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> 
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         ZillitIcon(ZillitIcons.Filter, tint = colors.ink2, size = 14.dp)
-        ZillitText("Filters", style = AnalyticsType.text(13f, FontWeight.Bold), color = colors.ink2)
+        ZillitText(str(S.asset_filters), style = AnalyticsType.text(13f, FontWeight.Bold), color = colors.ink2)
         if (count > 0) {
             ZillitText(
                 count.toString(),
@@ -170,7 +176,7 @@ private fun TitleRow(state: AnalyticsUiState) {
             buildAnnotatedString {
                 append(state.titleWord)
                 append(" ")
-                withStyle(SpanStyle(color = colors.amber)) { append("Analytics") }
+                withStyle(SpanStyle(color = colors.amber)) { append(str(S.analytics)) }
             },
             style = AnalyticsType.text(30f, FontWeight.ExtraBold, -0.022f),
             color = colors.ink,
@@ -205,9 +211,9 @@ private fun ModuleStrip(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
                 glyph = analyticsColors.surface,
             )
             Spacer(Modifier.weight(1f).height(10.dp))
-            StripLabel("Overview", state.isOverview)
+            StripLabel(str(S.ah_overview), state.isOverview)
             ZillitText(
-                "All modules",
+                str(S.desktop_cr_all_modules),
                 style = AnalyticsType.text(11f),
                 color = analyticsColors.ink3,
                 modifier = Modifier.padding(top = 2.dp),
@@ -333,7 +339,7 @@ private fun PageContent(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
                     ) { onEvent(AnalyticsEvent.SelectTab(it)) }
                     when (state.tabStatus) {
                         TabStatus.Loading -> LoadingSkeleton()
-                        TabStatus.Error -> ErrorCard("Couldn’t load this tab.", onRetry = null)
+                        TabStatus.Error -> ErrorCard(str(S.desktop_cr_tab_load_failed), onRetry = null)
                         TabStatus.Idle -> state.activeTabBlocks?.let { BlockList(it, context) }
                     }
                 }
@@ -439,7 +445,11 @@ private fun ErrorCard(message: String?, onRetry: (() -> Unit)?) {
     StateCard {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ToneIcon(ZillitIcons.Warning, red, box = 40.dp, glyph = 18.dp, radius = 12.dp, tint = red.ink)
-            ZillitText("Couldn’t load analytics", style = AnalyticsType.text(14f, FontWeight.Bold), color = colors.ink)
+            ZillitText(
+                str(S.desktop_cr_analytics_load_failed),
+                style = AnalyticsType.text(14f, FontWeight.Bold),
+                color = colors.ink,
+            )
             message?.takeIf { it.isNotBlank() }?.let {
                 ZillitText(
                     it,
@@ -451,7 +461,7 @@ private fun ErrorCard(message: String?, onRetry: (() -> Unit)?) {
             }
             onRetry?.let { retry ->
                 ZillitText(
-                    "Retry",
+                    str(S.retry),
                     style = AnalyticsType.text(13f, FontWeight.Bold),
                     color = colors.ink2,
                     modifier = Modifier
@@ -480,9 +490,13 @@ private fun EmptyCard() {
             ) {
                 ZillitIcon(ZillitIcons.Info, tint = colors.ink3, size = 18.dp)
             }
-            ZillitText("No analytics yet", style = AnalyticsType.text(14f, FontWeight.Bold), color = colors.ink)
             ZillitText(
-                "There’s nothing to show for this selection.",
+                str(S.desktop_cr_no_analytics_yet),
+                style = AnalyticsType.text(14f, FontWeight.Bold),
+                color = colors.ink,
+            )
+            ZillitText(
+                str(S.desktop_cr_nothing_to_show),
                 style = AnalyticsType.text(12.5f),
                 color = colors.ink3,
                 textAlign = TextAlign.Center,

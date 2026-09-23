@@ -30,6 +30,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.DraftChip
 import com.zillit.desktop.feature.callsheet.domain.SavedTemplate
@@ -47,6 +49,7 @@ import com.zillit.desktop.feature.callsheet.ui.components.CardGrid
 import com.zillit.desktop.feature.callsheet.ui.components.CscIconButton
 import com.zillit.desktop.feature.callsheet.ui.components.DayChip
 import com.zillit.desktop.feature.callsheet.ui.components.FilterChip
+import com.zillit.desktop.feature.callsheet.ui.components.InlineCount
 import com.zillit.desktop.feature.callsheet.ui.components.MetaCell
 import com.zillit.desktop.feature.callsheet.ui.components.NameCell
 import com.zillit.desktop.feature.callsheet.ui.components.PersonCell
@@ -92,9 +95,9 @@ private fun TemplatePanel(state: SheetUiState, onEvent: (SheetEvent) -> Unit) {
             .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            StripLabel("Drafts Template", Modifier.weight(1f))
+            StripLabel(str(S.cs_drafts_template_group), Modifier.weight(1f))
             Text(
-                "Shared with everyone who can create call sheets",
+                str(S.desktop_cs_template_shared_hint),
                 style = sheetText(12.sp),
                 color = colors.dsTextPlaceholder,
             )
@@ -102,10 +105,10 @@ private fun TemplatePanel(state: SheetUiState, onEvent: (SheetEvent) -> Unit) {
         SheetTable(
             columns = listOf(
                 TableColumn("#", width = 44.dp),
-                TableColumn("Template Name", weight = 1f),
-                TableColumn("Created By", width = 190.dp),
-                TableColumn("Updated", width = 170.dp),
-                TableColumn("Actions", width = 110.dp, alignment = Alignment.End),
+                TableColumn(str(S.templete_name), weight = 1f),
+                TableColumn(str(S.cs_created_by), width = 190.dp),
+                TableColumn(str(S.desktop_updated), width = 170.dp),
+                TableColumn(str(S.cs_draft_actions), width = 110.dp, alignment = Alignment.End),
             ),
             rows = state.savedTemplates,
             style = TableStyle.Csc,
@@ -143,7 +146,7 @@ private fun TemplateCell(
         3 -> MetaCell(template.updatedOn?.let { formatDateTime(it) } ?: "—", csc = true)
         else -> CscIconButton(
             icon = ZillitIcons.Trash,
-            description = "Delete template ${template.name}",
+            description = str(S.desktop_delete_template_named, template.name),
             onClick = { onEvent(DialogEvent.DeleteSavedTemplate(template)) },
             danger = true,
         )
@@ -174,15 +177,15 @@ private fun DraftsList(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowMi
         Box(Modifier.padding(bottom = 12.dp)) { SheetErrorLine(error) { onEvent(ListEvent.Retry) } }
     }
     when {
-        !list.loaded -> LoadingBlock("Loading drafts…")
+        !list.loaded -> LoadingBlock(str(S.desktop_loading_drafts))
         filtered.isEmpty() -> CscEmpty(
-            title = "No draft call sheets.",
+            title = str(S.desktop_cs_no_draft_call_sheets),
             sub = if (chip != DraftChip.All) {
-                "Nothing matches this filter."
+                str(S.desktop_nothing_matches_this_filter)
             } else if (state.isPoster) {
-                "Create one from a template to get started."
+                str(S.desktop_create_one_from_a_template)
             } else {
-                "Call sheets shared with you for comments will appear here."
+                str(S.desktop_cs_shared_for_comments_appear_here)
             },
         )
         state.draftsView == ListView.Table -> DraftsTable(state, filtered, onEvent)
@@ -195,12 +198,12 @@ private fun DraftsTable(state: SheetUiState, rows: List<CallSheetSummary>, onEve
     SheetTable(
         columns = listOf(
             TableColumn("#", width = 44.dp),
-            TableColumn("Document Name", weight = 1f),
-            TableColumn("Day", width = 110.dp),
-            TableColumn("Created By", width = 190.dp),
-            TableColumn("Updated", width = 170.dp),
-            TableColumn("Status", width = 170.dp, alignment = Alignment.CenterHorizontally),
-            TableColumn("Actions", width = 150.dp, alignment = Alignment.End),
+            TableColumn(str(S.desktop_document_name), weight = 1f),
+            TableColumn(str(S.bs_day), width = 110.dp),
+            TableColumn(str(S.cs_created_by), width = 190.dp),
+            TableColumn(str(S.desktop_updated), width = 170.dp),
+            TableColumn(str(S.status), width = 170.dp, alignment = Alignment.CenterHorizontally),
+            TableColumn(str(S.cs_draft_actions), width = 150.dp, alignment = Alignment.End),
         ),
         rows = rows,
         style = TableStyle.Csc,
@@ -208,7 +211,14 @@ private fun DraftsTable(state: SheetUiState, rows: List<CallSheetSummary>, onEve
     ) { row, column, index ->
         when (column) {
             0 -> Text("${index + 1}", style = sheetText(12.sp), color = SheetTheme.colors.dsTextMuted)
-            1 -> NameCell(row.name, formatDateTime(row.createdOn))
+            // The unread REPORT number beside the name; the comment count sits on the kebab.
+            1 -> Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NameCell(row.name, formatDateTime(row.createdOn))
+                InlineCount(state.unreadReports(row.id))
+            }
             2 -> DayChip(shootDayLabel(row.shared))
             3 -> CreatorCell(state, row, csc = true)
             4 -> MetaCell(row.updatedOn?.let { formatDateTime(it) } ?: "—", csc = true)
@@ -218,7 +228,7 @@ private fun DraftsTable(state: SheetUiState, rows: List<CallSheetSummary>, onEve
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SheetButton(
-                    "View",
+                    str(S.view),
                     { onEvent(ListEvent.View(row)) },
                     kind = ButtonKind.Csc,
                     icon = ZillitIcons.Eye,
@@ -248,8 +258,9 @@ private fun DraftCard(
         creatorDesignation = member?.designation.orEmpty(),
         nowMillis = nowMillis,
         approvals = null,
-        links = cardLinks(entries, listOf("view", "edit", "comment", "comments", "docdist", "chat")),
+        links = cardLinks(entries, listOf("view", "edit", "comment", "comments", "docdist", "sendChat")),
         pills = cardPills(entries, listOf("signature", "delete")),
+        reportBadge = state.unreadReports(row.id),
         modifier = modifier,
     )
 }
@@ -266,7 +277,7 @@ internal fun CreatorCell(state: SheetUiState, row: CallSheetSummary, csc: Boolea
 @Composable
 internal fun ViewToggle(view: ListView, onChange: (ListView) -> Unit) {
     Segmented(
-        options = listOf(ListView.Table to "Table", ListView.Cards to "Cards"),
+        options = listOf(ListView.Table to str(S.desktop_table), ListView.Cards to str(S.ah_cards)),
         selected = view,
         onSelect = onChange,
         icons = mapOf(ListView.Table to SheetIcons.Table, ListView.Cards to ZillitIcons.Grid),

@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.oneLine
 import com.zillit.desktop.core.locationpicker.ZillitLocationField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Creating and editing an event.
@@ -73,7 +75,7 @@ internal fun EventFormDialog(
     // measured to nothing: the dialog opened as a title over two buttons and
     // no event could be made (seen live 2026-08-17).
     ZillitDialogShell(
-        title = current?.draft?.formTitle ?: "Event",
+        title = current?.draft?.formTitle ?: str(S.ce_event_tab),
         icon = ZillitIcons.Calendar,
         visible = form != null,
         onDismiss = { onEvent(CalendarEvent2Event.CloseForm) },
@@ -94,12 +96,12 @@ internal fun EventFormDialog(
 private fun RowScope.FormActions(form: EventFormState, onEvent: (CalendarEvent2Event) -> Unit) {
     Spacer(Modifier.weight(1f))
     ZillitButton(
-        text = "Cancel",
+        text = str(S.cancel),
         variant = ButtonVariant.Tertiary,
         onClick = { onEvent(CalendarEvent2Event.CloseForm) },
     )
     ZillitButton(
-        text = if (form.draft.isEdit) "Save" else "Create",
+        text = if (form.draft.isEdit) str(S.save) else str(S.create),
         loading = form.isSaving,
         onClick = { onEvent(CalendarEvent2Event.SaveForm) },
     )
@@ -117,8 +119,8 @@ private fun FormFields(
     ZillitTextField(
         value = draft.title,
         onValueChange = { change(draft.copy(title = it)) },
-        label = "Title",
-        placeholder = "Event name",
+        label = str(S.title),
+        placeholder = str(S.event_name),
         errorText = form.errors.messageFor(EventFieldError.TitleBlank)
             ?: form.errors.messageFor(EventFieldError.TitleTooShort),
         modifier = Modifier.fillMaxWidth(),
@@ -127,28 +129,28 @@ private fun FormFields(
     AudienceRow(form, change)
     ColorRow(draft, change)
 
-    FormSection(icon = ZillitIcons.Clock, title = "When") {
+    FormSection(icon = ZillitIcons.Clock, title = str(S.section_when)) {
         WhenSection(form, change)
         TimezoneRow(form, change)
     }
 
     FormSection(
         icon = if (draft.isForMembers) ZillitIcons.Phone else ZillitIcons.Home,
-        title = if (draft.isForMembers) "Meeting" else "Where",
+        title = if (draft.isForMembers) str(S.desktop_cal_section_meeting) else str(S.desktop_cal_section_where),
     ) {
         MeetingSection(form, change)
     }
 
-    FormSection(icon = ZillitIcons.Reload, title = "Repeat") {
+    FormSection(icon = ZillitIcons.Reload, title = str(S.repeat)) {
         RecurrenceSection(form, change)
     }
 
-    FormSection(icon = ZillitIcons.Bell, title = "Reminder") {
+    FormSection(icon = ZillitIcons.Bell, title = str(S.reminder)) {
         ReminderRow(form, change)
     }
 
     if (draft.isForMembers) {
-        FormSection(icon = ZillitIcons.Users, title = "People") {
+        FormSection(icon = ZillitIcons.Users, title = str(S.section_people)) {
             GuestSection(form, change, loadAvatar)
         }
     }
@@ -156,8 +158,8 @@ private fun FormFields(
     ZillitTextField(
         value = draft.description,
         onValueChange = { change(draft.copy(description = it)) },
-        label = "Description",
-        placeholder = "Notes or agenda",
+        label = str(S.description),
+        placeholder = str(S.desktop_cal_notes_or_agenda),
         singleLine = false,
         modifier = Modifier.fillMaxWidth().heightIn(min = NOTES_HEIGHT),
     )
@@ -216,7 +218,7 @@ private fun AudienceRow(form: EventFormState, change: (EventDraft) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         EventAudience.entries.forEach { audience ->
             ZillitButton(
-                text = audience.label,
+                text = str(audience.label),
                 variant = chosen(audience == draft.audience),
                 size = ButtonSize.Small,
                 onClick = { change(draft.copy(audience = audience)) },
@@ -241,7 +243,7 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
         value = draft.dateText,
         onValueChange = { change(draft.withDate(it)) },
         today = form.today,
-        label = "Start date",
+        label = str(S.start_date),
         errorText = form.errors.messageFor(EventFieldError.DateInvalid)
             ?: form.errors.messageFor(EventFieldError.DateInPast),
         modifier = Modifier.fillMaxWidth(),
@@ -249,7 +251,7 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
 
     ZillitCheckbox(
         checked = draft.isAllDay,
-        label = "All day",
+        label = str(S.all_day),
         onCheckedChange = { change(draft.copy(isAllDay = it)) },
     )
 
@@ -258,7 +260,7 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
             TimePickerField(
                 value = draft.startText,
                 onValueChange = { change(draft.withStartTime(it)) },
-                label = "Start time",
+                label = str(S.start_time),
                 placeholder = "09:00",
                 errorText = form.errors.messageFor(EventFieldError.StartTimeInvalid)
                     ?: form.errors.messageFor(EventFieldError.TooShort),
@@ -267,7 +269,7 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
             TimePickerField(
                 value = draft.endText,
                 onValueChange = { change(draft.copy(endText = it)) },
-                label = "End time",
+                label = str(S.end_time),
                 placeholder = "17:30",
                 errorText = form.errors.messageFor(EventFieldError.EndTimeInvalid),
                 modifier = Modifier.weight(1f),
@@ -276,7 +278,11 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
 
         draft.endDateText.takeIf { it.isNotBlank() }?.let { ends ->
             ZillitText(
-                text = if (draft.isOvernight) "Ends the next day, $ends" else "Ends $ends",
+                text = if (draft.isOvernight) {
+                    str(S.desktop_cal_ends_next_day, ends)
+                } else {
+                    str(S.desktop_cal_ends_at, ends)
+                },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -297,14 +303,14 @@ private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
 
     if (draft.isForMembers) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            FieldLabel("Call type")
+            FieldLabel(str(S.call_type))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
             ) {
                 CallType.entries.forEach { callType ->
                     ZillitButton(
-                        text = callType.label,
+                        text = str(callType.label),
                         variant = chosen(callType == draft.callType),
                         size = ButtonSize.Small,
                         onClick = { change(draft.copy(callType = callType)) },
@@ -323,8 +329,8 @@ private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
         // Typing replaces a picked place, so its coordinates go with it.
         onTextChange = { change(draft.copy(location = it, locationLat = null, locationLng = null)) },
         onPicked = { change(draft.copy(location = it.oneLine(), locationLat = it.lat, locationLng = it.lng)) },
-        label = if (draft.callType?.needsLocation == true) "Location — required" else "Location",
-        placeholder = "Where to meet",
+        label = if (draft.callType?.needsLocation == true) str(S.desktop_cal_location_required) else str(S.location),
+        placeholder = str(S.desktop_cal_where_to_meet),
         errorText = form.errors.messageFor(EventFieldError.LocationMissing),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -346,7 +352,7 @@ private fun RecurrenceSection(form: EventFormState, change: (EventDraft) -> Unit
         FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             RecurrenceFrequency.entries.forEach { frequency ->
                 ZillitButton(
-                    text = frequency.label,
+                    text = str(frequency.label),
                     variant = chosen(frequency == rule.frequency),
                     size = ButtonSize.Small,
                     // Choosing a repeat fills in where it stops, rather than
@@ -366,7 +372,7 @@ private fun RecurrenceSection(form: EventFormState, change: (EventDraft) -> Unit
                 value = rule.endDateText,
                 onValueChange = { change(draft.copy(recurrence = rule.copy(endDateText = it))) },
                 today = form.today,
-                label = "Repeat until",
+                label = str(S.repeat_until),
                 placeholder = "2026-12-31",
                 errorText = form.recurrenceErrors.messageFor(RecurrenceError.NoEndDate)
                     ?: form.recurrenceErrors.messageFor(RecurrenceError.EndBeforeStart),
@@ -399,7 +405,7 @@ private fun WeekdayPicker(rule: Recurrence, change: (Recurrence) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         WEEKDAY_LABELS.forEachIndexed { index, label ->
             ZillitButton(
-                text = label,
+                text = str(label),
                 variant = chosen(index in rule.selectedDays),
                 size = ButtonSize.Small,
                 onClick = {
@@ -437,13 +443,13 @@ private fun TimezoneRow(form: EventFormState, change: (EventDraft) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "Timezone",
+            text = str(S.timezone),
             style = ZillitTheme.typography.label,
             color = ZillitTheme.colors.textSecondary,
         )
         Box {
             ZillitButton(
-                text = chosenZone?.label ?: "Device timezone",
+                text = chosenZone?.label ?: str(S.desktop_cal_device_timezone),
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 onClick = { open.value = true; search.value = "" },
@@ -481,7 +487,7 @@ private fun TimezoneMenu(
         ZillitTextField(
             value = search,
             onValueChange = onSearch,
-            placeholder = "Search timezones",
+            placeholder = str(S.desktop_cal_search_timezones),
             modifier = Modifier.fillMaxWidth(),
         )
         val matches = form.timezones.filter {
@@ -499,7 +505,7 @@ private fun TimezoneMenu(
                 .then(rememberWheelScroll(zoneState)),
         ) {
             item(key = "device") {
-                TimezoneChoice("Device timezone", form.draft.timezoneId.isBlank()) { onPick("") }
+                TimezoneChoice(str(S.desktop_cal_device_timezone), form.draft.timezoneId.isBlank()) { onPick("") }
             }
             items(matches, key = TimezoneOption::identifier) { option ->
                 TimezoneChoice(
@@ -533,7 +539,7 @@ private fun ColorRow(draft: EventDraft, change: (EventDraft) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "Colour",
+            text = str(S.av_color),
             style = ZillitTheme.typography.label,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -627,9 +633,9 @@ private fun InviteeList(
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         FieldLabel(
             if (draft.inviteeIds.isEmpty()) {
-                "Invite crew"
+                str(S.desktop_cal_invite_crew)
             } else {
-                "Invite crew — ${draft.inviteeIds.size} selected"
+                str(S.desktop_cal_invite_crew_selected, draft.inviteeIds.size)
             },
         )
 
@@ -678,7 +684,7 @@ private fun ExternalGuests(draft: EventDraft, change: (EventDraft) -> Unit) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldLabel("External guests")
+        FieldLabel(str(S.external_guests))
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -693,7 +699,7 @@ private fun ExternalGuests(draft: EventDraft, change: (EventDraft) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Add",
+                text = str(S.add),
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 enabled = typed.value.isNotBlank(),
@@ -724,7 +730,7 @@ private fun GuestRow(address: String, onRemove: () -> Unit) {
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Remove",
+            text = str(S.remove),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             onClick = onRemove,

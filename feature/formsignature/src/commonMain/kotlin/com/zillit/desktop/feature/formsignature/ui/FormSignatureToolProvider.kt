@@ -38,7 +38,7 @@ class FormSignatureToolProvider(
 ) : ToolProvider {
 
     override val path: String = FORM_SIGNATURE_PATH
-    override val title: String = FormSignatureUiState.TOOL_TITLE
+    override val title: String get() = FormSignatureUiState.TOOL_TITLE
     override val icon = ZillitIcons.Signature
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.cardexpenses.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A production expense card issued to one crew member.
  *
@@ -112,8 +115,8 @@ data class CardReceipt(
      * back to it. Ported from `receiptReconciliationBadge`.
      */
     fun reconciliationLabel(): String? = when {
-        matchStatus == MatchStatus.Unmatched -> "Unreconciled"
-        attachmentKey.isNullOrBlank() -> "Reconciled"
+        matchStatus == MatchStatus.Unmatched -> str(S.ah_unreconciled)
+        attachmentKey.isNullOrBlank() -> str(S.desktop_reconciled)
         else -> null
     }
 }
@@ -145,11 +148,13 @@ data class CardAlert(
     val at: Long?,
 )
 
-enum class AlertSeverity(val wire: String, val label: String) {
-    High("high", "High"),
-    Medium("medium", "Medium"),
-    Low("low", "Low"),
+enum class AlertSeverity(val wire: String, private val labelKey: String) {
+    High("high", S.desktop_weather_uv_high),
+    Medium("medium", S.medium),
+    Low("low", S.desktop_weather_uv_low),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): AlertSeverity =
@@ -247,12 +252,15 @@ data class BulkCoding(
  * was not at its limit — and picking the wrong one leaves a holder short in
  * a way nobody notices until they try to spend.
  */
-enum class TopUpMode(val wire: String, val label: String) {
+enum class TopUpMode(val wire: String, private val labelKey: String) {
     /** Leave each receipt's own setting alone. */
-    Keep("keep", "Per receipt"),
-    Restore("restore", "Restore float"),
-    ByExpense("expense", "By expense amount"),
-    None("none", "No top-up"),
+    Keep("keep", S.desktop_card_per_receipt),
+    Restore("restore", S.desktop_card_restore_float),
+    ByExpense("expense", S.desktop_card_by_expense_amount),
+    None("none", S.desktop_card_no_top_up),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** What a bulk post did. */
@@ -354,12 +362,15 @@ data class ApprovalOverrides(
 )
 
 /** Which part of the settings document a save is touching. */
-enum class SettingsSection(val label: String) {
-    Team("Accounts team"),
-    Coordinators("Department coordinators"),
-    Overrides("Approval rules"),
-    Providers("Card providers"),
-    RequestCap("Request ceiling"),
+enum class SettingsSection(private val labelKey: String) {
+    Team(S.ah_accounts_team),
+    Coordinators(S.desktop_card_department_coordinators),
+    Overrides(S.desktop_card_approval_rules),
+    Providers(S.desktop_card_providers),
+    RequestCap(S.desktop_card_request_ceiling),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The accountant's dashboard figures. */
@@ -482,17 +493,19 @@ data class DraftCardReceipt(
 }
 
 /** What a receipt was spent on, as the upload form offers it. */
-enum class ReceiptCategory(val wire: String, val label: String) {
-    Materials("materials", "Materials"),
-    Equipment("equipment", "Props / Equipment"),
-    Stationery("stationery", "Consumables / Stationery"),
-    Catering("catering", "Catering"),
-    Fuel("fuel", "Fuel"),
-    Parking("parking", "Parking"),
-    Travel("travel", "Taxi / Travel"),
-    Accommodation("accommodation", "Accommodation"),
-    Other("other", "Other"),
+enum class ReceiptCategory(val wire: String, private val labelKey: String) {
+    Materials("materials", S.ah_materials),
+    Equipment("equipment", S.ah_props_equipment),
+    Stationery("stationery", S.ah_consumables_stationery),
+    Catering("catering", S.catering),
+    Fuel("fuel", S.ah_fuel),
+    Parking("parking", S.ah_parking),
+    Travel("travel", S.ah_taxi_travel),
+    Accommodation("accommodation", S.ah_accommodation),
+    Other("other", S.other),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): ReceiptCategory {

@@ -36,6 +36,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
@@ -67,7 +69,7 @@ internal fun PoFormPage(state: PoUiState, form: PoFormState, onEvent: (PoEvent) 
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             if (form.problems.isNotEmpty()) {
-                ZillitSectionCard(title = "Please fix the following errors", icon = ZillitIcons.Warning) {
+                ZillitSectionCard(title = str(S.desktop_po_please_fix_errors), icon = ZillitIcons.Warning) {
                     form.problems.forEach { problem ->
                         ZillitText(
                             text = "• $problem",
@@ -112,9 +114,9 @@ private fun FormTopBar(state: PoUiState, form: PoFormState, onEvent: (PoEvent) -
                 // The web's two subtitles, kept: the form is the same, but who
                 // is filling it in changes what it means.
                 text = if (state.viewer.isAccountant) {
-                    "Accountant PO Entry. All fields required unless noted"
+                    str(S.desktop_po_accountant_entry_banner)
                 } else {
-                    "Department PO Request. All fields required unless noted"
+                    str(S.desktop_po_department_request_banner)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
@@ -150,12 +152,12 @@ private fun FormTopBar(state: PoUiState, form: PoFormState, onEvent: (PoEvent) -
 
 @Composable
 private fun TemplateNameCard(form: PoFormState, onEvent: (PoEvent) -> Unit) {
-    ZillitSectionCard(title = "Template", icon = ZillitIcons.Grid) {
+    ZillitSectionCard(title = str(S.txt_template), icon = ZillitIcons.Grid) {
         ZillitTextField(
             value = form.templateName,
             onValueChange = { onEvent(PoEvent.EditForm(form.copy(templateName = it))) },
-            label = "Template Name",
-            placeholder = "e.g. Studio Hire — Pinewood",
+            label = str(S.nda_template_name),
+            placeholder = str(S.desktop_po_template_name_example),
         )
     }
 }
@@ -170,7 +172,7 @@ private fun TemplateNameCard(form: PoFormState, onEvent: (PoEvent) -> Unit) {
  */
 @Composable
 private fun PoDetailsSection(state: PoUiState, form: PoFormState, onEvent: (PoEvent) -> Unit) {
-    ZillitSectionCard(title = "PO Details", icon = ZillitIcons.File) {
+    ZillitSectionCard(title = str(S.desktop_po_details), icon = ZillitIcons.File) {
         VendorAndDescription(state, form, onEvent)
         DepartmentAndCompany(state, form, onEvent)
         CodingRow(state, form, onEvent)
@@ -193,7 +195,7 @@ private fun ColumnScope.VendorAndDescription(state: PoUiState, form: PoFormState
     val label = { field: String, fallback: String -> state.fieldLabel(field, fallback) }
     run {
         if (shows(PoFormFields.VENDOR)) {
-            LabelledField(label(PoFormFields.VENDOR, "Vendor / Supplier")) {
+            LabelledField(label(PoFormFields.VENDOR, str(S.desktop_po_vendor_supplier))) {
                 ZillitSelect(
                     value = form.vendorId,
                     options = listOf(null) + state.vendors.map { it.id },
@@ -217,7 +219,7 @@ private fun ColumnScope.VendorAndDescription(state: PoUiState, form: PoFormState
                     },
                     label = { id ->
                         id?.let { key -> state.vendors.firstOrNull { it.id == key }?.name ?: key }
-                            ?: "Type to search or add a new vendor…"
+                            ?: str(S.desktop_po_vendor_search_placeholder)
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -227,8 +229,8 @@ private fun ColumnScope.VendorAndDescription(state: PoUiState, form: PoFormState
             ZillitTextField(
                 value = form.description,
                 onValueChange = { onEvent(PoEvent.EditForm(form.copy(description = it))) },
-                label = label(PoFormFields.DESCRIPTION, "Description"),
-                placeholder = "e.g. Studio hire — Stage G, 12 weeks",
+                label = label(PoFormFields.DESCRIPTION, str(S.description)),
+                placeholder = str(S.desktop_po_description_example),
             )
         }
     }
@@ -241,19 +243,19 @@ private fun ColumnScope.DepartmentAndCompany(state: PoUiState, form: PoFormState
     run {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             if (shows(PoFormFields.DEPARTMENT)) {
-                LabelledField(label(PoFormFields.DEPARTMENT, "Department"), Modifier.weight(1f)) {
+                LabelledField(label(PoFormFields.DEPARTMENT, str(S.department)), Modifier.weight(1f)) {
                     ZillitSelect(
                         value = form.departmentId,
                         options = listOf(null) + state.departments.map { it.id },
                         onSelect = { onEvent(PoEvent.EditForm(form.copy(departmentId = it))) },
-                        label = { id -> id?.let { state.departmentName(it) } ?: "Select department…" },
+                        label = { id -> id?.let { state.departmentName(it) } ?: str(S.select_department) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
             if (shows(PoFormFields.COMPANY) && state.companies.isNotEmpty()) {
                 LabelledField(
-                    label(PoFormFields.COMPANY, "Company") + " (optional)",
+                    label(PoFormFields.COMPANY, str(S.company)) + " " + str(S.desktop_optional_tail),
                     Modifier.weight(1f),
                 ) {
                     ZillitSelect(
@@ -262,7 +264,7 @@ private fun ColumnScope.DepartmentAndCompany(state: PoUiState, form: PoFormState
                         onSelect = { onEvent(PoEvent.EditForm(form.copy(companyId = it))) },
                         label = { id ->
                             id?.let { key -> state.companies.firstOrNull { it.id == key }?.name ?: key }
-                                ?: "Search companies…"
+                                ?: str(S.dm_nda_search_companies)
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -282,13 +284,13 @@ private fun ColumnScope.CodingRow(state: PoUiState, form: PoFormState, onEvent: 
                 ZillitTextField(
                     value = form.nominalCode,
                     onValueChange = { onEvent(PoEvent.EditForm(form.copy(nominalCode = it))) },
-                    label = label(PoFormFields.ACCOUNT_CODE, "Nominal Code"),
-                    placeholder = "Search or enter code…",
+                    label = label(PoFormFields.ACCOUNT_CODE, str(S.ah_lbl_nominal_code)),
+                    placeholder = str(S.desktop_po_search_or_enter_code),
                     modifier = Modifier.weight(1f),
                 )
             }
             if (shows(PoFormFields.CURRENCY)) {
-                LabelledField(label(PoFormFields.CURRENCY, "Currency"), Modifier.weight(1f)) {
+                LabelledField(label(PoFormFields.CURRENCY, str(S.ah_lbl_currency)), Modifier.weight(1f)) {
                     ZillitSelect(
                         value = form.currency ?: state.currencies.firstOrNull() ?: "GBP",
                         options = state.currencies.ifEmpty { listOf("GBP") },
@@ -302,8 +304,8 @@ private fun ColumnScope.CodingRow(state: PoUiState, form: PoFormState, onEvent: 
                 ZillitTextField(
                     value = form.episode,
                     onValueChange = { onEvent(PoEvent.EditForm(form.copy(episode = it))) },
-                    label = label(PoFormFields.EPISODE, "Episode"),
-                    placeholder = "e.g. EP-104",
+                    label = label(PoFormFields.EPISODE, str(S.episode)),
+                    placeholder = str(S.desktop_po_episode_example),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -323,7 +325,7 @@ private fun ColumnScope.DateRow(state: PoUiState, form: PoFormState, onEvent: (P
                     onValueChange = { iso ->
                         onEvent(PoEvent.EditForm(form.copy(effectiveDate = iso.isoDayToUtcMidnight())))
                     },
-                    label = label(PoFormFields.EFFECTIVE_DATE, "Effective Date"),
+                    label = label(PoFormFields.EFFECTIVE_DATE, str(S.ah_lbl_eff_date)),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -333,7 +335,7 @@ private fun ColumnScope.DateRow(state: PoUiState, form: PoFormState, onEvent: (P
                     onValueChange = { iso ->
                         onEvent(PoEvent.EditForm(form.copy(deliveryDate = iso.isoDayToUtcMidnight())))
                     },
-                    label = label(PoFormFields.DELIVERY_DATE, "Delivery Date"),
+                    label = label(PoFormFields.DELIVERY_DATE, str(S.delivery_date)),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -347,8 +349,8 @@ private fun ColumnScope.NotesRow(state: PoUiState, form: PoFormState, onEvent: (
     ZillitTextField(
         value = form.notes,
         onValueChange = { onEvent(PoEvent.EditForm(form.copy(notes = it))) },
-        label = state.fieldLabel(PoFormFields.NOTES, "Notes") + " (optional)",
-        placeholder = "Internal notes…",
+        label = state.fieldLabel(PoFormFields.NOTES, str(S.notes)) + " " + str(S.desktop_optional_tail),
+        placeholder = str(S.desktop_po_internal_notes),
         singleLine = false,
     )
 }
@@ -386,17 +388,17 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
         // Editing the block by hand breaks the link to the saved row.
         onEvent(PoEvent.EditForm(form.copy(deliveryAddress = next, deliveryAddressId = null)))
     }
-    ZillitSectionCard(title = "Delivery Address", icon = ZillitIcons.Home) {
+    ZillitSectionCard(title = str(S.delivery_address), icon = ZillitIcons.Home) {
         if (state.addresses.isNotEmpty()) {
             Row(verticalAlignment = Alignment.Bottom) {
-                LabelledField("Saved address", Modifier.weight(1f)) {
+                LabelledField(str(S.desktop_po_saved_address), Modifier.weight(1f)) {
                     ZillitSelect(
                         value = form.deliveryAddressId,
                         options = listOf(null) + state.addresses.map { it.id },
                         onSelect = { onEvent(PoEvent.PickSavedAddress(it)) },
                         label = { id ->
                             id?.let { key -> state.addresses.firstOrNull { it.id == key }?.label ?: key }
-                                ?: "Pick a saved address…"
+                                ?: str(S.desktop_po_pick_a_saved_address)
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -404,7 +406,7 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
                 if (form.deliveryAddressId != null) {
                     Spacer(modifier = Modifier.width(ZillitTheme.spacing.sm))
                     ZillitButton(
-                        text = "Use a different / manual address",
+                        text = str(S.desktop_po_use_manual_address),
                         onClick = { onEvent(PoEvent.PickSavedAddress(null)) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -417,14 +419,14 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
             ZillitTextField(
                 value = address.name,
                 onValueChange = { set(address.copy(name = it)) },
-                label = "Recipient Name",
-                placeholder = "Recipient name…",
+                label = str(S.dd_recipient_name),
+                placeholder = str(S.dd_recipient_name),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = address.email,
                 onValueChange = { set(address.copy(email = it)) },
-                label = "Email",
+                label = str(S.email),
                 placeholder = "email@example.com",
                 keyboardType = KeyboardType.Email,
                 modifier = Modifier.weight(1f),
@@ -434,14 +436,14 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
             ZillitTextField(
                 value = address.phoneCode,
                 onValueChange = { set(address.copy(phoneCode = it)) },
-                label = "Code",
+                label = str(S.code),
                 placeholder = "+44",
                 modifier = Modifier.width(CODE_WIDTH),
             )
             ZillitTextField(
                 value = address.phone,
                 onValueChange = { set(address.copy(phone = it)) },
-                label = "Phone",
+                label = str(S.phone),
                 placeholder = "1753 651700",
                 keyboardType = KeyboardType.Phone,
                 modifier = Modifier.weight(1f),
@@ -450,28 +452,28 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
         ZillitTextField(
             value = address.line1,
             onValueChange = { set(address.copy(line1 = it)) },
-            label = "Address Line 1",
-            placeholder = "Street address…",
+            label = str(S.address_line_1),
+            placeholder = str(S.ah_street_hint),
         )
         ZillitTextField(
             value = address.line2,
             onValueChange = { set(address.copy(line2 = it)) },
-            label = "Address Line 2",
-            placeholder = "Suite, unit, building…",
+            label = str(S.address_line_2),
+            placeholder = str(S.ah_suite_hint),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitTextField(
                 value = address.city,
                 onValueChange = { set(address.copy(city = it)) },
-                label = "City",
-                placeholder = "City…",
+                label = str(S.city),
+                placeholder = str(S.city),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = address.state,
                 onValueChange = { set(address.copy(state = it)) },
-                label = "State / County",
-                placeholder = "State / County…",
+                label = str(S.ah_lbl_state_county_row),
+                placeholder = str(S.ah_lbl_state_county_row),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -479,15 +481,15 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
             ZillitTextField(
                 value = address.postalCode,
                 onValueChange = { set(address.copy(postalCode = it)) },
-                label = "Postal / Zip Code",
-                placeholder = "Postal code…",
+                label = str(S.desktop_postal_zip_code),
+                placeholder = str(S.ah_lbl_postal_code),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = address.country,
                 onValueChange = { set(address.copy(country = it)) },
-                label = "Country",
-                placeholder = "Select country…",
+                label = str(S.ah_lbl_country),
+                placeholder = str(S.ah_select_country),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -507,11 +509,11 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
 private fun LineItemsSection(state: PoUiState, form: PoFormState, onEvent: (PoEvent) -> Unit) {
     val cadence = state.projectSettings.splitCadence
     ZillitSectionCard(
-        title = "Line Items",
+        title = str(S.ah_line_items),
         icon = ZillitIcons.Ledger,
         action = {
             ZillitButton(
-                text = "Add line",
+                text = str(S.desktop_po_add_line),
                 onClick = { onEvent(PoEvent.AddLine) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -532,15 +534,13 @@ private fun LineItemsSection(state: PoUiState, form: PoFormState, onEvent: (PoEv
             if (index != form.lines.lastIndex) ZillitDivider()
         }
         ZillitText(
-            text = "Split Line divides a line into equal parts for allocation across departments or accounts. " +
-                "A rental line (Exp. Type Rent, with start and end dates) splits by period instead, at the " +
-                "cadence set in PO Settings — currently ${cadence.label.lowercase()}.",
+            text = str(S.desktop_po_split_help, cadence.label.lowercase()),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
         if (form.lines.any { it.isSplitChild }) {
             ZillitNotice(
-                text = "Rental lines split by period",
+                text = str(S.desktop_po_rental_lines_split_by_period),
                 tone = StatusTone.Progress,
                 icon = ZillitIcons.Calendar,
             )
@@ -558,13 +558,13 @@ private fun LineHeader() {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        HeaderCell("Description", Modifier.weight(1f))
-        HeaderCell("Exp. Type", Modifier.width(EXP_WIDTH))
-        HeaderCell("Qty", Modifier.width(QTY_WIDTH))
-        HeaderCell("Unit Price", Modifier.width(PRICE_WIDTH))
-        HeaderCell("Code", Modifier.width(CODE_COLUMN))
-        HeaderCell("Tax", Modifier.width(TAX_WIDTH))
-        HeaderCell("Amount", Modifier.width(AMOUNT_WIDTH))
+        HeaderCell(str(S.description), Modifier.weight(1f))
+        HeaderCell(str(S.desktop_exp_type), Modifier.width(EXP_WIDTH))
+        HeaderCell(str(S.ah_lbl_qty), Modifier.width(QTY_WIDTH))
+        HeaderCell(str(S.ah_lbl_unit_price), Modifier.width(PRICE_WIDTH))
+        HeaderCell(str(S.code), Modifier.width(CODE_COLUMN))
+        HeaderCell(str(S.ah_lbl_vat_tax), Modifier.width(TAX_WIDTH))
+        HeaderCell(str(S.amount), Modifier.width(AMOUNT_WIDTH))
     }
     ZillitDivider()
 }
@@ -597,7 +597,7 @@ private fun LineRow(
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         if (line.isSplitChild) {
             ZillitText(
-                text = "Split child",
+                text = str(S.desktop_po_split_child),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -609,34 +609,34 @@ private fun LineRow(
             ZillitTextField(
                 value = line.description,
                 onValueChange = { set(line.copy(description = it)) },
-                placeholder = "Description…",
+                placeholder = str(S.ah_description_hint),
                 modifier = Modifier.weight(1f),
             )
             ZillitSelect(
                 value = line.expenditureType,
                 options = listOf(null) + EXPENDITURE_TYPES,
                 onSelect = { set(line.copy(expenditureType = it)) },
-                label = { it ?: "Exp. Type" },
+                label = { it ?: str(S.desktop_exp_type) },
                 modifier = Modifier.width(EXP_WIDTH),
             )
             ZillitTextField(
                 value = line.quantity.trimmed(),
                 onValueChange = { set(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-                placeholder = "Qty",
+                placeholder = str(S.ah_lbl_qty),
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.width(QTY_WIDTH),
             )
             ZillitTextField(
                 value = line.unitPrice.trimmed(),
                 onValueChange = { set(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-                placeholder = "Unit Price",
+                placeholder = str(S.ah_lbl_unit_price),
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.width(PRICE_WIDTH),
             )
             ZillitTextField(
                 value = line.nominalCode.orEmpty(),
                 onValueChange = { set(line.copy(nominalCode = it.takeIf { code -> code.isNotBlank() })) },
-                placeholder = "Code",
+                placeholder = str(S.code),
                 modifier = Modifier.width(CODE_COLUMN),
             )
             ZillitSelect(
@@ -646,7 +646,10 @@ private fun LineRow(
                     val tax = state.taxTypes.firstOrNull { it.id == id }
                     set(line.copy(taxType = id, vatRate = tax?.rate))
                 },
-                label = { id -> id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key } ?: "Tax" },
+                label = { id ->
+                    id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
+                        ?: str(S.ah_lbl_vat_tax)
+                },
                 modifier = Modifier.width(TAX_WIDTH),
             )
             ZillitText(
@@ -660,13 +663,13 @@ private fun LineRow(
                 ZillitDateField(
                     value = line.rentalStart.orEmpty(),
                     onValueChange = { set(line.copy(rentalStart = it.takeIf { day -> day.isNotBlank() })) },
-                    label = "Start",
+                    label = str(S.start),
                     modifier = Modifier.width(RENTAL_WIDTH),
                 )
                 ZillitDateField(
                     value = line.rentalEnd.orEmpty(),
                     onValueChange = { set(line.copy(rentalEnd = it.takeIf { day -> day.isNotBlank() })) },
-                    label = "End",
+                    label = str(S.end),
                     modifier = Modifier.width(RENTAL_WIDTH),
                 )
             }
@@ -676,7 +679,7 @@ private fun LineRow(
             // note. A divisible rental splits by period; anything else halves.
             if (line.isDivisibleRental) {
                 ZillitButton(
-                    text = "Split by Period",
+                    text = str(S.desktop_po_split_by_period),
                     onClick = { onEvent(PoEvent.SplitLineByPeriod(index)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -690,7 +693,7 @@ private fun LineRow(
                 )
             } else {
                 ZillitButton(
-                    text = "Split Line",
+                    text = str(S.desktop_po_split_line),
                     onClick = { onEvent(PoEvent.SplitLine(index)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -699,7 +702,7 @@ private fun LineRow(
             }
             Spacer(modifier = Modifier.weight(1f))
             ZillitButton(
-                text = if (line.isSplitChild) "Remove split" else "Remove line",
+                text = if (line.isSplitChild) str(S.desktop_po_remove_split) else str(S.desktop_po_remove_line),
                 onClick = { onEvent(PoEvent.RemoveLine(index)) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -711,11 +714,11 @@ private fun LineRow(
 @Composable
 private fun AttachmentsSection(busy: Boolean, form: PoFormState, onEvent: (PoEvent) -> Unit) {
     ZillitSectionCard(
-        title = "Attachments",
+        title = str(S.attachments),
         icon = ZillitIcons.Paperclip,
         action = {
             ZillitButton(
-                text = if (form.uploading) "Uploading…" else "Attachment",
+                text = if (form.uploading) str(S.ah_uploading) else str(S.attachment),
                 onClick = { onEvent(PoEvent.AttachFile) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -727,7 +730,7 @@ private fun AttachmentsSection(busy: Boolean, form: PoFormState, onEvent: (PoEve
     ) {
         if (form.attachments.isEmpty()) {
             ZillitText(
-                text = "A quote, a signed copy, a delivery note — anything that makes this order arguable.",
+                text = str(S.desktop_po_attachment_hint),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -742,14 +745,14 @@ private fun AttachmentsSection(busy: Boolean, form: PoFormState, onEvent: (PoEve
                     maxLines = 1,
                 )
                 ZillitButton(
-                    text = "View",
+                    text = str(S.view),
                     onClick = { onEvent(PoEvent.OpenAttachment(file)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                     enabled = !busy,
                 )
                 ZillitButton(
-                    text = "Remove",
+                    text = str(S.remove),
                     onClick = { onEvent(PoEvent.RemoveAttachment(file)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -764,11 +767,11 @@ private fun AttachmentsSection(busy: Boolean, form: PoFormState, onEvent: (PoEve
 @Composable
 private fun TotalsCard(form: PoFormState) {
     val totals = form.totals
-    ZillitSectionCard(title = "PO Total", icon = ZillitIcons.Bank) {
-        TotalRow("Net Total", Money.format(totals.net, form.currency))
-        TotalRow("Tax", Money.format(totals.tax, form.currency))
+    ZillitSectionCard(title = str(S.desktop_po_total), icon = ZillitIcons.Bank) {
+        TotalRow(str(S.ah_lbl_net_total), Money.format(totals.net, form.currency))
+        TotalRow(str(S.ah_lbl_vat_tax), Money.format(totals.tax, form.currency))
         ZillitDivider()
-        TotalRow("Gross Total", Money.format(totals.gross, form.currency), strong = true)
+        TotalRow(str(S.ah_lbl_gross_total), Money.format(totals.gross, form.currency), strong = true)
     }
 }
 

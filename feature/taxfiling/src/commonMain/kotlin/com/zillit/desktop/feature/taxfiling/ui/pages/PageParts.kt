@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingUiState
 import com.zillit.desktop.feature.taxfiling.ui.components.MtdIconTile
 import com.zillit.desktop.feature.taxfiling.ui.components.mtdPalette
@@ -70,8 +72,7 @@ internal fun AuthorityWarning(state: TaxFilingUiState) {
     ) {
         ZillitIcon(icon = ZillitIcons.Warning, tint = palette.red, size = 16.dp)
         ZillitText(
-            text = "This installation cannot send HMRC the machine details every filing requires, " +
-                "so obligations cannot be synced and nothing can be submitted from here.",
+            text = str(S.desktop_tax_no_machine_details_banner),
             style = mtdText(13.sp, FontWeight.Medium, tracking = 0.em),
             color = palette.ink,
         )

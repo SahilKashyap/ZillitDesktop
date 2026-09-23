@@ -38,14 +38,20 @@ class MapCanvasTest {
         )
         assertEquals(
             MapCanvasEvent.PreviewAdd(LatLng(1.5, -2.25), "Andheri", "Andheri West"),
-            MapCanvasWire.parseEvent("""{"type":"preview-action","action":"add","lat":1.5,"lng":-2.25,"name":"Andheri","address":"Andheri West"}"""),
+            MapCanvasWire.parseEvent(
+                """{"type":"preview-action","action":"add","lat":1.5,"lng":-2.25,""" +
+                    """"name":"Andheri","address":"Andheri West"}""",
+            ),
         )
         assertEquals(
             MapCanvasEvent.MarkerDragged("l1", LatLng(3.0, 4.0)),
             MapCanvasWire.parseEvent("""{"type":"marker-dragged","id":"l1","lat":3,"lng":4}"""),
         )
         assertIs<MapCanvasEvent.Failed>(MapCanvasWire.parseEvent("""{"type":"auth-failed"}"""))
-        assertEquals(MapCanvasEvent.Guide(collapsed = true, dismissed = false), MapCanvasWire.parseEvent("""{"type":"guide","collapsed":true}"""))
+        assertEquals(
+            MapCanvasEvent.Guide(collapsed = true, dismissed = false),
+            MapCanvasWire.parseEvent("""{"type":"guide","collapsed":true}"""),
+        )
         assertNull(MapCanvasWire.parseEvent("""{"type":"ready"}"""))
         assertNull(MapCanvasWire.parseEvent("not json"))
         assertNull(MapCanvasWire.parseEvent("""{"type":"marker-dragged","id":"l1"}"""))
@@ -54,13 +60,19 @@ class MapCanvasTest {
 
     @Test
     fun `every payload crosses as one quoted string`() {
-        val scene = MapScene(markers = listOf(SceneMarker("x", "It's \"quoted\" </script>", "Hotel", "H", "#8E44AD", LatLng(1.0, 2.0))))
+        val scene = MapScene(
+            markers = listOf(SceneMarker("x", "It's \"quoted\" </script>", "Hotel", "H", "#8E44AD", LatLng(1.0, 2.0))),
+        )
         val script = MapCanvasWire.renderScript(scene)
         assertTrue(script.startsWith("zillitMap.render(\""))
         assertTrue(script.endsWith("\")"))
-        val inner = Json.parseToJsonElement(script.removePrefix("zillitMap.render(").removeSuffix(")")).jsonPrimitive.content
+        val inner = Json.parseToJsonElement(
+            script.removePrefix("zillitMap.render(").removeSuffix(")"),
+        ).jsonPrimitive.content
         val decoded = Json.parseToJsonElement(inner).jsonObject
-        assertEquals("It's \"quoted\" </script>", decoded["markers"]!!.let { (it as kotlinx.serialization.json.JsonArray)[0].jsonObject["name"]!!.jsonPrimitive.content })
+        val markers = decoded["markers"]!! as kotlinx.serialization.json.JsonArray
+        val firstName = markers[0].jsonObject["name"]!!.jsonPrimitive.content
+        assertEquals("It's \"quoted\" </script>", firstName)
         assertEquals("null", decoded["zone"].toString())
         assertEquals("zillitMap.boot(\"k\\\"ey\")", MapCanvasWire.bootScript("k\"ey"))
     }
@@ -74,7 +86,9 @@ class MapCanvasTest {
     }
 
     private fun requestId(script: String): Int {
-        val payload = Json.parseToJsonElement(script.removePrefix("zillitMap.request(").removeSuffix(")")).jsonPrimitive.content
+        val payload = Json.parseToJsonElement(
+            script.removePrefix("zillitMap.request(").removeSuffix(")"),
+        ).jsonPrimitive.content
         return Json.parseToJsonElement(payload).jsonObject["id"]!!.jsonPrimitive.content.toInt()
     }
 

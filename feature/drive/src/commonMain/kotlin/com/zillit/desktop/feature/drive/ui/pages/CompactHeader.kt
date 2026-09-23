@@ -23,6 +23,8 @@ import com.zillit.desktop.feature.drive.domain.DriveSection
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.DriveViewMode
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The widget's header: the two sections as a segmented control, Upload and
@@ -47,7 +49,10 @@ internal fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         ) {
             ZillitSegmented(
                 options = DriveSection.entries.map {
-                    ZillitTab(it.name, if (it == DriveSection.MyDrive) "My Drive" else "Shared")
+                    ZillitTab(
+                        it.name,
+                        if (it == DriveSection.MyDrive) str(S.drive_section_my_drive) else str(S.history_shared),
+                    )
                 },
                 activeId = state.section.name,
                 onSelect = { id ->
@@ -61,18 +66,18 @@ internal fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 com.zillit.desktop.core.media.AttachMenu(
                     kinds = DRIVE_UPLOAD_KINDS,
                     icon = ZillitIcons.Upload,
-                    contentDescription = "Upload",
+                    contentDescription = str(S.upload),
                     onPick = { kind -> onEvent(DriveEvent.PickFilesOf(kind)) },
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.FolderPlus,
-                    contentDescription = "New folder",
+                    contentDescription = str(S.drive_pick_new_folder),
                     onClick = { onEvent(DriveEvent.OpenNewFolder) },
                 )
             }
             ZillitIconButton(
                 icon = ZillitIcons.Reload,
-                contentDescription = "Refresh",
+                contentDescription = str(S.refresh_text),
                 onClick = { onEvent(DriveEvent.Refresh) },
             )
         }
@@ -84,20 +89,20 @@ internal fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             if (state.breadcrumb.isNotEmpty() && !state.showTrash) {
                 ZillitIconButton(
                     icon = ZillitIcons.ArrowLeft,
-                    contentDescription = "Back",
+                    contentDescription = str(S.back),
                     onClick = { onEvent(DriveEvent.GoBack) },
                 )
             }
             ZillitSearchField(
                 value = state.searchInput,
                 onValueChange = { onEvent(DriveEvent.SearchInput(it)) },
-                placeholder = if (state.showTrash) "Trash" else state.currentFolderName,
+                placeholder = if (state.showTrash) str(S.trash_text) else state.currentFolderName,
                 enabled = !state.showTrash,
                 modifier = Modifier.weight(1f),
             )
             ZillitIconButton(
                 icon = if (state.viewMode == DriveViewMode.List) ZillitIcons.Grid else ZillitIcons.Ledger,
-                contentDescription = "Switch view",
+                contentDescription = str(S.desktop_drive_switch_view),
                 onClick = {
                     onEvent(
                         DriveEvent.SetViewMode(
@@ -108,7 +113,7 @@ internal fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             )
             ZillitIconButton(
                 icon = ZillitIcons.Trash,
-                contentDescription = if (state.showTrash) "Close trash" else "Trash",
+                contentDescription = if (state.showTrash) str(S.desktop_drive_close_trash) else str(S.trash_text),
                 onClick = { onEvent(DriveEvent.ShowTrash(!state.showTrash)) },
                 tint = if (state.showTrash) ZillitTheme.colors.danger else null,
             )
@@ -130,21 +135,21 @@ internal fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 if (state.movableCount > 0) {
                     ZillitIconButton(
                         icon = ZillitIcons.ArrowRight,
-                        contentDescription = "Move selection",
+                        contentDescription = str(S.desktop_drive_move_selection),
                         onClick = { onEvent(DriveEvent.OpenMoveSelection) },
                     )
                 }
                 if (state.downloadableCount > 0) {
                     ZillitIconButton(
                         icon = ZillitIcons.Download,
-                        contentDescription = "Download selection",
+                        contentDescription = str(S.desktop_drive_download_selection),
                         onClick = { onEvent(DriveEvent.DownloadSelection) },
                     )
                 }
                 if (state.deletableCount > 0) {
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Delete selection",
+                        contentDescription = str(S.desktop_drive_delete_selection),
                         onClick = { onEvent(DriveEvent.RequestDelete(state.selectedItems.map { it.ref })) },
                         tint = ZillitTheme.colors.danger,
                     )

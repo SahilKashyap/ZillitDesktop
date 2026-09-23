@@ -62,8 +62,15 @@ data class ReportSyncEvent(
     val name: String,
     val reportId: String? = null,
     val status: ReportStatus? = null,
+    /** `approval:voided` — the approval requests the sender superseded. */
+    val requestIds: List<String> = emptyList(),
 ) {
     val isComment: Boolean get() = name.startsWith("productionreport:comment:")
+
+    companion object {
+        const val DELETED = "production_report:previous_report:deleted"
+        const val VOIDED = "productionreport:approval:voided"
+    }
 }
 
 /**
@@ -150,11 +157,24 @@ interface ReportRepository {
     suspend fun deleteComment(id: String, commentId: String): ZillitResult<Unit>
 }
 
+/** The call sheet PUBLISHED for one shoot day — or why there is none to seed from. */
+sealed interface CallSheetForDay {
+    data class Found(val payload: SheetPayload) : CallSheetForDay
+
+    /** The service answered: nothing is published for that day (`call_sheet_not_found_for_day`). */
+    data object None : CallSheetForDay
+
+    /** The request failed — it says nothing about what is published, so no prompt. */
+    data object Unavailable : CallSheetForDay
+}
+
 /**
- * The last published call sheet, for seeding a new report's crew IN times
- * and key personnel. Failures and absence are both null — the web populates
- * silently or not at all.
+ * The call sheet published for the report's shoot day (`GET
+ * /call-sheets/by-day` on the call-sheet service, the date as LOCAL midnight
+ * epoch ms), for seeding a new report's crew IN times, key personnel and
+ * Crew Call. By day, not the newest published: all three belong to one shoot
+ * day, and the latest sheet may be another day's.
  */
 fun interface PublishedCallSheetLookup {
-    suspend fun lastPublishedPayload(projectId: String): SheetPayload?
+    suspend fun publishedForDay(projectId: String, dateYmd: String): CallSheetForDay
 }

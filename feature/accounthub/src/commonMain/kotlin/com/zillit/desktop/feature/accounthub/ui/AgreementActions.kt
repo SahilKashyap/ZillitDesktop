@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.SetupUpload
@@ -175,7 +177,7 @@ internal class AgreementActions(
                         agreementQueue = emptyList(),
                         agreementsUploading = false,
                     ),
-                    notice = "${stored.size} document(s) added.",
+                    notice = str(S.desktop_hub_n_documents_added, stored.size),
                 )
             }
             if (failed.isNotEmpty()) vm.sendSideEffect(AccountHubEffect.Failed(failureMessage(failed)))
@@ -191,17 +193,17 @@ internal class AgreementActions(
             vm.update {
                 copy(
                     setup = setup.copy(agreements = setup.agreements.filterNot { it.id == id }),
-                    notice = "Document removed.",
+                    notice = str(S.desktop_document_removed),
                 )
             }
         }, vm::report)
     }
 
     private fun failureMessage(failed: List<String>): String =
-        "Could not upload: " + failed.joinToString(", ")
+        str(S.desktop_hub_could_not_upload_x, failed.joinToString(", "))
 }
 
 // The web's `TermsDocumentSection` copy, verbatim.
-private const val UPLOAD_FAILED = "Upload failed — please try again"
-private const val METADATA_MISSING = "Can't open — attachment metadata missing"
-private const val OPEN_FAILED = "Couldn't open the document — please try again"
+private val UPLOAD_FAILED: String get() = str(S.desktop_hub_upload_failed_please_try_again)
+private val METADATA_MISSING: String get() = str(S.desktop_hub_cant_open_attachment_metadata_missing)
+private val OPEN_FAILED: String get() = str(S.desktop_hub_couldnt_open_the_document_please_try_again)

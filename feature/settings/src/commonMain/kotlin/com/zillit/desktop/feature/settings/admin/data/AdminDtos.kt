@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.settings.admin.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.AdminUnit
 import com.zillit.desktop.feature.settings.admin.domain.CompanyDetails
 import com.zillit.desktop.feature.settings.admin.domain.CompanyField
@@ -117,7 +119,7 @@ internal data class CrewDto(
             userId = resolved,
             // Never blank: a nameless row still has an admin switch on it, and
             // a switch beside an empty line cannot be thrown with confidence.
-            fullName = named.ifBlank { email.orEmpty() }.ifBlank { "Someone with no name set" },
+            fullName = named.ifBlank { email.orEmpty() }.ifBlank { str(S.desktop_someone_with_no_name) },
             email = email?.takeIf { it.isNotBlank() },
             phone = phone?.takeIf { it.isNotBlank() },
             department = (department ?: departmentName)?.takeIf { it.isNotBlank() },
@@ -151,7 +153,7 @@ internal data class PreApprovedDto(
             ?: listOfNotNull(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")
         return PreApprovedCrew(
             id = resolved,
-            fullName = named.ifBlank { email.orEmpty() }.ifBlank { "Someone with no name set" },
+            fullName = named.ifBlank { email.orEmpty() }.ifBlank { str(S.desktop_someone_with_no_name) },
             email = email?.takeIf { it.isNotBlank() },
             phone = listOfNotNull(countryCode?.takeIf { it.isNotBlank() }, phone?.takeIf { it.isNotBlank() })
                 .takeIf { it.isNotEmpty() }
@@ -316,7 +318,7 @@ internal data class SosContactDto(
         }
         return SosRecipient(
             id = resolved,
-            name = named.orEmpty().ifBlank { "Someone with no name set" },
+            name = named.orEmpty().ifBlank { str(S.desktop_someone_with_no_name) },
             entryType = kind,
             userId = user?.userId?.takeIf { it.isNotBlank() },
             phone = phoneNumber?.takeIf { it.isNotBlank() } ?: user?.phone?.takeIf { it.isNotBlank() },

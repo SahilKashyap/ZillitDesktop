@@ -43,13 +43,18 @@ import com.zillit.desktop.feature.invoices.domain.SalesInvoice
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.domain.UploadType
 import com.zillit.desktop.feature.invoices.domain.Vendor
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The department view's three tabs. */
-enum class DepartmentTab(val id: String, val label: String, val emptyText: String) {
-    ApprovalQueue("all", "Approval Queue", "No invoices awaiting your approval"),
-    MyDepartment("dept", "My Department", "No invoices found in your department"),
-    MyInvoices("my", "My Invoices", "You haven't uploaded any invoices yet"),
+enum class DepartmentTab(val id: String, private val labelKey: String, private val emptyKey: String) {
+    ApprovalQueue("all", S.ah_approval_queue, S.desktop_inv_no_awaiting_your_approval),
+    MyDepartment("dept", S.intradepartment, S.desktop_inv_none_in_your_department),
+    MyInvoices("my", S.desktop_my_invoices, S.desktop_inv_none_uploaded_yet),
     ;
+
+    val label: String get() = str(labelKey)
+    val emptyText: String get() = str(emptyKey)
 
     /** The `level_1` the service files this tab's rows under (`constants.js:176-186`); null for none. */
     val badgeKey: String?
@@ -61,12 +66,14 @@ enum class DepartmentTab(val id: String, val label: String, val emptyText: Strin
 }
 
 /** Client-side filter on `approval_status`. */
-enum class QuickFilter(val label: String) {
-    All("All"),
-    Pending("Pending"),
-    Approved("Approved"),
-    Rejected("Rejected"),
+enum class QuickFilter(private val labelKey: String) {
+    All(S.all),
+    Pending(S.pending),
+    Approved(S.approved),
+    Rejected(S.rejected),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun keeps(invoice: Invoice): Boolean = when (this) {
         All -> true
@@ -77,13 +84,16 @@ enum class QuickFilter(val label: String) {
 }
 
 /** A heading in the accountant's sidebar — the web's `NAV_SECTIONS`. */
-enum class InvoiceNavGroup(val label: String?) {
+enum class InvoiceNavGroup(private val labelKey: String?) {
     /** The first group has no heading on the web either. */
     Start(null),
-    ReceiveAndMatch("Receive & Match"),
-    ApproveAndPay("Approve & Pay"),
-    VendorsAndCreditors("Vendors & Creditors"),
-    SalesAndManagement("Sales & Management"),
+    ReceiveAndMatch(S.desktop_inv_nav_receive_and_match),
+    ApproveAndPay(S.desktop_inv_nav_approve_and_pay),
+    VendorsAndCreditors(S.desktop_inv_nav_vendors_and_creditors),
+    SalesAndManagement(S.desktop_inv_nav_sales_and_management),
+    ;
+
+    val label: String? get() = labelKey?.let { str(it) }
 }
 
 /**
@@ -92,31 +102,33 @@ enum class InvoiceNavGroup(val label: String?) {
  */
 enum class AccountantPage(
     val id: String,
-    val label: String,
+    private val labelKey: String,
     val group: InvoiceNavGroup,
     /** The row's icon, matched to the web's own per item. */
     val icon: ImageVector,
     /** Senior accountants only — the web's `senior: true` on Settings. */
     val seniorOnly: Boolean = false,
 ) {
-    Overview("overview", "Overview", InvoiceNavGroup.Start, ZillitIcons.Grid),
-    Inbox("inbox", "Invoice Inbox", InvoiceNavGroup.ReceiveAndMatch, ZillitIcons.Mail),
-    Register("register", "Invoice Register", InvoiceNavGroup.ReceiveAndMatch, ZillitIcons.File),
-    Matching("matching", "Invoices Pre-approval", InvoiceNavGroup.ReceiveAndMatch, ZillitIcons.Receipt),
-    ApprovalQueue("approval", "Approval Queue", InvoiceNavGroup.ApproveAndPay, ZillitIcons.Shield),
-    Entry("process", "Invoice Entry", InvoiceNavGroup.ApproveAndPay, ZillitIcons.Edit),
-    Payments("payments", "Payment Runs", InvoiceNavGroup.ApproveAndPay, ZillitIcons.Wallet),
-    Posted("posted", "Posted Invoices", InvoiceNavGroup.ApproveAndPay, ZillitIcons.Check),
-    Credits("credits", "Credit Notes", InvoiceNavGroup.ApproveAndPay, ZillitIcons.ArrowLeft),
-    Creditors("creditors", "Creditors Control", InvoiceNavGroup.VendorsAndCreditors, ZillitIcons.Bank),
-    Vendors("suppliers", "Vendors", InvoiceNavGroup.VendorsAndCreditors, ZillitIcons.Users),
-    Sales("sales", "Sales Invoices", InvoiceNavGroup.SalesAndManagement, ZillitIcons.CreditCard),
-    Accruals("accruals", "Accruals", InvoiceNavGroup.SalesAndManagement, ZillitIcons.Ledger),
-    Analytics("analytics", "Analytics", InvoiceNavGroup.SalesAndManagement, ZillitIcons.BarChart),
+    Overview("overview", S.ah_overview, InvoiceNavGroup.Start, ZillitIcons.Grid),
+    Inbox("inbox", S.desktop_invoice_inbox, InvoiceNavGroup.ReceiveAndMatch, ZillitIcons.Mail),
+    Register("register", S.desktop_invoice_register, InvoiceNavGroup.ReceiveAndMatch, ZillitIcons.File),
+    Matching("matching", S.desktop_invoices_pre_approval, InvoiceNavGroup.ReceiveAndMatch, ZillitIcons.Receipt),
+    ApprovalQueue("approval", S.ah_approval_queue, InvoiceNavGroup.ApproveAndPay, ZillitIcons.Shield),
+    Entry("process", S.desktop_invoice_entry, InvoiceNavGroup.ApproveAndPay, ZillitIcons.Edit),
+    Payments("payments", S.ah_payment_runs_btn, InvoiceNavGroup.ApproveAndPay, ZillitIcons.Wallet),
+    Posted("posted", S.desktop_posted_invoices, InvoiceNavGroup.ApproveAndPay, ZillitIcons.Check),
+    Credits("credits", S.desktop_credit_notes, InvoiceNavGroup.ApproveAndPay, ZillitIcons.ArrowLeft),
+    Creditors("creditors", S.desktop_creditors_control, InvoiceNavGroup.VendorsAndCreditors, ZillitIcons.Bank),
+    Vendors("suppliers", S.ah_vendors, InvoiceNavGroup.VendorsAndCreditors, ZillitIcons.Users),
+    Sales("sales", S.desktop_sales_invoices, InvoiceNavGroup.SalesAndManagement, ZillitIcons.CreditCard),
+    Accruals("accruals", S.desktop_accruals, InvoiceNavGroup.SalesAndManagement, ZillitIcons.Ledger),
+    Analytics("analytics", S.analytics, InvoiceNavGroup.SalesAndManagement, ZillitIcons.BarChart),
     /** Empty on purpose: the web shows its own "coming soon" here. */
-    Reports("reports", "Reports", InvoiceNavGroup.SalesAndManagement, ZillitIcons.Search),
-    Settings("settings", "Settings", InvoiceNavGroup.SalesAndManagement, ZillitIcons.Settings, seniorOnly = true),
+    Reports("reports", S.reports, InvoiceNavGroup.SalesAndManagement, ZillitIcons.Search),
+    Settings("settings", S.settings, InvoiceNavGroup.SalesAndManagement, ZillitIcons.Settings, seniorOnly = true),
     ;
+
+    val label: String get() = str(labelKey)
 
     /**
      * The kicker above the page title — the web's `PageHeader` eyebrow.
@@ -140,53 +152,52 @@ enum class AccountantPage(
 
     val eyebrow: String
         get() = when (this) {
-            Overview -> "Invoices / AP"
-            Inbox -> "Receive"
-            Register, Posted -> "Invoices"
-            Matching -> "Match"
-            ApprovalQueue -> "Approve"
-            Entry -> "Enter"
-            Payments -> "Pay"
-            Credits -> "Credits"
-            Creditors -> "Creditors"
-            Vendors -> "Vendors"
-            Sales -> "Sales"
-            Accruals -> "Accruals"
-            Analytics -> "Analytics"
-            Reports -> "Reports"
-            Settings -> "Configure"
+            Overview -> str(S.desktop_inv_eyebrow_invoices_ap)
+            Inbox -> str(S.desktop_receive)
+            Register, Posted -> str(S.ah_invoices)
+            Matching -> str(S.desktop_match)
+            ApprovalQueue -> str(S.approve)
+            Entry -> str(S.desktop_enter)
+            Payments -> str(S.desktop_pay)
+            Credits -> str(S.desktop_credits)
+            Creditors -> str(S.desktop_creditors)
+            Vendors -> str(S.ah_vendors)
+            Sales -> str(S.desktop_sales)
+            Accruals -> str(S.desktop_accruals)
+            Analytics -> str(S.analytics)
+            Reports -> str(S.reports)
+            Settings -> str(S.desktop_configure)
         }
 
     /** The heading the web prints for this page, which is not always [label]. */
     val heading: String
         get() = when (this) {
-            Overview -> "Overview"
-            Credits -> "Credit Notes & Disputes"
-            Posted -> "Posted Invoices"
-            Settings -> "Invoices Setup"
+            Overview -> str(S.ah_overview)
+            Credits -> str(S.desktop_credit_notes_and_disputes)
+            Posted -> str(S.desktop_posted_invoices)
+            Settings -> str(S.desktop_invoices_setup)
             else -> label
         }
 
     /** The sentence under the heading — the web's `description`, word for word. */
     val blurb: String
         get() = when (this) {
-            Overview -> "Vendor invoice lifecycle — from receipt to payment."
-            Inbox -> "Upload invoices or forward by email. AI extracts the data."
-            Register -> "All invoices in one place. Click any row for details."
-            Matching ->
-                "Match invoices to POs. Auto-suggested matches appear based on vendor, amount, and PO reference."
-            ApprovalQueue -> "Route invoices through the multi-tier approval chain."
-            Entry -> "Code, validate, and post approved invoices to the ledger."
-            Payments -> "Build payment runs from open items. BACs, wires, and cheques."
-            Posted -> "Everything that has hit the ledger — awaiting payment and paid."
-            Credits -> "Credit notes and dispute tracking."
-            Creditors -> "Outstanding balances and ageing by vendor."
-            Vendors -> "AI-powered vendor compliance, bank verification, and default coding."
-            Sales -> "Revenue invoicing — co-production, placement, facility recharges."
-            Accruals -> "Auto-accruals from open POs. Reverses on invoice receipt."
-            Analytics -> "Spend analysis by department and vendor."
-            Reports -> "Cost reports, Tax returns, and management exports."
-            Settings -> "AP controls — posting limits, alert preferences, and the sign-off chain."
+            Overview -> str(S.desktop_inv_blurb_overview)
+            Inbox -> str(S.desktop_inv_blurb_inbox)
+            Register -> str(S.desktop_inv_blurb_register)
+            Matching -> str(S.desktop_inv_blurb_matching)
+            ApprovalQueue -> str(S.desktop_inv_blurb_approval_queue)
+            Entry -> str(S.desktop_inv_blurb_entry)
+            Payments -> str(S.desktop_inv_blurb_payments)
+            Posted -> str(S.desktop_inv_blurb_posted)
+            Credits -> str(S.desktop_inv_blurb_credits)
+            Creditors -> str(S.desktop_inv_blurb_creditors)
+            Vendors -> str(S.desktop_inv_blurb_vendors)
+            Sales -> str(S.desktop_inv_blurb_sales)
+            Accruals -> str(S.desktop_inv_blurb_accruals)
+            Analytics -> str(S.desktop_inv_blurb_analytics)
+            Reports -> str(S.desktop_inv_blurb_reports)
+            Settings -> str(S.desktop_inv_blurb_settings)
         }
 
     /** Whether this page is a list of invoices, which is what the shared table shows. */
@@ -302,25 +313,29 @@ data class SalesInvoiceDraft(
 }
 
 /** The posted page's status filter — the web's three options. */
-enum class PostedFilter(val label: String, val status: InvoiceStatus?) {
-    All("All", null),
-    ReadyToPay("Ready to Pay", InvoiceStatus.ReadyToPay),
-    Paid("Paid", InvoiceStatus.Paid),
+enum class PostedFilter(private val labelKey: String, val status: InvoiceStatus?) {
+    All(S.all, null),
+    ReadyToPay(S.desktop_ready_to_pay, InvoiceStatus.ReadyToPay),
+    Paid(S.desktop_paid, InvoiceStatus.Paid),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun keeps(invoice: Invoice): Boolean = status == null || invoice.status == status
 }
 
 /** The register's status chips. Empty = every status. */
-enum class RegisterChip(val label: String, val statuses: Set<InvoiceStatus>) {
-    All("All", emptySet()),
-    Inbox("Inbox", setOf(InvoiceStatus.Inbox)),
-    Matching("Matching", setOf(InvoiceStatus.Matching)),
-    Approval("Approval", setOf(InvoiceStatus.Approval)),
-    Entry("Entry", setOf(InvoiceStatus.Entry, InvoiceStatus.UnderReview)),
-    Ready("Ready", setOf(InvoiceStatus.ReadyToPay)),
-    Paid("Paid", setOf(InvoiceStatus.Paid)),
+enum class RegisterChip(private val labelKey: String, val statuses: Set<InvoiceStatus>) {
+    All(S.all, emptySet()),
+    Inbox(S.inbox_text, setOf(InvoiceStatus.Inbox)),
+    Matching(S.desktop_matching, setOf(InvoiceStatus.Matching)),
+    Approval(S.ah_step_approval, setOf(InvoiceStatus.Approval)),
+    Entry(S.desktop_entry, setOf(InvoiceStatus.Entry, InvoiceStatus.UnderReview)),
+    Ready(S.dd_csv_status_ready, setOf(InvoiceStatus.ReadyToPay)),
+    Paid(S.desktop_paid, setOf(InvoiceStatus.Paid)),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun keeps(invoice: Invoice): Boolean = statuses.isEmpty() || invoice.status in statuses
 }
@@ -345,7 +360,7 @@ data class InvoiceDetail(
     val acting: Boolean = false,
     val opening: Boolean = false,
 ) {
-    fun nameOf(userId: String): String = names[userId] ?: userId.ifBlank { "Unknown" }
+    fun nameOf(userId: String): String = names[userId] ?: userId.ifBlank { str(S.desktop_unknown) }
 }
 
 enum class UploadStage { Uploading, Extracting, Ready }
@@ -362,9 +377,12 @@ data class UploadFlow(
     val sending: Boolean = false,
 )
 
-enum class EnterTab(val id: String, val label: String) {
-    Upload("upload", "Upload Invoice"),
-    Manual("manual", "Manual Entry"),
+enum class EnterTab(val id: String, private val labelKey: String) {
+    Upload("upload", S.ah_upload_invoice),
+    Manual("manual", S.desktop_manual_entry),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The accountant's Enter Invoice form. Amounts are kept as typed. */
@@ -503,7 +521,7 @@ data class InvoicesUiState(
             setup.pickingForTier != null || setup.removingMember != null || setup.removingRule != null
 
     fun vendorName(invoice: Invoice): String =
-        vendors[invoice.vendorId]?.name?.ifBlank { null } ?: invoice.supplierName.ifBlank { "Unknown" }
+        vendors[invoice.vendorId]?.name?.ifBlank { null } ?: invoice.supplierName.ifBlank { str(S.desktop_unknown) }
 
     /** A department the directory has not got: an em dash, never its id. */
     fun departmentName(id: String): String = departmentNames[id] ?: id.orDash()

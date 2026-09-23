@@ -51,6 +51,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.continuity.domain.ContinuityAttachment
 import com.zillit.desktop.feature.continuity.domain.ContinuityTab
 
@@ -92,7 +94,7 @@ fun ContinuityScreen(
                     .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
-                if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to the Continuity tool.")
+                if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_continuity_no_access))
                 state.error?.let { message ->
                     ZillitNotice(
                         text = message,
@@ -100,7 +102,7 @@ fun ContinuityScreen(
                         icon = ZillitIcons.Warning,
                         action = {
                             ZillitButton(
-                                text = "Dismiss",
+                                text = str(S.sync_action_dismiss),
                                 onClick = { onEvent(ContinuityEvent.DismissError) },
                                 variant = ButtonVariant.Tertiary,
                                 size = ButtonSize.Small,
@@ -151,22 +153,25 @@ private fun Header(state: ContinuityUiState, onEvent: (ContinuityEvent) -> Unit)
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitText(
-                        text = "Continuity",
+                        text = str(S.continuity),
                         style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = colors.textPrimary,
                     )
                     val total = state.unread.tabs.values.sum()
-                    if (total > 0) ZillitStatusPill(label = "$total unread", tone = StatusTone.Rejected, dot = true)
+                    if (total > 0) ZillitStatusPill(
+                        label = str(S.desktop_unread_count, total),
+                        tone = StatusTone.Rejected,
+                        dot = true,
+                    )
                 }
                 ZillitText(
-                    text = "Photos, videos and documents by scene — yours in My Department, " +
-                        "forwarded ones in All Departments.",
+                    text = str(S.desktop_continuity_header_blurb),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
             ZillitButton(
-                text = "Refresh",
+                text = str(S.refresh_text),
                 onClick = { onEvent(ContinuityEvent.Refresh) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = ZillitIcons.Reload,
@@ -184,7 +189,7 @@ private fun Header(state: ContinuityUiState, onEvent: (ContinuityEvent) -> Unit)
 internal fun UploadMenu(
     onEvent: (ContinuityEvent) -> Unit,
     loading: Boolean = false,
-    text: String = "Upload",
+    text: String = str(S.upload),
     variant: ButtonVariant = ButtonVariant.Primary,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -200,15 +205,15 @@ internal fun UploadMenu(
             expanded = open,
             onDismissRequest = { open = false },
             entries = listOf(
-                ZillitMenuEntry.Action("Photos", ZillitIcons.Photo, ZillitMenuTone.Primary) {
+                ZillitMenuEntry.Action(str(S.desktop_photos), ZillitIcons.Photo, ZillitMenuTone.Primary) {
                     open = false
                     onEvent(ContinuityEvent.PickFiles(PickKind.Photos))
                 },
-                ZillitMenuEntry.Action("Videos", ZillitIcons.Play, ZillitMenuTone.Neutral) {
+                ZillitMenuEntry.Action(str(S.drive_search_videos), ZillitIcons.Play, ZillitMenuTone.Neutral) {
                     open = false
                     onEvent(ContinuityEvent.PickFiles(PickKind.Videos))
                 },
-                ZillitMenuEntry.Action("Documents", ZillitIcons.File, ZillitMenuTone.Neutral) {
+                ZillitMenuEntry.Action(str(S.txt_documents), ZillitIcons.File, ZillitMenuTone.Neutral) {
                     open = false
                     onEvent(ContinuityEvent.PickFiles(PickKind.Documents))
                 },
@@ -242,7 +247,7 @@ private fun BoardCard(state: ContinuityUiState, onEvent: (ContinuityEvent) -> Un
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
                 ZillitText(
-                    text = "Continuity scene(s) from ${state.tab.label}",
+                    text = str(S.desktop_continuity_scenes_from, state.tab.label),
                     style = ZillitTheme.typography.titleMedium,
                     color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
@@ -250,13 +255,13 @@ private fun BoardCard(state: ContinuityUiState, onEvent: (ContinuityEvent) -> Un
                 ZillitSearchField(
                     value = state.folderQuery,
                     onValueChange = { onEvent(ContinuityEvent.SearchFolders(it)) },
-                    placeholder = "Search By Scene No",
+                    placeholder = str(S.search_by_scene_no),
                     modifier = Modifier.width(SEARCH_WIDTH),
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitText(
-                    text = "Note :",
+                    text = str(S.note),
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.textSecondary,
                 )
@@ -274,17 +279,21 @@ private fun FolderGrid(state: ContinuityUiState, onEvent: (ContinuityEvent) -> U
     when {
         state.loading && state.folders.isEmpty() -> SkeletonFolders()
         state.shownFolders.isEmpty() -> ZillitEmptyState(
-            title = if (state.folderQuery.isNotBlank()) "No scene matches" else "No scenes available.",
+            title = if (state.folderQuery.isNotBlank()) {
+                str(S.desktop_continuity_no_scene_matches)
+            } else {
+                str(S.desktop_continuity_no_scenes)
+            },
             message = when {
-                state.folderQuery.isNotBlank() -> "Try another scene number."
-                state.tab == ContinuityTab.MyDepartment -> "Upload a photo, video or document to start a scene folder."
-                else -> "Scenes forwarded from ‘My Department’ folders will appear here."
+                state.folderQuery.isNotBlank() -> str(S.desktop_continuity_try_another_scene)
+                state.tab == ContinuityTab.MyDepartment -> str(S.desktop_continuity_upload_to_start)
+                else -> str(S.desktop_continuity_forwarded_appear_here)
             },
             icon = ZillitIcons.Folder,
             action = if (state.tab == ContinuityTab.MyDepartment && state.folderQuery.isBlank()) {
                 {
                     ZillitButton(
-                        text = "Upload",
+                        text = str(S.upload),
                         onClick = { onEvent(ContinuityEvent.PickFiles(PickKind.Photos)) },
                         leadingIcon = ZillitIcons.Paperclip,
                     )
@@ -331,13 +340,13 @@ internal fun FolderCard(sceneFolder: String, unread: Int, onClick: () -> Unit) {
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                 ZillitText(
-                    text = "Scene No - $sceneFolder",
+                    text = str(S.desktop_scene_no_value, sceneFolder),
                     style = ZillitTheme.typography.titleSmall,
                     color = colors.textPrimary,
                     maxLines = 1,
                 )
                 ZillitText(
-                    text = if (unread > 0) "$unread new" else "Open",
+                    text = if (unread > 0) str(S.desktop_new_count, unread) else str(S.recce_open),
                     style = ZillitTheme.typography.bodySmall,
                     color = if (unread > 0) colors.danger else colors.textMuted,
                 )
@@ -395,12 +404,12 @@ private fun DropOverlay(visible: Boolean) {
                 ZillitIcon(icon = ZillitIcons.Upload, tint = colors.accent, size = FOLDER_GLYPH)
                 Spacer(Modifier.height(ZillitTheme.spacing.sm))
                 ZillitText(
-                    text = "Drop photos, videos or documents to upload",
+                    text = str(S.desktop_continuity_drop_hint),
                     style = ZillitTheme.typography.titleMedium,
                     color = colors.textPrimary,
                 )
                 ZillitText(
-                    text = "You will add the scene details next.",
+                    text = str(S.desktop_continuity_drop_next),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )

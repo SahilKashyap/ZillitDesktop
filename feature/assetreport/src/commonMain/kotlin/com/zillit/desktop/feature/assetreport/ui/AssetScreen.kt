@@ -15,6 +15,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.ui.components.swallowPresses
 import com.zillit.desktop.feature.assetreport.ui.pages.AssetDetailPage
 import com.zillit.desktop.feature.assetreport.ui.pages.AssetRegisterPage
@@ -36,7 +38,7 @@ fun AssetScreen(
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         if (state.viewer.isBlocked) {
             ZillitText(
-                text = "You don't have access to the Asset Register.",
+                text = str(S.desktop_asset_no_access),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
                 modifier = Modifier.align(Alignment.Center),
@@ -74,7 +76,7 @@ fun AssetScreen(
 }
 
 private val NoMedia = AssetMediaLoader {
-    ZillitResult.Failure(ZillitError.Storage(userMessage = "Files are unavailable here."))
+    ZillitResult.Failure(ZillitError.Storage(userMessage = str(S.desktop_files_unavailable)))
 }
 
 private const val DETAIL_IN_MILLIS = 300

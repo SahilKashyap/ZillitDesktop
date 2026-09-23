@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.auth.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** A job title within a department. */
 data class Designation(val id: String, val name: String)
 
@@ -63,11 +66,11 @@ enum class JoinFieldError {
 
 val JoinFieldError.message: String
     get() = when (this) {
-        JoinFieldError.FirstNameTooShort -> "Enter a first name of at least $MIN_NAME_LENGTH letters."
-        JoinFieldError.LastNameTooShort -> "Enter a last name of at least $MIN_NAME_LENGTH letters."
-        JoinFieldError.DepartmentMissing -> "Choose your department."
-        JoinFieldError.DesignationMissing -> "Choose your role."
-        JoinFieldError.UnitMissing -> "Choose the unit you are on."
+        JoinFieldError.FirstNameTooShort -> str(S.desktop_first_name_too_short, MIN_NAME_LENGTH)
+        JoinFieldError.LastNameTooShort -> str(S.desktop_last_name_too_short, MIN_NAME_LENGTH)
+        JoinFieldError.DepartmentMissing -> str(S.desktop_choose_your_department)
+        JoinFieldError.DesignationMissing -> str(S.desktop_choose_your_role)
+        JoinFieldError.UnitMissing -> str(S.desktop_choose_your_unit)
     }
 
 /**

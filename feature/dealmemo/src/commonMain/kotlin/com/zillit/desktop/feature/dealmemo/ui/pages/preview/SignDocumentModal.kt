@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoUiState
 import com.zillit.desktop.feature.dealmemo.ui.SignerEvent
@@ -115,7 +117,7 @@ private fun PlacementModal(signer: SignerState?, signature: CapturedSignature?, 
     var layout by remember { mutableStateOf<StackLayout?>(null) }
     DmModal(
         visible = signer != null,
-        title = "Sign: ${current?.surface?.label.orEmpty()}",
+        title = str(S.desktop_dm_sign_surface, current?.surface?.label.orEmpty()),
         onDismiss = { onEvent(SignerEvent.Cancel) },
         maxWidth = Dp.Infinity,
         fullHeight = true,
@@ -125,15 +127,17 @@ private fun PlacementModal(signer: SignerState?, signature: CapturedSignature?, 
             val stamps = current?.stamps?.size ?: 0
             if (stamps > 0) {
                 ZillitText(
-                    text = "$stamps signature${if (stamps == 1) "" else "s"} placed — the current one signs with the " +
-                        "document.",
+                    text = if (stamps == 1) str(S.desktop_dm_one_signature_placed) else str(
+                        S.desktop_dm_n_signatures_placed,
+                        stamps,
+                    ),
                     style = DmType.sans(12.sp),
                     color = pv.muted,
                     modifier = Modifier.weight(1f),
                 )
             }
             OutlineButton(
-                text = "Cancel",
+                text = str(S.dm_cancel),
                 onClick = { onEvent(SignerEvent.Cancel) },
                 enabled = !busy,
                 height = 36.dp,
@@ -142,7 +146,7 @@ private fun PlacementModal(signer: SignerState?, signature: CapturedSignature?, 
             )
             val ready = current?.ready == true && signature != null
             OutlineButton(
-                text = "Add another signature",
+                text = str(S.desktop_dm_add_another_signature),
                 onClick = {
                     val box = overlay
                     val placement = box?.let { layout?.placement(it) }
@@ -160,9 +164,9 @@ private fun PlacementModal(signer: SignerState?, signature: CapturedSignature?, 
             )
             SolidButton(
                 text = when {
-                    busy -> "Signing…"
-                    stamps > 0 -> "Sign Document (${stamps + 1} signatures)"
-                    else -> "Sign Document"
+                    busy -> str(S.dm_sign_signing)
+                    stamps > 0 -> str(S.desktop_dm_sign_document_n_signatures, stamps + 1)
+                    else -> str(S.dm_sign_document)
                 },
                 onClick = {
                     val placement = overlay?.let { layout?.placement(it) }
@@ -182,16 +186,16 @@ private fun PlacementModal(signer: SignerState?, signature: CapturedSignature?, 
                 when {
                     current.loading -> DocumentMessage {
                         ZillitSpinner(size = 16.dp, color = PreviewInk.Action)
-                        ZillitText(text = "Preparing document…", style = DmType.sans(13.sp), color = pv.muted)
+                        ZillitText(text = str(S.cs_preparing_document), style = DmType.sans(13.sp), color = pv.muted)
                     }
                     current.failed -> DocumentMessage {
                         ZillitText(
-                            text = "Couldn’t load this document for signing.",
+                            text = str(S.desktop_dm_couldnt_load_this_document_for_signing_2),
                             style = DmType.sans(13.sp),
                             color = pv.muted,
                         )
                         OutlineButton(
-                            text = "Retry",
+                            text = str(S.retry),
                             onClick = { onEvent(SignerEvent.Retry) },
                             icon = ZillitIcons.Reload,
                             height = 32.dp,
@@ -220,15 +224,17 @@ private fun Toolbar(signer: SignerState, onEvent: (DealMemoEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         ZillitText(
-            text = "Drag your signature to where you want to sign — the whole document scrolls below. Use “Add " +
-                "another signature” to sign on more pages.",
+            text = str(S.desktop_dm_drag_your_signature_to_where_you_want),
             style = DmType.sans(12.sp),
             color = pv.muted,
             modifier = Modifier.weight(1f),
         )
         if (signer.pages.isNotEmpty()) {
             ZillitText(
-                text = "${signer.pages.size} page${if (signer.pages.size == 1) "" else "s"}",
+                text = if (signer.pages.size == 1) str(S.desktop_dm_one_page) else str(
+                    S.desktop_dm_n_pages,
+                    signer.pages.size,
+                ),
                 style = DmType.sans(12.sp, FontWeight.SemiBold),
                 color = pv.muted,
             )
@@ -256,7 +262,7 @@ private fun Toolbar(signer: SignerState, onEvent: (DealMemoEvent) -> Unit) {
         ) {
             ZillitIcon(ZillitIcons.Edit, size = 10.dp, tint = PreviewInk.Action)
             ZillitText(
-                text = "Change signature",
+                text = str(S.docusign_change_signature),
                 style = DmType.sans(12.sp, FontWeight.SemiBold),
                 color = PreviewInk.Action,
             )
@@ -385,12 +391,12 @@ private fun StampView(
     ) {
         Image(
             bitmap = signature.image,
-            contentDescription = "Placed signature",
+            contentDescription = str(S.desktop_dm_placed_signature),
             contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),
         )
         if (hovered && enabled) {
-            MaybeTooltip("Remove this signature") {
+            MaybeTooltip(str(S.desktop_dm_remove_this_signature)) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -442,7 +448,7 @@ private fun LiveSignature(
     ) {
         Image(
             bitmap = signature.image,
-            contentDescription = "Your signature",
+            contentDescription = str(S.docusign_picker_your_signature),
             contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),
         )

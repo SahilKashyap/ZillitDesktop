@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.boxschedule.domain
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The production diary.
@@ -188,10 +190,13 @@ data class BlockDraft(
 }
 
 /** How a colliding date is resolved on create/edit. */
-enum class ConflictAction(val wire: String, val label: String) {
-    Replace("replace", "Replace"),
-    Extend("extend", "Extend"),
-    Overlap("overlap", "Overlap"),
+enum class ConflictAction(val wire: String, private val labelKey: String) {
+    Replace("replace", S.conflict_replace),
+    Extend("extend", S.conflict_extend),
+    Overlap("overlap", S.conflict_overlap),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** A colliding date the server reported instead of writing. */
@@ -304,7 +309,7 @@ data class BoxScheduleViewer(
 const val PERSONAL_NOTE_TYPE = "crew_start"
 
 /** What the web shows for [PERSONAL_NOTE_TYPE], whatever label the server still sends. */
-const val PERSONAL_NOTE_LABEL = "Personal Note"
+val PERSONAL_NOTE_LABEL: String get() = str(S.ce_note_type_personal)
 
 /** A note only its author sees. Untyped notes, from before the type field existed, are General. */
 val DiaryEvent.isPersonalNote: Boolean
@@ -322,9 +327,12 @@ fun List<DiaryEvent>.inDiaryOrder(): List<DiaryEvent> {
 }
 
 /** How the diary PDF is laid out — the server's `format`. */
-enum class DiaryPdfLayout(val wire: String, val label: String) {
-    Calendar("calendar", "Calendar"),
-    List("list", "List"),
+enum class DiaryPdfLayout(val wire: String, private val labelKey: String) {
+    Calendar("calendar", S.calendar),
+    List("list", S.desktop_drive_view_list),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** What the PDF is for. The server logs the verb and renders the same file either way. */

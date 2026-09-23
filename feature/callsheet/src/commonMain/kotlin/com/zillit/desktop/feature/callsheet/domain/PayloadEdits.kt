@@ -2,6 +2,9 @@
 
 package com.zillit.desktop.feature.callsheet.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Every structural edit of a call sheet document, as pure functions.
  *
@@ -26,7 +29,15 @@ sealed interface EditorSelection {
 }
 
 /** What the "+" menus insert. */
-enum class InsertKind(val label: String) { Notes("Notes"), Section("Section"), Table("Table"), PageBreak("Page Break") }
+enum class InsertKind(private val labelKey: String) {
+    Notes(S.notes),
+    Section(S.desktop_section),
+    Table(S.desktop_table),
+    PageBreak(S.desktop_page_break),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** One entry of the Sections list: the two virtual blocks interleave the real rows. */
 sealed interface SectionBlock {
@@ -72,7 +83,7 @@ fun newCell(kind: InsertKind): PageCell = when (kind) {
     InsertKind.Section -> PageCell(
         order = 0,
         kind = CellKind.Section,
-        title = "New Section",
+        title = str(S.desktop_new_section),
         hideTitle = true,
         columns = listOf(ColumnSpec(label = "Field"), ColumnSpec(label = "Value")),
         rows = blankLines(count = 3, columns = 2),
@@ -80,14 +91,14 @@ fun newCell(kind: InsertKind): PageCell = when (kind) {
     InsertKind.Table -> PageCell(
         order = 0,
         kind = CellKind.Table,
-        title = "New Table",
-        columns = List(TABLE_COLUMNS) { ColumnSpec(label = "Col ${it + 1}") },
+        title = str(S.desktop_new_table),
+        columns = List(TABLE_COLUMNS) { ColumnSpec(label = str(S.desktop_col_n, it + 1)) },
         rows = blankLines(count = 2, columns = TABLE_COLUMNS),
     )
     InsertKind.Notes, InsertKind.PageBreak -> PageCell(
         order = 0,
         kind = CellKind.Notes,
-        title = "New Notes",
+        title = str(S.desktop_new_notes),
         columns = listOf(ColumnSpec(label = "Title")),
         rows = blankLines(count = 1, columns = 1),
     )
@@ -279,7 +290,7 @@ fun PageCell.convertedTo(kind: CellKind): PageCell {
         copy(
             kind = kind,
             rawKind = kind.wire,
-            title = title.ifBlank { "Notes" },
+            title = title.ifBlank { str(S.notes) },
             columns = listOf(ColumnSpec()),
             rows = listOf(CellRow(order = 0, values = listOf(CellValue()))),
         )

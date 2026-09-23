@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CostReportTab
 
 /**
@@ -31,7 +33,7 @@ fun CostReportScreen(
             Box(Modifier.fillMaxSize().padding(24.dp)) {
                 SnapshotPage(
                     view = snapshot,
-                    backLabel = "Posted CRs",
+                    backLabel = str(S.cr_tab_posted),
                     resolveUser = resolveUser,
                     callbacks = SnapshotCallbacks(
                         onBack = { onEvent(CostReportEvent.CloseSnapshot) },
@@ -56,7 +58,7 @@ fun CostReportScreen(
                 )
                 if (state.viewer.isBlocked) {
                     ZillitNotice(
-                        text = "You do not have access to the Cost Report tool.",
+                        text = str(S.desktop_cr_no_access),
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
                     )
                 }

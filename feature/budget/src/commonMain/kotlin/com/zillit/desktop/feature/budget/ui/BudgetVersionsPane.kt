@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budget.domain.BudgetActivity
 import com.zillit.desktop.feature.budget.domain.BudgetChatEntry
 import com.zillit.desktop.feature.budget.domain.BudgetDocument
@@ -64,9 +66,9 @@ internal fun VersionsPane(
     when {
         state.loading && !state.hasDocuments -> LoadingRows()
         !state.hasDocuments -> RailEmpty(
-            title = "No budget uploaded yet",
+            title = str(S.desktop_budget_none_uploaded),
             message = if (state.canPost) {
-                "Use + to upload a PDF. Everyone with access sees it here."
+                str(S.desktop_budget_upload_pdf_hint)
             } else {
                 "A budget appears here once someone with posting rights uploads one."
             },
@@ -82,7 +84,7 @@ internal fun VersionsPane(
                 state.selected?.let { DocumentCard(state, it, onEvent) }
             }
             ZillitSectionLabel(
-                text = "Conversations",
+                text = str(S.conversations),
                 modifier = Modifier.padding(
                     start = ZillitTheme.spacing.lg,
                     end = ZillitTheme.spacing.lg,
@@ -122,14 +124,17 @@ private fun VersionPicker(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, 
         ) {
             Column(Modifier.weight(1f)) {
                 ZillitText(
-                    text = selected?.displayTitle(seams.nameOf) ?: "Select a file",
+                    text = selected?.displayTitle(seams.nameOf) ?: str(S.desktop_select_a_file),
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textPrimary,
                     maxLines = 1,
                 )
                 ZillitText(
-                    text = "${state.documents.size} version".let { if (state.documents.size == 1) it else it + "s" } +
-                        (if (selected?.id == state.latest?.id) " · latest" else " · older version"),
+                    text = if (selected?.id == state.latest?.id) {
+                        str(S.desktop_budget_versions_latest, state.documents.size)
+                    } else {
+                        str(S.desktop_budget_versions_older, state.documents.size)
+                    },
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                     maxLines = 1,
@@ -151,7 +156,7 @@ private fun VersionPicker(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, 
                 ZillitSearchField(
                     value = state.versionSearch,
                     onValueChange = { onEvent(BudgetEvent.VersionSearch(it)) },
-                    placeholder = "Search by uploader",
+                    placeholder = str(S.desktop_search_by_uploader),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 val rows = state.versionsMatching(seams.nameOf)
@@ -166,7 +171,7 @@ private fun VersionPicker(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, 
                 ) {
                     if (rows.isEmpty()) {
                         ZillitText(
-                            text = "No version by that uploader.",
+                            text = str(S.desktop_budget_no_version_by_uploader),
                             style = ZillitTheme.typography.bodySmall,
                             color = colors.textMuted,
                             modifier = Modifier.padding(ZillitTheme.spacing.sm),
@@ -220,13 +225,13 @@ private fun VersionRow(
             if (isOpen) ZillitIcon(ZillitIcons.Check, tint = colors.accentText, size = 14.dp)
         }
         ZillitText(
-            text = "Uploaded by - ${row.document.uploaderLabel(nameOf)}",
+            text = str(S.desktop_budget_uploaded_by, row.document.uploaderLabel(nameOf)),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textSecondary,
             maxLines = 1,
         )
         ZillitText(
-            text = "Uploaded on - ${uploadedOnLabel(row.document.createdMillis)}",
+            text = str(S.desktop_budget_uploaded_on, uploadedOnLabel(row.document.createdMillis)),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
             maxLines = 1,
@@ -258,14 +263,14 @@ private fun DocumentCard(state: BudgetUiState, document: BudgetDocument, onEvent
         ZillitFileBadge(fileName = file?.name ?: "budget.pdf")
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             ZillitText(
-                text = file?.name ?: "No file on this version",
+                text = file?.name ?: str(S.desktop_budget_no_file_on_version),
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textPrimary,
                 maxLines = 1,
             )
             val meta = listOfNotNull(
                 file?.sizeBytes?.takeIf { it > 0 }?.let(::readableSize),
-                document.episode.takeIf { it.isNotBlank() }?.let { "Episode $it" },
+                document.episode.takeIf { it.isNotBlank() }?.let { str(S.desktop_episode_numbered, it) },
             ).joinToString(" · ")
             if (meta.isNotBlank()) {
                 ZillitText(
@@ -278,7 +283,7 @@ private fun DocumentCard(state: BudgetUiState, document: BudgetDocument, onEvent
         }
         if (file?.isSpreadsheet == true) {
             ZillitButton(
-                text = "Download",
+                text = str(S.download),
                 onClick = { onEvent(BudgetEvent.DownloadFile) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Download,
@@ -286,7 +291,7 @@ private fun DocumentCard(state: BudgetUiState, document: BudgetDocument, onEvent
         } else {
             Box {
                 ZillitButton(
-                    text = "More",
+                    text = str(S.more),
                     onClick = { onEvent(BudgetEvent.MoreMenu(true)) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Paperclip,
@@ -296,21 +301,21 @@ private fun DocumentCard(state: BudgetUiState, document: BudgetDocument, onEvent
                     expanded = state.moreMenuOpen,
                     onDismissRequest = { onEvent(BudgetEvent.MoreMenu(false)) },
                     entries = buildList {
-                        add(ZillitMenuEntry.Action("View", ZillitIcons.Eye) { onEvent(BudgetEvent.ViewFile) })
+                        add(ZillitMenuEntry.Action(str(S.view), ZillitIcons.Eye) { onEvent(BudgetEvent.ViewFile) })
                         add(
-                            ZillitMenuEntry.Action("Download", ZillitIcons.Download) {
+                            ZillitMenuEntry.Action(str(S.download), ZillitIcons.Download) {
                                 onEvent(BudgetEvent.DownloadFile)
                             },
                         )
                         if (state.viewer.isAdmin) {
                             add(ZillitMenuEntry.Divider)
                             add(
-                                ZillitMenuEntry.Action("Download count", ZillitIcons.BarChart) {
+                                ZillitMenuEntry.Action(str(S.download_count), ZillitIcons.BarChart) {
                                     onEvent(BudgetEvent.ShowActivity(BudgetActivity.Download))
                                 },
                             )
                             add(
-                                ZillitMenuEntry.Action("View count", ZillitIcons.Users) {
+                                ZillitMenuEntry.Action(str(S.view_count), ZillitIcons.Users) {
                                     onEvent(BudgetEvent.ShowActivity(BudgetActivity.View))
                                 },
                             )
@@ -338,11 +343,11 @@ private fun ChatList(
         state.chatsLoading && state.chats.isEmpty() -> Box(modifier) { LoadingRows() }
         state.chats.isEmpty() -> Box(modifier) {
             RailEmpty(
-                title = "No conversations yet",
+                title = str(S.empty_conversations),
                 message = if (state.canChat) {
-                    "Use the chat button to add a member or create a group."
+                    str(S.desktop_budget_no_conversations_hint)
                 } else {
-                    "Conversations happen on the latest version."
+                    str(S.desktop_budget_conversations_latest)
                 },
                 icon = ZillitIcons.Users,
             )
@@ -359,14 +364,14 @@ private fun ChatList(
         ) {
             state.chats.forEach { entry ->
                 val name = when (entry) {
-                    is BudgetChatEntry.Person -> seams.nameOf(entry.userId) ?: entry.name.ifBlank { "Crew member" }
+                    is BudgetChatEntry.Person -> seams.nameOf(entry.userId) ?: entry.name.ifBlank { str(S.crew_member) }
                     is BudgetChatEntry.Group -> entry.name
                 }
                 RailRowCard(
                     title = name,
                     titleSuffix = (entry as? BudgetChatEntry.Person)?.takeIf { it.isAdmin }?.let { "(Admin)" },
                     subtitle = when (entry) {
-                        is BudgetChatEntry.Person -> if (entry.hasLeft) "Disconnected" else entry.designation
+                        is BudgetChatEntry.Person -> if (entry.hasLeft) str(S.disconnected) else entry.designation
                         is BudgetChatEntry.Group -> entry.memberIds.size.let { "$it member" + if (it == 1) "" else "s" }
                     },
                     leading = {
@@ -404,10 +409,10 @@ internal fun ChatActionsMenu(state: BudgetUiState, onEvent: (BudgetEvent) -> Uni
         if (state.canChat) {
             ZillitMenuEntries(
                 entries = listOf(
-                    ZillitMenuEntry.Action("Add member", ZillitIcons.UserPlus) {
+                    ZillitMenuEntry.Action(str(S.cs_add_member), ZillitIcons.UserPlus) {
                         onEvent(BudgetEvent.ShowMembers(BudgetMembersDialog.Kind.Member))
                     },
-                    ZillitMenuEntry.Action("Create group", ZillitIcons.Users) {
+                    ZillitMenuEntry.Action(str(S.create_group), ZillitIcons.Users) {
                         onEvent(BudgetEvent.ShowMembers(BudgetMembersDialog.Kind.Group))
                     },
                 ),
@@ -416,9 +421,9 @@ internal fun ChatActionsMenu(state: BudgetUiState, onEvent: (BudgetEvent) -> Uni
         } else {
             ZillitText(
                 text = if (state.hasDocuments) {
-                    "You cannot chat on previous budgets. Open the latest version to start a conversation."
+                    str(S.desktop_budget_cannot_chat_previous)
                 } else {
-                    "Upload at least one budget to start a conversation."
+                    str(S.desktop_budget_upload_to_chat)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
@@ -432,10 +437,10 @@ internal fun ChatActionsMenu(state: BudgetUiState, onEvent: (BudgetEvent) -> Uni
 
 /** The title the web shows — or, for a row with none, "Uploaded by - name". */
 internal fun BudgetDocument.displayTitle(nameOf: (String) -> String?): String =
-    title.ifBlank { "Uploaded by - ${uploaderLabel(nameOf)}" }
+    title.ifBlank { str(S.desktop_budget_uploaded_by, uploaderLabel(nameOf)) }
 
 internal fun BudgetDocument.uploaderLabel(nameOf: (String) -> String?): String =
-    nameOf(uploadedById) ?: uploadedByName.ifBlank { "Unknown" }
+    nameOf(uploadedById) ?: uploadedByName.ifBlank { str(S.desktop_unknown) }
 
 /** "Sep 15, 2026, 06:44 PM" — `toLocaleDateString('en-US', {…hour12})`. */
 internal fun uploadedOnLabel(epochMillis: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
@@ -455,8 +460,8 @@ internal fun uploadedOnLabel(epochMillis: Long, zone: TimeZone = TimeZone.curren
 /** "1.2 MB" — the same shape the drive's size column uses. */
 internal fun readableSize(bytes: Long): String = when {
     bytes < BYTES_PER_KB -> "$bytes B"
-    bytes < BYTES_PER_KB * BYTES_PER_KB -> "${round1(bytes / BYTES_PER_KB)} KB"
-    else -> "${round1(bytes / (BYTES_PER_KB * BYTES_PER_KB))} MB"
+    bytes < BYTES_PER_KB * BYTES_PER_KB -> str(S.desktop_size_kb, round1(bytes / BYTES_PER_KB))
+    else -> str(S.desktop_size_mb, round1(bytes / (BYTES_PER_KB * BYTES_PER_KB)))
 }
 
 private fun round1(value: Double): Double = (value * TENTHS).toInt() / TENTHS

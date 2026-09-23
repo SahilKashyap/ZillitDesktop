@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Csv
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
@@ -48,14 +50,14 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
 
     fun createInline() {
         val name = vm.state.newListName?.trim().orEmpty()
-        if (name.isEmpty()) return vm.fail("Enter a list name")
+        if (name.isEmpty()) return vm.fail(str(S.desktop_docdist_enter_list_name))
         if (vm.refusesWrite()) return
         vm.update { copy(creatingList = true) }
         vm.run {
             when (val result = vm.repository.createList(name, emptyList())) {
                 is ZillitResult.Success -> {
                     vm.update { copy(creatingList = false, newListName = null, lists = lists + result.data) }
-                    vm.notice("List created")
+                    vm.notice(str(S.desktop_docdist_list_created))
                     openList(result.data.id)
                 }
                 is ZillitResult.Failure -> {
@@ -131,11 +133,11 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
     private fun recipientFrom(email: String, name: String, job: String, existing: List<Recipient>): Recipient? {
         val address = email.trim().lowercase()
         if (!isValidEmail(address)) {
-            vm.fail("Enter a valid email")
+            vm.fail(str(S.dd_invalid_email))
             return null
         }
         if (existing.any { it.email.equals(address, ignoreCase = true) }) {
-            vm.notice("Already in this list")
+            vm.notice(str(S.desktop_docdist_already_in_this_list))
             return null
         }
         return Recipient(email = address, name = name.trim(), jobTitle = job.trim())
@@ -146,7 +148,7 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
 
     fun save() {
         val detail = vm.state.listDetail ?: return
-        if (detail.name.isBlank()) return vm.fail("List name is required")
+        if (detail.name.isBlank()) return vm.fail(str(S.desktop_list_name_required))
         if (vm.refusesWrite()) return
         editDetail { copy(saving = true) }
         vm.run {
@@ -168,7 +170,7 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
                             },
                         )
                     }
-                    vm.notice("Saved")
+                    vm.notice(str(S.saved))
                 }
                 is ZillitResult.Failure -> {
                     editDetail { copy(saving = false) }
@@ -184,9 +186,9 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
         vm.update {
             copy(
                 prompt = DocDistPrompt(
-                    title = "Remove \"${list.name}\"?",
-                    message = "The list is deleted. The people on it stay in your address book.",
-                    confirmLabel = "Remove",
+                    title = str(S.desktop_docdist_remove_list_title, list.name),
+                    message = str(S.desktop_docdist_delete_list_message),
+                    confirmLabel = str(S.remove),
                     event = DocDistEvent.DeleteList(listId),
                 ),
             )
@@ -203,7 +205,7 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
                         listDetail = listDetail?.takeIf { it.listId != listId },
                     )
                 }
-                vm.notice("List removed")
+                vm.notice(str(S.desktop_docdist_list_removed))
             }
         }
     }
@@ -214,13 +216,13 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
         vm.run {
             val file = vm.host.pickFiles().firstOrNull() ?: return@run
             if (!file.name.endsWith(".csv", ignoreCase = true) && !file.contentType.contains("csv")) {
-                return@run vm.fail("Choose a .csv file")
+                return@run vm.fail(str(S.desktop_docdist_choose_csv_file))
             }
             val existing = if (forEditor) vm.state.listEditor?.recipients else vm.state.listDetail?.recipients
             val rows = runCatching { Csv.toContacts(file.bytes.decodeToString(), existing.orEmpty().map { it.email }) }
                 .getOrNull()
-            if (rows == null) return@run vm.fail("Could not parse the CSV")
-            if (rows.isEmpty()) return@run vm.fail("No usable rows in this file")
+            if (rows == null) return@run vm.fail(str(S.desktop_docdist_could_not_parse_csv))
+            if (rows.isEmpty()) return@run vm.fail(str(S.desktop_docdist_no_usable_rows))
             val parsed = CsvImportState(fileName = file.name, rows = rows)
             if (forEditor) editEditor { copy(csv = parsed) } else editDetail { copy(csv = parsed) }
         }
@@ -241,8 +243,8 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
         } else {
             editEditor { copy(recipients = recipients + additions, csv = null) }
         }
-        if (additions.isEmpty()) vm.notice("Nothing new — all rows were already in this list")
-        else vm.notice("Added ${plural(additions.size, "contact")}")
+        if (additions.isEmpty()) vm.notice(str(S.desktop_docdist_nothing_new_in_csv))
+        else vm.notice(plural(additions.size, S.desktop_docdist_added_one_contact, S.desktop_docdist_added_contacts))
     }
 
     // -- composer's inline editor ------------------------------------------------
@@ -281,15 +283,15 @@ internal class ListsSection(private val vm: VmScope, private val library: Librar
     /** Creates the list and, when the composer is open, applies it there at once. */
     fun saveEditor(onCreated: (DistributionList) -> Unit) {
         val editor = vm.state.listEditor ?: return
-        if (editor.name.isBlank()) return vm.fail("List name is required")
-        if (editor.recipients.isEmpty()) return vm.fail("Add at least one recipient")
+        if (editor.name.isBlank()) return vm.fail(str(S.desktop_list_name_required))
+        if (editor.recipients.isEmpty()) return vm.fail(str(S.dd_at_least_one_recipient))
         if (vm.refusesWrite()) return
         editEditor { copy(saving = true) }
         vm.run {
             when (val result = vm.repository.createList(editor.name, editor.recipients, editor.description)) {
                 is ZillitResult.Success -> {
                     vm.update { copy(listEditor = null, lists = lists + result.data) }
-                    vm.notice("Distribution list created")
+                    vm.notice(str(S.dd_history_save_list_success))
                     onCreated(result.data)
                 }
                 is ZillitResult.Failure -> {

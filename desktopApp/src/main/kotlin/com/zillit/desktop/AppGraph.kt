@@ -32,6 +32,8 @@ import com.zillit.desktop.core.database.ZillitDatabase
 import com.zillit.desktop.core.database.SyncDatabaseFactory
 import com.zillit.desktop.core.database.ZillitDatabaseFactory
 import com.zillit.desktop.core.database.sync.SyncDatabase
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.ConnectivityMonitor
 import com.zillit.desktop.core.sync.DraftStore
 import com.zillit.desktop.core.sync.OfflineSupport
@@ -119,6 +121,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import com.zillit.desktop.core.localization.labelRefreshTrigger
+import com.zillit.desktop.core.strings.BundledCatalogSource
+import com.zillit.desktop.core.strings.StringStore
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -996,6 +1000,13 @@ sealed interface AppGraph {
 
             val uiLanguage = appScope.trackUiLanguage(preferences)
 
+            // The app's own words, in the chosen language. `Strings` holds
+            // English from the moment it is first read; the store follows the
+            // preference (the OS language until one is chosen) and swaps the
+            // catalogue in place — every `str()` read in composition
+            // recomposes, so nothing here waits for the parse.
+            appScope.launch { StringStore(BundledCatalogSource()).follow(uiLanguage) }
+
             // Driven here rather than from a Compose effect: this is
             // app-lifetime work, and starting it at composition raced the
             // keychain restore that supplies the device id — see
@@ -1869,7 +1880,7 @@ private fun buildStatusPlane(
  */
 internal suspend fun AppGraph.Ready.crewPresets(): ZillitResult<CrewPresets> {
     val projectId = projectContext?.context?.value?.project?.projectId
-        ?: return ZillitResult.Failure(ZillitError.Validation("No project is open."))
+        ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_no_project_is_open)))
 
     val departments = projectRepository.departments(projectId)
     val units = unitRepository.joinUnits(projectId)

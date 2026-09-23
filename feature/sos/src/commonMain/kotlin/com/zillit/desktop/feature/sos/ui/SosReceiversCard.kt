@@ -42,6 +42,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sos.domain.SosContact
 import com.zillit.desktop.feature.sos.domain.SosCrewMember
 
@@ -59,7 +61,7 @@ internal fun SosReceiversCard(state: SosUiState, onEvent: (SosEvent) -> Unit, mo
     val rows = if (contacts.tab == SosContactTab.Member) contacts.members else contacts.outsiders
     ZillitSectionCard(
         modifier = modifier,
-        title = "Receivers",
+        title = str(S.desktop_sos_receivers),
         icon = ZillitIcons.Users,
         meta = if (contacts.rows.isEmpty()) null else "${contacts.rows.size}",
     ) {
@@ -68,7 +70,7 @@ internal fun SosReceiversCard(state: SosUiState, onEvent: (SosEvent) -> Unit, mo
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitSegmented(
-                options = SosContactTab.entries.map { ZillitTab(id = it.id, label = it.label) },
+                options = SosContactTab.entries.map { ZillitTab(id = it.id, label = str(it.label)) },
                 activeId = contacts.tab.id,
                 onSelect = { onEvent(SosEvent.SelectContactTab(SosContactTab.fromId(it))) },
             )
@@ -103,14 +105,15 @@ private fun EditingBanner(state: SosUiState, onEvent: (SosEvent) -> Unit) {
     ) {
         ZillitIcon(ZillitIcons.Edit, tint = colors.accentText, size = ZillitDimens.iconSmall)
         ZillitText(
-            text = editing?.let { "Editing ${it.displayName}" } ?: "Editing a receiver",
+            text = editing?.let { str(S.desktop_sos_editing_receiver_named, it.displayName) }
+                ?: str(S.desktop_sos_editing_receiver),
             style = ZillitTheme.typography.label,
             color = colors.accentText,
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Cancel",
+            text = str(S.cancel),
             onClick = { onEvent(SosEvent.CancelEdit) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -143,15 +146,15 @@ private fun MemberPicker(state: SosUiState, onEvent: (SosEvent) -> Unit) {
         ZillitSearchField(
             value = contacts.crewSearch,
             onValueChange = { onEvent(SosEvent.CrewSearchChanged(it)) },
-            placeholder = "Search the crew to add",
+            placeholder = str(S.desktop_sos_search_crew_to_add),
             modifier = Modifier.fillMaxWidth(),
         )
         when {
             addable.isEmpty() -> MutedLine(
                 when {
-                    contacts.crewSearch.isNotBlank() -> "No crew match."
-                    contacts.crew.isEmpty() -> "Nobody on the crew to add."
-                    else -> "Everyone on the crew is already a receiver."
+                    contacts.crewSearch.isNotBlank() -> str(S.desktop_sos_no_crew_match)
+                    contacts.crew.isEmpty() -> str(S.desktop_sos_nobody_on_crew)
+                    else -> str(S.desktop_sos_everyone_already_receiver)
                 },
             )
 
@@ -181,7 +184,7 @@ private fun CrewRow(member: SosCrewMember, state: SosUiState, onEvent: (SosEvent
             }
         }
         ZillitButton(
-            text = if (state.contacts.isEditing) "Use" else "Add",
+            text = if (state.contacts.isEditing) str(S.recce_use) else str(S.add),
             onClick = { onEvent(SosEvent.SubmitMember(member.userId)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -204,7 +207,7 @@ private fun CrewRow(member: SosCrewMember, state: SosUiState, onEvent: (SosEvent
 private fun OutsiderForm(state: SosUiState, onEvent: (SosEvent) -> Unit) {
     if (!state.canAddOutsider) {
         ZillitNotice(
-            text = "Add a mobile number to your profile before adding an outside contact.",
+            text = str(S.desktop_sos_add_mobile_first),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Phone,
         )
@@ -223,8 +226,8 @@ private fun OutsiderForm(state: SosUiState, onEvent: (SosEvent) -> Unit) {
             ZillitTextField(
                 value = contacts.draft.contactName,
                 onValueChange = { onEvent(SosEvent.ContactNameChanged(it)) },
-                label = "Name",
-                placeholder = "Their name",
+                label = str(S.name),
+                placeholder = str(S.desktop_sos_their_name),
                 leadingIcon = ZillitIcons.User,
                 modifier = Modifier.weight(1f),
             )
@@ -234,15 +237,15 @@ private fun OutsiderForm(state: SosUiState, onEvent: (SosEvent) -> Unit) {
         ZillitTextField(
             value = contacts.draft.phoneNumber,
             onValueChange = { onEvent(SosEvent.PhoneChanged(it)) },
-            label = "Mobile number",
-            placeholder = "Digits only",
+            label = str(S.dm_step2_mobile_hint),
+            placeholder = str(S.desktop_sos_digits_only),
             leadingIcon = ZillitIcons.Phone,
             keyboardType = KeyboardType.Phone,
             modifier = Modifier.fillMaxWidth(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitButton(
-                text = if (contacts.isEditing) "Save receiver" else "Add receiver",
+                text = if (contacts.isEditing) str(S.desktop_sos_save_receiver) else str(S.desktop_sos_add_receiver),
                 onClick = { onEvent(SosEvent.SubmitOutsider) },
                 leadingIcon = if (contacts.isEditing) ZillitIcons.Check else ZillitIcons.UserPlus,
                 enabled = !contacts.busy,
@@ -255,12 +258,12 @@ private fun OutsiderForm(state: SosUiState, onEvent: (SosEvent) -> Unit) {
 @Composable
 private fun RelationField(state: SosUiState, onEvent: (SosEvent) -> Unit, modifier: Modifier = Modifier) {
     val names = state.contacts.relations.map { it.name }
-    Labelled("Relationship", modifier) {
+    Labelled(str(S.desktop_sos_relationship), modifier) {
         ZillitSelect(
             value = state.contacts.draft.relation,
             options = names,
             onSelect = { onEvent(SosEvent.RelationChanged(it)) },
-            label = { it.ifBlank { "Select" } },
+            label = { it.ifBlank { str(S.select) } },
             // A select fills whatever it is given, so it is pinned by the
             // column's weight rather than left to swallow the form — see the
             // Documents & Signature port.
@@ -279,12 +282,12 @@ private fun RelationField(state: SosUiState, onEvent: (SosEvent) -> Unit, modifi
 private fun CountryCodeField(state: SosUiState, onEvent: (SosEvent) -> Unit, modifier: Modifier = Modifier) {
     val contacts = state.contacts
     val codes = contacts.visibleCodes
-    Labelled("Country code", modifier) {
+    Labelled(str(S.dm_loanout_country_code), modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitSearchField(
                 value = contacts.codeSearch,
                 onValueChange = { onEvent(SosEvent.CodeSearchChanged(it)) },
-                placeholder = "Search",
+                placeholder = str(S.search),
                 modifier = Modifier.weight(1f),
             )
             ZillitSelect(
@@ -293,7 +296,7 @@ private fun CountryCodeField(state: SosUiState, onEvent: (SosEvent) -> Unit, mod
                 onSelect = { onEvent(SosEvent.CountryCodeChanged(it)) },
                 label = { dial ->
                     codes.firstOrNull { it.dialCode == dial }?.let { "${it.dialCode}  ${it.name}" }
-                        ?: dial.ifBlank { "Select" }
+                        ?: dial.ifBlank { str(S.select) }
                 },
                 modifier = Modifier.weight(CODE_SELECT_WEIGHT),
                 enabled = codes.isNotEmpty(),
@@ -315,14 +318,21 @@ private fun Labelled(label: String, modifier: Modifier = Modifier, content: @Com
 
 @Composable
 private fun ContactList(rows: List<SosContact>, state: SosUiState, onEvent: (SosEvent) -> Unit) {
-    val kind = if (state.contacts.tab == SosContactTab.Member) "crew" else "outside contacts"
-    ZillitSectionLabel(if (rows.isEmpty()) "Receiving" else "Receiving · ${rows.size}")
+    ZillitSectionLabel(
+        if (rows.isEmpty()) str(S.desktop_sos_receiving) else str(S.desktop_sos_receiving_count, rows.size),
+    )
     if (state.contacts.loading && rows.isEmpty()) {
-        MutedLine("Loading receivers…")
+        MutedLine(str(S.desktop_sos_loading_receivers))
         return
     }
     if (rows.isEmpty()) {
-        ContactsEmpty("No $kind on the list yet.")
+        ContactsEmpty(
+            if (state.contacts.tab == SosContactTab.Member) {
+                str(S.desktop_sos_no_crew_on_list)
+            } else {
+                str(S.desktop_sos_no_outside_contacts_on_list)
+            },
+        )
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
@@ -357,13 +367,13 @@ private fun ContactRow(row: SosContact, state: SosUiState, onEvent: (SosEvent) -
         }
         ZillitIconButton(
             icon = ZillitIcons.Edit,
-            contentDescription = "Edit receiver",
+            contentDescription = str(S.desktop_sos_edit_receiver),
             onClick = { onEvent(SosEvent.EditContact(row.id)) },
             enabled = !state.contacts.busy,
         )
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Remove receiver",
+            contentDescription = str(S.desktop_sos_remove_receiver),
             onClick = { onEvent(SosEvent.AskDeleteContact(row.id)) },
             enabled = !state.contacts.busy,
             tint = ZillitTheme.colors.danger,

@@ -7,6 +7,8 @@ import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.json.JsonElement
 import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.core.network.RequestModule
@@ -69,7 +71,7 @@ class ProjectRepositoryImpl(
     override suspend fun findByCode(code: String): ZillitResult<CodeLookup> {
         val trimmed = code.trim()
         if (trimmed.isBlank()) {
-            return ZillitResult.Failure(ZillitError.Validation("Enter a project code."))
+            return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_enter_a_project_code)))
         }
 
         return apiClient.request(
@@ -81,7 +83,7 @@ class ProjectRepositoryImpl(
         ).flatMapNotNull { body ->
             body.toCodeLookup()
                 ?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Validation("No project found for that code."))
+                ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_no_project_found_for_code)))
         }
     }
 

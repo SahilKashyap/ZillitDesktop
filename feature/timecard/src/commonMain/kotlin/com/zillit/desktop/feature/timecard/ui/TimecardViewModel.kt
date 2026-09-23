@@ -6,6 +6,8 @@ import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.LocalDraft
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
@@ -34,13 +36,15 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /** The pages the timecard tool offers. */
-enum class TimecardDestination(val slug: String, val label: String) {
-    MyWeeks("my", "My Timecards"),
-    Edit("edit", "This Week"),
-    ApprovalQueue("approval", "Approval Queue"),
-    Processing("processing", "Payroll Processing"),
-    Outstanding("outstanding", "Outstanding"),
+enum class TimecardDestination(val slug: String, private val labelKey: String) {
+    MyWeeks("my", S.desktop_my_timecards),
+    Edit("edit", S.desktop_drive_bucket_this_week),
+    ApprovalQueue("approval", S.ah_approval_queue),
+    Processing("processing", S.desktop_payroll_processing),
+    Outstanding("outstanding", S.desktop_outstanding),
     ;
+
+    val label: String get() = str(labelKey)
 
     /**
      * Whether [viewer] may open this page.
@@ -546,7 +550,7 @@ class TimecardViewModel(
                 is ZillitResult.Success -> {
                     sendNoteIfChanged(result.data, draft)
                     forgetDraft(draft.weekStarting)
-                    setState { copy(busy = false, notice = "Timecard saved") }
+                    setState { copy(busy = false, notice = str(S.desktop_timecard_saved)) }
                     load(currentState.destination)
                 }
 
@@ -601,7 +605,7 @@ class TimecardViewModel(
         )
         if (enqueued == null) {
             setState { copy(busy = false) }
-            sendEffect(TimecardEffect.Failed("Open a project before saving a timecard."))
+            sendEffect(TimecardEffect.Failed(str(S.desktop_timecard_open_project_before_saving)))
             return
         }
         forgetDraft(draft.weekStarting)
@@ -631,7 +635,7 @@ class TimecardViewModel(
             ),
         )
         if (enqueued == null) {
-            sendEffect(TimecardEffect.Failed("Open a project before submitting a timecard."))
+            sendEffect(TimecardEffect.Failed(str(S.desktop_timecard_open_project_before_submitting)))
             return
         }
         setState { copy(notice = QUEUED_SUBMIT_NOTICE) }
@@ -731,40 +735,44 @@ class TimecardViewModel(
         when (prompt) {
             is TimecardPrompt.Confirm -> when (prompt.action) {
                 TimecardConfirmAction.Submit -> submitWeek(prompt.targetId)
-                TimecardConfirmAction.Approve -> act("Approved") { repository.approve(prompt.targetId, null) }
+                TimecardConfirmAction.Approve -> act(str(S.approved)) { repository.approve(prompt.targetId, null) }
                 TimecardConfirmAction.FinalApprove ->
-                    act("Final approved") { repository.finalApprove(prompt.targetId) }
+                    act(str(S.cs_status_final_approved)) { repository.finalApprove(prompt.targetId) }
 
-                TimecardConfirmAction.Lock -> act("Week locked") { repository.lock(prompt.targetId) }
-                TimecardConfirmAction.MarkPaid -> act("Marked paid") { repository.markPaid(prompt.targetId) }
-                TimecardConfirmAction.ApproveSelected -> batch("approved") { repository.approveAll(it) }
-                TimecardConfirmAction.LockSelected -> batch("locked") { repository.lockAll(it) }
+                TimecardConfirmAction.Lock -> act(str(S.desktop_week_locked)) { repository.lock(prompt.targetId) }
+                TimecardConfirmAction.MarkPaid -> act(str(S.desktop_marked_paid)) {
+                    repository.markPaid(prompt.targetId)
+                }
+                TimecardConfirmAction.ApproveSelected -> batch(S.desktop_timecards_approved_count) {
+                    repository.approveAll(it)
+                }
+                TimecardConfirmAction.LockSelected -> batch(S.desktop_timecards_locked_count) { repository.lockAll(it) }
             }
 
             is TimecardPrompt.WithReason -> {
                 val reason = prompt.reason.trim()
                 if (reason.isEmpty()) {
-                    sendEffect(TimecardEffect.Failed("A reason is required."))
+                    sendEffect(TimecardEffect.Failed(str(S.desktop_a_reason_is_required)))
                     setState { copy(prompt = prompt) }
                     return
                 }
                 when (prompt.action) {
                     TimecardReasonAction.Reject ->
-                        act("Timecard rejected") { repository.reject(prompt.targetId, reason) }
+                        act(str(S.desktop_timecard_rejected)) { repository.reject(prompt.targetId, reason) }
 
                     TimecardReasonAction.Query ->
-                        act("Query sent") { repository.query(prompt.targetId, reason) }
+                        act(str(S.ah_query_sent_toast)) { repository.query(prompt.targetId, reason) }
                 }
             }
 
             is TimecardPrompt.Deduct -> {
                 val amount = prompt.amount.trim().toDoubleOrNull()
                 if (prompt.label.isBlank() || amount == null || amount <= 0) {
-                    sendEffect(TimecardEffect.Failed("A deduction needs a label and an amount."))
+                    sendEffect(TimecardEffect.Failed(str(S.desktop_deduction_needs_label_amount)))
                     setState { copy(prompt = prompt) }
                     return
                 }
-                act("Deduction added") {
+                act(str(S.desktop_deduction_added)) {
                     repository.addDeduction(
                         prompt.targetId,
                         prompt.label.trim(),
@@ -792,16 +800,16 @@ class TimecardViewModel(
             sendEffect(TimecardEffect.Failed(NOT_ON_SERVER_MESSAGE))
             return
         }
-        act("Timecard submitted") { repository.submit(targetId) }
+        act(str(S.desktop_timecard_submitted)) { repository.submit(targetId) }
     }
 
-    private fun batch(verb: String, block: suspend (List<String>) -> ZillitResult<Unit>) {
+    private fun batch(successKey: String, block: suspend (List<String>) -> ZillitResult<Unit>) {
         val ids = currentState.selection.toList()
         if (ids.isEmpty()) {
-            sendEffect(TimecardEffect.Failed("Nothing is selected."))
+            sendEffect(TimecardEffect.Failed(str(S.desktop_nothing_is_selected)))
             return
         }
-        act("${ids.size} timecard(s) $verb") { block(ids) }
+        act(str(successKey, ids.size)) { block(ids) }
         setState { copy(selection = emptySet()) }
     }
 
@@ -844,9 +852,9 @@ class TimecardViewModel(
         const val DRAFT_KIND = "timecard.draft"
         const val METADATA_CACHE = "timecard.metadata"
         const val ALLOWANCES_CACHE = "timecard.allowances"
-        const val QUEUED_SAVE_NOTICE = "Saved on this computer — it will be sent when you're back online."
-        const val QUEUED_SUBMIT_NOTICE = "Will be submitted as soon as you're back online."
-        const val NOT_ON_SERVER_MESSAGE = "This week is still waiting to be sent; it can be submitted once it is."
+        val QUEUED_SAVE_NOTICE: String get() = str(S.desktop_timecard_queued_save_notice)
+        val QUEUED_SUBMIT_NOTICE: String get() = str(S.desktop_timecard_queued_submit_notice)
+        val NOT_ON_SERVER_MESSAGE: String get() = str(S.desktop_timecard_not_on_server)
         private const val DAYS_IN_WEEK = 7
         private const val DAY_MILLIS = 86_400_000L
         private const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L

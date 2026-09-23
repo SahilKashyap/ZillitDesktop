@@ -44,6 +44,8 @@ import java.util.UUID
 import com.zillit.desktop.core.database.UserSnapshot
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.feature.chat.domain.MEMBER_DESIGNATION
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -411,7 +413,7 @@ internal fun chatVoice(
             capture.recorder?.start() ?: com.zillit.desktop.core.common.ZillitResult.Failure(
                 com.zillit.desktop.core.common.ZillitError.Storage(
                     technical = "no recorder wired",
-                    userMessage = "Recording is not available on this machine.",
+                    userMessage = str(S.desktop_recording_unavailable),
                 ),
             )
 

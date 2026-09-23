@@ -46,6 +46,8 @@ import com.zillit.desktop.feature.drive.domain.isRecent
 import com.zillit.desktop.feature.drive.domain.relativeTime
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The extension badge's palette — `DriveTable.getExtBadge`, one tint per
@@ -171,7 +173,7 @@ internal fun exactStamp(millis: Long?): String = EpochDate.dateTime(millis).ifBl
 internal fun SharingCell(item: DriveItem, state: DriveUiState) {
     val viewer = state.viewer
     if (viewer.isSharedWithMe(item)) {
-        val name = item.uploadedByName.ifBlank { "Unknown" }
+        val name = item.uploadedByName.ifBlank { str(S.desktop_unknown) }
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
@@ -189,13 +191,13 @@ internal fun SharingCell(item: DriveItem, state: DriveUiState) {
     val others = item.accessUserIds.filter { it != viewer.userId }
     if (others.isEmpty()) {
         ZillitText(
-            text = "Only you",
+            text = str(S.invitees_self_title),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
         return
     }
-    val people = others.map { id -> id to (state.crew.firstOrNull { it.id == id }?.name ?: "User") }
+    val people = others.map { id -> id to (state.crew.firstOrNull { it.id == id }?.name ?: str(S.user_label)) }
     val shown = people.take(MAX_STACKED)
     val overflow = people.size - shown.size
     ZillitTooltip(text = people.joinToString(", ") { (_, name) -> name }) {
@@ -227,7 +229,7 @@ internal fun SharingCell(item: DriveItem, state: DriveUiState) {
 /** A small "shared with you" marker beside a name — `TeamOutlined` in blue. */
 @Composable
 internal fun SharedWithYouMark() {
-    ZillitTooltip(text = "Shared with you") {
+    ZillitTooltip(text = str(S.drive_cd_shared_with_you)) {
         ZillitIcon(icon = ZillitIcons.Users, tint = ZillitTheme.colors.info, size = ZillitTheme.spacing.md)
     }
 }
@@ -245,14 +247,14 @@ internal fun DriveEmptyState(state: DriveUiState, onEvent: (DriveEvent) -> Unit)
     val sharedByMeEmpty = state.section == DriveSection.MyDrive && state.myDriveFilter == MyDriveFilter.SharedByMe
     val sharedEmpty = state.section == DriveSection.SharedWithMe
     val (title, message) = when {
-        searchEmpty -> "No results found" to "\"${state.search}\" not found"
-        sharedEmpty -> "No folders or files have been shared with you yet" to
-            "Files and folders shared with you will appear here"
-        sharedByMeEmpty -> "You haven't shared any items yet" to "Items you share with others will appear here"
+        searchEmpty -> str(S.desktop_drive_no_results_found) to str(S.desktop_drive_search_not_found, state.search)
+        sharedEmpty -> str(S.desktop_drive_empty_shared_title) to str(S.drive_empty_shared_subtitle)
+        sharedByMeEmpty ->
+            str(S.desktop_drive_empty_shared_by_me_title) to str(S.desktop_drive_empty_shared_by_me_message)
         state.showFavouritesOnly ->
-            "No favourites here" to "Star a file or folder and it will show up under this filter"
-        state.tagFilterId != null -> "Nothing carries this tag" to "Add the tag to a file or folder from its details"
-        else -> "No files or folders yet" to "Drag & drop files here, or use the Upload button to get started"
+            str(S.desktop_drive_empty_favourites_title) to str(S.desktop_drive_empty_favourites_message)
+        state.tagFilterId != null -> str(S.desktop_drive_empty_tag_title) to str(S.desktop_drive_empty_tag_message)
+        else -> str(S.desktop_drive_empty_title) to str(S.desktop_drive_empty_message)
     }
     val icon = when {
         searchEmpty -> ZillitIcons.Search
@@ -293,13 +295,13 @@ internal fun DriveEmptyState(state: DriveUiState, onEvent: (DriveEvent) -> Unit)
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitButton(
-                    text = "Upload files",
+                    text = str(S.dd_empty_upload_cta),
                     onClick = { onEvent(DriveEvent.OpenUpload) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Upload,
                 )
                 ZillitButton(
-                    text = "Create folder",
+                    text = str(S.dd_empty_create_cta),
                     onClick = { onEvent(DriveEvent.OpenNewFolder) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.FolderPlus,

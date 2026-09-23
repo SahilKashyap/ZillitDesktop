@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.sides.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.AutoPlan
 import com.zillit.desktop.feature.sides.domain.CallSheetRef
 import com.zillit.desktop.feature.sides.domain.GeneratePoller
@@ -82,7 +84,7 @@ internal class AutoFlow(
 
     fun viewCallSheet(sheet: CallSheetRef) = pdf.open(
         title = sheet.title,
-        subtitle = "Call sheet",
+        subtitle = str(S.sides_section_call_sheet),
         fileName = SidesRules.downloadName(sheet.title, "call_sheet"),
     ) { store.transfer.presign(sheet.attachment) }
 
@@ -91,8 +93,8 @@ internal class AutoFlow(
             dialog = SidesDialog.Confirm(
                 kind = ConfirmKind.CallSheet,
                 id = sheet.id,
-                title = "Delete call sheet?",
-                message = "Delete this call sheet?",
+                title = str(S.desktop_sides_delete_call_sheet_title),
+                message = str(S.desktop_sides_delete_call_sheet_message),
             ),
         )
     }
@@ -101,7 +103,7 @@ internal class AutoFlow(
         when (val deleted = store.repository.deleteCallSheet(id)) {
             is ZillitResult.Success -> {
                 if (store.current.auto?.selectedCallSheetId == id) selectCallSheet("")
-                store.notice("Call sheet deleted")
+                store.notice(str(S.desktop_sides_call_sheet_deleted))
                 reloadCallSheets()
                 true
             }
@@ -129,7 +131,7 @@ internal class AutoFlow(
 
     fun viewSchedule(schedule: ScheduleRef) = pdf.open(
         title = schedule.title,
-        subtitle = "Schedule",
+        subtitle = str(S.schedule),
         fileName = SidesRules.downloadName(schedule.title, "schedule"),
     ) { store.repository.scheduleDownloadUrl(schedule.id) }
 
@@ -138,8 +140,8 @@ internal class AutoFlow(
             dialog = SidesDialog.Confirm(
                 kind = ConfirmKind.Schedule,
                 id = schedule.id,
-                title = "Delete schedule?",
-                message = "Delete this shooting schedule?",
+                title = str(S.desktop_sides_delete_schedule_title),
+                message = str(S.desktop_sides_delete_schedule_message),
             ),
         )
     }
@@ -148,7 +150,7 @@ internal class AutoFlow(
         when (val deleted = store.repository.deleteSchedule(id)) {
             is ZillitResult.Success -> {
                 if (store.current.auto?.selectedScheduleId == id) form { copy(selectedScheduleId = "") }
-                store.notice("Schedule deleted")
+                store.notice(str(S.desktop_sides_schedule_deleted))
                 reloadSchedules()
                 true
             }
@@ -188,8 +190,8 @@ internal class AutoFlow(
         val current = store.current.auto ?: return
         if (current.running || store.refuses(RightsKind.Post)) return
         val refusal = when {
-            current.selectedCallSheetId.isBlank() -> "Select or upload a call sheet first"
-            current.orderedScenes.isEmpty() -> "No scenes to generate"
+            current.selectedCallSheetId.isBlank() -> str(S.sides_pick_call_sheet_first)
+            current.orderedScenes.isEmpty() -> str(S.sides_no_scenes_to_generate)
             else -> null
         }
         if (refusal != null) return store.failed(refusal)
@@ -210,7 +212,7 @@ internal class AutoFlow(
             when (val outcome = poller.run(onTick = { tick -> form { copy(result = tick) } })) {
                 is ZillitResult.Success -> {
                     form { copy(running = false, result = outcome.data.sides) }
-                    if (outcome.data.timedOut) store.failed("Still rendering — check Sides shortly")
+                    if (outcome.data.timedOut) store.failed(str(S.desktop_sides_still_rendering))
                 }
                 is ZillitResult.Failure -> {
                     form { copy(running = false, result = null) }
@@ -224,8 +226,8 @@ internal class AutoFlow(
         val result = store.current.auto?.result ?: return
         form { copy(viewed = true) }
         pdf.open(
-            title = result.title.ifBlank { "Sides" },
-            subtitle = "Generated sides",
+            title = result.title.ifBlank { str(S.txt_sides) },
+            subtitle = str(S.desktop_sides_generated_subtitle),
             fileName = SidesRules.downloadName(result.title),
         ) { store.repository.downloadUrl(result.id, countDownload = false) }
     }
@@ -246,7 +248,7 @@ internal class AutoFlow(
             when (val published = store.repository.publish(result.id)) {
                 is ZillitResult.Success -> {
                     store.update { copy(auto = null) }
-                    store.notice("Published to Sides")
+                    store.notice(str(S.desktop_sides_published))
                     onPublished()
                 }
                 is ZillitResult.Failure -> {

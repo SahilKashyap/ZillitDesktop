@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.chat.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatScope
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import kotlinx.serialization.json.JsonElement
@@ -59,7 +61,7 @@ internal fun roomFrom(room: JsonObject): GroupRoom? {
     val id = room.text("_id") ?: return null
     return GroupRoom(
         id = id,
-        name = room.text("room_name") ?: "Group",
+        name = room.text("room_name") ?: str(S.group),
         ownedBy = room.text("owned_by"),
         departmentId = room.text("department_id")?.takeIf { it.isNotBlank() },
         sortingActivity = (room["sorting_activity"] as? JsonPrimitive)

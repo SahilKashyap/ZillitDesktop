@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
 import com.zillit.desktop.feature.assetreport.domain.AssetFormat
 import com.zillit.desktop.feature.assetreport.domain.AssetLine
@@ -268,7 +270,7 @@ internal fun AssetSearchField(value: String, onValueChange: (String) -> Unit, mo
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
                 ZillitText(
-                    text = "Search assets, vendors, refs…",
+                    text = str(S.asset_search_hint),
                     style = ZillitTheme.typography.bodyLarge,
                     color = colors.textDisabled,
                     maxLines = 1,

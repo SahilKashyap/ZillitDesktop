@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The analytics page — the web's `AnalyticsPage`, fed by
  * `GET /invoices/analytics`.
@@ -71,11 +74,13 @@ data class SpendTotals(
  * Measured from the invoice date, not the due date: the creditors report asks
  * how long the production has owed the money, not how late it is.
  */
-enum class AgeingBucket(val label: String) {
-    Current("Current"),
-    Days30("30 Days"),
-    Days60("60+ Days"),
+enum class AgeingBucket(private val labelKey: String) {
+    Current(S.dv_current),
+    Days30(S.desktop_ageing_30_days),
+    Days60(S.desktop_ageing_60_plus_days),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         const val DAYS_30 = 30

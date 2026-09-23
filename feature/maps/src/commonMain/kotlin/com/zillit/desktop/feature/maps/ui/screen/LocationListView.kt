@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.MapLocation
 import com.zillit.desktop.feature.maps.domain.toFixed
 import com.zillit.desktop.feature.maps.ui.ListViewState
@@ -52,26 +54,47 @@ import com.zillit.desktop.feature.maps.ui.MapUiState
  * window.
  */
 @Composable
-internal fun LocationListView(state: MapUiState, list: ListViewState, onEvent: (MapEvent) -> Unit, modifier: Modifier = Modifier) {
+internal fun LocationListView(
+    state: MapUiState,
+    list: ListViewState,
+    onEvent: (MapEvent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = ZillitTheme.colors
-    val cityName = state.selectedCity?.displayName ?: "All Cities"
+    val cityName = state.selectedCity?.displayName ?: str(S.desktop_map_all_cities)
     val total = state.locations.size
-    val filtered = if (list.filter == ListViewState.ALL_TYPES) state.locations else state.locations.filter { it.type == list.filter }
+    val filtered = if (list.filter == ListViewState.ALL_TYPES) {
+        state.locations
+    } else {
+        state.locations.filter { it.type == list.filter }
+    }
     val narrowed = list.filter != ListViewState.ALL_TYPES
     Column(modifier.fillMaxSize().background(if (colors.isDark) colors.canvas else colors.surfaceSunken)) {
         HeroHeader(
             accent = MapColors.Brand,
-            title = "Locations",
+            title = str(S.desktop_map_locations_title),
             subtitle = if (narrowed) {
-                "Showing ${filtered.size} of $total locations"
+                str(S.desktop_map_showing_of, filtered.size, total)
             } else {
-                "Browse, search and manage every pinned location"
+                str(S.desktop_map_locations_subtitle)
             },
             onClose = { onEvent(MapEvent.Toolbar.ToggleListView) },
             eyebrow = { HeroChip(cityName) },
             trailing = {
-                HeroChip("$total ${if (total == 1) "Location" else "Locations"}", MapIcons.MapPin)
-                HeroPillButton("New Location", onClick = { onEvent(MapEvent.LocationForm.New) }, icon = ZillitIcons.Add, solid = true)
+                HeroChip(
+                    if (total == 1) {
+                        str(S.desktop_map_location_count_one, total)
+                    } else {
+                        str(S.desktop_map_location_count_other, total)
+                    },
+                    MapIcons.MapPin,
+                )
+                HeroPillButton(
+                    str(S.desktop_map_new_location),
+                    onClick = { onEvent(MapEvent.LocationForm.New) },
+                    icon = ZillitIcons.Add,
+                    solid = true,
+                )
             },
             below = {
                 FilterTabs(state, list, onEvent)
@@ -82,7 +105,8 @@ internal fun LocationListView(state: MapUiState, list: ListViewState, onEvent: (
             contentPadding = PaddingValues(24.dp),
         ) {
             when {
-                state.locationsLoading && state.locations.isEmpty() -> LoadingBlock("Loading locations...")
+                state.locationsLoading && state.locations.isEmpty() ->
+                    LoadingBlock(str(S.desktop_map_loading_locations))
                 filtered.isEmpty() -> EmptyCard(narrowed, list.filter, cityName, onEvent)
                 else -> LocationGrid(state, filtered, onEvent)
             }
@@ -109,7 +133,7 @@ private fun FilterTabs(state: MapUiState, list: ListViewState, onEvent: (MapEven
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Tab(
-                text = "All",
+                text = str(S.all),
                 icon = null,
                 count = state.locations.size,
                 active = list.filter == ListViewState.ALL_TYPES,
@@ -152,8 +176,19 @@ private fun Tab(text: String, icon: String?, count: Int, active: Boolean, active
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (icon != null) ZillitText(text = icon, style = TextStyle(fontSize = 13.sp), color = if (active) Color.White else colors.textSecondary)
-        ZillitText(text = text, style = labelBold(13.sp, FontWeight.Medium), color = if (active) Color.White else colors.textSecondary, maxLines = 1)
+        if (icon != null) {
+            ZillitText(
+                text = icon,
+                style = TextStyle(fontSize = 13.sp),
+                color = if (active) Color.White else colors.textSecondary,
+            )
+        }
+        ZillitText(
+            text = text,
+            style = labelBold(13.sp, FontWeight.Medium),
+            color = if (active) Color.White else colors.textSecondary,
+            maxLines = 1,
+        )
         if (count > 0) {
             Box(
                 Modifier
@@ -161,7 +196,11 @@ private fun Tab(text: String, icon: String?, count: Int, active: Boolean, active
                     .background(if (active) Color.White.copy(alpha = 0.25f) else colors.surfaceSunken)
                     .padding(horizontal = 6.dp, vertical = 1.dp),
             ) {
-                ZillitText(text = count.toString(), style = labelBold(11.sp), color = if (active) Color.White else colors.textMuted)
+                ZillitText(
+                    text = count.toString(),
+                    style = labelBold(11.sp),
+                    color = if (active) Color.White else colors.textMuted,
+                )
             }
         }
     }
@@ -194,6 +233,7 @@ private fun LocationGrid(state: MapUiState, locations: List<MapLocation>, onEven
 
 /** `LocationCard.jsx`. */
 @Composable
+@Suppress("LongMethod") // One card, laid out in one place.
 private fun LocationCard(state: MapUiState, location: MapLocation, onEvent: (MapEvent) -> Unit, modifier: Modifier) {
     val colors = ZillitTheme.colors
     val style = state.style(location.type)
@@ -215,7 +255,9 @@ private fun LocationCard(state: MapUiState, location: MapLocation, onEvent: (Map
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (location.hasType) {
                     Row(
-                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(accent).padding(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                            .background(accent)
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -233,12 +275,18 @@ private fun LocationCard(state: MapUiState, location: MapLocation, onEvent: (Map
                 Spacer(Modifier.weight(1f))
                 if (location.sceneNumber.isNotBlank()) {
                     Row(
-                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(colors.surfaceSunken).padding(horizontal = 8.dp, vertical = 3.dp),
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                            .background(colors.surfaceSunken)
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         ZillitIcon(icon = MapIcons.Film, tint = colors.textSecondary, size = 10.dp)
-                        ZillitText(text = "SC ${location.sceneNumber}", style = labelBold(11.sp), color = colors.textSecondary)
+                        ZillitText(
+                            text = "SC ${location.sceneNumber}",
+                            style = labelBold(11.sp),
+                            color = colors.textSecondary,
+                        )
                     }
                 }
             }
@@ -251,7 +299,14 @@ private fun LocationCard(state: MapUiState, location: MapLocation, onEvent: (Map
             )
             if (location.address.isNotBlank()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconChip(MapIcons.MapPin, MapColors.Brand, softOf(MapColors.Brand), size = 24.dp, iconSize = 11.dp, corner = 6.dp)
+                    IconChip(
+                        MapIcons.MapPin,
+                        MapColors.Brand,
+                        softOf(MapColors.Brand),
+                        size = 24.dp,
+                        iconSize = 11.dp,
+                        corner = 6.dp,
+                    )
                     ZillitText(
                         text = location.address,
                         style = ZillitTheme.typography.bodySmall,
@@ -262,8 +317,18 @@ private fun LocationCard(state: MapUiState, location: MapLocation, onEvent: (Map
                 }
             }
             location.point?.let { point ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconChip(MapIcons.Globe, MapColors.Info, softOf(MapColors.Info), size = 24.dp, iconSize = 11.dp, corner = 6.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    IconChip(
+                        MapIcons.Globe,
+                        MapColors.Info,
+                        softOf(MapColors.Info),
+                        size = 24.dp,
+                        iconSize = 11.dp,
+                        corner = 6.dp,
+                    )
                     ZillitText(
                         text = "${toFixed(point.lat, 6)}, ${toFixed(point.lng, 6)}",
                         style = TextStyle(fontSize = 11.sp, fontFamily = ZillitTheme.fonts.mono),
@@ -273,7 +338,10 @@ private fun LocationCard(state: MapUiState, location: MapLocation, onEvent: (Map
                 }
             }
             if (location.subTypes.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     location.subTypes.take(MAX_CARD_SUBTYPES).forEach { SubTypeChip(it) }
                     if (location.subTypes.size > MAX_CARD_SUBTYPES) {
                         ZillitText(
@@ -296,11 +364,17 @@ private fun LocationCard(state: MapUiState, location: MapLocation, onEvent: (Map
             Spacer(Modifier.weight(1f))
             Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CardAction(onClick = { onEvent(MapEvent.Locations.View(location.id)) }, icon = ZillitIcons.Eye, text = "View")
+                CardAction(onClick = { onEvent(MapEvent.Locations.View(location.id)) }, icon = ZillitIcons.Eye,
+                    text = str(S.view))
                 if (state.viewer.mayPost) {
-                    CardAction(onClick = { onEvent(MapEvent.Locations.Edit(location.id)) }, icon = ZillitIcons.Edit, text = "Edit", tone = ActionTone.Accent)
+                    CardAction(onClick = { onEvent(MapEvent.Locations.Edit(location.id)) }, icon = ZillitIcons.Edit,
+                        text = str(S.edit), tone = ActionTone.Accent)
                     Spacer(Modifier.weight(1f))
-                    CardAction(onClick = { onEvent(MapEvent.Locations.Delete(location.id)) }, icon = ZillitIcons.Trash, tone = ActionTone.Danger)
+                    CardAction(
+                        onClick = { onEvent(MapEvent.Locations.Delete(location.id)) },
+                        icon = ZillitIcons.Trash,
+                        tone = ActionTone.Danger,
+                    )
                 }
             }
         }
@@ -321,14 +395,22 @@ private fun EmptyCard(narrowed: Boolean, filter: String, cityName: String, onEve
             EmptyBlock(
                 icon = MapIcons.MapPin,
                 accent = MapColors.Brand,
-                title = if (narrowed) "No $filter locations" else "No locations yet",
-                message = if (narrowed) {
-                    "You haven't added any locations of type \"$filter\" to $cityName yet."
+                title = if (narrowed) {
+                    str(S.desktop_map_no_filter_locations, filter)
                 } else {
-                    "Pin locations on the map or add them manually to start organising your shoot."
+                    str(S.desktop_map_no_locations_yet)
+                },
+                message = if (narrowed) {
+                    str(S.desktop_map_no_filter_locations_msg, filter, cityName)
+                } else {
+                    str(S.desktop_map_no_locations_msg)
                 },
                 action = {
-                    ZillitButton(text = "Add Location", onClick = { onEvent(MapEvent.LocationForm.New) }, leadingIcon = ZillitIcons.Add)
+                    ZillitButton(
+                        text = str(S.add_location),
+                        onClick = { onEvent(MapEvent.LocationForm.New) },
+                        leadingIcon = ZillitIcons.Add,
+                    )
                 },
             )
         }

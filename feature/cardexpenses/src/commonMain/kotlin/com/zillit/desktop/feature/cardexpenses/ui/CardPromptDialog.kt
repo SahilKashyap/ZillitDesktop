@@ -15,6 +15,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The card tool's confirmation dialog.
@@ -62,7 +64,7 @@ fun CardPromptDialog(prompt: CardPrompt?, onEvent: (CardEvent) -> Unit) {
                 ZillitTextField(
                     value = shown.note,
                     onValueChange = { onEvent(CardEvent.UpdatePrompt(shown.copy(note = it))) },
-                    label = "Note (optional)",
+                    label = str(S.notes_optional),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -71,13 +73,13 @@ fun CardPromptDialog(prompt: CardPrompt?, onEvent: (CardEvent) -> Unit) {
                 ZillitTextField(
                     value = shown.number,
                     onValueChange = { onEvent(CardEvent.UpdatePrompt(shown.copy(number = it))) },
-                    label = "Card number",
+                    label = str(S.desktop_card_number),
                     placeholder = "4000 0000 0000 0000",
                     keyboardType = KeyboardType.Number,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ZillitText(
-                    text = "Only the last four digits are stored against the card for display.",
+                    text = str(S.desktop_card_last_four_note),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -92,7 +94,7 @@ fun CardPromptDialog(prompt: CardPrompt?, onEvent: (CardEvent) -> Unit) {
         ) {
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(CardEvent.DismissPrompt) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -114,10 +116,12 @@ private fun CardPrompt?.title(): String = when (this) {
 }
 
 private fun CardPrompt?.confirmLabel(): String = when (this) {
-    is CardPrompt.WithReason -> if (action == CardReasonAction.ResolveAlert) "Resolve" else "Reject"
-    is CardPrompt.WithAmount -> "Save"
-    is CardPrompt.WithCardNumber -> "Assign"
-    else -> "Confirm"
+    is CardPrompt.WithReason ->
+        if (action == CardReasonAction.ResolveAlert) str(S.desktop_resolve) else str(S.reject)
+
+    is CardPrompt.WithAmount -> str(S.save)
+    is CardPrompt.WithCardNumber -> str(S.assign)
+    else -> str(S.confirm)
 }
 
 private fun CardPrompt?.isDestructive(): Boolean = when (this) {

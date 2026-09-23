@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.calls.ui
 import com.zillit.desktop.core.common.onSuccess
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.CallApi
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
 import com.zillit.desktop.feature.calls.domain.CallLine
@@ -16,15 +18,18 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /** What pressing an ongoing call's button does — the web's `Line3CallJoinButton` states. */
-enum class OngoingVerb(val label: String) {
+enum class OngoingVerb(private val labelKey: String) {
     /** Not in it anywhere: join. */
-    Join("Join"),
+    Join(S.txt_join),
 
     /** In it on another device: joining here moves the call off that device. */
-    Switch("Switch here"),
+    Switch(S.desktop_call_switch_here),
 
     /** It is the call open on this device: surface it, never re-join. */
-    Return("Return"),
+    Return(S.desktop_return),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -344,9 +349,9 @@ fun List<CallLogEntry>.matchingCounterpart(
  * list anyone can read.
  */
 fun CallLogEntry.displayTitle(nameFor: (String) -> String?): String = when {
-    mode == CallMode.Group -> title.ifBlank { "Group call" }
+    mode == CallMode.Group -> title.ifBlank { str(S.txt_group_call) }
     else -> nameFor(peerUserId)?.takeIf(String::isNotBlank)
-        ?: title.ifBlank { "Unknown caller" }
+        ?: title.ifBlank { str(S.desktop_unknown_caller) }
 }
 
 /**
@@ -363,7 +368,7 @@ fun CallLogEntry.subtitle(
 ): String {
     val at = callTimeLabel(startedAtMillis, nowMillis, zone)
     val what = when {
-        missed -> "Missed"
+        missed -> str(S.missed)
         else -> formatDuration(durationMillis)
     }
     return listOf(what, at).filter(String::isNotBlank).joinToString(" · ")
@@ -405,7 +410,7 @@ fun callTimeLabel(
  * ordinary call claiming to have run all afternoon.
  */
 fun formatDuration(rawMillis: Long): String {
-    if (rawMillis <= 0) return "No answer"
+    if (rawMillis <= 0) return str(S.desktop_no_answer)
     val seconds = rawMillis / MILLIS_PER_SECOND
     val minutes = seconds / SECONDS_PER_MINUTE
     val hours = minutes / MINUTES_PER_HOUR

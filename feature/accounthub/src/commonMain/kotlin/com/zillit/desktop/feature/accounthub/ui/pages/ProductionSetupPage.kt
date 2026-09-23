@@ -55,6 +55,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankAccounts
 import com.zillit.desktop.feature.accounthub.domain.Companies
@@ -108,16 +110,14 @@ fun ProductionSetupPage(
 
     HubPage {
         ZillitPageHeader(
-            eyebrow = "Setup",
-            title = "Production Setup",
-            description = "Project-wide defaults inherited by new deal memos, purchase orders, payroll runs, " +
-                "and onboarding flows.",
+            eyebrow = str(S.desktop_setup),
+            title = str(S.ps_production_setup),
+            description = str(S.desktop_hub_project_wide_defaults_inherited_by_new_deal_memos_purchase_orders),
         )
 
         if (!state.viewer.canEdit) {
             ZillitNotice(
-                text = "You can see this configuration but not change it — edits are the " +
-                    "accounts department's.",
+                text = str(S.desktop_hub_you_can_see_this_configuration_but_not_change_it_edits),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Info,
             )
@@ -229,31 +229,27 @@ private fun ColumnScope.AccountingSections(
     AccountTagsSection(state, onEvent)
     TaxTypesSection(state, onEvent)
     HubModuleCard(
-        title = "Payroll Entry Setup",
-        description = "Approvers authorised to sign off payroll runs, and the project's pay-cycle window " +
-            "(e.g. Mon → Sun or Wed → Tue).",
+        title = str(S.desktop_payroll_entry_setup),
+        description = str(S.desktop_hub_approvers_authorised_to_sign_off_payroll_runs_and_the_projects),
         icon = ZillitIcons.Wallet,
         onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.Payroll)) },
     )
     HubModuleCard(
-        title = "Time Card Entry Setup",
-        description = "Control model, department-level setup, approval chain, cadence, allowance rules, and " +
-            "data-source priority for crew time cards.",
+        title = str(S.desktop_hub_time_card_entry_setup),
+        description = str(S.desktop_hub_control_model_department_level_setup_approval_chain_cadence_allowance_rules),
         icon = ZillitIcons.Clock,
         onConfigure = { onEvent(AccountHubEvent.OpenTimecardSetup) },
-        actionText = "Open Time Card ›",
+        actionText = str(S.desktop_open_time_card_chevron),
     )
     HubModuleCard(
-        title = "Purchase Order Entry Setup",
-        description = "Defaults for the PO module — description formatting, rental-split handling, and " +
-            "auto-assignment rules.",
+        title = str(S.desktop_hub_purchase_order_entry_setup),
+        description = str(S.desktop_hub_defaults_for_the_po_module_description_formatting_rental_split_handling),
         icon = ZillitIcons.Receipt,
         onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.PurchaseOrders)) },
     )
     HubModuleCard(
-        title = "Invoices Entry Setup",
-        description = "AP controls — posting limits, alert preferences, and the sign-off chain that gates " +
-            "payment runs.",
+        title = str(S.desktop_invoices_entry_setup),
+        description = str(S.desktop_hub_ap_controls_posting_limits_alert_preferences_and_the_sign_off),
         icon = ZillitIcons.File,
         onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.Invoices)) },
     )
@@ -261,20 +257,22 @@ private fun ColumnScope.AccountingSections(
     // desktop already renders that document in the tool, so a modal here
     // would be a second editor over one record; the tile deep-links instead.
     HubModuleCard(
-        title = "Production Expense Cards Entry Setup",
-        description = "Card-spend configuration — custodian, posting rights, approval shortcuts, deduction " +
-            "rules, and auto-coding.",
+        title = str(S.desktop_hub_production_expense_cards_entry_setup),
+        description = str(
+            S.desktop_hub_card_spend_configuration_custodian_posting_rights_approval_shortcuts_deduction_rules,
+        ),
         icon = ZillitIcons.CreditCard,
         onConfigure = { onEvent(AccountHubEvent.OpenSpendSetup(SpendSetup.Cards)) },
-        actionText = "Open card settings ›",
+        actionText = str(S.desktop_open_card_settings_chevron),
     )
     HubModuleCard(
-        title = "Petty Cash Entry Setup",
-        description = "Petty-cash configuration — float custodian, posting rights, approval shortcuts, " +
-            "deduction rules, and auto-coding.",
+        title = str(S.desktop_hub_petty_cash_entry_setup),
+        description = str(
+            S.desktop_hub_petty_cash_configuration_float_custodian_posting_rights_approval_shortcuts_deduction,
+        ),
         icon = ZillitIcons.Wallet,
         onConfigure = { onEvent(AccountHubEvent.OpenSpendSetup(SpendSetup.PettyCash)) },
-        actionText = "Open petty cash settings ›",
+        actionText = str(S.desktop_hub_open_petty_cash_settings_chevron),
     )
 }
 
@@ -312,9 +310,8 @@ private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Companies / Entities",
-        description = "Legal entities that own this production's bank accounts. A bank can sit under at most one " +
-            "company; the picker only lists banks not already claimed by another company.",
+        title = str(S.ps_companies_title),
+        description = str(S.desktop_hub_legal_entities_that_own_this_productions_bank_accounts_a_bank),
         dirty = setup.companies.dirty,
         saving = setup.companies.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Companies)) },
@@ -323,7 +320,7 @@ private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         extraActions = {
             if (editable) {
                 ZillitButton(
-                    text = "Add company",
+                    text = str(S.desktop_add_company),
                     onClick = { onEvent(AccountHubEvent.EditCompany(null)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -333,7 +330,7 @@ private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         },
     ) {
         if (companies.isEmpty()) {
-            EmptyLine("No companies added yet. Click Add company to register the production's legal entities.")
+            EmptyLine(str(S.desktop_hub_no_companies_added_yet_click_add_company_to_register_the))
         }
         companies.forEach { company ->
             CompanyCard(state, company, editable, onEvent)
@@ -395,7 +392,7 @@ private fun CompanyCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                MonoLabel("Production Co.")
+                MonoLabel(str(S.desktop_production_co))
                 CompanyTitleRow(company, currencies)
                 if (company.legalName.isNotBlank() && company.legalName.trim() != company.name.trim()) {
                     FieldHint("Legal name · ${company.legalName}")
@@ -406,9 +403,9 @@ private fun CompanyCard(
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 modifier = Modifier.widthIn(max = LINKED_MAX),
             ) {
-                MonoLabel("Linked banks")
+                MonoLabel(str(S.desktop_linked_banks))
                 if (linked.isEmpty()) {
-                    FieldHint("None")
+                    FieldHint(str(S.none))
                 } else {
                     LinkedBankChips(linked)
                 }
@@ -499,7 +496,7 @@ private fun CompanyTitleRow(company: Company, currencies: List<String>) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = company.name.ifBlank { "Unnamed company" },
+            text = company.name.ifBlank { str(S.desktop_unnamed_company) },
             style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             maxLines = 1,
         )
@@ -568,14 +565,13 @@ private fun BankAccountsSection(state: AccountHubUiState, onEvent: (AccountHubEv
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Bank Accounts",
-        description = "Project-level bank accounts that payroll and vendor disbursements default to. Stored in the " +
-            "central bank-accounts table (the same one Bank Reconciliation uses).",
+        title = str(S.desktop_bank_accounts),
+        description = str(S.desktop_hub_project_level_bank_accounts_that_payroll_and_vendor_disbursements_default),
         editable = editable,
         extraActions = {
             if (editable) {
                 ZillitButton(
-                    text = "Add account",
+                    text = str(S.desktop_add_account),
                     onClick = { onEvent(AccountHubEvent.EditBank(null)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -586,7 +582,7 @@ private fun BankAccountsSection(state: AccountHubUiState, onEvent: (AccountHubEv
     ) {
         // Said explicitly: this is the one section on the page with no Save
         // button, and its absence otherwise reads as a missing control.
-        FieldHint("Each account saves on its own — there is no section-level save here.")
+        FieldHint(str(S.desktop_hub_each_account_saves_on_its_own_there_is_no_section))
         if (setup.banks.isEmpty() && !setup.banksLoading) {
             EmptyBankState(editable, onAdd = { onEvent(AccountHubEvent.EditBank(null)) })
         }
@@ -616,11 +612,15 @@ private fun EmptyBankState(editable: Boolean, onAdd: () -> Unit) {
             ZillitIcon(icon = ZillitIcons.Bank, tint = colors.accentText)
         }
         ZillitText(
-            text = "No bank accounts on this project yet",
+            text = str(S.desktop_hub_no_bank_accounts_on_this_project_yet),
             style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
         )
         FieldHint(
-            if (editable) "Click to add the first one — payroll and vendor payments default to it." else "None added.",
+            if (editable) {
+                str(S.desktop_hub_click_to_add_the_first_one_payroll_and_vendor_payments)
+            } else {
+                str(S.desktop_none_added)
+            },
         )
     }
 }
@@ -663,7 +663,7 @@ private fun BankCard(
                     Monogram(bank.name.filter { it.isLetter() }.take(2).uppercase().ifBlank { "?" })
                     Column(modifier = Modifier.weight(1f)) {
                         ZillitText(
-                            text = bank.name.ifBlank { "Unnamed bank" },
+                            text = bank.name.ifBlank { str(S.desktop_unnamed_bank) },
                             style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             maxLines = 1,
                         )
@@ -684,7 +684,7 @@ private fun BankCard(
                 }
             }
             Column(modifier = Modifier.padding(top = ZillitTheme.spacing.lg)) {
-                MonoLabel("Holder")
+                MonoLabel(str(S.ah_holder))
                 ZillitText(
                     text = holder.ifBlank { "—" },
                     style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -710,23 +710,27 @@ private fun BankCard(
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                MonoLabel("Account details", modifier = Modifier.weight(1f))
+                MonoLabel(str(S.desktop_account_details), modifier = Modifier.weight(1f))
                 if (bank.accountNumber.isNotBlank()) {
                     ZillitIconButton(
                         icon = ZillitIcons.Eye,
-                        contentDescription = if (revealed) "Hide" else "Show (auto-hides in 5s)",
+                        contentDescription = if (revealed) {
+                            str(S.hide)
+                        } else {
+                            str(S.desktop_hub_show_auto_hides_in_5s_paren)
+                        },
                         onClick = { onEvent(AccountHubEvent.RevealBank(if (revealed) null else bank.id)) },
                     )
                 }
                 if (editable) {
                     ZillitIconButton(
                         icon = ZillitIcons.Edit,
-                        contentDescription = "Edit account",
+                        contentDescription = str(S.desktop_edit_account),
                         onClick = { onEvent(AccountHubEvent.EditBank(bank)) },
                     )
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Remove account",
+                        contentDescription = str(S.desktop_remove_account),
                         onClick = { onEvent(AccountHubEvent.AskRemove(SetupRemoval.BankRow(bank))) },
                         tint = colors.danger,
                     )
@@ -735,26 +739,26 @@ private fun BankCard(
             DetailGrid(
                 listOf(
                     DetailCell(
-                        "Account number",
+                        str(S.account_number),
                         if (revealed) bank.accountNumber else BankAccounts.masked(bank.accountNumber),
                         copyValue = bank.accountNumber,
                     ),
-                    DetailCell("Sort code", SortCode.formatted(bank.sortCode)),
-                    DetailCell("SWIFT / BIC", bank.swiftCode),
+                    DetailCell(str(S.ah_lbl_sort_code), SortCode.formatted(bank.sortCode)),
+                    DetailCell(str(S.ah_lbl_swift_row), bank.swiftCode),
                 ),
             )
             DetailGrid(
                 listOf(
                     DetailCell("IBAN", bank.ibanNumber),
-                    DetailCell("Nominal", bank.nominalCode),
-                    DetailCell("AP clearance", bank.apClearanceNominalCode),
+                    DetailCell(str(S.dm_rule_nominal), bank.nominalCode),
+                    DetailCell(str(S.desktop_ap_clearance), bank.apClearanceNominalCode),
                 ),
             )
             if (bank.chequeNumber.isNotBlank() || bank.wireNumber.isNotBlank()) {
                 DetailGrid(
                     listOf(
-                        DetailCell("Cheque number", bank.chequeNumber),
-                        DetailCell("Wire number", bank.wireNumber),
+                        DetailCell(str(S.desktop_cheque_number), bank.chequeNumber),
+                        DetailCell(str(S.desktop_wire_number), bank.wireNumber),
                         null,
                     ),
                 )
@@ -811,7 +815,7 @@ private fun CardField(label: String, value: String, copyValue: String, modifier:
             if (copyValue.isNotBlank()) {
                 ZillitIconButton(
                     icon = if (copied) ZillitIcons.Check else ZillitIcons.Copy,
-                    contentDescription = if (copied) "Copied" else "Copy $label",
+                    contentDescription = if (copied) str(S.dd_copied) else "Copy $label",
                     onClick = {
                         clipboard.setText(AnnotatedString(copyValue))
                         copied = true
@@ -851,9 +855,8 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Account Tags",
-        description = "Free-form labels attached to purchases and POs for ad-hoc grouping (camera, lighting, set " +
-            "dressing, marketing…). Drives the auto-complete on the PO form.",
+        title = str(S.desktop_account_tags),
+        description = str(S.desktop_hub_free_form_labels_attached_to_purchases_and_pos_for_ad),
         dirty = setup.assetTags.dirty,
         saving = setup.assetTags.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.AssetTags)) },
@@ -861,7 +864,7 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
         editable = editable,
     ) {
         FieldLabel("Tags · ${tags.size}")
-        if (tags.isEmpty() && !editable) EmptyLine("No tags yet.")
+        if (tags.isEmpty() && !editable) EmptyLine(str(S.desktop_no_tags_yet))
         // One control: the chips live inside the same well as the input, so the
         // whole thing reads as a single field, as the web's combobox does.
         Column(
@@ -898,7 +901,11 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
                             onEvent(AccountHubEvent.EditTagDraft(text))
                         }
                     },
-                    placeholder = if (tags.isEmpty()) "Type a tag and press Enter (or comma)…" else "Add another…",
+                    placeholder = if (tags.isEmpty()) {
+                        str(S.desktop_hub_type_a_tag_and_press_enter_or_comma)
+                    } else {
+                        str(S.desktop_dm_add_another_ellipsis)
+                    },
                     imeAction = ImeAction.Done,
                     onImeAction = { onEvent(AccountHubEvent.CommitTagDraft) },
                     modifier = Modifier.fillMaxWidth(),
@@ -908,7 +915,7 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
         if (editable) {
             val suggested = SUGGESTED_TAGS.filter { it !in tags }
             if (suggested.isNotEmpty()) {
-                FieldLabel("Suggested")
+                FieldLabel(str(S.desktop_suggested))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),

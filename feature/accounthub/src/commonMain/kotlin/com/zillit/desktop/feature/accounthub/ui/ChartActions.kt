@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AccountPatch
 import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
 import com.zillit.desktop.feature.accounthub.domain.CoaCostType
@@ -167,7 +169,9 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
                 isActive = form.isActive,
             )
             vm.runResult({ vm.repo.createAccount(draft) }, { created ->
-                vm.update { copy(chart = this.chart.copy(form = null), notice = "Code ${created.code} created.") }
+                vm.update {
+                    copy(chart = this.chart.copy(form = null), notice = str(S.desktop_hub_code_x_created, created.code))
+                }
                 reloadAccounts()
             }, ::formFailed)
             return
@@ -186,7 +190,7 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
         )
         vm.runResult({ vm.repo.updateAccount(editing.id, patch) }, { saved ->
             vm.update {
-                val notice = cascadeNotice(saved.cascadedDescendants) ?: "Saved."
+                val notice = cascadeNotice(saved.cascadedDescendants) ?: str(S.saved)
                 copy(chart = this.chart.copy(form = null), notice = notice)
             }
             reloadAccounts()
@@ -200,7 +204,11 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
 
     /** The web's toast when a class change reached the rows beneath. */
     private fun cascadeNotice(count: Int): String? =
-        if (count > 0) "Cost type updated — $count descendant${if (count == 1) "" else "s"} also updated" else null
+        when {
+            count == 1 -> str(S.desktop_hub_cost_type_updated_one_descendant_also_updated)
+            count > 1 -> str(S.desktop_hub_cost_type_updated_n_descendants_also_updated, count)
+            else -> null
+        }
 
     private fun confirmDeactivate() {
         val target = vm.setupState.chart.confirmDeactivate ?: return
@@ -210,7 +218,10 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
             // Deactivated, not deleted: the code stays so historical postings
             // still resolve against it, chipped "Inactive" in the chart.
             vm.update {
-                copy(chart = chart.copy(confirmDeactivate = null, deactivating = false), notice = "Code deactivated.")
+                copy(
+                    chart = chart.copy(confirmDeactivate = null, deactivating = false),
+                    notice = str(S.desktop_code_deactivated),
+                )
             }
             reloadAccounts()
         }, { error ->
@@ -222,7 +233,7 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
     private fun deactivate(id: String) {
         if (!vm.mayActAsAccountant()) return
         vm.runResult({ vm.repo.deactivateAccount(id) }, {
-            vm.update { copy(notice = "Code deactivated.") }
+            vm.update { copy(notice = str(S.desktop_code_deactivated)) }
             reloadAccounts()
         }, vm::report)
     }
@@ -241,7 +252,8 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
         val row = vm.setupState.chart.accounts.firstOrNull { it.id == id } ?: return
         if (row.costType == costType) return
         if (row.isFromBudget) {
-            vm.sendSideEffect(AccountHubEffect.Failed("Budget-imported rows are permanently classified as Expense."))
+            val message = str(S.desktop_hub_budget_imported_rows_are_permanently_classified_as_expense)
+            vm.sendSideEffect(AccountHubEffect.Failed(message))
             return
         }
         // Moved at once, so the select shows the choice while the call is out.
@@ -276,7 +288,10 @@ internal class ChartActions(private val vm: AccountHubViewModel) {
         )
         vm.runResult({ vm.repo.createAccount(draft) }, { created ->
             vm.update {
-                copy(chart = chart.copy(accounts = chart.accounts + created), notice = "Code ${created.code} created.")
+                copy(
+                    chart = chart.copy(accounts = chart.accounts + created),
+                    notice = str(S.desktop_hub_code_x_created, created.code),
+                )
             }
         }, vm::report)
     }

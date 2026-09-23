@@ -1,14 +1,16 @@
 package com.zillit.desktop.feature.dealmemo.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealExport
 import com.zillit.desktop.feature.dealmemo.domain.DealListRules
 import com.zillit.desktop.feature.dealmemo.domain.DealStatus
+import kotlin.time.Instant
 import kotlinx.coroutines.Job
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * All Deals — the web's `DMDealsPage` and the shell's Export / Create /
@@ -143,7 +145,7 @@ internal class DealListActions(private val vm: DealMemoViewModel) {
         val saver = vm.files ?: return
         edit { copy(exporting = kind) }
         if (kind == DealExport.StartForms) {
-            vm.update { copy(progressToast = "Preparing start forms… this can take a minute") }
+            vm.update { copy(progressToast = str(S.desktop_dm_preparing_start_forms_this_can_take_a)) }
         }
         vm.work {
             when (val bytes = vm.repository.export(kind)) {

@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.TaxFiling
 import com.zillit.desktop.feature.taxfiling.ui.CatalogState
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingEvent
@@ -59,18 +61,18 @@ import com.zillit.desktop.feature.taxfiling.ui.components.mtdText
 internal fun CatalogPage(catalog: CatalogState, onEvent: (TaxFilingEvent) -> Unit) {
     PageTitle(
         icon = ZillitIcons.Hierarchy,
-        title = "Tax Filing",
-        description = "Choose a filing to register companies, connect to the tax authority and submit returns.",
+        title = str(S.desktop_tax_filing),
+        description = str(S.desktop_tax_catalog_description),
     )
     val open: (TaxFiling) -> Unit = { onEvent(TaxFilingEvent.OpenFiling(it)) }
     when {
         catalog.loading -> MtdCard(padding = 0.dp, modifier = Modifier.fillMaxWidth()) { MtdSkeletonRows() }
         catalog.filings.isEmpty() -> CatalogEmpty()
         catalog.grouped -> {
-            SectionLabel("Your countries")
+            SectionLabel(str(S.desktop_tax_your_countries))
             CardGrid(catalog.mine, open)
             Spacer(Modifier.height(26.dp))
-            SectionLabel("Other countries")
+            SectionLabel(str(S.desktop_tax_other_countries))
             CardGrid(catalog.others, open)
         }
         else -> CardGrid(catalog.mine.ifEmpty { catalog.others }, open)
@@ -139,7 +141,7 @@ private fun FilingCard(filing: TaxFiling, onOpen: () -> Unit, modifier: Modifier
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "Open ${filing.title}",
+                onClickLabel = str(S.desktop_drive_open_item, filing.title),
                 role = Role.Button,
                 onClick = onOpen,
             ),
@@ -204,7 +206,7 @@ private fun FilingCardFooter(filing: TaxFiling) {
             modifier = Modifier.weight(1f),
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            ZillitText(text = "Open", style = mtdText(13.sp, FontWeight.Bold), color = palette.accentText)
+            ZillitText(text = str(S.recce_open), style = mtdText(13.sp, FontWeight.Bold), color = palette.accentText)
             ZillitIcon(icon = ZillitIcons.ArrowRight, tint = palette.accentText, size = 14.dp)
         }
     }
@@ -246,14 +248,13 @@ private fun CatalogEmpty() {
             MtdIconTile(icon = ZillitIcons.Building, size = 84.dp, iconSize = 40.dp, radius = 24.dp)
             Spacer(Modifier.height(22.dp))
             ZillitText(
-                text = "No tax filings available",
+                text = str(S.desktop_tax_no_filings_available),
                 style = mtdText(20.sp, FontWeight.Bold, tracking = (-0.02).em),
                 color = palette.ink,
             )
             Spacer(Modifier.height(8.dp))
             ZillitText(
-                text = "There are no tax filings available for your account yet. " +
-                    "Check back once a filing has been enabled.",
+                text = str(S.desktop_tax_no_filings_detail),
                 style = mtdText(14.5.sp),
                 color = palette.ink3,
                 textAlign = TextAlign.Center,

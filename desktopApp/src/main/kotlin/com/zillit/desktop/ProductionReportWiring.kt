@@ -14,15 +14,11 @@ import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
-import com.zillit.desktop.feature.callsheet.data.CallSheetRepositoryImpl
-import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
-import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
-import com.zillit.desktop.feature.callsheet.domain.SheetQuery
-import com.zillit.desktop.feature.chat.domain.CrewContact
-import com.zillit.desktop.feature.chat.ui.ChatEvent
-import com.zillit.desktop.feature.chat.ui.ChatViewModel
+import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.documentdistribution.data.FromToolFile
 import com.zillit.desktop.feature.documentdistribution.data.FromToolPublisher
 import com.zillit.desktop.feature.email.data.AwsCredentials
@@ -34,10 +30,15 @@ import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.feature.home.ui.BoardToolProvider
 import com.zillit.desktop.feature.home.ui.HomeBoardContext
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
+import com.zillit.desktop.feature.productionreport.data.PayloadWire
 import com.zillit.desktop.feature.productionreport.data.ReportRepositoryImpl
 import com.zillit.desktop.feature.productionreport.domain.ApprovalDecision
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
 import com.zillit.desktop.feature.productionreport.domain.BadgeLeaf
+import com.zillit.desktop.feature.productionreport.domain.BadgeSurface
+import com.zillit.desktop.feature.productionreport.domain.CallSheetForDay
 import com.zillit.desktop.feature.productionreport.domain.PublishedCallSheetLookup
+import com.zillit.desktop.feature.productionreport.domain.ReplaceTarget
 import com.zillit.desktop.feature.productionreport.domain.ReportBadgeSource
 import com.zillit.desktop.feature.productionreport.domain.ReportBadges
 import com.zillit.desktop.feature.productionreport.domain.ReportDelivery
@@ -62,10 +63,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 
 /**
@@ -86,7 +94,7 @@ internal fun AppGraph.Ready.buildReport(
     services = ReportServices(
         delivery = productionReportDelivery(),
         publishing = productionReportPublishing(permissions),
-        callSheets = productionReportCallSheets(CallSheetRepositoryImpl(apiClient, config)),
+        callSheets = productionReportCallSheets(),
         badges = productionReportBadges(),
         weather = productionReportWeather(),
     ),
@@ -118,15 +126,14 @@ internal fun AppGraph.Ready.productionReportChatFeed(permissions: () -> ProjectP
 internal const val PRODUCTION_REPORT_BOARD = "production-report"
 
 /**
- * The tool window: crew photos on every face, "Chat with …" opening the
- * one-to-one thread in Chat & Calls, and — for the production report — the
- * unit chat in the Chat workspace, drawn by the same board every notice
- * board uses.
+ * The tool window: crew photos on every face and — for the production
+ * report — the unit chat in the Chat workspace, drawn by the same board every
+ * notice board uses. "Send for Chat" goes through the chat REPOSITORY (see
+ * [productionReportPublishing]), so the window needs no chat view model.
  */
 internal fun reportToolProvider(
     viewModel: ReportViewModel,
     graph: AppGraph,
-    chat: ChatViewModel?,
     unitChat: HomeFeedViewModel? = null,
     boardContext: HomeBoardContext = HomeBoardContext(),
 ): ProductionReportToolProvider {
@@ -146,10 +153,6 @@ internal fun reportToolProvider(
         chat = board?.let { host ->
             @Composable { route: WorkspaceRoute, navigator: WindowNavigator -> host.Content(route, navigator) }
         },
-        openChat = { navigator, userId, fullName ->
-            chat?.onEvent(ChatEvent.OpenThread(CrewContact(userId = userId, fullName = fullName)))
-            navigator.openInNewWindow(WorkspaceRoute.Tool(CHAT_PATH))
-        },
     )
 }
 
@@ -168,7 +171,8 @@ private fun AppGraph.Ready.productionReportViewer(permissions: ProjectPermission
 /**
  * The crew as the report's pickers and crew sections need them — with their
  * standing, so approver and recipient lists leave out anyone who left or has
- * not joined, and with designations and departments as words, not label keys.
+ * not joined, with designations and departments as words, and with the
+ * designation's raw label KEY, which a reminder's `sent_by_role` carries.
  */
 private fun AppGraph.Ready.reportMembers(): List<SheetMember> =
     projectContext?.context?.value?.users.orEmpty().map { user ->
@@ -177,6 +181,7 @@ private fun AppGraph.Ready.reportMembers(): List<SheetMember> =
             fullName = user.fullName,
             department = user.department?.takeIf { it.isNotBlank() }?.let { Labels.translate(it) }.orEmpty(),
             designation = user.designationText().orEmpty(),
+            designationKey = user.designation.orEmpty(),
             status = user.status,
             isAdmin = user.isAdmin,
             avatarUrl = user.avatarUrl,
@@ -224,37 +229,59 @@ internal fun AppGraph.Ready.productionReportDelivery(): ReportDelivery = object 
         }
 }
 
+// Call sheet seed --------------------------------------------------------------------------------------
+
 /**
- * The report's seed source: the newest PUBLISHED call sheet, read through the
- * call-sheet module and re-parsed into the report module's payload type via
- * the wire shape both share.
+ * The call sheet PUBLISHED for the report's shoot day — `GET
+ * /call-sheets/by-day?date=<ms>` on the call-sheet service, the date as
+ * LOCAL midnight (how the call sheet writes its own `shared.date`; the server
+ * matches on the UTC day, so a UTC-midnight epoch misses east of UTC). The
+ * answer is the same shape as `GET /call-sheets/:id`, re-parsed into the
+ * report module's payload type via the wire shape both share.
+ *
+ * `call_sheet_not_found_for_day` is "none published" (the prompt); any other
+ * refusal or a transport failure is "couldn't ask" (no prompt).
  */
-internal fun productionReportCallSheets(
-    callSheets: CallSheetRepository,
-): PublishedCallSheetLookup = PublishedCallSheetLookup { projectId ->
-    val query = SheetQuery(projectId = projectId, statuses = listOf(CallSheetStatus.Published))
-    val published = when (val sheets = callSheets.sheets(query)) {
-        is ZillitResult.Failure -> return@PublishedCallSheetLookup null
-        is ZillitResult.Success -> sheets.data
-    }
-    val newest = published.maxByOrNull { it.publishedOn ?: it.updatedOn ?: 0L }
-        ?: return@PublishedCallSheetLookup null
-    when (val detail = callSheets.sheet(newest.id)) {
-        is ZillitResult.Failure -> null
-        is ZillitResult.Success ->
-            com.zillit.desktop.feature.productionreport.data.PayloadWire.parse(
-                com.zillit.desktop.feature.callsheet.data.PayloadWire.emit(detail.data.payload),
+internal fun AppGraph.Ready.productionReportCallSheets(): PublishedCallSheetLookup =
+    PublishedCallSheetLookup { _, dateYmd ->
+        val dateMs = runCatching {
+            LocalDate.parse(dateYmd).atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        }.getOrNull() ?: return@PublishedCallSheetLookup CallSheetForDay.Unavailable
+        val url = "${config.apiV2(ZillitService.CallSheet).trimEnd('/')}/call-sheets/by-day"
+        when (
+            val envelope = apiClient.envelope(
+                verb = HttpVerb.Get,
+                url = url,
+                module = RequestModule.ProjectUser,
+                queryParameters = mapOf("date" to dateMs),
             )
+        ) {
+            is ZillitResult.Failure -> CallSheetForDay.Unavailable
+            is ZillitResult.Success -> callSheetForDay(envelope.data.status, envelope.data.message, envelope.data.data)
+        }
     }
+
+/** The by-day envelope, read the way the web's `getPublishedCallSheetByDay` reads it. */
+internal fun callSheetForDay(status: Int?, message: String?, data: JsonElement?): CallSheetForDay {
+    if (message == CALL_SHEET_NOT_FOUND_FOR_DAY) return CallSheetForDay.None
+    if (status != 1) return CallSheetForDay.Unavailable
+    val sheet = (data as? JsonObject)?.let { it["call_sheet"] ?: it["callSheet"] } as? JsonObject
+        ?: return CallSheetForDay.None
+    val revision = (sheet["currentRevision"] ?: sheet["current_revision"]) as? JsonObject
+    val payload = revision?.get("payload") ?: sheet["payload"]
+    return CallSheetForDay.Found(PayloadWire.parse(payload))
 }
+
+private const val CALL_SHEET_NOT_FOUND_FOR_DAY = "call_sheet_not_found_for_day"
 
 // Publishing --------------------------------------------------------------------------------------
 
 /**
  * Where a report goes beyond its own service, as the web sends it: Document
  * Distribution (stored first, then filed by its keys under `Production Report`
- * or `Draft Production Report`), the tool's unit chat (a document message,
- * "New" replacing the posts before it), and storage for a drawn signature.
+ * or `Draft Production Report`), the tool's unit chat (a document message —
+ * New retiring the posts before it, Replace retiring the one it names), a
+ * crew member's 1:1 chat ("Send for Chat"), and storage for a drawn signature.
  */
 internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> ProjectPermissions): ReportPublishing =
     object : ReportPublishing {
@@ -293,12 +320,38 @@ internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> Projec
             }
         }
 
+        /**
+         * `fetchPRChatMessageData({unitId, timeStamp: now, page: 0, limit: 300})`
+         * — the newest page of the unit chat, filtered to its live documents.
+         */
+        override suspend fun replaceableDocuments(): ZillitResult<List<ReplaceTarget>> {
+            val unitId = permissions().access(PRODUCTION_REPORT_TOOL).unitId?.takeIf { it.isNotBlank() }
+                ?: return ZillitResult.Success(emptyList())
+            val chat = config.apiV2(ZillitService.ProductionReport).trimEnd('/')
+            return when (
+                val envelope = apiClient.envelope(
+                    verb = HttpVerb.Get,
+                    url = "$chat/production-report/$unitId/${System.currentTimeMillis()}/previous",
+                    module = RequestModule.ProjectUser,
+                    queryParameters = mapOf("page" to 0, "limit" to REPLACE_PAGE_LIMIT),
+                )
+            ) {
+                is ZillitResult.Failure -> envelope
+                is ZillitResult.Success -> if (envelope.data.status == 1) {
+                    ZillitResult.Success(replaceableDocuments(envelope.data.data))
+                } else {
+                    ZillitResult.Success(emptyList())
+                }
+            }
+        }
+
         override suspend fun postToChat(
             pdf: ByteArray,
             fileName: String,
             replacePrevious: Boolean,
+            replaceChatId: String?,
         ): ZillitResult<Unit> =
-            postDocument(fileName, PDF_TYPE, pdf, replacePrevious)
+            postDocument(fileName, PDF_TYPE, pdf, replacePrevious, replaceChatId)
 
         override suspend fun attachDocuments(replacePrevious: Boolean): ZillitResult<Int> {
             val files = FilePicker().pick()
@@ -308,10 +361,40 @@ internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> Projec
                     file.contentType,
                     file.bytes,
                     replacePrevious = replacePrevious && index == 0,
+                    replaceChatId = null,
                 )
                 if (posted is ZillitResult.Failure) return posted
             }
             return ZillitResult.Success(files.size)
+        }
+
+        /**
+         * `sendProductionReportForChat`: the PDF into storage, then the chat
+         * module's own sender (encryption and scope inside), as a document
+         * message with the PDF's placeholder tile — the web's first-page
+         * thumbnail is a nicety it treats as optional.
+         */
+        override suspend fun sendPdfToChat(userId: String, pdf: ByteArray, fileName: String): ZillitResult<Unit> {
+            val stored = when (val upload = reportStorage().upload(fileName, PDF_TYPE, pdf) {}) {
+                is ZillitResult.Failure -> return upload
+                is ZillitResult.Success -> upload.data
+            }
+            return chatRepository.send(
+                receiverId = userId,
+                body = "",
+                uniqueId = UUID.randomUUID().toString(),
+                nowMillis = System.currentTimeMillis(),
+                isGroup = false,
+                attachment = ChatAttachment(
+                    media = stored.media,
+                    name = fileName,
+                    contentType = PDF_TYPE,
+                    bucket = stored.bucket,
+                    region = stored.region,
+                    thumbnail = PDF_THUMBNAIL,
+                    sizeBytes = pdf.size.toLong(),
+                ),
+            )
         }
 
         override suspend fun uploadSignature(png: ByteArray): ZillitResult<ApprovalDecision.Signature> =
@@ -333,9 +416,10 @@ internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> Projec
             contentType: String,
             bytes: ByteArray,
             replacePrevious: Boolean,
+            replaceChatId: String?,
         ): ZillitResult<Unit> {
             val unitId = permissions().access(PRODUCTION_REPORT_TOOL).unitId?.takeIf { it.isNotBlank() }
-                ?: return ZillitResult.Failure(ZillitError.Validation("Production report unit not found."))
+                ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_production_report_unit_not_found)))
             val stored = when (val upload = reportStorage().upload(fileName, contentType, bytes) {}) {
                 is ZillitResult.Failure -> return upload
                 is ZillitResult.Success -> upload.data
@@ -344,7 +428,15 @@ internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> Projec
                 is ZillitResult.Failure -> return cipher
                 is ZillitResult.Success -> cipher.data
             }
-            val body = chatDocumentBody(unitId, stored, fileName, bytes.size.toLong(), empty, replacePrevious)
+            val body = chatDocumentBody(
+                unitId,
+                stored,
+                fileName,
+                bytes.size.toLong(),
+                empty,
+                replacePrevious,
+                replaceChatId,
+            )
             return when (
                 val sent = apiClient.envelope(
                     verb = HttpVerb.Post,
@@ -363,7 +455,46 @@ internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> Projec
         }
     }
 
+/**
+ * `buildReplaceableDocuments`: the `{chat_id, label}` options a Replace may
+ * retire, newest first. DOCUMENT messages only (the server acts on nothing
+ * else), not deleted, not archived (already moved to History), keyed on
+ * `_id` and NEVER `unique_id` — a `unique_id` target finds nothing and the
+ * post quietly appends. Ordered by `created` descending rather than
+ * reversed: the `/previous` API answers newest-first.
+ */
+internal fun replaceableDocuments(rows: JsonElement?): List<ReplaceTarget> =
+    (rows as? JsonArray).orEmpty()
+        .mapNotNull { it as? JsonObject }
+        .filter { row ->
+            row.string("message_type") == DOCUMENT &&
+                (row["attachment"] as? JsonObject)?.string("media")?.isNotBlank() == true &&
+                !row.truthy("deleted") && !row.truthy("archived")
+        }
+        .sortedByDescending { (it["created"] as? JsonPrimitive)?.doubleOrNull ?: 0.0 }
+        .mapNotNull { row ->
+            val id = row.string("_id")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val attachment = row["attachment"] as? JsonObject
+            val label = attachment?.string("name")?.takeIf { it.isNotBlank() }
+                ?: attachment?.string("original_file_name")?.takeIf { it.isNotBlank() }
+                ?: str(S.docusign_send_confirm_untitled)
+            ReplaceTarget(chatId = id, label = label)
+        }
+
+private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.content
+
+/** JavaScript truthiness for a flag the wire writes as a boolean, a timestamp or a string. */
+private fun JsonObject.truthy(key: String): Boolean {
+    val primitive = this[key] as? JsonPrimitive ?: return false
+    val content = primitive.content
+    return when {
+        primitive.isString -> content.isNotEmpty()
+        else -> content != "false" && content != "0" && content != "null" && content.isNotEmpty()
+    }
+}
+
 /** The unit-chat document body the web builds for a published report or an attached file. */
+@Suppress("LongParameterList") // The wire's fields, named.
 private fun chatDocumentBody(
     unitId: String,
     stored: StoredFile,
@@ -371,6 +502,7 @@ private fun chatDocumentBody(
     size: Long,
     emptyCipher: String,
     replacePrevious: Boolean,
+    replaceChatId: String?,
 ): JsonObject {
     val extension = fileName.substringAfterLast('.', "").lowercase()
     return buildJsonObject {
@@ -405,7 +537,9 @@ private fun chatDocumentBody(
         )
         put("unique_id", UUID.randomUUID().toString())
         put("comments", buildJsonArray { })
+        // The wipe flag follows the CHOICE (New), never the presence of a target; snake_case reaches the server as-is.
         put("replacePreviousChats", replacePrevious)
+        if (!replaceChatId.isNullOrBlank()) put("replace_chat_id", replaceChatId)
     }
 }
 
@@ -434,9 +568,11 @@ private fun AppGraph.Ready.reportStorage(): S3AttachmentUploader {
 
 /**
  * The tool's ledger rows, rebuilt as leaves (unit, levels, report) from the
- * store's grouped counts, and the reads the web emits: an approval unit read
- * whole (`notification:read`), a comment thread or tab by level
- * (`notification:level:read`) — each clearing the local ledger at once.
+ * store's grouped counts — badges v2: per-tab units, `level_1` the Approvals
+ * sub-tab, `level_2` report|comment, `level_3` the report id — and the one
+ * read the web emits: one report's badges of one kind on one surface
+ * (`notification:level:read`, never unit-wide), clearing the local ledger at
+ * once.
  */
 internal fun AppGraph.Ready.productionReportBadges(): ReportBadgeSource = object : ReportBadgeSource {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -459,104 +595,69 @@ internal fun AppGraph.Ready.productionReportBadges(): ReportBadgeSource = object
             ),
         )
 
+    /** Only the three v2 units are walked; legacy and tool-chat units never count in Manage. */
     private fun leavesNow(): List<BadgeLeaf> {
-        val units = split("unit")
-        val plain = units.filterKeys { it != ReportBadges.UNIT_COMMENT }.map { (unit, count) -> BadgeLeaf(
-            unit,
-            unread = count,
-        ) }
-        val comment = ReportBadges.UNIT_COMMENT
-        val commentTotal = units[comment] ?: 0
-        if (commentTotal == 0) return plain
-        val leaves = mutableListOf<BadgeLeaf>()
-        val tabs = split("level_1", unit = comment)
-        tabs.forEach { (tab, tabCount) ->
-            val subs = split("level_2", unit = comment, level1 = tab)
-            subs.forEach { (sub, subCount) ->
-                leaves += threads(
-                    split("level_3", unit = comment, level1 = tab, level2 = sub),
-                    subCount,
-                ) { doc, count ->
-                    BadgeLeaf(comment, tab, sub, doc, count)
-                }
+        val units = split("unit").filterKeys { it in ReportBadges.UNITS }
+        return units.flatMap { (unit, _) ->
+            if (unit == ReportBadges.UNIT_APPROVAL) {
+                split("level_1", unit = unit).keys.flatMap { level1 -> kindLeaves(unit, level1) }
+            } else {
+                kindLeaves(unit, level1 = null)
             }
-            val tabDocs = split("level_3", unit = comment, level1 = tab)
-            val subDocs = subs.keys.map { split("level_3", unit = comment, level1 = tab, level2 = it) }
-            val loose = tabDocs
-                .mapValues { (doc, count) -> count - subDocs.sumOf { it[doc] ?: 0 } }
-                .filterValues { it > 0 }
-            leaves += threads(
-                loose,
-                tabCount - subs.values.sum(),
-            ) { doc, count -> BadgeLeaf(comment, tab, "", doc, count) }
         }
-        val remainder = commentTotal - tabs.values.sum()
-        if (remainder > 0) leaves += BadgeLeaf(comment, unread = remainder)
-        return plain + leaves
     }
 
-    /** A leaf per report, and one without a report for rows the ledger filed with none. */
-    private fun threads(docs: Map<String, Int>, total: Int, leaf: (String, Int) -> BadgeLeaf): List<BadgeLeaf> {
-        val out = docs.map { (doc, count) -> leaf(doc, count) }
-        val missing = total - docs.values.sum()
-        return if (missing > 0) out + leaf("", missing) else out
-    }
+    /** One leaf per report under a kind, plus one nameless leaf for rows the ledger filed without a report. */
+    private fun kindLeaves(unit: String, level1: String?): List<BadgeLeaf> =
+        split("level_2", unit = unit, level1 = level1).flatMap { (level2, total) ->
+            val docs = split("level_3", unit = unit, level1 = level1, level2 = level2)
+            val named = docs.map { (doc, count) -> BadgeLeaf(unit, level1.orEmpty(), level2, doc, count) }
+            val missing = total - docs.values.sum()
+            if (missing > 0) named + BadgeLeaf(unit, level1.orEmpty(), level2, "", missing) else named
+        }
 
-    override fun readUnits(units: List<String>) {
+    override fun readBadge(surface: BadgeSurface, kind: BadgeKind, reportId: String) {
         val projectId = projectContext?.context?.value?.project?.projectId ?: return
+        if (reportId.isBlank()) return
+        // Finalized comments live under received / sent, so that is two reads.
+        val scopes = if (surface == BadgeSurface.Finalized && kind == BadgeKind.Comment) {
+            listOf(BadgeSurface.Received, BadgeSurface.Sent)
+        } else {
+            listOf(surface)
+        }
         scope.launch {
-            units.filter { it.isNotBlank() }.forEach { unit ->
+            scopes.forEach { target ->
+                val unit = ReportBadges.unitOf(target)
+                val level1 = target.wire.takeIf { target.isApproval }
                 val now = System.currentTimeMillis()
                 runCatching {
                     socketEvents.emit(
-                        ZillitSocketEvents.Badges.NotificationRead,
+                        ZillitSocketEvents.Badges.NotificationLevelRead,
                         NotificationReadDto(
                             projectId = projectId,
+                            tool = ReportBadges.TOOL,
                             module = ReportBadges.TOOL,
+                            unit = unit,
                             segment = unit,
+                            level1 = level1,
+                            level2 = kind.wire,
+                            level3 = reportId,
                             timestamp = now,
+                            readTime = now,
                         ),
                         NotificationReadDto.serializer(),
                     )
                 }
-                badgeStore.markRead(LedgerRead.Levels(tool = ReportBadges.TOOL, unit = unit))
-            }
-        }
-    }
-
-    override fun readCommentThread(reportId: String) = readComments(level1 = null, level3 = reportId)
-
-    override fun readCommentTab(tab: String) = readComments(level1 = tab, level3 = null)
-
-    private fun readComments(level1: String?, level3: String?) {
-        val projectId = projectContext?.context?.value?.project?.projectId ?: return
-        scope.launch {
-            val now = System.currentTimeMillis()
-            runCatching {
-                socketEvents.emit(
-                    ZillitSocketEvents.Badges.NotificationLevelRead,
-                    NotificationReadDto(
-                        projectId = projectId,
+                badgeStore.markRead(
+                    LedgerRead.Levels(
                         tool = ReportBadges.TOOL,
-                        module = ReportBadges.TOOL,
-                        unit = ReportBadges.UNIT_COMMENT,
-                        segment = ReportBadges.UNIT_COMMENT,
+                        unit = unit,
                         level1 = level1,
-                        level3 = level3,
-                        timestamp = now,
-                        readTime = now,
+                        level2 = kind.wire,
+                        level3 = reportId,
                     ),
-                    NotificationReadDto.serializer(),
                 )
             }
-            badgeStore.markRead(
-                LedgerRead.Levels(
-                    tool = ReportBadges.TOOL,
-                    unit = ReportBadges.UNIT_COMMENT,
-                    level1 = level1,
-                    level3 = level3,
-                ),
-            )
         }
     }
 }
@@ -579,7 +680,6 @@ private fun AppGraph.Ready.productionReportWeather(): ReportWeatherSource? {
 }
 
 private const val ONE_CALL = "https://api.openweathermap.org/data/3.0/onecall"
-private const val CHAT_PATH = "/cnc"
 private const val PRODUCTION_REPORT_TOOL = "production_report_tool"
 private const val REPORT_FOLDER = "Production Report"
 private const val DRAFT_REPORT_FOLDER = "Draft Production Report"
@@ -588,6 +688,7 @@ private const val PDF = "pdf"
 private const val PDF_TYPE = "application/pdf"
 private const val SIGNATURE_FILE = "signature.png"
 private const val KEY_SUFFIX = 6
+private const val REPLACE_PAGE_LIMIT = 300
 
 /** The placeholder the web stamps on every PDF message it posts (`App:2760`). */
 private const val PDF_THUMBNAIL = "6777b7ede9c303151d721ba9/home/actual/pdf1738063181064.png"

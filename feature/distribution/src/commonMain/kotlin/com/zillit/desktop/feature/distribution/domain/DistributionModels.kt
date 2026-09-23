@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.distribution.domain
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Distribution List is not a list: it is a per-user × per-unit opt-in
@@ -60,9 +62,12 @@ data class DistributionUnit(
 }
 
 /** The section chooser — the wire's `type` values, verbatim. */
-enum class DistributionSection(val wire: String, val label: String) {
-    Home("home", "Home"),
-    Tools("tools", "Tools"),
+enum class DistributionSection(val wire: String, private val labelKey: String) {
+    Home("home", S.home),
+    Tools("tools", S.tools),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**

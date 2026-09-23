@@ -54,6 +54,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitLanguageMenu
 import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
@@ -62,6 +63,8 @@ import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.domain.ProjectFilter
 import com.zillit.desktop.feature.auth.domain.highlightRanges
@@ -91,6 +94,8 @@ internal fun ProjectListScreen(
     modifier: Modifier = Modifier,
     createViewModel: CreateProductionViewModel? = null,
     joinViewModel: JoinProductionViewModel? = null,
+    language: String = "",
+    onLanguageChange: (String) -> Unit = {},
 ) {
     // The picker often appears UNDER a mouse that just clicked — the
     // production switcher sits where a habitual double-click's second
@@ -108,7 +113,7 @@ internal fun ProjectListScreen(
     Box(modifier) {
         ProjectListBody(state, { event ->
             if (event !is AuthEvent.SelectProject || openArmed) onEvent(event)
-        }, themeMode, onThemeModeChange)
+        }, themeMode, onThemeModeChange, language, onLanguageChange)
 
         // Always composed, visibility-driven: an `if` on the flag would
         // unmount the dialog on dismiss and skip its exit animation. Null
@@ -144,6 +149,8 @@ private fun ProjectListBody(
     onEvent: (AuthEvent) -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -155,6 +162,8 @@ private fun ProjectListBody(
             onEvent = onEvent,
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
+            language = language,
+            onLanguageChange = onLanguageChange,
         )
 
         if (state.isShowingSavedProjects) OfflineNotice()
@@ -189,18 +198,17 @@ private fun ProjectListBody(
         ) { view ->
             when (view) {
                 ListContent.Loading -> CentredMessage(
-                    text = "Loading your projects...",
+                    text = str(S.desktop_loading_your_projects),
                     icon = ZillitIcons.Reload,
                 )
 
                 ListContent.Empty -> CentredMessage(
-                    text = "This device isn't on any project yet. " +
-                        "Ask a coordinator to add you, then sign in again.",
+                    text = str(S.desktop_no_projects_on_device),
                     icon = ZillitIcons.Info,
                 )
 
                 ListContent.NoMatches -> CentredMessage(
-                    text = "No project matches \"${state.projectFilter.trim()}\".",
+                    text = str(S.desktop_no_project_matches, state.projectFilter.trim()),
                     icon = ZillitIcons.Search,
                 )
 
@@ -218,8 +226,7 @@ private fun ProjectListBody(
 @Composable
 private fun OfflineNotice() {
     ZillitText(
-        text = "You're offline — showing the projects saved on this device. " +
-            "They'll refresh when the connection is back.",
+        text = str(S.desktop_offline_projects_notice),
         style = ZillitTheme.typography.bodySmall,
         color = ZillitTheme.colors.textSecondary,
         modifier = Modifier
@@ -235,6 +242,8 @@ private fun ProjectListHeader(
     onEvent: (AuthEvent) -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -257,7 +266,7 @@ private fun ProjectListHeader(
             Spacer(Modifier.width(ZillitTheme.spacing.md))
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                 ZillitText(
-                    text = "Projects",
+                    text = str(S.cs_projects),
                     style = ZillitTheme.typography.displayLarge,
                 )
                 ZillitText(
@@ -269,9 +278,13 @@ private fun ProjectListHeader(
 
             Spacer(Modifier.weight(1f))
 
+            // The same pair the shell's bar carries, because this is the
+            // first screen after sign-in and the shell is not reachable yet.
+            ZillitLanguageMenu(selected = language, onSelect = onLanguageChange)
+            Spacer(Modifier.width(ZillitTheme.spacing.xs))
             ZillitIconButton(
                 icon = themeMode.nextIcon(),
-                contentDescription = "Switch theme",
+                contentDescription = str(S.theme_mode),
                 onClick = { onThemeModeChange(themeMode.next()) },
             )
         }
@@ -295,16 +308,16 @@ private fun FilterBar(state: AuthUiState, onEvent: (AuthEvent) -> Unit) {
         ZillitSearchField(
             value = state.projectFilter,
             onValueChange = { onEvent(AuthEvent.ProjectFilterChanged(it)) },
-            placeholder = "Search by name, code, or parent...",
+            placeholder = str(S.desktop_search_projects_placeholder),
             modifier = Modifier.widthIn(max = SEARCH_MAX_WIDTH).weight(1f),
         )
         ZillitButton(
-            text = "Join a project",
+            text = str(S.desktop_join_a_project),
             onClick = { onEvent(AuthEvent.StartJoin) },
             variant = ButtonVariant.Secondary,
         )
         ZillitButton(
-            text = "Start a project",
+            text = str(S.desktop_start_a_project),
             onClick = { onEvent(AuthEvent.StartNewProject) },
             leadingIcon = ZillitIcons.Add,
             variant = ButtonVariant.Primary,
@@ -460,7 +473,7 @@ private fun ProjectCardHeader(project: Project, query: String, onToggleFavourite
                 maxLines = 1,
             )
             ZillitText(
-                text = if (project.code.isBlank()) "No code" else "#${project.code}",
+                text = if (project.code.isBlank()) str(S.desktop_no_code) else "#${project.code}",
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -472,9 +485,9 @@ private fun ProjectCardHeader(project: Project, query: String, onToggleFavourite
             ZillitIconButton(
                 icon = if (project.isFavourite) ZillitIcons.StarFilled else ZillitIcons.StarOutline,
                 contentDescription = if (project.isFavourite) {
-                    "Remove from favourites"
+                    str(S.desktop_remove_from_favourites)
                 } else {
-                    "Add to favourites"
+                    str(S.desktop_add_to_favourites)
                 },
                 onClick = onToggleFavourite,
                 tint = if (project.isFavourite) colors.warning else colors.textMuted,
@@ -493,9 +506,9 @@ private fun ProjectCardFooter(project: Project) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            if (project.isAdmin) ZillitTag("Admin", tone = TagTone.Accent)
-            if (project.isPersonal) ZillitTag("Personal", tone = TagTone.Info)
-            if (project.isPending) ZillitTag("Awaiting approval", tone = TagTone.Warning)
+            if (project.isAdmin) ZillitTag(str(S.admin), tone = TagTone.Accent)
+            if (project.isPersonal) ZillitTag(str(S.personal), tone = TagTone.Info)
+            if (project.isPending) ZillitTag(str(S.av_subtab_awaiting_approval), tone = TagTone.Warning)
         }
         // The count lives on the card's corner (from the live device-scope
         // fetch); the list DTO's own number is a snapshot the server took
@@ -529,10 +542,10 @@ private fun ProjectCardFooter(project: Project) {
  * falls back to a humanised form when the dictionary has no entry for it.
  */
 internal fun Project.subtitle(labels: LabelDictionary): String = listOfNotNull(
-    parentName?.let { "in $it" },
+    parentName?.let { str(S.desktop_in_parent, it) },
     (subType?.takeIf { it.isNotBlank() } ?: type?.takeIf { it.isNotBlank() })
         ?.let { labels.translate(it) },
-).joinToString(" · ").ifEmpty { "Project" }
+).joinToString(" · ").ifEmpty { str(S.dm_step2_external_off) }
 
 /** Bolds the parts of [text] matching [query]. */
 private fun highlighted(
@@ -574,10 +587,10 @@ private fun Modifier.cardEntrance(index: Int): Modifier {
 
 /** The header's one line of orientation — counts, in words that scan. */
 private fun countSentence(visible: Int, total: Int): String = when {
-    total == 0 -> "No projects yet."
-    visible != total -> "Showing $visible of $total projects."
-    total == 1 -> "You have access to 1 project."
-    else -> "You have access to $total projects."
+    total == 0 -> str(S.cs_no_projects) + "."
+    visible != total -> str(S.desktop_showing_n_of_m_projects, visible, total)
+    total == 1 -> str(S.desktop_you_have_access_to_one_project)
+    else -> str(S.desktop_you_have_access_to_n_projects, total)
 }
 
 private fun ThemeMode.next(): ThemeMode = when (this) {

@@ -8,6 +8,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.addashboard.data.adRefreshes
 import com.zillit.desktop.feature.addashboard.domain.AdDates
 import com.zillit.desktop.feature.addashboard.domain.AdRepository
@@ -22,6 +24,7 @@ import com.zillit.desktop.feature.addashboard.domain.AdViewer
  * [now] is injected so the day the dashboard opens on is testable — the
  * alternative is a test that passes only until midnight UTC.
  */
+@Suppress("TooManyFunctions") // One private loader or mutator per dashboard action.
 class AdViewModel(
     private val repository: AdRepository,
     private val viewer: () -> AdViewer,
@@ -54,9 +57,9 @@ class AdViewModel(
         sendEffect(
             AdEffect.Failed(
                 if (rights == null) {
-                    NO_POSTING_RIGHTS
+                    str(S.desktop_ad_no_posting_rights)
                 } else {
-                    "$NO_POSTING_RIGHTS Asking an administrator."
+                    str(S.desktop_ad_no_posting_rights_asking_admin)
                 },
             ),
         )
@@ -177,7 +180,7 @@ class AdViewModel(
             is AdEvent.FilterCategory -> setState { copy(categoryFilter = event.category) }
             is AdEvent.FilterStatus -> setState { copy(statusFilter = event.status) }
 
-            is AdEvent.Verify -> mutate("Artiste verified") { repository.verify(event.id) }
+            is AdEvent.Verify -> mutate(str(S.desktop_ad_artiste_verified)) { repository.verify(event.id) }
             // Asked before the reason is typed rather than after: the dialog
             // exists to collect a reason for a write this person may not make.
             is AdEvent.StartBlock -> if (currentState.viewer.canPost) {
@@ -188,7 +191,7 @@ class AdViewModel(
             is AdEvent.BlockReason -> setState { copy(block = block?.copy(reason = event.text)) }
             AdEvent.ConfirmBlock -> confirmBlock()
             AdEvent.CancelBlock -> setState { copy(block = null) }
-            is AdEvent.Unblock -> mutate("Artiste unblocked") { repository.unblock(event.id) }
+            is AdEvent.Unblock -> mutate(str(S.desktop_ad_artiste_unblocked)) { repository.unblock(event.id) }
         }
     }
 
@@ -283,7 +286,11 @@ class AdViewModel(
                     setState {
                         copy(
                             addToDay = null,
-                            notice = "Added $added artiste" + if (added == 1) "" else "s",
+                            notice = if (added == 1) {
+                                str(S.desktop_ad_added_one_artiste)
+                            } else {
+                                str(S.desktop_ad_added_artistes, added)
+                            },
                         )
                     }
                     loadDay()
@@ -313,7 +320,7 @@ class AdViewModel(
         launch {
             when (val result = repository.submitDay(currentState.shootDate)) {
                 is ZillitResult.Success -> {
-                    setState { copy(notice = "Day submitted") }
+                    setState { copy(notice = str(S.desktop_ad_day_submitted)) }
                     loadDay()
                 }
 
@@ -335,7 +342,7 @@ class AdViewModel(
             val result = repository.block(open.artiste.id, open.reason.takeIf { it.isNotBlank() })
             when (result) {
                 is ZillitResult.Success -> {
-                    setState { copy(block = null, notice = "${open.artiste.name} blocked") }
+                    setState { copy(block = null, notice = str(S.desktop_ad_artiste_blocked, open.artiste.name)) }
                     loadRegister()
                 }
 
@@ -377,7 +384,7 @@ class AdViewModel(
         if (!currentState.viewer.canPost) {
             askForPostingRights()
         } else {
-            sendEffect(AdEffect.Failed("This day has been submitted and can no longer be changed."))
+            sendEffect(AdEffect.Failed(str(S.desktop_ad_day_submitted_no_changes)))
         }
     }
 
@@ -389,6 +396,3 @@ class AdViewModel(
         sendEffect(AdEffect.Failed(error.localised()))
     }
 }
-
-/** One wording for the gate, used by the refusal and by the request. */
-private const val NO_POSTING_RIGHTS = "You do not have posting rights for the AD dashboard."

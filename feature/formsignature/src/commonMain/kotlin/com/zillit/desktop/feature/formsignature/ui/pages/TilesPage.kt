@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.ui.FormSignScreen
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureUiState
@@ -60,8 +62,8 @@ internal fun TilesPage(state: FormSignatureUiState, onEvent: (FormSignatureEvent
         if (state.showsStandardTile) {
             add(
                 Tile(
-                    title = "Standard Documents",
-                    hint = "Standard Documents",
+                    title = str(S.standard_forms),
+                    hint = str(S.standard_forms),
                     icon = ZillitIcons.File,
                     screen = FormSignScreen.StandardDocuments,
                     badge = state.unread.standardForms,
@@ -71,8 +73,8 @@ internal fun TilesPage(state: FormSignatureUiState, onEvent: (FormSignatureEvent
         if (state.showsDocumentsTile) {
             add(
                 Tile(
-                    title = "Documents for Signature",
-                    hint = "Upload Documents And See the List",
+                    title = str(S.douments_for_sign_txt),
+                    hint = str(S.desktop_fs_upload_documents_hint),
                     icon = ZillitIcons.Signature,
                     screen = FormSignScreen.DocumentsForSignature,
                     badge = state.unread.documents,
@@ -81,8 +83,8 @@ internal fun TilesPage(state: FormSignatureUiState, onEvent: (FormSignatureEvent
         }
         add(
             Tile(
-                title = "Set/Edit Signature Block",
-                hint = "Set/edit Signature Block",
+                title = str(S.set_signature_edit),
+                hint = str(S.set_signature_edit),
                 icon = ZillitIcons.Edit,
                 screen = FormSignScreen.SignatureBlock,
                 badge = 0,
@@ -105,7 +107,7 @@ internal fun TilesPage(state: FormSignatureUiState, onEvent: (FormSignatureEvent
         if (state.viewer.isAdmin) {
             Box(Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.md), contentAlignment = Alignment.Center) {
                 ZillitButton(
-                    text = "Documents & Signature Guide",
+                    text = str(S.desktop_fs_guide_button),
                     onClick = { onEvent(FormSignatureEvent.OpenGuide) },
                     size = ButtonSize.Small,
                     trailingIcon = ZillitIcons.ChevronRight,

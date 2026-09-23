@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -60,7 +62,7 @@ internal fun ToolTopBar(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             if (onBack != null) {
-                ZillitIconButton(icon = ZillitIcons.ChevronLeft, contentDescription = "Back", onClick = onBack)
+                ZillitIconButton(icon = ZillitIcons.ChevronLeft, contentDescription = str(S.back), onClick = onBack)
             }
             ZillitText(
                 text = title,

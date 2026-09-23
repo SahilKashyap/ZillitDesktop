@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The two create flows: the department's Upload Invoice sheet and the
@@ -18,7 +20,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
 
     fun uploadInvoice() {
         if (!vm.state.value.viewer.mayPost) {
-            vm.update { copy(error = "You do not have posting rights for Invoices") }
+            vm.update { copy(error = str(S.desktop_inv_no_posting_rights)) }
             return
         }
         vm.run {
@@ -31,7 +33,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
             vm.update { copy(upload = UploadFlow(file)) }
             when (val up = vm.upload(file)) {
                 is ZillitResult.Failure -> vm.update {
-                    copy(upload = null, error = "Upload failed: ${up.error.localised()}")
+                    copy(upload = null, error = str(S.drive_notification_upload_failed_format, up.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(upload = upload?.copy(stage = UploadStage.Extracting, attachment = up.data)) }
@@ -62,7 +64,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(upload = null) }
-                    vm.notice("Invoice sent to accounts successfully")
+                    vm.notice(str(S.desktop_inv_sent_to_accounts))
                     vm.refresh()
                 }
             }
@@ -187,7 +189,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(enter = null) }
-                    vm.notice("Invoice created in the inbox")
+                    vm.notice(str(S.desktop_inv_created_in_inbox))
                     vm.refresh()
                 }
             }
@@ -195,21 +197,25 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
     }
 
     private fun validateEnter(form: EnterInvoiceForm): String? = when {
-        form.attachment == null -> "Attach the invoice document first"
-        form.vendorId.isBlank() -> "Pick a vendor"
-        form.invoiceNumber.isBlank() -> "An invoice number is required"
-        InvoiceFormat.parseDateInput(form.invoiceDate) == null -> "Invoice date must be YYYY-MM-DD"
-        InvoiceFormat.parseDateInput(form.effectiveDate) == null -> "Effective date must be YYYY-MM-DD"
-        form.dueDate.isNotBlank() && InvoiceFormat.parseDateInput(form.dueDate) == null -> "Due date must be YYYY-MM-DD"
-        form.departmentId.isBlank() -> "Pick a department"
-        (form.grossValue ?: 0.0) <= 0.0 -> "Gross must be greater than zero"
+        form.attachment == null -> str(S.desktop_inv_attach_document_first)
+        form.vendorId.isBlank() -> str(S.desktop_pick_a_vendor)
+        form.invoiceNumber.isBlank() -> str(S.desktop_inv_number_required)
+        InvoiceFormat.parseDateInput(form.invoiceDate) == null -> str(S.desktop_inv_invoice_date_format)
+        InvoiceFormat.parseDateInput(form.effectiveDate) == null -> str(S.desktop_inv_effective_date_format)
+        form.dueDate.isNotBlank() && InvoiceFormat.parseDateInput(form.dueDate) == null ->
+            str(S.desktop_inv_due_date_format)
+        form.departmentId.isBlank() -> str(S.desktop_pick_a_department)
+        (form.grossValue ?: 0.0) <= 0.0 -> str(S.desktop_inv_gross_greater_than_zero)
         form.amountsMismatch && !form.mismatchAcknowledged -> MISMATCH
         else -> null
     }
 
     private fun validate(file: PickedInvoiceFile, allowed: Set<String>): String? = when {
-        file.extension !in allowed -> "Only ${allowed.joinToString(", ") { it.uppercase() }} files can be uploaded"
-        file.bytes.size > InvoicesViewModel.MAX_FILE_BYTES -> "The file is larger than 10 MB"
+        file.extension !in allowed -> str(
+            S.desktop_only_files_can_be_uploaded,
+            allowed.joinToString(", ") { it.uppercase() },
+        )
+        file.bytes.size > InvoicesViewModel.MAX_FILE_BYTES -> str(S.desktop_file_larger_than_10mb)
         else -> null
     }
 
@@ -222,6 +228,6 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
         if (gross == null || other == null) "" else InvoiceFormat.plain(gross - other)
 
     private companion object {
-        const val MISMATCH = "Net + Tax does not equal Gross — submit again to create anyway"
+        val MISMATCH: String get() = str(S.desktop_inv_mismatch_submit_again)
     }
 }

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.FileKind
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
@@ -76,7 +78,7 @@ internal class LibrarySection(private val vm: VmScope) {
             when (result) {
                 is ZillitResult.Success -> {
                     vm.update { copy(folderEditor = null) }
-                    vm.notice(if (editor.isNew) "Folder created" else "Saved")
+                    vm.notice(str(if (editor.isNew) S.desktop_drive_activity_folder_created else S.saved))
                     vm.loadLibrary()
                 }
                 is ZillitResult.Failure -> {
@@ -93,9 +95,9 @@ internal class LibrarySection(private val vm: VmScope) {
         vm.update {
             copy(
                 prompt = DocDistPrompt(
-                    title = "Delete \"${folder.name}\"?",
-                    message = "All subfolders and uploaded documents within will be permanently deleted.",
-                    confirmLabel = "Delete",
+                    title = str(S.drive_delete_item_title_format, folder.name),
+                    message = str(S.desktop_docdist_delete_folder_message),
+                    confirmLabel = str(S.delete),
                     event = DocDistEvent.DeleteFolder(folderId),
                 ),
             )
@@ -115,7 +117,7 @@ internal class LibrarySection(private val vm: VmScope) {
                         selectedFolderIds = selectedFolderIds - folderId,
                     )
                 }
-                vm.notice("Folder deleted")
+                vm.notice(str(S.desktop_drive_activity_folder_deleted))
                 vm.loadLibrary()
             }
         }
@@ -129,9 +131,9 @@ internal class LibrarySection(private val vm: VmScope) {
         vm.update {
             copy(
                 prompt = DocDistPrompt(
-                    title = "Delete \"${document.name}\"?",
-                    message = "This file will be permanently deleted.",
-                    confirmLabel = "Delete",
+                    title = str(S.drive_delete_item_title_format, document.name),
+                    message = str(S.desktop_docdist_delete_file_message),
+                    confirmLabel = str(S.delete),
                     event = DocDistEvent.DeleteDocument(documentId),
                 ),
             )
@@ -148,7 +150,7 @@ internal class LibrarySection(private val vm: VmScope) {
                         preview = preview?.takeIf { it.document.id != documentId },
                     )
                 }
-                vm.notice("Deleted")
+                vm.notice(str(S.drive_deleted_default))
                 vm.loadLibrary()
             }
         }
@@ -161,13 +163,13 @@ internal class LibrarySection(private val vm: VmScope) {
         vm.update {
             copy(
                 prompt = DocDistPrompt(
-                    title = "Delete ${plural(count, "item")}?",
+                    title = plural(count, S.drive_delete_count_title_singular, S.drive_delete_count_title_plural),
                     message = if (selectedFolderIds.isNotEmpty()) {
-                        "Folders include all their subfolders + documents. This cannot be undone."
+                        str(S.desktop_docdist_delete_selection_with_folders)
                     } else {
-                        "This cannot be undone."
+                        str(S.desktop_cannot_be_undone)
                     },
-                    confirmLabel = "Delete",
+                    confirmLabel = str(S.delete),
                     event = DocDistEvent.DeleteSelection,
                 ),
             )
@@ -190,7 +192,7 @@ internal class LibrarySection(private val vm: VmScope) {
                 if (result is ZillitResult.Failure) return@run finishDelete(result.error)
             }
             vm.update { copy(selectedFolderIds = emptySet(), selectedDocumentIds = emptySet()) }
-            vm.notice("Deleted ${plural(count, "item")}")
+            vm.notice(plural(count, S.desktop_docdist_deleted_one_item, S.desktop_docdist_deleted_items))
             vm.loadLibrary()
         }
     }
@@ -234,7 +236,7 @@ internal class LibrarySection(private val vm: VmScope) {
 
     /** Runs a cross-folder fetch behind a "Preparing documents…" notice. */
     fun prepare(fetch: suspend () -> ZillitResult<List<LibraryDocument>>, then: (List<LibraryDocument>) -> Unit) {
-        vm.update { copy(busy = "Preparing documents…") }
+        vm.update { copy(busy = str(S.desktop_docdist_preparing_documents)) }
         vm.run {
             val result = fetch()
             vm.update { copy(busy = null) }
@@ -247,7 +249,7 @@ internal class LibrarySection(private val vm: VmScope) {
     fun pickAndUpload() {
         if (vm.refusesWrite()) return
         if (vm.state.currentFolder == null) {
-            vm.fail("Open a folder first — files are uploaded into a folder.")
+            vm.fail(str(S.desktop_docdist_open_a_folder_first))
             return
         }
         vm.run { uploadFiles(vm.host.pickFiles()) }
@@ -265,7 +267,7 @@ internal class LibrarySection(private val vm: VmScope) {
         val folderId = vm.state.currentFolderId
         val (accepted, rejected) = SupportedUploads.partition(raw)
         if (rejected.isNotEmpty()) {
-            vm.fail("Skipped ${summariseFileNames(rejected.map { it.name })} — unsupported file type.")
+            vm.fail(str(S.desktop_docdist_skipped_unsupported, summariseFileNames(rejected.map { it.name })))
         }
         if (accepted.isEmpty()) return
         vm.update { copy(upload = UploadProgress(UploadProgress.Stage.Preparing)) }
@@ -277,13 +279,18 @@ internal class LibrarySection(private val vm: VmScope) {
                 }
                 when (val result = vm.repository.uploadDocument(file, folderId, vm.today().toString())) {
                     is ZillitResult.Success -> uploaded++
-                    is ZillitResult.Failure -> vm.fail("Failed to upload ${file.name}: ${result.error.userMessage}")
+                    is ZillitResult.Failure ->
+                        vm.fail(str(S.desktop_docdist_failed_to_upload, file.name, result.error.userMessage))
                 }
             }
         } finally {
             vm.update { copy(upload = null) }
         }
-        if (uploaded > 0) vm.notice("Uploaded ${plural(uploaded, "file")}")
+        if (uploaded > 0) {
+            vm.notice(
+                plural(uploaded, S.desktop_docdist_uploaded_one_file, S.desktop_docdist_uploaded_files),
+            )
+        }
         vm.loadLibrary()
     }
 
@@ -291,7 +298,7 @@ internal class LibrarySection(private val vm: VmScope) {
 
     fun openPreview(documentId: String) {
         val document = vm.state.documents.firstOrNull { it.id == documentId }
-            ?: return vm.fail("That file is no longer in this folder.")
+            ?: return vm.fail(str(S.desktop_docdist_file_no_longer_in_folder))
         vm.update { copy(preview = PreviewState(document)) }
         vm.run {
             val bytes = when (val fetched = vm.repository.documentBytes(document)) {
@@ -321,7 +328,7 @@ internal class LibrarySection(private val vm: VmScope) {
         if (vm.refusesDownload()) return
         val document = vm.state.documents.firstOrNull { it.id == documentId }
             ?: vm.state.preview?.document?.takeIf { it.id == documentId }
-            ?: return vm.fail("That file is no longer in this folder.")
+            ?: return vm.fail(str(S.desktop_docdist_file_no_longer_in_folder))
         vm.update { copy(
             preview = preview?.takeIf { it.document.id == documentId }?.copy(downloading = true) ?: preview,
         ) }
@@ -345,7 +352,7 @@ internal class LibrarySection(private val vm: VmScope) {
         when (val saved = vm.host.saveToDownloads(fileName, bytes)) {
             is ZillitResult.Success -> {
                 vm.host.openFile(saved.data)
-                vm.notice("Saved $fileName to Downloads")
+                vm.notice(str(S.docusign_bulk_example_saved, fileName))
             }
             is ZillitResult.Failure -> vm.report(saved.error)
         }
@@ -358,7 +365,7 @@ internal class LibrarySection(private val vm: VmScope) {
         vm.run {
             vm.onSuccess(vm.repository.deleteDocument(document.id)) {
                 vm.update { copy(preview = null) }
-                vm.notice("Removed the broken record")
+                vm.notice(str(S.desktop_docdist_removed_broken_record))
                 vm.loadLibrary()
             }
         }
@@ -378,14 +385,14 @@ internal class LibrarySection(private val vm: VmScope) {
         if (moved == 0) return
         if (vm.refusesWrite()) return
         if (folders.any { it == folderId }) {
-            vm.fail("A folder cannot be moved into itself.")
+            vm.fail(str(S.desktop_drive_folder_into_itself))
             return
         }
         // The dialog bars the root row when files are selected; this is the
         // backstop behind it, because the destination also arrives from paths
         // the dialog does not own.
         if (documents.isNotEmpty() && folderId == null) {
-            vm.fail("Files must be moved into a folder, not the root.")
+            vm.fail(str(S.desktop_docdist_files_must_be_in_folder))
             return
         }
         if (closesDialog) vm.update { copy(moveTarget = moveTarget?.copy(saving = true)) }
@@ -397,7 +404,7 @@ internal class LibrarySection(private val vm: VmScope) {
                 return@run
             }
             vm.update { copy(selectedFolderIds = emptySet(), selectedDocumentIds = emptySet(), moveTarget = null) }
-            vm.notice("Moved ${plural(moved, "item")}")
+            vm.notice(plural(moved, S.desktop_docdist_moved_one_item, S.dd_moved_ok))
             vm.loadLibrary()
         }
     }
@@ -423,7 +430,7 @@ internal class LibrarySection(private val vm: VmScope) {
 
     fun publishSelection() {
         if (vm.refusesWrite()) return
-        if (vm.state.selectionCount == 0) return vm.fail("Choose at least one document to publish.")
+        if (vm.state.selectionCount == 0) return vm.fail(str(S.desktop_docdist_choose_document_to_publish))
         val folder = vm.state.singleSelectedFolder()
         // Only documents ticked: nothing to fetch, so the dialog opens at once.
         if (vm.state.selectedFolderIds.isEmpty()) return openPublish(vm.state.selectedDocuments, null)
@@ -440,12 +447,12 @@ internal class LibrarySection(private val vm: VmScope) {
         if (vm.refusesWrite()) return
         val folder = vm.state.folders.firstOrNull { it.id == folderId } ?: return
         prepare({ resolveFolder(folderId) }) { documents ->
-            if (documents.isEmpty()) vm.fail("Folder is empty") else openPublish(documents, folder)
+            if (documents.isEmpty()) vm.fail(str(S.desktop_docdist_folder_is_empty)) else openPublish(documents, folder)
         }
     }
 
     private fun openPublish(documents: List<LibraryDocument>, folder: LibraryFolder?) {
-        if (documents.isEmpty()) return vm.fail("Choose at least one document to publish.")
+        if (documents.isEmpty()) return vm.fail(str(S.desktop_docdist_choose_document_to_publish))
         vm.update {
             copy(
                 publish = PublishState(
@@ -504,7 +511,17 @@ internal class LibrarySection(private val vm: VmScope) {
                 is ZillitResult.Success -> {
                     val count = draft.documentIds.size
                     vm.update { copy(publish = null, selectedDocumentIds = emptySet(), selectedFolderIds = emptySet()) }
-                    vm.notice("Published ${plural(count, "file")} to ${target.label}")
+                    vm.notice(
+                        str(
+                            if (count == 1) {
+                                S.desktop_docdist_published_one_file_to
+                            } else {
+                                S.desktop_docdist_published_files_to
+                            },
+                            count,
+                            target.label,
+                        ),
+                    )
                     vm.reload()
                 }
                 is ZillitResult.Failure -> {

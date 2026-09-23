@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -7,25 +9,23 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 
 /** The schedule form's "How to set dates" tabs — `CreateScheduleModal`'s `dateTab`. */
-enum class DateTab(val label: String, val description: String) {
-    DateRange(
-        "Date Range",
-        "Set a start date and specify the number of consecutive days, or choose a start and end date.",
-    ),
-    Calendar(
-        "Calendar",
-        "Pick individual dates from the calendar. Useful for non-consecutive days like Apr 1, 5, 8, 12.",
-    ),
-    DayWise(
-        "Day Wise",
-        "Choose specific weekdays (e.g. Mon, Wed, Fri) within a date range.",
-    ),
+enum class DateTab(private val labelKey: String, private val descriptionKey: String) {
+    DateRange(S.cs_date_range, S.cs_date_range_desc),
+    Calendar(S.calendar, S.desktop_bs_calendar_tab_desc),
+    DayWise(S.cs_day_wise, S.desktop_bs_day_wise_desc),
+    ;
+
+    val label: String get() = str(labelKey)
+    val description: String get() = str(descriptionKey)
 }
 
 /** Date Range's two ways in — "Set by Days" or "Set by End Date". */
-enum class RangeMode(val label: String) {
-    ByDays("Set by Days"),
-    ByEndDate("Set by End Date"),
+enum class RangeMode(private val labelKey: String) {
+    ByDays(S.cs_set_by_days),
+    ByEndDate(S.cs_set_by_end_date),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The dates a schedule form describes, per tab — the web's `calendarDays` memo. */

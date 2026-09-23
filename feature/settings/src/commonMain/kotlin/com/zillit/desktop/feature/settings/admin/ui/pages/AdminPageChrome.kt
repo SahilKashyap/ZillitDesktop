@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.ui.AdminEvent
 import com.zillit.desktop.feature.settings.admin.ui.AdminUiState
 
@@ -137,7 +139,7 @@ private fun Header(
     ) {
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Back to admin settings",
+            contentDescription = str(S.desktop_back_to_admin_settings),
             onClick = onBack,
         )
         Column(Modifier.weight(1f)) {
@@ -193,7 +195,7 @@ fun Strip(
         if (onDismiss != null) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Dismiss",
+                contentDescription = str(S.sync_action_dismiss),
                 onClick = onDismiss,
                 size = STRIP_BUTTON,
             )

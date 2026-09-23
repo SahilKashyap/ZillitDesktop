@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.ContentFilter
 import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfLayout
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleType
@@ -61,7 +63,7 @@ import com.zillit.desktop.feature.boxschedule.ui.TypesManager
 internal fun FilterDialog(state: BoxScheduleUiState, draft: FilterDraft, onEvent: (BoxScheduleEvent) -> Unit) {
     val active = draft.typeName.isNotBlank() || draft.content != ContentFilter.All
     ZillitDialogShell(
-        title = "Filters",
+        title = str(S.asset_filters),
         icon = ZillitIcons.Filter,
         onDismiss = { onEvent(PageEvent.CloseFilters) },
         visible = true,
@@ -69,16 +71,16 @@ internal fun FilterDialog(state: BoxScheduleUiState, draft: FilterDraft, onEvent
         actions = {
             if (active) {
                 ZillitButton(
-                    "Clear all filters",
+                    str(S.bs_filter_clear_all),
                     onClick = { onEvent(PageEvent.ClearFilters) },
                     variant = ButtonVariant.Tertiary,
                 )
             }
             Box(Modifier.weight(1f))
-            ZillitButton("Apply Filters", onClick = { onEvent(PageEvent.ApplyFilters) })
+            ZillitButton(str(S.bs_filter_apply), onClick = { onEvent(PageEvent.ApplyFilters) })
         },
     ) {
-        FieldLabel("Show")
+        FieldLabel(str(S.txt_show))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ContentFilter.entries.forEach { content ->
                 PillChoice(
@@ -89,13 +91,13 @@ internal fun FilterDialog(state: BoxScheduleUiState, draft: FilterDraft, onEvent
             }
         }
         if (draft.content.showsSchedules) {
-            FieldLabel("Schedule Type")
+            FieldLabel(str(S.schedule_type))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 PillChoice(
-                    "All Types",
+                    str(S.bs_all_types),
                     selected = draft.typeName.isBlank(),
                     onClick = { onEvent(PageEvent.DraftType("")) },
                 )
@@ -117,24 +119,24 @@ internal fun FilterDialog(state: BoxScheduleUiState, draft: FilterDraft, onEvent
 internal fun PdfOptionsDialog(sheet: PdfSheet, onEvent: (BoxScheduleEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "PDF options",
-        subtitle = if (sheet.destination == PdfDestination.Publish) "Publish to Document Distribution" else "Print",
+        title = str(S.bs_pdf_options_title),
+        subtitle = if (sheet.destination == PdfDestination.Publish) str(S.dd_publish_confirm_title) else str(S.print),
         icon = if (sheet.destination == PdfDestination.Publish) ZillitIcons.Upload else ZillitIcons.Download,
         onDismiss = { onEvent(PanelEvent.ClosePdf) },
         visible = true,
         width = 440.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(PanelEvent.ClosePdf) },
                 variant = ButtonVariant.Secondary,
                 enabled = !sheet.busy,
             )
-            ZillitButton("Submit", onClick = { onEvent(PanelEvent.SubmitPdf) }, loading = sheet.busy)
+            ZillitButton(str(S.submit), onClick = { onEvent(PanelEvent.SubmitPdf) }, loading = sheet.busy)
         },
     ) {
         ZillitText(
-            "Which layout do you want for the PDF?",
+            str(S.desktop_bs_pdf_layout_question),
             style = ZillitTheme.typography.bodyMedium,
             color = colors.textMuted,
         )
@@ -151,7 +153,7 @@ internal fun PdfOptionsDialog(sheet: PdfSheet, onEvent: (BoxScheduleEvent) -> Un
         }
         PersonalNotesChoice(
             include = sheet.options.includePersonalNotes,
-            hint = "Personal Notes are visible only to you. Uncheck to keep them out of the PDF.",
+            hint = str(S.desktop_bs_personal_notes_pdf_hint),
             onChange = { onEvent(PanelEvent.SetPdfPersonalNotes(it)) },
         )
     }
@@ -169,7 +171,11 @@ private fun PersonalNotesChoice(include: Boolean, hint: String, onChange: (Boole
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ZillitCheckbox(checked = include, onCheckedChange = onChange, label = "Include my Personal Notes")
+        ZillitCheckbox(
+            checked = include,
+            onCheckedChange = onChange,
+            label = str(S.desktop_bs_include_my_personal_notes),
+        )
         ZillitText(
             hint,
             style = ZillitTheme.typography.labelSmall,
@@ -183,7 +189,7 @@ private fun PersonalNotesChoice(include: Boolean, hint: String, onChange: (Boole
 @Composable
 internal fun PrintSelectedDialog(prompt: PrintPrompt, count: Int, onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Print selected days",
+        title = str(S.desktop_bs_print_selected_days),
         subtitle = "$count day(s)",
         icon = ZillitIcons.Download,
         onDismiss = { onEvent(PanelEvent.ClosePrintSelected) },
@@ -191,16 +197,20 @@ internal fun PrintSelectedDialog(prompt: PrintPrompt, count: Int, onEvent: (BoxS
         width = 440.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(PanelEvent.ClosePrintSelected) },
                 variant = ButtonVariant.Secondary,
             )
-            ZillitButton("Print", onClick = { onEvent(PanelEvent.ConfirmPrintSelected) }, loading = prompt.printing)
+            ZillitButton(
+                str(S.print),
+                onClick = { onEvent(PanelEvent.ConfirmPrintSelected) },
+                loading = prompt.printing,
+            )
         },
     ) {
         PersonalNotesChoice(
             include = prompt.includePersonalNotes,
-            hint = "Personal Notes are visible only to you. Uncheck to keep them out of the printout.",
+            hint = str(S.desktop_bs_personal_notes_print_hint),
             onChange = { onEvent(PanelEvent.SetPrintPersonalNotes(it)) },
         )
     }
@@ -210,24 +220,24 @@ internal fun PrintSelectedDialog(prompt: PrintPrompt, count: Int, onEvent: (BoxS
 @Composable
 internal fun ShareDialog(panel: SharePanel, onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Share Schedule",
+        title = str(S.share_title),
         icon = ZillitIcons.Link,
         onDismiss = { onEvent(PanelEvent.CloseShare) },
         visible = true,
         width = 480.dp,
         actions = {
-            ZillitButton("Close", onClick = { onEvent(PanelEvent.CloseShare) }, variant = ButtonVariant.Secondary)
+            ZillitButton(str(S.close), onClick = { onEvent(PanelEvent.CloseShare) }, variant = ButtonVariant.Secondary)
         },
     ) {
         ShareCard(
             ZillitIcons.Link,
-            "Share via Link",
-            "Generate a read-only link that anyone can use to view the schedule.",
+            str(S.share_via_link),
+            str(S.share_link_desc),
         ) {
             val link = panel.link
             if (link == null) {
                 ZillitButton(
-                    "Generate Link",
+                    str(S.share_generate),
                     onClick = { onEvent(PanelEvent.GenerateShareLink) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Link,
@@ -240,7 +250,7 @@ internal fun ShareDialog(panel: SharePanel, onEvent: (BoxScheduleEvent) -> Unit)
                 ) {
                     ZillitTextField(value = link, onValueChange = {}, readOnly = true, modifier = Modifier.weight(1f))
                     ZillitButton(
-                        text = if (panel.linkCopied) "Copied" else "Copy",
+                        text = if (panel.linkCopied) str(S.dd_copied) else str(S.copy),
                         onClick = { onEvent(PanelEvent.CopyShareLink) },
                         variant = ButtonVariant.Secondary,
                         leadingIcon = if (panel.linkCopied) ZillitIcons.Check else ZillitIcons.Link,
@@ -250,11 +260,11 @@ internal fun ShareDialog(panel: SharePanel, onEvent: (BoxScheduleEvent) -> Unit)
         }
         ShareCard(
             ZillitIcons.Mail,
-            "Copy as Text (for Email)",
-            "Copy the schedule as plain text — paste into any email or message.",
+            str(S.share_as_text),
+            str(S.share_text_desc),
         ) {
             ZillitButton(
-                text = if (panel.textCopied) "Copied" else "Copy Schedule as Text",
+                text = if (panel.textCopied) str(S.dd_copied) else str(S.share_copy_text),
                 onClick = { onEvent(PanelEvent.CopyScheduleText) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = if (panel.textCopied) ZillitIcons.Check else ZillitIcons.Mail,
@@ -294,7 +304,7 @@ internal fun CommandPaletteDialog(state: BoxScheduleUiState, panel: PalettePanel
     val colors = ZillitTheme.colors
     val commands = DiaryCommand.available(state.mayEdit, panel.query)
     ZillitDialogShell(
-        title = "Commands",
+        title = str(S.desktop_bs_commands),
         icon = ZillitIcons.Search,
         onDismiss = { onEvent(PageEvent.ClosePalette) },
         visible = true,
@@ -303,7 +313,7 @@ internal fun CommandPaletteDialog(state: BoxScheduleUiState, panel: PalettePanel
         ZillitTextField(
             value = panel.query,
             onValueChange = { onEvent(PageEvent.PaletteQuery(it)) },
-            placeholder = "Type a command…",
+            placeholder = str(S.desktop_bs_type_a_command),
             leadingIcon = ZillitIcons.Search,
             onImeAction = { commands.firstOrNull()?.let { onEvent(PageEvent.RunCommand(it)) } },
             modifier = Modifier.fillMaxWidth(),
@@ -311,7 +321,7 @@ internal fun CommandPaletteDialog(state: BoxScheduleUiState, panel: PalettePanel
         Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).zillitVerticalScroll(rememberScrollState())) {
             if (commands.isEmpty()) {
                 ZillitText(
-                    "No matching commands",
+                    str(S.desktop_bs_no_matching_commands),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                     modifier = Modifier.padding(24.dp),
@@ -326,7 +336,11 @@ internal fun CommandPaletteDialog(state: BoxScheduleUiState, panel: PalettePanel
                 color = colors.textMuted,
                 modifier = Modifier.weight(1f),
             )
-            ZillitText("Cmd+K to toggle", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_bs_cmd_k_to_toggle),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
         }
     }
 }
@@ -366,13 +380,13 @@ private fun CommandRow(command: DiaryCommand, onClick: () -> Unit) {
 @Composable
 internal fun TypesManagerDialog(state: BoxScheduleUiState, manager: TypesManager, onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Schedule Types",
+        title = str(S.tm_title),
         icon = ZillitIcons.Settings,
         onDismiss = { onEvent(PanelEvent.CloseTypes) },
         visible = true,
         width = 480.dp,
         actions = {
-            ZillitButton("Close", onClick = { onEvent(PanelEvent.CloseTypes) }, variant = ButtonVariant.Secondary)
+            ZillitButton(str(S.close), onClick = { onEvent(PanelEvent.CloseTypes) }, variant = ButtonVariant.Secondary)
         },
     ) {
         state.types.forEach { type -> TypeRow(type, manager, onEvent) }
@@ -406,16 +420,16 @@ private fun TypeRow(type: ScheduleType, manager: TypesManager, onEvent: (BoxSche
                 modifier = Modifier.weight(1f),
             )
             if (type.systemDefined) {
-                SmallBadge("SYSTEM")
+                SmallBadge(str(S.tm_system))
             } else {
                 ZillitIconButton(
                     icon = ZillitIcons.Edit,
-                    contentDescription = "Edit type",
+                    contentDescription = str(S.desktop_bs_edit_type),
                     onClick = { onEvent(PanelEvent.StartTypeEdit(type.id)) },
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete type",
+                    contentDescription = str(S.desktop_bs_delete_type),
                     onClick = { onEvent(PanelEvent.DeleteType(type.id)) },
                     tint = colors.danger,
                 )
@@ -431,20 +445,20 @@ private fun RowScope.TypeEditor(manager: TypesManager, onEvent: (BoxScheduleEven
     ZillitTextField(
         value = manager.editTitle,
         onValueChange = { onEvent(PanelEvent.SetEditTitle(it)) },
-        placeholder = "Type name",
+        placeholder = str(S.header_name),
         onImeAction = { onEvent(PanelEvent.SaveTypeEdit) },
         modifier = Modifier.weight(1f),
     )
     ZillitIconButton(
         icon = ZillitIcons.Check,
-        contentDescription = "Save",
+        contentDescription = str(S.save),
         onClick = { onEvent(PanelEvent.SaveTypeEdit) },
         tint = ZillitTheme.colors.success,
         enabled = manager.editTitle.isNotBlank() && !manager.savingEdit,
     )
     ZillitIconButton(
         icon = ZillitIcons.Close,
-        contentDescription = "Cancel",
+        contentDescription = str(S.cancel),
         onClick = { onEvent(PanelEvent.CancelTypeEdit) },
     )
 }
@@ -459,18 +473,18 @@ private fun AddTypeRow(manager: TypesManager, onEvent: (BoxScheduleEvent) -> Uni
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FieldLabel("Add Custom Type")
+        FieldLabel(str(S.tm_add_custom))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ColorPickerButton(color = manager.newColor, onPick = { onEvent(PanelEvent.SetNewColor(it)) })
             ZillitTextField(
                 value = manager.newTitle,
                 onValueChange = { onEvent(PanelEvent.SetNewTitle(it)) },
-                placeholder = "Type name",
+                placeholder = str(S.header_name),
                 onImeAction = { onEvent(PanelEvent.AddType) },
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Add",
+                text = str(S.add),
                 onClick = { onEvent(PanelEvent.AddType) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,

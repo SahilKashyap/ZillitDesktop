@@ -8,7 +8,6 @@ import com.zillit.desktop.feature.callsheet.domain.DraftChip
 import com.zillit.desktop.feature.callsheet.domain.EditorSelection
 import com.zillit.desktop.feature.callsheet.domain.InsertKind
 import com.zillit.desktop.feature.callsheet.domain.MissingTitle
-import com.zillit.desktop.feature.callsheet.domain.SavedSignature
 import com.zillit.desktop.feature.callsheet.domain.SavedTemplate
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
 
@@ -34,10 +33,8 @@ sealed interface ListEvent : SheetEvent {
     /** History; [fromDetail] fetches the sheet first (every list but Received). */
     data class OpenHistory(val sheet: CallSheetSummary, val title: String, val fromDetail: Boolean = true) : ListEvent
     data class OpenApprovalStatus(val sheet: CallSheetSummary) : ListEvent
+    /** [readOnly] is the screen's status rule; the thread also locks unless the viewer may post in it. */
     data class OpenComments(val sheet: CallSheetSummary, val readOnly: Boolean) : ListEvent
-    data class ChatWithApprovers(val sheet: CallSheetSummary) : ListEvent
-    data class ChatWithCreator(val sheet: CallSheetSummary) : ListEvent
-    data class ChatWith(val userId: String) : ListEvent
     data class ViewReminder(val sheet: CallSheetSummary) : ListEvent
 
     /** Published hero: a PDF posted into the Home call-sheet unit beside the live sheet. */
@@ -72,16 +69,19 @@ sealed interface WorkflowEvent : SheetEvent {
     data class PickChatRecipient(val userId: String) : WorkflowEvent
     data object ConfirmSendForChat : WorkflowEvent
 
+    /** Opens the chooser: with a signature, or without. */
     data class OpenApprove(val sheet: CallSheetSummary) : WorkflowEvent
+
+    /** The chooser's "Approve with Signature": on to the pad. */
+    data object ChooseSignature : WorkflowEvent
 
     /** "Use This Signature": the drawn pad becomes the confirmed signature. */
     class UseSignature(val png: ByteArray) : WorkflowEvent
     data object ChangeSignature : WorkflowEvent
     data object ApproveWithSignature : WorkflowEvent
+
+    /** The chooser's "Approve Without Signature" — `{without_signature: true}` straight away. */
     data object ApproveWithoutSignature : WorkflowEvent
-    data object OpenSavedSignatures : WorkflowEvent
-    data object CloseSavedSignatures : WorkflowEvent
-    data class PickSavedSignature(val signature: SavedSignature) : WorkflowEvent
 
     data class OpenReject(val sheet: CallSheetSummary) : WorkflowEvent
     data class EditRejectReason(val reason: String) : WorkflowEvent
@@ -94,7 +94,8 @@ sealed interface WorkflowEvent : SheetEvent {
     data class PickDestination(val destination: PublishDestination) : WorkflowEvent
     data object ContinuePublish : WorkflowEvent
     data object BackToDestination : WorkflowEvent
-    data class PickContinuation(val continuation: Boolean) : WorkflowEvent
+    data class PickPublishChoice(val choice: PublishChoice) : WorkflowEvent
+    data class PickReplaceTarget(val chatId: String) : WorkflowEvent
     data class EditPublishNotes(val notes: String) : WorkflowEvent
     data object ConfirmPublish : WorkflowEvent
     data object AttachInstead : WorkflowEvent

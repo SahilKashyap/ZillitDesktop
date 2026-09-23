@@ -22,6 +22,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.addashboard.domain.AdDates
 import com.zillit.desktop.feature.addashboard.domain.AttendanceStatus
 import com.zillit.desktop.feature.addashboard.domain.SupportingArtistDay
@@ -43,8 +45,7 @@ internal fun ColumnScope.TodayPage(state: AdUiState, onEvent: (AdEvent) -> Unit)
     // a screen full of dead buttons with no explanation is the worse failure.
     if (state.today?.editable == false) {
         ZillitNotice(
-            text = "This day has been ${state.today.status.label.lowercase()} and can no longer " +
-                "be changed. Ask project to reopen it if something is wrong.",
+            text = str(S.desktop_ad_day_locked_notice, state.today.status.label.lowercase()),
             tone = StatusTone.Neutral,
             icon = ZillitIcons.Info,
             modifier = Modifier.fillMaxWidth(),
@@ -56,14 +57,14 @@ internal fun ColumnScope.TodayPage(state: AdUiState, onEvent: (AdEvent) -> Unit)
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitStatTile(label = "On the call", value = state.onToday.toString())
+        ZillitStatTile(label = str(S.desktop_ad_on_the_call), value = state.onToday.toString())
         ZillitStatTile(
-            label = "Turned up",
+            label = str(S.desktop_ad_turned_up),
             value = state.presentToday.toString(),
             tone = if (state.presentToday == state.onToday) StatusTone.Done else StatusTone.Pending,
         )
         ZillitStatTile(
-            label = "Not yet signed",
+            label = str(S.desktop_ad_not_yet_signed),
             value = state.unsignedToday.toString(),
             // What stops a day being paid, so it is called out rather than
             // left to be counted off the list.
@@ -74,8 +75,8 @@ internal fun ColumnScope.TodayPage(state: AdUiState, onEvent: (AdEvent) -> Unit)
     if (state.dayList.isEmpty()) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = "Nobody on this day yet",
-                message = "Add artistes from the register to build the call.",
+                title = str(S.desktop_ad_nobody_on_day),
+                message = str(S.desktop_ad_nobody_on_day_message),
                 icon = ZillitIcons.Users,
             )
         }
@@ -93,7 +94,7 @@ private fun ColumnScope.DayBar(state: AdUiState, onEvent: (AdEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitButton(
-            text = "Previous",
+            text = str(S.docusign_tour_prev),
             onClick = { onEvent(AdEvent.ChangeDay(state.shootDate - AdDates.MILLIS_PER_DAY)) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -106,10 +107,10 @@ private fun ColumnScope.DayBar(state: AdUiState, onEvent: (AdEvent) -> Unit) {
             state.today?.let { day ->
                 ZillitText(
                     text = listOfNotNull(
-                        day.dayNumber?.let { "Day $it" },
+                        day.dayNumber?.let { str(S.desktop_ad_day_number, it) },
                         day.unitName.takeIf { it.isNotBlank() },
                         day.location.takeIf { it.isNotBlank() },
-                    ).joinToString(" · ").ifEmpty { "No day details" },
+                    ).joinToString(" · ").ifEmpty { str(S.desktop_ad_no_day_details) },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -117,21 +118,21 @@ private fun ColumnScope.DayBar(state: AdUiState, onEvent: (AdEvent) -> Unit) {
         }
         state.today?.let { ZillitStatusPill(label = it.status.label, tone = StatusTone.Neutral) }
         ZillitButton(
-            text = "Next",
+            text = str(S.next),
             onClick = { onEvent(AdEvent.ChangeDay(state.shootDate + AdDates.MILLIS_PER_DAY)) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
         )
         if (state.dayIsOpen) {
             ZillitButton(
-                text = "Add artistes",
+                text = str(S.desktop_ad_add_artistes),
                 onClick = { onEvent(AdEvent.OpenAddToDay) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.UserPlus,
             )
             ZillitButton(
-                text = "Submit day",
+                text = str(S.desktop_ad_submit_day),
                 onClick = { onEvent(AdEvent.AskSubmitDay) },
                 size = ButtonSize.Small,
             )
@@ -149,7 +150,7 @@ private fun DayRow(entry: SupportingArtistDay, editable: Boolean, onEvent: (AdEv
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = entry.artisteName.ifBlank { "Unnamed" },
+                    text = entry.artisteName.ifBlank { str(S.desktop_unnamed) },
                     style = ZillitTheme.typography.titleSmall,
                 )
                 ZillitText(
@@ -186,7 +187,7 @@ private fun DayRow(entry: SupportingArtistDay, editable: Boolean, onEvent: (AdEv
                         )
                     }
                 ZillitButton(
-                    text = "Remove",
+                    text = str(S.remove),
                     onClick = { onEvent(AdEvent.RemoveFromDay(entry.id)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,

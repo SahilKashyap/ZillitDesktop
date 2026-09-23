@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.maps.ui
 import androidx.lifecycle.viewModelScope
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.data.MapCanvasClient
 import com.zillit.desktop.feature.maps.domain.BoundaryChoice
 import com.zillit.desktop.feature.maps.domain.CanvasTheme
@@ -242,7 +244,7 @@ class MapViewModel(
     private fun fitAll() {
         val points = currentState.filteredLocations.mapNotNull { it.point }
         if (points.isEmpty()) {
-            store.notice("No locations to zoom to", NoticeTone.Info)
+            store.notice(str(S.desktop_map_no_locations_to_zoom), NoticeTone.Info)
             return
         }
         canvasClient.fitPoints(points)
@@ -253,7 +255,8 @@ class MapViewModel(
             is MapEvent.Bars.SearchQuery -> setState { copy(search = SearchState(event.query)) }
             is MapEvent.Bars.SearchPick -> pickSearchResult(event.locationId)
             is MapEvent.Bars.ToggleTypeFilter -> setState {
-                copy(typeFilters = if (event.type in typeFilters) typeFilters - event.type else typeFilters + event.type)
+                val next = if (event.type in typeFilters) typeFilters - event.type else typeFilters + event.type
+                copy(typeFilters = next)
             }
             MapEvent.Bars.ClearTypeFilters -> setState { copy(typeFilters = emptySet()) }
             MapEvent.Bars.ExitPinMode -> pins.exitPinMode()
@@ -271,7 +274,11 @@ class MapViewModel(
         setState {
             copy(
                 search = null,
-                typeFilters = if (typeFilters.isNotEmpty() && location.type !in typeFilters) emptySet() else typeFilters,
+                typeFilters = if (typeFilters.isNotEmpty() && location.type !in typeFilters) {
+                    emptySet()
+                } else {
+                    typeFilters
+                },
             )
         }
         canvasClient.focusMarker(locationId, SEARCH_ZOOM)
@@ -372,7 +379,14 @@ class MapViewModel(
                 setState { applySync(event) }
                 // The city on screen is gone: the ladder picks another.
                 if (wasSelected) {
-                    setState { copy(selectedCityId = null, locations = emptyList(), zones = emptyList(), activeZoneId = null) }
+                    setState {
+                        copy(
+                            selectedCityId = null,
+                            locations = emptyList(),
+                            zones = emptyList(),
+                            activeZoneId = null,
+                        )
+                    }
                     cities.load()
                 }
             }

@@ -30,6 +30,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.auth.domain.NewProductionDraft
 import com.zillit.desktop.feature.auth.domain.ProductionField
 import com.zillit.desktop.feature.auth.domain.ProductionLanguage
@@ -55,14 +57,14 @@ internal fun CreateProductionDialog(
     ZillitDialogShell(
         visible = visible,
         title = when (state.stage) {
-            CreateStage.Editing -> "Start a project"
-            is CreateStage.VerifyingEmail -> "Confirm your email"
-            is CreateStage.Created -> "Project created"
+            CreateStage.Editing -> str(S.desktop_start_a_project)
+            is CreateStage.VerifyingEmail -> str(S.desktop_confirm_your_email)
+            is CreateStage.Created -> str(S.desktop_project_created)
         },
         subtitle = when (state.stage) {
-            CreateStage.Editing -> "Name it and say who runs it — a minute of form."
-            is CreateStage.VerifyingEmail -> "One code, and the project is yours."
-            is CreateStage.Created -> "Share the code and the crew can join."
+            CreateStage.Editing -> str(S.desktop_create_project_editing_subtitle)
+            is CreateStage.VerifyingEmail -> str(S.desktop_create_project_verifying_subtitle)
+            is CreateStage.Created -> str(S.desktop_create_project_created_subtitle)
         },
         icon = when (state.stage) {
             CreateStage.Editing -> ZillitIcons.Add
@@ -132,11 +134,11 @@ private fun ColumnScope.ProductionForm(
         modifier = Modifier.zillitVerticalScroll().weight(1f, fill = false),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        SectionLabel("Who you are")
+        SectionLabel(str(S.desktop_section_who_you_are))
         WhoSection(state, ::update)
-        SectionLabel("The project")
+        SectionLabel(str(S.desktop_section_the_project))
         WhatSection(state, ::update)
-        SectionLabel("Contact")
+        SectionLabel(str(S.contact))
         ContactSection(state, ::update)
     }
 
@@ -145,7 +147,7 @@ private fun ColumnScope.ProductionForm(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitButton(
-            text = "Continue",
+            text = str(S.continue_text),
             onClick = { onEvent(CreateProductionEvent.Submit) },
             modifier = Modifier.weight(1f),
             loading = state.isBusy,
@@ -161,14 +163,14 @@ private fun WhoSection(state: CreateProductionUiState, update: (NewProductionDra
         ZillitTextField(
             value = draft.firstName,
             onValueChange = { v -> update { copy(firstName = v) } },
-            label = "First name",
+            label = str(S.first_name_label),
             errorText = state.fieldErrors[ProductionField.FirstName],
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = draft.lastName,
             onValueChange = { v -> update { copy(lastName = v) } },
-            label = "Last name",
+            label = str(S.last_name_label),
             errorText = state.fieldErrors[ProductionField.LastName],
             modifier = Modifier.weight(1f),
         )
@@ -186,29 +188,29 @@ private fun ColumnScope.WhatSection(
     ZillitTextField(
         value = draft.productionName,
         onValueChange = { v -> update { copy(productionName = v) } },
-        label = "Project name",
+        label = str(S.project_name),
         errorText = state.fieldErrors[ProductionField.ProductionName],
     )
 
-    LabelledSelect("Project type", state.fieldErrors[ProductionField.Type]) {
+    LabelledSelect(str(S.project_type), state.fieldErrors[ProductionField.Type]) {
         ZillitSelect(
             value = state.selectedType,
             options = state.types,
             // Changing type invalidates the sub-type — leaving the old one would
             // submit a sub-type that does not belong to the new type.
             onSelect = { type -> update { copy(typeId = type?.id, subType = null, customSubType = "") } },
-            label = { it?.label ?: "Choose a type" },
+            label = { it?.label ?: str(S.desktop_choose_a_type) },
             modifier = Modifier.fillMaxWidth(),
         )
     }
 
     if (state.subTypeOptions.isNotEmpty()) {
-        LabelledSelect("Sub-type", state.fieldErrors[ProductionField.SubType]) {
+        LabelledSelect(str(S.desktop_sub_type), state.fieldErrors[ProductionField.SubType]) {
             ZillitSelect(
                 value = draft.subType,
                 options = state.subTypeOptions,
                 onSelect = { sub -> update { copy(subType = sub) } },
-                label = { it?.subTypeLabel() ?: "Choose a sub-type" },
+                label = { it?.subTypeLabel() ?: str(S.desktop_choose_a_sub_type) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -218,17 +220,17 @@ private fun ColumnScope.WhatSection(
         ZillitTextField(
             value = draft.customSubType,
             onValueChange = { v -> update { copy(customSubType = v) } },
-            label = "New sub-type",
+            label = str(S.desktop_new_sub_type),
             errorText = state.fieldErrors[ProductionField.CustomSubType],
         )
     }
 
-    LabelledSelect("Language", state.fieldErrors[ProductionField.Language]) {
+    LabelledSelect(str(S.desktop_language), state.fieldErrors[ProductionField.Language]) {
         ZillitSelect(
             value = state.languages.firstOrNull { it.code == draft.languageCode },
             options = state.languages,
             onSelect = { language -> update { copy(languageCode = language?.code) } },
-            label = { it?.name ?: "Choose a language" },
+            label = { it?.name ?: str(S.desktop_choose_a_language) },
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -245,9 +247,9 @@ private fun ColumnScope.ContactSection(
     ZillitTextField(
         value = draft.email,
         onValueChange = { v -> update { copy(email = v) } },
-        label = "Email",
+        label = str(S.email),
         placeholder = "you@production.com",
-        helperText = "We'll send a one-time code here to confirm it.",
+        helperText = str(S.desktop_email_code_helper),
         errorText = state.fieldErrors[ProductionField.Email],
         keyboardType = KeyboardType.Email,
     )
@@ -256,7 +258,7 @@ private fun ColumnScope.ContactSection(
         ZillitTextField(
             value = draft.countryCode,
             onValueChange = { v -> update { copy(countryCode = v.filter(Char::isDigit)) } },
-            label = "Country code",
+            label = str(S.dm_loanout_country_code),
             placeholder = "44",
             keyboardType = KeyboardType.Number,
             modifier = Modifier.width(COUNTRY_CODE_WIDTH),
@@ -264,7 +266,7 @@ private fun ColumnScope.ContactSection(
         ZillitTextField(
             value = draft.phone,
             onValueChange = { v -> update { copy(phone = v.filter(Char::isDigit)) } },
-            label = "Contact number (optional)",
+            label = str(S.desktop_contact_number_optional),
             errorText = state.fieldErrors[ProductionField.Phone],
             keyboardType = KeyboardType.Number,
             modifier = Modifier.weight(1f),
@@ -274,7 +276,7 @@ private fun ColumnScope.ContactSection(
     ZillitCheckbox(
         checked = draft.agreedToTerms,
         onCheckedChange = { v -> update { copy(agreedToTerms = v) } },
-        label = "I accept the Zillit terms of use and privacy policy.",
+        label = str(S.desktop_accept_terms_label),
         errorText = state.fieldErrors[ProductionField.Terms],
     )
 }
@@ -293,7 +295,7 @@ private fun EmailVerification(
     onEvent: (CreateProductionEvent) -> Unit,
 ) {
     ZillitText(
-        text = "We sent a code to $email. Enter it to create the project.",
+        text = str(S.desktop_create_project_code_sent, email),
         style = ZillitTheme.typography.bodyMedium,
         color = ZillitTheme.colors.textSecondary,
     )
@@ -301,7 +303,7 @@ private fun EmailVerification(
     ZillitTextField(
         value = state.otp,
         onValueChange = { onEvent(CreateProductionEvent.OtpChanged(it)) },
-        label = "Verification code",
+        label = str(S.desktop_verification_code),
         placeholder = "000000",
         keyboardType = KeyboardType.Number,
         imeAction = ImeAction.Go,
@@ -311,7 +313,7 @@ private fun EmailVerification(
     )
 
     ZillitButton(
-        text = "Create project",
+        text = str(S.cs_create_project),
         onClick = { onEvent(CreateProductionEvent.VerifyOtp) },
         modifier = Modifier.fillMaxWidth(),
         enabled = state.canSubmitOtp,
@@ -320,14 +322,14 @@ private fun EmailVerification(
 
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         ZillitButton(
-            text = "Back",
+            text = str(S.back),
             onClick = { onEvent(CreateProductionEvent.BackToForm) },
             modifier = Modifier.weight(1f),
             variant = ButtonVariant.Tertiary,
             enabled = !state.isBusy,
         )
         ZillitButton(
-            text = "Resend",
+            text = str(S.desktop_resend),
             onClick = { onEvent(CreateProductionEvent.ResendOtp) },
             modifier = Modifier.weight(1f),
             variant = ButtonVariant.Tertiary,
@@ -346,7 +348,7 @@ private fun EmailVerification(
 @Composable
 private fun CreatedSummary(stage: CreateStage.Created, onDismiss: () -> Unit) {
     ZillitText(
-        text = "${stage.project.name} is ready. Share this code with your crew so they can join.",
+        text = str(S.desktop_project_ready_share_code, stage.project.name),
         style = ZillitTheme.typography.bodyMedium,
         color = ZillitTheme.colors.textSecondary,
     )
@@ -367,7 +369,7 @@ private fun CreatedSummary(stage: CreateStage.Created, onDismiss: () -> Unit) {
     }
 
     ZillitButton(
-        text = "Done",
+        text = str(S.done_text),
         onClick = onDismiss,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -408,7 +410,7 @@ private fun LabelledSelect(
  * sub-types are translation keys (`feature_label`), so they need humanising too.
  */
 private fun String.subTypeLabel(): String =
-    if (this == ProductionType.ADD_NEW_SUB_TYPE) "Add a new sub-type…" else humanise()
+    if (this == ProductionType.ADD_NEW_SUB_TYPE) str(S.desktop_add_a_new_sub_type) else humanise()
 
 private val DIALOG_WIDTH = 560.dp
 private val DIALOG_MAX_HEIGHT = 720.dp

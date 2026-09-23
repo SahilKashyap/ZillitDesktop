@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallType
@@ -32,7 +34,7 @@ import com.zillit.desktop.feature.calls.domain.CallType
 @Composable
 fun CallSecondCallBanner(waiting: CallSession, onEvent: (CallEvent) -> Unit, modifier: Modifier = Modifier) {
     val what = buildString {
-        append(if (waiting.type == CallType.Video) "Video call" else "Call")
+        append(if (waiting.type == CallType.Video) str(S.txt_video_call_label) else str(S.call))
         val where = if (waiting.mode == CallMode.Group) waiting.title else ""
         if (where.isNotBlank()) append(" · ").append(where)
     }
@@ -49,7 +51,7 @@ fun CallSecondCallBanner(waiting: CallSession, onEvent: (CallEvent) -> Unit, mod
         ZillitAvatar(name = waiting.callerName.ifBlank { "?" }, userId = waiting.displayUserId, size = AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = "${waiting.callerName.ifBlank { "Someone" }} is calling",
+                text = str(S.desktop_call_is_calling, waiting.callerName.ifBlank { str(S.history_someone) }),
                 style = ZillitTheme.typography.titleSmall,
                 color = CallPalette.text,
                 maxLines = 1,
@@ -57,13 +59,13 @@ fun CallSecondCallBanner(waiting: CallSession, onEvent: (CallEvent) -> Unit, mod
             ZillitText(text = what, style = ZillitTheme.typography.labelSmall, color = CallPalette.muted, maxLines = 1)
         }
         ZillitButton(
-            text = "Decline",
+            text = str(S.decline),
             size = ButtonSize.Small,
             variant = ButtonVariant.Tertiary,
             onClick = { onEvent(CallEvent.DeclineSecondCall) },
         )
         ZillitButton(
-            text = "End & Accept",
+            text = str(S.txt_end_accept),
             size = ButtonSize.Small,
             onClick = { onEvent(CallEvent.EndAndAcceptSecondCall) },
         )

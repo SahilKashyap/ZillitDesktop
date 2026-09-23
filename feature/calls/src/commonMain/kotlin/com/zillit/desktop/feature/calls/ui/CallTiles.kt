@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.calls.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallMode
@@ -179,7 +181,7 @@ private fun selfTile(
     selfHand: Boolean,
 ): CallTile = CallTile(
     key = SELF_KEY,
-    name = selfName.ifBlank { "You" },
+    name = selfName.ifBlank { str(S.you) },
     userId = session.selfUserId,
     uid = selfUid,
     isSelf = true,
@@ -233,4 +235,4 @@ private const val ONE_UP = 1
 private const val TWO_UP = 4
 private const val THREE_UP = 9
 private const val SELF_KEY = "self"
-private const val UNNAMED = "Guest"
+private val UNNAMED: String get() = str(S.txt_badge_guest)

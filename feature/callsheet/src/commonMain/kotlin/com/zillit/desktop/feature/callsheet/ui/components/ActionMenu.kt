@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.ui.theme.SheetIcons
 import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
 
@@ -67,13 +69,13 @@ internal fun ActionMenu(entries: List<MenuEntry>, modifier: Modifier = Modifier,
         when {
             single != null -> KebabTrigger(
                 icon = SheetIcons.Comment,
-                description = "Comments",
+                description = str(S.cs_comments),
                 enabled = single.enabled,
                 onClick = single.onClick,
             )
             actions.isEmpty() -> KebabTrigger(
                 icon = SheetIcons.MoreVertical,
-                description = "Actions",
+                description = str(S.cs_draft_actions),
                 enabled = false,
                 onClick = {},
             )
@@ -89,7 +91,7 @@ private fun MenuWithTrigger(entries: List<MenuEntry>) {
     Box {
         KebabTrigger(
             icon = SheetIcons.MoreVertical,
-            description = "Actions",
+            description = str(S.cs_draft_actions),
             enabled = true,
             onClick = { open = true },
         )

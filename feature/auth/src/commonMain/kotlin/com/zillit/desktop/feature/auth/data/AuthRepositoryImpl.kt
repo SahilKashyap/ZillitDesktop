@@ -10,6 +10,8 @@ import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.auth.domain.DeviceStatus
 import com.zillit.desktop.core.security.SecureKey
 import com.zillit.desktop.core.security.SecureStore
@@ -49,7 +51,7 @@ class AuthRepositoryImpl(
     override suspend fun requestOtp(email: String, language: String): ZillitResult<kotlin.Unit> {
         val normalised = email.trim().lowercase()
         if (!normalised.looksLikeEmail()) {
-            return ZillitResult.Failure(ZillitError.Validation("Enter a valid email address."))
+            return ZillitResult.Failure(ZillitError.Validation(str(S.docusign_role_email_invalid)))
         }
 
         // Pre-auth: no session headers, because there is no session yet.
@@ -63,7 +65,7 @@ class AuthRepositoryImpl(
 
     override suspend fun verifyOtp(email: String, otp: String): ZillitResult<String> {
         if (otp.isBlank()) {
-            return ZillitResult.Failure(ZillitError.Validation("Enter the code from your email."))
+            return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_enter_code_from_email)))
         }
 
         return apiClient.request(

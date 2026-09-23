@@ -54,7 +54,12 @@ internal fun syncEventOf(name: String, payload: JsonElement?): ReportSyncEvent {
     val status = (frame?.text("status")?.takeIf { it.isNotBlank() } ?: report?.text("status"))
         ?.takeIf { it.isNotBlank() }
         ?.let { ReportStatus.fromWire(it) }
-    return ReportSyncEvent(name = name, reportId = reportId, status = status)
+    // `approval:voided` — the superseded request ids, flat or under `data` (web `voidedRequestIds`).
+    val requestIds = listOfNotNull(outer, outer?.get("data") as? JsonObject, frame).distinct()
+        .flatMap { it.strings("approval_request_ids", "approvalRequestIds") }
+        .filter { it.isNotBlank() }
+        .distinct()
+    return ReportSyncEvent(name = name, reportId = reportId, status = status, requestIds = requestIds)
 }
 
 /**

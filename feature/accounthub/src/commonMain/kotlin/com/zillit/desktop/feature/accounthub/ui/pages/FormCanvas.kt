@@ -59,6 +59,8 @@ import com.zillit.desktop.core.forms.FormField
 import com.zillit.desktop.core.forms.FormFieldType
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.core.forms.FormSection
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /*
  * The form as its submitters will see it — shared by the preview and the
@@ -419,7 +421,7 @@ private fun TableCell(field: FormField, focused: Boolean, onClick: (() -> Unit)?
             ) {
                 ZillitText(
                     text = when (field.type) {
-                        FormFieldType.Select.wire -> "Select..."
+                        FormFieldType.Select.wire -> str(S.select)
                         FormFieldType.Number.wire -> "0"
                         FormFieldType.Date.wire -> "dd/mm/yyyy"
                         else -> "${field.name}..."
@@ -516,7 +518,7 @@ internal fun SidePanel(
             }
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Close panel",
+                contentDescription = str(S.desktop_close_panel),
                 onClick = onClose,
             )
         }

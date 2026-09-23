@@ -8,6 +8,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.datetime.toLocalDateTime
@@ -739,7 +741,7 @@ class HomeFeedViewModel(
                 launchResult(
                     block = { repository.notifyUnread(unit.id, panel.noticeId, panel.commentId) },
                     onSuccess = {
-                        setState { copy(info = "Everyone still unread has been notified.") }
+                        setState { copy(info = str(S.desktop_board_everyone_notified)) }
                     },
                     onError = { error -> setState { copy(error = error.localised()) } },
                 )
@@ -917,7 +919,7 @@ class HomeFeedViewModel(
      */
     private fun refusedByCallSheet(unit: HomeUnit, picked: PickedMedia): Boolean {
         if (unit.kind != HomeUnitKind.CallSheet || picked.kind == NoticeKind.Document) return false
-        setState { copy(error = "Only documents can be posted to " + unit.label + ".") }
+        setState { copy(error = str(S.desktop_board_only_documents_to, unit.label)) }
         return true
     }
 
@@ -1088,7 +1090,7 @@ class HomeFeedViewModel(
         val folder = if (unit.kind == HomeUnitKind.CallSheet) CALL_SHEET_FOLDER else unit.label
         launchResult(
             block = { hook.publish(notice, listOf(folder), notice.createdAtMillis.toIsoDate()) },
-            onSuccess = { setState { copy(info = "Published to Document Distribution.") } },
+            onSuccess = { setState { copy(info = str(S.desktop_board_published_to_docdist)) } },
             onError = { error -> setState { copy(error = error.localised()) } },
         )
     }
@@ -1104,8 +1106,8 @@ class HomeFeedViewModel(
         // The explicit Download is a right of its own on both phones; the
         // sentence is Android's (`download_permission_alert`).
         if (download && !currentState.canDownload) {
-            val unit = currentState.selectedUnit?.label ?: "this unit"
-            setState { copy(error = "You do not have downloading rights on $unit.") }
+            val unit = currentState.selectedUnit?.label ?: str(S.desktop_board_this_unit)
+            setState { copy(error = str(S.desktop_board_no_download_rights, unit)) }
             return
         }
         val notice = currentState.notices.firstOrNull { it.id == noticeId }
@@ -1449,7 +1451,7 @@ class HomeFeedViewModel(
                 error = if (rights == null) {
                     noPostingRights(unit)
                 } else {
-                    "Asking an administrator for posting rights on ${unit.label}."
+                    str(S.desktop_board_asking_for_posting_rights, unit.label)
                 },
             )
         }
@@ -1466,7 +1468,7 @@ class HomeFeedViewModel(
         val callSheetTakes = notice.kind == NoticeKind.Text || notice.kind == NoticeKind.Document
         if (target.kind == HomeUnitKind.CallSheet && !callSheetTakes) {
             setState {
-                copy(forwarding = null, error = "Only text and documents can go to ${target.label}.")
+                copy(forwarding = null, error = str(S.desktop_board_only_text_and_documents_to, target.label))
             }
             return
         }
@@ -1475,7 +1477,7 @@ class HomeFeedViewModel(
         launchResult(
             block = { repository.forwardNotice(unitId, notice, newLocalId()) },
             onSuccess = {
-                setState { copy(info = "Forwarded to ${target.label}.") }
+                setState { copy(info = str(S.desktop_board_forwarded_to, target.label)) }
                 // A copy sent to the board on screen should appear on it.
                 if (unitId == currentState.selectedUnit?.id) loadNotices(target)
             },
@@ -1564,7 +1566,7 @@ class HomeFeedViewModel(
                     return@launchResult ZillitResult.Failure(
                         ZillitError.Storage(
                             technical = "media post retried with no file to upload",
-                            userMessage = "The file is no longer attached — pick it again.",
+                            userMessage = str(S.desktop_board_file_no_longer_attached),
                         ),
                     )
                 }
@@ -1758,26 +1760,41 @@ private const val TICK_MILLIS = 1_000L
  * and not-yet-delivered toasts.
  */
 internal fun refusal(verdict: ModifyVerdict, deleting: Boolean, reply: Boolean): String? {
-    val thing = if (reply) "reply" else "message"
-    val things = if (reply) "replies" else "messages"
-    return when (verdict) {
-        ModifyVerdict.Allowed -> null
-        ModifyVerdict.NotSent -> "This message is not uploaded yet."
-        ModifyVerdict.NotOwner ->
-            if (deleting) {
-                "You have no permission to delete other users' $things."
-            } else {
-                "You can't edit other users' $things."
-            }
-        ModifyVerdict.WindowClosed ->
-            if (deleting) {
-                "You are allowed to edit or delete within 30 mins of posting the message. " +
-                    "Only an admin can edit or delete after that. " +
-                    "Please contact an admin if you need this $thing edited or deleted."
-            } else {
-                "You can't edit a $thing after 30 minutes."
-            }
+    val key = when (verdict) {
+        ModifyVerdict.Allowed -> return null
+        ModifyVerdict.NotSent -> S.message_not_delivered_yet
+        ModifyVerdict.NotOwner -> refusalKey(
+            deleting, reply,
+            deleteReply = S.desktop_board_cannot_delete_others_replies,
+            deleteMessage = S.desktop_board_cannot_delete_others_messages,
+            editReply = S.desktop_board_cannot_edit_others_replies,
+            editMessage = S.desktop_board_cannot_edit_others_messages,
+        )
+        ModifyVerdict.WindowClosed -> refusalKey(
+            deleting, reply,
+            deleteReply = S.desktop_board_delete_window_closed_reply,
+            deleteMessage = S.desktop_board_delete_window_closed_message,
+            editReply = S.desktop_board_edit_window_closed_reply,
+            editMessage = S.desktop_board_edit_window_closed_message,
+        )
     }
+    return str(key)
+}
+
+/** The one of four sentences for an action (edit or delete) on a kind of post (message or reply). */
+@Suppress("LongParameterList") // Four keys, named at every call site.
+private fun refusalKey(
+    deleting: Boolean,
+    reply: Boolean,
+    deleteReply: String,
+    deleteMessage: String,
+    editReply: String,
+    editMessage: String,
+): String = when {
+    deleting && reply -> deleteReply
+    deleting -> deleteMessage
+    reply -> editReply
+    else -> editMessage
 }
 
 
@@ -1788,7 +1805,7 @@ private const val UPLOAD_DONE = 100
 private const val CALL_SHEET_FOLDER = "Call Sheet"
 
 /** Android's `you_dont_have_distribution_rights` (`strings.xml:3306`). */
-private const val NO_DISTRIBUTION_RIGHTS = "You do not have Distribution Rights on this Unit."
+private val NO_DISTRIBUTION_RIGHTS: String get() = str(S.you_dont_have_distribution_rights_on_this_unit)
 
 /** `yyyy-MM-dd` in the viewer's zone — the library's `folder_date`; today when the post has no clock. */
 private fun Long.toIsoDate(): String {
@@ -1815,9 +1832,7 @@ private fun HomeFeedUiState.withHistory(history: Boolean): HomeFeedUiState = cop
 )
 
 /** iOS's PostingPermissionPopUp, as a composer error rather than a modal. */
-private fun noPostingRights(unit: HomeUnit): String =
-    "You do not have posting rights for " + unit.label +
-        ". Ask a project admin to grant them."
+private fun noPostingRights(unit: HomeUnit): String = str(S.desktop_board_no_posting_rights_ask_admin, unit.label)
 
 /** The card shown before the server answers — the send's own local echo. */
 private fun optimisticNotice(localId: String, draft: NoticeDraft, now: Long): Notice = Notice(
@@ -1826,7 +1841,7 @@ private fun optimisticNotice(localId: String, draft: NoticeDraft, now: Long): No
     // to say the same thing the server will echo back, or the address appears
     // the moment the echo replaces this card. See `HomeFeedRepositoryImpl`.
     body = draft.trimmed.ifBlank { draft.location?.address.orEmpty() },
-    authorName = "You",
+    authorName = str(S.you),
     createdAtMillis = now,
     kind = when {
         draft.location != null -> NoticeKind.Location

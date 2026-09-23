@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -82,7 +84,7 @@ data class TrialBalance(
 
         /** The web's `COST_TYPE_DISPLAY` for the five it knows, and a humanised key for anything newer. */
         fun labelFor(costType: String): String = when {
-            costType.isBlank() -> "Uncategorised"
+            costType.isBlank() -> str(S.desktop_uncategorised)
             else -> costType.replace('_', ' ').replaceFirstChar { it.uppercase() }
         }
     }
@@ -288,9 +290,9 @@ data class TrialBalanceFilters(
      */
     val periodLabel: String
         get() = if (mode == PeriodMode.Current && from == TrialBalancePeriod.FLOOR) {
-            "Till ${TrialBalancePeriod.label(to)}"
+            str(S.desktop_till_date, TrialBalancePeriod.label(to))
         } else {
-            "${TrialBalancePeriod.label(from)} – ${TrialBalancePeriod.label(to)}"
+            str(S.ah_rental_format, TrialBalancePeriod.label(from), TrialBalancePeriod.label(to))
         }
 }
 
@@ -310,7 +312,12 @@ object TrialBalancePeriod {
      */
     const val FLOOR = "2000-01-01"
 
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val MONTHS: List<String>
+        get() = listOf(
+            S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+            S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+            S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+        ).map { str(it) }
 
     /** A `YYYY-MM-DD` day, or null for anything else — including a day half typed or one that does not exist. */
     fun parse(day: String): LocalDate? = runCatching { LocalDate.parse(day.trim()) }.getOrNull()
@@ -343,20 +350,32 @@ object TrialBalancePeriod {
  * "Till <today>" when nothing has been closed yet. "Date Range" is the two
  * pickers.
  */
-enum class PeriodMode(val label: String) { Current("Current Period"), Custom("Date Range") }
+enum class PeriodMode(private val labelKey: String) {
+    Current(S.desktop_current_period),
+    Custom(S.cs_date_range),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** The formats a report exports in — `POST …/export/{format}` returns the file. */
-enum class ExportFormat(val wire: String, val label: String, val extension: String) {
-    Pdf("pdf", "PDF", "pdf"),
-    Excel("xlsx", "Excel", "xlsx"),
-    Csv("csv", "CSV", "csv"),
+enum class ExportFormat(val wire: String, private val labelKey: String, val extension: String) {
+    Pdf("pdf", S.av_pdf, "pdf"),
+    Excel("xlsx", S.excel, "xlsx"),
+    Csv("csv", S.desktop_csv, "csv"),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The three reports a closing package can carry — the web's `REPORTS`. */
-enum class ClosingReport(val wire: String, val label: String) {
-    CostReport("cost_report", "Cost Report"),
-    TrialBalance("trial_balance", "Trial Balance"),
-    BibleReport("bible_report", "Bible Report"),
+enum class ClosingReport(val wire: String, private val labelKey: String) {
+    CostReport("cost_report", S.cr_title),
+    TrialBalance("trial_balance", S.desktop_trial_balance),
+    BibleReport("bible_report", S.desktop_bible_report),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**

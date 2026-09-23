@@ -25,6 +25,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.SavedContact
 import com.zillit.desktop.feature.email.ui.DialogButtons
 import com.zillit.desktop.feature.email.ui.ModalCard
@@ -52,11 +54,11 @@ internal fun EmailContactsScreen(
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitPageHeader(
-                title = "Contacts",
-                description = "The addresses you write to, kept with your mailbox.",
+                title = str(S.contacts),
+                description = str(S.desktop_email_contacts_description),
                 actions = {
                     ZillitButton(
-                        text = "New contact",
+                        text = str(S.desktop_email_new_contact),
                         leadingIcon = ZillitIcons.Add,
                         size = ButtonSize.Small,
                         onClick = { onEvent(EmailContactsEvent.Edit(null)) },
@@ -71,7 +73,7 @@ internal fun EmailContactsScreen(
             ZillitSearchField(
                 value = state.query,
                 onValueChange = { onEvent(EmailContactsEvent.QueryChanged(it)) },
-                placeholder = "Search name, address or company",
+                placeholder = str(S.desktop_email_contacts_search_placeholder),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -87,12 +89,12 @@ internal fun EmailContactsScreen(
 private fun ContactList(state: EmailContactsUiState, onEvent: (EmailContactsEvent) -> Unit) {
     val rows = state.visible
     when {
-        state.isLoading && state.contacts.isEmpty() -> SettingsHint("Loading…")
+        state.isLoading && state.contacts.isEmpty() -> SettingsHint(str(S.ah_loading))
 
         state.contacts.isEmpty() ->
-            SettingsHint("No contacts yet. Anyone you add here shows up as you type an address.")
+            SettingsHint(str(S.desktop_email_no_contacts_yet))
 
-        rows.isEmpty() -> SettingsHint("Nothing matches \"${state.query.trim()}\".")
+        rows.isEmpty() -> SettingsHint(str(S.desktop_email_nothing_matches, state.query.trim()))
 
         else -> {
             val list = rememberLazyListState()
@@ -124,19 +126,19 @@ private fun ContactRow(contact: SavedContact, onEvent: (EmailContactsEvent) -> U
             )
         }
         ZillitButton(
-            text = "Write",
+            text = str(S.desktop_email_write),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             onClick = { onEvent(EmailContactsEvent.WriteTo(contact)) },
         )
         ZillitIconButton(
             icon = ZillitIcons.Edit,
-            contentDescription = "Edit ${contact.displayName}",
+            contentDescription = str(S.desktop_edit_named, contact.displayName),
             onClick = { onEvent(EmailContactsEvent.Edit(contact)) },
         )
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Delete ${contact.displayName}",
+            contentDescription = str(S.desktop_delete_named, contact.displayName),
             onClick = { onEvent(EmailContactsEvent.AskDelete(contact)) },
         )
     }
@@ -147,7 +149,7 @@ private fun ContactEditor(draft: ContactDraft, isSaving: Boolean, onEvent: (Emai
     val contact = draft.contact
     ModalCard(onDismiss = { onEvent(EmailContactsEvent.CancelEdit) }) {
         ZillitText(
-            text = if (draft.isNew) "New contact" else "Edit contact",
+            text = str(if (draft.isNew) S.desktop_email_new_contact else S.edit_contact),
             style = ZillitTheme.typography.titleMedium,
         )
         draft.error?.let { message ->
@@ -156,7 +158,7 @@ private fun ContactEditor(draft: ContactDraft, isSaving: Boolean, onEvent: (Emai
         ZillitTextField(
             value = contact.address,
             onValueChange = { onEvent(EmailContactsEvent.DraftChanged(contact.copy(address = it))) },
-            label = "Email address",
+            label = str(S.hint_email),
             placeholder = "name@example.com",
             enabled = !isSaving,
             modifier = Modifier.fillMaxWidth(),
@@ -169,21 +171,21 @@ private fun ContactEditor(draft: ContactDraft, isSaving: Boolean, onEvent: (Emai
             ZillitTextField(
                 value = contact.firstName,
                 onValueChange = { onEvent(EmailContactsEvent.DraftChanged(contact.copy(firstName = it))) },
-                label = "First name",
+                label = str(S.first_name_label),
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = contact.lastName,
                 onValueChange = { onEvent(EmailContactsEvent.DraftChanged(contact.copy(lastName = it))) },
-                label = "Last name",
+                label = str(S.last_name_label),
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
             )
         }
         ContactExtras(contact, isSaving, onEvent)
         DialogButtons(
-            action = if (draft.isNew) "Add contact" else "Save",
+            action = str(if (draft.isNew) S.add_contact else S.save),
             enabled = contact.address.isNotBlank() && !isSaving,
             loading = isSaving,
             onConfirm = { onEvent(EmailContactsEvent.Save) },
@@ -198,14 +200,14 @@ private fun ContactExtras(contact: SavedContact, isSaving: Boolean, onEvent: (Em
     ZillitTextField(
         value = contact.company,
         onValueChange = { onEvent(EmailContactsEvent.DraftChanged(contact.copy(company = it))) },
-        label = "Company",
+        label = str(S.company),
         enabled = !isSaving,
         modifier = Modifier.fillMaxWidth(),
     )
     ZillitTextField(
         value = contact.phone,
         onValueChange = { onEvent(EmailContactsEvent.DraftChanged(contact.copy(phone = it))) },
-        label = "Phone",
+        label = str(S.phone),
         enabled = !isSaving,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -214,14 +216,17 @@ private fun ContactExtras(contact: SavedContact, isSaving: Boolean, onEvent: (Em
 @Composable
 private fun DeletePrompt(contact: SavedContact, onEvent: (EmailContactsEvent) -> Unit) {
     ModalCard(onDismiss = { onEvent(EmailContactsEvent.DismissDelete) }) {
-        ZillitText(text = "Delete ${contact.displayName}?", style = ZillitTheme.typography.titleMedium)
         ZillitText(
-            text = "${contact.address} will no longer be suggested as you type.",
+            text = str(S.desktop_delete_named_question, contact.displayName),
+            style = ZillitTheme.typography.titleMedium,
+        )
+        ZillitText(
+            text = str(S.desktop_email_contact_no_longer_suggested, contact.address),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
         DialogButtons(
-            action = "Delete",
+            action = str(S.delete),
             variant = ButtonVariant.Danger,
             onConfirm = { onEvent(EmailContactsEvent.ConfirmDelete) },
             onDismiss = { onEvent(EmailContactsEvent.DismissDelete) },

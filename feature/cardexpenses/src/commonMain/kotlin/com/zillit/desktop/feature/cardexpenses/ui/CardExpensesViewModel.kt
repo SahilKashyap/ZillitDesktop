@@ -5,6 +5,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.data.cardRefreshes
 import com.zillit.desktop.feature.cardexpenses.domain.BulkAction
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
@@ -106,7 +108,7 @@ class CardExpensesViewModel(
      * whether to call it is there, with the rest of the receipt's rules.
      */
     internal fun submitDraftReceipts(state: CardUiState) =
-        act("Receipts uploaded", clearDraft = true) {
+        act(str(S.desktop_card_receipts_uploaded), clearDraft = true) {
             repository.submitReceipts(state.myCard, state.draft)
         }
 
@@ -277,7 +279,7 @@ class CardExpensesViewModel(
 
             is CardEvent.SaveBsCode -> register.saveBsCode(event.cardId)
 
-            is CardEvent.MatchReceipt -> act("Receipt matched") {
+            is CardEvent.MatchReceipt -> act(str(S.desktop_card_receipt_matched)) {
                 repository.matchReceipt(event.receiptId, event.transactionId)
             }
 
@@ -524,7 +526,7 @@ class CardExpensesViewModel(
     private fun bulkPost() {
         val ids = currentState.selection.toList()
         if (ids.isEmpty()) {
-            sendEffect(CardEffect.Failed("Nothing is selected."))
+            sendEffect(CardEffect.Failed(str(S.desktop_nothing_is_selected)))
             return
         }
         val coding = currentState.bulkCoding
@@ -541,8 +543,11 @@ class CardExpensesViewModel(
                             // Partial failure is reported as such: "posted 38"
                             // when two did not go is how a discrepancy is found
                             // a week later by someone else.
-                            notice = "Posted ${outcome.succeeded}" +
-                                if (outcome.failed > 0) " · ${outcome.failed} failed" else "",
+                            notice = if (outcome.failed > 0) {
+                                str(S.desktop_card_posted_count_failed, outcome.succeeded, outcome.failed)
+                            } else {
+                                str(S.desktop_card_posted_count, outcome.succeeded)
+                            },
                         )
                     }
                     load(currentState.destination)
@@ -585,17 +590,16 @@ class CardExpensesViewModel(
         if (!draft.balances) {
             sendEffect(
                 CardEffect.Failed(
-                    "The splits come to a different amount from the receipt. " +
-                        "Adjust them so they add up before saving.",
+                    str(S.desktop_card_splits_do_not_add_up),
                 ),
             )
             return
         }
         if (draft.lines.any { it.nominalCode.isBlank() }) {
-            sendEffect(CardEffect.Failed("Every split needs a nominal code."))
+            sendEffect(CardEffect.Failed(str(S.desktop_card_split_needs_nominal)))
             return
         }
-        act("Splits saved") { repository.saveReceiptLines(draft.receiptId, draft.lines) }
+        act(str(S.desktop_card_splits_saved)) { repository.saveReceiptLines(draft.receiptId, draft.lines) }
         setState { copy(splits = null) }
     }
 
@@ -609,11 +613,11 @@ class CardExpensesViewModel(
             is CardPrompt.WithCardNumber -> {
                 val digits = prompt.number.filter(Char::isDigit)
                 if (digits.length < MIN_CARD_DIGITS) {
-                    sendEffect(CardEffect.Failed("Enter the full card number."))
+                    sendEffect(CardEffect.Failed(str(S.desktop_card_enter_full_number)))
                     setState { copy(prompt = prompt) }
                     return
                 }
-                act("Physical card assigned") {
+                act(str(S.ah_physical_card_assigned_toast)) {
                     repository.assignPhysicalCard(prompt.targetId, digits)
                 }
             }
@@ -658,79 +662,99 @@ class CardExpensesViewModel(
     private fun resolveConfirm(prompt: CardPrompt.Confirm) {
         val id = prompt.targetId
         if (!prompt.action.permitted(currentState.viewer)) {
-            sendEffect(CardEffect.Failed("You do not have the rights to do that on this project."))
+            sendEffect(CardEffect.Failed(str(S.desktop_po_no_rights_on_project)))
             return
         }
         when (prompt.action) {
-            CardConfirmAction.ApproveCard -> act("Card approved") { repository.approveCard(id, null) }
-            CardConfirmAction.OverrideCard -> act("Card overridden") { repository.overrideCard(id) }
-            CardConfirmAction.ActivateCard -> act("Card activated") { repository.activateCard(id, null) }
-            CardConfirmAction.SuspendCard -> act("Card suspended") { repository.suspendCard(id) }
-            CardConfirmAction.ReactivateCard -> act("Card reactivated") { repository.reactivateCard(id) }
+            CardConfirmAction.ApproveCard -> act(str(S.ah_card_approved_toast)) { repository.approveCard(id, null) }
+            CardConfirmAction.OverrideCard -> act(str(S.desktop_card_overridden_toast)) { repository.overrideCard(id) }
+            CardConfirmAction.ActivateCard -> act(str(S.ah_card_activated_toast)) { repository.activateCard(id, null) }
+            CardConfirmAction.SuspendCard -> act(str(S.ah_card_suspended_toast)) { repository.suspendCard(id) }
+            CardConfirmAction.ReactivateCard -> act(str(S.ah_card_reactivated_toast)) { repository.reactivateCard(id) }
             CardConfirmAction.DeleteCard -> register.delete(id)
-            CardConfirmAction.ApproveReceipt -> act("Receipt approved") { repository.approveReceipt(id, null) }
-            CardConfirmAction.OverrideReceipt -> act("Receipt overridden") { repository.overrideReceipt(id) }
+            CardConfirmAction.ApproveReceipt ->
+                act(str(S.desktop_card_receipt_approved)) { repository.approveReceipt(id, null) }
+
+            CardConfirmAction.OverrideReceipt ->
+                act(str(S.desktop_card_receipt_overridden)) { repository.overrideReceipt(id) }
+
             CardConfirmAction.PostReceipt -> postReceipt(id)
             CardConfirmAction.SubmitReceiptForApproval ->
-                act("Sent for approval") { repository.submitReceiptForApproval(id) }
+                act(str(S.ah_sent_for_approval_toast)) { repository.submitReceiptForApproval(id) }
 
-            CardConfirmAction.ConfirmMatch -> act("Match confirmed") { repository.confirmReceiptMatch(id) }
-            CardConfirmAction.UnmatchReceipt -> act("Match removed") { repository.unmatchReceipt(id) }
-            CardConfirmAction.FlagPersonal -> act("Flagged personal") { repository.flagReceiptPersonal(id) }
-            CardConfirmAction.DismissDuplicate -> act("Duplicate dismissed") { repository.dismissDuplicate(id) }
-            CardConfirmAction.DismissPersonal -> act("Personal flag cleared") { repository.dismissPersonal(id) }
-            CardConfirmAction.DeleteReceipt -> act("Receipt deleted") { repository.deleteReceipt(id) }
-            CardConfirmAction.CompleteTopUp -> act("Top-up completed") { repository.completeTopUp(id) }
-            CardConfirmAction.SkipTopUp -> act("Top-up skipped") { repository.skipTopUp(id) }
-            CardConfirmAction.DismissAlert -> act("Alert dismissed") { repository.dismissAlert(id) }
-            CardConfirmAction.InvestigateAlert -> act("Marked for investigation") { repository.investigateAlert(id) }
+            CardConfirmAction.ConfirmMatch ->
+                act(str(S.desktop_card_match_confirmed)) { repository.confirmReceiptMatch(id) }
+
+            CardConfirmAction.UnmatchReceipt -> act(str(S.desktop_card_match_removed)) { repository.unmatchReceipt(id) }
+            CardConfirmAction.FlagPersonal ->
+                act(str(S.desktop_card_flagged_personal)) { repository.flagReceiptPersonal(id) }
+
+            CardConfirmAction.DismissDuplicate ->
+                act(str(S.ah_duplicate_dismissed_toast)) { repository.dismissDuplicate(id) }
+
+            CardConfirmAction.DismissPersonal ->
+                act(str(S.desktop_card_personal_flag_cleared)) { repository.dismissPersonal(id) }
+
+            CardConfirmAction.DeleteReceipt -> act(str(S.ah_receipt_deleted_toast)) { repository.deleteReceipt(id) }
+            CardConfirmAction.CompleteTopUp -> act(str(S.desktop_card_topup_completed)) { repository.completeTopUp(id) }
+            CardConfirmAction.SkipTopUp -> act(str(S.ah_topup_skipped_toast)) { repository.skipTopUp(id) }
+            CardConfirmAction.DismissAlert -> act(str(S.ah_alert_dismissed_toast)) { repository.dismissAlert(id) }
+            CardConfirmAction.InvestigateAlert ->
+                act(str(S.desktop_card_marked_for_investigation)) { repository.investigateAlert(id) }
+
             CardConfirmAction.BulkApprove -> bulk(BulkAction.Approve)
             CardConfirmAction.BulkReject -> bulk(BulkAction.Reject)
-            CardConfirmAction.PostTransaction -> act("Transaction posted") { repository.postTransaction(id) }
+            CardConfirmAction.PostTransaction ->
+                act(str(S.desktop_card_transaction_posted)) { repository.postTransaction(id) }
+
             CardConfirmAction.FlagTransactionPersonal ->
-                act("Flagged personal") { repository.flagTransactionPersonal(id) }
+                act(str(S.desktop_card_flagged_personal)) { repository.flagTransactionPersonal(id) }
 
             CardConfirmAction.DeleteTransaction -> deleteTransaction(id)
             CardConfirmAction.BulkDeleteTransactions -> bulkDeleteTransactions()
-            CardConfirmAction.RerunMatching -> act("Matching re-run") { repository.rerunMatching(id) }
+            CardConfirmAction.RerunMatching -> act(str(S.desktop_card_matching_rerun)) { repository.rerunMatching(id) }
         }
     }
 
     private fun resolveReason(prompt: CardPrompt.WithReason) {
         val reason = prompt.reason.trim()
         if (reason.isEmpty()) {
-            sendEffect(CardEffect.Failed("A reason is required."))
+            sendEffect(CardEffect.Failed(str(S.desktop_a_reason_is_required)))
             setState { copy(prompt = prompt) }
             return
         }
         when (prompt.action) {
-            CardReasonAction.RejectCard -> act("Card rejected") { repository.rejectCard(prompt.targetId, reason) }
+            CardReasonAction.RejectCard ->
+                act(str(S.ah_card_rejected_toast)) { repository.rejectCard(prompt.targetId, reason) }
+
             CardReasonAction.RejectReceipt ->
-                act("Receipt rejected") { repository.rejectReceipt(prompt.targetId, reason) }
+                act(str(S.desktop_card_receipt_rejected)) { repository.rejectReceipt(prompt.targetId, reason) }
 
             CardReasonAction.QueryTransaction ->
-                act("Query sent") { repository.queryTransaction(prompt.targetId, reason) }
+                act(str(S.ah_query_sent_toast)) { repository.queryTransaction(prompt.targetId, reason) }
 
             CardReasonAction.RejectTransaction ->
-                act("Transaction rejected") { repository.rejectTransaction(prompt.targetId, reason) }
+                act(str(S.desktop_card_transaction_rejected)) { repository.rejectTransaction(prompt.targetId, reason) }
 
-            CardReasonAction.ResolveAlert -> act("Alert resolved") { repository.resolveAlert(prompt.targetId, reason) }
+            CardReasonAction.ResolveAlert ->
+                act(str(S.ah_alert_resolved_toast)) { repository.resolveAlert(prompt.targetId, reason) }
+
         }
     }
 
     private fun resolveAmount(prompt: CardPrompt.WithAmount) {
         val amount = prompt.amount.trim().toDoubleOrNull()
         if (amount == null || amount <= 0) {
-            sendEffect(CardEffect.Failed("Enter an amount greater than zero."))
+            sendEffect(CardEffect.Failed(str(S.desktop_card_amount_greater_than_zero)))
             setState { copy(prompt = prompt) }
             return
         }
         when (prompt.action) {
-            CardAmountAction.RequestTopUp -> act("Top-up requested") {
+            CardAmountAction.RequestTopUp -> act(str(S.desktop_card_topup_requested)) {
                 repository.requestTopUp(prompt.targetId, amount, prompt.note.takeIf(String::isNotBlank))
             }
 
-            CardAmountAction.PartialTopUp -> act("Top-up recorded") {
+            CardAmountAction.PartialTopUp -> act(str(S.desktop_card_topup_recorded)) {
                 repository.partialTopUp(prompt.targetId, amount)
             }
         }
@@ -740,15 +764,15 @@ class CardExpensesViewModel(
         val receipt = currentState.receipts.firstOrNull { it.id == receiptId }
         if (receipt != null && !currentState.viewer.canPost(receipt.amount)) {
             sendEffect(
-                CardEffect.Failed("This is above your posting limit. Pass it to a senior accountant."),
+                CardEffect.Failed(str(S.desktop_card_above_posting_limit)),
             )
             return
         }
-        act("Receipt posted") { repository.postReceipt(receiptId) }
+        act(str(S.desktop_card_receipt_posted)) { repository.postReceipt(receiptId) }
     }
 
     private fun deleteTransaction(transactionId: String) {
-        act("Transaction deleted") { repository.deleteTransaction(transactionId) }
+        act(str(S.desktop_card_transaction_deleted)) { repository.deleteTransaction(transactionId) }
         setState { copy(selectedTransactionId = null) }
     }
 
@@ -762,7 +786,7 @@ class CardExpensesViewModel(
     private fun bulkDeleteTransactions() {
         val ids = currentState.selection.toList()
         if (ids.isEmpty()) {
-            sendEffect(CardEffect.Failed("Nothing is selected."))
+            sendEffect(CardEffect.Failed(str(S.desktop_nothing_is_selected)))
             return
         }
         launch {
@@ -775,8 +799,11 @@ class CardExpensesViewModel(
                             busy = false,
                             selection = emptySet(),
                             selectedTransactionId = null,
-                            notice = "Deleted ${outcome.succeeded}" +
-                                if (outcome.failed > 0) " · ${outcome.failed} skipped" else "",
+                            notice = if (outcome.failed > 0) {
+                                str(S.desktop_card_deleted_count_skipped, outcome.succeeded, outcome.failed)
+                            } else {
+                                str(S.desktop_card_deleted_count, outcome.succeeded)
+                            },
                         )
                     }
                     load(currentState.destination)
@@ -793,10 +820,15 @@ class CardExpensesViewModel(
     private fun bulk(action: BulkAction) {
         val ids = currentState.selection.toList()
         if (ids.isEmpty()) {
-            sendEffect(CardEffect.Failed("Nothing is selected."))
+            sendEffect(CardEffect.Failed(str(S.desktop_nothing_is_selected)))
             return
         }
-        act("${ids.size} receipt(s) ${if (action == BulkAction.Approve) "approved" else "rejected"}") {
+        val notice = if (action == BulkAction.Approve) {
+            str(S.desktop_card_receipts_approved_count, ids.size)
+        } else {
+            str(S.desktop_card_receipts_rejected_count, ids.size)
+        }
+        act(notice) {
             repository.bulkApproval(action, ids)
         }
         setState { copy(selection = emptySet()) }

@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.invoices.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.Approval
 import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
@@ -70,9 +72,9 @@ internal fun departmentUploadBody(upload: DepartmentUpload): JsonObject = buildJ
 }
 
 private fun uploadDescription(supplier: String, fileName: String): String = when {
-    supplier.isNotBlank() -> "Invoice — ${supplier.trim()}"
+    supplier.isNotBlank() -> str(S.desktop_inv_invoice_from_supplier, supplier.trim())
     fileName.isNotBlank() -> fileName.substringBeforeLast('.')
-    else -> "Uploaded invoice"
+    else -> str(S.desktop_inv_uploaded_invoice)
 }
 
 private fun uploadPayMethod(type: UploadType, extracted: String): String = when (type) {

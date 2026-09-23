@@ -72,7 +72,7 @@ class DistributionScreenRenderTest {
         onNodeWithText("Location").assertDoesNotExist()
         // The web's pinned note and the admin-only listing-order hint.
         onAllNodesWithText("MUST READ").assertCountEquals(3)
-        onNodeWithText("Click Here").assertExists()
+        onNodeWithText("Click here").assertExists()
         onNodeWithText("1–2 of 2").assertExists()
     }
 

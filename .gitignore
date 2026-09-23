@@ -25,3 +25,8 @@ zillit.properties
 # JVM crash dumps — per-machine, carry local paths and environment details.
 hs_err_pid*.log
 replay_pid*.log
+core/strings/src/jvmMain/resources/i18n/.lock
+
+# Python bytecode from the localisation scripts.
+__pycache__/
+*.pyc

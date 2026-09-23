@@ -98,7 +98,8 @@ data class MapUiState(
     /** The types present in this city, sorted — the filter chips. */
     val presentTypes: List<String> get() = locations.map { it.type }.filter { it.isNotBlank() }.distinct().sorted()
 
-    val typeCounts: Map<String, Int> get() = locations.filter { it.type.isNotBlank() }.groupingBy { it.type }.eachCount()
+    val typeCounts: Map<String, Int>
+        get() = locations.filter { it.type.isNotBlank() }.groupingBy { it.type }.eachCount()
 
     /** Every unread map badge — the Cities control's red count. */
     val totalUnread: Int get() = cityUnread.values.sum()
@@ -311,6 +312,10 @@ data class ShareState(
 ) {
     val visiblePeople: List<SharePerson>
         get() = query.trim().lowercase().let { q ->
-            if (q.isEmpty()) people else people.filter { it.name.lowercase().contains(q) || it.designation.lowercase().contains(q) }
+            if (q.isEmpty()) {
+                people
+            } else {
+                people.filter { it.name.lowercase().contains(q) || it.designation.lowercase().contains(q) }
+            }
         }
 }

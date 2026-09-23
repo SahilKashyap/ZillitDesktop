@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Renders a QR code.
@@ -82,7 +84,7 @@ fun ZillitQrCode(
 @Composable
 private fun QrEncodingFailed() {
     ZillitText(
-        text = "Could not display the sign-in code.",
+        text = str(S.desktop_qr_code_could_not_display),
         style = ZillitTheme.typography.bodySmall,
         color = ZillitTheme.colors.danger,
     )

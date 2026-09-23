@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.purchaseorder.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
@@ -148,7 +150,7 @@ internal class PoEntryActions(
     private fun sendVendorEmail(id: String, allowResend: Boolean) {
         val order = vm.ui.orderById(id) ?: return
         if (!PoAccess.canSendVendorEmail(order, vm.ui.viewer, allowResend)) {
-            vm.fail("This order cannot be sent to its vendor from here.")
+            vm.fail(str(S.desktop_po_cannot_send_to_vendor))
             return
         }
         vm.update { copy(busy = true, entry = entry?.copy(sending = true)) }
@@ -161,9 +163,9 @@ internal class PoEntryActions(
                             busy = false,
                             entry = entry?.copy(sending = false),
                             notice = if (receipt.to.isBlank()) {
-                                "Sent to the vendor"
+                                str(S.desktop_po_sent_to_the_vendor)
                             } else {
-                                "Sent to ${receipt.to}"
+                                str(S.desktop_po_sent_to, receipt.to)
                             },
                             detail = detail?.takeIf { it.id == id }
                                 ?.copy(emailAt = receipt.at ?: vm.nowMillis(), emailBy = receipt.by)
@@ -199,7 +201,7 @@ internal class PoEntryActions(
     private fun process(id: String) {
         val order = vm.ui.orderById(id)
         if (order != null && !PoAccess.canProcess(order, vm.ui.viewer)) {
-            vm.fail("This order is not yours to process.")
+            vm.fail(str(S.desktop_po_not_yours_to_process))
             return
         }
         vm.update { copy(busy = true) }
@@ -253,15 +255,15 @@ internal class PoEntryActions(
         if (!entry.balances(order)) {
             vm.fail(
                 if (post) {
-                    "Coded lines must match the PO total before you can post"
+                    str(S.desktop_po_coded_lines_must_match_post)
                 } else {
-                    "Coded lines must match the PO total before you can save"
+                    str(S.desktop_po_coded_lines_must_match_save)
                 },
             )
             return
         }
         if (post && entry.effectiveDate == null) {
-            vm.fail("Enter an effective date before posting to the ledger")
+            vm.fail(str(S.desktop_po_effective_date_before_posting))
             return
         }
         vm.update { copy(entry = entry.copy(saving = !post, posting = post)) }
@@ -277,7 +279,7 @@ internal class PoEntryActions(
                 is ZillitResult.Success -> if (post) {
                     postToLedger(order.id)
                 } else {
-                    vm.update { copy(entry = entry.copy(saving = false), notice = "Saved") }
+                    vm.update { copy(entry = entry.copy(saving = false), notice = str(S.saved)) }
                     vm.load(vm.ui.destination)
                 }
 
@@ -295,7 +297,12 @@ internal class PoEntryActions(
                 // `detail` goes with it: the dialog that started this still held
                 // the pre-post order and read "Acct Entered" over a posted one.
                 vm.update {
-                    copy(entry = null, detail = null, notice = "Order posted", destination = PoDestination.Queue)
+                    copy(
+                        entry = null,
+                        detail = null,
+                        notice = str(S.desktop_order_posted),
+                        destination = PoDestination.Queue,
+                    )
                 }
                 vm.load(PoDestination.Queue)
             }
@@ -320,7 +327,7 @@ internal class PoEntryActions(
         val viewer = vm.ui.viewer
         val eligible = ids.mapNotNull { vm.ui.orderById(it) }.filter { PoAccess.canReassign(it, viewer) }
         if (eligible.isEmpty()) {
-            vm.fail("None of the selected orders can be reassigned.")
+            vm.fail(str(S.desktop_po_none_can_be_reassigned))
             return
         }
         vm.update {
@@ -329,9 +336,9 @@ internal class PoEntryActions(
                     orderId = eligible.first().id,
                     ids = eligible.map { it.id },
                     label = if (eligible.size == 1) {
-                        eligible.first().number.ifBlank { "this order" }
+                        eligible.first().number.ifBlank { str(S.desktop_po_this_order) }
                     } else {
-                        "${eligible.size} POs"
+                        str(S.desktop_po_count_pos, eligible.size)
                     },
                 ),
             )
@@ -342,12 +349,12 @@ internal class PoEntryActions(
         val dialog = vm.ui.reassign ?: return
         val assignee = dialog.userId
         if (assignee.isNullOrBlank()) {
-            vm.fail("Choose who the order goes to.")
+            vm.fail(str(S.desktop_po_choose_who_it_goes_to))
             return
         }
         val reason = dialog.resolvedReason
         if (reason.isBlank()) {
-            vm.fail("A reason is required.")
+            vm.fail(str(S.desktop_a_reason_is_required))
             return
         }
         vm.update { copy(reassign = dialog.copy(saving = true)) }
@@ -366,7 +373,12 @@ internal class PoEntryActions(
                             if (done == 0) {
                                 answer.error.localised()
                             } else {
-                                "$done of ${dialog.ids.size} reassigned, then: ${answer.error.localised()}"
+                                str(
+                                    S.desktop_po_reassigned_then_failed,
+                                    done,
+                                    dialog.ids.size,
+                                    answer.error.localised(),
+                                )
                             },
                         )
                         vm.load(vm.ui.destination)
@@ -378,7 +390,11 @@ internal class PoEntryActions(
                 copy(
                     reassign = null,
                     selection = emptySet(),
-                    notice = if (done == 1) "Order reassigned" else "$done orders reassigned",
+                    notice = if (done == 1) {
+                        str(S.desktop_order_reassigned)
+                    } else {
+                        str(S.desktop_po_orders_reassigned, done)
+                    },
                 )
             }
             vm.load(vm.ui.destination)
@@ -389,7 +405,8 @@ internal class PoEntryActions(
 
     private fun askClose(id: String) {
         val order = vm.ui.orderById(id) ?: return
-        vm.update { copy(closePo = PoCloseState(orderId = id, number = order.number.ifBlank { "this order" })) }
+        val number = order.number.ifBlank { str(S.desktop_po_this_order) }
+        vm.update { copy(closePo = PoCloseState(orderId = id, number = number)) }
     }
 
     private fun closeOne() {
@@ -398,7 +415,7 @@ internal class PoEntryActions(
         vm.launchWork {
             when (val answer = repository.close(dialog.orderId, dialog.reason.takeIf { it.isNotBlank() })) {
                 is ZillitResult.Success -> {
-                    vm.update { copy(closePo = null, detail = null, notice = "Order closed") }
+                    vm.update { copy(closePo = null, detail = null, notice = str(S.desktop_order_closed)) }
                     vm.load(vm.ui.destination)
                 }
 
@@ -421,7 +438,7 @@ internal class PoEntryActions(
     private fun closeOffPeriod() {
         val dialog = vm.ui.closeOff ?: return
         if (!dialog.confirmed) {
-            vm.fail("Tick the confirmation before closing off the period.")
+            vm.fail(str(S.desktop_po_tick_confirmation_close_off))
             return
         }
         vm.update { copy(closeOff = dialog.copy(saving = true)) }
@@ -432,7 +449,7 @@ internal class PoEntryActions(
                         copy(
                             closeOff = null,
                             selection = emptySet(),
-                            notice = "${dialog.ids.size} order(s) closed",
+                            notice = str(S.desktop_po_orders_closed, dialog.ids.size),
                         )
                     }
                     vm.load(vm.ui.destination)
@@ -450,7 +467,7 @@ internal class PoEntryActions(
         val dialog = vm.ui.bulkDate ?: return
         val date = dialog.date
         if (date == null) {
-            vm.fail("Pick an effective date.")
+            vm.fail(str(S.desktop_po_pick_an_effective_date))
             return
         }
         vm.update { copy(bulkDate = dialog.copy(saving = true)) }
@@ -458,7 +475,7 @@ internal class PoEntryActions(
             when (val answer = repository.bulkSetEffectiveDate(dialog.ids, date)) {
                 is ZillitResult.Success -> {
                     vm.update {
-                        copy(bulkDate = null, selection = emptySet(), notice = "Effective date set")
+                        copy(bulkDate = null, selection = emptySet(), notice = str(S.desktop_po_effective_date_set))
                     }
                     vm.load(vm.ui.destination)
                 }

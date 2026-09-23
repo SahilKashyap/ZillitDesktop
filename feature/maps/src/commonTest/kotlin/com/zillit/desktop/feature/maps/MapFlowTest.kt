@@ -96,7 +96,13 @@ class MapFlowTest {
         attachments = listOf(MapAttachment(media = "map/1/a.jpg", bucket = "b", region = "r", name = "a.jpg")),
     )
 
-    private val hotel = baseCamp.copy(id = "l2", name = "Sea View", type = "Hotel", subTypes = emptyList(), attachments = emptyList())
+    private val hotel = baseCamp.copy(
+        id = "l2",
+        name = "Sea View",
+        type = "Hotel",
+        subTypes = emptyList(),
+        attachments = emptyList(),
+    )
 
     private inner class Tool(
         val repo: FakeMapRepository,
@@ -145,7 +151,11 @@ class MapFlowTest {
     }
 
     private suspend fun TestScope.previewAdd(tool: Tool, point: LatLng, name: String = "Spot") =
-        page(tool, """{"type":"preview-action","action":"add","lat":${point.lat},"lng":${point.lng},"name":"$name","address":""}""")
+        page(
+            tool,
+            """{"type":"preview-action","action":"add","lat":${point.lat},""" +
+                """"lng":${point.lng},"name":"$name","address":""}""",
+        )
 
     private fun photo(name: String) = PickedPhoto(name, "image/jpeg", byteArrayOf(1, 2, 3))
 
@@ -188,7 +198,10 @@ class MapFlowTest {
 
     @Test
     fun `a pin inside the active zone opens the form at once, with the address filled in`() = runTest(dispatcher) {
-        val repo = FakeMapRepository(cityList = mutableListOf(mumbai), zonesByCity = mutableMapOf("mumbai" to listOf(zone("za"))))
+        val repo = FakeMapRepository(
+            cityList = mutableListOf(mumbai),
+            zonesByCity = mutableMapOf("mumbai" to listOf(zone("za"))),
+        )
         val tool = open(Tool(repo))
 
         previewAdd(tool, north(1.0))
@@ -203,7 +216,10 @@ class MapFlowTest {
 
     @Test
     fun `outside the zone asks first, and only Yes pins`() = runTest(dispatcher) {
-        val repo = FakeMapRepository(cityList = mutableListOf(mumbai), zonesByCity = mutableMapOf("mumbai" to listOf(zone("za"))))
+        val repo = FakeMapRepository(
+            cityList = mutableListOf(mumbai),
+            zonesByCity = mutableMapOf("mumbai" to listOf(zone("za"))),
+        )
         val tool = open(Tool(repo))
 
         previewAdd(tool, north(6.0))
@@ -253,7 +269,7 @@ class MapFlowTest {
         assertEquals(far, form.point)
         assertEquals("Andheri West", form.name)
         assertNull(tool.state.dialog)
-        assertTrue("City added successfully" in tool.notices)
+        assertTrue("City Added Successfully" in tool.notices)
     }
 
     @Test
@@ -294,7 +310,10 @@ class MapFlowTest {
 
     @Test
     fun `a dropped pin asks, and Move sends the whole record with the new point and address`() = runTest(dispatcher) {
-        val repo = FakeMapRepository(cityList = mutableListOf(mumbai), locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)))
+        val repo = FakeMapRepository(
+            cityList = mutableListOf(mumbai),
+            locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)),
+        )
         val tool = open(Tool(repo))
         val dropped = north(3.0)
 
@@ -329,7 +348,10 @@ class MapFlowTest {
 
     @Test
     fun `a cancelled or refused move sends the pin home`() = runTest(dispatcher) {
-        val repo = FakeMapRepository(cityList = mutableListOf(mumbai), locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)))
+        val repo = FakeMapRepository(
+            cityList = mutableListOf(mumbai),
+            locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)),
+        )
         val tool = open(Tool(repo))
         val dropped = north(3.0)
         val drag = """{"type":"marker-dragged","id":"l1","lat":${dropped.lat},"lng":${dropped.lng}}"""
@@ -484,8 +506,13 @@ class MapFlowTest {
         val bus = RightsRequestBus()
         val asked = mutableListOf<RightsRequest>()
         jobs += CoroutineScope(dispatcher).launch { bus.requests.collect(asked::add) }
-        val repo = FakeMapRepository(cityList = mutableListOf(mumbai), locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)))
-        val tool = open(Tool(repo, viewer = MapViewer(userId = "u1", canView = true, canPost = false, ready = true), rights = bus))
+        val repo = FakeMapRepository(
+            cityList = mutableListOf(mumbai),
+            locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)),
+        )
+        val tool = open(
+            Tool(repo, viewer = MapViewer(userId = "u1", canView = true, canPost = false, ready = true), rights = bus),
+        )
 
         send(tool, MapEvent.Toolbar.TogglePinMode, MapEvent.Cities.Add, MapEvent.Zones.Add)
         page(tool, """{"type":"marker-action","action":"edit","id":"l1"}""")
@@ -601,7 +628,10 @@ class MapFlowTest {
 
     @Test
     fun `a search result clears a filter that hides it and flies to its pin`() = runTest(dispatcher) {
-        val repo = FakeMapRepository(cityList = mutableListOf(mumbai), locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp, hotel)))
+        val repo = FakeMapRepository(
+            cityList = mutableListOf(mumbai),
+            locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp, hotel)),
+        )
         val tool = open(Tool(repo))
 
         send(tool, MapEvent.Bars.ToggleTypeFilter("Hotel"))
@@ -618,7 +648,10 @@ class MapFlowTest {
     @Test
     fun `a location shares the spec's text to the people picked`() = runTest(dispatcher) {
         val share = FakeShare(listOf(SharePerson("u2", "Zed"), SharePerson("u3", "Amy")))
-        val repo = FakeMapRepository(cityList = mutableListOf(mumbai), locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)))
+        val repo = FakeMapRepository(
+            cityList = mutableListOf(mumbai),
+            locationsByCity = mutableMapOf("mumbai" to listOf(baseCamp)),
+        )
         val tool = open(Tool(repo, share = share))
 
         send(tool, MapEvent.Locations.Share("l1"))

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.budget.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.time.Instant
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
@@ -127,10 +129,10 @@ object BudgetRules {
     fun groupComplaint(name: String, memberIds: Collection<String>): String? {
         val trimmed = name.trim()
         return when {
-            trimmed.isEmpty() -> "Group name is mandatory."
-            memberIds.isEmpty() -> "Please select a member to proceed."
+            trimmed.isEmpty() -> str(S.desktop_budget_group_name_mandatory)
+            memberIds.isEmpty() -> str(S.desktop_budget_select_member)
             trimmed.length < GROUP_NAME_MIN || trimmed.length > GROUP_NAME_MAX ->
-                "A group name is between $GROUP_NAME_MIN and $GROUP_NAME_MAX characters."
+                str(S.desktop_budget_group_name_length, GROUP_NAME_MIN, GROUP_NAME_MAX)
             else -> null
         }
     }

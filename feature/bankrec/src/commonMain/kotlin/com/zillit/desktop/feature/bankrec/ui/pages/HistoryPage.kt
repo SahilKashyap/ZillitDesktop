@@ -12,6 +12,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.ui.BankRecEvent
 import com.zillit.desktop.feature.bankrec.ui.BankRecUiState
@@ -45,11 +47,11 @@ fun ColumnScope.HistoryPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
                 value = state.historyAccountId,
                 options = state.bankAccounts.map { it.id },
                 onSelect = { onEvent(BankRecEvent.SetHistoryAccount(it)) },
-                label = { id -> state.account(id)?.displayName?.ifBlank { null } ?: "Bank account" },
+                label = { id -> state.account(id)?.displayName?.ifBlank { null } ?: str(S.dm_pay_card_bank) },
                 modifier = Modifier.widthIn(min = 200.dp, max = 300.dp),
             )
         }
-        SelectionActions(state, selected, PeriodScope.History, onEvent, exportLabel = "Export PDF")
+        SelectionActions(state, selected, PeriodScope.History, onEvent, exportLabel = str(S.recce_export_pdf))
     }
 
     BrCard(Modifier.fillMaxWidth()) {
@@ -73,13 +75,13 @@ fun ColumnScope.HistoryPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
                     else -> onEvent(BankRecEvent.OpenPeriodDetail(period.id))
                 }
             },
-            empty = { BrEmpty(title = "No reconciliation periods found", icon = ZillitIcons.Clock) },
+            empty = { BrEmpty(title = str(S.desktop_br_no_periods_found), icon = ZillitIcons.Clock) },
             columns = listOf(
                 selectColumn(rows, selected, PeriodScope.History, onEvent),
-                BrColumn("Month", width = 84.dp) { period ->
+                BrColumn(str(S.bs_month), width = 84.dp) { period ->
                     ZillitText(BankRecFormat.periodLabel(period), style = mono(13.sp, FontWeight.Medium), maxLines = 1)
                 },
-                BrColumn("Account", weight = 1.3f) { period ->
+                BrColumn(str(S.ah_account_label), weight = 1.3f) { period ->
                     val account = state.account(period.bankAccountId)
                     BrBankIdentity(
                         name = account?.displayName.orEmpty(),
@@ -88,7 +90,7 @@ fun ColumnScope.HistoryPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
                         compact = true,
                     )
                 },
-                BrColumn("Opening", width = 108.dp, align = BrAlign.End) { period ->
+                BrColumn(str(S.desktop_br_opening_column), width = 108.dp, align = BrAlign.End) { period ->
                     ZillitText(
                         BankRecFormat.plainMoney(period.openingBank, state.currencyOf(period)),
                         style = mono(12.5.sp),
@@ -96,7 +98,7 @@ fun ColumnScope.HistoryPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
                         maxLines = 1,
                     )
                 },
-                BrColumn("Closing", width = 108.dp, align = BrAlign.End) { period ->
+                BrColumn(str(S.desktop_br_closing_column), width = 108.dp, align = BrAlign.End) { period ->
                     ZillitText(
                         BankRecFormat.plainMoney(period.closingBank, state.currencyOf(period)),
                         style = mono(12.5.sp),
@@ -104,18 +106,18 @@ fun ColumnScope.HistoryPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
                         maxLines = 1,
                     )
                 },
-                BrColumn("Txns", width = 44.dp, align = BrAlign.End) { period ->
+                BrColumn(str(S.desktop_txns), width = 44.dp, align = BrAlign.End) { period ->
                     ZillitText(
                         period.totalTxns.toString(),
                         style = mono(12.5.sp),
                         color = ZillitTheme.colors.textSecondary,
                     )
                 },
-                BrColumn("Fraud", width = 76.dp) { period ->
+                BrColumn(str(S.desktop_fraud), width = 76.dp) { period ->
                     val (label, tone) = period.fraudBadge
                     BrBadge(label, tone)
                 },
-                BrColumn("FX Var", width = 88.dp, align = BrAlign.End) { period ->
+                BrColumn(str(S.desktop_br_fx_var), width = 88.dp, align = BrAlign.End) { period ->
                     ZillitText(
                         BankRecFormat.plainMoney(period.fxVarianceTotal, state.currencyOf(period)),
                         style = mono(12.5.sp),
@@ -123,9 +125,9 @@ fun ColumnScope.HistoryPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
                         maxLines = 1,
                     )
                 },
-                BrColumn("Status", width = 96.dp) { period -> BrBadge(period.status.label, period.status.tone) },
-                BrColumn("Signed Off", weight = 1.2f) { period -> SignedOffCell(period) },
-                BrColumn("Actions", width = 136.dp, align = BrAlign.End) { period ->
+                BrColumn(str(S.status), width = 96.dp) { period -> BrBadge(period.status.label, period.status.tone) },
+                BrColumn(str(S.desktop_signed_off_caps), weight = 1.2f) { period -> SignedOffCell(period) },
+                BrColumn(str(S.dd_actions), width = 136.dp, align = BrAlign.End) { period ->
                     if (!selecting) RowActions(period, onEvent, viewOpensDetail = true)
                 },
             ),

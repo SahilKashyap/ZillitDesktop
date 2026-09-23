@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.LinkQuality
 
 /**
@@ -92,9 +94,9 @@ private fun LinkQuality.fill(colors: com.zillit.desktop.core.designsystem.Zillit
 
 private val LinkQuality.word: String
     get() = when (this) {
-        LinkQuality.Poor -> "Weak"
-        LinkQuality.Bad -> "Poor"
-        LinkQuality.Down -> "Offline"
+        LinkQuality.Poor -> str(S.desktop_link_weak)
+        LinkQuality.Bad -> str(S.desktop_link_poor)
+        LinkQuality.Down -> str(S.offline)
         else -> ""
     }
 

@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
@@ -85,7 +87,7 @@ import com.zillit.desktop.feature.productionreport.ui.theme.ReportTheme
 internal fun CommentsDialog(state: ReportUiState, dialog: ReportDialog.Comments, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
     ReportModal(
-        title = "Comments - ${dialog.reportName.ifBlank { "Production Report" }}",
+        title = str(S.desktop_comment_count_title, dialog.reportName.ifBlank { str(S.pr_app_name) }),
         onClose = { onEvent(DialogEvent.Dismiss) },
         width = 600.dp,
         scrollable = false,
@@ -121,7 +123,7 @@ internal fun CommentsDialog(state: ReportUiState, dialog: ReportDialog.Comments,
                 Composer(dialog, onEvent, Modifier.padding(top = 12.dp))
             } else {
                 Text(
-                    "Comments are closed on a report approved for publishing.",
+                    dialog.closedNote,
                     style = reportText(11.sp),
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 10.dp),
@@ -144,7 +146,7 @@ private fun ThreadNote(loading: Boolean) {
         if (loading) {
             CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
             Text(
-                "Loading...",
+                str(S.pr_loading),
                 style = reportText(13.sp),
                 color = colors.textMeta,
                 modifier = Modifier.padding(top = 10.dp),
@@ -162,7 +164,7 @@ private fun ThreadNote(loading: Boolean) {
                 )
             }
             Text(
-                "No comments yet.",
+                str(S.pr_no_comments),
                 style = reportText(13.sp, FontWeight.Medium),
                 color = colors.textMeta,
                 modifier = Modifier.padding(top = 10.dp),
@@ -181,7 +183,7 @@ private fun CommentItem(
     val colors = ReportTheme.colors
     val isMe = state.me.isNotBlank() && comment.authorId == state.me
     val member = state.member(comment.authorId)
-    val name = member?.fullName?.ifBlank { null } ?: comment.authorName.ifBlank { "Unknown" }
+    val name = member?.fullName?.ifBlank { null } ?: comment.authorName.ifBlank { str(S.desktop_unknown) }
     val role = member?.designation?.ifBlank { null } ?: comment.authorRole
     val edited = comment.id in dialog.editedIds ||
         (comment.updatedOn != null && comment.createdOn != null && comment.updatedOn != comment.createdOn)
@@ -214,7 +216,13 @@ private fun CommentItem(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(formatDateTime(comment.createdOn), style = reportText(10.sp), color = colors.textMuted)
-                    if (edited) Text("Edited", style = reportText(10.sp, FontWeight.Medium), color = Color(0xFFF87171))
+                    if (edited) {
+                        Text(
+                            str(S.edited),
+                            style = reportText(10.sp, FontWeight.Medium),
+                            color = Color(0xFFF87171),
+                        )
+                    }
                 }
             }
         }
@@ -277,14 +285,14 @@ private fun Bubble(
             dialog.confirmDeleteId == comment.id -> {
                 Text(comment.text, style = reportText(13.sp, lineHeight = 21.sp), color = ink.copy(alpha = 0.6f))
                 Text(
-                    "Delete this comment?",
+                    str(S.desktop_delete_this_comment),
                     style = reportText(12.sp, FontWeight.SemiBold),
                     color = colors.red,
                     modifier = Modifier.padding(top = 10.dp),
                 )
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ReportButton(
-                        "Cancel",
+                        str(S.cancel),
                         { onEvent(DialogEvent.CancelDeleteComment) },
                         kind = ButtonKind.Outline,
                         height = 26.dp,
@@ -292,7 +300,7 @@ private fun Bubble(
                         horizontalPadding = 10.dp,
                     )
                     ReportButton(
-                        "Delete",
+                        str(S.delete),
                         { onEvent(DialogEvent.ConfirmDeleteComment) },
                         kind = ButtonKind.Danger,
                         height = 26.dp,
@@ -337,7 +345,7 @@ private fun EditBox(dialog: ReportDialog.Comments, onEvent: (ReportEvent) -> Uni
         )
         Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ReportButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.CancelCommentEdit) },
                 kind = ButtonKind.Ghost,
                 icon = ZillitIcons.Close,
@@ -347,7 +355,7 @@ private fun EditBox(dialog: ReportDialog.Comments, onEvent: (ReportEvent) -> Uni
                 horizontalPadding = 8.dp,
             )
             ReportButton(
-                if (dialog.savingEdit) "Saving..." else "Save",
+                if (dialog.savingEdit) str(S.ah_saving) else str(S.save),
                 { onEvent(DialogEvent.SaveCommentEdit) },
                 kind = ButtonKind.Accent,
                 icon = ZillitIcons.Check,
@@ -387,7 +395,7 @@ private fun CommentActions(
         ) {
             Icon(
                 ZillitIcons.ChevronDown,
-                contentDescription = "Comment actions",
+                contentDescription = str(S.desktop_comment_actions),
                 tint = if (hovered) colors.accent else colors.textTertiary,
                 modifier = Modifier.size(12.dp),
             )
@@ -402,10 +410,10 @@ private fun CommentActions(
         ) {
             Column(Modifier.widthIn(min = 150.dp).padding(horizontal = 6.dp)) {
                 val entries = listOf(
-                    MenuEntry.Action("edit", "Edit", ZillitIcons.Edit, MenuTone.Primary, enabled = !deleting) {
+                    MenuEntry.Action("edit", str(S.edit), ZillitIcons.Edit, MenuTone.Primary, enabled = !deleting) {
                         onEvent(DialogEvent.StartCommentEdit(comment.id))
                     },
-                    MenuEntry.Action("delete", "Delete", ZillitIcons.Trash, MenuTone.Danger, enabled = !deleting) {
+                    MenuEntry.Action("delete", str(S.delete), ZillitIcons.Trash, MenuTone.Danger, enabled = !deleting) {
                         onEvent(DialogEvent.AskDeleteComment(comment.id))
                     },
                 )
@@ -481,7 +489,9 @@ private fun Composer(dialog: ReportDialog.Comments, onEvent: (ReportEvent) -> Un
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.weight(1f).padding(vertical = 4.dp)) {
-            if (dialog.draft.isEmpty()) Text("Type a comment...", style = reportText(14.sp), color = colors.textMuted)
+            if (dialog.draft.isEmpty()) {
+                Text(str(S.desktop_type_a_comment), style = reportText(14.sp), color = colors.textMuted)
+            }
             BasicTextField(
                 value = dialog.draft,
                 onValueChange = { onEvent(DialogEvent.EditCommentDraft(it)) },
@@ -510,7 +520,12 @@ private fun Composer(dialog: ReportDialog.Comments, onEvent: (ReportEvent) -> Un
             if (dialog.sending) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
             } else {
-                Icon(ZillitIcons.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(
+                    ZillitIcons.Send,
+                    contentDescription = str(S.send),
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
             }
         }
     }

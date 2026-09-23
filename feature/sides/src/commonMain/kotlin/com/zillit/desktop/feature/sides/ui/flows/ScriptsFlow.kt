@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.sides.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.ScenePage
 import com.zillit.desktop.feature.sides.domain.Script
 import com.zillit.desktop.feature.sides.domain.ScriptVersion
@@ -101,7 +103,7 @@ internal class ScriptsFlow(
 
     fun replaceWith(script: Script, file: PickedDoc) {
         if (!SidesRules.isPdfOrFdx(file.name)) {
-            store.failed("Only PDF or .fdx files are allowed")
+            store.failed(str(S.desktop_only_pdf_fdx_allowed))
             return
         }
         store.update { copy(scripts = scripts.copy(replacing = scripts.replacing + script.id)) }
@@ -118,7 +120,7 @@ internal class ScriptsFlow(
             store.update { copy(scripts = scripts.copy(replacing = scripts.replacing - script.id)) }
             when (outcome) {
                 is ZillitResult.Success -> {
-                    store.notice("Script file updated")
+                    store.notice(str(S.desktop_sides_script_file_updated))
                     load()
                 }
                 is ZillitResult.Failure -> store.failed(outcome.error)
@@ -130,7 +132,7 @@ internal class ScriptsFlow(
         val isCurrent = version.id == script.currentVersion?.id
         pdf.open(
             title = if (isCurrent) script.title else version.fileName.ifBlank { version.label },
-            subtitle = if (isCurrent) version.label else "Version ${version.versionNumber}",
+            subtitle = if (isCurrent) version.label else str(S.desktop_version_number, version.versionNumber),
             fileName = SidesRules.downloadName(script.title, "script"),
         ) { store.repository.versionDownloadUrl(version.id) }
     }
@@ -148,9 +150,8 @@ internal class ScriptsFlow(
                 dialog = SidesDialog.Confirm(
                     kind = ConfirmKind.Script,
                     id = script.id,
-                    title = "Delete script?",
-                    message = "Deleting \"${script.title}\" also deletes the pages uploaded under it. " +
-                        "This can't be undone.",
+                    title = str(S.desktop_sides_delete_script_title),
+                    message = str(S.desktop_sides_delete_script_message, script.title),
                 ),
             )
         }
@@ -158,7 +159,7 @@ internal class ScriptsFlow(
 
     suspend fun delete(id: String): Boolean = when (val deleted = store.repository.deleteScript(id)) {
         is ZillitResult.Success -> {
-            store.notice("Script deleted")
+            store.notice(str(S.desktop_sides_script_deleted))
             load()
             true
         }
@@ -208,7 +209,7 @@ internal class ScriptsFlow(
 
     fun viewPage(page: ScenePage) = pdf.open(
         title = page.sceneNumber,
-        subtitle = page.description.ifBlank { "Page" },
+        subtitle = page.description.ifBlank { str(S.page) },
         fileName = SidesRules.downloadName(page.fileName.ifBlank { page.sceneNumber }, "page"),
     ) { store.repository.scenePageDownloadUrl(page.id) }
 
@@ -219,8 +220,8 @@ internal class ScriptsFlow(
                 dialog = SidesDialog.Confirm(
                     kind = ConfirmKind.Page,
                     id = page.id,
-                    title = "Delete page?",
-                    message = "This permanently deletes \"${page.sceneNumber}\".",
+                    title = str(S.desktop_sides_delete_page_title),
+                    message = str(S.desktop_delete_permanently_named, page.sceneNumber),
                 ),
             )
         }
@@ -228,7 +229,7 @@ internal class ScriptsFlow(
 
     suspend fun deletePage(id: String): Boolean = when (val deleted = store.repository.deleteScenePage(id)) {
         is ZillitResult.Success -> {
-            store.notice("Page deleted")
+            store.notice(str(S.desktop_sides_page_deleted))
             store.current.scripts.pages.entries.firstOrNull { (_, pages) -> pages.any { it.id == id } }
                 ?.let { reloadPages(it.key) }
             true

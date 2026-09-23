@@ -41,6 +41,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Drag-to-reorder scene chips — the web's `DraggableSceneOrder`.
@@ -82,7 +84,7 @@ internal fun DraggableSceneOrder(
         ) {
             if (order.isEmpty()) {
                 ZillitText(
-                    text = "Drag chips to reorder — or add scenes back below.",
+                    text = str(S.desktop_sides_order_add_back_hint),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -135,7 +137,7 @@ internal fun DraggableSceneOrder(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 ZillitText(
-                    text = "Add back",
+                    text = str(S.desktop_add_back),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                     modifier = Modifier.padding(vertical = 5.dp),

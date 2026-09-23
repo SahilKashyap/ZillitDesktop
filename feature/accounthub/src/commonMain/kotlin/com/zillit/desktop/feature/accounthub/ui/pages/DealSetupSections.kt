@@ -17,6 +17,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.DealCondition
 import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.ScheduleRules
@@ -53,19 +55,19 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         onEvent(AccountHubEvent.EditSchedule(next))
 
     SectionShell(
-        title = "Production Schedule",
-        description = "Set Production Schedules",
+        title = str(S.desktop_production_schedule),
+        description = str(S.desktop_set_production_schedules),
         dirty = setup.schedule.dirty,
         saving = setup.schedule.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Schedule)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.Schedule)) },
         editable = editable,
     ) {
-        DateRangeRow("Deal dates", schedule.overall, editable, errors[ScheduleRules.OVERALL]) {
+        DateRangeRow(str(S.desktop_deal_dates), schedule.overall, editable, errors[ScheduleRules.OVERALL]) {
             update(schedule.copy(overall = it))
         }
         DateRangeRow(
-            "Prep",
+            str(S.dm_ds_phase_prep),
             schedule.prep,
             editable,
             errors[ScheduleRules.PREP],
@@ -75,7 +77,7 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
             update(schedule.copy(prep = it))
         }
         DateRangeRow(
-            "Shoot",
+            str(S.dm_ds_phase_shoot),
             schedule.shoot,
             editable,
             errors[ScheduleRules.SHOOT],
@@ -85,7 +87,7 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
             update(schedule.copy(shoot = it))
         }
         DateRangeRow(
-            "Wrap",
+            str(S.dm_ds_phase_wrap),
             schedule.wrap,
             editable,
             errors[ScheduleRules.WRAP],
@@ -95,9 +97,9 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
             update(schedule.copy(wrap = it))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            FieldLabel("Custom days", modifier = Modifier.weight(1f))
+            FieldLabel(str(S.dm_ds_custom_days_title), modifier = Modifier.weight(1f))
             if (editable) {
-                GhostAddButton("Add custom day", onClick = {
+                GhostAddButton(str(S.desktop_add_custom_day), onClick = {
                     update(
                         schedule.copy(
                             customDays = schedule.customDays + CustomDayText(
@@ -108,7 +110,7 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
                 })
             }
         }
-        FieldHint("Named overlays on the schedule — Night Shoot, Second Unit. They may sit inside any phase.")
+        FieldHint(str(S.desktop_hub_named_overlays_on_the_schedule_night_shoot_second_unit_they))
         schedule.customDays.forEachIndexed { index, day ->
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 Row(
@@ -127,7 +129,7 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
                                 ),
                             )
                         },
-                        placeholder = "e.g. Night Shoot",
+                        placeholder = str(S.desktop_hub_e_g_night_shoot),
                         enabled = editable,
                         modifier = Modifier.weight(1f),
                     )
@@ -164,7 +166,7 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
                     if (editable) {
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Remove custom day",
+                            contentDescription = str(S.desktop_remove_custom_day),
                             onClick = {
                                 update(
                                     schedule.copy(
@@ -247,16 +249,15 @@ internal fun DealConditionsSection(state: AccountHubUiState, onEvent: (AccountHu
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Standard Deal Conditions",
-        description = "Default clauses inserted into the 'Terms & Conditions' step of every new deal memo. Crew can " +
-            "override per-memo.",
+        title = str(S.desktop_standard_deal_conditions),
+        description = str(S.desktop_hub_default_clauses_inserted_into_the_terms_conditions_step_of_every),
         dirty = section.dirty,
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.DealConditions)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.DealConditions)) },
         editable = editable,
     ) {
-        if (conditions.isEmpty()) EmptyLine("No standard conditions yet.")
+        if (conditions.isEmpty()) EmptyLine(str(S.desktop_hub_no_standard_conditions_yet))
         conditions.forEachIndexed { index, condition ->
             ConditionRow(
                 index = index,
@@ -274,7 +275,7 @@ internal fun DealConditionsSection(state: AccountHubUiState, onEvent: (AccountHu
         }
         if (!editable) return@SectionShell
         GhostAddButton(
-            text = "Add condition",
+            text = str(S.desktop_email_rule_add_condition),
             onClick = {
                 onEvent(AccountHubEvent.EditDealConditions(conditions + DealCondition(
                     id = "cond-new-${conditions.size}",
@@ -312,7 +313,7 @@ private fun ConditionRow(
         ZillitTextField(
             value = condition.condition,
             onValueChange = { onChange(condition.copy(condition = it)) },
-            placeholder = "Clause text…",
+            placeholder = str(S.desktop_clause_text),
             enabled = editable,
             singleLine = false,
             modifier = Modifier.weight(1f),
@@ -320,19 +321,19 @@ private fun ConditionRow(
         if (!editable) return@Row
         ZillitIconButton(
             icon = ZillitIcons.ChevronUp,
-            contentDescription = "Move up",
+            contentDescription = str(S.dd_cd_move_up),
             onClick = { onMove(-1) },
             enabled = index > 0,
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronDown,
-            contentDescription = "Move down",
+            contentDescription = str(S.dd_cd_move_down),
             onClick = { onMove(1) },
             enabled = !last,
         )
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Remove clause",
+            contentDescription = str(S.desktop_remove_clause),
             onClick = onRemove,
             tint = ZillitTheme.colors.danger,
         )
@@ -349,17 +350,15 @@ internal fun PayrollBureausSection(state: AccountHubUiState, onEvent: (AccountHu
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Payroll Bureau",
-        description = "Bureaus this production hands payroll off to. Each entry surfaces in the payroll-run picker " +
-            "so " +
-            "the coordinator can choose where to send the batch.",
+        title = str(S.desktop_payroll_bureau),
+        description = str(S.desktop_hub_bureaus_this_production_hands_payroll_off_to_each_entry_surfaces),
         dirty = section.dirty,
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.PayrollBureaus)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.PayrollBureaus)) },
         editable = editable,
     ) {
-        if (bureaus.isEmpty()) EmptyLine("No payroll bureaux yet.")
+        if (bureaus.isEmpty()) EmptyLine(str(S.desktop_hub_no_payroll_bureaux_yet))
         bureaus.forEachIndexed { index, bureau ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -375,7 +374,7 @@ internal fun PayrollBureausSection(state: AccountHubUiState, onEvent: (AccountHu
                             ),
                         )
                     },
-                    placeholder = "Bureau title (e.g. Sargent-Disc)",
+                    placeholder = str(S.desktop_hub_bureau_title_e_g_sargent_disc_paren),
                     enabled = editable,
                     modifier = Modifier.weight(1f),
                 )
@@ -388,14 +387,14 @@ internal fun PayrollBureausSection(state: AccountHubUiState, onEvent: (AccountHu
                             ),
                         )
                     },
-                    placeholder = "Description — what this bureau handles, contact, cadence…",
+                    placeholder = str(S.desktop_hub_description_what_this_bureau_handles_contact_cadence),
                     enabled = editable,
                     modifier = Modifier.weight(WEIGHT_WIDE),
                 )
                 if (editable) {
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Remove bureau",
+                        contentDescription = str(S.desktop_remove_bureau),
                         onClick = {
                             onEvent(AccountHubEvent.EditPayrollBureaus(bureaus.filterIndexed { at, _ -> at != index }))
                         },
@@ -406,7 +405,7 @@ internal fun PayrollBureausSection(state: AccountHubUiState, onEvent: (AccountHu
         }
         if (!editable) return@SectionShell
         GhostAddButton(
-            "Add bureau",
+            str(S.desktop_add_bureau),
             onClick = {
                 onEvent(AccountHubEvent.EditPayrollBureaus(bureaus + PayrollBureau(id = "bureau-new-${bureaus.size}")))
             },
@@ -423,9 +422,8 @@ internal fun PayrollDefaultsSection(state: AccountHubUiState, onEvent: (AccountH
     val editable = state.viewer.canEdit
 
     SectionShell(
-        title = "Deal Memo — Payroll Defaults",
-        description = "Project-wide payroll sync settings applied to every deal memo. Moved here from the per-deal " +
-            "wizard.",
+        title = str(S.desktop_hub_deal_memo_payroll_defaults),
+        description = str(S.desktop_hub_project_wide_payroll_sync_settings_applied_to_every_deal_memo),
         dirty = setup.payrollDefaults.dirty,
         saving = setup.payrollDefaults.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.PayrollDefaults)) },
@@ -434,27 +432,31 @@ internal fun PayrollDefaultsSection(state: AccountHubUiState, onEvent: (AccountH
     ) {
         ToggleRow(
             label = "Auto-sync signed deals to payroll",
-            hint = "A signed deal memo is pushed to payroll without a manual step.",
+            hint = str(S.desktop_hub_a_signed_deal_memo_is_pushed_to_payroll_without_a),
             checked = defaults.autoSync,
             onCheckedChange = { onEvent(AccountHubEvent.EditPayrollDefaults(defaults.copy(autoSync = it))) },
             enabled = editable,
         )
         ToggleRow(
             label = "Notify payroll when a deal is signed",
-            hint = "The payroll team is e-mailed on every signature.",
+            hint = str(S.desktop_hub_the_payroll_team_is_e_mailed_on_every_signature),
             checked = defaults.notifyPayroll,
             onCheckedChange = { onEvent(AccountHubEvent.EditPayrollDefaults(defaults.copy(notifyPayroll = it))) },
             enabled = editable,
         )
         ToggleRow(
             label = "Attach the signed PDF",
-            hint = "The signed deal memo rides along with that notification.",
+            hint = str(S.desktop_hub_the_signed_deal_memo_rides_along_with_that_notification),
             checked = defaults.includePdf,
             onCheckedChange = { onEvent(AccountHubEvent.EditPayrollDefaults(defaults.copy(includePdf = it))) },
             enabled = editable,
         )
         if (!editable) {
-            ZillitNotice(text = "Read-only for you.", tone = StatusTone.Neutral, icon = ZillitIcons.Info)
+            ZillitNotice(
+                text = str(S.desktop_hub_read_only_for_you),
+                tone = StatusTone.Neutral,
+                icon = ZillitIcons.Info,
+            )
         }
     }
 }

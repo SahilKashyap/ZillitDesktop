@@ -7,6 +7,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.ui.pages.AdminDialogs
 import com.zillit.desktop.feature.settings.admin.ui.pages.CompanyDetailsPage
 import com.zillit.desktop.feature.settings.admin.ui.pages.CrewOrderPage
@@ -101,18 +103,18 @@ private fun Unavailable(
     modifier: Modifier,
 ) {
     val reason = when {
-        production.isPersonal -> "A personal project has no crew, so there is nothing here to set."
-        else -> "This project runs no second or splinter units."
+        production.isPersonal -> str(S.desktop_personal_project_nothing_to_set)
+        else -> str(S.desktop_no_second_or_splinter_units)
     }
 
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         com.zillit.desktop.core.designsystem.component.ZillitEmptyState(
-            title = "${destination.title} is not part of this project",
+            title = str(S.desktop_not_part_of_this_project, destination.title),
             message = reason,
             icon = com.zillit.desktop.core.designsystem.icon.ZillitIcons.Info,
             action = {
                 com.zillit.desktop.core.designsystem.component.ZillitButton(
-                    text = "Back to admin settings",
+                    text = str(S.desktop_back_to_admin_settings),
                     onClick = onBack,
                 )
             },

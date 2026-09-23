@@ -8,6 +8,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -22,7 +24,7 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 class AnalyticsToolProvider(private val viewModel: AnalyticsViewModel) : ToolProvider {
 
     override val path: String = ANALYTICS_PATH
-    override val title: String = "Cost Report Analytics"
+    override val title: String get() = str(S.desktop_cr_analytics_title)
     override val icon = ZillitIcons.BarChart
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(1440.dp, 900.dp)

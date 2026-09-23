@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.sides.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.Script
 import com.zillit.desktop.feature.sides.domain.SidesRecord
 import com.zillit.desktop.feature.sides.domain.SidesRules
@@ -109,7 +111,7 @@ internal class ListFlow(
         if (store.refuses(RightsKind.Post)) return null
         val active = store.current.list.activeScript
         if (active?.currentVersion == null) {
-            store.failed("No published script available. Please upload script to generate sides")
+            store.failed(str(S.sides_gate_no_published))
             return null
         }
         return active.id
@@ -120,15 +122,15 @@ internal class ListFlow(
         if (store.refuses(RightsKind.Post)) return false
         val list = store.current.list
         if (list.activeScript?.currentVersion == null && !list.hasHistoryScripts) {
-            store.failed("No active script or pages found. Please upload script to pages to generate sides")
+            store.failed(str(S.sides_gate_no_active))
             return false
         }
         return true
     }
 
     fun view(record: SidesRecord) = pdf.open(
-        title = record.title.ifBlank { "Sides" },
-        subtitle = "Sides",
+        title = record.title.ifBlank { str(S.txt_sides) },
+        subtitle = str(S.txt_sides),
         fileName = SidesRules.downloadName(record.title),
     ) { store.repository.downloadUrl(record.id, countDownload = false) }
 
@@ -146,8 +148,8 @@ internal class ListFlow(
                 dialog = SidesDialog.Confirm(
                     kind = ConfirmKind.Sides,
                     id = record.id,
-                    title = "Delete sides?",
-                    message = "This permanently deletes \"${record.title}\".",
+                    title = str(S.desktop_sides_delete_title),
+                    message = str(S.desktop_delete_permanently_named, record.title),
                 ),
             )
         }
@@ -155,7 +157,7 @@ internal class ListFlow(
 
     suspend fun delete(id: String): Boolean = when (val deleted = store.repository.deleteSides(id)) {
         is ZillitResult.Success -> {
-            store.notice("Deleted")
+            store.notice(str(S.drive_deleted_default))
             load()
             true
         }

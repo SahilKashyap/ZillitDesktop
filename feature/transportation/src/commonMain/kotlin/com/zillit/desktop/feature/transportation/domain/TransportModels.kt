@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.transportation.domain
 
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Transportation tool — vehicles, drivers, pickup requests and permanent
@@ -36,12 +38,14 @@ data class Vehicle(
     val label: String get() = listOf(name, number).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
-enum class AllocationType(val wire: String, val label: String) {
-    Remained("remained", "Available for trips"),
-    Allocated("allocated", "Available for trips"),
-    Assigned("assigned", "Assigned to trip"),
-    Permanent("permanent", "Assigned permanently"),
+enum class AllocationType(val wire: String, private val labelKey: String) {
+    Remained("remained", S.txt_vehicle_status_remained),
+    Allocated("allocated", S.txt_vehicle_status_remained),
+    Assigned("assigned", S.txt_vehicle_status_assigned),
+    Permanent("permanent", S.desktop_transport_assigned_permanently),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(value: String?): AllocationType =
@@ -62,17 +66,18 @@ data class VehicleDraft(
 ) {
     /** The web's form rules, in its order. */
     fun problem(): String? = when {
-        name.isBlank() -> "A brand name is required"
-        name.length > NAME_MAX -> "The brand name is at most $NAME_MAX characters"
-        number.isBlank() -> "A vehicle number is required"
-        number.length > NAME_MAX -> "The vehicle number is at most $NAME_MAX characters"
+        name.isBlank() -> str(S.desktop_transport_brand_name_required)
+        name.length > NAME_MAX -> str(S.desktop_transport_brand_name_max, NAME_MAX)
+        number.isBlank() -> str(S.desktop_transport_vehicle_number_required)
+        number.length > NAME_MAX -> str(S.desktop_transport_vehicle_number_max, NAME_MAX)
         // The service refuses an empty type (406 `"vehicle_type" is not allowed to be empty`).
-        type.isBlank() -> "Pick a vehicle type"
-        seats < SEATS_MIN || seats > SEATS_MAX -> "Seats must be between $SEATS_MIN and $SEATS_MAX"
-        ownerName.length > OWNER_MAX -> "The owner name is at most $OWNER_MAX characters"
-        ownerContact.isNotBlank() && ownerContact.length !in CONTACT_RANGE -> "The contact number is 5 to 20 characters"
-        ownerAddress.length > ADDRESS_MAX -> "The address is at most $ADDRESS_MAX characters"
-        attachments.size > IMAGES_MAX -> "At most $IMAGES_MAX images"
+        type.isBlank() -> str(S.desktop_transport_pick_vehicle_type)
+        seats < SEATS_MIN || seats > SEATS_MAX -> str(S.desktop_transport_seats_range, SEATS_MIN, SEATS_MAX)
+        ownerName.length > OWNER_MAX -> str(S.desktop_transport_owner_name_max, OWNER_MAX)
+        ownerContact.isNotBlank() && ownerContact.length !in CONTACT_RANGE ->
+            str(S.desktop_transport_contact_number_length)
+        ownerAddress.length > ADDRESS_MAX -> str(S.desktop_transport_address_max, ADDRESS_MAX)
+        attachments.size > IMAGES_MAX -> str(S.desktop_transport_at_most_images, IMAGES_MAX)
         else -> null
     }
 
@@ -160,9 +165,9 @@ data class TransportUser(
     /** The web's `getStatusAllotmentValue`. */
     val availability: String
         get() = when {
-            permanentTrip -> "Permanent allocated"
-            isTripAssigned -> "Assigned to trip"
-            else -> "Available"
+            permanentTrip -> str(S.desktop_transport_permanent_allocated)
+            isTripAssigned -> str(S.txt_vehicle_status_assigned)
+            else -> str(S.available)
         }
 
     val isAvailable: Boolean get() = !permanentTrip && !isTripAssigned
@@ -188,13 +193,15 @@ data class GeoPlace(val address: String = "", val lat: Double? = null, val long:
     val mapsUrl: String? get() = if (hasCoordinates) "https://www.google.com/maps?q=$lat,$long" else null
 }
 
-enum class TripStatus(val wire: String, val label: String) {
-    Pending("pending", "Pending"),
-    Assigned("assigned", "Assigned"),
-    InProgress("inprogress", "In Progress"),
-    Completed("completed", "Completed"),
-    Cancelled("cancelled", "Cancelled"),
+enum class TripStatus(val wire: String, private val labelKey: String) {
+    Pending("pending", S.pending),
+    Assigned("assigned", S.assigned),
+    InProgress("inprogress", S.in_progress),
+    Completed("completed", S.completed),
+    Cancelled("cancelled", S.cancelled),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Whether a coordinator may still change passengers, vehicle and driver. */
     val isOpen: Boolean get() = this == Pending || this == Assigned || this == InProgress
@@ -270,11 +277,13 @@ enum class TripAction(val wireStatus: String?) {
     Update(null),
 }
 
-enum class PermanentStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Permanent("permanent", "Allocated"),
-    Completed("completed", "Completed"),
+enum class PermanentStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
+    Permanent("permanent", S.txt_vehicle_status_allocated),
+    Completed("completed", S.completed),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(value: String?): PermanentStatus =
@@ -311,12 +320,12 @@ data class PermanentDraft(
     /** The web's `validatePermanenRequest`, in its order; drafts skip it. */
     fun problem(vehicleSeats: Int?): String? = when {
         asDraft -> null
-        startMs <= 0L -> "A start date is required"
-        passengers.isEmpty() -> "Add at least one passenger"
-        vehicleId == null -> "Assign a vehicle"
-        driverId == null -> "Assign a driver"
-        vehicleSeats != null && vehicleSeats < passengers.size -> "The vehicle has too few seats for these passengers"
-        endMs > 0L && endMs < startMs -> "The end date cannot be before the start date"
+        startMs <= 0L -> str(S.desktop_transport_start_date_required)
+        passengers.isEmpty() -> str(S.desktop_transport_add_at_least_one_passenger)
+        vehicleId == null -> str(S.desktop_transport_assign_vehicle_required)
+        driverId == null -> str(S.desktop_transport_assign_driver_required)
+        vehicleSeats != null && vehicleSeats < passengers.size -> str(S.desktop_transport_too_few_seats)
+        endMs > 0L && endMs < startMs -> str(S.desktop_transport_end_before_start)
         else -> null
     }
 }
@@ -340,8 +349,8 @@ data class DriverDetailsUpdate(
 ) {
     /** The web's phone rule: optional, but 5 to 20 characters when given. */
     fun problem(): String? = when {
-        phone != null && phone.isNotBlank() && phone.length !in PHONE_RANGE -> "The phone number is 5 to 20 characters"
-        documents != null && documents.size > DOCUMENTS_MAX -> "At most $DOCUMENTS_MAX documents"
+        phone != null && phone.isNotBlank() && phone.length !in PHONE_RANGE -> str(S.desktop_transport_phone_length)
+        documents != null && documents.size > DOCUMENTS_MAX -> str(S.desktop_transport_at_most_documents, DOCUMENTS_MAX)
         else -> null
     }
 

@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.dealmemo.ui.preview
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealPdfKind
@@ -39,7 +41,7 @@ internal class PreviewDocumentActions(private val vm: DealMemoViewModel, private
      */
     fun openDealPdf() {
         val deal = vm.ui.preview?.deal ?: return
-        val fallback = "Deal-Memo-${deal.reference ?: "DealMemo"}.pdf"
+        val fallback = "Deal-Memo-${deal.reference ?: "DealMemo"}.pdf" // A file name, not text on screen.
         open(FileViewer(title = fallback, fileName = fallback, kind = FileViewerKind.DealPdf)) {
             val stored = SignedPdf.of(DocRead.obj(deal.json, "deal_pdf")).attachment?.takeIf { it.intact }
             val attachment = stored ?: when (val generated = generate(deal, DealPdfKind.DealMemo)) {
@@ -73,13 +75,15 @@ internal class PreviewDocumentActions(private val vm: DealMemoViewModel, private
             ),
         ) {
             val attachment = shown?.takeIf { it.intact }
-                ?: return@open ZillitResult.Failure(ZillitError.Validation("Preview not available for this document."))
+                ?: return@open ZillitResult.Failure(
+                    ZillitError.Validation(str(S.desktop_dm_preview_not_available_for_this_document)),
+                )
             fetchContent(attachment).map { (bytes, content) -> Triple(doc.filename, bytes, content) }
         }
     }
 
     fun openPassport(attachment: DealAttachment) {
-        val title = attachment.name ?: attachment.title ?: "Document"
+        val title = attachment.name ?: attachment.title ?: str(S.document)
         open(FileViewer(title = title, fileName = title, kind = FileViewerKind.Passport, attachment = attachment)) {
             fetchContent(attachment).map { (bytes, content) -> Triple(title, bytes, content) }
         }
@@ -166,7 +170,7 @@ internal class PreviewDocumentActions(private val vm: DealMemoViewModel, private
     }
 
     private fun <T> noStore(): ZillitResult<T> =
-        ZillitResult.Failure(ZillitError.Validation("Documents can't be opened here."))
+        ZillitResult.Failure(ZillitError.Validation(str(S.desktop_dm_documents_cant_be_opened_here)))
 
     /** `POST /deals/:id/pdf` — or the start form's — with the labels the page resolved. */
     suspend fun generate(deal: DealDoc, kind: DealPdfKind): ZillitResult<JsonObject> =

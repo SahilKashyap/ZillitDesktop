@@ -10,6 +10,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -41,7 +43,7 @@ class TaxFilingToolProvider(
 ) : ToolProvider {
 
     override val path: String = TAX_FILING_PATH
-    override val title: String = "Tax Filing"
+    override val title: String get() = str(S.desktop_tax_filing)
     override val icon = ZillitIcons.Hierarchy
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(WIDTH.dp, HEIGHT.dp)

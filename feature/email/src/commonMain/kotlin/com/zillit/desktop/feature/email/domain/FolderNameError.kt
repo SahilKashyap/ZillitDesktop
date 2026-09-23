@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** Why a folder name was refused. */
 enum class FolderNameError {
     Blank,
@@ -75,11 +78,11 @@ val EmailFolder.isDeletable: Boolean get() = isRenameable
 /** What to show the user. */
 val FolderNameError.message: String
     get() = when (this) {
-        FolderNameError.Blank -> "Give the folder a name."
-        FolderNameError.Duplicate -> "A folder with that name already exists."
-        FolderNameError.Reserved -> "That name is reserved by the mail server."
-        FolderNameError.IllegalCharacter -> "Folder names cannot contain / \\ or ."
-        FolderNameError.TooLong -> "That name is too long."
+        FolderNameError.Blank -> str(S.desktop_email_folder_name_required)
+        FolderNameError.Duplicate -> str(S.desktop_email_folder_name_duplicate)
+        FolderNameError.Reserved -> str(S.desktop_email_folder_name_reserved)
+        FolderNameError.IllegalCharacter -> str(S.desktop_email_folder_name_illegal_chars)
+        FolderNameError.TooLong -> str(S.desktop_email_folder_name_too_long)
     }
 
 private val ILLEGAL = charArrayOf('/', '\\', '.', '"')

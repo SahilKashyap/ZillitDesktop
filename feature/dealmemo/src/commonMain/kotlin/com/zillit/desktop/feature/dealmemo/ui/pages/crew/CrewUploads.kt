@@ -37,6 +37,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormValues
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealAttachment
@@ -68,9 +70,9 @@ internal fun PassportUploader(
         if (files.size < PASSPORT_MAX) {
             AddFileButton(
                 label = when {
-                    uploading -> "Uploading…"
-                    files.isEmpty() -> "Upload passport / ID (PDF, JPG or PNG — up to 2)"
-                    else -> "Add another"
+                    uploading -> str(S.dm_nda_uploading)
+                    files.isEmpty() -> str(S.desktop_dm_upload_passport_id_pdf_jpg_or_png)
+                    else -> str(S.desktop_dm_add_another)
                 },
                 uploading = uploading,
                 roomy = files.isEmpty(),
@@ -97,7 +99,7 @@ private fun PassportRow(file: DealAttachment, onView: () -> Unit, onRemove: () -
         ZillitIcon(ZillitIcons.File, size = 18.dp, tint = p.brand)
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = file.name ?: file.media ?: "Passport / ID",
+                text = file.name ?: file.media ?: str(S.dm_step2_passport),
                 style = DmType.sans(12.sp, FontWeight.Bold),
                 color = p.ink,
                 maxLines = 1,
@@ -133,7 +135,7 @@ private fun ViewChip(onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         ZillitIcon(ZillitIcons.Eye, size = 10.dp, tint = ink)
-        ZillitText(text = "View", style = DmType.sans(10.sp, FontWeight.SemiBold), color = ink)
+        ZillitText(text = str(S.dm_docs_view), style = DmType.sans(10.sp, FontWeight.SemiBold), color = ink)
     }
 }
 
@@ -154,7 +156,7 @@ private fun RemoveButton(onClick: () -> Unit) {
             ZillitIcons.Close,
             size = 11.dp,
             tint = Color(0xFFEF4444),
-            contentDescription = "Remove passport / ID",
+            contentDescription = str(S.desktop_dm_remove_passport_id),
         )
     }
 }
@@ -216,10 +218,10 @@ internal fun AdditionalDetails(rows: List<JsonObject>, onChange: (JsonArray) -> 
     }
 
     Column(Modifier.padding(top = 16.dp)) {
-        RowLabel("Additional Details")
+        RowLabel(str(S.dm_step2_bank_additional_title))
         if (rows.isEmpty()) {
             ZillitText(
-                text = "None.",
+                text = str(S.dm_rule_increment_none),
                 style = DmType.sans(11.sp),
                 color = p.muted,
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -254,7 +256,7 @@ internal fun AdditionalDetails(rows: List<JsonObject>, onChange: (JsonArray) -> 
                 }
             }
         }
-        DashedAddButton("Add detail") {
+        DashedAddButton(str(S.desktop_add_detail)) {
             modes[rows.size] = true
             write(
                 rows + buildJsonObject {
@@ -267,8 +269,14 @@ internal fun AdditionalDetails(rows: List<JsonObject>, onChange: (JsonArray) -> 
     }
 }
 
-private val DETAIL_TYPES =
-    listOf("text" to "Text", "number" to "Number", "phone" to "Phone", "email" to "Email", "url" to "URL")
+private val DETAIL_TYPES get() =
+    listOf(
+        "text" to str(S.docusign_field_text),
+        "number" to str(S.docusign_number_value_hint),
+        "phone" to str(S.dm_step2_representative_phone),
+        "email" to str(S.dm_req_email),
+        "url" to "URL",
+    )
 
 @Composable
 private fun DefineRow(
@@ -290,12 +298,12 @@ private fun DefineRow(
         FormInput(
             value = title,
             onValueChange = onTitle,
-            placeholder = "Field title (e.g. IBAN)",
+            placeholder = str(S.desktop_dm_field_title_e_g_iban),
             modifier = Modifier.weight(1f),
             onEnter = onDone,
         )
         if (title.isNotBlank()) DoneButton(onDone)
-        IconSquare(ZillitIcons.Close, danger = true, description = "Remove", onClick = onRemove)
+        IconSquare(ZillitIcons.Close, danger = true, description = str(S.dm_rules_remove), onClick = onRemove)
     }
 }
 
@@ -321,13 +329,18 @@ private fun FillRow(
             FormInput(
                 value = value,
                 onValueChange = onValue,
-                placeholder = "Value",
+                placeholder = str(S.dm_step2_bank_addl_value_hint),
                 modifier = Modifier.weight(1f),
                 error = left && !CrewFormValues.detailLooksValid(type, value),
                 onBlur = { left = true },
             )
-            IconSquare(ZillitIcons.Edit, danger = false, description = "Edit field", onClick = onEdit)
-            IconSquare(ZillitIcons.Close, danger = true, description = "Remove", onClick = onRemove)
+            IconSquare(
+                ZillitIcons.Edit,
+                danger = false,
+                description = str(S.docusign_field_edit_title),
+                onClick = onEdit,
+            )
+            IconSquare(ZillitIcons.Close, danger = true, description = str(S.dm_rules_remove), onClick = onRemove)
         }
     }
 }
@@ -345,7 +358,7 @@ private fun DoneButton(onClick: () -> Unit) {
             .pointerHoverIcon(PointerIcon.Hand)
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
-    ) { ZillitText(text = "Done", style = DmType.sans(11.sp, FontWeight.Bold), color = Color.White) }
+    ) { ZillitText(text = str(S.dm_quick_done), style = DmType.sans(11.sp, FontWeight.Bold), color = Color.White) }
 }
 
 @Composable

@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.AccessPerson
 import com.zillit.desktop.feature.callsheet.ui.PermissionEvent
 import com.zillit.desktop.feature.callsheet.ui.PermissionState
@@ -65,7 +67,7 @@ internal fun PermissionPage(state: SheetUiState, onEvent: (SheetEvent) -> Unit) 
     val permission = state.permission
     Column {
         InfoBanner(
-            Labels.current.exact("callsheet_permission_hint") ?: "To allow users to create a call sheet.",
+            Labels.current.exact("callsheet_permission_hint") ?: str(S.cs_permission_description),
             ZillitIcons.Info,
             Modifier.padding(bottom = 16.dp),
         )
@@ -73,7 +75,7 @@ internal fun PermissionPage(state: SheetUiState, onEvent: (SheetEvent) -> Unit) 
             SheetInput(
                 value = permission.search,
                 onChange = { onEvent(PermissionEvent.Search(it)) },
-                placeholder = Labels.current.exact("Search") ?: "Search",
+                placeholder = Labels.current.exact("Search") ?: str(S.search),
                 leadingIcon = ZillitIcons.Search,
                 modifier = Modifier.widthIn(max = 300.dp).fillMaxWidth(),
             )
@@ -83,8 +85,8 @@ internal fun PermissionPage(state: SheetUiState, onEvent: (SheetEvent) -> Unit) 
         }
         val visible = permission.visible
         when {
-            permission.loading && !permission.loaded -> LoadingBlock("Loading...")
-            visible.isEmpty() -> SheetEmptyState(Labels.current.exact("no_data_found") ?: "No data found")
+            permission.loading && !permission.loaded -> LoadingBlock(str(S.cs_loading))
+            visible.isEmpty() -> SheetEmptyState(Labels.current.exact("no_data_found") ?: str(S.no_data_found))
             else -> {
                 PermissionTable(state, visible, onEvent)
                 if (permission.search.isBlank()) Pager(permission, onEvent)
@@ -95,11 +97,11 @@ internal fun PermissionPage(state: SheetUiState, onEvent: (SheetEvent) -> Unit) 
 
 @Composable
 private fun PermissionTable(state: SheetUiState, people: List<AccessPerson>, onEvent: (SheetEvent) -> Unit) {
-    val unitTitle = people.firstNotNullOfOrNull { it.unitName.ifBlank { null } }?.localised() ?: "Call Sheet"
+    val unitTitle = people.firstNotNullOfOrNull { it.unitName.ifBlank { null } }?.localised() ?: str(S.cs_app_name)
     SheetTable(
         columns = listOf(
-            TableColumn("User", weight = 1.4f),
-            TableColumn("Department", weight = 1f),
+            TableColumn(str(S.user_label), weight = 1.4f),
+            TableColumn(str(S.department), weight = 1f),
             TableColumn(unitTitle, width = 180.dp),
         ),
         rows = people,
@@ -158,7 +160,7 @@ private fun EnableCell(state: SheetUiState, person: AccessPerson, onEvent: (Shee
     ) {
         SheetCheckbox(person.canPost, enabled = enabled, size = 16.dp)
         Text(
-            Labels.current.exact("enable_label") ?: "Enable",
+            Labels.current.exact("enable_label") ?: str(S.desktop_enable),
             style = sheetText(12.sp),
             color = if (enabled) colors.textPrimary else colors.textTertiary,
         )
@@ -179,7 +181,7 @@ private fun Pager(permission: PermissionState, onEvent: (SheetEvent) -> Unit) {
     ) {
         SheetIconButton(
             ZillitIcons.ChevronLeft,
-            "Previous page",
+            str(S.docusign_page_nav_prev_cd),
             { onEvent(PermissionEvent.Page(permission.page - 1)) },
             enabled = permission.page > 0,
         )
@@ -204,7 +206,7 @@ private fun Pager(permission: PermissionState, onEvent: (SheetEvent) -> Unit) {
         }
         SheetIconButton(
             ZillitIcons.ChevronRight,
-            "Next page",
+            str(S.docusign_page_nav_next_cd),
             { onEvent(PermissionEvent.Page(permission.page + 1)) },
             enabled = permission.page < pages - 1,
         )

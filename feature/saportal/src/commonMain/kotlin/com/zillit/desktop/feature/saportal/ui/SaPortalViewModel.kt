@@ -10,6 +10,8 @@ import com.zillit.desktop.feature.saportal.data.saRefreshes
 import com.zillit.desktop.feature.saportal.domain.SaPortalRepository
 import com.zillit.desktop.feature.saportal.domain.SaViewer
 import com.zillit.desktop.feature.saportal.domain.Voucher
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The supporting artiste's own portal.
@@ -19,6 +21,7 @@ import com.zillit.desktop.feature.saportal.domain.Voucher
  * "is there anything I need to sign", which is why the overview loads first
  * and the outstanding vouchers lead it.
  */
+@Suppress("TooManyFunctions") // One suspend loader or mutator per portal action.
 class SaPortalViewModel(
     private val repository: SaPortalRepository,
     /**
@@ -242,7 +245,7 @@ class SaPortalViewModel(
     private fun confirmSign() {
         val open = currentState.sign ?: return
         if (!open.ready) {
-            sendEffect(SaEffect.Failed("Type your name and accept both statements."))
+            sendEffect(SaEffect.Failed(str(S.desktop_sa_sign_validation)))
             return
         }
         setState { copy(sign = sign?.copy(saving = true)) }
@@ -255,7 +258,7 @@ class SaPortalViewModel(
             )
             when (result) {
                 is ZillitResult.Success -> {
-                    setState { copy(sign = null, notice = "Signed ${open.voucher.code}") }
+                    setState { copy(sign = null, notice = str(S.desktop_sa_signed_code, open.voucher.code)) }
                     loadVouchers()
                     // The open detail is stale the moment it is signed — its
                     // signature block and status both moved.
@@ -308,7 +311,7 @@ class SaPortalViewModel(
         launch {
             when (val result = repository.resolveQuery(id)) {
                 is ZillitResult.Success -> {
-                    setState { copy(notice = "Query marked resolved") }
+                    setState { copy(notice = str(S.desktop_sa_query_resolved)) }
                     loadQueries()
                     if (currentState.openQuery?.id == id) openQuery(id)
                 }
@@ -325,7 +328,7 @@ class SaPortalViewModel(
         launch {
             when (val result = repository.raiseQuery(draft.voucherId, draft.text)) {
                 is ZillitResult.Success -> {
-                    setState { copy(queryDraft = null, notice = "Query sent") }
+                    setState { copy(queryDraft = null, notice = str(S.ah_query_sent_toast)) }
                     loadQueries()
                 }
 

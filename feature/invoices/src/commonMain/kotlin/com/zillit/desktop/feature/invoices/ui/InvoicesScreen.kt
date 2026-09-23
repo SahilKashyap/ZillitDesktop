@@ -68,6 +68,8 @@ import com.zillit.desktop.feature.invoices.ui.pages.SalesInvoiceSheet
 import com.zillit.desktop.feature.invoices.ui.pages.SetupConfirmSheets
 import com.zillit.desktop.feature.invoices.ui.pages.TeamMemberSheet
 import com.zillit.desktop.feature.invoices.ui.pages.UploadDialog
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Invoices: the department board for crew, and for the accounts department the
@@ -112,30 +114,30 @@ fun InvoicesScreen(
             // the stage, the screen's title and its own sentence — rather
             // than one module heading over all sixteen.
             ZillitPageHeader(
-                title = if (accountant) state.page.heading else "Invoices",
+                title = if (accountant) state.page.heading else str(S.ah_invoices),
                 eyebrow = state.page.eyebrow.takeIf { accountant },
                 description = if (accountant) {
                     state.page.blurb
                 } else {
-                    "Supplier invoices: the ones waiting on you, your department's, and your own uploads."
+                    str(S.desktop_inv_department_intro)
                 },
                 actions = {
                     ZillitButton(
-                        text = "Refresh",
+                        text = str(S.refresh_text),
                         onClick = { onEvent(InvoicesEvent.Refresh) },
                         variant = ButtonVariant.Tertiary,
                         loading = state.loading,
                     )
                     if (accountant && state.page == AccountantPage.Inbox) {
                         ZillitButton(
-                            text = "Enter Invoice",
+                            text = str(S.desktop_enter_invoice),
                             onClick = { onEvent(InvoicesEvent.OpenEnter) },
                             leadingIcon = ZillitIcons.Add,
                         )
                     }
                     if (!accountant && state.viewer.mayPost) {
                         ZillitButton(
-                            text = "Upload Invoice",
+                            text = str(S.ah_upload_invoice),
                             onClick = { onEvent(InvoicesEvent.UploadInvoice) },
                             leadingIcon = ZillitIcons.Upload,
                             enabled = state.upload == null,
@@ -143,14 +145,14 @@ fun InvoicesScreen(
                     }
                 },
             )
-            if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to the Invoices tool.")
+            if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_inv_no_access))
             state.error?.let { message ->
                 ZillitNotice(
                     text = message,
                     tone = StatusTone.Rejected,
                     action = {
                         ZillitButton(
-                            text = "Dismiss",
+                            text = str(S.sync_action_dismiss),
                             onClick = { onEvent(InvoicesEvent.DismissError) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -261,7 +263,7 @@ private fun SidebarHeader(nowMs: Long) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         ZillitText(
-            text = "Invoices / Accounts Payable",
+            text = str(S.desktop_inv_accounts_payable),
             style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             maxLines = 2,
         )
@@ -360,20 +362,24 @@ private val SIDEBAR_WIDTH = 250.dp
 @Composable
 private fun HoldDialog(request: HoldRequest, onEvent: (InvoicesEvent) -> Unit) {
     ZillitDialogShell(
-        title = if (request.invoices.size == 1) "Hold for query" else "Hold ${request.invoices.size} invoices",
-        subtitle = "It stays out of the approval chain until the query is answered.",
+        title = if (request.invoices.size == 1) {
+            str(S.desktop_inv_hold_for_query)
+        } else {
+            str(S.desktop_inv_hold_n_invoices, request.invoices.size)
+        },
+        subtitle = str(S.desktop_inv_hold_subtitle),
         visible = true,
         onDismiss = { if (!request.busy) onEvent(InvoicesEvent.CancelHold) },
         icon = ZillitIcons.Warning,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CancelHold) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !request.busy,
             )
             ZillitButton(
-                text = "Hold",
+                text = str(S.desktop_hold),
                 onClick = { onEvent(InvoicesEvent.ConfirmHold) },
                 enabled = request.isReady && !request.busy,
                 loading = request.busy,
@@ -384,14 +390,18 @@ private fun HoldDialog(request: HoldRequest, onEvent: (InvoicesEvent) -> Unit) {
             value = request.reason,
             options = listOf<HoldReason?>(null) + HoldReason.entries,
             onSelect = { reason -> reason?.let { onEvent(InvoicesEvent.HoldReasonChanged(it)) } },
-            label = { it?.label ?: "Select reason…" },
+            label = { it?.label ?: str(S.desktop_select_reason) },
             enabled = !request.busy,
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
             value = request.notes,
             onValueChange = { onEvent(InvoicesEvent.HoldNotesChanged(it)) },
-            label = if (request.reason?.needsNotes() == true) "Query notes (required)" else "Query notes",
+            label = if (request.reason?.needsNotes() == true) {
+                str(S.desktop_inv_query_notes_required)
+            } else {
+                str(S.desktop_inv_query_notes)
+            },
             singleLine = false,
             enabled = !request.busy,
             modifier = Modifier.fillMaxWidth(),
@@ -435,13 +445,13 @@ private fun handleShortcut(
 @Composable
 private fun ShortcutsDialog(onEvent: (InvoicesEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Keyboard shortcuts",
+        title = str(S.desktop_keyboard_shortcuts),
         visible = true,
         onDismiss = { onEvent(InvoicesEvent.CloseShortcuts) },
         icon = ZillitIcons.Help,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(InvoicesEvent.CloseShortcuts) },
                 variant = ButtonVariant.Tertiary,
             )

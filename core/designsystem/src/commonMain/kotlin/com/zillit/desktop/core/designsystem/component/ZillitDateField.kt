@@ -27,6 +27,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -81,7 +83,7 @@ fun ZillitDateField(
             trailingContent = {
                 ZillitIconButton(
                     icon = ZillitIcons.Calendar,
-                    contentDescription = "Choose a date",
+                    contentDescription = str(S.desktop_choose_a_date),
                     onClick = { if (enabled) open = true },
                 )
             },
@@ -125,7 +127,7 @@ private fun MonthGrid(
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitIconButton(
                 icon = ZillitIcons.ChevronLeft,
-                contentDescription = "Previous month",
+                contentDescription = str(S.desktop_previous_month),
                 onClick = { onMonth(month.plus(-1, DateTimeUnit.MONTH)) },
             )
             ZillitText(
@@ -136,7 +138,7 @@ private fun MonthGrid(
             )
             ZillitIconButton(
                 icon = ZillitIcons.ChevronRight,
-                contentDescription = "Next month",
+                contentDescription = str(S.next_month),
                 onClick = { onMonth(month.plus(1, DateTimeUnit.MONTH)) },
             )
         }

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.authoring
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DepartmentCatalogue
 import com.zillit.desktop.feature.dealmemo.domain.isNonUnionId
@@ -76,23 +78,28 @@ object RateTables {
     private val FLAT_EXCLUDED_LABEL = Regex("penalty|broken turnaround|rest day|meal allowance")
 
     /** The fringe table's basis names — its own map, capitalised unlike the memo's. */
-    private val FRINGE_BASIS = mapOf(
-        "weekly_gross" to "Weekly Gross",
-        "qualifying_earnings" to "Qualifying Earnings",
-        "base_weekly" to "Base Weekly",
-        "ordinary_time" to "Ordinary Time",
-        "scale_wages" to "Scale Wages",
-        "gross_invoice" to "Gross Invoice",
-        "gross_fees" to "Gross Fees",
-        "excess_threshold" to "Excess of Threshold",
-        "futa_wage_base" to "FUTA Wage Base",
-    )
+    private val FRINGE_BASIS: Map<String, String>
+        get() = mapOf(
+            "weekly_gross" to str(S.desktop_dm_basis_weekly_gross),
+            "qualifying_earnings" to str(S.desktop_dm_basis_qualifying_earnings),
+            "base_weekly" to str(S.desktop_dm_basis_base_weekly),
+            "ordinary_time" to str(S.desktop_dm_basis_ordinary_time),
+            "scale_wages" to str(S.desktop_dm_basis_scale_wages),
+            "gross_invoice" to str(S.desktop_dm_basis_gross_invoice),
+            "gross_fees" to str(S.desktop_dm_basis_gross_fees),
+            "excess_threshold" to str(S.desktop_dm_basis_excess_of_threshold),
+            "futa_wage_base" to str(S.desktop_dm_basis_futa_wage_base),
+        )
 
-    private val BASIS_DISPLAY = mapOf(
-        "30_minutes" to "30 min", "hour" to "hour", "day" to "day", "days" to "days", "night" to "night",
-        "event" to "event", "mile" to "mile", "meal" to "meal", "call" to "call", "penalty" to "penalty",
-        "additional" to "additional", "actuals" to "Actuals",
-    )
+    private val BASIS_DISPLAY: Map<String, String>
+        get() = mapOf(
+            "30_minutes" to str(S.desktop_unit_30_min), "hour" to str(S.desktop_unit_hour),
+            "day" to str(S.day_label), "days" to str(S.dm_ds_days_label), "night" to str(S.desktop_unit_night),
+            "event" to str(S.desktop_unit_event), "mile" to str(S.desktop_unit_mile),
+            "meal" to str(S.desktop_unit_meal),
+            "call" to str(S.desktop_unit_call), "penalty" to str(S.desktop_unit_penalty),
+            "additional" to str(S.desktop_unit_additional), "actuals" to str(S.desktop_actuals),
+        )
 
     /** `getFringePackage`: the package the employment status maps to, else the default one. */
     fun fringePackage(agreement: JsonObject?, employmentStatus: String): JsonObject? {
@@ -141,7 +148,8 @@ object RateTables {
                 },
                 basis = present(item["basis"])?.let(Js::text)?.let { FRINGE_BASIS[it] ?: it } ?: RateFormat.DASH,
                 type = when {
-                    statutory != null -> if (Js.truthy(statutory)) "Statutory" else "Contractual"
+                    statutory != null ->
+                        if (Js.truthy(statutory)) str(S.desktop_statutory) else str(S.desktop_contractual)
                     else -> present(item["type"])?.let(Js::text) ?: RateFormat.DASH
                 },
             )
@@ -173,7 +181,7 @@ object RateTables {
     /** `fmtComp`: `OT rate`, `10% of gross`, `£25/event`, `×1.5`, `+0.5`, `Actuals`, a basis, or a dash. */
     @Suppress("CyclomaticComplexMethod")
     fun compensation(row: JsonObject, sym: String): String {
-        if (Js.truthy(row["use_ot_rate"])) return "OT rate"
+        if (Js.truthy(row["use_ot_rate"])) return str(S.desktop_dm_ot_rate)
         val rawType = present(row["rate_type"])
         val type = when {
             rawType != null && isText(rawType, "fixed") -> "flat"
@@ -187,11 +195,13 @@ object RateTables {
             ?: present(row["percentage"])
         val basis = row["basis"]?.takeIf(Js::truthy)?.let(Js::text)?.let { BASIS_DISPLAY[it] ?: it.replace('_', ' ') }
         return when {
-            type == "percentage" && amount != null -> "${Js.text(amount)}% of ${basis ?: "gross"}"
-            type == "flat" && amount != null -> "$sym${AgreementFormat.groupAmount(amount)}/${basis ?: "event"}"
+            type == "percentage" && amount != null ->
+                str(S.desktop_dm_percent_of, Js.text(amount), basis ?: str(S.desktop_unit_gross))
+            type == "flat" && amount != null ->
+                "$sym${AgreementFormat.groupAmount(amount)}/${basis ?: str(S.desktop_unit_event)}"
             type == "multiplier" && amount != null ->
                 "${if (Js.truthy(row["is_enhancement"])) "+" else "×"}${Js.text(amount)}"
-            rawType != null && isText(rawType, "actuals") -> "Actuals"
+            rawType != null && isText(rawType, "actuals") -> str(S.desktop_actuals)
             basis != null -> basis
             else -> RateFormat.DASH
         }
@@ -241,7 +251,7 @@ object RateTables {
                 band = present(row["label"])?.let(Js::text).orEmpty(),
                 sub = present(row["note"])?.let(Js::text),
                 multiplier = when {
-                    Js.truthy(row["use_ot_rate"]) -> "OT rate"
+                    Js.truthy(row["use_ot_rate"]) -> str(S.desktop_dm_ot_rate)
                     type == "multiplier" && amount != null -> "×${Js.text(amount)}"
                     else -> RateFormat.DASH
                 },
@@ -277,21 +287,27 @@ object RateTables {
         )
         return buildList {
             val hourly = RateFormat.groupAmount(dayRate / divisorValue)
-            add("Hourly Rate: $sym$hourly/hr" to "(day rate ÷ ${divisor?.let(Js::text) ?: "10"})")
-            floor?.let { add("OT Min: $sym${AgreementFormat.groupAmount(it)}/hr" to null) }
-            cap?.let { add("OT Max: $sym${AgreementFormat.groupAmount(it)}/hr" to null) }
+            add(
+                str(S.desktop_dm_chip_hourly_rate, "$sym$hourly") to
+                    str(S.desktop_dm_chip_day_rate_divisor, divisor?.let(Js::text) ?: "10"),
+            )
+            floor?.let { add(str(S.desktop_dm_chip_ot_min, "$sym${AgreementFormat.groupAmount(it)}") to null) }
+            cap?.let { add(str(S.desktop_dm_chip_ot_max, "$sym${AgreementFormat.groupAmount(it)}") to null) }
             when (multipliers.size) {
                 0 -> Unit
-                1 -> add("OT Rate: ×${Js.text(multipliers.first())}T all OT" to null)
-                else -> add("OT Rate: ${multipliers.joinToString(" / ") { "×${Js.text(it)}T" }}" to null)
+                1 -> add(str(S.desktop_dm_chip_ot_rate_all, Js.text(multipliers.first())) to null)
+                else -> {
+                    val list = multipliers.joinToString(" / ") { "×${Js.text(it)}T" }
+                    add(str(S.desktop_dm_chip_ot_rate, list) to null)
+                }
             }
             when (flats.size) {
                 0 -> Unit
-                1 -> add("OT Rate: $sym${AgreementFormat.groupAmount(flats.first())}/hr" to null)
+                1 -> add(str(S.desktop_dm_chip_ot_rate_hr, "$sym${AgreementFormat.groupAmount(flats.first())}") to null)
                 else -> {
                     val range = "$sym${AgreementFormat.groupAmount(flats.first())}–" +
                         "$sym${AgreementFormat.groupAmount(flats.last())}"
-                    add("OT Rate: $range/hr" to null)
+                    add(str(S.desktop_dm_chip_ot_rate_hr, range) to null)
                 }
             }
         }
@@ -307,7 +323,7 @@ object RateTables {
 
     /** `agreementLabel(union, short_label ?? label ?? union ?? "Agreement")`. */
     fun agreementName(union: String, agreement: JsonObject?): String = when {
-        isNonUnionId(union) -> "Non-Union"
+        isNonUnionId(union) -> str(S.dm_create_non_union)
         else -> (present(agreement?.get("short_label")) ?: present(agreement?.get("label")))?.let(Js::text) ?: union
     }
 

@@ -36,6 +36,8 @@ import com.zillit.desktop.feature.crewlist.domain.MemberCells
 import com.zillit.desktop.feature.crewlist.domain.MemberOverride
 import com.zillit.desktop.feature.crewlist.domain.PhoneField
 import com.zillit.desktop.feature.crewlist.domain.PhoneProblem
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * One member of the crew sheet — `CrewListCustomUserCard.jsx`. Read mode is
@@ -125,7 +127,7 @@ private fun NameCell(member: CrewMember, avatar: ImageBitmap?, copy: CrewCopy) {
             )
             if (member.isExternal) {
                 ZillitText(
-                    text = copy.t("not_on_zillit", "Not on Zillit"),
+                    text = copy.t("not_on_zillit", str(S.not_on_zillit)),
                     style = ZillitTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
                     color = crewPalette().externalInk,
                     maxLines = 1,
@@ -151,7 +153,7 @@ private fun PhoneEditor(
             DialCodePicker(
                 value = cells.countryCode,
                 codes = dialCodes,
-                placeholder = copy.t("Code", "Code"),
+                placeholder = copy.t("Code", str(S.code)),
                 isError = problem?.field == PhoneField.CountryCode,
                 onPick = { code -> onEdit(MemberOverride(countryCode = code)) },
                 modifier = Modifier.width(DIAL_CODE_WIDTH),
@@ -159,7 +161,7 @@ private fun PhoneEditor(
             CrewCellField(
                 value = cells.phone,
                 onValueChange = { typed -> onEdit(MemberOverride(phone = typed.filter { it in '0'..'9' })) },
-                placeholder = copy.t("Phone", "Phone"),
+                placeholder = copy.t("Phone", str(S.phone)),
                 isError = problem?.field == PhoneField.Number,
                 digits = true,
                 modifier = Modifier.weight(1f),
@@ -176,8 +178,8 @@ private fun EmailCell(
     copy: CrewCopy,
     onEdit: (MemberOverride) -> Unit,
 ) {
-    val profile = copy.t("crew_list_profile_email_label", "PROFILE")
-    val project = copy.t("crew_list_project_email_label", "PROJECT")
+    val profile = copy.t("crew_list_profile_email_label", str(S.profile_label).uppercase())
+    val project = copy.t("crew_list_project_email_label", str(S.dm_step2_external_off).uppercase())
     Column(
         modifier = Modifier.padding(start = if (editable) 0.dp else 8.dp),
         verticalArrangement = Arrangement.spacedBy(if (editable) 6.dp else 3.dp),
@@ -187,18 +189,18 @@ private fun EmailCell(
                 CrewCellField(
                     value = cells.profileEmail,
                     onValueChange = { onEdit(MemberOverride(email = it)) },
-                    placeholder = copy.t("poEmailLable", "Email"),
+                    placeholder = copy.t("poEmailLable", str(S.email)),
                     modifier = Modifier.fillMaxWidth(),
                 )
             } else {
-                CellValue(cells.profileEmail, copy.t("crew_list_email_not_set", "Not set"))
+                CellValue(cells.profileEmail, copy.t("crew_list_email_not_set", str(S.dm_gpr_not_set)))
             }
         }
         EmailLine(project) {
             if (editable) {
                 val locked = copy.t(
                     "crew_list_project_email_locked_tip",
-                    "Project email is auto-generated and cannot be changed",
+                    str(S.desktop_cl_project_email_locked_tip),
                 )
                 ZillitTooltip(locked) {
                     LockedField(cells.projectEmail, Modifier.fillMaxWidth())

@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
@@ -57,14 +59,14 @@ fun CardSettingsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val draft = state.settingsDraft ?: state.settings
     if (draft == null) {
         ScrollingPage {
-            ZillitNotice(text = "Loading the project's card settings…", tone = StatusTone.Progress)
+            ZillitNotice(text = str(S.desktop_card_loading_settings), tone = StatusTone.Progress)
         }
         return
     }
 
     ScrollingPage {
         ZillitNotice(
-            text = "These settings apply to every card on this production. Each section saves on its own.",
+            text = str(S.desktop_card_settings_intro),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Info,
         )
@@ -93,14 +95,14 @@ private fun TeamSection(state: CardUiState, draft: CardSettings, onEvent: (CardE
 
     SettingsSectionCard(
         section = SettingsSection.Team,
-        description = "Posting limits, override access and senior standing for the accounts team.",
+        description = str(S.desktop_card_team_description),
         icon = ZillitIcons.Users,
         dirty = dirty,
         state = state,
         onEvent = onEvent,
         action = {
             ZillitButton(
-                text = "Add member",
+                text = str(S.cs_add_member),
                 onClick = {
                     onEvent(CardEvent.EditSettings(draft.copy(teamMembers = members + CardTeamMember(""))))
                 },
@@ -111,7 +113,7 @@ private fun TeamSection(state: CardUiState, draft: CardSettings, onEvent: (CardE
         },
     ) {
         if (members.isEmpty()) {
-            EmptySectionLine("Nobody is configured, so nobody can post. Add the accounts team here.")
+            EmptySectionLine(str(S.desktop_card_team_empty))
             return@SettingsSectionCard
         }
         members.forEachIndexed { index, member ->
@@ -166,14 +168,14 @@ private fun TeamMemberRow(
                 value = person,
                 options = people,
                 onSelect = { onChange(member.copy(userId = it?.id.orEmpty()).normalised()) },
-                label = { it?.pickerLabel ?: "Choose a person" },
+                label = { it?.pickerLabel ?: str(S.desktop_card_choose_a_person) },
                 modifier = Modifier.weight(1f),
             )
             ZillitStatusPill(
                 label = when {
-                    member.unlimited -> "Unlimited"
-                    member.blocked -> "No access"
-                    else -> "Up to ${money(member.postingLimit, currency)}"
+                    member.unlimited -> str(S.drive_link_views_unlimited)
+                    member.blocked -> str(S.dd_publish_no_access_badge)
+                    else -> str(S.desktop_card_up_to_amount, money(member.postingLimit, currency))
                 },
                 tone = when {
                     member.unlimited -> StatusTone.Done
@@ -201,8 +203,8 @@ private fun TeamMemberRow(
                 onValueChange = { text ->
                     onChange(member.copy(postingLimit = text.trim().toDoubleOrNull() ?: 0.0))
                 },
-                label = "Posting limit",
-                placeholder = "0 blocks posting entirely",
+                label = str(S.desktop_posting_limit),
+                placeholder = str(S.desktop_card_posting_limit_placeholder),
                 keyboardType = KeyboardType.Decimal,
                 enabled = !member.unlimited,
                 modifier = Modifier.width(LIMIT_FIELD),
@@ -211,13 +213,13 @@ private fun TeamMemberRow(
                 checked = member.unlimited,
                 onCheckedChange = { on -> onChange(member.copy(postingLimit = if (on) null else 0.0)) },
                 enabled = !member.isSenior,
-                label = "Unlimited",
+                label = str(S.drive_link_views_unlimited),
             )
             ZillitSwitch(
                 checked = member.canOverride,
                 onCheckedChange = { onChange(member.copy(canOverride = it)) },
                 enabled = !member.isSenior,
-                label = "Can override a chain",
+                label = str(S.desktop_card_can_override_chain),
             )
             // A senior is unlimited and can override by definition, so turning
             // this on takes the other two out of the person's hands rather
@@ -225,7 +227,7 @@ private fun TeamMemberRow(
             ZillitSwitch(
                 checked = member.isSenior,
                 onCheckedChange = { onChange(member.copy(isSenior = it).normalised()) },
-                label = "Senior",
+                label = str(S.desktop_senior),
             )
         }
     }
@@ -249,14 +251,14 @@ private fun CoordinatorSection(state: CardUiState, draft: CardSettings, onEvent:
 
     SettingsSectionCard(
         section = SettingsSection.Coordinators,
-        description = "Who codes each department's receipts, and whether that department has to.",
+        description = str(S.desktop_card_coordinators_description),
         icon = ZillitIcons.Grid,
         dirty = dirty,
         state = state,
         onEvent = onEvent,
         action = {
             ZillitButton(
-                text = "Add department",
+                text = str(S.desktop_card_add_department),
                 onClick = {
                     onEvent(CardEvent.EditSettings(draft.copy(coordinators = rows + DepartmentCoordinator(""))))
                 },
@@ -267,7 +269,7 @@ private fun CoordinatorSection(state: CardUiState, draft: CardSettings, onEvent:
         },
     ) {
         if (rows.isEmpty()) {
-            EmptySectionLine("No department codes its own receipts. Every receipt goes straight to approval.")
+            EmptySectionLine(str(S.desktop_card_coordinators_empty))
             return@SettingsSectionCard
         }
         rows.forEachIndexed { index, row ->
@@ -305,7 +307,7 @@ private fun CoordinatorSection(state: CardUiState, draft: CardSettings, onEvent:
                                 ),
                             )
                         },
-                        label = { it?.department?.ifBlank { it.departmentId } ?: "Choose a department" },
+                        label = { it?.department?.ifBlank { it.departmentId } ?: str(S.desktop_choose_a_department) },
                         modifier = Modifier.weight(1f),
                     )
                     ZillitSwitch(
@@ -321,7 +323,7 @@ private fun CoordinatorSection(state: CardUiState, draft: CardSettings, onEvent:
                                 ),
                             )
                         },
-                        label = "Coding required",
+                        label = str(S.desktop_card_coding_required),
                     )
                     ZillitButton(
                         text = "",
@@ -353,12 +355,12 @@ private fun CoordinatorSection(state: CardUiState, draft: CardSettings, onEvent:
                         )
                     },
                     placeholder = if (row.departmentId.isBlank()) {
-                        "Choose a department first"
+                        str(S.desktop_choose_a_department_first)
                     } else {
-                        "Choose the coordinators"
+                        str(S.desktop_card_choose_the_coordinators)
                     },
                     enabled = row.departmentId.isNotBlank(),
-                    emptyText = "Nobody is listed in this department",
+                    emptyText = str(S.desktop_card_nobody_in_department),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -374,7 +376,7 @@ private fun OverridesSection(state: CardUiState, draft: CardSettings, onEvent: (
 
     SettingsSectionCard(
         section = SettingsSection.Overrides,
-        description = "When an accountant may step past the standard approval chain.",
+        description = str(S.desktop_card_overrides_description),
         icon = ZillitIcons.Shield,
         dirty = dirty,
         state = state,
@@ -382,25 +384,25 @@ private fun OverridesSection(state: CardUiState, draft: CardSettings, onEvent: (
     ) {
         OverrideSwitch(
             checked = overrides.overrideCardRequests,
-            label = "Accountants may approve card requests outright",
-            detail = "The request skips the standard chain and is recorded against their name.",
+            label = str(S.desktop_card_override_requests_label),
+            detail = str(S.desktop_card_override_requests_detail),
         ) { onEvent(CardEvent.EditSettings(draft.copy(overrides = overrides.copy(overrideCardRequests = it)))) }
         OverrideSwitch(
             checked = overrides.overrideReceipts,
-            label = "Accountants may approve receipts outright",
-            detail = "Bypasses the coordinator and the department head.",
+            label = str(S.desktop_card_override_receipts_label),
+            detail = str(S.desktop_card_override_receipts_detail),
         ) { onEvent(CardEvent.EditSettings(draft.copy(overrides = overrides.copy(overrideReceipts = it)))) }
         OverrideSwitch(
             checked = overrides.requireCoordinatorCoding,
-            label = "Receipts must be coded by a coordinator first",
-            detail = "Nothing enters the approval queue until its department has coded it.",
+            label = str(S.desktop_card_coordinator_coding_label),
+            detail = str(S.desktop_card_coordinator_coding_detail),
         ) {
             onEvent(CardEvent.EditSettings(draft.copy(overrides = overrides.copy(requireCoordinatorCoding = it))))
         }
         OverrideSwitch(
             checked = overrides.requireSeniorSignOff,
-            label = "Senior sign-off before posting",
-            detail = "Receipts cannot reach the ledger until a senior accountant has cleared them.",
+            label = str(S.desktop_card_senior_signoff_label),
+            detail = str(S.desktop_card_senior_signoff_detail),
         ) { onEvent(CardEvent.EditSettings(draft.copy(overrides = overrides.copy(requireSeniorSignOff = it)))) }
     }
 }
@@ -419,14 +421,14 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
 
     SettingsSectionCard(
         section = SettingsSection.Providers,
-        description = "The issuers a card can be held with. Offered on every card form.",
+        description = str(S.desktop_card_providers_description),
         icon = ZillitIcons.CreditCard,
         dirty = dirty,
         state = state,
         onEvent = onEvent,
         action = {
             ZillitButton(
-                text = "Add provider",
+                text = str(S.desktop_card_add_provider),
                 onClick = {
                     val next = providers + CardProvider(id = newProviderId(providers), name = "")
                     onEvent(CardEvent.EditSettings(draft.copy(providers = next)))
@@ -438,7 +440,7 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
         },
     ) {
         if (providers.isEmpty()) {
-            EmptySectionLine("No providers configured. Cards are raised without an issuer named.")
+            EmptySectionLine(str(S.desktop_card_providers_empty))
             return@SettingsSectionCard
         }
         providers.forEachIndexed { index, provider ->
@@ -467,7 +469,7 @@ private fun ProviderRow(provider: CardProvider, onRename: (String) -> Unit, onRe
         ZillitTextField(
             value = provider.name,
             onValueChange = onRename,
-            placeholder = "Barclaycard Business",
+            placeholder = str(S.desktop_card_provider_placeholder),
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
@@ -493,7 +495,7 @@ private fun RequestCapSection(state: CardUiState, draft: CardSettings, onEvent: 
 
     SettingsSectionCard(
         section = SettingsSection.RequestCap,
-        description = "The most a card request may ask for. Leave it empty for no ceiling.",
+        description = str(S.desktop_card_request_cap_description),
         icon = ZillitIcons.Wallet,
         dirty = dirty,
         state = state,
@@ -504,8 +506,8 @@ private fun RequestCapSection(state: CardUiState, draft: CardSettings, onEvent: 
             onValueChange = { text ->
                 onEvent(CardEvent.EditSettings(draft.copy(requestCap = text.trim().toDoubleOrNull())))
             },
-            label = "Maximum request",
-            placeholder = "No ceiling",
+            label = str(S.desktop_card_maximum_request),
+            placeholder = str(S.desktop_card_no_ceiling),
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.width(LIMIT_FIELD),
         )
@@ -533,7 +535,7 @@ private fun SettingsSectionCard(
     com.zillit.desktop.core.designsystem.component.ZillitSectionCard(
         title = section.label,
         icon = icon,
-        meta = if (dirty) "Unsaved" else null,
+        meta = if (dirty) str(S.asset_unsaved) else null,
         action = action,
     ) {
         ZillitText(
@@ -548,7 +550,7 @@ private fun SettingsSectionCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                text = "Save",
+                text = str(S.save),
                 onClick = { onEvent(CardEvent.SaveSettings(section)) },
                 size = ButtonSize.Small,
                 enabled = dirty && !state.busy,
@@ -556,7 +558,7 @@ private fun SettingsSectionCard(
             )
             if (dirty) {
                 ZillitButton(
-                    text = "Discard",
+                    text = str(S.ah_discard),
                     onClick = { onEvent(CardEvent.DiscardSettings) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -592,7 +594,7 @@ private fun OverrideSwitch(
 
 @Composable
 private fun EmptySectionLine(text: String) {
-    FieldGroupLabel("Nothing configured")
+    FieldGroupLabel(str(S.desktop_card_nothing_configured))
     ZillitText(
         text = text,
         style = ZillitTheme.typography.bodySmall,

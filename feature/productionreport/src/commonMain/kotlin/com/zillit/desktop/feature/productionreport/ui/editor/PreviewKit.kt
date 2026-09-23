@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ColumnSpec
 import com.zillit.desktop.feature.productionreport.domain.ReportTime
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
@@ -261,7 +263,7 @@ internal fun SectionBar(
 internal fun BarBadge(selected: Boolean, detail: String?, onEdit: () -> Unit) {
     val accent = ReportTheme.colors.accent
     if (selected) {
-        val text = detail?.let { "Editing: $it" } ?: "Editing"
+        val text = detail?.let { str(S.desktop_editing_detail, it) } ?: str(S.desktop_editing)
         Text(
             text,
             style = reportText(9.sp, FontWeight.SemiBold, 12.sp),
@@ -279,7 +281,7 @@ internal fun BarBadge(selected: Boolean, detail: String?, onEdit: () -> Unit) {
     } else {
         val (source, hovered) = rememberHover()
         Text(
-            "Click to edit",
+            str(S.desktop_click_to_edit),
             style = reportText(9.sp, FontWeight.Medium, 12.sp),
             color = if (hovered) Color.White else Color.White.copy(alpha = 0.7f),
             maxLines = 1,
@@ -303,7 +305,7 @@ internal fun FooterBadge(selected: Boolean, detail: String?, onEdit: () -> Unit,
     ) {
         if (selected) {
             Text(
-                detail?.let { "Editing: $it" } ?: "Editing",
+                detail?.let { str(S.desktop_editing_detail, it) } ?: str(S.desktop_editing),
                 style = reportText(9.sp, FontWeight.SemiBold, 12.sp),
                 color = Color.White,
                 maxLines = 1,
@@ -316,7 +318,7 @@ internal fun FooterBadge(selected: Boolean, detail: String?, onEdit: () -> Unit,
         } else {
             val (source, hovered) = rememberHover()
             Text(
-                "Click to edit",
+                str(S.desktop_click_to_edit),
                 style = reportText(if (small) 8.sp else 9.sp, FontWeight.Medium, 12.sp),
                 color = if (hovered) accent else if (small) doc.pillText.copy(alpha = 0.8f) else doc.pillText,
                 modifier = Modifier
@@ -429,7 +431,7 @@ internal fun inOutText(stored: String): String = when {
     stored.startsWith("Time:") -> {
         val raw = stored.removePrefix("Time:")
         when {
-            raw.isEmpty() -> "Time"
+            raw.isEmpty() -> str(S.time)
             ReportTime.isLegacyEpoch(raw) -> ReportTime.toWireTime(raw)
             else -> raw
         }

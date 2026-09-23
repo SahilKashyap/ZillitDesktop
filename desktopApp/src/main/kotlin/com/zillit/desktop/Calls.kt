@@ -1,6 +1,8 @@
 package com.zillit.desktop
 
 import androidx.compose.foundation.layout.fillMaxSize
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.ui.CallLogEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -355,10 +357,10 @@ private fun AppGraph.Ready.directTarget(entry: CallLogEntry, otherProjectId: Str
 private val LEFT_STATUSES = setOf("left", "removed")
 
 /** Android's `user_not_active_txt` (`res/values/strings.xml:3431`). */
-private const val USER_NOT_ACTIVE = "User is not active in this project."
+private val USER_NOT_ACTIVE: String get() = str(S.user_not_active_txt)
 
 /** Android's `txt_error_call` (`res/values/strings.xml:942`). */
-private const val CALL_FAILED = "Facing issues while starting a call."
+private val CALL_FAILED: String get() = str(S.txt_error_call)
 
 /** A crew member's name, honouring the keep-private flag the lists apply. */
 internal fun crewNameOf(ready: AppGraph.Ready, userId: String): String? =

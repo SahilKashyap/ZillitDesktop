@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -30,7 +32,7 @@ class WorksheetToolProvider(
 ) : ToolProvider {
 
     override val path: String = WORKSHEET_PATH
-    override val title: String = "Cost Report"
+    override val title: String get() = str(S.cr_title)
     override val icon = ZillitIcons.BarChart
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -54,7 +56,7 @@ class WorksheetToolProvider(
                 }
             }
         }
-        LaunchedEffect(state.pane) { navigator.setTitle("Cost Report · ${state.pane.label}") }
+        LaunchedEffect(state.pane) { navigator.setTitle(str(S.desktop_cr_window_title, state.pane.label)) }
 
         WorksheetScreen(
             state = state,

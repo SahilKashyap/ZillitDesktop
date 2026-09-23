@@ -25,6 +25,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.searchCrew
@@ -73,7 +75,7 @@ fun GroupEditorDialog(
     onDismiss: () -> Unit,
 ) {
     ZillitDialogShell(
-        title = "Create new group",
+        title = str(S.desktop_chat_create_new_group),
         icon = ZillitIcons.Users,
         onDismiss = onDismiss,
         visible = visible,
@@ -83,12 +85,12 @@ fun GroupEditorDialog(
         scrollable = false,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = onDismiss,
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Create",
+                text = str(S.create),
                 onClick = { onEvent(GroupEditorEvent.Create) },
                 loading = state.isBusy,
             )
@@ -109,18 +111,18 @@ private fun GroupEditorForm(
         ZillitTextField(
             value = state.name,
             onValueChange = { onEvent(GroupEditorEvent.NameChanged(it)) },
-            label = "Group name",
-            placeholder = "Please enter group name",
+            label = str(S.mtg_group_name_hint),
+            placeholder = str(S.desktop_chat_please_enter_group_name),
             modifier = Modifier.fillMaxWidth().testTag("group-name"),
         )
         ZillitSearchField(
             value = state.memberQuery,
             onValueChange = { onEvent(GroupEditorEvent.QueryChanged(it)) },
-            placeholder = "Search members",
+            placeholder = str(S.desktop_search_members),
         )
         if (state.selected.isNotEmpty()) {
             ZillitText(
-                text = "${state.selected.size} selected",
+                text = str(S.dd_n_selected, state.selected.size),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textSecondary,
             )

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.preview
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.rates.Js
@@ -21,92 +23,107 @@ object MemoFormat {
 
     const val DASH = DealCrewLabels.DASH
 
-    val DEAL_LABELS = mapOf(
-        "weekly" to "Weekly Rolling",
-        "fixed" to "Fixed Term",
-        "dayplayer" to "Day Player",
-        "daily" to "Day Player",
-        "buyout" to "Buy-Out",
-        "buy-out" to "Buy-Out",
-        "picture" to "Picture Deal",
-        "boxrental" to "Box Rental Only",
-    )
+    val DEAL_LABELS: Map<String, String>
+        get() = mapOf(
+            "weekly" to str(S.desktop_dm_deal_type_weekly_rolling),
+            "fixed" to str(S.desktop_dm_deal_type_fixed_term),
+            "dayplayer" to str(S.desktop_dm_deal_type_day_player),
+            "daily" to str(S.desktop_dm_deal_type_day_player),
+            "buyout" to str(S.desktop_dm_deal_type_buy_out),
+            "buy-out" to str(S.desktop_dm_deal_type_buy_out),
+            "picture" to str(S.desktop_dm_deal_type_picture_deal),
+            "boxrental" to str(S.desktop_dm_deal_type_box_rental_only),
+        )
 
-    val NOTICE_LABELS = mapOf(
-        "statutory" to "Statutory minimum",
-        "1week" to "1 week",
-        "2week" to "2 weeks",
-        "4week" to "4 weeks",
-        "1month" to "1 month",
-        "production" to "Duration of production",
-        "negotiated" to "Negotiated",
-        "none" to "N/A (fixed term)",
-        "custom" to "Custom",
-    )
+    val NOTICE_LABELS: Map<String, String>
+        get() = mapOf(
+            "statutory" to str(S.desktop_dm_notice_statutory_minimum),
+            "1week" to str(S.desktop_dm_notice_1_week),
+            "2week" to str(S.desktop_dm_notice_2_weeks),
+            "4week" to str(S.desktop_dm_notice_4_weeks),
+            "1month" to str(S.desktop_dm_notice_1_month),
+            "production" to str(S.desktop_dm_notice_duration_of_production),
+            "negotiated" to str(S.desktop_negotiated),
+            "none" to str(S.desktop_dm_notice_na_fixed_term),
+            "custom" to str(S.custom),
+        )
 
-    val BILLING_BASIS_LABELS = mapOf(
-        "week" to "Per week",
-        "day" to "Per day",
-        "flat" to "Flat deal",
-        "episode" to "Per episode",
-        "production" to "Per production",
-    )
+    val BILLING_BASIS_LABELS: Map<String, String>
+        get() = mapOf(
+            "week" to str(S.desktop_dm_billing_per_week),
+            "day" to str(S.desktop_dm_billing_per_day),
+            "flat" to str(S.desktop_dm_billing_flat_deal),
+            "episode" to str(S.desktop_dm_billing_per_episode),
+            "production" to str(S.desktop_dm_billing_per_production),
+        )
 
-    val TRAVEL_ZONE_LABELS = mapOf(
-        "30mile" to "30-mile radius (PACT/BECTU 8.3a)",
-        "m25" to "Within the M25 (PACT/BECTU 8.3b)",
-    )
+    val TRAVEL_ZONE_LABELS: Map<String, String>
+        get() = mapOf(
+            "30mile" to str(S.desktop_dm_travel_zone_30mile),
+            "m25" to str(S.desktop_dm_travel_zone_m25),
+        )
 
-    val COA_BASIS_LABELS = mapOf(
-        "none" to "None",
-        "1week" to "1 full week",
-        "2.5days" to "2.5 days (½ × weekly)",
-        "50pct" to "50% of weekly",
-        "100pct" to "100% of weekly",
-        "negotiated" to "Negotiated",
-    )
+    val COA_BASIS_LABELS: Map<String, String>
+        get() = mapOf(
+            "none" to str(S.none),
+            "1week" to str(S.desktop_dm_coa_1_full_week),
+            "2.5days" to str(S.desktop_dm_coa_2_5_days),
+            "50pct" to str(S.desktop_dm_coa_50pct),
+            "100pct" to str(S.desktop_dm_coa_100pct),
+            "negotiated" to str(S.desktop_negotiated),
+        )
 
-    val PAY_FREQ_LABEL = mapOf(
-        "weekly" to "Per Week",
-        "daily" to "Per Day",
-        "shoot" to "Per Shoot Day",
-        "non_shoot" to "Per Non-Shoot Day",
-        "all" to "All Days",
-    )
+    val PAY_FREQ_LABEL: Map<String, String>
+        get() = mapOf(
+            "weekly" to str(S.desktop_dm_freq_per_week),
+            "daily" to str(S.desktop_dm_freq_per_day),
+            "shoot" to str(S.desktop_dm_freq_per_shoot_day),
+            "non_shoot" to str(S.desktop_dm_freq_per_non_shoot_day),
+            "all" to str(S.desktop_dm_all_days),
+        )
 
-    private val PREVIEW_BASIS_LABELS = mapOf(
-        "30_minutes" to "30 min",
-        "hour" to "hour",
-        "day" to "day",
-        "days" to "days",
-        "night" to "night",
-        "event" to "event",
-        "mile" to "mile",
-        "meal" to "meal",
-        "call" to "call",
-        "penalty" to "penalty",
-        "additional" to "additional",
-        "actuals" to "Actuals",
-    )
+    private val PREVIEW_BASIS_LABELS: Map<String, String>
+        get() = mapOf(
+            "30_minutes" to str(S.desktop_unit_30_min),
+            "hour" to str(S.desktop_unit_hour),
+            "day" to str(S.day_label),
+            "days" to str(S.dm_ds_days_label),
+            "night" to str(S.desktop_unit_night),
+            "event" to str(S.desktop_unit_event),
+            "mile" to str(S.desktop_unit_mile),
+            "meal" to str(S.desktop_unit_meal),
+            "call" to str(S.desktop_unit_call),
+            "penalty" to str(S.desktop_unit_penalty),
+            "additional" to str(S.desktop_unit_additional),
+            "actuals" to str(S.desktop_actuals),
+        )
 
-    private val ENTITLEMENT_BASIS = mapOf(
-        "day" to "Daily",
-        "week" to "5 Days Week",
-        "3in5" to "3 in 5",
-        "mile" to "Per Mile",
-        "hour" to "Per Hour (retired — re-select)",
-        "night" to "Per Night (retired — re-select)",
-        "event" to "Per Event (retired — re-select)",
-    )
+    private val ENTITLEMENT_BASIS: Map<String, String>
+        get() = mapOf(
+            "day" to str(S.daily),
+            "week" to str(S.desktop_5_days_week),
+            "3in5" to str(S.desktop_3_in_5),
+            "mile" to str(S.desktop_per_mile),
+            "hour" to str(S.desktop_hub_per_hour_retired_re_select_dashes),
+            "night" to str(S.desktop_hub_per_night_retired_re_select_dashes),
+            "event" to str(S.desktop_hub_per_event_retired_re_select_dashes),
+        )
 
-    private val LEGACY_DURATIONS = mapOf(
-        "statutory" to "Statutory minimum",
-        "production" to "Duration of production",
-        "negotiated" to "Negotiated",
-        "none" to "N/A (fixed term)",
-    )
+    private val LEGACY_DURATIONS: Map<String, String>
+        get() = mapOf(
+            "statutory" to str(S.desktop_dm_notice_statutory_minimum),
+            "production" to str(S.desktop_dm_notice_duration_of_production),
+            "negotiated" to str(S.desktop_negotiated),
+            "none" to str(S.desktop_dm_notice_na_fixed_term),
+        )
 
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val MONTHS: List<String>
+        get() = listOf(
+            str(S.desktop_month_short_jan), str(S.desktop_month_short_feb), str(S.desktop_month_short_mar),
+            str(S.desktop_month_short_apr), str(S.desktop_month_short_may), str(S.desktop_month_short_jun),
+            str(S.desktop_month_short_jul), str(S.desktop_month_short_aug), str(S.desktop_month_short_sep),
+            str(S.desktop_month_short_oct), str(S.desktop_month_short_nov), str(S.desktop_month_short_dec),
+        )
     private val DURATION = Regex("^(\\d+)_(day|week|month|hour)$")
     private val LEGACY_COMPACT = Regex("^(\\d+)(day|week|month)s?$")
     private val LEGACY_FREE_TEXT = Regex("^(\\d+)\\s*(day|week|month)s?\\b", RegexOption.IGNORE_CASE)
@@ -151,8 +168,14 @@ object MemoFormat {
         val match = DURATION.find(raw) ?: LEGACY_COMPACT.find(raw) ?: LEGACY_FREE_TEXT.find(raw)
         if (match != null) {
             val count = match.groupValues[1].toLong()
-            val unit = match.groupValues[2].lowercase().replaceFirstChar { it.uppercase() }
-            return "$count $unit${if (count == 1L) "" else "s"}"
+            val one = count == 1L
+            val key = when (match.groupValues[2].lowercase()) {
+                "day" -> if (one) S.desktop_dm_dur_day else S.desktop_dm_dur_days
+                "week" -> if (one) S.desktop_dm_dur_week else S.desktop_dm_dur_weeks
+                "month" -> if (one) S.desktop_dm_dur_month else S.desktop_dm_dur_months
+                else -> if (one) S.desktop_dm_dur_hour else S.desktop_dm_dur_hours
+            }
+            return str(key, count)
         }
         return LEGACY_DURATIONS[raw] ?: raw
     }
@@ -182,7 +205,7 @@ object MemoFormat {
     @Suppress("CyclomaticComplexMethod")
     fun unionComp(row: JsonObject, symbol: String): String {
         val source = DocRead.obj(row, "source")
-        if (Js.truthy(source?.get("use_ot_rate"))) return "OT rate"
+        if (Js.truthy(source?.get("use_ot_rate"))) return str(S.desktop_dm_ot_rate)
         val rawType = DocRead.text(source, "rate_type")
         val type = when {
             rawType == "fixed" -> "flat"
@@ -198,10 +221,12 @@ object MemoFormat {
         return when {
             type == "multiplier" && amount != null ->
                 "${if (Js.truthy(source?.get("is_enhancement"))) "+" else "×"}${Js.text(amount)}"
-            type == "percentage" && amount != null -> "${Js.text(amount)}% of ${basis ?: "gross"}"
+            type == "percentage" && amount != null ->
+                str(S.desktop_dm_percent_of, Js.text(amount), basis ?: str(S.desktop_unit_gross))
             type == "flat" && amount != null ->
-                "$symbol${Js.toNumber(amount)?.let(RateFormat::groupAmountAuto) ?: Js.text(amount)}/${basis ?: "event"}"
-            rawType == "actuals" -> "Actuals"
+                "$symbol${Js.toNumber(amount)?.let(RateFormat::groupAmountAuto) ?: Js.text(amount)}/" +
+                    (basis ?: str(S.desktop_unit_event))
+            rawType == "actuals" -> str(S.desktop_actuals)
             basis != null -> basis
             else -> DASH
         }

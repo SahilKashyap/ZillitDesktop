@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.payroll.domain.NominalAllocation
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * One crew line, opened: what they are paid, and where it is charged.
@@ -55,13 +57,12 @@ fun LineDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
         val slip = state.payslip
         if (slip == null) {
             ZillitText(
-                text = "No payslip has been produced for this line yet. " +
-                    "One appears once the run is staged.",
+                text = str(S.desktop_payroll_no_payslip),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
         } else {
-            ZillitText(text = "Payslip", style = ZillitTheme.typography.titleSmall)
+            ZillitText(text = str(S.desktop_payroll_payslip), style = ZillitTheme.typography.titleSmall)
             slip.lines.forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
@@ -98,7 +99,7 @@ fun LineDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitText(text = "Where this is charged", style = ZillitTheme.typography.titleSmall)
+            ZillitText(text = str(S.desktop_payroll_where_charged), style = ZillitTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
             ZillitText(
                 text = "${Money.format(state.splitTotal, line.currency)} of " +
@@ -111,7 +112,11 @@ fun LineDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
                 },
             )
             ZillitStatusPill(
-                label = if (state.splitBalances) "Allocated" else "Does not add up",
+                label = if (state.splitBalances) {
+                    str(S.txt_vehicle_status_allocated)
+                } else {
+                    str(S.desktop_payroll_does_not_add_up)
+                },
                 tone = if (state.splitBalances) StatusTone.Done else StatusTone.Rejected,
                 dot = true,
             )
@@ -132,7 +137,7 @@ fun LineDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitButton(
-                text = "Add an allocation",
+                text = str(S.desktop_payroll_add_allocation),
                 onClick = { onEvent(PayrollEvent.AddAllocation) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -142,12 +147,12 @@ fun LineDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
             )
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(PayrollEvent.OpenLine(null)) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Save allocations",
+                text = str(S.desktop_payroll_save_allocations),
                 onClick = { onEvent(PayrollEvent.SaveAllocations) },
                 enabled = state.splitBalances && !state.busy && state.codingEditable,
                 loading = state.busy,
@@ -172,19 +177,19 @@ private fun AllocationRow(
         ZillitTextField(
             value = allocation.nominalCode,
             onValueChange = { onChange(allocation.copy(nominalCode = it)) },
-            label = if (index == 0) "Nominal code" else null,
+            label = if (index == 0) str(S.dm_allow_nominal) else null,
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = allocation.description,
             onValueChange = { onChange(allocation.copy(description = it)) },
-            label = if (index == 0) "What it covers" else null,
+            label = if (index == 0) str(S.desktop_payroll_what_it_covers) else null,
             modifier = Modifier.weight(2f),
         )
         ZillitTextField(
             value = if (allocation.amount == 0.0) "" else allocation.amount.toString(),
             onValueChange = { onChange(allocation.copy(amount = it.trim().toDoubleOrNull() ?: 0.0)) },
-            label = if (index == 0) "Amount" else null,
+            label = if (index == 0) str(S.amount) else null,
             placeholder = "0.00",
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.weight(1f),

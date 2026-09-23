@@ -2,11 +2,16 @@ package com.zillit.desktop.feature.productionreport
 
 import com.zillit.desktop.feature.productionreport.data.matchesProject
 import com.zillit.desktop.feature.productionreport.data.syncEventOf
+import com.zillit.desktop.feature.productionreport.domain.ApprovalRequest
 import com.zillit.desktop.feature.productionreport.domain.ReportComment
+import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSyncEvent
+import com.zillit.desktop.feature.productionreport.domain.SheetPayload
+import com.zillit.desktop.feature.productionreport.ui.DialogEvent
 import com.zillit.desktop.feature.productionreport.ui.ListEvent
 import com.zillit.desktop.feature.productionreport.ui.ReportDialog
+import com.zillit.desktop.feature.productionreport.ui.WorkflowEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -19,6 +24,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -53,7 +59,53 @@ class ReportSyncTest {
         assertEquals("r2", syncEventOf("productionreport:comment:created", comment).reportId)
         assertTrue(syncEventOf("productionreport:comment:created", comment).isComment)
         assertNull(syncEventOf("productionreport:approval:approved", null).reportId)
+        val voided = Json.parseToJsonElement(
+            """{"data":{"production_report_id":"r3","approval_request_ids":["q1","","q2"]}}""",
+        )
+        assertEquals(listOf("q1", "q2"), syncEventOf(ReportSyncEvent.VOIDED, voided).requestIds)
     }
+
+    @Test
+    fun `a report deleted elsewhere closes its editor and dialogs, a voided request its approve`() =
+        runTest(dispatcher) {
+            val report = Samples.row("r1", "Day 1")
+            repository.details["r1"] = ReportDetail(report, SheetPayload())
+            val vm = harness.start(this)
+            vm.onEvent(ListEvent.Edit(report))
+            settle()
+            assertEquals("r1", vm.currentState.editor?.reportId)
+
+            repository.liveEvents.emit(ReportSyncEvent(ReportSyncEvent.DELETED, reportId = "r2"))
+            settle()
+            assertEquals("r1", vm.currentState.editor?.reportId, "another report's delete is not ours")
+            repository.liveEvents.emit(ReportSyncEvent(ReportSyncEvent.DELETED, reportId = "r1"))
+            settle()
+            assertNull(vm.currentState.editor)
+            assertEquals("This production report was deleted.", harness.toasts.last().message)
+
+            val request = ApprovalRequest("q1", "me", "Author", "2nd AD")
+            val received = Samples.row("r5", "Day 5", ReportStatus.PendingApproval, "u2", listOf(request))
+            vm.onEvent(WorkflowEvent.OpenApprove(received))
+            assertIs<ReportDialog.Approve>(vm.currentState.dialog)
+            repository.liveEvents.emit(ReportSyncEvent(ReportSyncEvent.VOIDED, requestIds = listOf("q9")))
+            settle()
+            assertIs<ReportDialog.Approve>(vm.currentState.dialog, "another request was voided")
+            repository.liveEvents.emit(ReportSyncEvent(ReportSyncEvent.VOIDED, requestIds = listOf("q1")))
+            settle()
+            assertNull(vm.currentState.dialog)
+            assertEquals("This approval request is no longer active.", harness.toasts.last().message)
+
+            val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+            repository.deleteGate = gate
+            vm.onEvent(ListEvent.Delete(Samples.row("r7", "Day 7")))
+            vm.onEvent(DialogEvent.Confirm)
+            repository.liveEvents.emit(ReportSyncEvent(ReportSyncEvent.DELETED, reportId = "r7"))
+            settle()
+            assertIs<ReportDialog.Confirm>(vm.currentState.dialog, "our own delete in flight closes itself")
+            gate.complete(Unit)
+            settle()
+            assertNull(vm.currentState.dialog)
+        }
 
     @Test
     fun `only a frame naming another production is dropped`() {

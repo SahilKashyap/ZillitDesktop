@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.domain.DiaryView
@@ -68,7 +70,7 @@ internal fun DiaryHeader(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) 
         DiaryToolbar(state, onEvent)
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             ZillitText(
-                text = "PRODUCTION DIARY/BOX SCHEDULE",
+                text = str(S.bs_title),
                 style = serif(20.sp, FontWeight.ExtraBold, spacing = 3.sp),
                 color = colors.textPrimary,
                 textAlign = TextAlign.Center,
@@ -95,24 +97,24 @@ private fun DiaryToolbar(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) 
     ) {
         val canSelect = state.page.view == DiaryView.List && !state.page.selecting && state.filteredRows.isNotEmpty()
         if (mayEdit && canSelect) {
-            ToolbarButton("Select", ZillitIcons.Check) { onEvent(PageEvent.EnterSelect) }
+            ToolbarButton(str(S.select), ZillitIcons.Check) { onEvent(PageEvent.EnterSelect) }
         }
         Box {
-            ToolbarButton("History", ZillitIcons.Clock) { onEvent(PanelEvent.OpenHistory) }
+            ToolbarButton(str(S.history), ZillitIcons.Clock) { onEvent(PanelEvent.OpenHistory) }
             ZillitBadge(
                 count = state.historyBadge,
                 modifier = Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp),
             )
         }
-        if (mayEdit) ToolbarButton("Edit Types", ZillitIcons.Settings) { onEvent(PanelEvent.OpenTypes) }
-        ToolbarButton("Presets", ZillitIcons.StarOutline) { onEvent(PanelEvent.OpenPresets) }
+        if (mayEdit) ToolbarButton(str(S.bs_edit_types), ZillitIcons.Settings) { onEvent(PanelEvent.OpenTypes) }
+        ToolbarButton(str(S.bs_presets), ZillitIcons.StarOutline) { onEvent(PanelEvent.OpenPresets) }
         if (mayEdit) PdfButtons(state, onEvent)
         Spacer(Modifier.weight(1f))
         if (mayEdit) {
-            ToolbarButton("Create Event", ZillitIcons.Calendar) { onEvent(EntryEvent.NewEntry(DiaryKind.Event)) }
-            ToolbarButton("Create Note", ZillitIcons.Edit) { onEvent(EntryEvent.NewEntry(DiaryKind.Note)) }
+            ToolbarButton(str(S.create_event), ZillitIcons.Calendar) { onEvent(EntryEvent.NewEntry(DiaryKind.Event)) }
+            ToolbarButton(str(S.bs_create_note), ZillitIcons.Edit) { onEvent(EntryEvent.NewEntry(DiaryKind.Note)) }
             ZillitButton(
-                text = "Create Schedule",
+                text = str(S.create_schedule),
                 onClick = { onEvent(ScheduleEvent.NewSchedule()) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
@@ -126,7 +128,7 @@ private fun DiaryToolbar(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) 
 private fun PdfButtons(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit) {
     val busy = state.overlays.pdf?.takeIf { it.busy }?.destination
     ZillitButton(
-        text = if (busy == PdfDestination.Print) "Preparing..." else "Print",
+        text = if (busy == PdfDestination.Print) str(S.preparing) else str(S.print),
         onClick = { onEvent(PanelEvent.OpenPdf(PdfDestination.Print)) },
         variant = ButtonVariant.Secondary,
         size = ButtonSize.Small,
@@ -135,7 +137,7 @@ private fun PdfButtons(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) ->
     )
     if (state.canPublish) {
         ZillitButton(
-            text = "Publish to Doc Distribution",
+            text = str(S.dd_publish_to_distribution),
             onClick = { onEvent(PanelEvent.OpenPdf(PdfDestination.Publish)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -177,7 +179,7 @@ internal fun SelectionBar(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent)
         )
         val allChosen = total > 0 && chosen == total
         ZillitText(
-            text = if (allChosen) "Deselect All" else "Select All",
+            text = if (allChosen) str(S.deselect_emails) else str(S.select_all),
             style = ZillitTheme.typography.label,
             color = colors.surface.copy(alpha = 0.7f),
             modifier = Modifier
@@ -188,7 +190,11 @@ internal fun SelectionBar(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent)
         Spacer(Modifier.weight(1f))
         if (state.canPrint) {
             ZillitButton(
-                text = if (state.overlays.printSelected?.printing == true) "Preparing..." else "Print Selected",
+                text = if (state.overlays.printSelected?.printing == true) {
+                    str(S.preparing)
+                } else {
+                    str(S.desktop_bs_print_selected)
+                },
                 onClick = { onEvent(PanelEvent.OpenPrintSelected) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -197,7 +203,7 @@ internal fun SelectionBar(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent)
             )
         }
         ZillitButton(
-            text = "Delete Selected",
+            text = str(S.bs_delete_selected),
             onClick = { onEvent(ScheduleEvent.AskBulkDelete) },
             variant = ButtonVariant.Danger,
             size = ButtonSize.Small,
@@ -205,7 +211,7 @@ internal fun SelectionBar(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent)
             enabled = chosen > 0,
         )
         ZillitButton(
-            text = "Cancel",
+            text = str(S.cancel),
             onClick = { onEvent(PageEvent.ExitSelect) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -242,8 +248,8 @@ internal fun ViewBar(
             onSelect = { onEvent(PageEvent.SetView(it)) },
         )
         DefaultViewMenu(
-            buttonText = "Set Default View",
-            description = "This view will load first every time you open the Production Diary/Box Schedule.",
+            buttonText = str(S.desktop_bs_set_default_view),
+            description = str(S.desktop_bs_default_view_hint),
             options = DiaryView.entries,
             current = state.page.defaultView,
             label = { it.label },
@@ -254,13 +260,13 @@ internal fun ViewBar(
             ZillitSearchField(
                 value = state.page.filter.search,
                 onValueChange = { onEvent(PageEvent.Search(it)) },
-                placeholder = "Search by title, type, date...",
+                placeholder = str(S.bs_search_hint),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         Box {
             ZillitButton(
-                text = "Filter",
+                text = str(S.filter),
                 onClick = { onEvent(PageEvent.OpenFilters) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -330,7 +336,7 @@ internal fun <T> DefaultViewMenu(
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Column(Modifier.width(260.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ZillitText("Choose your default view", style = ZillitTheme.typography.titleSmall)
+                ZillitText(str(S.dv_choose_title), style = ZillitTheme.typography.titleSmall)
                 ZillitText(description, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
                 options.forEach { option ->
                     DefaultOption(
@@ -371,7 +377,7 @@ private fun DefaultOption(title: String, hint: String, selected: Boolean, onClic
             ZillitText(title, style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold))
             ZillitText(hint, style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         }
-        if (selected) ZillitText("Current", style = ZillitTheme.typography.labelSmall, color = colors.success)
+        if (selected) ZillitText(str(S.dv_current), style = ZillitTheme.typography.labelSmall, color = colors.success)
     }
 }
 

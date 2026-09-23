@@ -1,6 +1,8 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import java.awt.Dimension
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
@@ -65,12 +67,12 @@ internal object DocumentEditorWindow {
             if (client == null) {
                 val reason = when (val failure = KcefRuntime.failure) {
                     KcefRuntime.Failure.NoJcefRuntime ->
-                        "This build has no embedded browser, so documents cannot be edited here."
+                        str(S.desktop_no_embedded_browser_documents)
 
                     is KcefRuntime.Failure.Broken ->
-                        "The embedded browser could not start (${failure.reason})."
+                        str(S.desktop_embedded_browser_failed, failure.reason)
 
-                    null -> "The embedded browser is unavailable."
+                    null -> str(S.desktop_browser_unavailable)
                 }
                 ZillitLog.w(TAG) { "editor unavailable: $reason" }
                 onUnavailable(reason)

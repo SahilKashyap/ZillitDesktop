@@ -24,6 +24,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.plural
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
 import com.zillit.desktop.feature.boxschedule.domain.DateConflict
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
@@ -47,27 +50,27 @@ import com.zillit.desktop.feature.boxschedule.ui.ScopeMode
 @Composable
 internal fun ConflictDialog(state: BoxScheduleUiState, prompt: ConflictPrompt, onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Schedule Conflict",
+        title = str(S.conflict_title),
         icon = ZillitIcons.Warning,
         onDismiss = { onEvent(ScheduleEvent.CancelConflict) },
         visible = true,
         width = 520.dp,
         actions = {
             ZillitButton(
-                "← Back to Edit Dates",
+                "← ${str(S.conflict_back)}",
                 onClick = { onEvent(ScheduleEvent.ConflictBack) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !prompt.saving,
             )
             Box(Modifier.weight(1f))
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(ScheduleEvent.CancelConflict) },
                 variant = ButtonVariant.Secondary,
                 enabled = !prompt.saving,
             )
             ZillitButton(
-                "Done",
+                str(S.done_text),
                 onClick = { onEvent(ScheduleEvent.ResolveConflict) },
                 enabled = prompt.choice != null,
                 loading = prompt.saving,
@@ -75,17 +78,17 @@ internal fun ConflictDialog(state: BoxScheduleUiState, prompt: ConflictPrompt, o
         },
     ) {
         ZillitText(
-            "${prompt.conflicts.size} date(s) overlap with existing schedules:",
+            str(S.desktop_bs_conflict_dates_overlap, prompt.conflicts.size),
             style = ZillitTheme.typography.bodyMedium,
         )
         ConflictTable(state, prompt.conflicts)
-        ZillitText("What would you like to do?", style = ZillitTheme.typography.titleSmall)
+        ZillitText(str(S.desktop_bs_what_would_you_like_to_do), style = ZillitTheme.typography.titleSmall)
         CONFLICT_OPTIONS.forEach { (action, description) ->
             OptionCard(
                 selected = prompt.choice == action,
                 title = action.label,
-                description = description,
-                badge = "Recommended".takeIf { action == ConflictAction.Replace },
+                description = str(description),
+                badge = str(S.desktop_recommended).takeIf { action == ConflictAction.Replace },
                 enabled = !prompt.saving,
                 onClick = { onEvent(ScheduleEvent.PickConflict(action)) },
             )
@@ -100,9 +103,9 @@ private fun ConflictTable(state: BoxScheduleUiState, conflicts: List<DateConflic
     val shape = RoundedCornerShape(8.dp)
     Column(Modifier.fillMaxWidth().clip(shape).border(1.dp, colors.border, shape)) {
         Row(Modifier.fillMaxWidth().background(colors.surfaceSunken).padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Caption("Date", Modifier.weight(1f))
-            Caption("Current Type", Modifier.weight(1.2f))
-            Caption("Schedule", Modifier.weight(1f))
+            Caption(str(S.date), Modifier.weight(1f))
+            Caption(str(S.desktop_bs_current_type), Modifier.weight(1.2f))
+            Caption(str(S.schedule), Modifier.weight(1f))
         }
         conflicts.forEach { conflict ->
             Row(
@@ -136,11 +139,40 @@ private fun ConflictTable(state: BoxScheduleUiState, conflicts: List<DateConflic
     }
 }
 
+/** Each resolution with the catalogue key of its description. */
 private val CONFLICT_OPTIONS = listOf(
-    ConflictAction.Replace to "Remove existing schedule on these dates and use your new schedule instead",
-    ConflictAction.Extend to "Keep existing schedule, only fill empty dates with new schedule",
-    ConflictAction.Overlap to "Keep existing schedule and also add the new one on the same dates",
+    ConflictAction.Replace to S.conflict_replace_desc,
+    ConflictAction.Extend to S.desktop_bs_conflict_extend_desc,
+    ConflictAction.Overlap to S.conflict_overlap_desc,
 )
+
+/** Cancel, and the one confirm whose wording turns on delete-vs-edit and scope. */
+@Composable
+private fun ScopeDialogActions(
+    delete: Boolean,
+    single: Boolean,
+    prompt: ScheduleScopePrompt,
+    onEvent: (BoxScheduleEvent) -> Unit,
+) {
+    ZillitButton(
+        str(S.cancel),
+        onClick = { onEvent(ScheduleEvent.CancelScope) },
+        variant = ButtonVariant.Secondary,
+    )
+    ZillitButton(
+        text = str(
+            when {
+                delete && single -> S.bs_sched_scope_btn_delete_this
+                delete -> S.bs_sched_scope_btn_delete_all
+                single -> S.bs_sched_scope_btn_edit_this
+                else -> S.bs_sched_scope_btn_edit_all
+            },
+        ),
+        onClick = { onEvent(ScheduleEvent.ConfirmScope) },
+        variant = if (delete) ButtonVariant.Danger else ButtonVariant.Primary,
+        loading = prompt.working,
+    )
+}
 
 /** "This schedule covers more than one day." — this date only, or the complete schedule. */
 @Composable
@@ -157,45 +189,37 @@ internal fun ScheduleScopeDialog(
     val count = block.calendarDays.size
     val single = prompt.scope == ScheduleScope.Single
     ZillitDialogShell(
-        title = if (delete) "Delete schedule" else "Edit schedule",
-        subtitle = "This schedule covers more than one day.",
+        title = str(if (delete) S.bs_sched_scope_delete_title else S.bs_sched_scope_edit_title),
+        subtitle = str(S.bs_sched_scope_subtitle),
         icon = if (delete) ZillitIcons.Trash else ZillitIcons.Edit,
         onDismiss = { onEvent(ScheduleEvent.CancelScope) },
         visible = true,
         width = 460.dp,
-        actions = {
-            ZillitButton("Cancel", onClick = { onEvent(ScheduleEvent.CancelScope) }, variant = ButtonVariant.Secondary)
-            ZillitButton(
-                text = "${if (delete) "Delete" else "Edit"} ${if (single) "this date" else "schedule"}",
-                onClick = { onEvent(ScheduleEvent.ConfirmScope) },
-                variant = if (delete) ButtonVariant.Danger else ButtonVariant.Primary,
-                loading = prompt.working,
-            )
-        },
+        actions = { ScopeDialogActions(delete, single, prompt, onEvent) },
     ) {
         BlockSummary(block, state)
         ZillitText(
-            if (delete) "What do you want to delete?" else "What do you want to edit?",
+            str(if (delete) S.bs_sched_scope_choose_delete else S.bs_sched_scope_choose_edit),
             style = ZillitTheme.typography.titleSmall,
         )
         OptionCard(
             selected = single,
-            title = "This date only",
+            title = str(S.bs_sched_scope_this_date_title),
             description = if (delete) {
-                "Remove $date from this schedule only. Every other day stays as it is."
+                str(S.desktop_bs_scope_this_date_desc_delete, date)
             } else {
-                "Change the type for $date only. Every other day in this schedule stays as it is."
+                str(S.bs_sched_scope_this_date_desc_edit, date)
             },
             accent = accent,
             onClick = { onEvent(ScheduleEvent.ChooseScope(ScheduleScope.Single)) },
         )
         OptionCard(
             selected = !single,
-            title = "Complete schedule",
+            title = str(S.bs_sched_scope_complete_title),
             description = if (delete) {
-                "Delete the complete schedule — all $count day(s). This action cannot be undone."
+                str(S.desktop_bs_scope_complete_desc_delete, plural(S.bs_day_count, count))
             } else {
-                "Change the type and dates for all $count day(s) in this schedule."
+                str(S.bs_sched_scope_complete_desc_edit, plural(S.bs_day_count, count))
             },
             accent = accent,
             onClick = { onEvent(ScheduleEvent.ChooseScope(ScheduleScope.Complete)) },
@@ -224,9 +248,9 @@ private fun BlockSummary(block: ScheduleBlock, state: BoxScheduleUiState) {
 @Composable
 internal fun DeleteDayDialog(prompt: DeleteDayPrompt, onEvent: (BoxScheduleEvent) -> Unit) {
     ConfirmDialog(
-        title = "Delete Schedule Day",
-        message = "Are you sure you want to delete this schedule day? This action cannot be undone.",
-        confirm = "Delete",
+        title = str(S.desktop_bs_delete_schedule_day_title),
+        message = str(S.desktop_bs_delete_schedule_day_message),
+        confirm = str(S.delete),
         working = prompt.working,
         onConfirm = { onEvent(ScheduleEvent.ConfirmDeleteDay) },
         onCancel = { onEvent(ScheduleEvent.CancelDeleteDay) },
@@ -238,27 +262,26 @@ internal fun DeleteDayDialog(prompt: DeleteDayPrompt, onEvent: (BoxScheduleEvent
 internal fun DeleteBlockDialog(state: BoxScheduleUiState, block: ScheduleBlock, onEvent: (BoxScheduleEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "Delete Script",
+        title = str(S.bs_delete_script),
         icon = ZillitIcons.Trash,
         onDismiss = { onEvent(ScheduleEvent.CancelDeleteBlock) },
         visible = true,
         width = 440.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(ScheduleEvent.CancelDeleteBlock) },
                 variant = ButtonVariant.Secondary,
             )
             ZillitButton(
-                "Delete Script",
+                str(S.bs_delete_script),
                 onClick = { onEvent(ScheduleEvent.ConfirmDeleteBlock) },
                 variant = ButtonVariant.Danger,
             )
         },
     ) {
         ZillitText(
-            "Are you sure you want to delete this script? " +
-                "This will remove all ${block.calendarDays.size} day(s) and any linked events.",
+            str(S.desktop_bs_delete_script_message, block.calendarDays.size),
             style = ZillitTheme.typography.bodyMedium,
         )
         Row(
@@ -279,7 +302,7 @@ internal fun DeleteBlockDialog(state: BoxScheduleUiState, block: ScheduleBlock, 
             )
         }
         ZillitText(
-            "This action cannot be undone.",
+            str(S.action_cannot_be_undone),
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Medium),
             color = colors.danger,
         )
@@ -290,10 +313,9 @@ internal fun DeleteBlockDialog(state: BoxScheduleUiState, block: ScheduleBlock, 
 @Composable
 internal fun DeleteAllOnDialog(state: BoxScheduleUiState, dayKey: Long, onEvent: (BoxScheduleEvent) -> Unit) {
     ConfirmDialog(
-        title = "Delete all schedules on this day?",
-        message = "Every schedule on ${DiaryFormat.longDate(dayKey, state.zone)} loses this date. " +
-            "A schedule that is only this day is removed.",
-        confirm = "Delete all",
+        title = str(S.desktop_bs_delete_all_on_day_title),
+        message = str(S.desktop_bs_delete_all_on_day_message, DiaryFormat.longDate(dayKey, state.zone)),
+        confirm = str(S.delete_all),
         onConfirm = { onEvent(ScheduleEvent.ConfirmDeleteAllOn) },
         onCancel = { onEvent(ScheduleEvent.CancelDeleteAllOn) },
     )
@@ -303,9 +325,9 @@ internal fun DeleteAllOnDialog(state: BoxScheduleUiState, dayKey: Long, onEvent:
 @Composable
 internal fun BulkDeleteDialog(count: Int, onEvent: (BoxScheduleEvent) -> Unit) {
     ConfirmDialog(
-        title = "Delete selected days",
-        message = "Are you sure you want to delete $count day(s)?",
-        confirm = "Delete",
+        title = str(S.desktop_bs_delete_selected_days_title),
+        message = str(S.desktop_bs_delete_selected_days_message, count),
+        confirm = str(S.delete),
         onConfirm = { onEvent(ScheduleEvent.ConfirmBulkDelete) },
         onCancel = { onEvent(ScheduleEvent.CancelBulkDelete) },
     )
@@ -328,7 +350,7 @@ internal fun ConfirmDialog(
         visible = true,
         width = 420.dp,
         actions = {
-            ZillitButton("Cancel", onClick = onCancel, variant = ButtonVariant.Secondary)
+            ZillitButton(str(S.cancel), onClick = onCancel, variant = ButtonVariant.Secondary)
             ZillitButton(
                 confirm,
                 onClick = onConfirm,
@@ -353,12 +375,16 @@ internal fun EntryScopeDialog(
     delete: Boolean,
     onEvent: (BoxScheduleEvent) -> Unit,
 ) {
-    val noun = if (entry.kind == DiaryKind.Note) "note" else "event"
+    val isNote = entry.kind == DiaryKind.Note
+    val noun = str(if (isNote) S.note else S.ce_event_tab)
     if (delete && !entry.isRecurring) {
         ConfirmDialog(
-            title = "Delete $noun?",
-            message = "This will permanently remove the $noun “${entry.title.ifBlank { noun }}”.",
-            confirm = "Delete $noun",
+            title = str(if (isNote) S.desktop_bs_delete_note_title else S.desktop_bs_delete_event_title),
+            message = str(
+                if (isNote) S.desktop_bs_delete_note_message else S.desktop_bs_delete_event_message,
+                entry.title.ifBlank { noun },
+            ),
+            confirm = str(if (isNote) S.desktop_bs_delete_note_confirm else S.confirm_delete_title),
             working = prompt.working,
             onConfirm = { onEvent(EntryEvent.ConfirmDelete) },
             onCancel = { onEvent(EntryEvent.CancelDelete) },
@@ -371,9 +397,9 @@ internal fun EntryScopeDialog(
 /** How the recurring prompt reads, and what it sends, for an edit or for a delete. */
 private class ScopeFlavour(
     val delete: Boolean,
-    val title: String,
-    val subtitle: String,
-    val question: String,
+    val titleKey: String,
+    val subtitleKey: String,
+    val questionKey: String,
     val cancel: BoxScheduleEvent,
     val confirm: BoxScheduleEvent,
     val choose: (RecurrenceScope) -> BoxScheduleEvent,
@@ -381,9 +407,9 @@ private class ScopeFlavour(
 
 private val DELETE_SCOPE = ScopeFlavour(
     delete = true,
-    title = "Delete recurring event?",
-    subtitle = "This action cannot be undone.",
-    question = "Choose how much of the series to delete:",
+    titleKey = S.bs_delete_recurring_dialog_title,
+    subtitleKey = S.bs_delete_recurring_dialog_subtitle,
+    questionKey = S.bs_delete_recurring_choose,
     cancel = EntryEvent.CancelDelete,
     confirm = EntryEvent.ConfirmDelete,
     choose = { EntryEvent.ChooseDeleteScope(it) },
@@ -391,9 +417,9 @@ private val DELETE_SCOPE = ScopeFlavour(
 
 private val EDIT_SCOPE = ScopeFlavour(
     delete = false,
-    title = "Edit recurring event",
-    subtitle = "Choose which events this change applies to.",
-    question = "Choose which events to edit:",
+    titleKey = S.edit_recurring_event,
+    subtitleKey = S.desktop_bs_edit_recurring_subtitle,
+    questionKey = S.desktop_bs_edit_recurring_choose,
     cancel = EntryEvent.CancelUpdateScope,
     confirm = EntryEvent.ConfirmUpdateScope,
     choose = { EntryEvent.ChooseUpdateScope(it) },
@@ -411,15 +437,15 @@ private fun RecurringScopeDialog(
     val colors = ZillitTheme.colors
     val delete = flavour.delete
     ZillitDialogShell(
-        title = flavour.title,
-        subtitle = flavour.subtitle,
+        title = str(flavour.titleKey),
+        subtitle = str(flavour.subtitleKey),
         icon = if (delete) ZillitIcons.Warning else ZillitIcons.Edit,
         onDismiss = { onEvent(flavour.cancel) },
         visible = true,
         width = 500.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(flavour.cancel) },
                 variant = ButtonVariant.Secondary,
                 enabled = !prompt.working,
@@ -433,12 +459,12 @@ private fun RecurringScopeDialog(
         },
     ) {
         SeriesSummary(entry, state, noun)
-        ZillitText(flavour.question, style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary)
+        ZillitText(str(flavour.questionKey), style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary)
         val day = entry.occurrenceDate.takeIf { it > 0 }?.let { DiaryFormat.shortWeekdayDate(it, state.zone) }
         RecurrenceScope.entries.forEach { scope ->
             OptionCard(
                 selected = prompt.scope == scope,
-                title = SCOPE_TITLES.getValue(scope),
+                title = str(SCOPE_TITLES.getValue(scope)),
                 description = scopeDescription(scope, day, delete),
                 accent = if (delete) colors.danger else colors.accent,
                 enabled = !prompt.working,
@@ -474,50 +500,51 @@ private fun SeriesSummary(entry: DiaryEvent, state: BoxScheduleUiState, noun: St
     }
 }
 
+/** Each scope to the catalogue key of its title. */
 private val SCOPE_TITLES = mapOf(
-    RecurrenceScope.Single to "This event only",
-    RecurrenceScope.ThisAndFollowing to "This and following events",
-    RecurrenceScope.All to "All events in the series",
+    RecurrenceScope.Single to S.bs_delete_opt_single_title,
+    RecurrenceScope.ThisAndFollowing to S.bs_delete_opt_following_title,
+    RecurrenceScope.All to S.bs_delete_opt_all_title,
 )
 
 /** What each scope does, named with the occurrence's day when there is one. */
 private fun scopeDescription(scope: RecurrenceScope, day: String?, delete: Boolean): String = when (scope) {
     RecurrenceScope.Single -> when {
-        day == null -> "Only this occurrence."
-        delete -> "Removes the $day occurrence. Earlier and later dates stay."
-        else -> "Changes the $day occurrence alone; it becomes a separate event."
+        day == null -> str(S.desktop_bs_scope_only_this_occurrence)
+        delete -> str(S.bs_delete_opt_single_desc, day)
+        else -> str(S.desktop_bs_scope_single_edit_desc, day)
     }
     RecurrenceScope.ThisAndFollowing -> when {
-        day == null -> "This occurrence and every later date."
-        delete -> "Removes the $day occurrence and every date after it. Earlier dates stay."
-        else -> "Changes $day and every date after it. Earlier dates stay."
+        day == null -> str(S.desktop_bs_scope_this_and_later)
+        delete -> str(S.bs_delete_opt_following_desc, day)
+        else -> str(S.desktop_bs_scope_following_edit_desc, day)
     }
     RecurrenceScope.All -> if (delete) {
-        "Removes every occurrence, past and future. The series is gone."
+        str(S.bs_delete_opt_all_desc)
     } else {
-        "Changes every occurrence, past and future."
+        str(S.desktop_bs_scope_all_edit_desc)
     }
 }
 
-private fun scopeCta(scope: RecurrenceScope, delete: Boolean): String {
-    val verb = if (delete) "Delete" else "Edit"
-    return when (scope) {
-        RecurrenceScope.Single -> "$verb this event"
-        RecurrenceScope.ThisAndFollowing -> "$verb this and following"
-        RecurrenceScope.All -> "$verb all events"
-    }
-}
+private fun scopeCta(scope: RecurrenceScope, delete: Boolean): String = str(
+    when (scope) {
+        RecurrenceScope.Single -> if (delete) S.bs_delete_btn_single else S.bs_update_btn_continue_single
+        RecurrenceScope.ThisAndFollowing ->
+            if (delete) S.bs_delete_btn_following else S.bs_update_btn_continue_following
+        RecurrenceScope.All -> if (delete) S.bs_delete_btn_all else S.bs_update_btn_continue_all
+    },
+)
 
 private fun cadence(entry: DiaryEvent, state: BoxScheduleUiState): String {
     val label = when (entry.repeatStatus) {
-        "daily" -> "Daily"
-        "weekly" -> "Weekly"
-        "monthly" -> "Monthly"
-        "yearly" -> "Yearly"
-        else -> "Recurring"
+        "daily" -> str(S.daily)
+        "weekly" -> str(S.ce_weekly)
+        "monthly" -> str(S.ce_monthly)
+        "yearly" -> str(S.yearly)
+        else -> str(S.recurring)
     }
     if (entry.repeatEndDate <= 0) return label
-    return "$label · until ${DiaryFormat.mediumDate(entry.repeatEndDate, state.zone)}"
+    return str(S.bs_delete_recurring_summary, label, DiaryFormat.mediumDate(entry.repeatEndDate, state.zone))
 }
 
 @Composable
@@ -532,21 +559,17 @@ private fun IconLine(icon: ImageVector, text: String) {
 @Composable
 internal fun CalendarInfoDialog(info: CalendarInfo, onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Calendar Event",
+        title = str(S.desktop_bs_calendar_event_title),
         icon = ZillitIcons.Calendar,
         onDismiss = { onEvent(EntryEvent.CloseCalendarInfo) },
         visible = true,
         width = 420.dp,
-        actions = { ZillitButton("Got it", onClick = { onEvent(EntryEvent.CloseCalendarInfo) }) },
+        actions = { ZillitButton(str(S.dd_action_got_it), onClick = { onEvent(EntryEvent.CloseCalendarInfo) }) },
     ) {
         ZillitText(
-            text = if (info.forDelete) {
-                "This event was created in the Calendar module and cannot be deleted from " +
-                    "Production Diary/Box Schedule. Open it from the Calendar module to delete it."
-            } else {
-                "This event was created in the Calendar module and cannot be edited from " +
-                    "Production Diary/Box Schedule. Open it from the Calendar module to make changes."
-            },
+            text = str(
+                if (info.forDelete) S.desktop_bs_calendar_event_no_delete else S.desktop_bs_calendar_event_no_edit,
+            ),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
             modifier = Modifier.width(360.dp),

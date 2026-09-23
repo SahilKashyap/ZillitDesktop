@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.costreport.ui.worksheet
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CoaRow
 import com.zillit.desktop.feature.costreport.domain.CostReportViewer
@@ -29,15 +31,21 @@ import com.zillit.desktop.feature.costreport.ui.LedgerView
 import com.zillit.desktop.feature.costreport.ui.SnapshotView
 
 /** The worksheet's two panes — the header tabs. */
-enum class WorksheetPane(val id: String, val label: String) {
-    Worksheet("ws", "Cost Report Worksheet"),
-    Live("live", "Live CR"),
+enum class WorksheetPane(val id: String, private val labelKey: String) {
+    Worksheet("ws", S.desktop_cr_worksheet_pane),
+    Live("live", S.desktop_cr_live_cr),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The Live CR pane's own tabs. Hot Costs is switched off on the web, so it is not offered here. */
-enum class LiveTab(val id: String, val label: String) {
-    Current("current", "Current CR"),
-    History("history", "CR History"),
+enum class LiveTab(val id: String, private val labelKey: String) {
+    Current("current", S.cr_tab_current),
+    History("history", S.desktop_cr_cr_history),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** What a pane is fetching — the loader's caption. */
@@ -87,9 +95,9 @@ data class CrPane(
     /** What the grid's loader says, by phase. */
     val loaderMessage: String
         get() = when (phase) {
-            CrPhase.Snapshot -> "Fetching ${week?.range.orEmpty()} report"
-            CrPhase.Live -> "Computing live report"
-            CrPhase.Init, null -> "Loading…"
+            CrPhase.Snapshot -> str(S.desktop_cr_fetching_report, week?.range.orEmpty())
+            CrPhase.Live -> str(S.desktop_cr_computing_live)
+            CrPhase.Init, null -> str(S.ah_loading)
         }
 }
 
@@ -123,10 +131,13 @@ data class CrReference(
 
     /** `Please upload Chart of Accounts and Budget to continue.` */
     val metaMissingMessage: String
-        get() = "Please upload ${listOfNotNull(
-            "Chart of Accounts".takeIf { !hasCoa },
-            "Budget".takeIf { !hasBudget },
-        ).joinToString(" and ")} to continue."
+        get() = str(
+            S.desktop_cr_please_upload,
+            listOfNotNull(
+                str(S.desktop_chart_of_accounts).takeIf { !hasCoa },
+                str(S.budget_text).takeIf { !hasBudget },
+            ).joinToString(" " + str(S.and) + " "),
+        )
 
     val rates: CurrencyRates get() = currencies.rates
 

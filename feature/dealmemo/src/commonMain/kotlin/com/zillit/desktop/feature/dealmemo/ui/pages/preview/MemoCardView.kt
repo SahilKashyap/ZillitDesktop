@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealAttachment
 import com.zillit.desktop.feature.dealmemo.domain.preview.HolidayPayView
 import com.zillit.desktop.feature.dealmemo.domain.preview.MemoBlock
@@ -87,7 +89,7 @@ private fun Masthead(card: MemoCardView) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ZillitText(
-                    text = "Crew Deal Memo",
+                    text = str(S.txt_crew_deal_memo),
                     style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 18.sp),
                     color = pv.ink,
                     maxLines = 1,
@@ -205,7 +207,7 @@ private fun BankIdentity(bank: MemoValue.Bank) {
         }
         if (bank.sortCode.isNotEmpty()) {
             ZillitText(
-                text = "Sort: ${bank.sortCode}",
+                text = str(S.desktop_dm_sort_code_value, bank.sortCode),
                 style = DmType.mono(12.sp),
                 color = Color(0xFF8A8D95),
                 maxLines = 1,
@@ -213,7 +215,7 @@ private fun BankIdentity(bank: MemoValue.Bank) {
         }
         if (bank.account.isNotEmpty()) {
             ZillitText(
-                text = "Acc: ${bank.account}",
+                text = str(S.desktop_dm_account_value, bank.account),
                 style = DmType.mono(12.sp),
                 color = Color(0xFF8A8D95),
                 maxLines = 1,
@@ -228,7 +230,7 @@ private fun BankIdentity(bank: MemoValue.Bank) {
 private fun PassportChips(files: List<DealAttachment>, onEvent: (DealMemoEvent) -> Unit) {
     if (files.isEmpty()) {
         ZillitText(
-            text = "Not provided",
+            text = str(S.desktop_dm_not_provided),
             style = DmType.sans(14.5.sp).copy(fontStyle = FontStyle.Italic),
             color = Color(0xFF9CA3AF),
         )
@@ -248,7 +250,7 @@ private fun PassportChips(files: List<DealAttachment>, onEvent: (DealMemoEvent) 
             ) {
                 FileTypeBadge(file.extension)
                 ZillitText(
-                    text = file.name ?: "Passport / ID",
+                    text = file.name ?: str(S.dm_step2_passport),
                     style = DmType.sans(14.sp, FontWeight.SemiBold),
                     color = Color(0xFF111827),
                     maxLines = 1,
@@ -291,7 +293,7 @@ internal fun FileTypeBadge(extension: String) {
 private fun ViewChip(onClick: () -> Unit) {
     val (source, hovered) = rememberHover()
     val shape = RoundedCornerShape(7.dp)
-    MaybeTooltip("View passport / ID") {
+    MaybeTooltip(str(S.desktop_dm_view_passport_id)) {
         Row(
             modifier = Modifier
                 .clip(shape)
@@ -306,7 +308,7 @@ private fun ViewChip(onClick: () -> Unit) {
         ) {
             ZillitIcon(ZillitIcons.Eye, size = 10.dp, tint = Color(0xFF4A4D55))
             ZillitText(
-                text = "View",
+                text = str(S.dm_docs_view),
                 style = DmType.sans(11.sp, FontWeight.Bold),
                 color = Color(0xFF4A4D55),
                 maxLines = 1,
@@ -321,7 +323,7 @@ private fun DgaBlock(fields: List<MemoField>, onEvent: (DealMemoEvent) -> Unit) 
         Box(Modifier.fillMaxWidth().height(1.dp).background(pv.divider))
         Spacer(Modifier.height(12.dp))
         ZillitText(
-            text = "DGA PRODUCTION FEE",
+            text = str(S.dm_rates_card_dga),
             style = DmType.display(9.sp, FontWeight.Bold, 0.04.em),
             color = pv.faint,
         )
@@ -340,7 +342,7 @@ private fun HolidayPayBlock(view: HolidayPayView) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Holiday Pay (HP) Treatment",
+                text = str(S.desktop_dm_holiday_pay_hp_treatment),
                 style = DmType.sans(11.sp, FontWeight.SemiBold),
                 color = pv.muted,
                 modifier = Modifier.weight(1f),
@@ -359,7 +361,7 @@ private fun HolidayPayBlock(view: HolidayPayView) {
             }
             Spacer(Modifier.size(12.dp))
             ZillitText(
-                text = if (view.inclusive) "Inclusive" else "Exclusive (on top)",
+                text = if (view.inclusive) str(S.dm_rates_hp_inclusive_title) else str(S.desktop_dm_exclusive_on_top),
                 style = DmType.sans(11.sp, FontWeight.SemiBold),
                 color = pv.body,
             )

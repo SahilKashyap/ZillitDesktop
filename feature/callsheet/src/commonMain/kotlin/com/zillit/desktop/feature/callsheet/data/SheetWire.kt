@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.callsheet.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.AccessPage
 import com.zillit.desktop.feature.callsheet.domain.AccessPerson
 import com.zillit.desktop.feature.callsheet.domain.ApprovalRequest
@@ -216,20 +218,20 @@ internal object SheetWire {
         val two = entries.firstOrNull { idOf(it) == LORD_OF_MISRULE }
         if (standard == null && one == null && two == null) {
             return entries.mapIndexed { index, entry ->
-                StockTemplate(idOf(entry), "Template ${index + 1}", PayloadWire.parse(entry))
+                StockTemplate(idOf(entry), str(S.tpl_template_n, index + 1), PayloadWire.parse(entry))
             }
         }
         val prepared = mutableListOf<StockTemplate>()
         standard?.let { prepared += StockTemplate(
             STANDARD,
-            "Create your own template",
+            str(S.tpl_create_your_own),
             PayloadWire.parse(it),
             isCreateYourOwn = true,
         ) }
-        one?.let { prepared += StockTemplate(COMFORT_AND_JOY, "Template 1", PayloadWire.parse(it)) }
-        two?.let { prepared += StockTemplate(LORD_OF_MISRULE, "Template 2", PayloadWire.parse(it)) }
+        one?.let { prepared += StockTemplate(COMFORT_AND_JOY, str(S.tpl_template_n, 1), PayloadWire.parse(it)) }
+        two?.let { prepared += StockTemplate(LORD_OF_MISRULE, str(S.tpl_template_n, 2), PayloadWire.parse(it)) }
         entries.filter { idOf(it) !in KNOWN_IDS }.forEach { entry ->
-            prepared += StockTemplate(idOf(entry), "Template ${prepared.size + 1}", PayloadWire.parse(entry))
+            prepared += StockTemplate(idOf(entry), str(S.tpl_template_n, prepared.size + 1), PayloadWire.parse(entry))
         }
         return prepared
     }

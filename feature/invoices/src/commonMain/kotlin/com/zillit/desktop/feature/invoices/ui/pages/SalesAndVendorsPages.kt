@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDataTable
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.SalesInvoice
 import com.zillit.desktop.feature.invoices.domain.SalesInvoiceStatus
@@ -45,19 +47,19 @@ private fun VendorTiles(rows: List<VendorRow>, projectCurrency: String) {
     ) {
         val currency = rows.firstOrNull { it.currency.isNotBlank() }?.currency ?: projectCurrency
         ZillitStatTile(
-            label = "Vendors",
+            label = str(S.ah_vendors),
             value = rows.size.toString(),
             sub = "on this production",
             modifier = Modifier.weight(1f).fillMaxHeight(),
         )
         ZillitStatTile(
-            label = "Total Spend",
+            label = str(S.ah_total_spend),
             value = Money.format(rows.sumOf { it.totalSpend }, currency),
             sub = countMeta(rows.sumOf { it.invoiceCount }),
             modifier = Modifier.weight(1f).fillMaxHeight(),
         )
         ZillitStatTile(
-            label = "Missing details",
+            label = str(S.desktop_missing_details),
             value = rows.count { !it.isCompliant }.toString(),
             sub = "no tax ID or bank",
             tone = StatusTone.Pending,
@@ -95,13 +97,13 @@ internal fun ColumnScope.VendorsPage(
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = "Search vendor or tax ID",
+            placeholder = str(S.desktop_search_vendor_or_tax_id),
             modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
         )
     }
     VendorTiles(all, state.projectCurrency)
     TableCard(
-        title = "Vendors",
+        title = str(S.ah_vendors),
         icon = ZillitIcons.Users,
         meta = countMeta(rows.size, "vendor"),
     ) {
@@ -109,8 +111,8 @@ internal fun ColumnScope.VendorsPage(
             rows = rows,
             columns = vendorColumns(state),
             key = { it.vendor.id },
-            emptyTitle = "No vendors yet",
-            emptyMessage = "Vendors added in the Account Hub appear here with what has been spent with them.",
+            emptyTitle = str(S.desktop_no_vendors_yet),
+            emptyMessage = str(S.desktop_inv_vendors_empty_message),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
@@ -118,21 +120,27 @@ internal fun ColumnScope.VendorsPage(
 }
 
 private fun vendorColumns(state: InvoicesUiState): List<TableColumn<VendorRow>> = listOf(
-    TableColumn("Vendor", ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(it.vendor.name) },
-    TableColumn("Country", ColumnWidth.Weight(1f)) { CellText(it.vendor.country.ifBlank { "—" }, muted = true) },
-    TableColumn("Tax ID", ColumnWidth.Weight(1f)) { CellText(it.vendor.taxNumber.ifBlank { "—" }, muted = true) },
-    TableColumn("Type", ColumnWidth.Weight(1f)) { CellText(it.vendor.type.ifBlank { "—" }, muted = true) },
-    TableColumn("Bank", ColumnWidth.Weight(1f)) { CellText(it.vendor.bankName.ifBlank { "—" }, muted = true) },
-    TableColumn("Default Code", ColumnWidth.Weight(1f)) {
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(it.vendor.name) },
+    TableColumn(str(S.country), ColumnWidth.Weight(1f)) { CellText(it.vendor.country.ifBlank { "—" }, muted = true) },
+    TableColumn(
+        str(S.desktop_tax_id),
+        ColumnWidth.Weight(1f),
+    ) { CellText(it.vendor.taxNumber.ifBlank { "—" }, muted = true) },
+    TableColumn(str(S.type), ColumnWidth.Weight(1f)) { CellText(it.vendor.type.ifBlank { "—" }, muted = true) },
+    TableColumn(
+        str(S.desktop_bank),
+        ColumnWidth.Weight(1f),
+    ) { CellText(it.vendor.bankName.ifBlank { "—" }, muted = true) },
+    TableColumn(str(S.desktop_default_code), ColumnWidth.Weight(1f)) {
         CellText(it.vendor.defaultNominalCode.ifBlank { "—" }, muted = true)
     },
-    TableColumn("Terms", ColumnWidth.Fixed(PAY_WIDTH)) {
+    TableColumn(str(S.desktop_terms), ColumnWidth.Fixed(PAY_WIDTH)) {
         CellText(it.vendor.slaLabel ?: it.vendor.terms.ifBlank { "—" }, muted = true)
     },
-    TableColumn("Total Spend", ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
+    TableColumn(str(S.ah_total_spend), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
         MoneyText(it.totalSpend, it.currency, state.projectCurrency)
     },
-    TableColumn("Compliance", ColumnWidth.Weight(WEIGHT_MEDIUM)) { row ->
+    TableColumn(str(S.dm_section_compliance), ColumnWidth.Weight(WEIGHT_MEDIUM)) { row ->
         ZillitStatusPill(
             label = row.complianceLabel,
             tone = if (row.isCompliant) StatusTone.Done else StatusTone.Pending,
@@ -166,18 +174,18 @@ internal fun ColumnScope.SalesInvoicesPage(
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = "Search ref or client",
+            placeholder = str(S.desktop_search_ref_or_client),
             modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
         )
         ZillitButton(
-            text = "Raise an invoice",
+            text = str(S.desktop_raise_an_invoice),
             onClick = { onEvent(InvoicesEvent.StartSalesInvoice) },
             size = ButtonSize.Small,
             enabled = state.viewer.mayPost,
         )
     }
     TableCard(
-        title = "Invoice List",
+        title = str(S.desktop_invoice_list),
         icon = ZillitIcons.CreditCard,
         meta = countMeta(rows.size, "invoice"),
     ) {
@@ -185,8 +193,8 @@ internal fun ColumnScope.SalesInvoicesPage(
             rows = rows,
             columns = salesColumns(state, onEvent),
             key = { it.id },
-            emptyTitle = "No sales invoices",
-            emptyMessage = "Invoices the production raises against a client appear here.",
+            emptyTitle = str(S.desktop_no_sales_invoices),
+            emptyMessage = str(S.desktop_inv_sales_empty_message),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
@@ -197,16 +205,22 @@ private fun salesColumns(
     state: InvoicesUiState,
     onEvent: (InvoicesEvent) -> Unit,
 ): List<TableColumn<SalesInvoice>> = listOf(
-    TableColumn("Invoice", ColumnWidth.Weight(1f)) { CellText(it.reference.ifBlank { "—" }) },
-    TableColumn("Client", ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(it.clientName.ifBlank { "Unknown" }) },
-    TableColumn("Description", ColumnWidth.Weight(WEIGHT_WIDEST)) {
+    TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) { CellText(it.reference.ifBlank { "—" }) },
+    TableColumn(
+        str(S.desktop_client),
+        ColumnWidth.Weight(WEIGHT_MEDIUM),
+    ) { CellText(it.clientName.ifBlank { str(S.desktop_unknown) }) },
+    TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
         CellText(it.description.ifBlank { "—" }, muted = it.description.isBlank())
     },
-    TableColumn("Gross", ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
+    TableColumn(str(S.desktop_gross), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
         MoneyText(it.grossAmount, it.currency, state.projectCurrency)
     },
-    TableColumn("Due", ColumnWidth.Fixed(DUE_WIDTH)) { CellText(InvoiceFormat.date(it.dueDateMs), muted = true) },
-    TableColumn("Status", ColumnWidth.Weight(WEIGHT_NARROW)) {
+    TableColumn(
+        str(S.desktop_due),
+        ColumnWidth.Fixed(DUE_WIDTH),
+    ) { CellText(InvoiceFormat.date(it.dueDateMs), muted = true) },
+    TableColumn(str(S.status), ColumnWidth.Weight(WEIGHT_NARROW)) {
         ZillitStatusPill(label = it.status.label, tone = it.status.tone())
     },
     TableColumn("", ColumnWidth.Fixed(RUN_ACTIONS_WIDTH)) { invoice ->
@@ -223,7 +237,7 @@ private fun SalesActions(state: InvoicesUiState, invoice: SalesInvoice, onEvent:
     ) {
         if (invoice.status.canSend) {
             ZillitButton(
-                text = "Send",
+                text = str(S.send),
                 onClick = { onEvent(InvoicesEvent.SendSalesInvoice(invoice)) },
                 size = ButtonSize.Small,
                 enabled = !state.busy && state.viewer.mayPost,
@@ -231,7 +245,7 @@ private fun SalesActions(state: InvoicesUiState, invoice: SalesInvoice, onEvent:
         }
         if (invoice.status.canMarkPaid) {
             ZillitButton(
-                text = "Mark paid",
+                text = str(S.desktop_mark_paid),
                 onClick = { onEvent(InvoicesEvent.MarkSalesInvoicePaid(invoice)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -240,7 +254,7 @@ private fun SalesActions(state: InvoicesUiState, invoice: SalesInvoice, onEvent:
         }
         if (invoice.status == SalesInvoiceStatus.Draft) {
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 onClick = { onEvent(InvoicesEvent.DeleteSalesInvoice(invoice)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

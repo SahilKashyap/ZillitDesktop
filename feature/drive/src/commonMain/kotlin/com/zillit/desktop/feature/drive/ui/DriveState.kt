@@ -28,11 +28,16 @@ import com.zillit.desktop.feature.drive.domain.QueuedUpload
 import com.zillit.desktop.feature.drive.domain.combinedRows
 import com.zillit.desktop.feature.drive.domain.eligible
 import com.zillit.desktop.feature.drive.domain.innerTabTotals
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** List or grid. Persists across folder navigation (FR-20.4). */
-enum class DriveViewMode(val label: String) {
-    List("List"),
-    Grid("Grid"),
+enum class DriveViewMode(private val labelKey: String) {
+    List(S.desktop_drive_view_list),
+    Grid(S.desktop_drive_view_grid),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** Everything the details panel knows about the item it is open on. */
@@ -208,7 +213,13 @@ data class EditDraft(
 }
 
 /** Which of the share drawer's two tabs is open — a file has both, a folder only People. */
-enum class ShareTab(val label: String) { People("People"), Link("Share via link") }
+enum class ShareTab(private val labelKey: String) {
+    People(S.section_people),
+    Link(S.drive_share_tab_link),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** The share-via-link form and its list of live links (`ShareViaLink.jsx`). */
 data class ShareLinkForm(

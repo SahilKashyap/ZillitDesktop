@@ -57,6 +57,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
 import com.zillit.desktop.feature.dealmemo.ui.SignerEvent
 import com.zillit.desktop.feature.dealmemo.ui.components.DmConfirm
@@ -87,7 +89,7 @@ internal fun SignaturePicker(signer: SignerState?, onEvent: (DealMemoEvent) -> U
     val library = current?.library ?: SignatureLibrary()
     DmModal(
         visible = signer != null,
-        title = "Choose or Draw Your Signature",
+        title = str(S.docusign_picker_title),
         onDismiss = { onEvent(SignerEvent.Cancel) },
         maxWidth = 840.dp,
         closeOnBackdrop = false,
@@ -95,12 +97,12 @@ internal fun SignaturePicker(signer: SignerState?, onEvent: (DealMemoEvent) -> U
         titleContent = {
             Column(Modifier.weight(1f)) {
                 ZillitText(
-                    text = "BEFORE SIGNING",
+                    text = str(S.docusign_picker_before_signing),
                     style = DmType.sans(10.sp, FontWeight.Bold, 0.12.em),
                     color = PreviewInk.Action,
                 )
                 ZillitText(
-                    text = "Choose or Draw Your Signature",
+                    text = str(S.docusign_picker_title),
                     style = DmType.display(16.sp, FontWeight.Bold),
                     color = pv.ink,
                 )
@@ -108,7 +110,7 @@ internal fun SignaturePicker(signer: SignerState?, onEvent: (DealMemoEvent) -> U
         },
         headerActions = {
             OutlineButton(
-                text = "Back to review",
+                text = str(S.desktop_dm_back_to_review),
                 onClick = { onEvent(SignerEvent.Cancel) },
                 height = 30.dp,
                 radius = 15.dp,
@@ -119,14 +121,14 @@ internal fun SignaturePicker(signer: SignerState?, onEvent: (DealMemoEvent) -> U
             {
                 if (library.selectedId == null) {
                     ZillitText(
-                        text = "Select or draw a signature to continue",
+                        text = str(S.docusign_presign_continue_hint),
                         style = DmType.sans(12.sp),
                         color = pv.faint,
                         modifier = Modifier.weight(1f),
                     )
                 }
                 SolidButton(
-                    text = "Continue to Signing ›",
+                    text = str(S.desktop_dm_continue_to_signing),
                     onClick = { onEvent(SignerEvent.ContinueToSigning) },
                     enabled = library.selectedId != null,
                     height = 36.dp,
@@ -148,9 +150,9 @@ internal fun SignaturePicker(signer: SignerState?, onEvent: (DealMemoEvent) -> U
     }
     DmConfirm(
         visible = library.pendingDelete != null,
-        title = "Delete signature",
-        message = "Delete this saved signature?",
-        confirmLabel = "Delete",
+        title = str(S.delete_signature),
+        message = str(S.desktop_dm_delete_this_saved_signature),
+        confirmLabel = str(S.dm_nda_delete),
         onConfirm = { onEvent(SignerEvent.ConfirmDeleteSaved) },
         onCancel = { onEvent(SignerEvent.CancelDeleteSaved) },
         kind = DmConfirmKind.Danger,
@@ -160,13 +162,13 @@ internal fun SignaturePicker(signer: SignerState?, onEvent: (DealMemoEvent) -> U
 @Composable
 private fun LibraryStrip(library: SignatureLibrary, onEvent: (DealMemoEvent) -> Unit) {
     ZillitText(
-        text = "Pick a saved signature or draw a new one",
+        text = str(S.docusign_picker_subtitle),
         style = DmType.sans(14.sp, FontWeight.Bold),
         color = pv.ink,
     )
     Spacer(Modifier.height(2.dp))
     ZillitText(
-        text = "Then tap the highlighted fields on the document to sign.",
+        text = str(S.docusign_picker_then_tap),
         style = DmType.sans(12.5.sp),
         color = pv.muted,
     )
@@ -174,7 +176,7 @@ private fun LibraryStrip(library: SignatureLibrary, onEvent: (DealMemoEvent) -> 
     if (library.loading) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ZillitSpinner(size = 14.dp, color = PreviewInk.Action)
-            ZillitText(text = "Loading your signatures…", style = DmType.sans(12.5.sp), color = pv.muted)
+            ZillitText(text = str(S.desktop_dm_loading_your_signatures), style = DmType.sans(12.5.sp), color = pv.muted)
         }
         return
     }
@@ -213,12 +215,12 @@ private fun SavedSignatureCard(image: ImageBitmap?, selected: Boolean, onSelect:
         if (image != null) {
             Image(
                 bitmap = image,
-                contentDescription = "Saved signature",
+                contentDescription = str(S.txt_signature_list_header),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            ZillitText(text = "Unavailable", style = DmType.sans(12.sp), color = pv.faint)
+            ZillitText(text = str(S.dm_doc_unavailable), style = DmType.sans(12.sp), color = pv.faint)
         }
         if (hovered || selected) {
             Box(
@@ -262,7 +264,7 @@ private fun AddNewTile(onClick: () -> Unit) {
             ZillitIcon(ZillitIcons.Add, size = 18.dp, tint = if (hovered) PreviewInk.Action else pv.muted)
             Spacer(Modifier.height(4.dp))
             ZillitText(
-                text = "Add New",
+                text = str(S.desktop_dm_add_new),
                 style = DmType.sans(12.5.sp, FontWeight.Bold),
                 color = if (hovered) PreviewInk.Action else pv.muted,
             )
@@ -274,7 +276,7 @@ private fun AddNewTile(onClick: () -> Unit) {
 private fun StepHeader(step: String, title: String, sub: String, onBack: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlineButton(
-            text = "← Back",
+            text = str(S.desktop_dm_back_arrow),
             onClick = onBack,
             height = 28.dp,
             radius = 14.dp,
@@ -294,23 +296,23 @@ private fun StepHeader(step: String, title: String, sub: String, onBack: () -> U
 @Composable
 private fun MethodStep(onEvent: (DealMemoEvent) -> Unit) {
     StepHeader(
-        step = "STEP 1 OF 2",
-        title = "How would you like to make your signature?",
-        sub = "Pick any one — you can change it later.",
+        step = str(S.desktop_dm_step_1_of_2),
+        title = str(S.desktop_dm_how_would_you_like_to_make_your),
+        sub = str(S.docusign_create_sig_choose_hint),
         onBack = { onEvent(SignerEvent.StepBack) },
     )
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         MethodCard(
-            title = "Type your signature",
-            tag = "Easiest",
-            body = "Write your name and pick a handwriting style.",
+            title = str(S.desktop_dm_type_your_signature),
+            tag = str(S.docusign_create_sig_card_type_tag),
+            body = str(S.docusign_create_sig_card_type_blurb),
             onClick = { onEvent(SignerEvent.Method(NewSignatureStep.Type)) },
             modifier = Modifier.weight(1f),
         )
         MethodCard(
-            title = "Draw your signature",
+            title = str(S.desktop_dm_draw_your_signature),
             tag = null,
-            body = "Use your mouse, or your finger on a touchscreen.",
+            body = str(S.docusign_create_sig_card_draw_blurb),
             onClick = { onEvent(SignerEvent.Method(NewSignatureStep.Draw)) },
             modifier = Modifier.weight(1f),
         )
@@ -353,9 +355,9 @@ private fun MethodCard(title: String, tag: String?, body: String, onClick: () ->
 @Composable
 private fun TypeStep(library: SignatureLibrary, onEvent: (DealMemoEvent) -> Unit) {
     StepHeader(
-        step = "STEP 2 OF 2",
-        title = "Type your signature",
-        sub = "We turn what you type into handwriting.",
+        step = str(S.desktop_dm_step_2_of_2),
+        title = str(S.desktop_dm_type_your_signature),
+        sub = str(S.docusign_create_sig_type_hint),
         onBack = { onEvent(SignerEvent.StepBack) },
     )
     val fieldShape = RoundedCornerShape(10.dp)
@@ -370,7 +372,7 @@ private fun TypeStep(library: SignatureLibrary, onEvent: (DealMemoEvent) -> Unit
         contentAlignment = Alignment.CenterStart,
     ) {
         if (library.typedText.isEmpty()) {
-            ZillitText(text = "Your full name", style = DmType.sans(13.5.sp), color = pv.faint)
+            ZillitText(text = str(S.desktop_sa_your_full_name), style = DmType.sans(13.5.sp), color = pv.faint)
         }
         BasicTextField(
             value = library.typedText,
@@ -457,9 +459,9 @@ private fun TypedTile(text: String, font: SignatureFont, selected: Boolean, onCl
 @Composable
 private fun DrawStep(library: SignatureLibrary, onEvent: (DealMemoEvent) -> Unit) {
     StepHeader(
-        step = "STEP 2 OF 2",
-        title = "Draw your signature",
-        sub = "Use your mouse, or your finger on a touchscreen.",
+        step = str(S.desktop_dm_step_2_of_2),
+        title = str(S.desktop_dm_draw_your_signature),
+        sub = str(S.docusign_create_sig_card_draw_blurb),
         onBack = { onEvent(SignerEvent.StepBack) },
     )
     val strokes = remember { mutableStateListOf<List<Offset>>() }
@@ -500,7 +502,7 @@ private fun DrawStep(library: SignatureLibrary, onEvent: (DealMemoEvent) -> Unit
         }
         if (strokes.isEmpty() && live.isEmpty()) {
             ZillitText(
-                text = "Sign here",
+                text = str(S.docusign_signing_sign_here),
                 style = DmType.sans(13.sp),
                 color = pv.faint,
                 modifier = Modifier.align(Alignment.Center),
@@ -508,7 +510,7 @@ private fun DrawStep(library: SignatureLibrary, onEvent: (DealMemoEvent) -> Unit
         }
         if (strokes.isNotEmpty()) {
             ZillitText(
-                text = "Clear",
+                text = str(S.dm_sign_clear),
                 style = DmType.sans(12.sp, FontWeight.SemiBold),
                 color = PreviewInk.Action,
                 modifier = Modifier
@@ -550,10 +552,10 @@ private fun UseRow(library: SignatureLibrary, enabled: Boolean, onUse: () -> Uni
             ) {
                 if (library.saveForNextTime) ZillitIcon(ZillitIcons.Check, size = 10.dp, tint = Color.White)
             }
-            ZillitText(text = "Save this for next time", style = DmType.sans(12.5.sp), color = pv.body)
+            ZillitText(text = str(S.docusign_create_sig_save_next_time), style = DmType.sans(12.5.sp), color = pv.body)
         }
         SolidButton(
-            text = "Use this signature",
+            text = str(S.docusign_create_sig_use_signature),
             onClick = onUse,
             enabled = enabled && !library.working,
             loading = library.working,

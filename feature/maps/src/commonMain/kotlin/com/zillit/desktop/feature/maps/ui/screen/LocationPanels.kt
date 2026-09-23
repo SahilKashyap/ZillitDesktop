@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.LocationRules
 import com.zillit.desktop.feature.maps.domain.MapLocation
 import com.zillit.desktop.feature.maps.domain.toFixed
@@ -64,23 +66,27 @@ internal fun LocationFormPanel(state: MapUiState, form: LocationFormState, onEve
         header = {
             HeroHeader(
                 accent = heroColor,
-                title = if (form.isEdit) "Edit Location" else "New Location",
+                title = if (form.isEdit) str(S.desktop_location_edit_title) else str(S.desktop_map_new_location),
                 subtitle = if (form.isEdit) {
-                    "Update the details for this location and save your changes."
+                    str(S.desktop_map_edit_location_subtitle)
                 } else {
-                    "Capture the details of a new location to pin on the map."
+                    str(S.desktop_map_new_location_subtitle)
                 },
                 onClose = { onEvent(MapEvent.LocationForm.Close) },
             )
         },
         footer = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                ZillitButton(text = "Cancel", onClick = { onEvent(MapEvent.LocationForm.Close) }, variant = ButtonVariant.Secondary)
+                ZillitButton(
+                    text = str(S.cancel),
+                    onClick = { onEvent(MapEvent.LocationForm.Close) },
+                    variant = ButtonVariant.Secondary,
+                )
                 ZillitButton(
                     text = when {
-                        form.saving -> "Saving..."
-                        form.isEdit -> "Update Location"
-                        else -> "Save Location"
+                        form.saving -> str(S.ah_saving)
+                        form.isEdit -> str(S.txt_update_location)
+                        else -> str(S.desktop_map_save_location)
                     },
                     onClick = { onEvent(MapEvent.LocationForm.Save) },
                     leadingIcon = ZillitIcons.Save,
@@ -103,24 +109,25 @@ internal fun LocationFormPanel(state: MapUiState, form: LocationFormState, onEve
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+@Suppress("LongMethod") // One form section; each field is one line of it.
 private fun BasicInformation(state: MapUiState, form: LocationFormState, onEvent: (MapEvent) -> Unit) {
-    SectionCard(title = "Basic Information", icon = MapIcons.FileText, accent = MapColors.Brand) {
+    SectionCard(title = str(S.desktop_map_basic_information), icon = MapIcons.FileText, accent = MapColors.Brand) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FieldLabel("Location Name", MapIcons.TypeGlyph, MapColors.Brand, required = true)
+            FieldLabel(str(S.location_name), MapIcons.TypeGlyph, MapColors.Brand, required = true)
             ZillitTextField(
                 value = form.name,
                 onValueChange = { onEvent(MapEvent.LocationForm.Name(it)) },
-                placeholder = "Enter location name",
+                placeholder = str(S.desktop_map_enter_location_name),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FieldLabel("Location Type", MapIcons.Layers, MapColors.Brand)
+            FieldLabel(str(S.dm_cond_work_location), MapIcons.Layers, MapColors.Brand)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 ZillitTextField(
                     value = if (form.typeMenuOpen) form.typeSearch else form.type.ifBlank { form.typeSearch },
                     onValueChange = { onEvent(MapEvent.LocationForm.TypeSearch(it)) },
-                    placeholder = "Search or select a type...",
+                    placeholder = str(S.desktop_map_search_or_select_type),
                     // The web's `onFocus`: the list opens as soon as the field is entered.
                     modifier = Modifier.weight(1f).onFocusChanged {
                         if (it.isFocused && !form.typeMenuOpen) onEvent(MapEvent.LocationForm.TypeMenu(true))
@@ -133,7 +140,7 @@ private fun BasicInformation(state: MapUiState, form: LocationFormState, onEvent
                     },
                 )
                 ZillitButton(
-                    text = "Add",
+                    text = str(S.add),
                     onClick = { onEvent(MapEvent.LocationForm.NewType) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Add,
@@ -144,7 +151,7 @@ private fun BasicInformation(state: MapUiState, form: LocationFormState, onEvent
         val available = state.types.firstOrNull { it.name == form.type }?.subTypes.orEmpty()
         if (available.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("Subtypes", MapIcons.Tag, MapColors.Brand)
+                FieldLabel(str(S.desktop_map_subtypes), MapIcons.Tag, MapColors.Brand)
                 FlowRow(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -166,32 +173,32 @@ private fun BasicInformation(state: MapUiState, form: LocationFormState, onEvent
         }
         if (form.isOtherType) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("Custom Type", MapIcons.TypeGlyph, MapColors.Brand, required = true)
+                FieldLabel(str(S.desktop_map_custom_type), MapIcons.TypeGlyph, MapColors.Brand, required = true)
                 ZillitTextField(
                     value = form.customType,
                     onValueChange = { onEvent(MapEvent.LocationForm.CustomType(it)) },
-                    placeholder = "Enter custom type name",
+                    placeholder = str(S.desktop_map_enter_custom_type),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
         if (form.isShootingType) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("Scene Number", MapIcons.Film, MapColors.Brand)
+                FieldLabel(str(S.txt_scene_number), MapIcons.Film, MapColors.Brand)
                 ZillitTextField(
                     value = form.sceneNumber,
                     onValueChange = { onEvent(MapEvent.LocationForm.SceneNumber(it)) },
-                    placeholder = "e.g., 12A",
+                    placeholder = str(S.desktop_map_scene_number_hint),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FieldLabel("Description", MapIcons.FileText, MapColors.Brand)
+            FieldLabel(str(S.description), MapIcons.FileText, MapColors.Brand)
             MapTextArea(
                 value = form.description,
                 onValueChange = { onEvent(MapEvent.LocationForm.Description(it)) },
-                placeholder = "Add notes or description...",
+                placeholder = str(S.desktop_map_add_notes),
             )
         }
     }
@@ -202,7 +209,9 @@ private fun BasicInformation(state: MapUiState, form: LocationFormState, onEvent
 private fun TypeMenu(state: MapUiState, form: LocationFormState, onEvent: (MapEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val query = form.typeSearch.trim().lowercase()
-    val matches = state.types.filter { query.isEmpty() || it.name.lowercase().contains(query) }.sortedBy { it.name.lowercase() }
+    val matches = state.types
+        .filter { query.isEmpty() || it.name.lowercase().contains(query) }
+        .sortedBy { it.name.lowercase() }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -215,7 +224,7 @@ private fun TypeMenu(state: MapUiState, form: LocationFormState, onEvent: (MapEv
     ) {
         if (matches.isEmpty()) {
             ZillitText(
-                text = "No types found",
+                text = str(S.desktop_map_no_types_found),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -238,7 +247,9 @@ private fun TypeMenu(state: MapUiState, form: LocationFormState, onEvent: (MapEv
                     )
                     .hoverable(source)
                     .pointerHoverIcon(PointerIcon.Hand)
-                    .clickable(interactionSource = source, indication = null) { onEvent(MapEvent.LocationForm.PickType(type.name)) }
+                    .clickable(interactionSource = source, indication = null) {
+                        onEvent(MapEvent.LocationForm.PickType(type.name))
+                    }
                     .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -256,47 +267,65 @@ private fun TypeMenu(state: MapUiState, form: LocationFormState, onEvent: (MapEv
 
 @Composable
 private fun LocationDetails(form: LocationFormState, onEvent: (MapEvent) -> Unit) {
-    SectionCard(title = "Location Details", icon = MapIcons.Crosshair, accent = MapColors.Brand) {
+    SectionCard(title = str(S.desktop_map_location_details), icon = MapIcons.Crosshair, accent = MapColors.Brand) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FieldLabel("Address", MapIcons.MapPin, MapColors.Brand, required = true)
+            FieldLabel(str(S.address), MapIcons.MapPin, MapColors.Brand, required = true)
             ZillitTextField(
                 value = form.address,
                 onValueChange = { onEvent(MapEvent.LocationForm.AddressText(it)) },
-                placeholder = "Search address...",
+                placeholder = str(S.desktop_map_search_address),
                 modifier = Modifier.fillMaxWidth(),
             )
             SuggestionList(form.addressSuggestions, onPick = { onEvent(MapEvent.LocationForm.AddressPick(it)) })
-            Hint("Search and select a place to auto-fill coordinates — or drag the pin on the map")
+            Hint(str(S.desktop_map_address_hint))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("Latitude", MapIcons.Globe, MapColors.Brand)
-                ReadOnlyBox(form.point?.let { toFixed(it.lat, COORDINATE_DIGITS) }.orEmpty(), "Auto-filled")
+                FieldLabel(str(S.desktop_latitude), MapIcons.Globe, MapColors.Brand)
+                ReadOnlyBox(
+                    form.point?.let { toFixed(it.lat, COORDINATE_DIGITS) }.orEmpty(),
+                    str(S.desktop_map_auto_filled),
+                )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("Longitude", MapIcons.Globe, MapColors.Brand)
-                ReadOnlyBox(form.point?.let { toFixed(it.lng, COORDINATE_DIGITS) }.orEmpty(), "Auto-filled")
+                FieldLabel(str(S.desktop_longitude), MapIcons.Globe, MapColors.Brand)
+                ReadOnlyBox(
+                    form.point?.let { toFixed(it.lng, COORDINATE_DIGITS) }.orEmpty(),
+                    str(S.desktop_map_auto_filled),
+                )
             }
         }
     }
 }
 
 @Composable
+@Suppress("LongMethod") // One form section; each field is one line of it.
 private fun PhotosSection(form: LocationFormState, onEvent: (MapEvent) -> Unit) {
     val colors = ZillitTheme.colors
     var over by remember { mutableStateOf(false) }
     val (source, hovered) = rememberHover()
-    SectionCard(title = "Photos", icon = MapIcons.Camera, accent = MapColors.Brand) {
+    SectionCard(title = str(S.desktop_photos), icon = MapIcons.Camera, accent = MapColors.Brand) {
         val dashColor = if (over || hovered) MapColors.Brand else colors.borderStrong
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(if (over) softOf(MapColors.Brand) else if (hovered) softOf(MapColors.Brand).copy(alpha = 0.05f) else Color.Transparent)
+                .background(
+                    if (over) {
+                        softOf(MapColors.Brand)
+                    } else if (hovered) {
+                        softOf(MapColors.Brand).copy(alpha = 0.05f)
+                    } else {
+                        Color.Transparent
+                    },
+                )
                 .drawBehind {
                     drawRoundRect(
                         color = dashColor,
-                        style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))),
+                        style = Stroke(
+                            width = 2.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+                        ),
                         cornerRadius = CornerRadius(12.dp.toPx()),
                     )
                 }
@@ -306,29 +335,41 @@ private fun PhotosSection(form: LocationFormState, onEvent: (MapEvent) -> Unit) 
                 )
                 .hoverable(source)
                 .pointerHoverIcon(PointerIcon.Hand)
-                .clickable(interactionSource = source, indication = null) { onEvent(MapEvent.LocationForm.BrowsePhotos) }
+                .clickable(interactionSource = source, indication = null) {
+                    onEvent(MapEvent.LocationForm.BrowsePhotos)
+                }
                 .padding(vertical = 24.dp, horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Box(
-                Modifier.size(48.dp).clip(CircleShape).background(if (over) MapColors.BrandSoftStrong else softOf(MapColors.Brand)),
+                Modifier.size(48.dp)
+                    .clip(CircleShape)
+                    .background(if (over) MapColors.BrandSoftStrong else softOf(MapColors.Brand)),
                 contentAlignment = Alignment.Center,
             ) {
                 ZillitIcon(icon = MapIcons.UploadCloud, tint = MapColors.Brand, size = 22.dp)
             }
             ZillitText(
-                text = if (over) "Drop images to upload" else "Drag & drop images here",
+                text = if (over) str(S.desktop_map_drop_images) else str(S.desktop_map_drag_drop_images),
                 style = labelBold(13.sp, FontWeight.Medium),
                 color = colors.textPrimary,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                ZillitText(text = "or", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
-                ZillitText(text = "click to browse", style = labelBold(12.sp, FontWeight.Medium), color = MapColors.Brand)
-                ZillitText(text = "— JPG, PNG, WEBP, HEIC, HEIF", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                ZillitText(text = str(S.or), style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                ZillitText(
+                    text = str(S.desktop_map_click_to_browse),
+                    style = labelBold(12.sp, FontWeight.Medium),
+                    color = MapColors.Brand,
+                )
+                ZillitText(
+                    text = str(S.desktop_map_image_formats),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
             }
             ZillitText(
-                text = "${form.mediaCount} of ${LocationRules.MAX_MEDIA}",
+                text = str(S.docusign_field_of, form.mediaCount, LocationRules.MAX_MEDIA),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -340,7 +381,9 @@ private fun PhotosSection(form: LocationFormState, onEvent: (MapEvent) -> Unit) 
                     is Int -> {
                         val attachment = form.existing[tile]
                         PhotoTile(onRemove = { onEvent(MapEvent.LocationForm.RemoveExisting(tile)) }) {
-                            AsyncPicture(key = attachment.media, modifier = Modifier.fillMaxSize()) { photo(attachment, preview = true) }
+                            AsyncPicture(key = attachment.media, modifier = Modifier.fillMaxSize()) {
+                                photo(attachment, preview = true)
+                            }
                         }
                     }
                     is com.zillit.desktop.feature.maps.ui.NewPhoto -> PhotoTile(
@@ -384,7 +427,7 @@ private fun PhotoTile(isNew: Boolean = false, onRemove: (() -> Unit)?, picture: 
     ) {
         picture()
         if (isNew) {
-            Box(Modifier.align(Alignment.TopStart).padding(4.dp)) { SmallTag("NEW", MapColors.Brand) }
+            Box(Modifier.align(Alignment.TopStart).padding(4.dp)) { SmallTag(str(S.mtg_new), MapColors.Brand) }
         }
         if (onRemove != null && hovered) {
             Box(
@@ -398,7 +441,8 @@ private fun PhotoTile(isNew: Boolean = false, onRemove: (() -> Unit)?, picture: 
                     .clickable(onClick = onRemove),
                 contentAlignment = Alignment.Center,
             ) {
-                ZillitIcon(icon = ZillitIcons.Trash, contentDescription = "Remove", tint = Color.White, size = 11.dp)
+                ZillitIcon(icon = ZillitIcons.Trash, contentDescription = str(S.remove), tint = Color.White,
+                    size = 11.dp)
             }
         }
     }
@@ -407,6 +451,7 @@ private fun PhotoTile(isNew: Boolean = false, onRemove: (() -> Unit)?, picture: 
 /** One location's details (`locations/LocationDetail.jsx`). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+@Suppress("LongMethod") // One panel, read top to bottom; the order is the reading order.
 internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEvent: (MapEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val style = state.style(location.type)
@@ -419,7 +464,13 @@ internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEve
                 title = location.displayName,
                 subtitle = null,
                 onClose = { onEvent(MapEvent.Locations.CloseDetail) },
-                trailing = { HeroPillButton("Edit", onClick = { onEvent(MapEvent.Locations.Edit(location.id)) }, icon = ZillitIcons.Edit) },
+                trailing = {
+                    HeroPillButton(
+                        str(S.edit),
+                        onClick = { onEvent(MapEvent.Locations.Edit(location.id)) },
+                        icon = ZillitIcons.Edit,
+                    )
+                },
                 eyebrow = if (location.hasType || location.sceneNumber.isNotBlank()) {
                     {
                         if (location.hasType) HeroChip("${style.icon}  ${location.type}")
@@ -435,7 +486,11 @@ internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEve
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             ZillitIcon(icon = MapIcons.MapPin, tint = Color.White.copy(alpha = 0.85f), size = 14.dp)
-                            ZillitText(text = location.address, style = ZillitTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
+                            ZillitText(
+                                text = location.address,
+                                style = ZillitTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.85f),
+                            )
                         }
                     }
                 } else {
@@ -449,38 +504,53 @@ internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEve
             contentPadding = PanelBodyPadding,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SectionCard(title = "Location Details", icon = MapIcons.Crosshair, accent = MapColors.Brand) {
+            SectionCard(title = str(S.desktop_map_location_details), icon = MapIcons.Crosshair,
+                accent = MapColors.Brand) {
                 if (location.address.isNotBlank()) {
-                    InfoRow(MapIcons.MapPin, "Address", MapColors.Brand) {
-                        ZillitText(text = location.address, style = ZillitTheme.typography.bodyMedium, color = colors.textPrimary)
+                    InfoRow(MapIcons.MapPin, str(S.address), MapColors.Brand) {
+                        ZillitText(
+                            text = location.address,
+                            style = ZillitTheme.typography.bodyMedium,
+                            color = colors.textPrimary,
+                        )
                     }
                 }
                 location.point?.let { point ->
-                    InfoRow(MapIcons.Globe, "Coordinates", MapColors.Info) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val lat = toFixed(point.lat, COORDINATE_DIGITS)
+                    val lng = toFixed(point.lng, COORDINATE_DIGITS)
+                    InfoRow(MapIcons.Globe, str(S.desktop_map_coordinates), MapColors.Info) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             ZillitText(
-                                text = "${toFixed(point.lat, COORDINATE_DIGITS)}, ${toFixed(point.lng, COORDINATE_DIGITS)}",
+                                text = "$lat, $lng",
                                 style = ZillitTheme.typography.bodyMedium.copy(fontFamily = ZillitTheme.fonts.mono),
                                 color = colors.textPrimary,
                             )
                             CardAction(
                                 onClick = { onEvent(MapEvent.Locations.CopyCoordinates(location.id)) },
                                 icon = MapIcons.Copy,
-                                text = "Copy",
+                                text = str(S.copy),
                                 tone = ActionTone.Accent,
                             )
                         }
                     }
                 }
                 if (location.subTypes.isNotEmpty()) {
-                    InfoRow(MapIcons.Tag, "Subtypes", MapColors.Brand) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    InfoRow(MapIcons.Tag, str(S.desktop_map_subtypes), MapColors.Brand) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
                             location.subTypes.forEach { sub ->
                                 ZillitText(
                                     text = sub,
                                     style = labelBold(12.sp, FontWeight.Medium),
                                     color = colors.textPrimary,
-                                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(softOf(MapColors.Brand)).padding(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                                        .background(softOf(MapColors.Brand))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp),
                                 )
                             }
                         }
@@ -488,12 +558,20 @@ internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEve
                 }
             }
             if (location.description.isNotBlank()) {
-                SectionCard(title = "Description", icon = MapIcons.FileText, accent = MapColors.Brand) {
-                    ZillitText(text = location.description, style = ZillitTheme.typography.bodyLarge, color = colors.textSecondary)
+                SectionCard(title = str(S.description), icon = MapIcons.FileText, accent = MapColors.Brand) {
+                    ZillitText(
+                        text = location.description,
+                        style = ZillitTheme.typography.bodyLarge,
+                        color = colors.textSecondary,
+                    )
                 }
             }
             if (location.attachments.isNotEmpty()) {
-                SectionCard(title = "Photos (${location.attachments.size})", icon = MapIcons.Camera, accent = MapColors.Brand) {
+                SectionCard(
+                    title = str(S.desktop_map_photos_count, location.attachments.size),
+                    icon = MapIcons.Camera,
+                    accent = MapColors.Brand,
+                ) {
                     PhotoGrid(location.attachments.withIndex().toList(), columns = 3) { (index, attachment) ->
                         Box(
                             Modifier
@@ -503,7 +581,9 @@ internal fun LocationDetailPanel(state: MapUiState, location: MapLocation, onEve
                                 .pointerHoverIcon(PointerIcon.Hand)
                                 .clickable { onEvent(MapEvent.Locations.OpenPhoto(location.id, index)) },
                         ) {
-                            AsyncPicture(key = attachment.media, modifier = Modifier.fillMaxSize()) { photo(attachment, preview = true) }
+                            AsyncPicture(key = attachment.media, modifier = Modifier.fillMaxSize()) {
+                                photo(attachment, preview = true)
+                            }
                         }
                     }
                 }

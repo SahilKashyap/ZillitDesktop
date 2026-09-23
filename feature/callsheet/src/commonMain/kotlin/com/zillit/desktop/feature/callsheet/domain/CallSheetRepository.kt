@@ -53,10 +53,16 @@ sealed interface ApprovalDecision {
         ApprovalDecision
 }
 
-/** `POST /send-reminder`. The call sheet never sends `sent_by_role`. */
+/**
+ * `POST /send-reminder`. [sentBy] is the sender's MEMBER ID, not their name
+ * (the reader looks them up and shows who they are today; reminders written
+ * before Sep 2026 hold a name there and render it verbatim), and
+ * [sentByRole] the designation KEY, read only when the id resolves to nobody.
+ */
 data class ReminderRequest(
     val sentBy: String,
     val sentById: String,
+    val sentByRole: String,
     val assigneeIds: List<String>,
     val message: String,
 )

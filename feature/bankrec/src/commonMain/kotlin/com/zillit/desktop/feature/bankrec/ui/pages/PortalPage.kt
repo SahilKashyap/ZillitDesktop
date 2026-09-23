@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankPeriod
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.PortalLink
@@ -56,8 +58,7 @@ fun ColumnScope.PortalPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ZillitText(
-            "Generate a secure, read-only reconciliation summary — share with guarantors, broadcasters, " +
-                "or auditors without giving system access.",
+            str(S.desktop_br_portal_intro),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
             modifier = Modifier.weight(1f),
@@ -67,12 +68,14 @@ fun ColumnScope.PortalPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
                 value = portal.selectedPeriodId ?: state.periods.first().id,
                 options = state.periods.map { it.id },
                 onSelect = { onEvent(BankRecEvent.SelectPortalPeriod(it)) },
-                label = { id -> state.period(id)?.let { portalPeriodLabel(it, state) } ?: "Select period…" },
+                label = { id ->
+                    state.period(id)?.let { portalPeriodLabel(it, state) } ?: str(S.desktop_br_select_period)
+                },
                 modifier = Modifier.widthIn(min = 190.dp, max = 280.dp),
             )
         }
         ZillitButton(
-            text = "Generate & Share Link",
+            text = str(S.desktop_br_generate_share_link),
             onClick = { onEvent(BankRecEvent.ComposePortalLink) },
             size = ButtonSize.Small,
             leadingIcon = BankRecIcons.Share,
@@ -87,7 +90,7 @@ fun ColumnScope.PortalPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
 
     BrCard(
         Modifier.fillMaxWidth(),
-        title = "Active Portal Links",
+        title = str(S.desktop_br_active_portal_links),
         icon = BankRecIcons.Share,
         titleRight = if (portal.links.isEmpty()) {
             null
@@ -95,7 +98,11 @@ fun ColumnScope.PortalPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
             {
                 val count = portal.links.size
                 ZillitText(
-                    "$count link${if (count == 1) "" else "s"}",
+                    if (count == 1) {
+                        str(S.desktop_br_link_count_one, count)
+                    } else {
+                        str(S.desktop_br_link_count_many, count)
+                    },
                     style = ZillitTheme.typography.labelSmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -105,7 +112,7 @@ fun ColumnScope.PortalPage(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
         when {
             portal.loading && portal.links.isEmpty() -> BrSkeletonRows(4)
             portal.links.isEmpty() -> ZillitText(
-                "No portal links generated yet. Click “Generate & Share Link” to create one.",
+                str(S.desktop_br_no_portal_links),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -122,7 +129,7 @@ private fun portalPeriodLabel(period: BankPeriod, state: BankRecUiState): String
     val month = BankRecFormat.periodLabel(period)
     val shared = state.periods.count { it.periodMillis == period.periodMillis } > 1
     val account = state.account(period.bankAccountId)?.displayName.orEmpty()
-    val status = if (period.isOpen) "In Progress" else "Complete"
+    val status = if (period.isOpen) str(S.in_progress) else str(S.dm_action_complete)
     return listOfNotNull(month, account.takeIf { shared && it.isNotBlank() }, status).joinToString(" · ")
 }
 
@@ -135,7 +142,7 @@ private fun LinksTable(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
         key = { it.id },
         minWeightWidth = 96.dp,
         columns = listOf(
-            BrColumn("Recipient", weight = 1.3f) { link ->
+            BrColumn(str(S.dm_nda_recipient_label), weight = 1.3f) { link ->
                 Column {
                     ZillitText(
                         link.recipientName.ifBlank { BankRecFormat.DASH },
@@ -145,7 +152,7 @@ private fun LinksTable(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
                     ZillitText(link.recipientEmail, style = mono(10.5.sp), color = colors.textMuted, maxLines = 1)
                 }
             },
-            BrColumn("Type", width = 104.dp) { link ->
+            BrColumn(str(S.type), width = 104.dp) { link ->
                 ZillitText(
                     link.orgType.label,
                     style = ZillitTheme.typography.bodySmall,
@@ -153,21 +160,21 @@ private fun LinksTable(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
                     maxLines = 2,
                 )
             },
-            BrColumn("Period", width = 76.dp) { link ->
+            BrColumn(str(S.cr_meta_period), width = 76.dp) { link ->
                 ZillitText(link.periodLabel.ifBlank { BankRecFormat.DASH }, style = muted, maxLines = 1)
             },
-            BrColumn("Permissions", weight = 1.6f) { link -> PermissionChips(link) },
-            BrColumn("Created", width = 84.dp) { link ->
+            BrColumn(str(S.desktop_permissions), weight = 1.6f) { link -> PermissionChips(link) },
+            BrColumn(str(S.drive_created), width = 84.dp) { link ->
                 ZillitText(BankRecFormat.day(link.createdAtMillis), style = muted, color = colors.textSecondary)
             },
-            BrColumn("Expires", width = 84.dp) { link ->
+            BrColumn(str(S.drive_link_expires_label), width = 84.dp) { link ->
                 ZillitText(
-                    link.expiresAtMillis?.let(BankRecFormat::day) ?: "No expiry",
+                    link.expiresAtMillis?.let(BankRecFormat::day) ?: str(S.desktop_no_expiry),
                     style = muted,
                     color = colors.textSecondary,
                 )
             },
-            BrColumn("Views", width = 48.dp, align = BrAlign.End) { link ->
+            BrColumn(str(S.desktop_views), width = 48.dp, align = BrAlign.End) { link ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -176,8 +183,10 @@ private fun LinksTable(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
                     ZillitText(link.views.toString(), style = muted)
                 }
             },
-            BrColumn("Status", width = 70.dp) { link -> BrBadge(link.status.label, link.status.tone) },
-            BrColumn("Actions", width = 176.dp, align = BrAlign.End) { link -> LinkActions(link, state, onEvent) },
+            BrColumn(str(S.status), width = 70.dp) { link -> BrBadge(link.status.label, link.status.tone) },
+            BrColumn(str(S.dd_actions), width = 176.dp, align = BrAlign.End) { link ->
+                LinkActions(link, state, onEvent)
+            },
         ),
     )
 }
@@ -195,7 +204,7 @@ private fun LinkActions(link: PortalLink, state: BankRecUiState, onEvent: (BankR
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (!link.isActive) {
             ZillitButton(
-                text = "Re-share",
+                text = str(S.desktop_br_re_share),
                 onClick = { onEvent(BankRecEvent.EditPortalLink(link)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -205,19 +214,19 @@ private fun LinkActions(link: PortalLink, state: BankRecUiState, onEvent: (BankR
         val copied = portal.copiedToken == link.token
         ZillitIconButton(
             icon = if (copied) ZillitIcons.Check else BankRecIcons.Copy,
-            contentDescription = if (copied) "Copied" else "Copy link",
+            contentDescription = if (copied) str(S.dd_copied) else str(S.copy_link_txt),
             onClick = { onEvent(BankRecEvent.CopyPortalLink(link)) },
             tint = if (copied) ZillitTheme.colors.success else ZillitTheme.colors.textMuted,
         )
         ZillitButton(
-            text = "Edit",
+            text = str(S.edit),
             onClick = { onEvent(BankRecEvent.EditPortalLink(link)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
         )
         val revoking = portal.revokingId == link.id
         ZillitButton(
-            text = if (revoking) "Revoking…" else "Revoke",
+            text = if (revoking) str(S.desktop_br_revoking) else str(S.drive_link_revoke),
             onClick = { onEvent(BankRecEvent.RevokePortalLink(link)) },
             variant = ButtonVariant.Danger,
             size = ButtonSize.Small,

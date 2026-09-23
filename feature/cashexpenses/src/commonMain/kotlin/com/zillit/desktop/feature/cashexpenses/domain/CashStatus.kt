@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.cashexpenses.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Where a receipt batch is in the cash workflow.
  *
@@ -47,19 +50,19 @@ enum class BatchStatus(val wire: String) {
      */
     @Suppress("CyclomaticComplexMethod") // One label per status; a map would separate the two.
     fun label(accountant: Boolean = false): String = when (this) {
-        Pending -> "Pending"
-        Coding -> "With Coordinator"
-        Coded -> "Coded"
-        InAudit -> "In Audit"
-        AwaitingApproval -> "Awaiting Approval"
-        ReadyToPost -> "Ready to Post"
-        UnderReview -> "Under Review"
-        Escalated -> "Escalated"
-        Posted -> "Posted"
-        Queried -> "Queried"
-        Rejected -> "Rejected"
-        AcctOverride -> if (accountant) "Override" else "Ready to Post"
-        Unknown -> "Pending"
+        Pending -> str(S.pending)
+        Coding -> str(S.desktop_ce_with_coordinator)
+        Coded -> str(S.desktop_ce_coded)
+        InAudit -> str(S.desktop_ce_in_audit)
+        AwaitingApproval -> str(S.dm_filter_status_pending)
+        ReadyToPost -> str(S.ah_ready_to_post)
+        UnderReview -> str(S.ah_under_review)
+        Escalated -> str(S.ah_escalated)
+        Posted -> str(S.ah_status_posted)
+        Queried -> str(S.ah_queried)
+        Rejected -> str(S.rejected)
+        AcctOverride -> if (accountant) str(S.dm_nom_table_override) else str(S.ah_ready_to_post)
+        Unknown -> str(S.pending)
     }
 
     /** Terminal: the money has moved and nothing further happens to this batch. */
@@ -101,17 +104,17 @@ enum class FloatStatus(val wire: String) {
 
     val label: String
         get() = when (this) {
-            AwaitingApproval -> "Awaiting Approval"
-            Approved, AcctOverride -> "Approved"
-            ReadyToCollect -> "Ready to Collect"
-            Collected, Active -> "Collected"
-            Spending -> "Spending"
-            Spent -> "Spent"
-            PendingReturn -> "Pending Return"
-            Cancelled -> "Cancelled"
-            Closed -> "Closed"
-            Rejected -> "Rejected"
-            Unknown -> "Awaiting Approval"
+            AwaitingApproval -> str(S.dm_filter_status_pending)
+            Approved, AcctOverride -> str(S.approved)
+            ReadyToCollect -> str(S.desktop_ce_ready_to_collect)
+            Collected, Active -> str(S.desktop_ce_collected)
+            Spending -> str(S.desktop_ce_spending)
+            Spent -> str(S.ah_spent_label)
+            PendingReturn -> str(S.desktop_ce_pending_return)
+            Cancelled -> str(S.cancelled)
+            Closed -> str(S.ah_status_closed)
+            Rejected -> str(S.rejected)
+            Unknown -> str(S.dm_filter_status_pending)
         }
 
     /**
@@ -144,10 +147,12 @@ enum class FloatStatus(val wire: String) {
 }
 
 /** Which of the two cash pipelines a batch belongs to. */
-enum class ExpenseType(val wire: String, val label: String) {
-    PettyCash("pc", "Petty Cash"),
-    OutOfPocket("oop", "Out of Pocket"),
+enum class ExpenseType(val wire: String, private val labelKey: String) {
+    PettyCash("pc", S.desktop_petty_cash),
+    OutOfPocket("oop", S.desktop_ce_out_of_pocket),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): ExpenseType =
@@ -156,12 +161,14 @@ enum class ExpenseType(val wire: String, val label: String) {
 }
 
 /** How a settled batch is paid — or absorbed. */
-enum class Settlement(val wire: String, val label: String) {
-    Reimburse("REIMBURSE", "Reimburse"),
-    ReduceFloat("REDUCE_FLOAT", "Reduce Float"),
-    TopUpFloat("TOP_UP_FLOAT", "Top Up Float"),
-    CloseFloat("CLOSE_FLOAT", "Close Float"),
+enum class Settlement(val wire: String, private val labelKey: String) {
+    Reimburse("REIMBURSE", S.desktop_ce_reimburse),
+    ReduceFloat("REDUCE_FLOAT", S.desktop_ce_reduce_float),
+    TopUpFloat("TOP_UP_FLOAT", S.desktop_ce_top_up_float),
+    CloseFloat("CLOSE_FLOAT", S.desktop_ce_close_float),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): Settlement? {
@@ -179,17 +186,19 @@ enum class Settlement(val wire: String, val label: String) {
 }
 
 /** What a receipt was for. Free text on the wire; these are the offered set. */
-enum class ExpenseCategory(val wire: String, val label: String) {
-    Materials("materials", "Materials"),
-    Equipment("equipment", "Props / Equipment"),
-    Stationery("stationery", "Consumables / Stationery"),
-    Catering("catering", "Catering"),
-    Fuel("fuel", "Fuel"),
-    Parking("parking", "Parking"),
-    Taxi("taxi", "Taxi / Travel"),
-    Accommodation("accommodation", "Accommodation"),
-    Other("other", "Other"),
+enum class ExpenseCategory(val wire: String, private val labelKey: String) {
+    Materials("materials", S.ah_materials),
+    Equipment("equipment", S.ah_props_equipment),
+    Stationery("stationery", S.ah_consumables_stationery),
+    Catering("catering", S.catering),
+    Fuel("fuel", S.ah_fuel),
+    Parking("parking", S.ah_parking),
+    Taxi("taxi", S.ah_taxi_travel),
+    Accommodation("accommodation", S.ah_accommodation),
+    Other("other", S.other),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun label(wire: String?): String =
@@ -220,13 +229,14 @@ sealed interface Lifecycle {
     data class NeedsAction(val reason: BatchStatus) : Lifecycle
 
     companion object {
-        val STAGES = listOf(
-            Stage("Submitted", "Receipts sent"),
-            Stage("Coordinator", "Budget coding"),
-            Stage("Accounts", "Audit & verify"),
-            Stage("Approval", "Sign-off"),
-            Stage("Posted", "Ledger / payment"),
-        )
+        val STAGES: List<Stage>
+            get() = listOf(
+                Stage(str(S.ah_step_submitted), str(S.ah_step_submitted_desc)),
+                Stage(str(S.ah_step_coordinator), str(S.ah_step_coordinator_desc)),
+                Stage(str(S.ah_step_accounts), str(S.ah_step_accounts_desc)),
+                Stage(str(S.ah_step_approval), str(S.ah_step_approval_desc)),
+                Stage(str(S.ah_step_posted), str(S.ah_step_posted_desc)),
+            )
 
         @Suppress("MagicNumber") // The stage indices are the stages; naming them adds nothing.
         fun of(status: BatchStatus): Lifecycle = when (status) {

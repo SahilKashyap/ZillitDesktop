@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** Which parts of a message a term is matched against. */
 enum class SearchField { Subject, From, To, Body }
 
@@ -92,7 +95,7 @@ private fun EmailSummary.matches(field: SearchField, term: String): Boolean = wh
 
 /** What to tell the user their search covered. */
 fun searchScopeLabel(syncedFolders: Int): String = when (syncedFolders) {
-    0 -> "No mail has been downloaded yet."
-    1 -> "Searching mail downloaded to this computer."
-    else -> "Searching mail downloaded to this computer, across $syncedFolders folders."
+    0 -> str(S.desktop_email_search_nothing_downloaded)
+    1 -> str(S.desktop_email_search_downloaded)
+    else -> str(S.desktop_email_search_downloaded_folders, syncedFolders)
 }

@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.ui.SetupModalSection
 
 /**
@@ -175,10 +177,10 @@ fun SetupModalShell(
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     val (dot, text) = when {
-                        loading -> colors.textMuted to "Loading…"
-                        loadError != null -> colors.danger to "Load error"
-                        dirty -> colors.warning to "Unsaved changes"
-                        else -> colors.success to "Saved"
+                        loading -> colors.textMuted to str(S.loading_)
+                        loadError != null -> colors.danger to str(S.desktop_load_error)
+                        dirty -> colors.warning to str(S.cs_exit_title)
+                        else -> colors.success to str(S.saved)
                     }
                     Box(Modifier.size(6.dp).clip(CircleShape).background(dot))
                     FieldHint(text)
@@ -202,15 +204,10 @@ fun SetupModalShell(
                             maxLines = 1,
                         )
                     }
-                    if (dirty) Pill("Unsaved", tone = StatusTone.Pending, dot = true)
-                    ZillitButton(
-                        text = if (saving) "Saving…" else "Save changes",
-                        onClick = onSave,
-                        size = ButtonSize.Small,
-                        enabled = dirty && !saving,
-                        loading = saving,
-                    )
-                    ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Close", onClick = onClose)
+                    // The header keeps the section name, the Unsaved pill and
+                    // ×; Save sits in the footer (web 03f047d47).
+                    if (dirty) Pill(str(S.asset_unsaved), tone = StatusTone.Pending, dot = true)
+                    ZillitIconButton(icon = ZillitIcons.Close, contentDescription = str(S.close), onClick = onClose)
                 }
                 HairLine()
                 Column(
@@ -242,12 +239,19 @@ fun SetupModalShell(
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     Kbd("esc")
-                    FieldHint("to close")
+                    FieldHint(str(S.desktop_to_close))
                     Box(Modifier.size(3.dp).clip(CircleShape).background(colors.borderStrong))
                     Kbd("⌘S")
-                    FieldHint("to save")
+                    FieldHint(str(S.desktop_to_save))
                     Fill()
-                    FieldHint("Changes apply to new transactions only")
+                    FieldHint(str(S.desktop_hub_changes_apply_to_new_transactions_only))
+                    ZillitButton(
+                        text = if (saving) str(S.ah_saving) else str(S.dm_setup_save),
+                        onClick = onSave,
+                        size = ButtonSize.Small,
+                        enabled = dirty && !saving,
+                        loading = saving,
+                    )
                 }
             }
         }
@@ -260,7 +264,7 @@ private fun LoadErrorBody(message: String) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         ZillitText(
-            text = "Couldn't load settings",
+            text = str(S.desktop_couldnt_load_settings),
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
             color = colors.danger,
         )

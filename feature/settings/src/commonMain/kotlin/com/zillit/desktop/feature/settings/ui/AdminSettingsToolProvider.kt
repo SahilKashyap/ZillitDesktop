@@ -7,6 +7,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -66,7 +68,7 @@ class AdminSettingsToolProvider(
 ) : ToolProvider {
 
     override val path: String = ADMIN_SETTINGS_PATH
-    override val title: String = ADMIN_SETTINGS_TITLE
+    override val title: String get() = ADMIN_SETTINGS_TITLE
 
     /**
      * Not the Settings gear. Two rail entries sharing one glyph is two entries
@@ -239,7 +241,7 @@ const val ADMIN_SETTINGS_PATH = "/settings/admin"
  * Shared with the rail, which cannot import this module — see `DefaultRailItems`
  * for why the rail is a fixed list rather than something derived.
  */
-const val ADMIN_SETTINGS_TITLE = "Admin Settings"
+val ADMIN_SETTINGS_TITLE: String get() = str(S.admin_settings)
 
 /**
  * Where each administration page lives.
@@ -258,6 +260,6 @@ val ApprovalQueue.path: String
 
 private val ApprovalQueue.tabTitle: String
     get() = when (this) {
-        ApprovalQueue.NewCrew -> "Approve new crew"
-        ApprovalQueue.ProfileChanges -> "Approve profile changes"
+        ApprovalQueue.NewCrew -> str(S.desktop_approve_new_crew)
+        ApprovalQueue.ProfileChanges -> str(S.desktop_approve_profile_changes)
     }

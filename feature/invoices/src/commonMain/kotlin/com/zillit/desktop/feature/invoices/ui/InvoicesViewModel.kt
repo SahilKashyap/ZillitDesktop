@@ -36,6 +36,8 @@ import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.domain.ResolvedTier
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Invoices (Accounts Payable): the department view — my uploads, my
@@ -155,7 +157,7 @@ class InvoicesViewModel(
             InvoicesEvent.ToggleSelectAll -> payments.toggleSelectAll()
             is InvoicesEvent.ProcessSelected -> payments.processSelected(event.method)
             InvoicesEvent.CancelPaymentRun -> setState { copy(runDraft = null) }
-            is InvoicesEvent.ApproveRun -> payments.actOnRun(event.run, "Run approved") {
+            is InvoicesEvent.ApproveRun -> payments.actOnRun(event.run, str(S.ah_run_approved_toast)) {
                 repository.approvePaymentRun(it)
             }
             is InvoicesEvent.StartRejectRun -> setState { copy(rejectRun = RunRejection(event.run)) }
@@ -164,20 +166,29 @@ class InvoicesViewModel(
             }
             InvoicesEvent.ConfirmRejectRun -> payments.confirmRejectRun()
             InvoicesEvent.CancelRejectRun -> setState { copy(rejectRun = null) }
-            is InvoicesEvent.DeleteRun -> payments.actOnRun(event.run, "Run deleted") {
+            is InvoicesEvent.DeleteRun -> payments.actOnRun(event.run, str(S.desktop_run_deleted)) {
                 repository.deletePaymentRun(it)
             }
 
-            is InvoicesEvent.PostInvoice -> actOn(listOf(event.invoice), "Posted") { repository.postInvoice(it.id) }
+            is InvoicesEvent.PostInvoice -> actOn(
+                listOf(event.invoice),
+                str(S.ah_status_posted),
+            ) { repository.postInvoice(it.id) }
             is InvoicesEvent.ReturnToApproval ->
-                actOn(listOf(event.invoice), "Sent back for approval") { repository.returnToApproval(it.id) }
+                actOn(
+                    listOf(event.invoice),
+                    str(S.desktop_inv_sent_back_for_approval),
+                ) { repository.returnToApproval(it.id) }
 
             is InvoicesEvent.SelectEntryFilter -> setState { copy(entryFilter = event.filter, selected = emptySet()) }
             is InvoicesEvent.SelectEntrySort -> setState { copy(entrySort = event.sort) }
             is InvoicesEvent.SelectPayFilter -> setState { copy(payFilter = event.method, selected = emptySet()) }
-            InvoicesEvent.PostSelected -> actOn(payments.selectedRows(), "Posted") { repository.postInvoice(it.id) }
+            InvoicesEvent.PostSelected -> actOn(
+                payments.selectedRows(),
+                str(S.ah_status_posted),
+            ) { repository.postInvoice(it.id) }
             InvoicesEvent.ReviewSelected ->
-                actOn(payments.selectedRows(), "Sent for review") { repository.markUnderReview(it.id) }
+                actOn(payments.selectedRows(), str(S.desktop_sent_for_review)) { repository.markUnderReview(it.id) }
 
             InvoicesEvent.StartAssign -> payments.startAssign()
             is InvoicesEvent.EditAssign -> setState { copy(assignFor = event.request) }
@@ -191,11 +202,11 @@ class InvoicesViewModel(
             InvoicesEvent.ConfirmSalesInvoice -> payments.confirmSalesInvoice()
             InvoicesEvent.CancelSalesInvoice -> setState { copy(salesDraft = null) }
             is InvoicesEvent.SendSalesInvoice ->
-                payments.actOnSales("Sent to the client") { repository.sendSalesInvoice(event.invoice.id) }
+                payments.actOnSales(str(S.desktop_sent_to_the_client)) { repository.sendSalesInvoice(event.invoice.id) }
             is InvoicesEvent.MarkSalesInvoicePaid ->
-                payments.actOnSales("Marked paid") { repository.markSalesInvoicePaid(event.invoice.id) }
+                payments.actOnSales(str(S.desktop_marked_paid)) { repository.markSalesInvoicePaid(event.invoice.id) }
             is InvoicesEvent.DeleteSalesInvoice ->
-                payments.actOnSales("Deleted") { repository.deleteSalesInvoice(event.invoice.id) }
+                payments.actOnSales(str(S.drive_deleted_default)) { repository.deleteSalesInvoice(event.invoice.id) }
             InvoicesEvent.RegenerateAccruals -> regenerateAccruals()
             is InvoicesEvent.ActOnCreditNote -> actOnCreditNote(event.note)
             is InvoicesEvent.SendToApproval -> sendToApproval(event.invoice)
@@ -204,8 +215,14 @@ class InvoicesViewModel(
             is InvoicesEvent.HoldNotesChanged -> setState { copy(holdFor = holdFor?.copy(notes = event.notes)) }
             InvoicesEvent.ConfirmHold -> confirmHold()
             InvoicesEvent.CancelHold -> setState { copy(holdFor = null) }
-            is InvoicesEvent.Release -> actOn(listOf(event.invoice), "Released") { repository.release(it.id) }
-            is InvoicesEvent.Unmatch -> actOn(listOf(event.invoice), "PO removed") { repository.unmatch(it.id) }
+            is InvoicesEvent.Release -> actOn(
+                listOf(event.invoice),
+                str(S.desktop_released),
+            ) { repository.release(it.id) }
+            is InvoicesEvent.Unmatch -> actOn(
+                listOf(event.invoice),
+                str(S.desktop_po_removed),
+            ) { repository.unmatch(it.id) }
             is InvoicesEvent.Search -> setState { copy(search = event.query) }
             InvoicesEvent.Refresh -> refresh()
             InvoicesEvent.DismissError -> setState { copy(error = null) }
@@ -318,7 +335,7 @@ class InvoicesViewModel(
                 if (saved is ZillitResult.Failure) {
                     setState { copy(error = saved.error.localised()) }
                 } else {
-                    notice("Exported")
+                    notice(str(S.desktop_exported))
                 }
             }
         }
@@ -342,7 +359,7 @@ class InvoicesViewModel(
             val result = repository.regenerateAccruals()
             setState { copy(busy = false, error = (result as? ZillitResult.Failure)?.error?.localised()) }
             if (result is ZillitResult.Success) {
-                notice("Accruals recalculated")
+                notice(str(S.desktop_accruals_recalculated))
                 loadAccruals()
             }
         }
@@ -375,7 +392,11 @@ class InvoicesViewModel(
             }
             setState { copy(busy = false, error = (result as? ZillitResult.Failure)?.error?.localised()) }
             if (result is ZillitResult.Success) {
-                notice(if (note.status == CreditNoteStatus.Pending) "Credit note applied" else "Dispute raised")
+                notice(if (note.status == CreditNoteStatus.Pending) {
+                    str(S.desktop_credit_note_applied)
+                } else {
+                    str(S.desktop_dispute_raised)
+                })
                 loadCreditNotes()
             }
         }
@@ -392,10 +413,10 @@ class InvoicesViewModel(
         // for the same reason.
         val rows = holdTargets(invoice).filter { it.status != InvoiceStatus.Held }
         if (rows.isEmpty()) {
-            setState { copy(error = "Nothing to send.") }
+            setState { copy(error = str(S.desktop_nothing_to_send)) }
             return
         }
-        actOn(rows, "Sent for approval") { repository.sendToApproval(it.id) }
+        actOn(rows, str(S.ah_sent_for_approval_toast)) { repository.sendToApproval(it.id) }
     }
 
     private fun confirmHold() {
@@ -539,7 +560,7 @@ class InvoicesViewModel(
         launch {
             when (val r = repository.approvalTiers()) {
                 is ZillitResult.Failure -> setState {
-                    copy(error = "Could not load approval tiers: ${r.error.localised()}")
+                    copy(error = str(S.desktop_inv_could_not_load_approval_tiers, r.error.localised()))
                 }
                 is ZillitResult.Success -> setState { copy(tierConfigs = r.data) }
             }
@@ -671,7 +692,9 @@ class InvoicesViewModel(
             }
             val failure = (outcome as? ZillitResult.Failure)?.error?.userMessage
             setState { copy(detail = detail?.copy(opening = false), error = failure) }
-            if (outcome is ZillitResult.Success) sendEffect(InvoicesEffect.Notice("Saved to Downloads"))
+            if (outcome is ZillitResult.Success) {
+                sendEffect(InvoicesEffect.Notice(str(S.docusign_signing_attachment_saved)))
+            }
         }
     }
 

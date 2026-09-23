@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.boxschedule.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
 import com.zillit.desktop.feature.boxschedule.domain.GuestEmails
 import kotlinx.coroutines.async
@@ -100,7 +102,7 @@ internal class AudienceActions(private val vm: BoxScheduleViewModel) {
                         presetsLoading = false,
                     )
                 }
-                if (presetList is ZillitResult.Failure) vm.notice("Failed to load presets")
+                if (presetList is ZillitResult.Failure) vm.notice(str(S.bs_preset_failed))
                 if (departmentList is ZillitResult.Failure) vm.notice(departmentList.error.localised())
             }
         }
@@ -116,8 +118,8 @@ internal class AudienceActions(private val vm: BoxScheduleViewModel) {
         val email = draft.trim().lowercase()
         return when {
             email.isEmpty() -> this
-            !GuestEmails.isValid(email) -> copy(error = "Please enter a valid email address")
-            email in emails -> copy(error = "This email has already been added")
+            !GuestEmails.isValid(email) -> copy(error = str(S.ah_err_email_invalid))
+            email in emails -> copy(error = str(S.desktop_bs_email_already_added))
             else -> copy(emails = emails + email, draft = "", error = null)
         }
     }

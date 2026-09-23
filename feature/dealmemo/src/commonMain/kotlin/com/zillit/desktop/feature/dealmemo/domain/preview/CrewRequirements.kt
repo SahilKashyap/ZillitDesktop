@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.preview
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import kotlinx.serialization.json.JsonElement
@@ -53,38 +55,41 @@ object CrewRequirements {
         "passportAttachment" to "passport_attachment",
     )
 
-    val FIELD_LABELS: Map<String, String> = mapOf(
-        "preferredName" to "Screen credit",
-        "screenCreditDesignation" to "Screen credit designation",
-        "dob" to "Date of birth",
-        "niNumber" to "National Insurance No.",
-        "taxCode" to "Tax code",
-        "rightToWork" to "Right to work",
-        "homeAddress" to "Home address",
-        "emergencyContact" to "Emergency contact",
-        "emergencyContactName" to "Emergency contact name",
-        "emergencyContactNumber" to "Emergency contact number",
-        "email" to "Email",
-        "mobile" to "Mobile",
-        "gender" to "Gender",
-        "emergencyEmail" to "Emergency email",
-        "emergencyAddress" to "Emergency address",
-        "representativeName" to "Agency name",
-        "representativePhone" to "Agency phone",
-        "representativeEmail" to "Agency email",
-        "representativeAddress" to "Agency address",
-        "bankAccountHolderName" to "Account holder name",
-        "bankName" to "Bank name",
-        "bankAccountNumber" to "Account number",
-        "bankSortCode" to "Sort code",
-        "bankIbanNumber" to "IBAN",
-        "bankSwiftCode" to "SWIFT / BIC",
-        "passportAttachment" to "Passport / ID",
+    private val FIELD_LABEL_KEYS: Map<String, String> = mapOf(
+        "preferredName" to S.dm_step2_preferred_name,
+        "screenCreditDesignation" to S.dm_step2_screen_credit_designation,
+        "dob" to S.dm_req_dob,
+        "niNumber" to S.dm_req_ni,
+        "taxCode" to S.dm_crew_tax_code,
+        "rightToWork" to S.dm_req_rtw,
+        "homeAddress" to S.dm_req_home_address,
+        "emergencyContact" to S.dm_req_emergency,
+        "emergencyContactName" to S.desktop_dm_emergency_contact_name,
+        "emergencyContactNumber" to S.desktop_dm_emergency_contact_number,
+        "email" to S.email,
+        "mobile" to S.dm_req_mobile,
+        "gender" to S.gender,
+        "emergencyEmail" to S.desktop_dm_emergency_email,
+        "emergencyAddress" to S.desktop_dm_emergency_address,
+        "representativeName" to S.dm_step2_agency_name,
+        "representativePhone" to S.desktop_dm_agency_phone,
+        "representativeEmail" to S.desktop_dm_agency_email,
+        "representativeAddress" to S.desktop_dm_agency_address,
+        "bankAccountHolderName" to S.dm_req_account_holder,
+        "bankName" to S.bank_name_label,
+        "bankAccountNumber" to S.account_number,
+        "bankSortCode" to S.ah_lbl_sort_code,
+        "bankIbanNumber" to S.dm_step2_bank_iban,
+        "bankSwiftCode" to S.dm_step2_bank_swift,
+        "passportAttachment" to S.dm_step2_passport,
     )
 
-    private val LABEL_BY_PATH: Map<String, String> =
-        KEY_MAP.entries.associate { (key, path) -> path to (FIELD_LABELS[key] ?: key) } +
-            ("full_legal_name" to "Full legal name")
+    val FIELD_LABELS: Map<String, String>
+        get() = FIELD_LABEL_KEYS.mapValues { (_, key) -> str(key) }
+
+    private val LABEL_BY_PATH: Map<String, String>
+        get() = KEY_MAP.entries.associate { (key, path) -> path to (FIELD_LABEL_KEYS[key]?.let(::str) ?: key) } +
+            ("full_legal_name" to str(S.dm_req_full_legal_name))
 
     val ALWAYS_REQUIRED = listOf("full_legal_name", "bank.name", "bank.account_holder_name", "emergency_contact_name")
 
@@ -146,7 +151,8 @@ object CrewRequirements {
             }
             if (pair != null) {
                 paired += pair
-                out += pair.joinToString(" or ") { LABEL_BY_PATH[it] ?: it }
+                val labels = LABEL_BY_PATH
+                out += str(S.desktop_dm_or_join, labels[pair[0]] ?: pair[0], labels[pair[1]] ?: pair[1])
             } else {
                 out += LABEL_BY_PATH[path] ?: path
             }

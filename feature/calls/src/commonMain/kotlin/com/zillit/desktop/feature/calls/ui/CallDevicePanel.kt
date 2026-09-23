@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.MediaDevice
 
 /**
@@ -51,7 +53,7 @@ fun CallDevicePanel(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "Audio",
+            text = str(S.audio),
             style = ZillitTheme.typography.titleSmall,
             color = colors.textPrimary,
         )
@@ -60,18 +62,18 @@ fun CallDevicePanel(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
-            item { DeviceHeading("Microphone") }
+            item { DeviceHeading(str(S.txt_microphone)) }
             item {
-                DeviceChoice("System default", devices.microphoneId.isBlank()) { onChooseMicrophone("") }
+                DeviceChoice(str(S.theme_system_default), devices.microphoneId.isBlank()) { onChooseMicrophone("") }
             }
             items(devices.microphones, key = { "mic-" + it.id }) { device ->
                 DeviceChoice(device.displayName, device.id == devices.microphoneId) {
                     onChooseMicrophone(device.id)
                 }
             }
-            item { DeviceHeading("Speaker") }
+            item { DeviceHeading(str(S.txt_speaker)) }
             item {
-                DeviceChoice("System default", devices.speakerId.isBlank()) { onChooseSpeaker("") }
+                DeviceChoice(str(S.theme_system_default), devices.speakerId.isBlank()) { onChooseSpeaker("") }
             }
             items(devices.speakers, key = { "spk-" + it.id }) { device ->
                 DeviceChoice(device.displayName, device.id == devices.speakerId) {

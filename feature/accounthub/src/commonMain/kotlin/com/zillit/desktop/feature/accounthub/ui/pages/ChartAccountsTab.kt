@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ChartMode
 import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
 import com.zillit.desktop.feature.accounthub.domain.ChartSortKey
@@ -105,7 +107,7 @@ internal fun ColumnScope.ChartAccountsTab(
     CoaToolbar(chart, canEdit, canImport, onEvent)
 
     when {
-        chart.loading && !chart.loaded -> CoaLoadingCard("Loading chart of accounts…")
+        chart.loading && !chart.loaded -> CoaLoadingCard(str(S.desktop_hub_loading_chart_of_accounts))
         chart.isViewEmpty -> CoaEmptyAccounts(canEdit, canImport, importOffered, onEvent)
         else -> {
             val orphans = remember(chart.accounts, chart.view, chart.showInactive) { chart.forest.orphans.size }
@@ -135,11 +137,11 @@ internal fun ColumnScope.ChartAccountsTab(
 private fun CoaStatStrip(stats: CoaStats) {
     val colors = ZillitTheme.colors
     val cells = listOf(
-        Triple("Total codes", stats.total, "across the chart"),
-        Triple("Headers", stats.headers, "top-level groups"),
-        Triple("Nominals", stats.nominals, "mid-level"),
-        Triple("Codes", stats.codes, "postable"),
-        Triple("Active", stats.active, "enabled for posting"),
+        Triple(str(S.desktop_total_codes), stats.total, str(S.desktop_across_the_chart)),
+        Triple(str(S.desktop_headers), stats.headers, str(S.desktop_top_level_groups)),
+        Triple(str(S.desktop_nominals), stats.nominals, "mid-level"),
+        Triple(str(S.desktop_codes), stats.codes, "postable"),
+        Triple(str(S.active), stats.active, str(S.desktop_enabled_for_posting)),
     )
     Row(
         modifier = Modifier
@@ -190,7 +192,7 @@ private fun CoaToolbar(chart: ChartState, canEdit: Boolean, canImport: Boolean, 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (canImport) {
                 ZillitButton(
-                    text = "Import Budget",
+                    text = str(S.desktop_import_budget),
                     onClick = { onEvent(AccountHubEvent.OpenBudgetImport) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = CoaIcons.Upload,
@@ -199,7 +201,7 @@ private fun CoaToolbar(chart: ChartState, canEdit: Boolean, canImport: Boolean, 
             }
             if (canEdit) {
                 ZillitButton(
-                    text = "New COA Entry",
+                    text = str(S.desktop_new_coa_entry),
                     onClick = { onEvent(AccountHubEvent.OpenBulkAdd(null)) },
                     leadingIcon = CoaIcons.Plus,
                     modifier = Modifier.height(TOOLBAR_HEIGHT),
@@ -221,7 +223,7 @@ private fun ToolbarControls(chart: ChartState, onEvent: (AccountHubEvent) -> Uni
         ZillitSearchField(
             value = chart.search,
             onValueChange = { onEvent(AccountHubEvent.SearchChart(it)) },
-            placeholder = "Search codes or names…",
+            placeholder = str(S.desktop_hub_search_codes_or_names),
             modifier = Modifier.width(SEARCH_WIDTH).height(TOOLBAR_HEIGHT),
         )
         CoaToolbarButton(
@@ -233,19 +235,19 @@ private fun ToolbarControls(chart: ChartState, onEvent: (AccountHubEvent) -> Uni
         )
         CoaViewSwitch(
             options = listOf(
-                Triple(ChartMode.Tree, "Tree", CoaIcons.Tree),
-                Triple(ChartMode.Table, "Table", CoaIcons.Table),
+                Triple(ChartMode.Tree, str(S.desktop_tree), CoaIcons.Tree),
+                Triple(ChartMode.Table, str(S.desktop_table), CoaIcons.Table),
             ),
             value = chart.mode,
             onChange = { onEvent(AccountHubEvent.SetChartMode(it)) },
         )
-        CoaSquareButton(tooltip = "Refresh", onClick = { onEvent(AccountHubEvent.Refresh) }) {
+        CoaSquareButton(tooltip = str(S.refresh_text), onClick = { onEvent(AccountHubEvent.Refresh) }) {
             if (chart.loading) {
                 ZillitSpinner(size = 14.dp)
             } else {
                 ZillitIcon(
                     CoaIcons.Refresh,
-                    contentDescription = "Refresh",
+                    contentDescription = str(S.refresh_text),
                     tint = ZillitTheme.colors.textSecondary,
                     size = 14.dp,
                 )
@@ -319,16 +321,15 @@ private fun CoaEmptyAccounts(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 ZillitText(
-                    "Your Chart of Accounts is empty",
+                    str(S.desktop_hub_your_chart_of_accounts_is_empty),
                     style = ZillitTheme.typography.titleLarge.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
                     color = colors.textPrimary,
                 )
                 ZillitText(
                     if (importOffered) {
-                        "Two ways to start: upload an existing budget (PDF/Excel) and we'll extract the codes " +
-                            "for you, or build one manually from scratch."
+                        str(S.desktop_hub_two_ways_to_start_upload_an_existing_budget_pdf_excel)
                     } else {
-                        "Build your codes manually from scratch."
+                        str(S.desktop_hub_build_your_codes_manually_from_scratch)
                     },
                     style = ZillitTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
                     color = colors.textSecondary,
@@ -340,13 +341,13 @@ private fun CoaEmptyAccounts(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
                     if (canImport) {
                         ZillitButton(
-                            text = "Import Budget",
+                            text = str(S.desktop_import_budget),
                             onClick = { onEvent(AccountHubEvent.OpenBudgetImport) },
                             leadingIcon = CoaIcons.Upload,
                         )
                     }
                     ZillitButton(
-                        text = "Build from scratch",
+                        text = str(S.desktop_build_from_scratch),
                         onClick = { onEvent(AccountHubEvent.OpenBulkAdd(null)) },
                         variant = ButtonVariant.Secondary,
                         leadingIcon = CoaIcons.Plus,
@@ -528,10 +529,10 @@ private fun RowActions(account: CoaAccount, onEvent: (AccountHubEvent) -> Unit) 
     account.lineType.addChildLabel?.let { tooltip ->
         CoaRowAction(CoaIcons.Plus, tooltip, onClick = { onEvent(AccountHubEvent.OpenBulkAdd(account)) })
     }
-    CoaRowAction(CoaIcons.Edit, "Edit", onClick = { onEvent(AccountHubEvent.ComposeAccount(editing = account)) })
+    CoaRowAction(CoaIcons.Edit, str(S.edit), onClick = { onEvent(AccountHubEvent.ComposeAccount(editing = account)) })
     CoaRowAction(
         CoaIcons.Trash,
-        "Deactivate",
+        str(S.dm_notices_deactivate),
         danger = true,
         onClick = { onEvent(AccountHubEvent.AskDeactivateAccount(account)) },
     )
@@ -683,7 +684,7 @@ private fun CoaTableRow(
                     CoaCostChip(
                         account.costType,
                         tooltip = if (account.isFromBudget) {
-                            "Budget-imported rows are permanently classified as Expense."
+                            str(S.desktop_hub_budget_imported_rows_are_permanently_classified_as_expense)
                         } else {
                             ""
                         },

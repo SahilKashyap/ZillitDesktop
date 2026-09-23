@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
@@ -50,20 +52,20 @@ internal fun EntryDetailsSheet(
     val dayKey = DiaryCalendar.dayKey(entry.anchor, state.zone)
     val canChange = state.mayEdit && !entry.calendarSourced
     DiarySheet(
-        title = if (isEvent) "EVENT DETAILS" else "NOTE DETAILS",
+        title = if (isEvent) str(S.desktop_bs_event_details_upper) else str(S.desktop_bs_note_details_upper),
         onDismiss = { onEvent(DayEvent.CloseViewEntry) },
         width = 480.dp,
         padded = false,
         footer = if (canChange) {
             {
                 ZillitButton(
-                    text = "Delete",
+                    text = str(S.delete),
                     onClick = { onEvent(EntryEvent.AskDelete(entry.listKey)) },
                     variant = ButtonVariant.Danger,
                     leadingIcon = ZillitIcons.Trash,
                 )
                 ZillitButton(
-                    text = "Edit This ${if (isEvent) "Event" else "Note"}",
+                    text = str(S.desktop_bs_edit_this_kind, if (isEvent) str(S.ce_event_tab) else str(S.note_label)),
                     onClick = { onEvent(EntryEvent.EditEntry(entry.listKey)) },
                     leadingIcon = ZillitIcons.Edit,
                 )
@@ -90,9 +92,9 @@ private fun AddToEntryDay(entry: DiaryEvent, dayKey: Long, onEvent: (BoxSchedule
         Modifier.fillMaxWidth().background(colors.surfaceSunken).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Caption("Add to this day", modifier = Modifier.weight(1f))
+        Caption(str(S.dd_add_to_day), modifier = Modifier.weight(1f))
         CreateButton(
-            if (isEvent) "Create Event" else "Create Note",
+            if (isEvent) str(S.create_event) else str(S.bs_create_note),
             if (isEvent) ZillitIcons.Clock else ZillitIcons.Edit,
         ) {
             onEvent(EntryEvent.NewEntry(entry.kind, dayKey))
@@ -106,25 +108,25 @@ private fun AddToEntryDay(entry: DiaryEvent, dayKey: Long, onEvent: (BoxSchedule
 private fun EntryFacts(entry: DiaryEvent, state: BoxScheduleUiState) {
     val isEvent = entry.kind == DiaryKind.Event
     if (entry.body.isNotBlank()) {
-        DetailLine(ZillitIcons.Edit, if (isEvent) "Description" else "Notes") { DetailText(entry.body) }
+        DetailLine(ZillitIcons.Edit, if (isEvent) str(S.description) else str(S.notes)) { DetailText(entry.body) }
     }
-    if (entry.location.isNotBlank()) DetailLine(ZillitIcons.Pin, "Location") { LocationLink(entry) }
+    if (entry.location.isNotBlank()) DetailLine(ZillitIcons.Pin, str(S.location)) { LocationLink(entry) }
     if (!isEvent) {
         val label = state.noteTypes.firstOrNull { it.value == entry.noteType }?.label
-            ?: if (entry.isPersonalNote) "Personal Note" else "General"
-        DetailLine(ZillitIcons.Info, "Type") { DetailText(label) }
+            ?: if (entry.isPersonalNote) str(S.ce_note_type_personal) else str(S.ce_note_type_general)
+        DetailLine(ZillitIcons.Info, str(S.type)) { DetailText(label) }
     }
     if (entry.callType.isNotBlank()) {
-        DetailLine(ZillitIcons.Users, "Call Type") { DetailText(DiaryFormat.callTypeLabel(entry.callType)) }
+        DetailLine(ZillitIcons.Users, str(S.call_type)) { DetailText(DiaryFormat.callTypeLabel(entry.callType)) }
     }
     if (entry.timezone.isNotBlank()) {
-        DetailLine(ZillitIcons.Clock, "Timezone") { DetailText(DiaryFormat.timezoneLabel(entry.timezone)) }
+        DetailLine(ZillitIcons.Clock, str(S.timezone)) { DetailText(DiaryFormat.timezoneLabel(entry.timezone)) }
     }
     if (entry.reminder.isNotBlank() && entry.reminder != "none") {
-        DetailLine(ZillitIcons.Bell, "Reminder") { DetailText(DiaryFormat.reminderLabel(entry.reminder)) }
+        DetailLine(ZillitIcons.Bell, str(S.reminder)) { DetailText(DiaryFormat.reminderLabel(entry.reminder)) }
     }
     if (entry.repeatStatus.isNotBlank() && entry.repeatStatus != "none" && !entry.calendarSourced) {
-        DetailLine(ZillitIcons.Reload, "Repeat") { DetailText(DiaryFormat.repeatLine(entry, state.zone)) }
+        DetailLine(ZillitIcons.Reload, str(S.repeat)) { DetailText(DiaryFormat.repeatLine(entry, state.zone)) }
     }
 }
 
@@ -132,7 +134,7 @@ private fun EntryFacts(entry: DiaryEvent, state: BoxScheduleUiState) {
 @Composable
 private fun EntryPeople(entry: DiaryEvent, state: BoxScheduleUiState) {
     if (entry.audience.isSet) {
-        DetailLine(ZillitIcons.Users, "Distribute To") {
+        DetailLine(ZillitIcons.Users, str(S.distribute_to)) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 DetailText(entry.audience.mode.label)
                 AudienceChip(entry.audience, state)
@@ -140,24 +142,24 @@ private fun EntryPeople(entry: DiaryEvent, state: BoxScheduleUiState) {
         }
     }
     if (entry.externalEmails.isNotEmpty()) {
-        DetailLine(ZillitIcons.Mail, "External Guests (${entry.externalEmails.size})") {
+        DetailLine(ZillitIcons.Mail, str(S.desktop_bs_external_guests_n, entry.externalEmails.size)) {
             Column { entry.externalEmails.forEach { ZillitText(it.mail, style = ZillitTheme.typography.bodySmall) } }
         }
     }
     if (entry.kind == DiaryKind.Event && entry.fullDay) {
-        DetailLine(ZillitIcons.Calendar, "Duration") { DetailText("Full Day Event") }
+        DetailLine(ZillitIcons.Calendar, str(S.desktop_cal_duration)) { DetailText(str(S.desktop_bs_full_day_event)) }
     }
     if (entry.organizerExcluded) {
-        DetailLine(ZillitIcons.User, "Organizer") { DetailText("The organizer will not be a part of this event") }
+        DetailLine(ZillitIcons.User, str(S.desktop_bs_organizer)) { DetailText(str(S.exclude_me)) }
     }
     if (entry.createdByName.isNotBlank()) {
         val stamp = if (entry.createdAt > 0) " — ${DiaryFormat.fullStamp(entry.createdAt, state.zone)}" else ""
-        DetailLine(ZillitIcons.User, "Created By") { DetailText(entry.createdByName + stamp) }
+        DetailLine(ZillitIcons.User, str(S.created_by)) { DetailText(entry.createdByName + stamp) }
     }
     if (entry.calendarSourced) {
-        DetailLine(ZillitIcons.Info, "Calendar Event") {
+        DetailLine(ZillitIcons.Info, str(S.desktop_bs_calendar_event_title)) {
             ZillitText(
-                "Created in the Calendar module — open it there to make changes.",
+                str(S.desktop_bs_created_in_calendar_module),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -186,7 +188,7 @@ private fun EntryHero(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             ZillitText(
-                entry.title.ifBlank { if (isEvent) "(untitled)" else "Untitled note" },
+                entry.title.ifBlank { if (isEvent) str(S.new_box_untitled) else str(S.desktop_bs_untitled_note) },
                 style = serif(20.sp, FontWeight.Bold),
                 color = hexColor(entry.textColor) ?: colors.textPrimary,
             )
@@ -211,7 +213,7 @@ private fun EntryHero(
             }
             if (mayCall && entry.canJoin(state)) {
                 ZillitButton(
-                    text = if (entry.prefersVideoCall) "Join video call" else "Join call",
+                    text = if (entry.prefersVideoCall) str(S.desktop_bs_join_video_call) else str(S.join_call),
                     onClick = { onEvent(PageEvent.JoinCall(entry.listKey)) },
                     leadingIcon = ZillitIcons.Phone,
                     modifier = Modifier.padding(top = 6.dp),

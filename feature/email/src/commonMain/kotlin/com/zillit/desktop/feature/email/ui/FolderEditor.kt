@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.email.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.FolderNameError
 import com.zillit.desktop.feature.email.domain.FolderRepository
@@ -26,9 +28,9 @@ data class FolderEdit(
 ) {
     val isRename: Boolean get() = renaming != null
 
-    val title: String get() = if (isRename) "Rename folder" else "New folder"
+    val title: String get() = str(if (isRename) S.rename_folder else S.drive_pick_new_folder)
 
-    val action: String get() = if (isRename) "Rename" else "Create"
+    val action: String get() = str(if (isRename) S.rename else S.create)
 }
 
 /**

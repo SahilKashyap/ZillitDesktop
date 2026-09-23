@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
@@ -219,18 +221,24 @@ private fun TerritoryReadOnly(state: DealMemoUiState, builder: BuilderState) {
         }
     }
     RoGrid {
-        field("Production Entity", company?.let { DocRead.text(it, "name") ?: DocRead.text(it, "company_name") })
-        field("Production Type", form.text("productionType").takeIf { it.isNotEmpty() }?.let(::localised))
+        field(
+            str(S.desktop_dm_production_entity),
+            company?.let { DocRead.text(it, "name") ?: DocRead.text(it, "company_name") },
+        )
+        field(str(S.dm_step1_production_type), form.text("productionType").takeIf { it.isNotEmpty() }?.let(::localised))
         val known = TerritoryCatalogue.territory(territory)
         field(
-            "Territory",
+            str(S.dm_section_territory),
             known?.label ?: "🌐 $territory",
             leading = known?.let { { TerritoryFlag(it.id, 16.dp) } },
         )
-        field("Agreement", agreementLabel(form.text("union"), union))
-        if ((pact?.get("bands") as? JsonArray).orEmpty().isNotEmpty()) field("Budget Band", form.text("pactBand"))
+        field(str(S.dm_rule_import_agreement), agreementLabel(form.text("union"), union))
+        if ((pact?.get("bands") as? JsonArray).orEmpty().isNotEmpty()) field(
+            str(S.dm_step1_budget_band_title),
+            form.text("pactBand"),
+        )
         if ((pact?.get("special_depts") as? JsonArray).orEmpty().isNotEmpty()) {
-            field("Special Department", yesNo(form.flag("pactSpecialDept")))
+            field(str(S.desktop_dm_special_department), yesNo(form.flag("pactSpecialDept")))
         }
     }
 }
@@ -243,28 +251,34 @@ private fun CrewReadOnly(state: DealMemoUiState, builder: BuilderState) {
     val crewName = user?.fullName?.takeIf { it.isNotEmpty() }
         ?: form.text("crewName").ifEmpty { null }
         ?: form.text("fullLegalName").ifEmpty { null }
-        ?: if (form.flag("isExternal")) "External crew member" else ""
+        ?: if (form.flag("isExternal")) str(S.dm_step2_external_label) else ""
     val role = when {
-        form.text("jobTitle") == DealForm.CUSTOM_JOB_TITLE -> form.text("customJobTitle").ifEmpty { "Custom" }
+        form.text("jobTitle") == DealForm.CUSTOM_JOB_TITLE -> form.text("customJobTitle").ifEmpty { str(S.custom) }
         form.text("designation").isNotEmpty() -> catalogue.designationLabel(form.text("designation"))
         else -> form.text("jobTitle").ifEmpty { DASH }
     }
     RoGrid {
-        field("Crew Name", crewName)
-        field("Department", state.labels.departmentLabel(form.text("department").ifEmpty { null }))
-        field("Designation", role)
-        if (form.text("jobTitle") == DealForm.CUSTOM_JOB_TITLE) field("Custom Designation", form.text("customJobTitle"))
+        field(str(S.dm_step2_crew_name), crewName)
+        field(str(S.dm_nom_dept), state.labels.departmentLabel(form.text("department").ifEmpty { null }))
+        field(str(S.dm_label_designation), role)
+        if (form.text("jobTitle") == DealForm.CUSTOM_JOB_TITLE) field(
+            str(S.desktop_dm_custom_designation),
+            form.text("customJobTitle"),
+        )
         field(
-            "Crew Type",
+            str(S.dm_step2_crew_type),
             when (form.text("crewType")) {
-                "shoot_crew" -> "Shooting Crew"
-                "non_shoot_crew" -> "Non-Shooting Crew"
+                "shoot_crew" -> str(S.dm_step2_crew_type_shoot)
+                "non_shoot_crew" -> str(S.dm_step2_crew_type_non_shoot)
                 else -> DASH
             },
         )
-        field("Reports To", if (form.text("reportsToType") == "HOD") "HOD" else form.text("reportsTo"))
-        field("Call Sheet Tier", form.text("callSheetTier"))
-        field("Unit", unitLabel(form.text("unit"), state))
+        field(
+            str(S.dm_step2_reports_to_type),
+            if (form.text("reportsToType") == "HOD") "HOD" else form.text("reportsTo"),
+        )
+        field(str(S.dm_step2_call_sheet_tier), form.text("callSheetTier"))
+        field(str(S.dm_step2_unit), unitLabel(form.text("unit"), state))
     }
 }
 
@@ -273,23 +287,23 @@ private fun CrewReadOnly(state: DealMemoUiState, builder: BuilderState) {
 private fun PersonalReadOnly(form: DealForm) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         RoGrid {
-            field("Full Legal Name", form.text("fullLegalName"))
-            field("Screen Credit", form.text("preferredName"))
-            field("Screen Credit Designation", form.text("screenCreditDesignation"))
-            field("Gender", DealLabels.formatLabel(form.text("gender")))
-            field("Date of Birth", dayDate(form.text("dob")))
-            field("Email", form.text("email"), required = form.flag("isExternal"))
-            field("Mobile", form.text("mobile"))
-            field("Insurance / NI No.", form.text("niNumber"))
-            field("Tax Code", form.text("taxCode"))
-            field("Right to Work", DealLabels.formatLabel(form.text("rightToWork")))
+            field(str(S.dm_req_full_legal_name), form.text("fullLegalName"))
+            field(str(S.dm_step2_preferred_name), form.text("preferredName"))
+            field(str(S.dm_step2_screen_credit_designation), form.text("screenCreditDesignation"))
+            field(str(S.dm_step2_gender), DealLabels.formatLabel(form.text("gender")))
+            field(str(S.dm_req_dob), dayDate(form.text("dob")))
+            field(str(S.dm_req_email), form.text("email"), required = form.flag("isExternal"))
+            field(str(S.dm_req_mobile), form.text("mobile"))
+            field(str(S.dm_edit_personal_insurance), form.text("niNumber"))
+            field(str(S.dm_crew_tax_code), form.text("taxCode"))
+            field(str(S.dm_req_rtw), DealLabels.formatLabel(form.text("rightToWork")))
             val passports = DealPayload.passports(form["passportAttachment"])
             val names = passports.mapNotNull { (it as? JsonObject)?.let { att -> DocRead.text(att, "name") } }
             field(
-                "Passport / ID",
-                names.joinToString(", ").ifEmpty { if (passports.isNotEmpty()) "Attached" else DASH },
+                str(S.dm_step2_passport),
+                names.joinToString(", ").ifEmpty { if (passports.isNotEmpty()) str(S.dm_docs_attached) else DASH },
             )
-            field("Address", CrewFormValues.address(form["homeAddress"]).format(), wide = true)
+            field(str(S.dm_address_label), CrewFormValues.address(form["homeAddress"]).format(), wide = true)
             if (UkPayroll.appliesTo(form.text("territory"), form.text("employmentStatus"))) {
                 UkPayroll.memoRows(
                     block = form.obj("uk"),
@@ -299,37 +313,44 @@ private fun PersonalReadOnly(form: DealForm) {
             }
         }
         Column {
-            SubsectionLabel("Bank Details")
+            SubsectionLabel(str(S.dm_crew_step_bank))
             val bank = form.obj("bank")
             RoGrid {
-                field("Account Holder Name", bankText(bank, "account_holder_name"))
-                field("Bank Name", bankText(bank, "name"))
-                field("Account Number", bankText(bank, "account_number"))
-                field("Sort Code", bankText(bank, "sort_code"))
+                field(str(S.dm_req_account_holder), bankText(bank, "account_holder_name"))
+                field(str(S.dm_step2_bank_name), bankText(bank, "name"))
+                field(str(S.dm_step2_bank_account_number), bankText(bank, "account_number"))
+                field(str(S.dm_step2_bank_sort_code), bankText(bank, "sort_code"))
                 field("IBAN", bankText(bank, "iban_number"))
-                field("SWIFT / BIC", bankText(bank, "swift_code"))
+                field(str(S.dm_step2_bank_swift), bankText(bank, "swift_code"))
             }
         }
         Column {
-            SubsectionLabel("Emergency Details")
+            SubsectionLabel(str(S.dm_crew_step_emergency))
             RoGrid {
-                field("Contact Name", form.text("emergencyContactName").ifEmpty { form.text("emergencyContact") })
+                field(str(S.contact_name), form.text("emergencyContactName").ifEmpty { form.text("emergencyContact") })
                 field(
-                    "Contact Number",
+                    str(S.contact_number),
                     phoneText(form.text("emergencyCountryCode"), form.text("emergencyContactNumber")),
                 )
-                field("Email", form.text("emergencyEmail"))
-                field("Address", CrewFormValues.address(form["emergencyAddress"]).format(), wide = true)
+                field(str(S.dm_req_email), form.text("emergencyEmail"))
+                field(str(S.dm_address_label), CrewFormValues.address(form["emergencyAddress"]).format(), wide = true)
             }
         }
         Column {
-            SubsectionLabel("Agency/Representative Details")
+            SubsectionLabel(str(S.dm_step2_card_representative))
             RoGrid {
-                field("Representing Agency", form.text("agencyName").ifEmpty { form.text("agencyId") })
-                field("Agency Name", form.text("representativeName"))
-                field("Phone", phoneText(form.text("representativeCountryCode"), form.text("representativePhone")))
-                field("Email", form.text("representativeEmail"))
-                field("Address", CrewFormValues.address(form["representativeAddress"]).format(), wide = true)
+                field(str(S.dm_step2_representing_agency), form.text("agencyName").ifEmpty { form.text("agencyId") })
+                field(str(S.dm_step2_agency_name), form.text("representativeName"))
+                field(
+                    str(S.dm_step2_representative_phone),
+                    phoneText(form.text("representativeCountryCode"), form.text("representativePhone")),
+                )
+                field(str(S.dm_req_email), form.text("representativeEmail"))
+                field(
+                    str(S.dm_address_label),
+                    CrewFormValues.address(form["representativeAddress"]).format(),
+                    wide = true,
+                )
             }
         }
     }
@@ -348,15 +369,22 @@ private fun EmploymentReadOnly(builder: BuilderState) {
             ?.let { DocRead.text(it, "label") } ?: status
     }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        RoGrid { field("Employment Status", label) }
+        RoGrid { field(str(S.dm_crew_emp_status), label) }
         if (CrewStatus.isLoanOut(status)) {
             Column {
-                SubsectionLabel("Loan Out Company")
+                SubsectionLabel(str(S.dm_loanout_section_title))
                 RoGrid {
-                    field("Company Name", form.text("loanOutCompanyName"))
-                    field("Phone", phoneText(form.text("loanOutCountryCode"), form.text("loanOutPhoneNumber")))
-                    field("Email", form.text("loanOutEmail"))
-                    field("Address", CrewFormValues.address(form["loanOutCompanyAddress"]).format(), wide = true)
+                    field(str(S.dm_loanout_name), form.text("loanOutCompanyName"))
+                    field(
+                        str(S.dm_step2_representative_phone),
+                        phoneText(form.text("loanOutCountryCode"), form.text("loanOutPhoneNumber")),
+                    )
+                    field(str(S.dm_req_email), form.text("loanOutEmail"))
+                    field(
+                        str(S.dm_address_label),
+                        CrewFormValues.address(form["loanOutCompanyAddress"]).format(),
+                        wide = true,
+                    )
                 }
             }
         }
@@ -366,21 +394,23 @@ private fun EmploymentReadOnly(builder: BuilderState) {
 @Composable
 private fun DealStructureReadOnly(form: DealForm) {
     RoGrid {
-        field("Deal Type", DEAL_TYPES[form.text("dealType")] ?: form.text("dealType"))
-        field("Billing Basis", DealLabels.formatLabel(form.text("billingBasis")))
-        field("Start Date", dayDate(form.text("dealStart")))
-        field("End Date", dayDate(form.text("dealEnd")))
-        field("Date of Deal Memo", dayDate(form.text("dealMemoDate")))
-        field("Date Due", dayDate(form.text("completionDue")))
+        field(str(S.dm_ds_card_type), DEAL_TYPES[form.text("dealType")] ?: form.text("dealType"))
+        field(str(S.dm_ds_billing_basis), DealLabels.formatLabel(form.text("billingBasis")))
+        field(str(S.dm_ds_start_date), dayDate(form.text("dealStart")))
+        field(str(S.dm_label_end_date), dayDate(form.text("dealEnd")))
+        field(str(S.desktop_dm_date_of_deal_memo), dayDate(form.text("dealMemoDate")))
+        field(str(S.dm_prev_date_due), dayDate(form.text("completionDue")))
         if (form.flag("schedOn")) {
-            listOf("Prep", "Shoot", "Wrap").forEach { phase ->
-                val start = form.text("sched${phase}Start")
-                val end = form.text("sched${phase}End")
-                field(phase, if (start.isEmpty() && end.isEmpty()) DASH else "${dayDate(start)} → ${dayDate(end)}")
-            }
+            listOf("Prep" to S.dm_ds_phase_prep, "Shoot" to S.dm_ds_phase_shoot, "Wrap" to S.dm_ds_phase_wrap)
+                .forEach { (phase, labelKey) ->
+                    val start = form.text("sched${phase}Start")
+                    val end = form.text("sched${phase}End")
+                    val range = if (start.isEmpty() && end.isEmpty()) DASH else "${dayDate(start)} → ${dayDate(end)}"
+                    field(str(labelKey), range)
+                }
         }
         field(
-            "Notice Period",
+            str(S.dm_ds_card_notice),
             if (form.text("noticeType") == "custom") {
                 "${form.text("noticeCustomValue").ifEmpty { DASH }} ${form.text("noticeCustomUnit")}".trim()
             } else {
@@ -389,7 +419,7 @@ private fun DealStructureReadOnly(form: DealForm) {
         )
         if (form.text("noticeReminderValue").isNotEmpty() || form.text("noticeReminderUnit").isNotEmpty()) {
             field(
-                "Notice Reminder",
+                str(S.desktop_dm_notice_reminder),
                 "${form.text("noticeReminderValue").ifEmpty { DASH }} ${form.text("noticeReminderUnit")}".trim(),
             )
         }
@@ -401,45 +431,48 @@ private fun RatesReadOnly(form: DealForm) {
     val symbol = RateFormat.currencySymbol(form.text("currency"))
     fun money(key: String) = form.text(key).takeIf { it.isNotEmpty() }?.let { "$symbol$it" }
     RoGrid {
-        field("Contract Currency", form.text("currency"))
-        field("Payment Currency", form.text("paymentCurrency").ifEmpty { form.text("currency") })
+        field(str(S.dm_rates_currency), form.text("currency"))
+        field(str(S.dm_rates_payment_currency), form.text("paymentCurrency").ifEmpty { form.text("currency") })
         when (form.text("dealType")) {
-            "picture" -> field("Picture Fee", money("pictureFee"))
+            "picture" -> field(str(S.dm_rates_card_picture), money("pictureFee"))
             "buyout" -> {
-                field("Buy-Out Rate (weekly)", money("buyoutRate"))
-                field("Buy-Out Day Rate", money("buyoutDailyRate"))
+                field(str(S.dm_rates_buyout_rate_weekly), money("buyoutRate"))
+                field(str(S.desktop_dm_buy_out_day_rate), money("buyoutDailyRate"))
             }
             else -> {
-                field("Day Rate", money("dayRate"))
+                field(str(S.dm_rates_day_rate), money("dayRate"))
                 val weekly = money("weeklyRate") ?: Js.parseFloat(form["dayRate"])?.let {
                     "$symbol${RateFormat.groupAmount(it * WEEK_DAYS)}"
                 }
-                field("Weekly Rate", weekly)
-                field("Working Hours / Day", form.text("basicWorkingHoursPerDay"))
+                field(str(S.dm_rates_weekly_rate), weekly)
+                field(str(S.desktop_dm_working_hours_day), form.text("basicWorkingHoursPerDay"))
             }
         }
-        field("HP Treatment", DealLabels.formatLabel(form.text("hpMode")))
+        field(str(S.desktop_dm_hp_treatment), DealLabels.formatLabel(form.text("hpMode")))
         field(
-            "Phase Rates",
+            str(S.dm_rates_card_phases),
             if (form.flag("phaseRatesOn")) {
-                "Prep $symbol${form.text("prepRate").ifEmpty { DASH }} · Shoot " +
-                    "$symbol${form.text("shootRate").ifEmpty { DASH }} · " +
-                    "Wrap $symbol${form.text("wrapRate").ifEmpty { DASH }}"
+                str(
+                    S.desktop_dm_phase_rates_summary,
+                    "$symbol${form.text("prepRate").ifEmpty { DASH }}",
+                    "$symbol${form.text("shootRate").ifEmpty { DASH }}",
+                    "$symbol${form.text("wrapRate").ifEmpty { DASH }}",
+                )
             } else {
-                "Off"
+                str(S.desktop_off)
             },
         )
         if (form.flag("dgaWeeklyFee") || form.flag("dgaNegotiatedCOA")) {
-            field("Weekly Fee", money("dgaWeeklyFee"))
-            field("COA Basis", DealLabels.formatLabel(form.text("dgaCOABasis")))
-            field("COA Amount", money("dgaNegotiatedCOA"))
+            field(str(S.desktop_dm_weekly_fee), money("dgaWeeklyFee"))
+            field(str(S.desktop_dm_coa_basis), DealLabels.formatLabel(form.text("dgaCOABasis")))
+            field(str(S.desktop_dm_coa_amount), money("dgaNegotiatedCOA"))
         }
-        field("Travel Day Paid in Full", yesNo(form.flag("travelDayFull")))
-        field("Rest Day at Double", yesNo(form.flag("restDayDouble")))
+        field(str(S.desktop_dm_travel_day_paid_in_full), yesNo(form.flag("travelDayFull")))
+        field(str(S.desktop_dm_rest_day_at_double), yesNo(form.flag("restDayDouble")))
         field(
-            "Overtimes · Premiums · Penalties · Turnarounds · Fringes",
-            "From the agreement's working rules" + if (form.flag("rulesCustomized")) {
-                " — customised for this deal (open Edit to review)"
+            str(S.desktop_dm_overtimes_premiums_penalties_turnarounds_fringes),
+            str(S.desktop_dm_from_the_agreements_working_rules) + if (form.flag("rulesCustomized")) {
+                " " + str(S.desktop_dm_customised_for_this_deal_suffix)
             } else {
                 ""
             },
@@ -456,15 +489,23 @@ private fun AllowancesReadOnly(form: DealForm) {
         add(text(row["name"]))
         text(row["rate"]).takeIf { it.isNotEmpty() }?.let { add("$symbol$it/${text(row["basis"]).ifEmpty { "day" }}") }
         if (text(row["cap_type"]) == "capped" && text(row["cap_amount"]).isNotEmpty()) {
-            add("cap $symbol${text(row["cap_amount"])}")
+            add(str(S.desktop_dm_cap_amount_line, "$symbol${text(row["cap_amount"])}"))
         }
-        text(row["nominal"]).takeIf { it.isNotEmpty() }?.let { add("nominal $it") }
+        text(row["nominal"]).takeIf { it.isNotEmpty() }?.let { add(str(S.desktop_dm_nominal_code_line, it)) }
     }.joinToString(" · ")
     val allowances = enabled("allowances")
     val rentals = enabled("rentals")
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        RoStack("Allowances (${allowances.size})", allowances.map(::line), empty = "None enabled")
-        RoStack("Rentals (${rentals.size})", rentals.map(::line), empty = "None enabled")
+        RoStack(
+            str(S.desktop_dm_allowances_count, allowances.size),
+            allowances.map(::line),
+            empty = str(S.desktop_dm_none_enabled),
+        )
+        RoStack(
+            str(S.desktop_dm_rentals_count, rentals.size),
+            rentals.map(::line),
+            empty = str(S.desktop_dm_none_enabled),
+        )
     }
 }
 
@@ -484,18 +525,23 @@ private fun ConditionsReadOnly(form: DealForm) {
     }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RoGrid {
-            field("Work Location", DealLabels.formatLabel(form.text("workLocationType")))
-            field("Travel Zone", DealLabels.formatLabel(form.text("travelZone")))
-            field("Distant Location", yesNo(form.flag("distantLocation")))
+            field(str(S.dm_cond_card_location), DealLabels.formatLabel(form.text("workLocationType")))
+            field(str(S.desktop_dm_travel_zone), DealLabels.formatLabel(form.text("travelZone")))
+            field(str(S.desktop_dm_distant_location), yesNo(form.flag("distantLocation")))
         }
-        RoStack("Conditions (${conditions.size})", conditions, numbered = true, empty = "None")
         RoStack(
-            "Documents (${documents.size})",
+            str(S.desktop_dm_conditions_count, conditions.size),
+            conditions,
+            numbered = true,
+            empty = str(S.dm_rule_increment_none),
+        )
+        RoStack(
+            str(S.desktop_dm_documents_count, documents.size),
             listOfNotNull(documents.joinToString(" · ").ifEmpty { null }),
-            empty = "None",
+            empty = str(S.dm_rule_increment_none),
         )
         if (form.text("additionalNotes").isNotEmpty()) {
-            RoGrid { field("Additional Notes", form.text("additionalNotes"), wide = true) }
+            RoGrid { field(str(S.dm_ds_card_additional_notes), form.text("additionalNotes"), wide = true) }
         }
     }
 }
@@ -504,12 +550,12 @@ private fun ConditionsReadOnly(form: DealForm) {
 private fun PayrollReadOnly(state: DealMemoUiState, form: DealForm) {
     val defaults = state.projectSettings.view.payrollDefaults
     RoGrid {
-        field("Bureau", form.text("bureau"))
-        field("Pay Frequency", DealLabels.formatLabel(form.text("payFrequency")))
-        field("First Pay Period", dayDate(form.text("firstPayPeriod")))
-        field("Auto-sync", yesNo(Js.truthy(defaults["auto_sync"])))
-        field("Notify Payroll", yesNo(Js.truthy(defaults["notify_payroll"])))
-        field("Include PDF", yesNo(Js.truthy(defaults["include_pdf"])))
+        field(str(S.dm_pay_preview_bureau), form.text("bureau"))
+        field(str(S.dm_allow_basis), DealLabels.formatLabel(form.text("payFrequency")))
+        field(str(S.desktop_dm_first_pay_period), dayDate(form.text("firstPayPeriod")))
+        field(str(S.desktop_dm_auto_sync), yesNo(Js.truthy(defaults["auto_sync"])))
+        field(str(S.desktop_dm_notify_payroll), yesNo(Js.truthy(defaults["notify_payroll"])))
+        field(str(S.desktop_dm_include_pdf), yesNo(Js.truthy(defaults["include_pdf"])))
     }
 }
 
@@ -522,7 +568,7 @@ internal fun dayDate(value: String): String {
     return "${date.day.toString().padStart(2, '0')} ${MONTHS[date.month.ordinal]} ${date.year}"
 }
 
-private fun yesNo(value: Boolean) = if (value) "Yes" else "No"
+private fun yesNo(value: Boolean) = if (value) str(S.yes) else str(S.no)
 
 private fun phoneText(code: String, number: String): String = if (number.isEmpty()) "" else "$code $number".trim()
 
@@ -548,7 +594,7 @@ internal fun localised(key: String): String =
 
 /** `agreementLabel`: Non-Union for the synthetic id, else the agreement's label, short label or id. */
 internal fun agreementLabel(union: String, agreement: JsonObject?): String = when {
-    isNonUnionId(union) -> "Non-Union"
+    isNonUnionId(union) -> str(S.dm_create_non_union)
     else -> agreement?.let { DocRead.text(it, "label") ?: DocRead.text(it, "short_label") } ?: union
 }
 
@@ -558,16 +604,29 @@ private fun unitLabel(unit: String, state: DealMemoUiState): String {
     return DealLabels.translation(match.name)?.takeIf { it.isNotEmpty() } ?: match.name
 }
 
-private val DEAL_TYPES = mapOf(
-    "weekly" to "Weekly Rolling",
-    "fixed" to "Fixed Term",
-    "dayplayer" to "Day Player",
-    "buyout" to "Buy-Out",
-    "picture" to "Picture Deal",
-    "boxrental" to "Box Rental Only",
+private val DEAL_TYPES get() = mapOf(
+    "weekly" to str(S.desktop_dm_deal_type_weekly_rolling),
+    "fixed" to str(S.desktop_dm_deal_type_fixed_term),
+    "dayplayer" to str(S.desktop_dm_deal_type_day_player),
+    "buyout" to str(S.desktop_dm_deal_type_buy_out),
+    "picture" to str(S.desktop_dm_deal_type_picture_deal),
+    "boxrental" to str(S.desktop_dm_deal_type_box_rental_only),
 )
 
-private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+private val MONTHS get() = listOf(
+    str(S.desktop_month_short_jan),
+    str(S.desktop_month_short_feb),
+    str(S.desktop_month_short_mar),
+    str(S.desktop_month_short_apr),
+    str(S.desktop_month_short_may),
+    str(S.desktop_month_short_jun),
+    str(S.desktop_month_short_jul),
+    str(S.desktop_month_short_aug),
+    str(S.desktop_month_short_sep),
+    str(S.desktop_month_short_oct),
+    str(S.desktop_month_short_nov),
+    str(S.desktop_month_short_dec),
+)
 private const val DASH = MemoFormat.DASH
 private const val LABEL_WIDTH = 210
 private const val NARROW_LABEL_WIDTH = 150

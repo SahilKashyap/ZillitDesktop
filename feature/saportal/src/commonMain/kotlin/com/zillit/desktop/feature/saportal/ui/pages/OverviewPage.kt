@@ -28,6 +28,8 @@ import com.zillit.desktop.feature.saportal.ui.day
 import com.zillit.desktop.feature.saportal.ui.money
 import com.zillit.desktop.feature.saportal.ui.shift
 import com.zillit.desktop.feature.saportal.ui.title
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * What an artiste opens the portal to find out: is anything waiting on me,
@@ -42,10 +44,10 @@ internal fun ColumnScope.OverviewPage(state: SaUiState, onEvent: (SaEvent) -> Un
     val summary = state.summary
 
     if (state.hasOutstanding) {
-        ZillitSectionCard(title = "Waiting for your signature", modifier = Modifier.fillMaxWidth()) {
+        ZillitSectionCard(title = str(S.desktop_sa_waiting_signature), modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitText(
-                    text = "A day is not sent for payment until you have signed it.",
+                    text = str(S.desktop_sa_not_sent_until_signed),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -57,7 +59,7 @@ internal fun ColumnScope.OverviewPage(state: SaUiState, onEvent: (SaEvent) -> Un
     }
 
     summary?.nextBooking?.let { next ->
-        ZillitSectionCard(title = "Next booking", modifier = Modifier.fillMaxWidth()) {
+        ZillitSectionCard(title = str(S.desktop_sa_next_booking), modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -79,8 +81,8 @@ internal fun ColumnScope.OverviewPage(state: SaUiState, onEvent: (SaEvent) -> Un
     if (summary == null) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = "Nothing here yet",
-                message = "Once you have worked a day on this project it will appear here.",
+                title = str(S.desktop_nothing_here_yet),
+                message = str(S.desktop_sa_nothing_here_message),
                 icon = ZillitIcons.Info,
             )
         }
@@ -93,30 +95,30 @@ internal fun ColumnScope.OverviewPage(state: SaUiState, onEvent: (SaEvent) -> Un
 @Composable
 private fun ColumnScope.EarningsTiles(state: SaUiState) {
     val summary = state.summary ?: return
-    ZillitSectionLabel("Your earnings")
+    ZillitSectionLabel(str(S.desktop_sa_your_earnings))
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitStatTile(
-            label = "This year",
+            label = str(S.desktop_this_year),
             value = money(summary.ytdGross, state.profile?.currency),
         )
         ZillitStatTile(
-            label = "All time",
+            label = str(S.desktop_all_time),
             value = money(summary.totalGross, state.profile?.currency),
         )
         ZillitStatTile(
-            label = "Holiday accrued",
+            label = str(S.desktop_sa_holiday_accrued),
             value = money(summary.holidayAccrued, state.profile?.currency),
             // Not spendable yet, and saying so stops it being read as owed now.
-            sub = "Paid with your final week",
+            sub = str(S.desktop_sa_paid_with_final_week),
         )
         ZillitStatTile(
-            label = "Days worked",
+            label = str(S.desktop_sa_days_worked),
             value = summary.vouchers.total.toString(),
-            sub = "${summary.vouchers.paid} paid",
+            sub = str(S.desktop_sa_paid_count, summary.vouchers.paid),
             tone = if (summary.vouchers.pending > 0) StatusTone.Pending else StatusTone.Done,
         )
     }
@@ -138,7 +140,7 @@ private fun OutstandingRow(voucher: Voucher, onEvent: (SaEvent) -> Unit) {
             )
         }
         ZillitButton(
-            text = "Review and sign",
+            text = str(S.desktop_sa_review_and_sign),
             onClick = { onEvent(SaEvent.OpenVoucher(voucher.id)) },
             size = ButtonSize.Small,
             variant = ButtonVariant.Primary,

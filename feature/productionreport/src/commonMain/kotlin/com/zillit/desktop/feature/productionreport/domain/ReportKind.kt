@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.productionreport.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The three report tools that share this engine.
  *
@@ -13,7 +16,7 @@ package com.zillit.desktop.feature.productionreport.domain
 enum class ReportKind(
     /** `shared.reportType`; empty for a production report (the field is absent on the wire). */
     val wire: String,
-    val title: String,
+    private val titleKey: String,
     val path: String,
     val toolIdentifier: String,
     /** Wrap reports go straight from Drafts to Published on the web — no approvals tab. */
@@ -21,10 +24,12 @@ enum class ReportKind(
     /** Only the production report regenerates crew-times sections from the crew list. */
     val generatesCrewSections: Boolean,
 ) {
-    Production("", "Production Report", "/film-tools/production-report", "production_report_tool", true, true),
-    Ad("ad", "AD Report", "/film-tools/ad-report", "ad_report_tool", true, false),
-    Wrap("wrap", "Wrap Report", "/film-tools/wrap-report", "wrap_report_tool", false, false),
+    Production("", S.pr_app_name, "/film-tools/production-report", "production_report_tool", true, true),
+    Ad("ad", S.desktop_ad_report, "/film-tools/ad-report", "ad_report_tool", true, false),
+    Wrap("wrap", S.desktop_wrap_report, "/film-tools/wrap-report", "wrap_report_tool", false, false),
     ;
+
+    val title: String get() = str(titleKey)
 
     /** Whether a stored report belongs to this tool. Legacy rows carry no type and are production reports. */
     fun owns(reportType: String): Boolean = reportType.trim().lowercase() == wire

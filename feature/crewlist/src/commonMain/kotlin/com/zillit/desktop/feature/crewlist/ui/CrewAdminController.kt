@@ -10,6 +10,8 @@ import com.zillit.desktop.feature.crewlist.domain.CrewListRepository
 import com.zillit.desktop.feature.crewlist.domain.DepartmentOrder
 import com.zillit.desktop.feature.crewlist.domain.OrderedDepartment
 import com.zillit.desktop.feature.crewlist.domain.PeopleOrder
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The two admin editors the crew list opens in place, as the web mounts them
@@ -115,7 +117,7 @@ internal class CrewAdminController(
         val moved = editor.order.moveToPosition(index, position)
         if (moved == null) {
             val size = editor.order.current.size
-            val message = store.copy("invalid_position_popup", "Priority must be between %s and %s")
+            val message = store.copy("invalid_position_popup", str(S.desktop_cl_priority_must_be_between))
                 .replaceFirst("%s", "1")
                 .replaceFirst("%s", size.toString())
             store.toast(message, CrewListEffect.Tone.Error)
@@ -133,7 +135,10 @@ internal class CrewAdminController(
                 is ZillitResult.Success -> {
                     store.update { copy(departments = null) }
                     store.toast(
-                        store.copy("project_departments_reordered_successfully", "Department order saved."),
+                        store.copy(
+                            "project_departments_reordered_successfully",
+                            str(S.desktop_cl_department_order_saved),
+                        ),
                         CrewListEffect.Tone.Success,
                     )
                     onDepartmentsSaved()
@@ -177,7 +182,7 @@ internal class CrewAdminController(
         val people = store.state.departments?.people ?: return
         val moved = people.order.moveToPosition(index, position)
         if (moved == null) {
-            val message = store.copy("invalid_position_popup", "Priority must be between %s and %s")
+            val message = store.copy("invalid_position_popup", str(S.desktop_cl_priority_must_be_between))
                 .replaceFirst("%s", "1")
                 .replaceFirst("%s", people.order.current.size.toString())
             store.toast(message, CrewListEffect.Tone.Error)
@@ -195,12 +200,13 @@ internal class CrewAdminController(
             when (val saved = repository.reorderPeople(people.order.current.map { it.userId })) {
                 is ZillitResult.Success -> {
                     editPeople { copy(saving = false, order = order.saved()) }
-                    store.toast(saved.data.localisedMessage().ifBlank { "Order saved." }, CrewListEffect.Tone.Success)
+                    val message = saved.data.localisedMessage().ifBlank { str(S.desktop_cl_order_saved) }
+                    store.toast(message, CrewListEffect.Tone.Success)
                     onDepartmentsSaved()
                 }
                 is ZillitResult.Failure -> {
                     editPeople { copy(saving = false) }
-                    val message = saved.error.readable().ifBlank { "Failed to save the new order." }
+                    val message = saved.error.readable().ifBlank { str(S.desktop_cl_failed_to_save_new_order) }
                     store.toast(message, CrewListEffect.Tone.Error)
                 }
             }
@@ -240,7 +246,7 @@ internal class CrewAdminController(
             val picked = host.pickLogo() ?: return@launch
             val image = host.decode(picked.bytes)
             if (image == null) {
-                store.toast("That file is not an image the logo can use.", CrewListEffect.Tone.Error)
+                store.toast(str(S.desktop_cl_logo_not_an_image), CrewListEffect.Tone.Error)
                 return@launch
             }
             store.update {
@@ -280,12 +286,14 @@ internal class CrewAdminController(
             when (val saved = repository.saveCompanyDetails(editor.details, logo, editor.removeLogo)) {
                 is ZillitResult.Success -> {
                     store.update { copy(company = null) }
-                    store.toast(store.copy("CompanyDetailsSaved", "Company details saved"), CrewListEffect.Tone.Success)
+                    val message = store.copy("CompanyDetailsSaved", str(S.desktop_cl_company_details_saved))
+                    store.toast(message, CrewListEffect.Tone.Success)
                     onCompanySaved()
                 }
                 is ZillitResult.Failure -> {
                     store.update { copy(company = company?.copy(saving = false)) }
-                    store.toast(saved.error.readable().ifBlank { "Something went wrong" }, CrewListEffect.Tone.Error)
+                    val message = saved.error.readable().ifBlank { str(S.something_went_wrong) }
+                    store.toast(message, CrewListEffect.Tone.Error)
                 }
             }
         }

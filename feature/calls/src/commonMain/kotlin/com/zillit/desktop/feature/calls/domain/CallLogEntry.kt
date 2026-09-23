@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.calls.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** Which way a logged call went, from this device's point of view. */
 enum class CallLogDirection { Incoming, Outgoing }
 
@@ -11,11 +14,14 @@ enum class CallLogDirection { Incoming, Outgoing }
  * on an older row — is Line 1. Not [CallProvider], whose absent-means-Agora
  * default is right for joining a live call and wrong for labelling history.
  */
-enum class CallLine(val label: String) {
-    One("Line 1"),
-    Two("Line 2"),
-    Three("Line 3"),
+enum class CallLine(private val labelKey: String) {
+    One(S.txt_line_one),
+    Two(S.txt_line_two),
+    Three(S.txt_line_three),
     ;
+
+    /** The line's name as the phones show it. */
+    val label: String get() = str(labelKey)
 
     /** The plumbing a redial on this line takes — the row's tag turned back into a choice. */
     val provider: CallProvider

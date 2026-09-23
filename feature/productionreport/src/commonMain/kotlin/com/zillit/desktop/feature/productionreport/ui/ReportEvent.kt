@@ -30,9 +30,12 @@ sealed interface ListEvent : ReportEvent {
     data class Delete(val report: ReportSummary) : ListEvent
     data class OpenHistory(val report: ReportSummary, val title: String) : ListEvent
     data class OpenComments(val report: ReportSummary, val readOnly: Boolean) : ListEvent
-    data class ChatWithApprovers(val report: ReportSummary) : ListEvent
-    data class ChatWithCreator(val report: ReportSummary) : ListEvent
-    data class ChatWith(val userId: String) : ListEvent
+
+    /** ZL-21415: share the report's PDF in a 1:1 chat — the picker, then the send. */
+    data class SendForChat(val report: ReportSummary) : ListEvent
+    data class SearchChatRecipient(val query: String) : ListEvent
+    data class PickChatRecipient(val userId: String) : ListEvent
+    data object ConfirmSendForChat : ListEvent
     data object AttachDocument : ListEvent
 }
 
@@ -43,9 +46,6 @@ sealed interface WorkflowEvent : ReportEvent {
     data class SendToDocDist(val report: ReportSummary, val fromDraft: Boolean) : WorkflowEvent
     data object ConfirmDocDist : WorkflowEvent
 
-    data object ChooseComments : WorkflowEvent
-    data object ChooseSignature : WorkflowEvent
-    data object BackToChooser : WorkflowEvent
     data class SearchRecipients(val query: String) : WorkflowEvent
     data class ToggleRecipient(val userId: String) : WorkflowEvent
     data object ToggleAllRecipients : WorkflowEvent
@@ -54,6 +54,9 @@ sealed interface WorkflowEvent : ReportEvent {
     data object CancelRemoval : WorkflowEvent
 
     data class OpenApprove(val report: ReportSummary) : WorkflowEvent
+
+    /** ZL-21512: the chooser's "Approve with Signature" — advance to the signing screen. */
+    data object ChooseSignedApproval : WorkflowEvent
     class ApproveWithSignature(val png: ByteArray) : WorkflowEvent
     data object ApproveWithoutSignature : WorkflowEvent
     data class OpenReject(val report: ReportSummary) : WorkflowEvent
@@ -67,7 +70,8 @@ sealed interface WorkflowEvent : ReportEvent {
     data class OpenPublish(val report: ReportSummary) : WorkflowEvent
     data class PickDestination(val destination: PublishDestination) : WorkflowEvent
     data object ContinuePublish : WorkflowEvent
-    data class PickContinuation(val continuation: Boolean) : WorkflowEvent
+    data class PickPublishType(val type: PublishType) : WorkflowEvent
+    data class PickReplaceTarget(val chatId: String) : WorkflowEvent
     data object ConfirmPublish : WorkflowEvent
 }
 
@@ -113,7 +117,10 @@ sealed interface EditorEvent : ReportEvent {
     data object SaveAs : EditorEvent
     data object SaveAsTemplate : EditorEvent
     data object UpdateTemplate : EditorEvent
-    data object OpenSend : EditorEvent
+
+    /** The header's sends, gated by `sheetSendActions`: save first, then submit, editor kept open on failure. */
+    data object SendForSignature : EditorEvent
+    data object SendForComments : EditorEvent
     data class SetSectionSearch(val query: String) : EditorEvent
     data object Undo : EditorEvent
     data class ExpireUndo(val serial: Long) : EditorEvent

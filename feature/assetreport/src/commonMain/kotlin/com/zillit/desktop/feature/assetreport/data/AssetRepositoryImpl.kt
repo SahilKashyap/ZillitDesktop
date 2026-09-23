@@ -10,6 +10,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.domain.AssetAttachment
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
 import com.zillit.desktop.feature.assetreport.domain.AssetLine
@@ -138,7 +140,7 @@ class AssetRepositoryImpl(
             is ZillitResult.Failure -> answered
             is ZillitResult.Success -> remember(answered.data)
                 ?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Validation("The register answered without the saved record."))
+                ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_asset_register_no_record)))
         }
 
     /** Decodes a record and keeps its attachment objects for the next write. */
@@ -174,7 +176,7 @@ class AssetRepositoryImpl(
                 ZillitResult.Failure(
                     ZillitError.Validation(
                         data.message?.takeIf { it.isNotBlank() }?.localisedMessage()
-                            ?: "The register refused this request.",
+                            ?: str(S.desktop_asset_register_refused),
                     ),
                 )
             } else {

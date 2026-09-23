@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Csv
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
@@ -163,7 +165,8 @@ internal class HistorySection(private val vm: VmScope, private val library: Libr
         val subject = detail.distribution?.subject
         copy(
             historyDetail = detail.copy(
-                saveListName = if (!open) null else subject?.let { "$it — recipients" } ?: "New distribution list",
+                saveListName = if (!open) null else subject?.let { str(S.dd_history_save_list_default_suffix, it) }
+                    ?: str(S.dd_history_save_list_default_fallback),
             ),
         )
     }
@@ -176,8 +179,8 @@ internal class HistorySection(private val vm: VmScope, private val library: Libr
         val detail = vm.state.historyDetail ?: return
         val name = detail.saveListName?.trim().orEmpty()
         val recipients = detail.distribution?.uniqueRecipients.orEmpty()
-        if (name.isEmpty()) return vm.fail("List name is required")
-        if (recipients.isEmpty()) return vm.fail("No recipients to save")
+        if (name.isEmpty()) return vm.fail(str(S.desktop_list_name_required))
+        if (recipients.isEmpty()) return vm.fail(str(S.dd_history_save_list_no_recipients))
         if (vm.refusesWrite()) return
         vm.update { copy(historyDetail = historyDetail?.copy(savingList = true)) }
         vm.run {
@@ -189,7 +192,7 @@ internal class HistorySection(private val vm: VmScope, private val library: Libr
                             lists = lists + result.data,
                         )
                     }
-                    vm.notice("Distribution list created")
+                    vm.notice(str(S.dd_history_save_list_success))
                 }
                 is ZillitResult.Failure -> {
                     vm.update { copy(historyDetail = historyDetail?.copy(savingList = false)) }

@@ -30,6 +30,8 @@ import com.zillit.desktop.feature.payroll.domain.Payslip
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** Everything the payroll tool is showing. */
 data class PayrollUiState(
@@ -355,17 +357,16 @@ class PayrollViewModel(
         if (!currentState.splitBalances) {
             sendEffect(
                 PayrollEffect.Failed(
-                    "The nominal split does not add up to what this week pays. " +
-                        "Adjust it before saving.",
+                    str(S.desktop_payroll_split_mismatch),
                 ),
             )
             return
         }
         if (currentState.nominalSplit.any { it.nominalCode.isBlank() }) {
-            sendEffect(PayrollEffect.Failed("Every allocation needs a nominal code."))
+            sendEffect(PayrollEffect.Failed(str(S.desktop_payroll_allocation_needs_code)))
             return
         }
-        act("Nominal split saved") {
+        act(str(S.desktop_payroll_split_saved)) {
             repository.saveNominalSplit(weekStarting, crewId, currentState.nominalSplit)
         }
     }
@@ -449,18 +450,18 @@ class PayrollViewModel(
         // `canOperate` holds (`PayrollScreen`), and this handler took
         // whatever prompt reached it.
         if (!currentState.viewer.canOperate) {
-            sendEffect(PayrollEffect.Failed("You do not have rights to operate payroll."))
+            sendEffect(PayrollEffect.Failed(str(S.desktop_payroll_no_rights)))
             return
         }
         when (prompt) {
             is PayrollPrompt.Confirm -> when (prompt.action) {
                 PayrollConfirmAction.MarkPaid ->
-                    act("${prompt.ids.size} timecard(s) marked paid") {
+                    act(str(S.desktop_payroll_marked_paid, prompt.ids.size)) {
                         repository.markPaid(prompt.ids)
                     }
 
                 PayrollConfirmAction.MarkUnpaid ->
-                    act("Timecard returned to approved") {
+                    act(str(S.desktop_payroll_returned_to_approved)) {
                         repository.markUnpaid(prompt.ids.first())
                     }
             }
@@ -479,7 +480,7 @@ class PayrollViewModel(
     private fun post(prompt: PayrollPrompt.Post) {
         val bankId = prompt.bankId
         if (bankId.isNullOrBlank()) {
-            sendEffect(PayrollEffect.Failed("Choose the account this is settled from."))
+            sendEffect(PayrollEffect.Failed(str(S.desktop_payroll_choose_account)))
             setState { copy(prompt = prompt) }
             return
         }
@@ -494,12 +495,12 @@ class PayrollViewModel(
                             selection = emptySet(),
                             notice = when {
                                 outcome.marked == 0 ->
-                                    "Nothing was posted — ${outcome.skipped} row(s) were not ready."
+                                    str(S.desktop_payroll_nothing_posted, outcome.skipped)
 
                                 outcome.skipped > 0 ->
-                                    "Posted ${outcome.marked}, skipped ${outcome.skipped} not ready."
+                                    str(S.desktop_payroll_posted_skipped, outcome.marked, outcome.skipped)
 
-                                else -> "Posted ${outcome.marked} timecard(s) to the ledger."
+                                else -> str(S.desktop_payroll_posted_count, outcome.marked)
                             },
                         )
                     }
@@ -547,7 +548,7 @@ class PayrollToolProvider(
 ) : ToolProvider {
 
     override val path: String = PAYROLL_PATH
-    override val title: String = "Payroll"
+    override val title: String get() = str(S.dm_section_payroll)
     override val icon = ZillitToolIcons.Payroll
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

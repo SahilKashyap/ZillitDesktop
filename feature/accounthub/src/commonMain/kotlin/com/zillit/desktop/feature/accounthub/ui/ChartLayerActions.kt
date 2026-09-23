@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.TrackingNode
 import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.domain.TrackingSets
@@ -78,7 +80,7 @@ internal class ChartLayerActions(private val vm: AccountHubViewModel) {
                 vm.update {
                     copy(
                         chart = chart.copy(layerSetDraft = null),
-                        notice = if (draft.isNew) "Layer created." else "Layer saved.",
+                        notice = if (draft.isNew) str(S.desktop_layer_created) else str(S.desktop_layer_saved),
                     )
                 }
                 load()
@@ -108,7 +110,7 @@ internal class ChartLayerActions(private val vm: AccountHubViewModel) {
                 vm.update {
                     copy(
                         chart = chart.copy(layerNodeDraft = null),
-                        notice = if (draft.isNew) "Code added." else "Code saved.",
+                        notice = if (draft.isNew) str(S.desktop_code_added) else str(S.desktop_code_saved),
                     )
                 }
                 load()
@@ -139,7 +141,12 @@ internal class ChartLayerActions(private val vm: AccountHubViewModel) {
                 }
             },
             {
-                vm.update { copy(chart = chart.copy(layerDelete = null, layerDeleting = false), notice = "Deleted.") }
+                vm.update {
+                    copy(
+                        chart = chart.copy(layerDelete = null, layerDeleting = false),
+                        notice = str(S.drive_deleted_default),
+                    )
+                }
                 load()
             },
             { error ->

@@ -30,6 +30,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -53,7 +55,7 @@ internal fun DatePickerField(
     today: LocalDate,
     modifier: Modifier = Modifier,
     label: String? = null,
-    placeholder: String = "Date — 2026-08-04",
+    placeholder: String = str(S.desktop_cal_date_placeholder),
     errorText: String? = null,
     weekStart: DayOfWeek = DayOfWeek.MONDAY,
 ) {
@@ -73,7 +75,7 @@ internal fun DatePickerField(
             trailingContent = {
                 ZillitIconButton(
                     icon = ZillitIcons.Calendar,
-                    contentDescription = "Choose a date",
+                    contentDescription = str(S.desktop_choose_a_date),
                     onClick = { open = true },
                 )
             },
@@ -123,7 +125,7 @@ private fun MonthPicker(
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitIconButton(
                 icon = ZillitIcons.ChevronLeft,
-                contentDescription = "Previous month",
+                contentDescription = str(S.desktop_previous_month),
                 onClick = { onMonth(month.plus(-1, DateTimeUnit.MONTH)) },
             )
             ZillitText(
@@ -134,7 +136,7 @@ private fun MonthPicker(
             )
             ZillitIconButton(
                 icon = ZillitIcons.ChevronRight,
-                contentDescription = "Next month",
+                contentDescription = str(S.next_month),
                 onClick = { onMonth(month.plus(1, DateTimeUnit.MONTH)) },
             )
         }

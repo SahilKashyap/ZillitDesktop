@@ -42,6 +42,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The sheet's title bar: the tool's mark and name, how many people it lists,
@@ -79,7 +81,7 @@ internal fun CrewTitleBar(
             }
             if (onOpenWidget != null) {
                 ZillitButton(
-                    text = "Widget",
+                    text = str(S.desktop_widget),
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Detach,
@@ -119,23 +121,21 @@ internal fun CrewNoticeBanner(
                     ZillitText(
                         text = copy.t(
                             "crew_list_header_text",
-                            "You can rearrange the department listing by navigating to Settings → Admin Settings → " +
-                                "Listing Order for Crew List",
+                            str(S.desktop_cl_header_text),
                         ) + " or ",
                         style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
                         color = colors.textPrimary,
                         maxLines = 2,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    InlineLink(copy.t("click_here_label", "Click Here"), onOpenOrder)
+                    InlineLink(copy.t("click_here_label", str(S.tools_description_click_here)), onOpenOrder)
                 }
             }
             if (showEmailLine) {
                 ZillitText(
                     text = copy.t(
                         "crew_list_profile_email_hint",
-                        "To change a profile email before generating the PDF, click Edit and update it for that user " +
-                            "— this applies to the crew list only.",
+                        str(S.desktop_cl_profile_email_hint),
                     ),
                     style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
                     color = colors.textPrimary,
@@ -199,14 +199,14 @@ internal fun CrewToolbar(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ZillitButton(
-            text = copy.t("generate_pdf", "Generate PDF"),
+            text = copy.t("generate_pdf", str(S.generate_pdf)),
             leadingIcon = CrewIcons.Document,
             enabled = !model.busy,
             onClick = onGenerate,
         )
         if (!model.compact) {
             ZillitButton(
-                text = copy.t("Preview", "Preview"),
+                text = copy.t("Preview", str(S.preview)),
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Eye,
                 enabled = !model.busy,
@@ -214,7 +214,7 @@ internal fun CrewToolbar(
             )
         }
         ZillitButton(
-            text = copy.t("refresh", "Refresh"),
+            text = copy.t("refresh", str(S.refresh_text)),
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Reload,
             enabled = !model.busy,
@@ -222,7 +222,7 @@ internal fun CrewToolbar(
         )
         if (!model.compact && model.showAddExternal) {
             ZillitButton(
-                text = copy.t("Add External User", "Add External User"),
+                text = copy.t("Add External User", str(S.add_external_user)),
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.UserPlus,
                 enabled = !model.busy,
@@ -231,10 +231,10 @@ internal fun CrewToolbar(
         }
         if (!model.compact) {
             if (model.editing) {
-                ZillitButton(text = copy.t("Done", "Done"), leadingIcon = ZillitIcons.Check, onClick = onDone)
+                ZillitButton(text = copy.t("Done", str(S.ah_done)), leadingIcon = ZillitIcons.Check, onClick = onDone)
             } else {
                 ZillitButton(
-                    text = copy.t("Edit", "Edit"),
+                    text = copy.t("Edit", str(S.edit)),
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Edit,
                     enabled = !model.busy,
@@ -246,7 +246,7 @@ internal fun CrewToolbar(
         ZillitSearchField(
             value = model.query,
             onValueChange = onSearch,
-            placeholder = copy.t("Search", "Search"),
+            placeholder = copy.t("Search", str(S.search)),
             modifier = Modifier.width(if (model.compact) 180.dp else 240.dp),
         )
     }
@@ -269,7 +269,7 @@ internal fun EditsHint(visible: Boolean, copy: CrewCopy) {
             ZillitText(
                 text = copy.t(
                     "crew_list_edits_applied_hint",
-                    "Your edits will be applied when you preview, generate or publish.",
+                    str(S.desktop_cl_edits_applied_hint),
                 ),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealMemoMetadata
 import com.zillit.desktop.feature.dealmemo.domain.DealMemoRights
 
@@ -13,16 +15,18 @@ import com.zillit.desktop.feature.dealmemo.domain.DealMemoRights
  */
 enum class DealTab(
     val slug: String,
-    val label: String,
+    private val labelKey: String,
     val requiresPost: Boolean = false,
     val approversOnly: Boolean = false,
 ) {
-    Overview("overview", "Overview", requiresPost = true),
-    Deals("deals", "All Deals", requiresPost = true),
-    MyDeal("my-deal", "My Deal"),
-    ApprovalQueue("approval-queue", "Approval Queue", approversOnly = true),
-    Notices("notices", "Notices", requiresPost = true),
+    Overview("overview", S.dm_tab_overview, requiresPost = true),
+    Deals("deals", S.dm_tab_deals, requiresPost = true),
+    MyDeal("my-deal", S.dm_tab_my_deal),
+    ApprovalQueue("approval-queue", S.dm_tab_approval_queue, approversOnly = true),
+    Notices("notices", S.dm_tab_notices, requiresPost = true),
     ;
+
+    val label: String get() = str(labelKey)
 
     /**
      * Whether this tab is offered — the web's `visibleTabs` filter, condition
@@ -49,10 +53,12 @@ enum class DealTab(
 }
 
 /** Which kind of deal-memo setup — the Create menu's two items and the Setup Hub's two lists. */
-enum class SetupGroup(val wire: String, val slug: String, val label: String) {
-    Union("union", "union", "Union"),
-    NonUnion("non_union", "non-union", "Non-Union"),
+enum class SetupGroup(val wire: String, val slug: String, private val labelKey: String) {
+    Union("union", "union", S.dm_label_union),
+    NonUnion("non_union", "non-union", S.dm_create_non_union),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromSlug(slug: String?): SetupGroup? = entries.firstOrNull { it.slug == slug }

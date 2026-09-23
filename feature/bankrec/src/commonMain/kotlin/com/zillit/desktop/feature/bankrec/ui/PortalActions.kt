@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.PortalExpiry
 import com.zillit.desktop.feature.bankrec.domain.PortalLink
 import com.zillit.desktop.feature.bankrec.domain.PortalLinkDraft
@@ -101,9 +103,9 @@ internal class PortalActions(
                 edit { copy(draft = null) }
                 vm.notify(
                     if (draft.isEdit) {
-                        "Portal link updated."
+                        str(S.desktop_br_portal_link_updated)
                     } else {
-                        "Link generated. ${draft.recipientName.trim()} will be emailed a code to open it."
+                        str(S.desktop_br_link_generated, draft.recipientName.trim())
                     },
                 )
                 loadLinks()
@@ -117,7 +119,7 @@ internal class PortalActions(
     }
 
     private fun copy(link: PortalLink) {
-        if (link.token.isBlank()) return vm.refuse("This link has no address to copy.")
+        if (link.token.isBlank()) return vm.refuse(str(S.desktop_br_link_no_address))
         vm.emit(BankRecEffect.CopyToClipboard(portalUrl(link.token)))
         edit { copy(copiedToken = link.token) }
         copiedJob?.cancel()
@@ -137,7 +139,7 @@ internal class PortalActions(
                     links = links.map { if (it.id == link.id) it.copy(status = PortalStatus.Revoked) else it },
                 )
             }
-            vm.notify("Link revoked.")
+            vm.notify(str(S.drive_link_revoked))
             loadLinks()
         }, { error ->
             edit { copy(revokingId = null) }

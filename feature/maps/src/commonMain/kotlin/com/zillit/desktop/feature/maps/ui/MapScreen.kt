@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.ui.screen.CitiesPanel
 import com.zillit.desktop.feature.maps.ui.screen.CanvasErrorBar
 import com.zillit.desktop.feature.maps.ui.screen.DirectionsPanel
@@ -93,8 +95,8 @@ fun MapScreen(
                 EmptyBlock(
                     icon = MapIcons.Map,
                     accent = MapColors.Brand,
-                    title = "You do not have access to the map tool.",
-                    message = "Ask an administrator for view rights on Map.",
+                    title = str(S.desktop_map_no_access),
+                    message = str(S.desktop_map_no_access_hint),
                 )
             }
         }
@@ -118,7 +120,11 @@ private fun ColumnScope.Bars(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     AnimatedVisibility(state.pinMode, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         PinModeBanner(state, onEvent)
     }
-    AnimatedVisibility(state.search != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+    AnimatedVisibility(
+        state.search != null,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+    ) {
         SearchBar(state, onEvent)
     }
     AnimatedVisibility(state.filterOpen, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -141,16 +147,16 @@ private fun MapArea(state: MapUiState, onEvent: (MapEvent) -> Unit, canvas: (@Co
         EmptyBlock(
             icon = MapIcons.Map,
             accent = MapColors.Brand,
-            title = if (noCities) "No cities added yet" else "The map cannot be shown here",
+            title = if (noCities) str(S.desktop_map_no_cities_yet) else str(S.desktop_map_cannot_show_here),
             message = if (noCities) {
-                "Add the first city to start pinning locations."
+                str(S.desktop_map_add_first_city)
             } else {
-                "This build has no embedded browser. Cities, locations and zones still open from the toolbar."
+                str(S.desktop_map_no_browser)
             },
             action = {
                 // The web's floating control reads "Add City" until there is one.
                 ZillitButton(
-                    text = if (noCities) "Add City" else "Cities",
+                    text = if (noCities) str(S.desktop_map_add_city) else str(S.cities),
                     onClick = { onEvent(MapEvent.Cities.Open) },
                     leadingIcon = if (noCities) ZillitIcons.Add else MapIcons.Map,
                 )
@@ -177,7 +183,8 @@ private fun RightPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 is MapPanel.ZoneDetail -> state.zone(panel.zoneId)?.let { ZoneDetailPanel(state, it, onEvent) }
                 MapPanel.Types -> TypesPanel(state, onEvent)
                 MapPanel.LocationForm -> state.locationForm?.let { LocationFormPanel(state, it, onEvent) }
-                is MapPanel.LocationDetail -> state.location(panel.locationId)?.let { LocationDetailPanel(state, it, onEvent) }
+                is MapPanel.LocationDetail ->
+                    state.location(panel.locationId)?.let { LocationDetailPanel(state, it, onEvent) }
             }
         }
     }

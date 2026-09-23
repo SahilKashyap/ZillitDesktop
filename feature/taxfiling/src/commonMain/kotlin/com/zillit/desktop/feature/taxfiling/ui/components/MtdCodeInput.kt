@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.CoaCode
 import com.zillit.desktop.feature.taxfiling.domain.CoaCodes
 
@@ -63,7 +65,7 @@ internal fun MtdCodeInput(
     codes: List<CoaCode>,
     onCommit: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Add code…",
+    placeholder: String = str(S.desktop_add_code_ellipsis),
     enabled: Boolean = true,
     loading: Boolean = false,
     failed: Boolean = false,
@@ -240,8 +242,8 @@ private fun CodeList(
 ) {
     val palette = mtdPalette()
     when (state) {
-        ListState.Loading -> ListNote("Loading Chart of Accounts…")
-        ListState.Failed -> ListNote("Couldn't load the Chart of Accounts. Reopen the return to retry.", palette.red)
+        ListState.Loading -> ListNote(str(S.desktop_dm_loading_chart_of_accounts))
+        ListState.Failed -> ListNote(str(S.desktop_tax_coa_failed), palette.red)
         ListState.EmptyChart, ListState.Ready -> {
             ranked.forEachIndexed { index, code ->
                 CodeRow(code = code, highlighted = index == highlight, picked = code.code in picked) {
@@ -264,7 +266,7 @@ private fun CodeList(
                         color = palette.accentText,
                     )
                     ZillitText(
-                        text = "Use code — not in Chart of Accounts",
+                        text = str(S.desktop_dm_use_code_not_in_chart_of_accounts),
                         style = mtdText(12.sp),
                         color = palette.muted,
                         maxLines = 1,
@@ -274,9 +276,9 @@ private fun CodeList(
             if (ranked.isEmpty() && unknownCode == null) {
                 ListNote(
                     if (state == ListState.EmptyChart) {
-                        "This project's Chart of Accounts is empty — add codes in Chart of Accounts first."
+                        str(S.desktop_dm_this_projects_chart_of_accounts_is_empty)
                     } else {
-                        "Type to filter…"
+                        str(S.desktop_dm_type_to_filter)
                     },
                 )
             }

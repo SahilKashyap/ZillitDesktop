@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -15,14 +17,14 @@ import kotlinx.datetime.plus
  */
 @Suppress("MagicNumber") // These literals *are* the constants: the wire values.
 enum class RecurrenceFrequency(val wireValue: Int, val label: String) {
-    Never(0, "Does not repeat"),
-    Daily(1, "Daily"),
-    Weekly(2, "Weekly"),
-    Monthly(3, "Monthly"),
-    Yearly(4, "Yearly"),
+    Never(0, S.does_not_repeat),
+    Daily(1, S.daily),
+    Weekly(2, S.ce_weekly),
+    Monthly(3, S.ce_monthly),
+    Yearly(4, S.yearly),
 
     /** Repeats on chosen weekdays. */
-    Custom(5, "Custom"),
+    Custom(5, S.custom),
     ;
 
     val repeats: Boolean get() = this != Never
@@ -58,9 +60,9 @@ enum class RecurrenceError { NoWeekdays, NoEndDate, EndBeforeStart }
 
 val RecurrenceError.message: String
     get() = when (this) {
-        RecurrenceError.NoWeekdays -> "Choose at least one day to repeat on."
-        RecurrenceError.NoEndDate -> "A repeating event needs a date to stop on."
-        RecurrenceError.EndBeforeStart -> "The repeat has to end after the event starts."
+        RecurrenceError.NoWeekdays -> str(S.desktop_cal_choose_a_weekday)
+        RecurrenceError.NoEndDate -> str(S.desktop_cal_repeat_needs_end_date)
+        RecurrenceError.EndBeforeStart -> str(S.desktop_cal_repeat_end_after_start)
     }
 
 /**
@@ -121,7 +123,7 @@ fun sundayFirstIndexToDayOfWeek(index: Int): DayOfWeek =
     DayOfWeek(if (index == 0) DAYS_IN_WEEK else index)
 
 /** `Sun`, `Mon`, … in the order the server indexes them. */
-val WEEKDAY_LABELS: List<String> = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+val WEEKDAY_LABELS: List<String> = listOf(S.sun, S.mon, S.tue, S.wed, S.thu, S.fri, S.sat)
 
 private const val DAYS_IN_WEEK = 7
 

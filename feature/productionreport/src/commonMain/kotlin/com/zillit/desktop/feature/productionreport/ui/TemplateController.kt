@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.productionreport.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ManageTab
 import com.zillit.desktop.feature.productionreport.domain.SavedTemplate
 
@@ -25,9 +27,9 @@ internal class TemplateController(private val ctx: ReportContext) {
                 copy(
                     dialog = ReportDialog.Confirm(
                         action = ConfirmAction.DeleteTemplate(event.template),
-                        title = "Delete Template",
+                        title = str(S.ah_delete_template),
                         message = "\"${event.template.name}\" will be removed for everyone in this project.",
-                        confirmLabel = "Delete",
+                        confirmLabel = str(S.delete),
                         danger = true,
                     ),
                 )
@@ -63,7 +65,7 @@ internal class TemplateController(private val ctx: ReportContext) {
                 is ZillitResult.Success -> {
                     val payload = result.data.payload
                     if (payload == null) {
-                        ctx.toast("Couldn't open template: Template has no content", isError = true)
+                        ctx.toast(str(S.desktop_pr_template_no_content), isError = true)
                         return@launchWork
                     }
                     ctx.editor.openNew(
@@ -73,22 +75,36 @@ internal class TemplateController(private val ctx: ReportContext) {
                     )
                 }
                 is ZillitResult.Failure -> if (result.error.isGone()) {
-                    ctx.toast("That template no longer exists — list refreshed.", isError = true)
+                    ctx.toast(str(S.desktop_template_gone_list_refreshed), isError = true)
                     ctx.lists.refreshSavedTemplates()
                 } else {
-                    ctx.toast("Couldn't open template: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_open_template, result.error.localised()), isError = true)
                 }
             }
         }
     }
 
+    /** The confirm stays up (spinning) until the delete settles. A 404 still counts as done. */
     fun delete(template: SavedTemplate) {
+        ctx.update { copy(busy = true, dialog = (dialog as? ReportDialog.Confirm)?.copy(busy = true) ?: dialog) }
         ctx.launchWork {
-            when (val result = ctx.repository.deleteTemplate(template.id)) {
-                is ZillitResult.Success -> ctx.toast("Template deleted.")
-                is ZillitResult.Failure -> if (!result.error.isGone()) {
-                    ctx.toast("Delete failed: ${result.error.localised()}", isError = true)
+            val done = when (val result = ctx.repository.deleteTemplate(template.id)) {
+                is ZillitResult.Success -> {
+                    ctx.toast(str(S.dd_template_deleted))
+                    true
                 }
+                is ZillitResult.Failure -> {
+                    if (!result.error.isGone()) {
+                        ctx.toast(str(S.desktop_delete_failed_reason, result.error.localised()), isError = true)
+                    }
+                    result.error.isGone()
+                }
+            }
+            ctx.update {
+                copy(
+                    busy = false,
+                    dialog = if (done) null else (dialog as? ReportDialog.Confirm)?.copy(busy = false) ?: dialog,
+                )
             }
             ctx.lists.refreshSavedTemplates()
         }
@@ -97,22 +113,25 @@ internal class TemplateController(private val ctx: ReportContext) {
     /**
      * "Save as Template": the document shared with the whole project; the
      * server names it. Not held behind the review-restart prompt — a template
-     * save does not touch the report.
+     * save does not touch the report. Create-only (ZL-21539): a template is a
+     * starting layout, made while building one, never while editing an
+     * EXISTING report — where it would mark the document clean and force-close
+     * the editor, discarding unsaved edits.
      */
     fun saveAsTemplate() {
         val editor = ctx.state.editor ?: return
-        if (editor.savingTemplate || !ctx.state.isPoster) return
+        if (editor.savingTemplate || !ctx.state.isPoster || !editor.isNew) return
         ctx.update { copy(editor = editor.copy(savingTemplate = true)) }
         ctx.launchWork {
             when (val result = ctx.repository.createTemplate(editor.document)) {
                 is ZillitResult.Success -> {
-                    val name = result.data?.name?.ifBlank { null } ?: "Draft Template"
-                    ctx.toast("Saved as \"$name\" — visible to everyone who can create production reports.")
+                    val name = result.data?.name?.ifBlank { null } ?: str(S.desktop_draft_template)
+                    ctx.toast(str(S.desktop_pr_template_saved_as, name))
                     leaveToDrafts()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(editor = this.editor?.copy(savingTemplate = false)) }
-                    ctx.toast("Template save failed: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_template_save_failed_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -127,7 +146,7 @@ internal class TemplateController(private val ctx: ReportContext) {
         ctx.launchWork {
             when (val result = ctx.repository.updateTemplate(template.id, editor.document)) {
                 is ZillitResult.Success -> {
-                    ctx.toast("\"${template.name}\" updated for the whole project.")
+                    ctx.toast(str(S.desktop_template_updated_for_project, template.name))
                     leaveToDrafts()
                 }
                 is ZillitResult.Failure -> {
@@ -140,10 +159,11 @@ internal class TemplateController(private val ctx: ReportContext) {
                         )
                     }
                     if (result.error.isGone()) {
-                        ctx.toast("That template no longer exists — list refreshed.", isError = true)
+                        ctx.toast(str(S.desktop_template_gone_list_refreshed), isError = true)
                         ctx.lists.refreshSavedTemplates()
                     } else {
-                        ctx.toast("Template update failed: ${result.error.localised()}", isError = true)
+                        val reason = result.error.localised()
+                        ctx.toast(str(S.desktop_template_update_failed_reason, reason), isError = true)
                     }
                 }
             }

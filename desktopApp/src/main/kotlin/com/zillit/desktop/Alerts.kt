@@ -19,6 +19,8 @@ import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.EmailRealtimeEvent
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Desktop alerts for things that arrive while the user is looking elsewhere.
@@ -189,7 +191,7 @@ private fun MessageAlerts(
 
             notifier.post(
                 DesktopNotification(
-                    title = crewName(message.senderId) ?: "New message",
+                    title = crewName(message.senderId) ?: str(S.notification_redacted_new_message),
                     body = message.cardPreview(crewName),
                 ),
             )
@@ -228,8 +230,8 @@ private fun MailAlerts(
             val arrived = unread - previous
             notifier.post(
                 DesktopNotification(
-                    title = if (arrived == 1) "New mail" else "$arrived new messages",
-                    body = "Waiting in your inbox.",
+                    title = if (arrived == 1) str(S.new_mail) else str(S.desktop_n_new_messages, arrived),
+                    body = str(S.desktop_waiting_in_inbox),
                 ),
             )
         }

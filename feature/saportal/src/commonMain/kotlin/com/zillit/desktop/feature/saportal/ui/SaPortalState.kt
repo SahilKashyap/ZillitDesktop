@@ -9,15 +9,19 @@ import com.zillit.desktop.feature.saportal.domain.SaViewer
 import com.zillit.desktop.feature.saportal.domain.Voucher
 import com.zillit.desktop.feature.saportal.domain.VoucherDetail
 import com.zillit.desktop.feature.saportal.domain.VoucherStatus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The portal's sections, in the order an artiste wants them. */
-enum class SaDestination(val slug: String, val label: String) {
-    Dashboard("dashboard", "Overview"),
-    Vouchers("vouchers", "My days"),
-    Pay("pay", "Pay"),
-    Queries("queries", "Queries"),
-    Profile("profile", "My details"),
+enum class SaDestination(val slug: String, private val labelKey: String) {
+    Dashboard("dashboard", S.ah_overview),
+    Vouchers("vouchers", S.desktop_sa_my_days),
+    Pay("pay", S.desktop_pay),
+    Queries("queries", S.desktop_queries),
+    Profile("profile", S.desktop_sa_my_details),
     ;
+
+    val label: String get() = str(labelKey)
 
     /**
      * Which socket refresh kind this page answers to.

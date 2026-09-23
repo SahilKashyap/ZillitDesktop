@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.maps.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.CenterPointType
 import com.zillit.desktop.feature.maps.domain.GeocodeOutcome
 import com.zillit.desktop.feature.maps.domain.IntersectionStreets
@@ -46,7 +48,9 @@ internal class ZoneController(private val store: MapStore) {
             is MapEvent.Zones.Street2 -> street(first = false, text = event.text)
             is MapEvent.Zones.Street2Pick -> streetPick(first = false, prediction = event.prediction)
             MapEvent.Zones.FindIntersection -> findIntersection()
-            is MapEvent.Zones.Preset -> updateForm { copy(preset = event.miles, useCustom = false, customTouched = false) }
+            is MapEvent.Zones.Preset -> updateForm {
+                copy(preset = event.miles, useCustom = false, customTouched = false)
+            }
             MapEvent.Zones.Custom -> updateForm { copy(useCustom = true) }
             is MapEvent.Zones.CustomRadius -> updateForm { copy(customRadius = event.text) }
             MapEvent.Zones.CustomRadiusLeft -> updateForm { copy(customTouched = true) }
@@ -70,7 +74,7 @@ internal class ZoneController(private val store: MapStore) {
                 }
                 is ZillitResult.Failure -> {
                     store.update { copy(zonesLoading = false) }
-                    store.failed(result.error, "Failed to fetch studio zones")
+                    store.failed(result.error, str(S.desktop_map_failed_fetch_zones))
                 }
             }
         }
@@ -140,7 +144,7 @@ internal class ZoneController(private val store: MapStore) {
         val city = state.selectedCity ?: return
         val zone = zoneId?.let { state.zone(it) }
         if (zoneId != null && zone == null) {
-            store.notice("Studio zone not found", NoticeTone.Error)
+            store.notice(str(S.desktop_map_zone_not_found), NoticeTone.Error)
             return
         }
         val form = if (zone == null) {
@@ -165,7 +169,9 @@ internal class ZoneController(private val store: MapStore) {
                 intersection = streets?.takeIf { zone.centerPointType == CenterPointType.Intersection }?.label,
             )
         }
-        store.update { copy(zoneForm = form, panels = panels.filterNot { it == MapPanel.ZoneForm } + MapPanel.ZoneForm) }
+        store.update {
+            copy(zoneForm = form, panels = panels.filterNot { it == MapPanel.ZoneForm } + MapPanel.ZoneForm)
+        }
     }
 
     private fun updateForm(reducer: ZoneFormState.() -> ZoneFormState) =
@@ -264,7 +270,11 @@ internal class ZoneController(private val store: MapStore) {
                         )
                     }
                     store.notice(
-                        if (form.street2.isBlank()) "Location found!" else "Intersection found!",
+                        if (form.street2.isBlank()) {
+                            str(S.desktop_map_location_found)
+                        } else {
+                            str(S.desktop_map_intersection_found)
+                        },
                         NoticeTone.Success,
                     )
                 }
@@ -272,9 +282,9 @@ internal class ZoneController(private val store: MapStore) {
                     updateForm { copy(finding = false) }
                     store.notice(
                         if (outcome.status == "ZERO_RESULTS") {
-                            "No location found for the given street(s). Try a different street name."
+                            str(S.desktop_map_no_street_result)
                         } else {
-                            "Geocoding failed: ${outcome.status}"
+                            str(S.desktop_map_geocoding_failed, outcome.status)
                         },
                         NoticeTone.Error,
                     )
@@ -293,7 +303,7 @@ internal class ZoneController(private val store: MapStore) {
         // The city must sit inside its own zone. The panel checks this before
         // the hook's own checks, so it wins whenever a centre is already set.
         val cityOutside = ZoneRules.cityOutsideZone(
-            cityName = city?.name.orEmpty().ifBlank { "Selected City" },
+            cityName = city?.name.orEmpty().ifBlank { str(S.desktop_map_selected_city) },
             city = city?.coordinates,
             centre = form.point,
             radiusMiles = form.effectiveRadius,
@@ -302,7 +312,7 @@ internal class ZoneController(private val store: MapStore) {
             ?: cityOutside
             ?: intersectionProblem(form)
             ?: coordinateProblem(form)
-            ?: "Radius must be greater than 0 miles".takeIf { form.effectiveRadius <= 0 }
+            ?: str(S.desktop_map_radius_positive).takeIf { form.effectiveRadius <= 0 }
         if (problem != null) {
             store.notice(problem, NoticeTone.Warning)
             return
@@ -321,38 +331,47 @@ internal class ZoneController(private val store: MapStore) {
         store.spawn {
             val result = form.editId?.let { store.repository.updateZone(it, draft) }
                 ?: store.repository.createZone(draft)
-            when (result) {
-                is ZillitResult.Failure -> {
-                    updateForm { copy(saving = false) }
-                    store.failed(
-                        result.error,
-                        if (form.isEdit) "Failed to update location" else "Failed to create location",
-                    )
-                }
-                is ZillitResult.Success -> {
-                    store.succeeded(
-                        result.data,
-                        if (form.isEdit) "Location updated successfully" else "Location created successfully",
-                    )
-                    closeForm()
-                    store.hooks.reloadZones()
-                    store.hooks.reloadCities()
-                }
+            finishSave(form, result)
+        }
+    }
+
+    /** The save's answer: the toast, and — on success — the reloads. */
+    private fun finishSave(form: ZoneFormState, result: ZillitResult<String?>) {
+        when (result) {
+            is ZillitResult.Failure -> {
+                updateForm { copy(saving = false) }
+                store.failed(
+                    result.error,
+                    if (form.isEdit) {
+                        str(S.desktop_map_failed_update_location)
+                    } else {
+                        str(S.desktop_map_failed_create_location)
+                    },
+                )
+            }
+            is ZillitResult.Success -> {
+                store.succeeded(
+                    result.data,
+                    if (form.isEdit) str(S.desktop_map_location_updated) else str(S.desktop_map_location_created),
+                )
+                closeForm()
+                store.hooks.reloadZones()
+                store.hooks.reloadCities()
             }
         }
     }
 
     private fun intersectionProblem(form: ZoneFormState): String? = when {
         form.mode != CenterPointType.Intersection -> null
-        form.street1.isBlank() -> "Please enter street 1"
-        form.intersection == null -> "Please select the intersection first by clicking \"Select Intersection\""
+        form.street1.isBlank() -> str(S.desktop_map_enter_street_1)
+        form.intersection == null -> str(S.desktop_map_select_intersection_first)
         else -> null
     }
 
     private fun coordinateProblem(form: ZoneFormState): String? = when {
         form.point != null -> null
-        form.mode == CenterPointType.Intersection -> "Please select the intersection to set coordinates"
-        else -> "Please set a center point location"
+        form.mode == CenterPointType.Intersection -> str(S.desktop_map_select_intersection_coords)
+        else -> str(S.desktop_map_set_center_point)
     }
 
     private fun askDelete(zoneId: String) {
@@ -360,9 +379,9 @@ internal class ZoneController(private val store: MapStore) {
         store.update {
             copy(
                 dialog = MapDialog.Confirm(
-                    title = "Delete Studio Zone",
-                    message = "Are you sure you want to delete \"${zone.name}\"?",
-                    confirmLabel = "Delete",
+                    title = str(S.desktop_map_delete_zone_title),
+                    message = str(S.desktop_map_delete_confirm_named, zone.name),
+                    confirmLabel = str(S.delete),
                     danger = true,
                     action = ConfirmAction.DeleteZone(zoneId),
                 ),
@@ -373,9 +392,9 @@ internal class ZoneController(private val store: MapStore) {
     fun delete(zoneId: String, done: () -> Unit) {
         store.spawn {
             when (val result = store.repository.deleteLocation(zoneId)) {
-                is ZillitResult.Failure -> store.failed(result.error, "Failed to delete location")
+                is ZillitResult.Failure -> store.failed(result.error, str(S.desktop_map_failed_delete_location))
                 is ZillitResult.Success -> {
-                    store.succeeded(result.data, "Location deleted successfully")
+                    store.succeeded(result.data, str(S.desktop_map_location_deleted))
                     store.popPanel { it == MapPanel.ZoneDetail(zoneId) }
                     store.hooks.reloadZones()
                     store.hooks.reloadCities()

@@ -1,3 +1,5 @@
+@file:Suppress("MatchingDeclarationName") // The file is the toast surface; MapToast is one entry in it.
+
 package com.zillit.desktop.feature.maps.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility

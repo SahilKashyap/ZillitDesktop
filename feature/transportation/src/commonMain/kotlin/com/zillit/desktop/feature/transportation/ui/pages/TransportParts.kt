@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.media.decodeImageBitmap
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transportation.domain.AllocationType
 import com.zillit.desktop.feature.transportation.domain.StoredMedia
 import com.zillit.desktop.feature.transportation.domain.TransportUser
@@ -184,7 +186,7 @@ internal fun EmptyLine(text: String) {
 
 /** A red round "×" — the web's delete button on every passenger and CC row. */
 @Composable
-internal fun RemoveButton(onClick: () -> Unit, description: String = "Remove") {
+internal fun RemoveButton(onClick: () -> Unit, description: String = str(S.remove)) {
     ZillitIconButton(icon = ZillitIcons.Trash, contentDescription = description, onClick = onClick,
         tint = ZillitTheme.colors.danger)
 }
@@ -215,7 +217,7 @@ internal fun PersonRow(
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically) {
                 ZillitText(text = name, style = ZillitTheme.typography.bodyMedium, color = colors.textPrimary)
-                if (user?.isGone == true) ZillitTag(label = "Disabled", tone = TagTone.Danger)
+                if (user?.isGone == true) ZillitTag(label = str(S.txt_disabled), tone = TagTone.Danger)
             }
             val line = subtitle ?: user?.designationLabel.orEmpty()
             if (line.isNotBlank()) {
@@ -256,8 +258,9 @@ internal fun DriverRow(
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically) {
                 ZillitText(text = user.fullName, style = ZillitTheme.typography.titleSmall, color = colors.textPrimary)
-                if (user.isTempDriver) ZillitTag(label = "Temp driver", tone = TagTone.Warning)
-                if (user.isGone) ZillitTag(label = "Disabled", tone = TagTone.Danger)
+                if (user.isTempDriver) ZillitTag(label = str(S.desktop_transport_temp_driver_tag),
+                    tone = TagTone.Warning)
+                if (user.isGone) ZillitTag(label = str(S.txt_disabled), tone = TagTone.Danger)
             }
             ZillitText(text = user.designationLabel, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
             ZillitText(
@@ -266,17 +269,21 @@ internal fun DriverRow(
                 color = if (user.isAvailable) colors.success else colors.danger,
             )
             if (!forTrip) {
-                DetailLine("Documents", if (user.hasDocuments) "Submitted" else "Request",
+                DetailLine(str(S.txt_documents),
+                    if (user.hasDocuments) str(S.txt_submitted) else str(S.docusign_request_access),
                     ok = user.hasDocuments) { onEvent(TransportEvent.OpenDocumentReminder(user.userId)) }
-                DetailLine("Licence", if (user.hasLicence) "Submitted" else "Request",
+                DetailLine(str(S.tv_licence),
+                    if (user.hasLicence) str(S.txt_submitted) else str(S.docusign_request_access),
                     ok = user.hasLicence) { onEvent(TransportEvent.LicenceReminder(user.userId)) }
                 val vehicle = state.vehicle(user.vehicleId)
-                DetailLine("Vehicle", vehicle?.label ?: "Not assigned", ok = vehicle != null, onRequest = null)
+                DetailLine(str(S.vehicle), vehicle?.label ?: str(S.not_assigned),
+                    ok = vehicle != null, onRequest = null)
             }
         }
         val call = slots.call
         if (call != null) {
-            ZillitIconButton(icon = ZillitIcons.Phone, contentDescription = "Call ${user.fullName}",
+            ZillitIconButton(icon = ZillitIcons.Phone,
+                contentDescription = str(S.desktop_transport_call_user, user.fullName),
                 onClick = { call(user) }, tint = colors.accent)
         }
         trailing?.invoke(this)
@@ -328,18 +335,19 @@ internal fun VehicleRow(
                 verticalAlignment = Alignment.CenterVertically) {
                 ZillitText(text = vehicle.name.ifBlank { vehicle.number }, style = ZillitTheme.typography.titleSmall,
                     color = colors.textPrimary)
-                if (vehicle.isPrivate) ZillitTag(label = "Private", tone = TagTone.Info)
+                if (vehicle.isPrivate) ZillitTag(label = str(S.drivers_badge_private), tone = TagTone.Info)
             }
             ZillitText(text = vehicle.number, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
             if (!forTrip) ZillitStatusPill(label = vehicle.allocation.label, tone = allocationTone(vehicle.allocation))
             if (vehicle.seats > 0) {
-                ZillitText(text = "Seating capacity: ${vehicle.seats}", style = ZillitTheme.typography.bodySmall,
+                ZillitText(text = str(S.desktop_transport_seating_capacity_n, vehicle.seats),
+                    style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary)
             }
             if (!forTrip) {
                 val driver = state.user(vehicle.driverId)
                 ZillitText(
-                    text = "Driver — ${driver?.fullName ?: "Not assigned"}",
+                    text = str(S.desktop_transport_driver_dash, driver?.fullName ?: str(S.not_assigned)),
                     style = ZillitTheme.typography.bodySmall,
                     color = if (driver == null) colors.danger else colors.textSecondary,
                 )
@@ -361,7 +369,7 @@ internal fun ConfirmDialog(
     onCancel: () -> Unit,
     danger: Boolean = true,
     busy: Boolean = false,
-    cancelLabel: String = "Cancel",
+    cancelLabel: String = str(S.cancel),
     /** Closing without answering — the scrim, Escape. Defaults to the cancel answer. */
     onDismiss: () -> Unit = onCancel,
 ) {
@@ -386,8 +394,8 @@ internal fun PeoplePickerDialog(state: TransportUiState, onEvent: (TransportEven
     val picker = state.peoplePicker ?: return
     val candidates = state.peopleChoices(picker)
     val title = when (picker.purpose) {
-        PickPurpose.PermanentPassengers -> "Add passengers"
-        else -> "Add CC users"
+        PickPurpose.PermanentPassengers -> str(S.desktop_transport_add_passengers)
+        else -> str(S.txt_add_cc_users)
     }
     ZillitDialogShell(
         title = title,
@@ -395,20 +403,21 @@ internal fun PeoplePickerDialog(state: TransportUiState, onEvent: (TransportEven
         visible = true,
         scrollable = false,
         actions = {
-            ZillitButton(text = "Cancel", onClick = { onEvent(TransportEvent.CancelPeoplePicker) },
+            ZillitButton(text = str(S.cancel), onClick = { onEvent(TransportEvent.CancelPeoplePicker) },
                 variant = ButtonVariant.Tertiary)
-            ZillitButton(text = "Add (${picker.chosen.size})", onClick = { onEvent(TransportEvent.SubmitPeoplePicker) },
+            ZillitButton(text = str(S.desktop_transport_add_count, picker.chosen.size),
+                onClick = { onEvent(TransportEvent.SubmitPeoplePicker) },
                 enabled = picker.chosen.isNotEmpty())
         },
     ) {
         ZillitSearchField(
             value = picker.query,
             onValueChange = { onEvent(TransportEvent.PeoplePickerChanged(picker.copy(query = it))) },
-            placeholder = "Search by name or designation",
+            placeholder = str(S.desktop_transport_search_name_or_designation),
             modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.sm),
         )
         if (candidates.isEmpty()) {
-            EmptyLine("Nobody to add")
+            EmptyLine(str(S.desktop_transport_nobody_to_add))
             return@ZillitDialogShell
         }
         LazyColumn(Modifier.heightIn(max = LIST_MAX)) {
@@ -439,22 +448,22 @@ internal fun PeoplePickerDialog(state: TransportUiState, onEvent: (TransportEven
 internal fun VehiclePickerDialog(state: TransportUiState, target: AssignTarget, onEvent: (TransportEvent) -> Unit) {
     val choices = state.vehicleChoices(target)
     ZillitDialogShell(
-        title = "Vehicle list",
+        title = str(S.txt_vehicle_list),
         onDismiss = { onEvent(TransportEvent.CancelVehiclePicker) },
         visible = true,
         scrollable = false,
         actions = {
-            ZillitButton(text = "Cancel", onClick = { onEvent(TransportEvent.CancelVehiclePicker) },
+            ZillitButton(text = str(S.cancel), onClick = { onEvent(TransportEvent.CancelVehiclePicker) },
                 variant = ButtonVariant.Tertiary)
         },
     ) {
         if (choices.isEmpty()) {
             EmptyLine(
-                if (target == AssignTarget.DriverDetails) "Every vehicle already has a driver"
-                else "No available vehicles",
+                if (target == AssignTarget.DriverDetails) str(S.desktop_transport_every_vehicle_has_driver)
+                else str(S.desktop_transport_no_available_vehicles),
             )
             if (state.viewer.isCoordinator) {
-                ZillitButton(text = "Create vehicle", onClick = {
+                ZillitButton(text = str(S.desktop_transport_create_vehicle), onClick = {
                     onEvent(TransportEvent.CancelVehiclePicker)
                     onEvent(TransportEvent.NewVehicle)
                 }, variant = ButtonVariant.Secondary)
@@ -475,23 +484,23 @@ internal fun VehiclePickerDialog(state: TransportUiState, target: AssignTarget, 
 internal fun DriverPickerDialog(state: TransportUiState, target: AssignTarget, onEvent: (TransportEvent) -> Unit) {
     val choices = state.driverChoices(target)
     ZillitDialogShell(
-        title = "Drivers",
+        title = str(S.drivers),
         onDismiss = { onEvent(TransportEvent.CancelDriverPicker) },
         visible = true,
         scrollable = false,
         actions = {
-            ZillitButton(text = "Cancel", onClick = { onEvent(TransportEvent.CancelDriverPicker) },
+            ZillitButton(text = str(S.cancel), onClick = { onEvent(TransportEvent.CancelDriverPicker) },
                 variant = ButtonVariant.Tertiary)
         },
     ) {
         ZillitSearchField(
             value = state.driverPickerQuery,
             onValueChange = { onEvent(TransportEvent.DriverPickerQuery(it)) },
-            placeholder = "Search driver by name",
+            placeholder = str(S.desktop_transport_search_driver_by_name),
             modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.sm),
         )
         if (choices.isEmpty()) {
-            EmptyLine("No drivers to choose from")
+            EmptyLine(str(S.desktop_transport_no_drivers_to_choose))
             return@ZillitDialogShell
         }
         LazyColumn(Modifier.heightIn(max = LIST_MAX)) {

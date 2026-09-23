@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.SceneDisplayMode
 import com.zillit.desktop.feature.sides.domain.ScenePage
 import com.zillit.desktop.feature.sides.domain.Script
@@ -74,7 +76,7 @@ internal fun GeneratePage(form: GenerateState, canDownload: Boolean, onEvent: (S
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         LinkButton(
-            "Back to Sides",
+            str(S.desktop_sides_back),
             icon = ZillitIcons.ArrowLeft,
             onClick = { onEvent(SidesEvent.GenClose) },
             muted = true,
@@ -94,9 +96,9 @@ internal fun GeneratePage(form: GenerateState, canDownload: Boolean, onEvent: (S
                     .padding(28.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                ZillitText("Generate Sides", style = ZillitTheme.typography.titleLarge)
+                ZillitText(str(S.sides_generate), style = ZillitTheme.typography.titleLarge)
                 when {
-                    form.loading -> SidesLoader("Loading scripts…")
+                    form.loading -> SidesLoader(str(S.desktop_loading_scripts))
                     form.result != null || form.running -> ResultStage(form, canDownload, onEvent)
                     else -> SetupForm(form, onEvent)
                 }
@@ -110,40 +112,50 @@ internal fun GeneratePage(form: GenerateState, canDownload: Boolean, onEvent: (S
 @Composable
 private fun SetupForm(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
     ScriptsSection(form, onEvent)
-    Section("Pick scenes (versions)") {
+    Section(str(S.sides_section_versions)) {
         form.selectedScript?.let { script -> SourceHead(script, active = form.isActiveScript) }
-        VersionsBox(form, form.primaryVersions, form.isActiveScript, "No script versions — use Pages below.", onEvent)
+        VersionsBox(
+            form,
+            form.primaryVersions,
+            form.isActiveScript,
+            str(S.desktop_sides_no_versions_use_pages),
+            onEvent,
+        )
     }
     form.extraScriptIds.forEach { id ->
         val script = form.scripts.firstOrNull { it.id == id } ?: return@forEach
         Section(null) {
             SourceHead(script, active = script.id == form.activeScriptId) {
-                LinkButton("Remove", icon = ZillitIcons.Close, onClick = { onEvent(SidesEvent.GenRemoveScript(id)) })
+                LinkButton(
+                    str(S.remove),
+                    icon = ZillitIcons.Close,
+                    onClick = { onEvent(SidesEvent.GenRemoveScript(id)) },
+                )
             }
             VersionsBox(
                 form = form,
                 versions = form.versions[id].orEmpty(),
                 isActiveScript = script.id == form.activeScriptId,
-                emptyText = "No script versions.",
+                emptyText = str(S.desktop_sides_no_versions),
                 onEvent = onEvent,
             )
         }
     }
     if (form.pages.isNotEmpty()) {
-        Section("Pages (scene folders)") {
+        Section(str(S.desktop_sides_pages_scene_folders)) {
             SourceBox { form.pages.forEach { page -> PageAccordion(form, page, onEvent) } }
         }
     }
     if (form.allSelectedScenes.isNotEmpty()) OrderSection(form, onEvent)
     if (form.readyToSubmit) {
-        Section("Selected scenes") { SelectedChips(form, onEvent) }
+        Section(str(S.sides_section_summary)) { SelectedChips(form, onEvent) }
     }
     ModeSection(form.displayMode) { onEvent(SidesEvent.GenDisplayMode(it)) }
-    Section("Title", optional = true) {
+    Section(str(S.title), optional = true) {
         ZillitTextField(
             value = form.title,
             onValueChange = { onEvent(SidesEvent.GenTitle(it)) },
-            placeholder = "Auto-generated",
+            placeholder = str(S.desktop_auto_generated),
         )
     }
     FormFooter(form, onEvent)
@@ -151,19 +163,19 @@ private fun SetupForm(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
 
 @Composable
 private fun ScriptsSection(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
-    Section("Scripts") {
+    Section(str(S.desktop_scripts)) {
         ZillitSelect(
             value = form.selectedScript,
             options = form.scripts,
             onSelect = { it?.let { script -> onEvent(SidesEvent.GenPickScript(script.id)) } },
-            label = { script -> script?.let { scriptOption(it) } ?: "Select a script" },
+            label = { script -> script?.let { scriptOption(it) } ?: str(S.desktop_select_a_script) },
         )
         if (form.addableScripts.isNotEmpty()) {
             ZillitSelect(
                 value = null,
                 options = form.addableScripts,
                 onSelect = { it?.let { script -> onEvent(SidesEvent.GenAddScript(script.id)) } },
-                label = { script -> script?.title ?: "+ Add another script…" },
+                label = { script -> script?.title ?: str(S.sides_add_script_prompt) },
             )
         }
     }
@@ -196,15 +208,15 @@ private fun VersionsBox(
 @Composable
 private fun OrderSection(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
     val colors = ZillitTheme.colors
-    Section("Scene order") {
+    Section(str(S.desktop_scene_order)) {
         ZillitCheckbox(
             checked = form.rearrange,
             onCheckedChange = { onEvent(SidesEvent.GenRearrange(it)) },
-            label = "Rearrange scene order",
+            label = str(S.sides_rearrange),
         )
         if (form.rearrange) {
             ZillitText(
-                text = "Drag chips to reorder — sides render top-to-bottom in this order.",
+                text = str(S.desktop_sides_order_render_hint),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -215,7 +227,7 @@ private fun OrderSection(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
             )
             if (form.order.isNotEmpty()) {
                 ZillitText(
-                    text = "Sides will be ordered as: ${form.order.joinToString(", ")}",
+                    text = str(S.sides_order_preview, form.order.joinToString(", ")),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -227,18 +239,18 @@ private fun OrderSection(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
 /** The two unselected-scenes cards, shared with the Autogenerate dialog. */
 @Composable
 internal fun ModeSection(mode: String, onChange: (String) -> Unit) {
-    Section("Unselected scenes") {
+    Section(str(S.sides_section_unselected)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             RadioCard(
-                title = "Cross out unselected scenes",
-                subtitle = "Keep full pages; strike through scenes not selected (default).",
+                title = str(S.sides_crossout_unselected),
+                subtitle = str(S.desktop_sides_crossout_subtitle),
                 selected = mode == SceneDisplayMode.CROSSOUT,
                 onClick = { onChange(SceneDisplayMode.CROSSOUT) },
                 modifier = Modifier.weight(1f),
             )
             RadioCard(
-                title = "Hide unselected scenes",
-                subtitle = "Only the selected scenes appear.",
+                title = str(S.sides_hide_unselected),
+                subtitle = str(S.desktop_sides_hide_subtitle),
                 selected = mode == SceneDisplayMode.HIDE,
                 onClick = { onChange(SceneDisplayMode.HIDE) },
                 modifier = Modifier.weight(1f),
@@ -251,19 +263,21 @@ internal fun ModeSection(mode: String, onChange: (String) -> Unit) {
 private fun FormFooter(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         ZillitText(
-            text = if (form.readyToSubmit) {
-                "${form.sceneCount} scene${if (form.sceneCount == 1) "" else "s"} selected"
-            } else {
-                "No scenes selected yet"
+            // Android's `sides_summary_count` reads "%1$d scene(s) selected";
+            // the desktop has always inflected, so it picks between two keys.
+            text = when {
+                !form.readyToSubmit -> str(S.desktop_sides_no_scenes_selected)
+                form.sceneCount == 1 -> str(S.desktop_sides_one_scene_selected, form.sceneCount)
+                else -> str(S.desktop_sides_n_scenes_selected, form.sceneCount)
             },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.weight(1f),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ZillitButton("Cancel", onClick = { onEvent(SidesEvent.GenClose) }, variant = ButtonVariant.Secondary)
+            ZillitButton(str(S.cancel), onClick = { onEvent(SidesEvent.GenClose) }, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = if (form.running) "Submitting…" else "Submit",
+                text = if (form.running) str(S.ah_submitting) else str(S.submit),
                 onClick = { onEvent(SidesEvent.GenSubmit) },
                 enabled = !form.running && form.scriptId.isNotBlank() && form.readyToSubmit,
                 loading = form.running,
@@ -275,7 +289,7 @@ private fun FormFooter(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
 
 /** The web's option label: a file-less script says so. */
 private fun scriptOption(script: Script): String =
-    if (script.hasFile) script.title else "${script.title} (no file — pages only)"
+    if (script.hasFile) script.title else "${script.title} ${str(S.sides_no_file_suffix)}"
 
 @Composable
 internal fun Section(label: String?, optional: Boolean = false, content: @Composable () -> Unit) {
@@ -293,7 +307,7 @@ private fun SourceHead(script: Script, active: Boolean, trailing: (@Composable (
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ZillitText(script.title, style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-        if (active) SidesBadge("ACTIVE", tint = ZillitTheme.colors.success)
+        if (active) SidesBadge(str(S.docusign_sidebar_chip_active), tint = ZillitTheme.colors.success)
         Spacer(Modifier.weight(1f))
         trailing?.invoke()
     }
@@ -326,14 +340,14 @@ private fun VersionAccordion(
         onToggle = { onEvent(SidesEvent.GenToggleVersionOpen(version.id)) },
         head = {
             ZillitText(version.label, style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-            if (isCurrent) SidesBadge("CURRENT")
+            if (isCurrent) SidesBadge(str(S.dv_current))
             Spacer(Modifier.weight(1f))
             if (!open && picked.isNotEmpty()) PickCount(picked.size.toString())
         },
     ) {
         if (version.id in form.scenesLoading) {
             ZillitText(
-                "Loading scenes…",
+                str(S.desktop_loading_scenes),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -362,7 +376,7 @@ private fun PageAccordion(form: GenerateState, page: ScenePage, onEvent: (SidesE
         head = {
             Box(Modifier.size(10.dp).clip(CircleShape).background(hexColor(page.color) ?: colors.textMuted))
             ZillitText(
-                page.sceneNumber.ifBlank { "Page" },
+                page.sceneNumber.ifBlank { str(S.page) },
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             )
             if (page.description.isNotBlank()) {
@@ -377,23 +391,27 @@ private fun PageAccordion(form: GenerateState, page: ScenePage, onEvent: (SidesE
             } else {
                 Spacer(Modifier.weight(1f))
             }
-            ZillitText("${page.pageCount} pg", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_page_count_pg, page.pageCount),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
             if (!open && (picked.isNotEmpty() || whole)) {
-                PickCount(if (whole && picked.isEmpty()) "PDF" else picked.size.toString())
+                PickCount(if (whole && picked.isEmpty()) str(S.av_pdf) else picked.size.toString())
             }
         },
     ) {
         val scenes = form.scenesByPage[page.id].orEmpty()
         when {
             page.id in form.scenesLoading -> ZillitText(
-                "Loading scenes…",
+                str(S.desktop_loading_scenes),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
             scenes.isEmpty() -> ZillitCheckbox(
                 checked = whole,
                 onCheckedChange = { onEvent(SidesEvent.GenToggleWholePage(page.id)) },
-                label = "No scenes detected — include the entire PDF",
+                label = str(S.desktop_sides_include_entire_pdf),
             )
             else -> SceneNumberGrid(
                 scenes = scenes,
@@ -430,7 +448,7 @@ private fun SelectedChips(form: GenerateState, onEvent: (SidesEvent) -> Unit) {
             scenes.map { scene -> scene to { onEvent(SidesEvent.GenTogglePageScene(pageId, scene)) } }
         }
         chips.forEach { (scene, remove) ->
-            ZillitTooltip("Remove scene") {
+            ZillitTooltip(str(S.desktop_remove_scene)) {
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -468,34 +486,32 @@ private fun ResultStage(form: GenerateState, canDownload: Boolean, onEvent: (Sid
     ) {
         when {
             result == null || !result.status.terminal -> {
-                SidesLoader("Generating sides…")
+                SidesLoader(str(S.sides_generating))
                 ZillitText(
-                    "This usually takes under a minute.",
+                    str(S.desktop_usually_under_minute),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
             result.status == SidesStatus.Error -> {
                 ResultIcon(ZillitIcons.Close, colors.danger)
-                ZillitText("Generation failed", style = ZillitTheme.typography.titleLarge)
+                ZillitText(str(S.sides_generation_failed), style = ZillitTheme.typography.titleLarge)
                 ZillitText(
-                    text = result.error.ifBlank {
-                        "Something went wrong while generating your sides. Please try again."
-                    },
+                    text = result.error.ifBlank { str(S.desktop_sides_generation_error_yours) },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
                 ZillitButton(
-                    "Back to setup",
+                    str(S.desktop_back_to_setup),
                     onClick = { onEvent(SidesEvent.GenBackToForm) },
                     variant = ButtonVariant.Secondary,
                 )
             }
             else -> {
                 ResultIcon(ZillitIcons.Check, colors.success)
-                ZillitText("Sides generated successfully", style = ZillitTheme.typography.titleLarge)
+                ZillitText(str(S.desktop_sides_generated), style = ZillitTheme.typography.titleLarge)
                 ZillitText(
-                    text = "Review your sides, then publish them to the Sides module.",
+                    text = str(S.desktop_sides_review_publish),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -552,7 +568,7 @@ private fun ResultSelection(form: GenerateState) {
         if (scenes.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitText(
-                    "Scenes",
+                    str(S.av_scenes),
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = colors.textMuted,
                 )
@@ -575,7 +591,7 @@ private fun ResultSelection(form: GenerateState) {
         if (pages.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitText(
-                    "Pages",
+                    str(S.pages),
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = colors.textMuted,
                 )
@@ -586,7 +602,11 @@ private fun ResultSelection(form: GenerateState) {
                     ) {
                         SceneChip(page.number, tint = hexColor(page.color))
                         if (page.scenes.isEmpty()) {
-                            ZillitText("Whole PDF", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                            ZillitText(
+                                str(S.desktop_sides_whole_pdf),
+                                style = ZillitTheme.typography.bodySmall,
+                                color = colors.textMuted,
+                            )
                         } else {
                             val shown = page.scenes.take(SidesRules.RESULT_PAGE_SCENE_CAP)
                             ZillitText(shown.joinToString(", "), style = ZillitTheme.typography.bodySmall)
@@ -615,24 +635,28 @@ private fun ResultSelection(form: GenerateState) {
 @Composable
 internal fun ReviewActions(form: GenerateState, canDownload: Boolean, onEvent: (SidesEvent) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        ZillitButton("Back", onClick = { onEvent(SidesEvent.GenBackToForm) }, variant = ButtonVariant.Secondary)
+        ZillitButton(str(S.back), onClick = { onEvent(SidesEvent.GenBackToForm) }, variant = ButtonVariant.Secondary)
         if (!form.viewed) {
-            ZillitButton("View sides", onClick = { onEvent(SidesEvent.GenView) }, leadingIcon = ZillitIcons.Eye)
+            ZillitButton(
+                str(S.desktop_sides_view),
+                onClick = { onEvent(SidesEvent.GenView) },
+                leadingIcon = ZillitIcons.Eye,
+            )
         } else {
             ZillitButton(
-                "View again",
+                str(S.sides_view_again),
                 onClick = { onEvent(SidesEvent.GenView) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Eye,
             )
             ZillitButton(
-                text = if (canDownload) "Download" else "Download (request access)",
+                text = if (canDownload) str(S.download) else str(S.desktop_download_request_access),
                 onClick = { onEvent(SidesEvent.GenDownload) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Download,
             )
             ZillitButton(
-                text = if (form.publishing) "Publishing…" else "Publish",
+                text = if (form.publishing) str(S.desktop_publishing) else str(S.publish),
                 onClick = { onEvent(SidesEvent.GenPublish) },
                 loading = form.publishing,
                 enabled = !form.publishing,

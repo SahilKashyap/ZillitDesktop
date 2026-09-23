@@ -22,6 +22,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A search box: magnifier, text, and a clear button once there is something to
@@ -40,7 +42,7 @@ fun ZillitSearchField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Search",
+    placeholder: String = str(S.search),
     enabled: Boolean = true,
 ) {
     val colors = ZillitTheme.colors
@@ -94,7 +96,7 @@ fun ZillitSearchField(
         if (value.isNotEmpty()) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Clear search",
+                contentDescription = str(S.ah_cd_clear_search),
                 onClick = { onValueChange("") },
                 tint = colors.textMuted,
             )

@@ -10,6 +10,8 @@ import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.domain.StoredFile
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -41,7 +43,7 @@ internal fun callRecordingShare(
         return@CallRecordingShare ZillitResult.Failure(
             ZillitError.Storage(
                 technical = "call recording unreadable at ${recording.path}",
-                userMessage = "The recording could not be read.",
+                userMessage = str(S.desktop_recording_unreadable),
             ),
         )
     }

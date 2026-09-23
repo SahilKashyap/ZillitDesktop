@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.castboard.domain
 
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Casting and Wardrobe are one board.
@@ -15,7 +17,7 @@ import com.zillit.desktop.core.config.ZillitService
  * engine with a descriptor is the same behaviour with one place to fix.
  */
 data class BoardTool(
-    val title: String,
+    private val titleKey: String,
     /** Which host answers — they are different services, despite the shared shape. */
     val service: ZillitService,
     /** `casting` or `wardrobe`: the path segment and the info route's prefix. */
@@ -29,28 +31,30 @@ data class BoardTool(
     val showsScenes: Boolean,
 ) {
 
+    val title: String get() = str(titleKey)
+
     val infoPath: String get() = "$segment/$segment-info"
 
     companion object {
 
         val Casting = BoardTool(
-            title = "Casting",
+            titleKey = S.casting,
             service = ZillitService.Casting,
             segment = "casting",
             units = listOf(
-                BoardUnitKind("casting_main_tool", "Main cast"),
-                BoardUnitKind("casting_background_tool", "Background cast"),
+                BoardUnitKind("casting_main_tool", S.main_cast),
+                BoardUnitKind("casting_background_tool", S.desktop_cast_background_cast),
             ),
             showsScenes = false,
         )
 
         val Wardrobe = BoardTool(
-            title = "Wardrobe",
+            titleKey = S.wardrobe,
             service = ZillitService.Wardrobe,
             segment = "wardrobe",
             units = listOf(
-                BoardUnitKind("wardrobe_main_tool", "Main wardrobe"),
-                BoardUnitKind("wardrobe_background_tool", "Background wardrobe"),
+                BoardUnitKind("wardrobe_main_tool", S.desktop_cast_main_wardrobe),
+                BoardUnitKind("wardrobe_background_tool", S.desktop_cast_background_wardrobe),
             ),
             showsScenes = true,
         )
@@ -58,4 +62,6 @@ data class BoardTool(
 }
 
 /** One of a board's two lists, named by the tool that grants it. */
-data class BoardUnitKind(val identifier: String, val label: String)
+data class BoardUnitKind(val identifier: String, private val labelKey: String) {
+    val label: String get() = str(labelKey)
+}

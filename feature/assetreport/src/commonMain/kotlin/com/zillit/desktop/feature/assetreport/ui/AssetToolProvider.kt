@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -23,7 +25,7 @@ class AssetToolProvider(
 ) : ToolProvider {
 
     override val path: String = ASSET_PATH
-    override val title: String = "Asset Register"
+    override val title: String get() = str(S.asset_title)
     override val icon = ZillitToolIcons.IcAssets
     override val openMode: OpenMode = OpenMode.Maximized
     override val defaultSize: DpSize = DpSize(1280.dp, 820.dp)

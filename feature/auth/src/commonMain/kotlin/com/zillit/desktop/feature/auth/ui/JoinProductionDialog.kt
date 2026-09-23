@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.feature.auth.domain.Department
 import com.zillit.desktop.feature.auth.domain.Designation
@@ -45,12 +47,12 @@ internal fun JoinProductionDialog(
     modifier: Modifier = Modifier,
 ) {
     ZillitDialogShell(
-        title = "Join a project",
+        title = str(S.desktop_join_a_project),
         visible = visible,
         subtitle = when (state.step) {
-            JoinStep.Code -> "Step 1 of 2 — the project code"
-            JoinStep.Details -> "Step 2 of 2 — who you are on this project"
-            JoinStep.Submitted -> "Request sent"
+            JoinStep.Code -> str(S.desktop_join_step_one_subtitle)
+            JoinStep.Details -> str(S.desktop_join_step_two_subtitle)
+            JoinStep.Submitted -> str(S.desktop_request_sent)
         },
         icon = ZillitIcons.User,
         onDismiss = { onEvent(JoinEvent.Dismiss) },
@@ -113,7 +115,7 @@ private fun StepBar(step: JoinStep) {
 @Composable
 private fun CodeStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
     ZillitText(
-        text = "Enter the code the project gave you.",
+        text = str(S.desktop_join_enter_code),
         style = ZillitTheme.typography.bodySmall,
         color = ZillitTheme.colors.textMuted,
     )
@@ -121,12 +123,12 @@ private fun CodeStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
     ZillitTextField(
         value = state.codeText,
         onValueChange = { onEvent(JoinEvent.CodeChanged(it)) },
-        placeholder = "Project code",
+        placeholder = str(S.project_code),
         modifier = Modifier.fillMaxWidth(),
     )
 
     DialogActions(
-        confirmText = "Find project",
+        confirmText = str(S.desktop_find_project),
         confirmEnabled = state.canFindProject,
         isBusy = state.isBusy,
         onConfirm = { onEvent(JoinEvent.FindProject) },
@@ -165,14 +167,14 @@ private fun DetailsStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
         ZillitTextField(
             value = draft.firstName,
             onValueChange = { onEvent(JoinEvent.DraftChanged(draft.copy(firstName = it))) },
-            placeholder = "First name",
+            placeholder = str(S.first_name_label),
             errorText = JoinFieldError.FirstNameTooShort.takeIf { it in state }?.message,
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = draft.lastName,
             onValueChange = { onEvent(JoinEvent.DraftChanged(draft.copy(lastName = it))) },
-            placeholder = "Last name",
+            placeholder = str(S.last_name_label),
             errorText = JoinFieldError.LastNameTooShort.takeIf { it in state }?.message,
             modifier = Modifier.weight(1f),
         )
@@ -187,11 +189,11 @@ private fun DetailsStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
     ZillitCheckbox(
         checked = draft.keepNamePrivate,
         onCheckedChange = { onEvent(JoinEvent.DraftChanged(draft.copy(keepNamePrivate = it))) },
-        label = "Keep my name off crew lists",
+        label = str(S.desktop_keep_name_off_crew_lists),
     )
 
     DialogActions(
-        confirmText = "Send request",
+        confirmText = str(S.av_send_request),
         confirmEnabled = !state.isBusy,
         isBusy = state.isBusy,
         onConfirm = { onEvent(JoinEvent.Submit) },
@@ -226,9 +228,9 @@ private fun PhotoRow(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                 ZillitText(
                     text = when {
-                        state.isStoringPhoto -> "Saving your photo…"
-                        stored != null -> "Photo added"
-                        else -> "Add a photo — optional"
+                        state.isStoringPhoto -> str(S.desktop_saving_your_photo)
+                        stored != null -> str(S.desktop_photo_added)
+                        else -> str(S.desktop_add_a_photo_optional)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
@@ -236,14 +238,14 @@ private fun PhotoRow(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
 
                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                     ZillitButton(
-                        text = if (stored != null) "Change" else "Choose photo",
+                        text = if (stored != null) str(S.change) else str(S.docusign_field_choose_photo),
                         variant = ButtonVariant.Tertiary,
                         enabled = !state.isStoringPhoto && !state.isBusy,
                         onClick = { onEvent(JoinEvent.ChoosePhoto) },
                     )
                     if (stored != null) {
                         ZillitButton(
-                            text = "Remove",
+                            text = str(S.remove),
                             variant = ButtonVariant.Tertiary,
                             enabled = !state.isStoringPhoto,
                             onClick = { onEvent(JoinEvent.RemovePhoto) },
@@ -269,7 +271,7 @@ private fun PhotoRow(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
 private fun CrewFields(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
     val draft = state.draft
 
-    LabelledField("Department", JoinFieldError.DepartmentMissing.takeIf { it in state }?.message) {
+    LabelledField(str(S.department), JoinFieldError.DepartmentMissing.takeIf { it in state }?.message) {
         ZillitSelect(
             value = state.departments.firstOrNull { it.id == draft.departmentId },
             options = state.departments,
@@ -278,32 +280,32 @@ private fun CrewFields(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
             },
             // Department, role and unit names are translation keys —
             // `transportation_department_label`, `main_unit_label`.
-            label = { it?.name?.localised() ?: "Select a department" },
+            label = { it?.name?.localised() ?: str(S.desktop_select_a_department) },
         )
     }
 
-    LabelledField("Role", JoinFieldError.DesignationMissing.takeIf { it in state }?.message) {
+    LabelledField(str(S.recce_field_role), JoinFieldError.DesignationMissing.takeIf { it in state }?.message) {
         ZillitSelect(
             value = state.designations.firstOrNull { it.id == draft.designationId },
             options = state.designations,
             onSelect = { chosen ->
                 onEvent(JoinEvent.DraftChanged(draft.copy(designationId = chosen?.id)))
             },
-            label = { it?.name?.localised() ?: "Select a role" },
+            label = { it?.name?.localised() ?: str(S.desktop_select_a_role) },
             // Roles belong to a department; offering them first would be a list
             // of every job on the production.
             enabled = draft.departmentId != null,
         )
     }
 
-    LabelledField("Unit", JoinFieldError.UnitMissing.takeIf { it in state }?.message) {
+    LabelledField(str(S.dm_step2_unit), JoinFieldError.UnitMissing.takeIf { it in state }?.message) {
         ZillitSelect(
             value = state.units.firstOrNull { it.id == draft.unitId },
             options = state.units,
             onSelect = { chosen ->
                 onEvent(JoinEvent.DraftChanged(draft.copy(unitId = chosen?.id)))
             },
-            label = { it?.name?.localised() ?: "Select a unit" },
+            label = { it?.name?.localised() ?: str(S.desktop_select_a_unit) },
         )
     }
 }
@@ -331,7 +333,7 @@ private fun SubmittedStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
         horizontalArrangement = Arrangement.End,
     ) {
         ZillitButton(
-            text = "Done",
+            text = str(S.done_text),
             variant = ButtonVariant.Primary,
             onClick = { onEvent(JoinEvent.Dismiss) },
         )
@@ -369,9 +371,9 @@ private fun DialogActions(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
     ) {
-        ZillitButton(text = "Cancel", variant = ButtonVariant.Tertiary, onClick = onDismiss)
+        ZillitButton(text = str(S.cancel), variant = ButtonVariant.Tertiary, onClick = onDismiss)
         ZillitButton(
-            text = if (isBusy) "Working..." else confirmText,
+            text = if (isBusy) str(S.desktop_working) else confirmText,
             variant = ButtonVariant.Primary,
             enabled = confirmEnabled,
             onClick = onConfirm,

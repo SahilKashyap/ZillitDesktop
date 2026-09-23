@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.sos.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -108,11 +110,11 @@ data class ExternalContactDraft(
 ) {
     /** The first thing wrong with the draft, or null when it can be sent. */
     fun problem(): String? = when {
-        contactName.isBlank() -> "Enter the contact's name."
-        relation.isBlank() -> "Pick a relationship."
-        countryCode.isBlank() -> "Pick a country code."
-        phoneNumber.isBlank() -> "Enter a mobile number."
-        !PHONE.matches(phoneNumber) -> "Enter a valid mobile number — digits only, 5 to 20 of them."
+        contactName.isBlank() -> str(S.desktop_sos_enter_contact_name)
+        relation.isBlank() -> str(S.desktop_sos_pick_relationship)
+        countryCode.isBlank() -> str(S.desktop_sos_pick_country_code)
+        phoneNumber.isBlank() -> str(S.desktop_sos_enter_mobile)
+        !PHONE.matches(phoneNumber) -> str(S.desktop_sos_invalid_mobile)
         else -> null
     }
 
@@ -165,10 +167,14 @@ fun Long.toStampLabel(zone: TimeZone = TimeZone.currentSystemDefault()): String 
     if (this <= 0) return ""
     val moment = runCatching { Instant.fromEpochMilliseconds(this).toLocalDateTime(zone) }.getOrNull()
         ?: return ""
-    val month = MONTHS[moment.month.ordinal]
+    val month = str(MONTHS[moment.month.ordinal])
     return "${moment.day.pad()} $month ${moment.year}, ${moment.hour.pad()}:${moment.minute.pad()}"
 }
 
 private fun Int.pad(): String = toString().padStart(2, '0')
 
-private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+private val MONTHS = listOf(
+    S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+    S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+    S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+)

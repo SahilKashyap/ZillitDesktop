@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankPeriod
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.ui.BankRecEvent
@@ -51,9 +53,9 @@ internal fun ColumnScope.PeriodHistoryCard(state: BankRecUiState, onEvent: (Bank
     val selected = state.overviewSelection
     BrCard(
         modifier = Modifier.fillMaxWidth(),
-        title = "Reconciliation History",
+        title = str(S.desktop_br_reconciliation_history),
         icon = ZillitIcons.Clock,
-        titleRight = { SelectionActions(state, selected, scope, onEvent, exportLabel = "Export PDF") },
+        titleRight = { SelectionActions(state, selected, scope, onEvent, exportLabel = str(S.recce_export_pdf)) },
     ) {
         PeriodTable(state, state.periods, selected, scope, onEvent)
     }
@@ -69,12 +71,18 @@ internal fun SelectionActions(
     exportLabel: String,
 ) {
     if (selected.isNotEmpty()) {
-        BrLinkButton("Clear", ZillitTheme.colors.textSecondary, { onEvent(BankRecEvent.ClearPeriodSelection(scope)) })
+        BrLinkButton(
+            str(S.txt_clear),
+            ZillitTheme.colors.textSecondary,
+            { onEvent(BankRecEvent.ClearPeriodSelection(scope)) },
+        )
         ZillitButton(
             text = if (state.deleting?.deleting == true) {
-                "Deleting…"
+                str(S.ah_deleting)
+            } else if (selected.size == 1) {
+                str(S.desktop_br_delete_selected_one, selected.size)
             } else {
-                "Delete ${selected.size} period${if (selected.size == 1) "" else "s"}"
+                str(S.desktop_br_delete_n_periods, selected.size)
             },
             onClick = { onEvent(BankRecEvent.AskDeletePeriods(selected.toList())) },
             variant = ButtonVariant.Danger,
@@ -113,13 +121,13 @@ private fun PeriodTable(
                 else -> onEvent(BankRecEvent.OpenTab(BankTab.History))
             }
         },
-        empty = { BrEmpty(title = "No reconciliation periods found", icon = ZillitIcons.Bank) },
+        empty = { BrEmpty(title = str(S.desktop_br_no_periods_found), icon = ZillitIcons.Bank) },
         columns = listOf(
             selectColumn(rows, selected, scope, onEvent),
-            BrColumn("Period", width = 92.dp) { period ->
+            BrColumn(str(S.cr_meta_period), width = 92.dp) { period ->
                 ZillitText(BankRecFormat.periodLabel(period), style = mono(13.sp, FontWeight.SemiBold), maxLines = 1)
             },
-            BrColumn("Bank", weight = 1.5f) { period ->
+            BrColumn(str(S.desktop_bank), weight = 1.5f) { period ->
                 val account = state.account(period.bankAccountId)
                 BrBankIdentity(
                     name = account?.displayName.orEmpty(),
@@ -128,24 +136,24 @@ private fun PeriodTable(
                     compact = true,
                 )
             },
-            BrColumn("Txns", width = 48.dp, align = BrAlign.End) { period ->
+            BrColumn(str(S.desktop_txns), width = 48.dp, align = BrAlign.End) { period ->
                 ZillitText(period.totalTxns.toString(), style = mono(13.sp), color = ZillitTheme.colors.textSecondary)
             },
-            BrColumn("Matched", width = 68.dp, align = BrAlign.End) { period ->
+            BrColumn(str(S.desktop_matched), width = 68.dp, align = BrAlign.End) { period ->
                 ZillitText(
                     "${period.matchedCount}/${period.totalTxns}",
                     style = mono(13.sp),
                     color = ZillitTheme.colors.textSecondary,
                 )
             },
-            BrColumn("Progress", width = 104.dp) { period -> BrMiniProgress(period.matchedPercent) },
-            BrColumn("Fraud", width = 76.dp) { period ->
+            BrColumn(str(S.desktop_progress), width = 104.dp) { period -> BrMiniProgress(period.matchedPercent) },
+            BrColumn(str(S.desktop_fraud), width = 76.dp) { period ->
                 val (label, tone) = period.fraudBadge
                 BrBadge(label, tone)
             },
-            BrColumn("Status", width = 96.dp) { period -> BrBadge(period.status.label, period.status.tone) },
-            BrColumn("Signed Off", weight = 1.2f) { period -> SignedOffCell(period) },
-            BrColumn("Actions", width = 142.dp, align = BrAlign.End) { period ->
+            BrColumn(str(S.status), width = 96.dp) { period -> BrBadge(period.status.label, period.status.tone) },
+            BrColumn(str(S.desktop_signed_off_caps), weight = 1.2f) { period -> SignedOffCell(period) },
+            BrColumn(str(S.dd_actions), width = 142.dp, align = BrAlign.End) { period ->
                 if (!selecting) RowActions(period, onEvent, viewOpensDetail = true)
             },
         ),
@@ -196,7 +204,7 @@ internal fun SignedOffCell(period: BankPeriod, showDate: Boolean = true) {
     }
     Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
         ZillitText(
-            person?.name ?: "Signed off",
+            person?.name ?: str(S.desktop_signed_off),
             style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
         )
@@ -217,7 +225,7 @@ internal fun RowActions(period: BankPeriod, onEvent: (BankRecEvent) -> Unit, vie
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         if (period.isDeletable) {
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 onClick = { onEvent(BankRecEvent.AskDeletePeriods(listOf(period.id))) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -225,13 +233,13 @@ internal fun RowActions(period: BankPeriod, onEvent: (BankRecEvent) -> Unit, vie
         }
         if (period.isOpen) {
             ZillitButton(
-                text = "Open",
+                text = str(S.recce_open),
                 onClick = { onEvent(BankRecEvent.OpenPeriod(period.id)) },
                 size = ButtonSize.Small,
             )
         } else {
             ZillitButton(
-                text = "View",
+                text = str(S.view),
                 onClick = {
                     onEvent(
                         if (viewOpensDetail) {

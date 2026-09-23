@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.ui.SidesEvent
 import com.zillit.desktop.feature.sides.ui.SidesPdfView
 import com.zillit.desktop.feature.sides.ui.components.SidesLoader
@@ -61,13 +63,21 @@ internal fun SidesPdfOverlay(view: SidesPdfView, canDownload: Boolean, onEvent: 
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         ZillitIcon(icon = ZillitIcons.Info, tint = colors.accentText, size = 14.dp)
-                        ZillitText("Selection details", style = ZillitTheme.typography.label, color = colors.accentText)
+                        ZillitText(
+                            str(S.desktop_selection_details),
+                            style = ZillitTheme.typography.label,
+                            color = colors.accentText,
+                        )
                     }
                 }
             }
             if (!view.loading && view.url.isNotBlank()) {
                 ZillitButton(
-                    text = if (canDownload) "Open in browser" else "Open in browser (request access)",
+                    text = if (canDownload) {
+                        str(S.desktop_drive_open_in_browser)
+                    } else {
+                        str(S.desktop_open_in_browser_request_access)
+                    },
                     onClick = { onEvent(SidesEvent.PdfOpenExternal) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -75,7 +85,7 @@ internal fun SidesPdfOverlay(view: SidesPdfView, canDownload: Boolean, onEvent: 
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(SidesEvent.ClosePdf) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -88,7 +98,7 @@ internal fun SidesPdfOverlay(view: SidesPdfView, canDownload: Boolean, onEvent: 
                     ZillitText(view.error, style = ZillitTheme.typography.bodyMedium, color = Color.White)
                 }
                 view.notPdf -> NotPdf(canDownload, onEvent)
-                view.loading -> Centre { SidesLoader("Loading preview…") }
+                view.loading -> Centre { SidesLoader(str(S.desktop_loading_preview)) }
                 else -> PageStack(view)
             }
         }
@@ -109,20 +119,19 @@ private fun NotPdf(canDownload: Boolean, onEvent: (SidesEvent) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ZillitIcon(icon = ZillitIcons.Warning, tint = Color.White.copy(alpha = 0.8f), size = 40.dp)
-            ZillitText("Preview not available", style = ZillitTheme.typography.titleMedium, color = Color.White)
             ZillitText(
-                text = "This is a Final Draft (.fdx) or non-PDF file, which can’t be previewed here. " +
-                    if (canDownload) {
-                        "Download it to open in Final Draft, or open it in your browser."
-                    } else {
-                        "You do not have permission to download this file — request access from an admin to open it."
-                    },
+                str(S.desktop_preview_not_available),
+                style = ZillitTheme.typography.titleMedium,
+                color = Color.White,
+            )
+            ZillitText(
+                text = if (canDownload) str(S.desktop_sides_fdx_preview_hint) else str(S.desktop_sides_fdx_no_download),
                 style = ZillitTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.8f),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ZillitButton(
-                    text = if (canDownload) "Download" else "Request download access",
+                    text = if (canDownload) str(S.download) else str(S.desktop_request_download_access),
                     onClick = { onEvent(SidesEvent.PdfDownload) },
                     size = ButtonSize.Small,
                     leadingIcon = if (canDownload) ZillitIcons.Download else ZillitIcons.Lock,
@@ -145,7 +154,7 @@ private fun PageStack(view: SidesPdfView) {
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap,
-                    contentDescription = "Page ${page.page + 1}",
+                    contentDescription = str(S.desktop_page_n, page.page + 1),
                     modifier = Modifier.fillMaxWidth().widthIn(max = 900.dp),
                 )
             }

@@ -155,7 +155,8 @@ internal fun parseCity(obj: JsonObject?): MapCity? {
     )
 }
 
-internal fun parseTypes(data: JsonElement?): List<LocationType> = data.items().mapNotNull { parseType(it as? JsonObject) }
+internal fun parseTypes(data: JsonElement?): List<LocationType> =
+    data.items().mapNotNull { parseType(it as? JsonObject) }
 
 internal fun parseType(obj: JsonObject?): LocationType? {
     if (obj == null || obj.isDeleted()) return null

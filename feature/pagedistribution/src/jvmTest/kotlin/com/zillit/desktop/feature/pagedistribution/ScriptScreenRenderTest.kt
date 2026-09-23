@@ -156,8 +156,8 @@ class ScriptScreenRenderTest {
             onNodeWithText("2").assertExists()
             onNodeWithText("Search by scene number").assertExists()
             onNodeWithText("Search by episode").assertExists()
-            onNodeWithText("Search by colour").assertExists()
-            onNodeWithText("Upload page").assertExists()
+            onNodeWithText("Search by color").assertExists()
+            onNodeWithText("Upload Page").assertExists()
             onNodeWithText("13A").performClick()
             assertEquals(listOf<DistributionEvent>(DistributionEvent.OpenFolder("13A")), events)
         }
@@ -208,8 +208,8 @@ class ScriptScreenRenderTest {
                 }
             }
             onNodeWithText("Scene No : 12  ·  1 page").assertExists()
-            onNodeWithText("Scene number:").assertExists()
-            onNodeWithText("Page Number:").assertExists()
+            onNodeWithText("Scene Number:").assertExists()
+            onNodeWithText("Page number:").assertExists()
             onNodeWithText("Page Date:").assertExists()
             onNodeWithText("Upload here").assertExists()
             onNodeWithText("More +").performClick()
@@ -268,9 +268,9 @@ class ScriptScreenRenderTest {
             onNodeWithText("Starts with a number, up to 15 characters.").assertExists()
             onNodeWithText("Page Number (Optional)").assertExists()
             onNodeWithText("Page date (Optional)").assertExists()
-            onNodeWithText("Episode number *").assertExists()
+            onNodeWithText("Episode Number *").assertExists()
             onNodeWithText("Select a color (Optional)").assertExists()
-            onNodeWithText("White").assertExists()
+            onNodeWithText("WHITE").assertExists()
         }
     }
 
@@ -299,7 +299,7 @@ class ScriptScreenRenderTest {
 
     @Test
     fun `the scene rule is the web's`() {
-        assertEquals("Scene number is required", sceneProblem("  "))
+        assertEquals("Scene number is required.", sceneProblem("  "))
         assertEquals("Scene Number should start with a number", sceneProblem("A1"))
         assertEquals("Scene Number not greater than 15 characters", sceneProblem("1234567890123456"))
         assertNull(sceneProblem("12A"))

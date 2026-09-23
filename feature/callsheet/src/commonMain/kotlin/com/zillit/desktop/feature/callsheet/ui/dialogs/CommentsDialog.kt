@@ -64,6 +64,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.ui.editor.ReadOnlySheet
 import com.zillit.desktop.feature.callsheet.domain.SheetComment
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
@@ -93,7 +95,7 @@ import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
 internal fun CommentsDialog(state: SheetUiState, dialog: SheetDialog.Comments, onEvent: (SheetEvent) -> Unit) {
     val colors = SheetTheme.colors
     SheetModal(
-        title = "Comments - ${dialog.sheetName.ifBlank { "Call Sheet" }}",
+        title = "Comments - ${dialog.sheetName.ifBlank { str(S.cs_app_name) }}",
         onClose = { onEvent(DialogEvent.Dismiss) },
         modifier = Modifier.fillMaxHeight(REVIEW_HEIGHT),
         width = 1380.dp,
@@ -133,7 +135,7 @@ internal fun CommentsDialog(state: SheetUiState, dialog: SheetDialog.Comments, o
                     Composer(dialog, onEvent, Modifier.padding(top = 12.dp))
                 } else {
                     Text(
-                        "Comments are closed on a call sheet approved for publishing.",
+                        str(S.desktop_cs_comments_closed_note),
                         style = sheetText(11.sp),
                         color = colors.textMuted,
                         modifier = Modifier.padding(top = 10.dp),
@@ -164,13 +166,13 @@ private fun PreviewPane(state: SheetUiState, dialog: SheetDialog.Comments, modif
                 ReadOnlySheet(preview, state.members, Modifier.widthIn(max = 1120.dp))
             }
             dialog.previewFailed -> Text(
-                "Couldn't load the preview.",
+                str(S.desktop_could_not_load_the_preview),
                 style = sheetText(14.sp),
                 color = colors.textSecondary,
                 modifier = Modifier.align(Alignment.Center),
             )
             else -> Text(
-                "Loading preview…",
+                str(S.desktop_loading_preview),
                 style = sheetText(14.sp),
                 color = colors.textSecondary,
                 modifier = Modifier.align(Alignment.Center),
@@ -195,7 +197,7 @@ private fun ThreadNote(loading: Boolean) {
         if (loading) {
             CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
             Text(
-                "Loading...",
+                str(S.loading_),
                 style = sheetText(13.sp),
                 color = colors.textMeta,
                 modifier = Modifier.padding(top = 10.dp),
@@ -213,7 +215,7 @@ private fun ThreadNote(loading: Boolean) {
                 )
             }
             Text(
-                "No comments yet.",
+                str(S.cs_no_comments),
                 style = sheetText(13.sp, FontWeight.Medium),
                 color = colors.textMeta,
                 modifier = Modifier.padding(top = 10.dp),
@@ -232,7 +234,7 @@ private fun CommentItem(
     val colors = SheetTheme.colors
     val isMe = state.me.isNotBlank() && comment.authorId == state.me
     val member = state.member(comment.authorId)
-    val name = member?.fullName?.ifBlank { null } ?: comment.authorName.ifBlank { "Unknown" }
+    val name = member?.fullName?.ifBlank { null } ?: comment.authorName.ifBlank { str(S.desktop_unknown) }
     val role = member?.designation?.ifBlank { null } ?: comment.authorRole
     val edited = comment.id in dialog.editedIds ||
         (comment.updatedOn != null && comment.createdOn != null && comment.updatedOn != comment.createdOn)
@@ -267,7 +269,7 @@ private fun CommentItem(
                     Text(formatDateTime(comment.createdOn), style = sheetText(10.sp), color = colors.textMuted)
                     if (edited) {
                         Text(
-                            "(edited)",
+                            str(S.edited),
                             style = sheetText(10.sp).copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
                             color = colors.textMuted,
                         )
@@ -334,14 +336,14 @@ private fun Bubble(
             dialog.confirmDeleteId == comment.id -> {
                 Text(comment.text, style = sheetText(13.sp, lineHeight = 21.sp), color = ink.copy(alpha = 0.6f))
                 Text(
-                    "Delete this comment?",
+                    str(S.desktop_delete_this_comment),
                     style = sheetText(12.sp, FontWeight.SemiBold),
                     color = colors.red,
                     modifier = Modifier.padding(top = 10.dp),
                 )
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SheetButton(
-                        "Cancel",
+                        str(S.cancel),
                         { onEvent(DialogEvent.CancelDeleteComment) },
                         kind = ButtonKind.Outline,
                         height = 26.dp,
@@ -349,7 +351,7 @@ private fun Bubble(
                         horizontalPadding = 10.dp,
                     )
                     SheetButton(
-                        "Delete",
+                        str(S.delete),
                         { onEvent(DialogEvent.ConfirmDeleteComment) },
                         kind = ButtonKind.Danger,
                         height = 26.dp,
@@ -394,7 +396,7 @@ private fun EditBox(dialog: SheetDialog.Comments, onEvent: (SheetEvent) -> Unit)
         )
         Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SheetButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.CancelCommentEdit) },
                 kind = ButtonKind.Ghost,
                 icon = ZillitIcons.Close,
@@ -404,7 +406,7 @@ private fun EditBox(dialog: SheetDialog.Comments, onEvent: (SheetEvent) -> Unit)
                 horizontalPadding = 8.dp,
             )
             SheetButton(
-                if (dialog.savingEdit) "Saving..." else "Save",
+                if (dialog.savingEdit) str(S.ah_saving) else str(S.save),
                 { onEvent(DialogEvent.SaveCommentEdit) },
                 kind = ButtonKind.Accent,
                 icon = ZillitIcons.Check,
@@ -444,7 +446,7 @@ private fun CommentActions(
         ) {
             Icon(
                 ZillitIcons.ChevronDown,
-                contentDescription = "Comment actions",
+                contentDescription = str(S.desktop_comment_actions),
                 tint = if (hovered) colors.accent else colors.textTertiary,
                 modifier = Modifier.size(12.dp),
             )
@@ -459,10 +461,10 @@ private fun CommentActions(
         ) {
             Column(Modifier.widthIn(min = 150.dp).padding(horizontal = 6.dp)) {
                 val entries = listOf(
-                    MenuEntry.Action("edit", "Edit", ZillitIcons.Edit, MenuTone.Primary, enabled = !deleting) {
+                    MenuEntry.Action("edit", str(S.edit), ZillitIcons.Edit, MenuTone.Primary, enabled = !deleting) {
                         onEvent(DialogEvent.StartCommentEdit(comment.id))
                     },
-                    MenuEntry.Action("delete", "Delete", ZillitIcons.Trash, MenuTone.Danger, enabled = !deleting) {
+                    MenuEntry.Action("delete", str(S.delete), ZillitIcons.Trash, MenuTone.Danger, enabled = !deleting) {
                         onEvent(DialogEvent.AskDeleteComment(comment.id))
                     },
                 )
@@ -538,7 +540,9 @@ private fun Composer(dialog: SheetDialog.Comments, onEvent: (SheetEvent) -> Unit
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.weight(1f).padding(vertical = 4.dp)) {
-            if (dialog.draft.isEmpty()) Text("Type a comment...", style = sheetText(14.sp), color = colors.textMuted)
+            if (dialog.draft.isEmpty()) {
+                Text(str(S.desktop_type_a_comment), style = sheetText(14.sp), color = colors.textMuted)
+            }
             BasicTextField(
                 value = dialog.draft,
                 onValueChange = { onEvent(DialogEvent.EditCommentDraft(it)) },
@@ -567,7 +571,12 @@ private fun Composer(dialog: SheetDialog.Comments, onEvent: (SheetEvent) -> Unit
             if (dialog.sending) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
             } else {
-                Icon(ZillitIcons.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(
+                    ZillitIcons.Send,
+                    contentDescription = str(S.send),
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
             }
         }
     }

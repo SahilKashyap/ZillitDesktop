@@ -20,6 +20,8 @@ import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
 import kotlinx.coroutines.flow.conflate
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The location library: three shortlists of folders, a gallery per folder,
@@ -144,7 +146,7 @@ class LocationViewModel(
             LocationEvent.PickFile -> guardPost { sendEffect(LocationEffect.PickFile) }
             is LocationEvent.FilePicked -> {
                 if (!event.file.isImage && !event.file.isVideo) {
-                    setState { copy(error = "Only images and videos are allowed") }
+                    setState { copy(error = str(S.only_video_image_allowed)) }
                 } else {
                     setState { copy(editor = seededEditor().copy(file = event.file)) }
                 }
@@ -315,7 +317,7 @@ class LocationViewModel(
         val open = s.gallery ?: return
         val records = open.records.filter { it.id in open.selected }
         if (records.isEmpty()) return
-        run("Moved to ${to.label}") { repository.move(records, s.status, to) }
+        run(str(S.desktop_email_moved_to, to.label)) { repository.move(records, s.status, to) }
     }
 
     private fun deleteSelected() {
@@ -324,11 +326,11 @@ class LocationViewModel(
         val open = s.gallery
         val uploaders = open?.records?.filter { it.id in ids }?.map { it.uploadedBy }.orEmpty()
         if (!s.viewer.mayDelete(uploaders)) {
-            setState { copy(confirmDelete = null, error = "Only an admin can delete other people's records") }
+            setState { copy(confirmDelete = null, error = str(S.desktop_location_admin_delete_only)) }
             return
         }
         setState { copy(confirmDelete = null) }
-        run("Deleted") { repository.delete(ids, s.status) }
+        run(str(S.drive_deleted_default)) { repository.delete(ids, s.status) }
     }
 
     private fun pdfSelected() {
@@ -353,11 +355,11 @@ class LocationViewModel(
 
     private fun download(record: LocationMedia) {
         if (!state.value.viewer.mayDownload) {
-            setState { copy(error = "You do not have download rights for Location") }
+            setState { copy(error = str(S.desktop_location_no_download_rights)) }
             return
         }
         val attachment = record.attachment ?: run {
-            setState { copy(error = "This record has no file to download") }
+            setState { copy(error = str(S.desktop_location_no_file_to_download)) }
             return
         }
         setState { copy(busy = true) }
@@ -366,7 +368,7 @@ class LocationViewModel(
                 is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
-                    sendEffect(LocationEffect.Notice("Saved to Downloads"))
+                    sendEffect(LocationEffect.Notice(str(S.docusign_signing_attachment_saved)))
                 }
             }
         }
@@ -382,10 +384,10 @@ class LocationViewModel(
     private fun saveProblem(editor: LocationEditor, status: LocationStatus): String? {
         val bare = editor.id == null && editor.file == null && editor.link.isBlank()
         return when {
-            editor.location.isBlank() -> "A location name is required"
-            bare && status != LocationStatus.Selected -> "A photo, video or link is required here"
+            editor.location.isBlank() -> str(S.desktop_location_name_required)
+            bare && status != LocationStatus.Selected -> str(S.desktop_location_media_required)
             editor.episodes.isNotBlank() && !editor.episodes.matches(EPISODES) ->
-                "Episodes are numbers separated by commas"
+                str(S.desktop_location_episodes_format)
             else -> null
         }
     }
@@ -409,7 +411,9 @@ class LocationViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, editor = null) }
-                    sendEffect(LocationEffect.Notice(if (id == null) "Location added" else "Location updated"))
+                    sendEffect(LocationEffect.Notice(
+                        str(if (id == null) S.desktop_location_added else S.desktop_location_updated),
+                    ))
                     val open = state.value.gallery
                     if (open != null) openGallery(open.pick)
                     refresh()
@@ -447,7 +451,7 @@ class LocationViewModel(
 
     private inline fun guardPost(block: () -> Unit) {
         if (state.value.viewer
-            .mayPost) block() else setState { copy(error = "You do not have posting rights for Location") }
+            .mayPost) block() else setState { copy(error = str(S.desktop_location_no_posting_rights)) }
     }
 
     private fun <T> ZillitResult<T>.orError(): T? = when (this) {

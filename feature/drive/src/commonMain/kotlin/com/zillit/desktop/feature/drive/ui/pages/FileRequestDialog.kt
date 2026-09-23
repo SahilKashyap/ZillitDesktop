@@ -23,6 +23,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Ask someone outside the production to send files into a folder.
@@ -38,19 +40,19 @@ internal fun FileRequestDialog(state: DriveUiState, onEvent: (DriveEvent) -> Uni
     if (!panel.open) return
 
     ZillitDialogShell(
-        title = "Request files",
-        subtitle = panel.folderName.takeIf { it.isNotBlank() }?.let { "Into $it" },
+        title = str(S.drive_request_files_title),
+        subtitle = panel.folderName.takeIf { it.isNotBlank() }?.let { str(S.desktop_drive_request_into, it) },
         icon = ZillitIcons.Upload,
         visible = true,
         onDismiss = { onEvent(DriveEvent.CloseFileRequests) },
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DriveEvent.CloseFileRequests) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Create link",
+                text = str(S.desktop_drive_create_link),
                 onClick = { onEvent(DriveEvent.SubmitFileRequest) },
                 enabled = panel.canSubmit,
                 loading = panel.submitting,
@@ -73,13 +75,13 @@ private fun NewRequestForm(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     ZillitTextField(
         value = panel.title,
         onValueChange = { onEvent(DriveEvent.FileRequestTitle(it)) },
-        placeholder = "What are you asking for? (e.g. Location stills)",
+        placeholder = str(S.desktop_drive_request_title_hint),
         modifier = Modifier.fillMaxWidth(),
     )
     ZillitTextField(
         value = panel.description,
         onValueChange = { onEvent(DriveEvent.FileRequestDescription(it)) },
-        placeholder = "Anything they should know (optional)",
+        placeholder = str(S.desktop_drive_request_note_hint),
         singleLine = false,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -88,7 +90,7 @@ private fun NewRequestForm(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "Expires in",
+            text = str(S.desktop_drive_expires_in),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -96,7 +98,7 @@ private fun NewRequestForm(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         // the exact hour a supplier's upload window shuts.
         listOf(7, 14, 30).forEach { days ->
             ZillitButton(
-                text = "$days days",
+                text = str(S.ah_days_format, days),
                 onClick = { onEvent(DriveEvent.FileRequestExpiry(days)) },
                 variant = if (panel.expiryDays == days) ButtonVariant.Secondary else ButtonVariant.Tertiary,
             )
@@ -106,12 +108,12 @@ private fun NewRequestForm(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         ZillitCheckbox(
             checked = panel.requireName,
             onCheckedChange = { onEvent(DriveEvent.FileRequestRequireName(it)) },
-            label = "Ask for their name",
+            label = str(S.desktop_drive_ask_for_name),
         )
         ZillitCheckbox(
             checked = panel.requireEmail,
             onCheckedChange = { onEvent(DriveEvent.FileRequestRequireEmail(it)) },
-            label = "Ask for their email",
+            label = str(S.desktop_drive_ask_for_email),
         )
     }
 }
@@ -126,19 +128,19 @@ private fun CreatedLink(request: DriveFileRequest, onEvent: (DriveEvent) -> Unit
     ) {
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = "Link ready — copied to your clipboard",
+                text = str(S.desktop_drive_link_ready_copied),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textPrimary,
             )
             ZillitText(
-                text = request.link.ifBlank { "(no address came back)" },
+                text = request.link.ifBlank { str(S.desktop_drive_no_address_returned) },
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
                 maxLines = 1,
             )
         }
         ZillitButton(
-            text = "Copy again",
+            text = str(S.desktop_drive_copy_again),
             onClick = { onEvent(DriveEvent.CopyFileRequest(request)) },
             variant = ButtonVariant.Secondary,
             enabled = request.link.isNotBlank(),
@@ -149,16 +151,16 @@ private fun CreatedLink(request: DriveFileRequest, onEvent: (DriveEvent) -> Unit
 @Composable
 private fun OpenRequests(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val panel = state.fileRequests
-    ZillitSectionLabel(text = "Open requests", modifier = Modifier.fillMaxWidth())
+    ZillitSectionLabel(text = str(S.desktop_drive_open_requests), modifier = Modifier.fillMaxWidth())
     when {
         panel.loading -> ZillitText(
-            text = "Loading…",
+            text = str(S.ah_loading),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
 
         panel.requests.isEmpty() -> ZillitText(
-            text = "Nothing open on this folder yet.",
+            text = str(S.desktop_drive_no_open_requests),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -188,16 +190,16 @@ private fun OpenRequests(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 // A revoked request keeps its row: it explains where a link
                 // that someone still holds has gone.
                 if (request.revoked) {
-                    ZillitStatusPill(label = "Revoked", tone = StatusTone.Rejected)
+                    ZillitStatusPill(label = str(S.desktop_drive_revoked), tone = StatusTone.Rejected)
                 } else {
                     ZillitButton(
-                        text = "Copy",
+                        text = str(S.copy),
                         onClick = { onEvent(DriveEvent.CopyFileRequest(request)) },
                         variant = ButtonVariant.Tertiary,
                         enabled = request.link.isNotBlank(),
                     )
                     ZillitButton(
-                        text = "Revoke",
+                        text = str(S.drive_link_revoke),
                         onClick = { onEvent(DriveEvent.RevokeFileRequest(request)) },
                         variant = ButtonVariant.Danger,
                     )

@@ -54,6 +54,8 @@ import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS
 import com.zillit.desktop.core.media.AttachMenu
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailSignature
@@ -97,9 +99,9 @@ internal fun ComposePane(
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
             FromRow(state.fromAddress)
-            RecipientRow(RecipientField.To, "To", state, onEvent, required = true)
-            RecipientRow(RecipientField.Cc, "Cc", state, onEvent)
-            RecipientRow(RecipientField.Bcc, "Bcc", state, onEvent)
+            RecipientRow(RecipientField.To, str(S.toText), state, onEvent, required = true)
+            RecipientRow(RecipientField.Cc, str(S.txtCC), state, onEvent)
+            RecipientRow(RecipientField.Bcc, str(S.txtBCC), state, onEvent)
             SubjectRow(state, onEvent)
 
             state.error?.let { message ->
@@ -114,7 +116,7 @@ internal fun ComposePane(
             RichTextEditor(
                 value = state.body,
                 onValueChange = { onEvent(ComposeEvent.BodyChanged(it)) },
-                placeholder = "Write your message…",
+                placeholder = str(S.dd_editor_placeholder),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = EDITOR_MIN_HEIGHT)
@@ -149,7 +151,7 @@ private fun ComposeToolbar(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitButton(
-            text = "Send",
+            text = str(S.send),
             leadingIcon = ZillitIcons.Send,
             onClick = { onEvent(ComposeEvent.Send) },
             enabled = !state.isSending,
@@ -162,12 +164,12 @@ private fun ComposeToolbar(
             AttachMenu(
                 kinds = ALL_ATTACHMENT_KINDS,
                 icon = ZillitIcons.Paperclip,
-                contentDescription = "Attach",
+                contentDescription = str(S.dd_action_attach),
                 onPick = { kind -> onEvent(ComposeEvent.PickFilesOf(kind)) },
             )
         }
         ZillitButton(
-            text = if (state.isSavingDraft) "Saving Draft…" else "Save as Draft",
+            text = str(if (state.isSavingDraft) S.docusign_saving_draft else S.txt_save_as_draft),
             leadingIcon = ZillitIcons.Save,
             variant = ButtonVariant.Tertiary,
             enabled = !state.isSavingDraft && !state.isSending,
@@ -178,7 +180,7 @@ private fun ComposeToolbar(
         Spacer(Modifier.weight(1f))
         if (onPopOut != null) {
             ZillitButton(
-                text = "Popout",
+                text = str(S.desktop_popout),
                 leadingIcon = ZillitIcons.Detach,
                 variant = ButtonVariant.Tertiary,
                 onClick = onPopOut,
@@ -206,7 +208,7 @@ private fun DiscardButton(onEvent: (ComposeEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitIcon(ZillitIcons.Trash, contentDescription = null, tint = colors.danger, size = TOOLBAR_ICON)
-        ZillitText(text = "Discard", style = ZillitTheme.typography.button, color = colors.danger)
+        ZillitText(text = str(S.ah_discard), style = ZillitTheme.typography.button, color = colors.danger)
     }
 }
 
@@ -219,7 +221,7 @@ private fun FromRow(address: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        FieldLabel("From")
+        FieldLabel(str(S.fromText))
         ZillitText(
             text = address.ifBlank { "—" },
             style = ZillitTheme.typography.bodyMedium,
@@ -228,10 +230,10 @@ private fun FromRow(address: String) {
             modifier = Modifier.weight(1f).testTag(FROM_TAG),
         )
         if (address.isNotBlank()) {
-            ZillitTooltip("Copy email") {
+            ZillitTooltip(str(S.dd_copy_email)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Copy,
-                    contentDescription = "Copy email",
+                    contentDescription = str(S.dd_copy_email),
                     onClick = { copyTextToClipboard(address) },
                     size = TOOLBAR_BUTTON,
                 )
@@ -337,7 +339,7 @@ private fun UnknownAddresses(tokens: List<String>, state: ComposeUiState, onEven
             ) {
                 ZillitIcon(ZillitIcons.UserPlus, contentDescription = null, tint = colors.accentText, size = CHIP_ICON)
                 ZillitText(
-                    text = "Add $address to contacts",
+                    text = str(S.desktop_email_add_address_to_contacts, address),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.accentText,
                 )
@@ -353,11 +355,11 @@ private fun SubjectRow(state: ComposeUiState, onEvent: (ComposeEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        FieldLabel("Subject")
+        FieldLabel(str(S.subject))
         ZillitTextField(
             value = state.draft.subject,
             onValueChange = { if (it.length <= SUBJECT_LIMIT) onEvent(ComposeEvent.SubjectChanged(it)) },
-            placeholder = "Subject",
+            placeholder = str(S.subject),
             modifier = Modifier.weight(1f).testTag(SUBJECT_TAG),
         )
     }
@@ -434,7 +436,9 @@ private fun QuotedOriginal(state: ComposeUiState, onEvent: (ComposeEvent) -> Uni
                 size = CHIP_ICON,
             )
             ZillitText(
-                text = if (state.quoteExpanded) "Quoted message" else "Show quoted message",
+                text = str(
+                    if (state.quoteExpanded) S.desktop_email_quoted_message else S.desktop_email_show_quoted_message,
+                ),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textSecondary,
             )
@@ -496,7 +500,7 @@ private fun FileChip(name: String, caption: String, failed: Boolean, onRemove: (
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Remove $name",
+            contentDescription = str(S.bs_chip_remove, name),
             onClick = onRemove,
             size = TOOLBAR_BUTTON,
         )
@@ -505,8 +509,8 @@ private fun FileChip(name: String, caption: String, failed: Boolean, onRemove: (
 
 /** A settled attachment shows its size; an unsettled one says so. */
 private fun OutgoingAttachment.status(): String = when (val current = state) {
-    UploadState.Pending -> "Waiting…"
-    is UploadState.InProgress -> "Uploading… ${current.percent}%"
+    UploadState.Pending -> str(S.desktop_email_waiting)
+    is UploadState.InProgress -> str(S.desktop_email_uploading_percent, current.percent)
     is UploadState.Uploaded -> readableSize
     is UploadState.Failed -> current.reason
 }
@@ -536,14 +540,14 @@ private fun SignatureRow(state: ComposeUiState, onEvent: (ComposeEvent) -> Unit)
             ZillitIcon(ZillitIcons.Signature, contentDescription = null, tint = colors.textMuted, size = CHIP_ICON)
             Spacer(Modifier.width(ZillitTheme.spacing.xs))
             ZillitText(
-                text = "Signature",
+                text = str(S.signature_txt),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textMuted,
                 modifier = Modifier.weight(1f),
             )
             Box {
                 ZillitButton(
-                    text = state.signature?.title ?: "No signature",
+                    text = state.signature?.title ?: str(S.desktop_email_no_signature),
                     trailingIcon = ZillitIcons.ChevronDown,
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -555,7 +559,7 @@ private fun SignatureRow(state: ComposeUiState, onEvent: (ComposeEvent) -> Unit)
                     onDismissRequest = { open = false },
                     entries = buildList {
                         add(
-                            ZillitMenuEntry.Action("No signature", ZillitIcons.Minus) {
+                            ZillitMenuEntry.Action(str(S.desktop_email_no_signature), ZillitIcons.Minus) {
                                 onEvent(ComposeEvent.SignatureChosen(null))
                             },
                         )
@@ -568,7 +572,7 @@ private fun SignatureRow(state: ComposeUiState, onEvent: (ComposeEvent) -> Unit)
                         }
                         add(ZillitMenuEntry.Divider)
                         add(
-                            ZillitMenuEntry.Action("Manage signatures…", ZillitIcons.Settings) {
+                            ZillitMenuEntry.Action(str(S.desktop_email_manage_signatures), ZillitIcons.Settings) {
                                 onEvent(ComposeEvent.ManageSignatures)
                             },
                         )
@@ -591,9 +595,9 @@ private fun SignaturePreview(signature: EmailSignature) {
 @Composable
 private fun SubjectlessDialog(sending: Boolean, onEvent: (ComposeEvent) -> Unit) {
     ModalCard(onDismiss = { onEvent(ComposeEvent.DismissSubjectless) }) {
-        ZillitText(text = "Subject", style = ZillitTheme.typography.titleMedium)
+        ZillitText(text = str(S.subject), style = ZillitTheme.typography.titleMedium)
         ZillitText(
-            text = "Do you want to send the email without a subject?",
+            text = str(S.desktop_email_send_without_subject),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -602,12 +606,12 @@ private fun SubjectlessDialog(sending: Boolean, onEvent: (ComposeEvent) -> Unit)
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Don't Send",
+                text = str(S.desktop_email_dont_send),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(ComposeEvent.DismissSubjectless) },
             )
             ZillitButton(
-                text = "Send Anyway",
+                text = str(S.dd_action_send_anyway),
                 loading = sending,
                 enabled = !sending,
                 onClick = { onEvent(ComposeEvent.SendAnyway) },

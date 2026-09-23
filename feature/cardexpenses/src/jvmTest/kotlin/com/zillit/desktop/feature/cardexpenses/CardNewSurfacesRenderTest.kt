@@ -96,7 +96,7 @@ class CardNewSurfacesRenderTest {
             cardDetail = CardDetail(cardId = "card-1"),
         ),
     ) {
-        onNodeWithText("Edit details").assertIsDisplayed()
+        onNodeWithText("Edit Details").assertIsDisplayed()
         onNodeWithText("Delete request").assertIsDisplayed()
     }
 
@@ -136,7 +136,7 @@ class CardNewSurfacesRenderTest {
             coding = CodingDraft("receipt-1", nominalCode = "4100"),
         ),
     ) {
-        onNodeWithText("Save draft").assertIsDisplayed()
+        onNodeWithText("Save Draft").assertIsDisplayed()
         onNodeWithText("Save and send").assertIsDisplayed()
         onNodeWithText("Code and approve").assertIsDisplayed()
     }
@@ -168,7 +168,7 @@ class CardNewSurfacesRenderTest {
             draft = listOf(DraftCardReceipt()),
         ),
     ) {
-        onNodeWithText("Upload receipts").assertIsDisplayed()
+        onNodeWithText("Upload Receipts").assertIsDisplayed()
     }
 
     // -- settings -------------------------------------------------------------
@@ -179,7 +179,7 @@ class CardNewSurfacesRenderTest {
     ) {
         // The page scrolls, so the lower sections are in the tree rather than
         // on screen — which is what this test is checking for.
-        onNodeWithText("Accounts team").assertIsDisplayed()
+        onNodeWithText("Accounts Team").assertIsDisplayed()
         onNodeWithText("Department coordinators").assertExists()
         onNodeWithText("Approval rules").assertExists()
         onNodeWithText("Card providers").assertExists()

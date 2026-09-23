@@ -15,6 +15,8 @@ import com.zillit.desktop.core.designsystem.ZillitColors
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -39,7 +41,7 @@ class MapToolProvider(
 ) : ToolProvider {
 
     override val path: String = MAP_PATH
-    override val title: String = "Map"
+    override val title: String get() = str(S.map)
     override val icon = ZillitToolIcons.Location
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

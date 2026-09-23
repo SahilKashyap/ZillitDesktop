@@ -21,6 +21,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
 
@@ -42,13 +44,13 @@ fun CallDetailDialog(
 ) {
     val title = entry.displayTitle(nameFor)
     ZillitDialogShell(
-        title = "Call activity",
+        title = str(S.txt_call_activity),
         subtitle = entry.detailSubtitle(),
         icon = ZillitIcons.Phone,
         onDismiss = onDismiss,
         visible = true,
         actions = {
-            ZillitButton(text = "Close", onClick = onDismiss, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.close), onClick = onDismiss, variant = ButtonVariant.Tertiary)
         },
     ) {
         Row(
@@ -155,7 +157,7 @@ private fun ParticipantRow(row: CallDetailParticipant) {
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
                 ZillitText(text = row.name, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
-                if (row.isGuest) ZillitTag("Guest", tone = TagTone.Neutral)
+                if (row.isGuest) ZillitTag(str(S.txt_badge_guest), tone = TagTone.Neutral)
             }
             listOfNotNull(row.subLabel, row.meta).takeIf { it.isNotEmpty() }?.let { lines ->
                 ZillitText(
@@ -172,10 +174,10 @@ private fun ParticipantRow(row: CallDetailParticipant) {
 
 /** The badge's colour says what the word says: green in, red missed, grey gone. */
 private fun badgeTone(badge: String): TagTone = when (badge) {
-    "Host" -> TagTone.Accent
-    "In call" -> TagTone.Success
-    "Missed", "Declined" -> TagTone.Danger
-    "Ringing" -> TagTone.Warning
+    str(S.host_txt) -> TagTone.Accent
+    str(S.txt_badge_in_call) -> TagTone.Success
+    str(S.missed), str(S.declined_events) -> TagTone.Danger
+    str(S.txt_ringing) -> TagTone.Warning
     else -> TagTone.Neutral
 }
 

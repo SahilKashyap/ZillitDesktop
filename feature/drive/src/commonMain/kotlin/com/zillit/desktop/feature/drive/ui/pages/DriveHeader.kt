@@ -63,6 +63,8 @@ import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.DriveViewMode
 import com.zillit.desktop.feature.drive.ui.refs
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The header panel — `DriveHeader.jsx` plus `DriveToolbar.jsx`: the two
@@ -93,8 +95,7 @@ internal fun DriveHeaderPanel(
         }
         if (state.viewer.ready && !state.viewer.canCreate && state.section == DriveSection.MyDrive) {
             ZillitNotice(
-                text = "You can browse this drive but cannot upload to it or create folders. " +
-                    "Ask an administrator for posting rights on the Drive.",
+                text = str(S.desktop_drive_no_posting_notice),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )
@@ -119,7 +120,7 @@ private fun SectionTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit, onOp
             ZillitIcon(icon = ZillitIcons.Drive, tint = ZillitTheme.colors.accent, size = ZillitTheme.spacing.lg)
         }
         ZillitText(
-            text = "Drive",
+            text = str(S.txt_drive),
             style = ZillitTheme.typography.titleMedium,
             modifier = Modifier.padding(end = ZillitTheme.spacing.md),
         )
@@ -134,7 +135,7 @@ private fun SectionTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit, onOp
         Box(Modifier.weight(1f))
         if (onOpenWidget != null) {
             ZillitButton(
-                text = "Widget",
+                text = str(S.desktop_widget),
                 onClick = onOpenWidget,
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -142,7 +143,7 @@ private fun SectionTabs(state: DriveUiState, onEvent: (DriveEvent) -> Unit, onOp
             )
         }
         ZillitButton(
-            text = "Refresh",
+            text = str(S.refresh_text),
             onClick = { onEvent(DriveEvent.Refresh) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -243,7 +244,7 @@ private fun TrashCrumb(state: DriveUiState) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitIcon(icon = ZillitIcons.Trash, tint = ZillitTheme.colors.danger, size = ZillitTheme.spacing.lg)
-        ZillitText(text = "Trash", style = ZillitTheme.typography.titleSmall)
+        ZillitText(text = str(S.trash_text), style = ZillitTheme.typography.titleSmall)
         ZillitText(
             text = "· ${state.trash.items.size}",
             style = ZillitTheme.typography.bodySmall,
@@ -260,7 +261,7 @@ private fun SearchCrumb(state: DriveUiState) {
     ) {
         ZillitIcon(icon = ZillitIcons.Search, tint = ZillitTheme.colors.accent, size = ZillitTheme.spacing.lg)
         ZillitText(
-            text = "Search results for",
+            text = str(S.desktop_drive_search_results_for),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -297,7 +298,7 @@ private fun Breadcrumb(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         if (state.breadcrumb.isNotEmpty()) {
             ZillitIconButton(
                 icon = ZillitIcons.ArrowLeft,
-                contentDescription = "Back",
+                contentDescription = str(S.back),
                 onClick = { onEvent(DriveEvent.GoBack) },
             )
         }
@@ -379,7 +380,7 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             ZillitSearchField(
                 value = state.searchInput,
                 onValueChange = { onEvent(DriveEvent.SearchInput(it)) },
-                placeholder = "Search files & folders…",
+                placeholder = str(S.dd_search_files_folders),
                 modifier = Modifier.width(SEARCH_WIDTH),
             )
         }
@@ -394,19 +395,21 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                     modifier = Modifier.width(FILTER_WIDTH),
                 )
             }
-            ZillitTooltip(text = if (state.showFavouritesOnly) "Show all" else "Show favourites") {
+            val favouritesTip =
+                if (state.showFavouritesOnly) str(S.ds_sent_filter_show_all) else str(S.desktop_drive_show_favourites)
+            ZillitTooltip(text = favouritesTip) {
                 ToggleIcon(
                     icon = if (state.showFavouritesOnly) ZillitIcons.StarFilled else ZillitIcons.StarOutline,
-                    description = "Favourites filter",
+                    description = str(S.desktop_drive_favourites_filter),
                     active = state.showFavouritesOnly,
                     activeTint = ZillitTheme.colors.gold,
                     onClick = { onEvent(DriveEvent.ShowFavouritesOnly(!state.showFavouritesOnly)) },
                 )
             }
-            ZillitTooltip(text = "Activity log") {
+            ZillitTooltip(text = str(S.desktop_drive_activity_log)) {
                 ToggleIcon(
                     icon = ZillitIcons.Clock,
-                    description = "Activity log",
+                    description = str(S.desktop_drive_activity_log),
                     active = false,
                     activeTint = ZillitTheme.colors.accent,
                     onClick = { onEvent(DriveEvent.OpenActivityLog) },
@@ -415,22 +418,22 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             if (state.tags.isNotEmpty()) TagFilter(state.tags, state.tagFilterId, onEvent)
             if (state.canCreateHere) {
                 ZillitButton(
-                    text = "Upload",
+                    text = str(S.upload),
                     onClick = { onEvent(DriveEvent.OpenUpload) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Upload,
                 )
                 ZillitButton(
-                    text = "Create folder",
+                    text = str(S.dd_empty_create_cta),
                     onClick = { onEvent(DriveEvent.OpenNewFolder) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.FolderPlus,
                 )
                 if (state.folderId != null) {
-                    ZillitTooltip(text = "Generate a public link people can use to upload files into this folder.") {
+                    ZillitTooltip(text = str(S.desktop_drive_request_files_tooltip)) {
                         ZillitButton(
-                            text = "Request files",
+                            text = str(S.drive_request_files_title),
                             onClick = { onEvent(DriveEvent.OpenFileRequestsHere) },
                             variant = ButtonVariant.Secondary,
                             size = ButtonSize.Small,
@@ -440,10 +443,11 @@ private fun Actions(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 }
             }
         }
-        ZillitTooltip(text = if (state.showTrash) "Close trash" else "View trash") {
+        val trashTip = if (state.showTrash) str(S.desktop_drive_close_trash) else str(S.desktop_drive_view_trash)
+        ZillitTooltip(text = trashTip) {
             ToggleIcon(
                 icon = ZillitIcons.Trash,
-                description = "Trash",
+                description = str(S.trash_text),
                 active = state.showTrash,
                 activeTint = ZillitTheme.colors.danger,
                 onClick = { onEvent(DriveEvent.ShowTrash(!state.showTrash)) },
@@ -513,12 +517,12 @@ private fun ToggleIcon(
 /** The tag filter — a select of the project's tags, "Tag" when none is chosen. */
 @Composable
 private fun TagFilter(tags: List<DriveTag>, tagFilterId: String?, onEvent: (DriveEvent) -> Unit) {
-    val none = DriveTag(id = "", name = "Tag")
+    val none = DriveTag(id = "", name = str(S.desktop_drive_tag))
     ZillitSelect(
         value = tags.firstOrNull { it.id == tagFilterId } ?: none,
         options = listOf(none) + tags,
         onSelect = { onEvent(DriveEvent.FilterByTag(it.id.takeIf { id -> id.isNotBlank() })) },
-        label = { if (it.id.isBlank()) "Tag" else "# ${it.name}" },
+        label = { if (it.id.isBlank()) str(S.desktop_drive_tag) else "# ${it.name}" },
         modifier = Modifier.width(TAG_WIDTH),
     )
 }
@@ -543,12 +547,16 @@ private fun BulkBar(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitStatusPill(
-            label = "$selected item${if (selected == 1) "" else "s"} selected",
+            label = if (selected == 1) {
+                str(S.desktop_drive_items_selected_one)
+            } else {
+                str(S.desktop_drive_items_selected_many, selected)
+            },
             tone = StatusTone.Pending,
         )
         if (state.deletableCount > 0) {
             ZillitButton(
-                text = bulkLabel("Delete", state.deletableCount, selected),
+                text = bulkLabel(str(S.delete), state.deletableCount, selected),
                 onClick = { onEvent(DriveEvent.RequestDelete(state.selectedItems.refs())) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -557,7 +565,7 @@ private fun BulkBar(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         }
         if (state.movableCount > 0) {
             ZillitButton(
-                text = bulkLabel("Move to…", state.movableCount, selected),
+                text = bulkLabel(str(S.drive_move_to_ellipsis), state.movableCount, selected),
                 onClick = { onEvent(DriveEvent.OpenMoveSelection) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -566,7 +574,7 @@ private fun BulkBar(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         }
         if (state.downloadableCount > 0) {
             ZillitButton(
-                text = bulkLabel("Download", state.downloadableCount, selected),
+                text = bulkLabel(str(S.download), state.downloadableCount, selected),
                 onClick = { onEvent(DriveEvent.DownloadSelection) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -575,7 +583,7 @@ private fun BulkBar(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         }
         Box(Modifier.weight(1f))
         ZillitButton(
-            text = "Clear",
+            text = str(S.ah_clear),
             onClick = { onEvent(DriveEvent.ClearSelection) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -586,7 +594,7 @@ private fun BulkBar(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
 
 /** "Delete 17 of 20" when some rows are not the viewer's to touch. */
 private fun bulkLabel(verb: String, eligible: Int, selected: Int): String =
-    if (eligible == selected) verb else "$verb ($eligible of $selected)"
+    if (eligible == selected) verb else str(S.desktop_drive_bulk_label, verb, eligible, selected)
 
 /**
  * Folders / Files under the header — `DriveInnerTabs`, shown only at the

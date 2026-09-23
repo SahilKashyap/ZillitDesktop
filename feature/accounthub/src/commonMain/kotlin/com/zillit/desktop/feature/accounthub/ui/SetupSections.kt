@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.DayType
 import com.zillit.desktop.feature.accounthub.domain.DayTypes
@@ -29,7 +31,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
         val refusal = when (section) {
             SetupSection.Currencies -> setup.currencies.edited.validationError()
             SetupSection.TaxTypes -> TaxType.problem(setup.taxTypes.edited)
-            SetupSection.Schedule -> "Fix the schedule dates before saving."
+            SetupSection.Schedule -> str(S.desktop_hub_fix_the_schedule_dates_before_saving)
                 .takeIf { ScheduleRules.hasErrors(setup.schedule.edited.toDomain()) }
             else -> null
         }
@@ -40,28 +42,28 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 call = { vm.repo.saveCompanies(Companies.forWire(setup.companies.edited, setup.banks)) },
                 done = { rows -> copy(setup = this.setup.copy(companies = this.setup.companies.committed(rows))) },
                 failed = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = false))) },
-                notice = "Companies saved.",
+                notice = str(S.desktop_companies_saved),
             )
             SetupSection.Currencies -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(currencies = this.setup.currencies.copy(saving = true))) },
                 call = { vm.repo.saveCurrencies(setup.currencies.edited) },
                 done = { value -> copy(setup = this.setup.copy(currencies = this.setup.currencies.committed(value))) },
                 failed = { copy(setup = this.setup.copy(currencies = this.setup.currencies.copy(saving = false))) },
-                notice = "Currencies saved.",
+                notice = str(S.desktop_currencies_saved),
             )
             SetupSection.TaxTypes -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.copy(saving = true))) },
                 call = { vm.repo.saveTaxTypes(setup.taxTypes.edited) },
                 done = { rows -> copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.committed(rows))) },
                 failed = { copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.copy(saving = false))) },
-                notice = "Tax types saved.",
+                notice = str(S.desktop_tax_types_saved),
             )
             SetupSection.AssetTags -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(assetTags = this.setup.assetTags.copy(saving = true))) },
                 call = { vm.repo.saveAssetTags(setup.assetTags.edited) },
                 done = { tags -> copy(setup = this.setup.copy(assetTags = this.setup.assetTags.committed(tags))) },
                 failed = { copy(setup = this.setup.copy(assetTags = this.setup.assetTags.copy(saving = false))) },
-                notice = "Asset tags saved.",
+                notice = str(S.desktop_asset_tags_saved),
             )
             SetupSection.Budget -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(budget = this.setup.budget.copy(saving = true))) },
@@ -70,7 +72,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                     copy(setup = this.setup.copy(budget = this.setup.budget.committed(BudgetForm.from(value))))
                 },
                 failed = { copy(setup = this.setup.copy(budget = this.setup.budget.copy(saving = false))) },
-                notice = "Budget saved.",
+                notice = str(S.desktop_budget_saved),
             )
             SetupSection.Schedule -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(schedule = this.setup.schedule.copy(saving = true))) },
@@ -79,7 +81,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                     copy(setup = this.setup.copy(schedule = this.setup.schedule.committed(ScheduleForm.from(value))))
                 },
                 failed = { copy(setup = this.setup.copy(schedule = this.setup.schedule.copy(saving = false))) },
-                notice = "Schedule saved.",
+                notice = str(S.desktop_schedule_saved),
             )
             SetupSection.PayrollDefaults -> vm.commitSection(
                 marking = {
@@ -92,7 +94,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 failed = {
                     copy(setup = this.setup.copy(payrollDefaults = this.setup.payrollDefaults.copy(saving = false)))
                 },
-                notice = "Payroll defaults saved.",
+                notice = str(S.desktop_payroll_defaults_saved),
             )
             SetupSection.DealConditions -> vm.commitSection(
                 marking = {
@@ -108,7 +110,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 failed = {
                     copy(setup = this.setup.copy(dealConditions = this.setup.dealConditions.copy(saving = false)))
                 },
-                notice = "Deal conditions saved.",
+                notice = str(S.desktop_deal_conditions_saved),
             )
             SetupSection.PayrollBureaus -> vm.commitSection(
                 marking = {
@@ -121,14 +123,14 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 failed = {
                     copy(setup = this.setup.copy(payrollBureaus = this.setup.payrollBureaus.copy(saving = false)))
                 },
-                notice = "Payroll bureaus saved.",
+                notice = str(S.desktop_payroll_bureaus_saved),
             )
             SetupSection.Allowances -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(allowances = this.setup.allowances.copy(saving = true))) },
                 call = { vm.repo.saveAllowancesRentals(setup.allowances.edited) },
                 done = { value -> copy(setup = this.setup.copy(allowances = this.setup.allowances.committed(value))) },
                 failed = { copy(setup = this.setup.copy(allowances = this.setup.allowances.copy(saving = false))) },
-                notice = "Allowances and rentals saved.",
+                notice = str(S.desktop_hub_allowances_and_rentals_saved),
             )
             SetupSection.PayrollSettings -> vm.commitSection(
                 marking = {
@@ -141,14 +143,14 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 failed = {
                     copy(setup = this.setup.copy(payrollSettings = this.setup.payrollSettings.copy(saving = false)))
                 },
-                notice = "Payroll settings saved.",
+                notice = str(S.desktop_payroll_settings_saved),
             )
             SetupSection.PoSetup -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(poSetup = this.setup.poSetup.copy(saving = true))) },
                 call = { vm.repo.savePurchaseOrderSetup(setup.poSetup.edited) },
                 done = { value -> copy(setup = this.setup.copy(poSetup = this.setup.poSetup.committed(value))) },
                 failed = { copy(setup = this.setup.copy(poSetup = this.setup.poSetup.copy(saving = false))) },
-                notice = "Purchase order settings saved.",
+                notice = str(S.desktop_hub_purchase_order_settings_saved),
             )
             SetupSection.InvoicesSetup -> vm.commitSection(
                 marking = {
@@ -161,7 +163,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 failed = {
                     copy(setup = this.setup.copy(invoicesSetup = this.setup.invoicesSetup.copy(saving = false)))
                 },
-                notice = "Invoice settings saved.",
+                notice = str(S.desktop_invoice_settings_saved),
             )
             SetupSection.NonUnionPay -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(nonUnionPay = this.setup.nonUnionPay.copy(saving = true))) },
@@ -170,7 +172,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                     copy(setup = this.setup.copy(nonUnionPay = this.setup.nonUnionPay.committed(value)))
                 },
                 failed = { copy(setup = this.setup.copy(nonUnionPay = this.setup.nonUnionPay.copy(saving = false))) },
-                notice = "Pay rules saved.",
+                notice = str(S.desktop_pay_rules_saved),
             )
             // Its own endpoint, and its own save: editing a day type must not
             // re-save the pay rules it is rendered inside.
@@ -194,7 +196,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 copy(setup = this.setup.copy(dayTypes = this.setup.dayTypes.committed(DayTypes.seeded(saved))))
             },
             failed = { copy(setup = this.setup.copy(dayTypes = this.setup.dayTypes.copy(saving = false))) },
-            notice = "Day types saved.",
+            notice = str(S.desktop_day_types_saved),
         )
     }
 

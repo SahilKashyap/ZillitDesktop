@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.bankrec.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.FxPosting
 import com.zillit.desktop.feature.bankrec.domain.FxRates
 import com.zillit.desktop.feature.bankrec.domain.FxVariance
@@ -77,7 +79,7 @@ internal class FxActions(private val vm: BankRecViewModel) {
     private fun post() {
         val dialog = page.post ?: return
         if (dialog.posting || dialog.posted) return
-        if (!dialog.ready) return vm.refuse("Enter both rates to post.")
+        if (!dialog.ready) return vm.refuse(str(S.desktop_br_enter_both_rates))
         edit { copy(post = dialog.copy(posting = true)) }
         val posting = FxPosting(
             nominalCode = dialog.nominalCode.trim(),
@@ -108,7 +110,7 @@ internal class FxActions(private val vm: BankRecViewModel) {
         if (unposted.isEmpty()) return
         val blocking = unposted.filterNot { FxRates.resolve(it, rates).ok }
         if (blocking.isNotEmpty()) {
-            return vm.refuse("Some rows are missing a budget or bank rate.")
+            return vm.refuse(str(S.desktop_br_missing_rates))
         }
         edit { copy(postingAll = true, postAllMessage = null) }
         vm.launchWork {
@@ -133,9 +135,9 @@ internal class FxActions(private val vm: BankRecViewModel) {
                 copy(
                     postingAll = false,
                     postAllMessage = if (failed > 0) {
-                        "Posted $posted of ${unposted.size} — $failed failed"
+                        str(S.desktop_br_posted_of_failed, posted, unposted.size, failed)
                     } else {
-                        "Posted $posted of ${unposted.size}"
+                        str(S.desktop_br_posted_of, posted, unposted.size)
                     },
                 )
             }

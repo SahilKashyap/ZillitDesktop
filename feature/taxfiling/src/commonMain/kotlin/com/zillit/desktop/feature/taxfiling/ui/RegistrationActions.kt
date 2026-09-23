@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.taxfiling.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.RegistrationRequest
 import com.zillit.desktop.feature.taxfiling.domain.SupportedFiling
 import com.zillit.desktop.feature.taxfiling.domain.TaxFilingRoute
@@ -47,7 +49,7 @@ internal class RegistrationActions(private val vm: TaxFilingViewModel) {
         // One registration per company — the dialog only offers the free ones,
         // and a stale list must not register a company twice.
         if (state.registrations.any { it.companyId == draft.companyId }) {
-            return vm.info("That company is already registered.")
+            return vm.info(str(S.desktop_tax_already_registered))
         }
         val company = state.companies.firstOrNull { it.id == draft.companyId }
         val filing = (state.route as? TaxFilingRoute.Filing)?.supported ?: SupportedFiling.MtdVat
@@ -67,7 +69,12 @@ internal class RegistrationActions(private val vm: TaxFilingViewModel) {
             },
             {
                 vm.update { copy(draft = null) }
-                vm.toast("Registered ${company?.name?.takeIf { it.isNotBlank() } ?: "company"}")
+                vm.toast(
+                    str(
+                        S.desktop_tax_registered_named,
+                        company?.name?.takeIf { it.isNotBlank() } ?: str(S.desktop_company_lower),
+                    ),
+                )
                 vm.loadFiling()
             },
             { error ->
@@ -101,7 +108,7 @@ internal class RegistrationActions(private val vm: TaxFilingViewModel) {
                     returnState = if (closing) ReturnState() else returnState,
                 )
             }
-            vm.toast("Removed $name")
+            vm.toast(str(S.desktop_tax_removed_named, name))
             vm.loadFiling()
         }, { error ->
             vm.update { copy(removeInFlight = false) }
@@ -111,13 +118,18 @@ internal class RegistrationActions(private val vm: TaxFilingViewModel) {
 
     /** UK GDPR data portability: everything held for the registration, as JSON. */
     private fun export(registration: TaxRegistration) {
-        val sink = vm.fileSink ?: return vm.fail("This installation cannot save files.")
+        val sink = vm.fileSink ?: return vm.fail(str(S.desktop_cannot_save_files))
         val named = registration.named(vm.current.companies)
         vm.request({ vm.repository.exportRegistration(registration.id) }, { json ->
             vm.work {
                 when (val saved = sink.save(exportFileName(named), json.encodeToByteArray(), open = false)) {
                     is ZillitResult.Success ->
-                        vm.toast("Exported ${named.companyName.ifBlank { "company" }} data to Downloads")
+                        vm.toast(
+                            str(
+                                S.desktop_tax_exported_company_data,
+                                named.companyName.ifBlank { str(S.desktop_company_lower) },
+                            ),
+                        )
                     is ZillitResult.Failure -> vm.fail(saved.error)
                 }
             }
@@ -138,7 +150,7 @@ internal class RegistrationActions(private val vm: TaxFilingViewModel) {
         vm.request({ vm.repository.connectUrl(registration.id) }, { url ->
             if (url.isBlank()) {
                 vm.update { copy(connectingId = null) }
-                vm.fail("No connect URL returned")
+                vm.fail(str(S.desktop_tax_no_connect_url))
             } else {
                 vm.emit(TaxFilingEffect.OpenInBrowser(url))
                 watchFor(registration.id)
@@ -158,14 +170,13 @@ internal class RegistrationActions(private val vm: TaxFilingViewModel) {
                 val row = rows.firstOrNull { it.id == registrationId }
                 if (row == null || row.connected) {
                     vm.update { copy(connectingId = null) }
-                    if (row != null) vm.toast("Connected to HMRC")
+                    if (row != null) vm.toast(str(S.desktop_tax_connected_to_hmrc))
                     return@work
                 }
             }
             vm.update { copy(connectingId = null) }
             vm.info(
-                "HMRC hasn't confirmed the connection yet. Finish signing in to HMRC in your browser, " +
-                    "then connect again.",
+                str(S.desktop_tax_connect_not_confirmed),
             )
         }
     }

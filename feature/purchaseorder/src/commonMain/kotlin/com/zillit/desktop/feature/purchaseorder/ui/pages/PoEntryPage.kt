@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
@@ -60,7 +62,7 @@ internal fun PoEntryPage(state: PoUiState, entry: PoEntryState, onEvent: (PoEven
         ZillitDivider()
         if (order == null) {
             ZillitNotice(
-                text = "Loading PO…",
+                text = str(S.desktop_po_loading_po),
                 tone = StatusTone.Progress,
                 icon = ZillitIcons.Clock,
             )
@@ -75,9 +77,11 @@ internal fun PoEntryPage(state: PoUiState, entry: PoEntryState, onEvent: (PoEven
             ) {
                 if (!balanced) {
                     ZillitNotice(
-                        text = "Coded lines must match the PO total before you can post — the lines come to " +
-                            "${Money.format(entry.ledgerTotal, order.currency)} against " +
-                            "${Money.format(order.gross, order.currency)}.",
+                        text = str(
+                            S.desktop_po_coded_lines_mismatch_detail,
+                            Money.format(entry.ledgerTotal, order.currency),
+                            Money.format(order.gross, order.currency),
+                        ),
                         tone = StatusTone.Pending,
                         icon = ZillitIcons.Warning,
                     )
@@ -123,7 +127,7 @@ private fun EntryTopBar(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitButton(
-            text = "Back to Queue",
+            text = str(S.desktop_po_back_to_queue),
             onClick = { onEvent(PoEvent.CloseEntry) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -131,13 +135,13 @@ private fun EntryTopBar(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent
         )
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = order?.number?.ifBlank { "Purchase order" } ?: "Purchase order",
+                text = order?.number?.ifBlank { str(S.purchase_order) } ?: str(S.purchase_order),
                 style = ZillitTheme.typography.titleMedium,
             )
             ZillitText(
                 text = listOfNotNull(
                     order?.let { state.vendorName(it) }?.takeIf { it.isNotBlank() },
-                    "Assigned to: ${order?.let { state.assigneeName(it) } ?: "Unassigned"}",
+                    str(S.desktop_po_assigned_to, order?.let { state.assigneeName(it) } ?: str(S.unassigned)),
                 ).joinToString(" · "),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
@@ -157,7 +161,7 @@ private fun EntryActions(
     onEvent: (PoEvent) -> Unit,
 ) {
     ZillitButton(
-        text = if (entry.previewOpen) "Collapse PO preview" else "Show PO Preview",
+        text = if (entry.previewOpen) str(S.desktop_po_collapse_preview) else str(S.desktop_po_show_preview),
         onClick = { onEvent(PoEvent.EditEntry(entry.copy(previewOpen = !entry.previewOpen))) },
         variant = ButtonVariant.Tertiary,
         size = ButtonSize.Small,
@@ -165,7 +169,7 @@ private fun EntryActions(
     )
     if (order != null) {
         ZillitButton(
-            text = "View PDF",
+            text = str(S.ah_view_pdf),
             onClick = { onEvent(PoEvent.ViewPdf(order.id)) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -178,9 +182,9 @@ private fun EntryActions(
         if (PoAccess.canSendVendorEmail(order, state.viewer, allowResend = true)) {
             ZillitButton(
                 text = when {
-                    entry.sending -> "Sending…"
-                    order.emailed -> "Resend to Vendor"
-                    else -> "Send to Vendor"
+                    entry.sending -> str(S.dd_busy_sending)
+                    order.emailed -> str(S.desktop_po_resend_to_vendor)
+                    else -> str(S.desktop_po_send_to_vendor)
                 },
                 onClick = { onEvent(PoEvent.SendVendorEmail(order.id, allowResend = true)) },
                 variant = ButtonVariant.Secondary,
@@ -192,7 +196,7 @@ private fun EntryActions(
         }
     }
     ZillitButton(
-        text = "Save",
+        text = str(S.save),
         onClick = { onEvent(PoEvent.SaveEntry) },
         variant = ButtonVariant.Secondary,
         size = ButtonSize.Small,
@@ -200,7 +204,7 @@ private fun EntryActions(
         enabled = !entry.saving && !entry.posting,
     )
     ZillitButton(
-        text = "Post to Ledger",
+        text = str(S.ah_post_to_ledger),
         onClick = { onEvent(PoEvent.PostEntry) },
         size = ButtonSize.Small,
         leadingIcon = ZillitIcons.Ledger,
@@ -214,11 +218,11 @@ private fun EntryActions(
 @Composable
 private fun CodingCard(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent) -> Unit) {
     ZillitSectionCard(
-        title = "Coded lines",
+        title = str(S.desktop_po_coded_lines),
         icon = ZillitIcons.Ledger,
         action = {
             ZillitButton(
-                text = "Add line",
+                text = str(S.desktop_po_add_line),
                 onClick = { onEvent(PoEvent.AddEntryLine) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -232,15 +236,15 @@ private fun CodingCard(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent)
                 onValueChange = { iso ->
                     onEvent(PoEvent.EditEntry(entry.copy(effectiveDate = iso.isoDayToUtcMidnight())))
                 },
-                label = "Effective Date",
-                helperText = "The period these lines post into.",
+                label = str(S.ah_lbl_eff_date),
+                helperText = str(S.desktop_po_period_these_lines_post_into),
                 modifier = Modifier.width(DATE_FIELD),
             )
             ZillitTextField(
                 value = entry.nominalCode,
                 onValueChange = { onEvent(PoEvent.EditEntry(entry.copy(nominalCode = it))) },
-                label = "Nominal Code",
-                placeholder = "Search or enter code…",
+                label = str(S.ah_lbl_nominal_code),
+                placeholder = str(S.desktop_po_search_or_enter_code),
                 modifier = Modifier.width(DATE_FIELD),
             )
         }
@@ -261,12 +265,12 @@ private fun EntryLineHeader() {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        EntryHeaderCell("Description", Modifier.weight(1f))
-        EntryHeaderCell("Qty", Modifier.width(QTY_FIELD))
-        EntryHeaderCell("Unit", Modifier.width(PRICE_FIELD))
-        EntryHeaderCell("Code", Modifier.width(CODE_FIELD))
-        EntryHeaderCell("Tax", Modifier.width(TAX_FIELD))
-        EntryHeaderCell("Amount", Modifier.width(AMOUNT_WIDTH))
+        EntryHeaderCell(str(S.description), Modifier.weight(1f))
+        EntryHeaderCell(str(S.ah_lbl_qty), Modifier.width(QTY_FIELD))
+        EntryHeaderCell(str(S.dm_step2_unit), Modifier.width(PRICE_FIELD))
+        EntryHeaderCell(str(S.code), Modifier.width(CODE_FIELD))
+        EntryHeaderCell(str(S.ah_lbl_vat_tax), Modifier.width(TAX_FIELD))
+        EntryHeaderCell(str(S.amount), Modifier.width(AMOUNT_WIDTH))
     }
 }
 
@@ -304,27 +308,27 @@ private fun EntryLineRow(
         ZillitTextField(
             value = line.description,
             onValueChange = { set(line.copy(description = it)) },
-            placeholder = "Description…",
+            placeholder = str(S.ah_description_hint),
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = line.quantity.trimmed(),
             onValueChange = { set(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-            placeholder = "Qty",
+            placeholder = str(S.ah_lbl_qty),
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.width(QTY_FIELD),
         )
         ZillitTextField(
             value = line.unitPrice.trimmed(),
             onValueChange = { set(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-            placeholder = "Unit",
+            placeholder = str(S.dm_step2_unit),
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.width(PRICE_FIELD),
         )
         ZillitTextField(
             value = line.nominalCode.orEmpty(),
             onValueChange = { set(line.copy(nominalCode = it.takeIf { code -> code.isNotBlank() })) },
-            placeholder = "Code",
+            placeholder = str(S.code),
             modifier = Modifier.width(CODE_FIELD),
         )
         ZillitSelect(
@@ -334,7 +338,9 @@ private fun EntryLineRow(
                 val tax = state.taxTypes.firstOrNull { it.id == id }
                 set(line.copy(taxType = id, vatRate = tax?.rate))
             },
-            label = { id -> id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key } ?: "Tax" },
+            label = { id ->
+                id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key } ?: str(S.ah_lbl_vat_tax)
+            },
             modifier = Modifier.width(TAX_FIELD),
         )
         ZillitText(
@@ -343,7 +349,7 @@ private fun EntryLineRow(
             modifier = Modifier.width(AMOUNT_WIDTH),
         )
         ZillitButton(
-            text = "Remove",
+            text = str(S.remove),
             onClick = { onEvent(PoEvent.RemoveEntryLine(index)) },
             variant = ButtonVariant.Danger,
             size = ButtonSize.Small,
@@ -361,15 +367,15 @@ private fun EntryTotals(
     reclaimable: Double,
 ) {
     val totals = entry.totals
-    ZillitSectionCard(title = "Ledger Total", icon = ZillitIcons.Bank) {
-        EntryTotalRow("Net Total", Money.format(totals.net, currency))
-        EntryTotalRow("Tax", Money.format(totals.tax, currency))
-        EntryTotalRow("Reclaimable", Money.format(reclaimable, currency))
+    ZillitSectionCard(title = str(S.ah_ledger_total_upper), icon = ZillitIcons.Bank) {
+        EntryTotalRow(str(S.ah_lbl_net_total), Money.format(totals.net, currency))
+        EntryTotalRow(str(S.ah_lbl_vat_tax), Money.format(totals.tax, currency))
+        EntryTotalRow(str(S.desktop_po_reclaimable), Money.format(reclaimable, currency))
         ZillitDivider()
-        EntryTotalRow("Ledger Total", Money.format(entry.ledgerTotal, currency), strong = true)
-        EntryTotalRow("PO Total", Money.format(orderGross, currency), strong = true)
+        EntryTotalRow(str(S.ah_ledger_total_upper), Money.format(entry.ledgerTotal, currency), strong = true)
+        EntryTotalRow(str(S.desktop_po_total), Money.format(orderGross, currency), strong = true)
         ZillitStatusPill(
-            label = if (balanced) "Balanced" else "Awaiting Balance",
+            label = if (balanced) str(S.desktop_card_balanced) else str(S.desktop_po_awaiting_balance),
             tone = if (balanced) StatusTone.Done else StatusTone.Pending,
         )
     }

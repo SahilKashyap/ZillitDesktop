@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
 import com.zillit.desktop.feature.callsheet.domain.relativeLong
@@ -50,6 +52,7 @@ import com.zillit.desktop.feature.callsheet.ui.SheetEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetUiState
 import com.zillit.desktop.feature.callsheet.ui.components.ButtonKind
 import com.zillit.desktop.feature.callsheet.ui.components.Face
+import com.zillit.desktop.feature.callsheet.ui.components.InlineCount
 import com.zillit.desktop.feature.callsheet.ui.components.MetaCell
 import com.zillit.desktop.feature.callsheet.ui.components.SheetButton
 import com.zillit.desktop.feature.callsheet.ui.components.SheetEmptyState
@@ -74,18 +77,22 @@ internal fun PublishedPage(state: SheetUiState, onEvent: (SheetEvent) -> Unit, n
         val latest = sorted.firstOrNull()
         when {
             latest != null -> HeroCard(state, latest, nowMillis, onEvent)
-            !list.loaded -> LoadingBlock("Loading published call sheets…")
+            !list.loaded -> LoadingBlock(str(S.desktop_cs_loading_published))
             else -> SheetEmptyState(
-                "No published call sheets yet",
+                str(S.desktop_cs_no_published_yet),
                 minHeight = 260.dp,
-                sub = "Published call sheets will appear here once approved and published.",
+                sub = str(S.desktop_cs_published_appear_here),
             )
         }
         val older = sorted.drop(1)
         if (older.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SheetButton(
-                    text = if (state.showOlderPublished) "Hide History" else "History (${older.size})",
+                    text = if (state.showOlderPublished) {
+                        str(S.desktop_hide_history)
+                    } else {
+                        str(S.desktop_history_n, older.size)
+                    },
                     onClick = { onEvent(ListEvent.ToggleOlderPublished) },
                     kind = ButtonKind.Outline,
                     radius = 12.dp,
@@ -109,7 +116,7 @@ private fun HeroCard(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Lo
             .background(colors.surface)
             .border(1.dp, colors.border, RoundedCornerShape(12.dp)),
     ) {
-        HeroHeader(sheet, nowMillis)
+        HeroHeader(state, sheet, nowMillis)
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         HeroMeta(state, sheet, nowMillis)
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
@@ -121,14 +128,14 @@ private fun HeroCard(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Lo
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "This is the current live version of the call sheet.",
+                str(S.desktop_cs_current_live_version),
                 style = sheetText(11.sp),
                 color = colors.textMuted,
                 modifier = Modifier.weight(1f),
             )
             if (state.isPoster) {
                 SheetButton(
-                    "Attach Document",
+                    str(S.ah_attach_document),
                     { onEvent(ListEvent.AttachDocument(sheet)) },
                     kind = ButtonKind.Secondary,
                     icon = ZillitIcons.Paperclip,
@@ -137,7 +144,7 @@ private fun HeroCard(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Lo
                 )
             }
             SheetButton(
-                "View PDF",
+                str(S.ah_view_pdf),
                 { onEvent(ListEvent.View(sheet)) },
                 kind = ButtonKind.Accent,
                 icon = ZillitIcons.Eye,
@@ -149,7 +156,7 @@ private fun HeroCard(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Lo
 }
 
 @Composable
-private fun HeroHeader(sheet: CallSheetSummary, nowMillis: Long) {
+private fun HeroHeader(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Long) {
     val colors = SheetTheme.colors
     val background = if (colors.isDark) {
         Brush.horizontalGradient(listOf(colors.surface, colors.surface))
@@ -169,11 +176,17 @@ private fun HeroHeader(sheet: CallSheetSummary, nowMillis: Long) {
         }
         Column(Modifier.weight(1f)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Currently Published", style = sheetText(14.sp, FontWeight.SemiBold), color = colors.textStrong)
+                Text(
+                    str(S.desktop_currently_published),
+                    style = sheetText(14.sp, FontWeight.SemiBold),
+                    color = colors.textStrong,
+                )
                 LivePill()
+                InlineCount(state.unreadReports(sheet.id))
             }
-            val subject = sheet.name.ifBlank { "${shootDayLabel(sheet.shared)} call sheet" }
-            val published = sheet.publishedOn?.let { " • Published ${relativeLong(it, nowMillis)}" }.orEmpty()
+            val subject = sheet.name.ifBlank { str(S.desktop_cs_day_call_sheet, shootDayLabel(sheet.shared)) }
+            val published = sheet.publishedOn?.let { str(S.desktop_cs_published_suffix, relativeLong(it, nowMillis)) }
+                .orEmpty()
             Text(
                 "$subject$published",
                 style = sheetText(12.sp),
@@ -216,7 +229,11 @@ private fun LivePill() {
     ) {
         val dot = if (colors.isDark) colors.green else Color(0xFF12B76A)
         Box(Modifier.size(6.dp).alpha(alpha).clip(CircleShape).background(dot))
-        Text("LIVE", style = sheetText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp), color = colors.green)
+        Text(
+            str(S.desktop_status_live),
+            style = sheetText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
+            color = colors.green,
+        )
     }
 }
 
@@ -228,24 +245,31 @@ private fun HeroMeta(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Lo
     BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
         val columns = if (maxWidth >= 720.dp) 4 else 2
         val items: List<@Composable (Modifier) -> Unit> = listOf(
-            { m -> MetaItem(m, ZillitIcons.Calendar, null, "Shoot Day", shootDayLabel(sheet.shared), null) },
+            { m -> MetaItem(m, ZillitIcons.Calendar, null, str(S.cs_shoot_day), shootDayLabel(sheet.shared), null) },
             { m ->
                 MetaItem(
                     m,
                     null,
                     sheet,
-                    "Created By",
+                    str(S.cs_created_by),
                     member?.fullName ?: sheet.createdBy.ifBlank { "-" },
                     member?.designation,
                 )
             },
-            { m -> MetaItem(m, ZillitIcons.Clock, null, "Created At", formatDateTime(sheet.createdOn), null) },
+            { m -> MetaItem(
+                m,
+                ZillitIcons.Clock,
+                null,
+                str(S.ah_lbl_created_at),
+                formatDateTime(sheet.createdOn),
+                null,
+            ) },
             { m ->
                 MetaItem(
                     m,
                     ZillitIcons.Clock,
                     null,
-                    "Published At",
+                    str(S.desktop_published_at),
                     formatDateTime(sheet.publishedOn),
                     relativeLong(sheet.publishedOn, nowMillis),
                 )
@@ -318,18 +342,24 @@ private fun OlderTable(
 ) {
     SheetTable(
         columns = listOf(
-            TableColumn("S.No", width = 72.dp),
-            TableColumn("Day", width = 110.dp),
-            TableColumn("Created By", weight = 1f),
-            TableColumn("Created At", width = 190.dp),
-            TableColumn("Published At", width = 190.dp),
-            TableColumn("Actions", width = 200.dp),
+            TableColumn(str(S.desktop_s_no), width = 72.dp),
+            TableColumn(str(S.bs_day), width = 110.dp),
+            TableColumn(str(S.cs_created_by), weight = 1f),
+            TableColumn(str(S.ah_lbl_created_at), width = 190.dp),
+            TableColumn(str(S.desktop_published_at), width = 190.dp),
+            TableColumn(str(S.cs_draft_actions), width = 200.dp),
         ),
         rows = rows,
         minWidth = 900.dp,
     ) { row, column, _ ->
         when (column) {
-            0 -> MetaCell(row.serialNo.ifBlank { "-" })
+            0 -> Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MetaCell(row.serialNo.ifBlank { "-" })
+                InlineCount(state.unreadReports(row.id))
+            }
             1 -> MetaCell(shootDayLabel(row.shared, fallbackTotal))
             2 -> CreatorCell(state, row)
             3 -> MetaCell(formatDateTime(row.createdOn))
@@ -337,8 +367,8 @@ private fun OlderTable(
             else -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val loading = state.historyLoadingId == row.id
                 SheetButton(
-                    if (loading) "Loading…" else "View History",
-                    { onEvent(ListEvent.OpenHistory(row, "History")) },
+                    if (loading) str(S.cs_loading) else str(S.cs_action_view_history),
+                    { onEvent(ListEvent.OpenHistory(row, str(S.history))) },
                     kind = ButtonKind.Outline,
                     enabled = state.historyLoadingId == null,
                     height = 26.dp,
@@ -346,7 +376,7 @@ private fun OlderTable(
                     horizontalPadding = 8.dp,
                 )
                 SheetButton(
-                    "View",
+                    str(S.view),
                     { onEvent(ListEvent.View(row)) },
                     kind = ButtonKind.Warning,
                     height = 26.dp,

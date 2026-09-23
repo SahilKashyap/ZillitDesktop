@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.purchaseorder.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoDeliveryAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
@@ -69,8 +71,8 @@ internal class PoRegisterActions(
             PoPrompt.Confirm(
                 action = PoConfirmAction.DeleteTemplate,
                 targetId = id,
-                title = "Delete Template",
-                message = "\"${template.name}\" will be removed. This action cannot be undone.",
+                title = str(S.ah_delete_template),
+                message = str(S.desktop_po_template_will_be_removed, template.name),
                 destructive = true,
             ),
         )
@@ -82,7 +84,11 @@ internal class PoRegisterActions(
             when (val answer = repository.deleteTemplate(id)) {
                 is ZillitResult.Success -> {
                     vm.update {
-                        copy(busy = false, notice = "Template deleted", templates = templates.filterNot { it.id == id })
+                        copy(
+                            busy = false,
+                            notice = str(S.dd_template_deleted),
+                            templates = templates.filterNot { it.id == id },
+                        )
                     }
                 }
 
@@ -131,7 +137,7 @@ internal class PoRegisterActions(
     private fun openAddress(id: String) {
         val row = vm.ui.addresses.firstOrNull { it.id == id } ?: return
         if (!row.editableBy(vm.ui.viewer)) {
-            vm.fail("You can only edit delivery addresses you created.")
+            vm.fail(str(S.desktop_po_only_edit_own_addresses))
             return
         }
         vm.update { copy(addressForm = PoAddressForm(id = row.id, address = row.address)) }
@@ -152,7 +158,11 @@ internal class PoRegisterActions(
                     vm.update {
                         copy(
                             addressForm = null,
-                            notice = if (form.id == null) "Delivery address saved" else "Delivery address updated",
+                            notice = if (form.id == null) {
+                                str(S.desktop_po_delivery_address_saved)
+                            } else {
+                                str(S.desktop_po_delivery_address_updated)
+                            },
                             // Replace in place where it was already listed, so
                             // the row does not jump to the bottom on an edit.
                             addresses = if (addresses.any { it.id == saved.id }) {
@@ -168,7 +178,8 @@ internal class PoRegisterActions(
                     copy(
                         addressForm = form.copy(
                             saving = false,
-                            problem = answer.error.localised().ifBlank { "Couldn't update the delivery address." },
+                            problem = answer.error.localised()
+                                .ifBlank { str(S.desktop_po_delivery_address_update_failed) },
                         ),
                     )
                 }

@@ -5,7 +5,6 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.productionreport.domain.PublishedCallSheetLookup
 import com.zillit.desktop.feature.productionreport.domain.ReportBadgeSource
-import com.zillit.desktop.feature.productionreport.domain.ReportChatOpener
 import com.zillit.desktop.feature.productionreport.domain.ReportDelivery
 import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.ReportPublishing
@@ -27,7 +26,6 @@ class ReportServices(
     val publishing: ReportPublishing,
     val callSheets: PublishedCallSheetLookup,
     val badges: ReportBadgeSource = object : ReportBadgeSource {},
-    val chat: ReportChatOpener = ReportChatOpener { _, _ -> false },
     val weather: ReportWeatherSource? = null,
 )
 
@@ -74,23 +72,10 @@ class ReportViewModel(
     hasChat: Boolean = false,
 ) : ZillitViewModel<ReportUiState, ReportEvent, ReportEffect>(ReportUiState(kind = kind, hasChat = hasChat)) {
 
-    /** The tool window's "open this person's chat", attached while it is shown. */
-    private var chatTarget: ReportChatOpener? = null
-
-    /** A chat opener that goes through the window when one is attached, else the host's own. */
-    private val hostServices = ReportServices(
-        delivery = services.delivery,
-        publishing = services.publishing,
-        callSheets = services.callSheets,
-        badges = services.badges,
-        chat = ReportChatOpener { userId, fullName -> (chatTarget ?: services.chat).openChat(userId, fullName) },
-        weather = services.weather,
-    )
-
     private val context: ReportContext = object : ReportContext {
         override val state: ReportUiState get() = currentState
         override val repository: ReportRepository get() = this@ReportViewModel.repository
-        override val services: ReportServices get() = hostServices
+        override val services: ReportServices get() = this@ReportViewModel.services
         override val kind: ReportKind get() = this@ReportViewModel.kind
         override val lists: ListsController get() = this@ReportViewModel.lists
         override val editor: EditorController get() = this@ReportViewModel.editor
@@ -118,11 +103,6 @@ class ReportViewModel(
     /** Called each time the tool's window is shown. */
     fun start() = lists.start()
 
-    /** Routes "Chat with …" through the tool's window while it is open; null detaches. */
-    fun attachChat(opener: ReportChatOpener?) {
-        chatTarget = opener
-    }
-
     override fun onEvent(event: ReportEvent) {
         when (event) {
             is ListEvent -> onListEvent(event)
@@ -130,7 +110,8 @@ class ReportViewModel(
             is DialogEvent -> onDialogEvent(event)
             EditorEvent.SaveAsTemplate -> templates.saveAsTemplate()
             EditorEvent.UpdateTemplate -> templates.updateTemplate()
-            EditorEvent.OpenSend -> workflow.openEditorSend()
+            EditorEvent.SendForSignature -> workflow.sendFromEditorForSignature()
+            EditorEvent.SendForComments -> workflow.openEditorComments()
             is EditorEvent -> editor.onEvent(event)
             is DocumentEvent -> document.onEvent(event)
         }
@@ -159,21 +140,36 @@ class ReportViewModel(
         }
     }
 
+    /** A dialog with a request in flight (a busy confirm, a sending picker) does not close under it. */
     private fun dismiss() {
-        if (currentState.busy && currentState.dialog !is ReportDialog.Comments) return
+        val dialog = currentState.dialog
+        if (currentState.busy && dialog !is ReportDialog.Comments) return
+        if ((dialog as? ReportDialog.Confirm)?.busy == true || (dialog as? ReportDialog.SendForChat)?.sending == true) {
+            return
+        }
         comments.close()
         setState { copy(dialog = null) }
     }
 
+    /**
+     * The deletes keep their confirm up until the request settles (the
+     * controller closes it on success); everything else closes at once.
+     */
     private fun confirm(secondary: Boolean) {
         val dialog = currentState.dialog as? ReportDialog.Confirm ?: return
-        setState { copy(dialog = null) }
+        if (dialog.busy) return
         when (val action = dialog.action) {
             is ConfirmAction.DeleteReport -> rows.delete(action.report)
             is ConfirmAction.DeleteTemplate -> templates.delete(action.template)
-            ConfirmAction.NoApprovers -> Unit
-            is ConfirmAction.RestartReview -> editor.runSave(action.then)
-            ConfirmAction.LeaveEditor -> if (secondary) editor.saveAndLeave() else editor.discardAndLeave()
+            else -> {
+                setState { copy(dialog = null) }
+                when (action) {
+                    is ConfirmAction.RestartReview -> editor.runSave(action.then)
+                    ConfirmAction.LeaveEditor -> if (secondary) editor.saveAndLeave() else editor.discardAndLeave()
+                    // NoApprovers, MissingCallTimes, NoPublishedCallSheet: an OK that only closes.
+                    else -> Unit
+                }
+            }
         }
     }
 }

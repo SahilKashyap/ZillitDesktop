@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.chat.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toLocalDateTime
@@ -159,12 +161,15 @@ fun RecentRow.hasStanding(newest: Map<String, Long>): Boolean = when (this) {
  * Groups, Favourites (`ChatsComponent`'s chip strip). Declaration order is
  * display order.
  */
-enum class ChatFilter(val label: String) {
-    All("All"),
-    Unread("Unread"),
-    Members("Members"),
-    Groups("Groups"),
-    Favourites("Favourites"),
+enum class ChatFilter(private val labelKey: String) {
+    All(S.all),
+    Unread(S.unread_txt),
+    Members(S.members),
+    Groups(S.groups_txt),
+    Favourites(S.favorite),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -269,8 +274,8 @@ fun chatDayLabel(
     val today = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(zone).date
     val month = MONTHS[day.monthNumber - 1]
     return when {
-        day == today -> "Today"
-        day.toEpochDays() == today.toEpochDays() - 1 -> "Yesterday"
+        day == today -> str(S.today)
+        day.toEpochDays() == today.toEpochDays() - 1 -> str(S.yesterday)
         day.year == today.year -> "${WEEKDAYS[day.dayOfWeek.isoDayNumber - 1]} ${day.dayOfMonth} $month"
         else -> "${day.dayOfMonth} $month ${day.year}"
     }

@@ -1,19 +1,24 @@
 package com.zillit.desktop.feature.cardexpenses.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** Where a card is in its own lifecycle. */
-enum class CardStatus(val wire: String, val label: String) {
-    Requested("requested", "Requested"),
-    Pending("pending", "Pending"),
-    Approved("approved", "Approved"),
-    Rejected("rejected", "Rejected"),
-    Active("active", "Active"),
-    DigitalActive("digital_active", "Digital active"),
-    InTransit("in_transit", "In transit"),
-    Suspended("suspended", "Suspended"),
-    Cancelled("cancelled", "Cancelled"),
-    Closed("closed", "Closed"),
-    Unknown("", "Unknown"),
+enum class CardStatus(val wire: String, private val labelKey: String) {
+    Requested("requested", S.av_chip_requested),
+    Pending("pending", S.pending),
+    Approved("approved", S.approved),
+    Rejected("rejected", S.rejected),
+    Active("active", S.active),
+    DigitalActive("digital_active", S.desktop_card_digital_active),
+    InTransit("in_transit", S.desktop_card_in_transit),
+    Suspended("suspended", S.desktop_suspended),
+    Cancelled("cancelled", S.cancelled),
+    Closed("closed", S.ah_status_closed),
+    Unknown("", S.desktop_unknown),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): CardStatus {
@@ -23,10 +28,12 @@ enum class CardStatus(val wire: String, val label: String) {
     }
 }
 
-enum class CardType(val wire: String, val label: String) {
-    Physical("physical", "Physical"),
-    Digital("digital", "Digital"),
+enum class CardType(val wire: String, private val labelKey: String) {
+    Physical("physical", S.desktop_card_physical),
+    Digital("digital", S.desktop_card_digital),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): CardType =
@@ -35,22 +42,24 @@ enum class CardType(val wire: String, val label: String) {
 }
 
 /** Where a transaction or receipt is in the coding/approval workflow. */
-enum class CardWorkflowStatus(val wire: String, val label: String) {
-    Imported("imported", "Imported"),
-    PendingReceipt("pending_receipt", "Pending receipt"),
-    PendingCode("pending_code", "Pending coding"),
-    Submitted("submitted", "Submitted"),
-    AwaitingApproval("awaiting_approval", "Awaiting approval"),
-    Approved("approved", "Approved"),
-    ReadyToPost("ready_to_post", "Ready to post"),
-    Posted("posted", "Posted"),
-    Queried("queried", "Queried"),
-    Rejected("rejected", "Rejected"),
-    Personal("personal", "Personal"),
-    Overridden("overridden", "Overridden"),
-    Processing("processing", "Processing"),
-    Unknown("", "Unknown"),
+enum class CardWorkflowStatus(val wire: String, private val labelKey: String) {
+    Imported("imported", S.desktop_imported),
+    PendingReceipt("pending_receipt", S.ah_txn_filter_pending_receipt),
+    PendingCode("pending_code", S.ah_pending_coding),
+    Submitted("submitted", S.txt_submitted),
+    AwaitingApproval("awaiting_approval", S.av_subtab_awaiting_approval),
+    Approved("approved", S.approved),
+    ReadyToPost("ready_to_post", S.ah_ready_to_post),
+    Posted("posted", S.ah_status_posted),
+    Queried("queried", S.ah_queried),
+    Rejected("rejected", S.rejected),
+    Personal("personal", S.personal),
+    Overridden("overridden", S.desktop_overridden),
+    Processing("processing", S.desktop_card_processing),
+    Unknown("", S.desktop_unknown),
     ;
+
+    val label: String get() = str(labelKey)
 
     val isPosted: Boolean get() = this == Posted
 
@@ -63,10 +72,12 @@ enum class CardWorkflowStatus(val wire: String, val label: String) {
 }
 
 /** Whether a receipt has been tied to a statement line. */
-enum class MatchStatus(val wire: String, val label: String) {
-    Matched("matched", "Matched"),
-    Unmatched("unmatched", "Unmatched"),
+enum class MatchStatus(val wire: String, private val labelKey: String) {
+    Matched("matched", S.desktop_matched),
+    Unmatched("unmatched", S.desktop_dm_unmatched),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /**

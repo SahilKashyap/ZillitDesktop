@@ -60,6 +60,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
 import com.zillit.desktop.feature.assetreport.domain.AssetFormat
 import com.zillit.desktop.feature.assetreport.ui.AssetDetail
@@ -104,15 +106,15 @@ internal fun AssetDetailPage(
                         .align(Alignment.CenterHorizontally),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
-                    Section("Details") { MetaGrid(detail, state, columns = if (wide) 6 else 3) }
+                    Section(str(S.details)) { MetaGrid(detail, state, columns = if (wide) 6 else 3) }
                     if (detail.hydrationFailed) {
                         ZillitNotice(
-                            text = "This asset's category, note and attachments could not be loaded.",
+                            text = str(S.desktop_asset_detail_load_failed),
                             tone = StatusTone.Rejected,
                             icon = ZillitIcons.Warning,
                             action = {
                                 ZillitButton(
-                                    text = "Try again",
+                                    text = str(S.try_again),
                                     onClick = { onEvent(AssetEvent.RetryRecord) },
                                     variant = ButtonVariant.Secondary,
                                     leadingIcon = ZillitIcons.Reload,
@@ -122,14 +124,14 @@ internal fun AssetDetailPage(
                     }
                     if (wide) {
                         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                            Section("Category", Modifier.width(CATEGORY_COLUMN)) {
+                            Section(str(S.av_category), Modifier.width(CATEGORY_COLUMN)) {
                                 CategoryChoices(detail, stacked = true, onEvent = onEvent)
                             }
-                            Section("Comments", Modifier.weight(1f)) { NoteEditor(detail, state, onEvent) }
+                            Section(str(S.av_comments), Modifier.weight(1f)) { NoteEditor(detail, state, onEvent) }
                         }
                     } else {
-                        Section("Category") { CategoryChoices(detail, stacked = false, onEvent = onEvent) }
-                        Section("Comments") { NoteEditor(detail, state, onEvent) }
+                        Section(str(S.av_category)) { CategoryChoices(detail, stacked = false, onEvent = onEvent) }
+                        Section(str(S.av_comments)) { NoteEditor(detail, state, onEvent) }
                     }
                     AttachmentsSection(detail, media, onEvent)
                 }
@@ -143,12 +145,13 @@ private fun DetailTopBar(detail: AssetDetail, onEvent: (AssetEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val line = detail.line
     AssetTopBar(
-        backLabel = "Back to Asset Register",
+        backLabel = str(S.desktop_back_to_asset_register),
         onBack = { onEvent(AssetEvent.RequestClose) },
         title = {
             // PO Entry's breadcrumb: the parent as an amber caps link, a slash, the record.
             ZillitText(
-                text = "ASSET REGISTER",
+                // Capitalised: the register's own title behind this overlay reads the same key.
+                text = str(S.asset_title).uppercase(),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.08.em),
                 color = colors.accentText,
                 maxLines = 1,
@@ -173,9 +176,9 @@ private fun DetailTopBar(detail: AssetDetail, onEvent: (AssetEvent) -> Unit) {
         right = {
             SaveButton(
                 text = when {
-                    detail.isSaving -> "Saving…"
-                    detail.metaDirty -> "Save"
-                    else -> "Saved"
+                    detail.isSaving -> str(S.ah_saving)
+                    detail.metaDirty -> str(S.save)
+                    else -> str(S.saved)
                 },
                 enabled = detail.metaDirty && !detail.isLocked,
                 onClick = { onEvent(AssetEvent.SaveDetails) },
@@ -201,21 +204,25 @@ private fun MetaGrid(detail: AssetDetail, state: AssetUiState, columns: Int) {
     val colors = ZillitTheme.colors
     val line = detail.line
     val cells: List<@Composable () -> Unit> = listOf(
-        { MetaCell(AssetIcons.Store, "Vendor") { MetaValue(state.vendorName(line.vendorId)) } },
-        { MetaCell(ZillitIcons.Users, "Department") { MetaValue(state.departmentName(line.departmentId)) } },
+        { MetaCell(AssetIcons.Store, str(S.ah_lbl_vendor)) { MetaValue(state.vendorName(line.vendorId)) } },
+        { MetaCell(ZillitIcons.Users, str(S.department)) { MetaValue(state.departmentName(line.departmentId)) } },
         {
-            MetaCell(AssetIcons.Tag, "Expense Type") {
+            MetaCell(AssetIcons.Tag, str(S.asset_lbl_expense_type)) {
                 if (line.expenditureType.label.isBlank()) MetaValue("—") else ExpenseCell(line)
             }
         },
-        { MetaCell(AssetIcons.List, "Qty") { MetaValue(AssetFormat.quantity(line.quantity), mono = true) } },
         {
-            MetaCell(AssetIcons.Coins, "Unit Cost") {
+            MetaCell(AssetIcons.List, str(S.ah_lbl_qty)) {
+                MetaValue(AssetFormat.quantity(line.quantity), mono = true)
+            }
+        },
+        {
+            MetaCell(AssetIcons.Coins, str(S.asset_lbl_unit_cost)) {
                 MetaValue(state.money(line.unitPrice, line.currency), mono = true)
             }
         },
         {
-            MetaCell(ZillitIcons.Receipt, "Total") {
+            MetaCell(ZillitIcons.Receipt, str(S.asset_total)) {
                 MetaValue(state.money(line.total, line.currency), mono = true, color = colors.accentText)
             }
         },
@@ -444,7 +451,7 @@ private fun NoteEditor(detail: AssetDetail, state: AssetUiState, onEvent: (Asset
             value = detail.noteDraft,
             onValueChange = { onEvent(AssetEvent.NoteChanged(it)) },
             enabled = !detail.isLocked,
-            placeholder = if (detail.isHydrating) "" else "Add a note about this asset…",
+            placeholder = if (detail.isHydrating) "" else str(S.asset_note_hint),
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             ZillitText(
@@ -455,9 +462,9 @@ private fun NoteEditor(detail: AssetDetail, state: AssetUiState, onEvent: (Asset
             )
             SaveButton(
                 text = when {
-                    detail.isSaving -> "Saving…"
-                    detail.noteJustSaved -> "Saved"
-                    else -> "Save"
+                    detail.isSaving -> str(S.ah_saving)
+                    detail.noteJustSaved -> str(S.saved)
+                    else -> str(S.save)
                 },
                 enabled = detail.noteDirty && !detail.isLocked && !detail.noteJustSaved,
                 confirmed = detail.noteJustSaved,
@@ -472,15 +479,15 @@ private fun NoteEditor(detail: AssetDetail, state: AssetUiState, onEvent: (Asset
 internal fun noteStatus(detail: AssetDetail, state: AssetUiState): String {
     val record = detail.record
     return when {
-        detail.isHydrating -> "Loading…"
-        detail.noteDirty -> "Unsaved changes"
+        detail.isHydrating -> str(S.ah_loading)
+        detail.noteDirty -> str(S.cs_exit_title)
         record != null && record.commentBy.isNotBlank() -> buildString {
-            append("Last saved")
+            append(str(S.desktop_asset_last_saved))
             // Someone the crew list has lost is left out rather than printed as an id.
             state.author(record.commentBy)?.let { append(" by ").append(it) }
             AssetFormat.date(record.commentAtMillis).takeIf { it.isNotEmpty() }?.let { append(" · ").append(it) }
         }
-        else -> "Not saved yet"
+        else -> str(S.asset_not_saved_yet)
     }
 }
 
@@ -530,28 +537,28 @@ private fun NoteField(value: String, onValueChange: (String) -> Unit, enabled: B
 internal fun UnsavedChangesDialog(detail: AssetDetail?, onEvent: (AssetEvent) -> Unit) {
     val saving = detail?.isSaving == true
     ZillitDialogShell(
-        title = "Unsaved changes",
-        subtitle = "This asset has changes that haven't been saved. Save them or discard before leaving.",
+        title = str(S.cs_exit_title),
+        subtitle = str(S.desktop_asset_unsaved_subtitle),
         visible = detail?.confirmLeave == true,
         onDismiss = { onEvent(AssetEvent.KeepEditing) },
         width = 440.dp,
         actions = {
             ZillitButton(
-                text = "Discard",
+                text = str(S.ah_discard),
                 onClick = { onEvent(AssetEvent.DiscardAndClose) },
                 variant = ButtonVariant.Secondary,
                 enabled = !saving,
             )
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = if (saving) "Saving…" else "Save & leave",
+                text = if (saving) str(S.ah_saving) else str(S.cs_exit_save_and_leave),
                 onClick = { onEvent(AssetEvent.SaveAndClose) },
                 enabled = !saving,
             )
         },
     ) {
         ZillitText(
-            text = "Save keeps everything you've edited. Discard throws away unsaved changes for this asset.",
+            text = str(S.desktop_asset_unsaved_explainer),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
         )

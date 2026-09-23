@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.EnvelopeRecipient
 import com.zillit.desktop.feature.esignature.domain.EsignFormat
 import com.zillit.desktop.feature.esignature.ui.EditorState
@@ -89,7 +91,7 @@ private fun EditorHeader(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         ) {
             ZillitIconButton(
                 icon = ZillitIcons.ArrowLeft,
-                contentDescription = "Back",
+                contentDescription = str(S.docusign_back),
                 onClick = { onEvent(EsignEvent.Back) },
             )
             Column(Modifier.weight(1f)) {
@@ -98,26 +100,35 @@ private fun EditorHeader(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ZillitText(
-                        text = editor.title.ifBlank { if (editor.isTemplate) "New template" else "Untitled document" },
+                        text = editor.title.ifBlank {
+                            if (editor.isTemplate) {
+                                str(S.dm_template_new)
+                            } else {
+                                str(S.docusign_send_confirm_untitled)
+                            }
+                        },
                         style = ZillitTheme.typography.titleMedium,
                         maxLines = 1,
                         modifier = Modifier.widthIn(max = 520.dp),
                     )
                     ZillitTag(
                         label = when {
-                            editor.isTemplate -> "TEMPLATE DRAFT"
-                            editor.envelopeId != null -> "DRAFT"
-                            else -> "NEW"
+                            editor.isTemplate -> str(S.docusign_template_draft_pill)
+                            editor.envelopeId != null -> str(S.desktop_draft_upper)
+                            else -> str(S.mtg_new)
                         },
                         tone = if (editor.isTemplate) TagTone.Info else TagTone.Neutral,
                     )
-                    editor.fromTemplateName?.let { ZillitTag(label = "From template · $it", tone = TagTone.Accent) }
+                    editor.fromTemplateName?.let { ZillitTag(
+                        label = str(S.desktop_ds_from_template, it),
+                        tone = TagTone.Accent,
+                    ) }
                 }
                 ZillitText(
                     text = if (editor.step == EditorStep.Prepare) {
-                        "Step 1 of 2 · Prepare the document and choose who signs"
+                        str(S.desktop_ds_step_1_of_2_prepare_the_document_and)
                     } else {
-                        "Step 2 of 2 · Place the fields each signer fills"
+                        str(S.desktop_ds_step_2_of_2_place_the_fields_each)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
@@ -134,8 +145,8 @@ private fun StepDots(step: EditorStep) {
     val colors = ZillitTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(
-            "Prepare" to EditorStep.Prepare,
-            "Place fields" to EditorStep.Place,
+            str(S.desktop_ds_prepare) to EditorStep.Prepare,
+            str(S.desktop_ds_place_fields) to EditorStep.Place,
         ).forEachIndexed { index, (label, s) ->
             val active = s == step
             val done = step.ordinal > s.ordinal
@@ -177,21 +188,25 @@ private fun EditorFooter(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         ) {
             if (editor.step == EditorStep.Place) {
                 ZillitButton(
-                    "Back to prepare",
+                    str(S.desktop_ds_back_to_prepare),
                     onClick = { onEvent(EsignEvent.GoToPrepare) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.ArrowLeft,
                 )
                 ZillitText(
-                    "${editor.placedCount} field${if (editor.placedCount == 1) "" else "s"} placed" +
-                        (if (editor.settings.initialsOnAllPages) " · initials on every page" else ""),
+                    str(S.docusign_fields_placed, editor.placedCount) +
+                        (if (editor.settings.initialsOnAllPages) {
+                            str(S.desktop_ds_initials_on_every_page_suffix)
+                        } else {
+                            ""
+                        }),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             } else {
                 ZillitButton(
-                    "Cancel",
+                    str(S.cancel),
                     onClick = { onEvent(EsignEvent.CancelCompose) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -200,14 +215,14 @@ private fun EditorFooter(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
             Spacer(Modifier.weight(1f))
             when {
                 editor.step == EditorStep.Prepare -> ZillitButton(
-                    "Next: Place fields",
+                    str(S.docusign_next_place_fields),
                     onClick = { onEvent(EsignEvent.GoToPlace) },
                     size = ButtonSize.Small,
                     trailingIcon = ZillitIcons.ArrowRight,
                     enabled = editor.canPlace && !editor.loadingDoc,
                 )
                 editor.isTemplate -> ZillitButton(
-                    if (editor.templateId != null) "Update template" else "Save template",
+                    if (editor.templateId != null) str(S.update_template) else str(S.docusign_save_template),
                     onClick = { onEvent(EsignEvent.SaveTemplate) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Save,
@@ -215,13 +230,13 @@ private fun EditorFooter(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                 )
                 else -> {
                     ZillitButton(
-                        "Save as template",
+                        str(S.docusign_save_as_template),
                         onClick = { onEvent(EsignEvent.OpenSaveAsTemplate) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
                     )
                     ZillitButton(
-                        "Save draft",
+                        str(S.ah_save_draft),
                         onClick = { onEvent(EsignEvent.SaveDraft) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -229,7 +244,7 @@ private fun EditorFooter(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                         loading = editor.saving,
                     )
                     ZillitButton(
-                        "Send envelope",
+                        str(S.desktop_ds_send_envelope),
                         onClick = { onEvent(EsignEvent.RequestSend) },
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Send,
@@ -262,11 +277,10 @@ private fun PrepareStep(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                     CcCard(editor, onEvent)
                 } else {
                     EsignCard {
-                        BlockTitle("Signer roles")
+                        BlockTitle(str(S.desktop_ds_signer_roles))
                         Spacer(Modifier.height(6.dp))
                         ZillitText(
-                            "A template carries role slots, not people. Whoever uses it picks the real signers. " +
-                                "Slots are created as you place fields.",
+                            str(S.desktop_ds_template_role_slots_hint),
                             style = ZillitTheme.typography.bodySmall,
                             color = colors.textSecondary,
                         )
@@ -281,10 +295,10 @@ private fun PrepareStep(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
 private fun DocumentCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     EsignCard {
-        BlockTitle("Document") {
+        BlockTitle(str(S.docusign_section_document)) {
             if (editor.hasDocument) {
                 ZillitButton(
-                    "Replace",
+                    str(S.replace),
                     onClick = { onEvent(EsignEvent.PickDocument) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -313,7 +327,10 @@ private fun DocumentCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                 ) {
                     ZillitIcon(ZillitIcons.Upload, tint = colors.accent, size = 24.dp)
                 }
-                ZillitText("Choose a PDF to send for signature", style = ZillitTheme.typography.titleSmall)
+                ZillitText(
+                    str(S.desktop_ds_choose_a_pdf_to_send_for_signature),
+                    style = ZillitTheme.typography.titleSmall,
+                )
                 ZillitText(
                     "PDF only · up to 100 MB",
                     style = ZillitTheme.typography.bodySmall,
@@ -325,7 +342,7 @@ private fun DocumentCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                 DocTile(size = 44.dp)
                 Column(Modifier.weight(1f)) {
                     ZillitText(
-                        editor.fileName.ifBlank { editor.document?.name ?: "Document" },
+                        editor.fileName.ifBlank { editor.document?.name ?: str(S.docusign_section_document) },
                         style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                     )
@@ -383,13 +400,13 @@ private fun DocumentCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
 private fun MessageCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     EsignCard {
-        BlockTitle(if (editor.isTemplate) "Template details" else "Add message")
+        BlockTitle(if (editor.isTemplate) str(S.dm_nda_sheet_title_template) else str(S.docusign_section_add_message))
         Spacer(Modifier.height(4.dp))
         ZillitText(
             if (editor.isTemplate) {
-                "The name and description shown in the template library."
+                str(S.desktop_ds_the_name_and_description_shown_in_the_template)
             } else {
-                "The subject and message you enter here are included in the email your recipients receive."
+                str(S.desktop_ds_the_subject_and_message_you_enter_here_are)
             },
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
@@ -398,18 +415,22 @@ private fun MessageCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         ZillitTextField(
             value = editor.title,
             onValueChange = { v -> onEvent(EsignEvent.EditCompose { copy(title = v) }) },
-            label = if (editor.isTemplate) "Name" else "Subject",
-            placeholder = if (editor.isTemplate) "Crew engagement form" else "Enter subject",
+            label = if (editor.isTemplate) str(S.name) else str(S.subject),
+            placeholder = if (editor.isTemplate) {
+                str(S.desktop_ds_crew_engagement_form)
+            } else {
+                str(S.desktop_ds_enter_subject)
+            },
         )
         Spacer(Modifier.height(10.dp))
         ZillitTextField(
             value = editor.description,
             onValueChange = { v -> onEvent(EsignEvent.EditCompose { copy(description = v) }) },
-            label = if (editor.isTemplate) "Description" else "Message",
+            label = if (editor.isTemplate) str(S.description) else str(S.message),
             placeholder = if (editor.isTemplate) {
-                "What this template is for"
+                str(S.desktop_ds_what_this_template_is_for)
             } else {
-                "Enter message — tell people what the document is and what you need from them."
+                str(S.desktop_ds_enter_message_tell_people_what_the_document_is)
             },
             singleLine = false,
             modifier = Modifier.fillMaxWidth().height(110.dp),
@@ -422,35 +443,39 @@ private fun OptionsCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val settings = editor.settings
     EsignCard {
-        BlockTitle("Options")
+        BlockTitle(str(S.docusign_prop_options))
         Spacer(Modifier.height(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!editor.isTemplate) {
                 ZillitSwitch(
                     checked = settings.signingOrderEnabled,
                     onCheckedChange = { onEvent(EsignEvent.EditSettings(settings.copy(signingOrderEnabled = it))) },
-                    label = "Signs in this order — each signer is notified after the one before completes",
+                    label = str(S.desktop_ds_signing_order_label),
                 )
             }
             ZillitSwitch(
                 checked = settings.initialsOnAllPages,
                 onCheckedChange = { onEvent(EsignEvent.SetInitialsOnAllPages(it)) },
-                label = "Initials on every page — one initial field per signer, bottom right of each page",
+                label = str(S.desktop_ds_initials_all_pages_label),
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    ZillitText("Remind signers", style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
+                    ZillitText(
+                        str(S.desktop_ds_remind_signers),
+                        style = ZillitTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
                     ZillitSelect(
                         value = settings.reminderCadenceDays,
                         options = REMINDER_CHOICES,
                         onSelect = { onEvent(EsignEvent.EditSettings(settings.copy(reminderCadenceDays = it))) },
                         label = { days ->
                             when (days) {
-                                null -> "Every 2 days (default)"
-                                1 -> "Every day"
+                                null -> str(S.desktop_ds_every_2_days_default)
+                                1 -> str(S.every_day)
                                 else -> "Every $days days"
                             }
                         },
@@ -461,12 +486,16 @@ private fun OptionsCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    ZillitText("Expires after", style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
+                    ZillitText(
+                        str(S.desktop_ds_expires_after),
+                        style = ZillitTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
                     ZillitSelect(
                         value = settings.expirationDays,
                         options = EXPIRY_CHOICES,
                         onSelect = { onEvent(EsignEvent.EditSettings(settings.copy(expirationDays = it))) },
-                        label = { days -> if (days == null) "Never" else "$days days" },
+                        label = { days -> if (days == null) str(S.never) else "$days days" },
                         modifier = Modifier.width(130.dp),
                     )
                 }
@@ -479,7 +508,7 @@ private fun OptionsCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
 private fun SignersCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     EsignCard {
-        BlockTitle("Signers") {
+        BlockTitle(str(S.docusign_section_signers)) {
             ZillitText("${editor.signers.size}", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         }
         Spacer(Modifier.height(8.dp))
@@ -487,13 +516,13 @@ private fun SignersCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
             ZillitSwitch(
                 checked = editor.selfSigns,
                 onCheckedChange = { onEvent(EsignEvent.ToggleSelfSign(it)) },
-                label = "I need to sign this document too",
+                label = str(S.desktop_ds_i_need_to_sign_too),
             )
             Spacer(Modifier.height(8.dp))
         }
         if (editor.signers.isEmpty()) {
             ZillitNotice(
-                text = "Add at least one signer. Everyone you add gets their own colour on the document.",
+                text = str(S.desktop_ds_add_at_least_one_signer_everyone_you_add),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Users,
             )
@@ -517,14 +546,14 @@ private fun SignersCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ZillitButton(
-                "Add signer",
+                str(S.desktop_ds_add_signer),
                 onClick = { onEvent(EsignEvent.EditCompose { copy(signerPickerOpen = true, pickerSearch = "") }) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.UserPlus,
             )
             ZillitButton(
-                "External signer by email",
+                str(S.desktop_ds_external_signer_by_email),
                 onClick = { onEvent(EsignEvent.OpenExternal(EnvelopeRecipient.ROLE_SIGNER)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
@@ -538,7 +567,7 @@ private fun SignersCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
 private fun CcCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     EsignCard {
-        BlockTitle("Receives a copy") {
+        BlockTitle(str(S.desktop_ds_receives_a_copy)) {
             ZillitText("${editor.ccs.size}", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         }
         Spacer(Modifier.height(4.dp))
@@ -565,14 +594,14 @@ private fun CcCard(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ZillitButton(
-                "Add CC",
+                str(S.desktop_ds_add_cc),
                 onClick = { onEvent(EsignEvent.EditCompose { copy(ccPickerOpen = true, pickerSearch = "") }) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.UserPlus,
             )
             ZillitButton(
-                "External CC by email",
+                str(S.desktop_ds_external_cc_by_email),
                 onClick = { onEvent(EsignEvent.OpenExternal(EnvelopeRecipient.ROLE_CC)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
@@ -623,7 +652,7 @@ private fun RecipientRow(
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     maxLines = 1,
                 )
-                if (recipient.isExternal) ZillitTag("External", tone = TagTone.Info)
+                if (recipient.isExternal) ZillitTag(str(S.docusign_row_external_chip), tone = TagTone.Info)
                 if (recipient.isPlaceholder) ZillitTag("placeholder", tone = TagTone.Warning)
             }
             if (recipient.email.isNotBlank()) {
@@ -635,7 +664,7 @@ private fun RecipientRow(
                 )
             } else if (recipient.isPlaceholder) {
                 ZillitText(
-                    "Pick a real user before sending",
+                    str(S.desktop_ds_pick_a_real_user_before_sending),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.warning,
                     maxLines = 1,
@@ -645,20 +674,20 @@ private fun RecipientRow(
         if (onUp != null || onDown != null) {
             ZillitIconButton(
                 ZillitIcons.ChevronUp,
-                "Move up",
+                str(S.docusign_send_confirm_move_up),
                 onClick = onUp ?: {},
                 enabled = onUp != null,
                 size = 22.dp,
             )
             ZillitIconButton(
                 ZillitIcons.ChevronDown,
-                "Move down",
+                str(S.docusign_send_confirm_move_down),
                 onClick = onDown ?: {},
                 enabled = onDown != null,
                 size = 22.dp,
             )
         }
-        ZillitIconButton(ZillitIcons.Close, "Remove", onClick = onRemove, size = 22.dp)
+        ZillitIconButton(ZillitIcons.Close, str(S.remove), onClick = onRemove, size = 22.dp)
     }
 }
 
@@ -686,8 +715,8 @@ private fun PeoplePicker(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                 )
     }
     ZillitDialogShell(
-        title = if (forCc) "Add a CC" else "Add a signer",
-        subtitle = "Project users",
+        title = if (forCc) str(S.desktop_ds_add_a_cc) else str(S.desktop_ds_add_a_signer),
+        subtitle = str(S.project_users),
         visible = open,
         onDismiss = { onEvent(EsignEvent.EditCompose { copy(signerPickerOpen = false, ccPickerOpen = false) }) },
         icon = ZillitIcons.Users,
@@ -697,14 +726,14 @@ private fun PeoplePicker(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         ZillitSearchField(
             value = editor.pickerSearch,
             onValueChange = { q -> onEvent(EsignEvent.EditCompose { copy(pickerSearch = q) }) },
-            placeholder = "Search project users…",
+            placeholder = str(S.av_search_project_users),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))
         ZillitScrollColumn(Modifier.fillMaxWidth().height(360.dp)) {
             if (matches.isEmpty()) {
                 ZillitText(
-                    "Nobody matches.",
+                    str(S.desktop_nobody_matches),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                     modifier = Modifier.padding(12.dp),
@@ -728,7 +757,7 @@ private fun PeoplePicker(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                             maxLines = 1,
                         )
                         ZillitText(
-                            option.email.ifBlank { "No email on the crew list — add by email instead" },
+                            option.email.ifBlank { str(S.desktop_ds_no_email_on_the_crew_list_add_by) },
                             style = ZillitTheme.typography.labelSmall,
                             color = if (option.email.isBlank()) colors.warning else colors.textMuted,
                             maxLines = 1,
@@ -745,8 +774,12 @@ private fun PeoplePicker(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
 private fun ExternalDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val draft = editor.external
     ZillitDialogShell(
-        title = if (draft?.role == EnvelopeRecipient.ROLE_CC) "External CC" else "External signer",
-        subtitle = "Someone outside the production — they sign from an emailed link",
+        title = if (draft?.role == EnvelopeRecipient.ROLE_CC) {
+            str(S.desktop_ds_external_cc)
+        } else {
+            str(S.desktop_ds_external_signer)
+        },
+        subtitle = str(S.desktop_ds_someone_outside_the_production_they_sign_from_an),
         visible = draft != null,
         onDismiss = { onEvent(EsignEvent.CloseExternal) },
         scrollable = false,
@@ -754,13 +787,13 @@ private fun ExternalDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         width = 460.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(EsignEvent.CloseExternal) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                "Add",
+                str(S.add),
                 onClick = { onEvent(EsignEvent.AddExternal) },
                 size = ButtonSize.Small,
                 enabled = draft?.emailValid == true,
@@ -772,15 +805,19 @@ private fun ExternalDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
             ZillitTextField(
                 value = draft.name,
                 onValueChange = { onEvent(EsignEvent.EditExternal(draft.copy(name = it))) },
-                label = "Name",
-                placeholder = "Jane Doe",
+                label = str(S.name),
+                placeholder = str(S.dd_preview_sample_name),
             )
             ZillitTextField(
                 value = draft.email,
                 onValueChange = { onEvent(EsignEvent.EditExternal(draft.copy(email = it))) },
-                label = "Email",
+                label = str(S.email),
                 placeholder = "jane@example.com",
-                errorText = if (draft.email.isNotBlank() && !draft.emailValid) "Enter a valid email address" else null,
+                errorText = if (draft.email.isNotBlank() && !draft.emailValid) {
+                    str(S.docusign_role_email_invalid)
+                } else {
+                    null
+                },
             )
         }
     }
@@ -790,7 +827,7 @@ private fun ExternalDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
 private fun ConfirmSendDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "Send this envelope?",
+        title = str(S.desktop_ds_send_this_envelope),
         subtitle = editor.title,
         visible = editor.confirmSend,
         onDismiss = { onEvent(EsignEvent.CancelSend) },
@@ -799,13 +836,13 @@ private fun ConfirmSendDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit
         width = 480.dp,
         actions = {
             ZillitButton(
-                "Not yet",
+                str(S.desktop_ad_not_yet),
                 onClick = { onEvent(EsignEvent.CancelSend) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                "Send now",
+                str(S.desktop_ds_send_now),
                 onClick = { onEvent(EsignEvent.ConfirmSend) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Send,
@@ -816,9 +853,9 @@ private fun ConfirmSendDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ZillitText(
                 if (editor.settings.signingOrderEnabled) {
-                    "Signers are notified one at a time, in this order:"
+                    str(S.desktop_ds_signers_are_notified_one_at_a_time_in)
                 } else {
-                    "Every signer is notified at once:"
+                    str(S.desktop_ds_every_signer_is_notified_at_once)
                 },
                 style = ZillitTheme.typography.bodyMedium,
             )
@@ -829,8 +866,11 @@ private fun ConfirmSendDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit
                 ) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(signerColor(i)))
                     ZillitText(
-                        "${s.name.ifBlank { s.email }} · " +
-                            "${editor.fieldsOf(editor.recipients.indexOf(s)).size} field(s)",
+                        str(
+                            S.desktop_ds_signer_field_count,
+                            s.name.ifBlank { s.email },
+                            editor.fieldsOf(editor.recipients.indexOf(s)).size,
+                        ),
                         style = ZillitTheme.typography.bodySmall,
                     )
                 }
@@ -850,8 +890,8 @@ private fun ConfirmSendDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit
 private fun SaveAsTemplateDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val sheet = editor.saveAsTemplate
     ZillitDialogShell(
-        title = if (editor.templateId != null) "Update template" else "Save as template",
-        subtitle = "Signers are stripped to role slots; the document, fields and message are kept.",
+        title = if (editor.templateId != null) str(S.update_template) else str(S.docusign_save_as_template),
+        subtitle = str(S.desktop_ds_signers_are_stripped_to_role_slots_the_document),
         visible = sheet != null,
         onDismiss = { onEvent(EsignEvent.CancelSaveAsTemplate) },
         scrollable = false,
@@ -859,13 +899,13 @@ private fun SaveAsTemplateDialog(editor: EditorState, onEvent: (EsignEvent) -> U
         width = 480.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(EsignEvent.CancelSaveAsTemplate) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                if (editor.templateId != null) "Update" else "Save template",
+                if (editor.templateId != null) str(S.update) else str(S.docusign_save_template),
                 onClick = { onEvent(EsignEvent.ConfirmSaveAsTemplate) },
                 size = ButtonSize.Small,
                 loading = sheet?.saving == true,
@@ -878,21 +918,21 @@ private fun SaveAsTemplateDialog(editor: EditorState, onEvent: (EsignEvent) -> U
             ZillitTextField(
                 value = sheet.name,
                 onValueChange = { onEvent(EsignEvent.EditSaveAsTemplate(sheet.copy(name = it))) },
-                label = "Name",
-                placeholder = "Crew Deal Memo — Standard",
+                label = str(S.name),
+                placeholder = str(S.desktop_ds_crew_deal_memo_standard),
             )
             ZillitTextField(
                 value = sheet.category,
                 onValueChange = { onEvent(EsignEvent.EditSaveAsTemplate(sheet.copy(category = it))) },
-                label = "Category",
-                placeholder = "deal_memo, nda, release…",
+                label = str(S.av_category),
+                placeholder = str(S.desktop_ds_category_hint),
                 helperText = editor.categories.takeIf { it.isNotEmpty() }?.let { "In use: ${it.joinToString(", ")}" },
             )
             ZillitTextField(
                 value = sheet.description,
                 onValueChange = { onEvent(EsignEvent.EditSaveAsTemplate(sheet.copy(description = it))) },
-                label = "Description",
-                placeholder = "What this template is for",
+                label = str(S.description),
+                placeholder = str(S.desktop_ds_what_this_template_is_for),
                 singleLine = false,
             )
         }

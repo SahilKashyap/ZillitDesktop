@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.ChecklistRow
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealPreviewRules
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealSigning
@@ -93,16 +95,16 @@ private fun ChecklistModal(open: Boolean, rules: DealPreviewRules?, onEvent: (De
     if (open && rules != null) shown.value = rules.checklist
     DmModal(
         visible = open && rules != null,
-        title = "Checklist for the Crew Member",
+        title = str(S.dm_step9_card_checks),
         onDismiss = { onEvent(PreviewEvent.CloseChecklist) },
         maxWidth = 520.dp,
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
             ZillitText(
                 text = buildAnnotatedString {
-                    append("What still needs completing on this deal memo. Use ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Complete your details") }
-                    append(" to fill in anything marked Pending.")
+                    append(str(S.desktop_dm_what_still_needs_completing_on_this_deal) + " ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(str(S.dm_crew_complete_details)) }
+                    append(" " + str(S.desktop_dm_to_fill_in_pending_suffix))
                 },
                 style = DmType.sans(12.sp).copy(lineHeight = 18.sp),
                 color = pv.muted,
@@ -110,7 +112,7 @@ private fun ChecklistModal(open: Boolean, rules: DealPreviewRules?, onEvent: (De
             Spacer(Modifier.height(12.dp))
             val rows = shown.value
             if (rows.isEmpty()) {
-                ZillitText(text = "No onboarding items.", style = DmType.sans(12.sp), color = pv.muted)
+                ZillitText(text = str(S.desktop_dm_no_onboarding_items), style = DmType.sans(12.sp), color = pv.muted)
             } else {
                 ChecklistTable(rows)
             }
@@ -123,9 +125,9 @@ private fun ChecklistTable(rows: List<ChecklistRow>) {
     val shape = RoundedCornerShape(6.dp)
     Column(modifier = Modifier.fillMaxWidth().clip(shape).border(1.dp, pv.divider, shape)) {
         Row(Modifier.fillMaxWidth().background(pv.tableHead).padding(horizontal = 12.dp, vertical = 8.dp)) {
-            MemoLabel("Item")
+            MemoLabel(str(S.desktop_dm_item))
             Spacer(Modifier.weight(1f))
-            Box(Modifier.widthIn(min = 96.dp)) { MemoLabel("Status") }
+            Box(Modifier.widthIn(min = 96.dp)) { MemoLabel(str(S.dm_label_status)) }
         }
         rows.forEach { row ->
             Box(Modifier.fillMaxWidth().height(1.dp).background(pv.divider))
@@ -157,10 +159,18 @@ private fun ChecklistTable(rows: List<ChecklistRow>) {
                             horizontalArrangement = Arrangement.spacedBy(5.dp),
                         ) {
                             ZillitIcon(ZillitIcons.Check, size = 10.dp, tint = Color(0xFF16A34A))
-                            ZillitText(text = "Complete", style = DmType.sans(13.sp), color = Color(0xFF16A34A))
+                            ZillitText(
+                                text = str(S.dm_action_complete),
+                                style = DmType.sans(13.sp),
+                                color = Color(0xFF16A34A),
+                            )
                         }
                     } else {
-                        ZillitText(text = "Pending", style = DmType.sans(13.sp), color = Color(0xFF9CA3AF))
+                        ZillitText(
+                            text = str(S.dm_checklist_pending),
+                            style = DmType.sans(13.sp),
+                            color = Color(0xFF9CA3AF),
+                        )
                     }
                 }
             }
@@ -190,12 +200,12 @@ private fun GateModal(
     val listed = blockers.filterNot { it.chipsOnly }
     DmModal(
         visible = visible,
-        title = "Not ready yet",
+        title = str(S.desktop_dm_not_ready_yet),
         onDismiss = { onEvent(PreviewEvent.CloseGate) },
         maxWidth = 460.dp,
         footer = {
             SolidButton(
-                text = "Got it",
+                text = str(S.dd_action_got_it),
                 onClick = { onEvent(PreviewEvent.CloseGate) },
                 color = PreviewInk.Brand,
                 hover = PreviewInk.BrandHover,
@@ -208,7 +218,7 @@ private fun GateModal(
             modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
         ) {
-            ZillitText(text = "Finish these first:", style = DmType.sans(13.sp), color = pv.muted)
+            ZillitText(text = str(S.desktop_dm_finish_these_first), style = DmType.sans(13.sp), color = pv.muted)
             listed.forEach { blocker ->
                 Spacer(Modifier.height(14.dp))
                 ZillitText(text = blocker.section, style = DmType.sans(13.sp, FontWeight.Bold), color = pv.ink)
@@ -227,7 +237,7 @@ private fun GateModal(
             if (listed.isNotEmpty() && rules?.crewCanEdit == true) {
                 Spacer(Modifier.height(14.dp))
                 SolidButton(
-                    text = "Complete your details",
+                    text = str(S.dm_crew_complete_details),
                     onClick = { onEvent(PreviewEvent.CompleteDetails) },
                     icon = ZillitIcons.Edit,
                     color = PreviewInk.Brand,
@@ -241,9 +251,8 @@ private fun GateModal(
                 if (chips.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
                     ChipGroup(
-                        label = "Documents to sign",
-                        instruction = "These need your signature before this deal can go for approval. Click a " +
-                            "document to sign it.",
+                        label = str(S.docusign_receiver_title),
+                        instruction = str(S.desktop_dm_these_need_your_signature_before_this_deal),
                         chips = chips,
                         glow = false,
                         onEvent = onEvent,
@@ -265,19 +274,19 @@ private fun RejectModal(draft: RejectDraft?, onEvent: (DealMemoEvent) -> Unit) {
     val hasReason = current.reason.isNotBlank()
     DmModal(
         visible = draft != null,
-        title = "Reject deal memo",
+        title = str(S.dm_reject_title),
         onDismiss = { onEvent(PreviewEvent.CancelReject) },
         maxWidth = 480.dp,
         dismissible = !busy,
         footer = {
             DmButton(
-                "Cancel",
+                str(S.dm_cancel),
                 onClick = { onEvent(PreviewEvent.CancelReject) },
                 style = DmButtonStyle.ModalNeutral,
                 enabled = !busy,
             )
             SolidButton(
-                text = if (busy) "Rejecting..." else "Confirm Rejection",
+                text = if (busy) str(S.ah_run_detail_btn_rejecting) else str(S.desktop_dm_confirm_rejection),
                 onClick = { onEvent(PreviewEvent.ConfirmReject) },
                 color = if (hasReason) PreviewInk.Red else Color(0xFFE5E7EB),
                 hover = if (hasReason) PreviewInk.RedHover else Color(0xFFE5E7EB),
@@ -290,15 +299,14 @@ private fun RejectModal(draft: RejectDraft?, onEvent: (DealMemoEvent) -> Unit) {
     ) {
         Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
             ZillitText(
-                text = "Tell your production administrator what you don't agree with. They can revise the deal and " +
-                    "send it back to you.",
+                text = str(S.desktop_dm_tell_your_production_administrator_what_you_dont),
                 style = DmType.sans(12.sp).copy(lineHeight = 18.sp),
                 color = pv.muted,
             )
             Spacer(Modifier.height(14.dp))
             ZillitText(
                 text = buildAnnotatedString {
-                    append("REASON FOR REJECTION")
+                    append(str(S.reason_for_rejection))
                     withStyle(SpanStyle(color = PreviewInk.Todo)) { append(" *") }
                 },
                 style = DmType.sans(12.sp, FontWeight.SemiBold, 0.05.em),
@@ -317,7 +325,7 @@ private fun RejectModal(draft: RejectDraft?, onEvent: (DealMemoEvent) -> Unit) {
             ) {
                 if (current.reason.isEmpty()) {
                     ZillitText(
-                        text = "e.g. the daily rate doesn't match what we agreed…",
+                        text = str(S.desktop_dm_e_g_the_daily_rate_doesnt_match),
                         style = DmType.sans(12.sp),
                         color = pv.faint,
                     )
@@ -388,16 +396,18 @@ internal fun FileViewerModal(viewer: FileViewer?, onClose: () -> Unit, onDownloa
                 ) {
                     ZillitSpinner(size = 16.dp, color = Color(0xFF9CA3AF))
                     ZillitText(
-                        text = if (current.kind == FileViewerKind.DealPdf) "Loading PDF…" else "Loading attachment…",
+                        text = if (current.kind == FileViewerKind.DealPdf) str(S.desktop_dm_loading_pdf) else str(
+                            S.desktop_dm_loading_attachment,
+                        ),
                         style = DmType.sans(13.sp),
                         color = Color(0xFF9CA3AF),
                     )
                 }
                 current.failed -> ViewerMessage(
                     when (current.kind) {
-                        FileViewerKind.DealPdf -> "Failed to load the PDF. Please try again."
-                        FileViewerKind.Document -> "Preview not available for this document."
-                        FileViewerKind.Passport -> "Failed to load attachment."
+                        FileViewerKind.DealPdf -> str(S.desktop_dm_failed_to_load_the_pdf_please_try)
+                        FileViewerKind.Document -> str(S.desktop_dm_preview_not_available_for_this_document)
+                        FileViewerKind.Passport -> str(S.desktop_dm_failed_to_load_attachment)
                     },
                 )
                 else -> ViewerBody(current, onDownload)
@@ -419,10 +429,14 @@ private fun ViewerBody(viewer: FileViewer, onDownload: () -> Unit) {
         ViewerContent.Unsupported, null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
             ZillitIcon(ZillitIcons.File, size = 36.dp, tint = Color(0xFFD1D5DB))
             Spacer(Modifier.height(10.dp))
-            ZillitText(text = "Preview not available for this file type.", style = DmType.sans(14.sp), color = pv.muted)
+            ZillitText(
+                text = str(S.desktop_dm_preview_not_available_for_this_file_type),
+                style = DmType.sans(14.sp),
+                color = pv.muted,
+            )
             Spacer(Modifier.height(6.dp))
             ZillitText(
-                text = "Download to view",
+                text = str(S.desktop_dm_download_to_view),
                 style = DmType.sans(12.sp, FontWeight.SemiBold).copy(textDecoration = TextDecoration.Underline),
                 color = PreviewInk.Download,
                 modifier = Modifier
@@ -467,7 +481,7 @@ private fun ViewerMessage(text: String) {
 @Composable
 internal fun DownloadButton(onClick: () -> Unit) {
     SolidButton(
-        text = "Download",
+        text = str(S.dm_nda_download),
         onClick = onClick,
         icon = ZillitIcons.Download,
         color = PreviewInk.Download,
@@ -495,7 +509,7 @@ private fun StartFormModal(
     if (open && view != null) shown.value = view
     DmModal(
         visible = open && view != null,
-        title = "Start Form",
+        title = str(S.dm_prev_tab_start_form),
         onDismiss = { onEvent(PreviewEvent.CloseStartForm) },
         maxWidth = 1100.dp,
         fullHeight = true,

@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BankDetail
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
@@ -78,7 +80,7 @@ fun <T> HubSelect(
     label: (T) -> String,
     onSelect: (T?) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select…",
+    placeholder: String = str(S.select),
     fieldLabel: String? = null,
     enabled: Boolean = true,
     searchable: Boolean = true,
@@ -114,7 +116,7 @@ fun <T> HubSelect(
                 if (clearable && value != null && enabled) {
                     ZillitIconButton(
                         icon = ZillitIcons.Close,
-                        contentDescription = "Clear",
+                        contentDescription = str(S.ah_clear),
                         onClick = { onSelect(null) },
                     )
                 }
@@ -126,7 +128,7 @@ fun <T> HubSelect(
                         ZillitSearchField(
                             value = search,
                             onValueChange = { search = it },
-                            placeholder = "Search…",
+                            placeholder = str(S.search),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -143,7 +145,10 @@ fun <T> HubSelect(
                         onPick = { onSelect(it); open = false; search = "" },
                         label = label,
                         secondary = secondary,
-                        empty = if (options.isEmpty()) "Nothing to choose from" else "No results for “$search”",
+                        empty = if (options.isEmpty()) str(S.desktop_nothing_to_choose_from) else str(
+                            S.desktop_hub_no_results_for_x,
+                            search,
+                        ),
                     )
                     PickerFooter(shown.size, options.size)
                 }
@@ -162,7 +167,7 @@ fun <T> HubMultiSelect(
     label: (T) -> String,
     onChange: (List<T>) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select…",
+    placeholder: String = str(S.select),
     fieldLabel: String? = null,
     enabled: Boolean = true,
 ) {
@@ -210,7 +215,7 @@ fun <T> HubMultiSelect(
                     ZillitSearchField(
                         value = search,
                         onValueChange = { search = it },
-                        placeholder = "Search…",
+                        placeholder = str(S.search),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     val shown = options.filter { search.isBlank() || label(it).contains(search, ignoreCase = true) }
@@ -222,7 +227,10 @@ fun <T> HubMultiSelect(
                     ) {
                         if (shown.isEmpty()) {
                             FieldHint(
-                                if (options.isEmpty()) "Nothing to choose from" else "No results for “$search”",
+                                if (options.isEmpty()) str(S.desktop_nothing_to_choose_from) else str(
+                                    S.desktop_hub_no_results_for_x,
+                                    search,
+                                ),
                                 Modifier.padding(ZillitTheme.spacing.sm),
                             )
                         }
@@ -265,7 +273,7 @@ fun Chip(text: String, modifier: Modifier = Modifier, onRemove: (() -> Unit)? = 
         if (onRemove != null) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove $text",
+                contentDescription = str(S.bs_chip_remove, text),
                 onClick = onRemove,
                 size = 18.dp,
                 tint = colors.accentText,
@@ -341,8 +349,14 @@ private fun PickerFooter(shown: Int, total: Int, picked: Int? = null) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FieldHint(if (shown == total) "$total option${if (total == 1) "" else "s"}" else "$shown of $total")
-        if (picked != null) FieldHint("· $picked selected")
+        FieldHint(
+            when {
+                shown != total -> str(S.docusign_field_of, shown, total)
+                total == 1 -> str(S.desktop_one_option)
+                else -> str(S.desktop_n_options, total)
+            },
+        )
+        if (picked != null) FieldHint(str(S.desktop_hub_n_selected_bullet, picked))
     }
 }
 
@@ -386,8 +400,8 @@ fun CoaCodeField(
             helperText = when {
                 value.isBlank() -> null
                 known -> accounts.firstOrNull { it.code.equals(value.trim(), true) }?.name
-                accounts.isEmpty() -> "The chart is empty — the code will be stored as typed."
-                else -> "Not in the chart — stored as typed."
+                accounts.isEmpty() -> str(S.desktop_hub_the_chart_is_empty_the_code_will_be_stored_as)
+                else -> str(S.desktop_hub_not_in_the_chart_stored_as_typed)
             },
             modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
         )
@@ -427,7 +441,7 @@ fun CoaCodeField(
                     }
                     if (onCreate != null) {
                         ZillitButton(
-                            text = "Create “${value.trim()}” as a nominal",
+                            text = str(S.desktop_hub_create_x_as_a_nominal, value.trim()),
                             onClick = { onCreate(value.trim(), value.trim(), costType); focused = false },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -571,8 +585,8 @@ fun DateField(
     val maxMillis = max?.let(IsoDate::toEpochMillis)
     val bounds = when {
         parsed == null -> null
-        minMillis != null && parsed < minMillis -> "Must be on or after $min."
-        maxMillis != null && parsed > maxMillis -> "Must be on or before $max."
+        minMillis != null && parsed < minMillis -> str(S.desktop_hub_must_be_on_or_after_x, min)
+        maxMillis != null && parsed > maxMillis -> str(S.desktop_hub_must_be_on_or_before_x, max)
         else -> null
     }
     // A calendar to pick from, as the web's `<input type="date">` has. Typing
@@ -585,7 +599,8 @@ fun DateField(
         errorText = errorText ?: bounds,
         // Only once something has been typed that will not save — a date
         // half-entered is not yet an error.
-        helperText = value.takeIf { it.isNotBlank() && parsed == null }?.let { "Not a date yet — use YYYY-MM-DD." },
+        helperText = value.takeIf { it.isNotBlank() && parsed == null }
+            ?.let { str(S.desktop_hub_not_a_date_yet_use_yyyy_mm_dd) },
         modifier = modifier,
     )
 }
@@ -598,16 +613,17 @@ fun DateField(
  * filled. A row without a title is never persisted, so it cannot block a
  * save; a filled row is soft-checked against its type as it is typed.
  */
+@Suppress("LongMethod") // One detail row, read left to right; the order is the reading order.
 @Composable
 fun TypedDetailsEditor(
     rows: List<BankDetail>,
     onChange: (List<BankDetail>) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    addLabel: String = "Add detail",
+    addLabel: String = str(S.desktop_add_detail),
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        if (rows.isEmpty()) FieldHint("No additional details.")
+        if (rows.isEmpty()) FieldHint(str(S.desktop_no_additional_details))
         rows.forEachIndexed { index, row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -619,7 +635,7 @@ fun TypedDetailsEditor(
                     onValueChange = { text ->
                         onChange(rows.mapIndexed { i, r -> if (i == index) r.copy(title = text) else r })
                     },
-                    placeholder = "Field name",
+                    placeholder = str(S.desktop_field_name),
                     enabled = enabled,
                     modifier = Modifier.weight(1f),
                 )
@@ -638,10 +654,12 @@ fun TypedDetailsEditor(
                     onValueChange = { text ->
                         onChange(rows.mapIndexed { i, r -> if (i == index) r.copy(value = text) else r })
                     },
-                    placeholder = "Value",
+                    placeholder = str(S.ah_addl_value_hint),
                     enabled = enabled,
-                    errorText = if (row.isTitled && !row.isValid) "Not a valid " +
-                        "${row.fieldType.label.lowercase()}" else null,
+                    errorText = if (row.isTitled && !row.isValid) str(
+                        S.desktop_hub_not_a_valid_x,
+                        row.fieldType.label.lowercase(),
+                    ) else null,
                     keyboardType = when (row.fieldType) {
                         BankDetailType.Number -> KeyboardType.Decimal
                         BankDetailType.Email -> KeyboardType.Email
@@ -654,7 +672,7 @@ fun TypedDetailsEditor(
                 if (enabled) {
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Remove ${row.title.ifBlank { "detail" }}",
+                        contentDescription = str(S.bs_chip_remove, row.title.ifBlank { str(S.desktop_detail) }),
                         onClick = { onChange(rows.filterIndexed { i, _ -> i != index }) },
                     )
                 }

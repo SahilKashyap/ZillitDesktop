@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitHorizontalScrollRail
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.domain.AssetCurrency
 import com.zillit.desktop.feature.assetreport.domain.AssetDepartment
 import com.zillit.desktop.feature.assetreport.domain.AssetFormat
@@ -70,11 +72,11 @@ internal fun AssetRegisterPage(state: AssetUiState, onEvent: (AssetEvent) -> Uni
     val colors = ZillitTheme.colors
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
         AssetTopBar(
-            backLabel = "Back to Film Tools",
+            backLabel = str(S.desktop_hub_back_to_film_tools),
             onBack = { onEvent(AssetEvent.Leave) },
             title = {
                 ZillitText(
-                    text = "Asset Register",
+                    text = str(S.asset_title),
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.textPrimary,
                     maxLines = 1,
@@ -84,8 +86,11 @@ internal fun AssetRegisterPage(state: AssetUiState, onEvent: (AssetEvent) -> Uni
                 if (!state.isLoading) {
                     val count = state.visible.size
                     ZillitText(
-                        text = "$count asset${if (count == 1) "" else "s"} · " +
+                        text = str(
+                            S.desktop_asset_count_total,
+                            count,
                             AssetFormat.money(state.total, state.currencySymbol),
+                        ),
                         style = ZillitTheme.typography.labelSmall,
                         color = colors.textMuted,
                         maxLines = 1,
@@ -148,7 +153,7 @@ private fun FilterBar(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
     ) {
         // Privileged only: everyone else is scoped to their own department server-side.
         if (state.viewer.privileged) {
-            FilterField("Department", Modifier.width(DEPARTMENT_WIDTH)) {
+            FilterField(str(S.department), Modifier.width(DEPARTMENT_WIDTH)) {
                 AssetSelect(
                     options = state.departments,
                     selectedKeys = state.departmentFilter,
@@ -160,12 +165,12 @@ private fun FilterBar(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
                         onEvent(AssetEvent.FilterDepartments(next))
                     },
                     onClear = { onEvent(AssetEvent.FilterDepartments(emptyList())) },
-                    placeholder = if (state.departmentsLoading) "Loading…" else "All departments",
+                    placeholder = if (state.departmentsLoading) str(S.ah_loading) else str(S.all_departments),
                     multiple = true,
                 )
             }
         }
-        FilterField("Currency", Modifier.width(CURRENCY_WIDTH)) {
+        FilterField(str(S.asset_currency), Modifier.width(CURRENCY_WIDTH)) {
             val choices = state.currencies.choices
             AssetSelect(
                 options = choices,
@@ -178,12 +183,12 @@ private fun FilterBar(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
                 onClear = { onEvent(AssetEvent.PickCurrency(null)) }.takeIf {
                     state.currencyCode.isNotBlank() && !state.currencyCode.equals(state.currencies.defaultCode, true)
                 },
-                placeholder = "Currency",
+                placeholder = str(S.asset_currency),
                 rowHeight = CURRENCY_ROW_HEIGHT,
                 row = { CurrencyRow(it, state.currencies.symbolFor(it.code)) },
             )
         }
-        FilterField("Category") {
+        FilterField(str(S.av_category)) {
             CategorySegments(selected = state.categoryFilter, onSelect = { onEvent(AssetEvent.FilterCategory(it)) })
         }
         Spacer(Modifier.weight(1f))
@@ -237,16 +242,19 @@ private fun CurrencyRow(currency: AssetCurrency, symbol: String) {
 // -- the grid ------------------------------------------------------------------------------
 
 /** The web's grid: fixed columns hold their width, the three named ones share the rest. */
-private enum class Col(val title: String, val fixed: Dp?, val share: Float = 0f, val end: Boolean = false) {
-    Code("Code", 88.dp),
-    Asset("Asset", null, share = 1.5f),
-    Vendor("Vendor", null, share = 0.9f),
-    Department("Department", null, share = 0.9f),
-    Ref("Ref", 118.dp),
-    Exp("Exp. Type", 172.dp),
-    Qty("Qty", 62.dp, end = true),
-    Unit("Unit Cost", 134.dp, end = true),
-    Total("Total", 150.dp, end = true),
+private enum class Col(private val titleKey: String, val fixed: Dp?, val share: Float = 0f, val end: Boolean = false) {
+    Code(S.code, 88.dp),
+    Asset(S.desktop_asset, null, share = 1.5f),
+    Vendor(S.ah_lbl_vendor, null, share = 0.9f),
+    Department(S.department, null, share = 0.9f),
+    Ref(S.desktop_ref, 118.dp),
+    Exp(S.desktop_exp_type, 172.dp),
+    Qty(S.ah_lbl_qty, 62.dp, end = true),
+    Unit(S.asset_lbl_unit_cost, 134.dp, end = true),
+    Total(S.asset_total, 150.dp, end = true),
+    ;
+
+    val title: String get() = str(titleKey)
 }
 
 @Composable
@@ -357,7 +365,7 @@ private fun NoResult() {
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            text = "No assets match your filters.",
+            text = str(S.desktop_asset_no_match),
             style = ZillitTheme.typography.bodyLarge,
             color = ZillitTheme.colors.textMuted,
         )
@@ -375,7 +383,8 @@ private fun TotalBar(state: AssetUiState) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "TOTAL",
+                // Capitalised like the column head above it, which uppercases the same key.
+                text = str(S.asset_total).uppercase(),
                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.1.em),
                 color = colors.textSecondary,
                 modifier = Modifier.weight(1f),

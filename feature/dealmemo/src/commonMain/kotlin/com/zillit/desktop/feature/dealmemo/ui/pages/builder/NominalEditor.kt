@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealValidators
@@ -46,26 +48,24 @@ internal fun NominalEditor(state: DealMemoUiState, builder: BuilderState, ops: F
     val department = form.text("department")
     BuilderAlert(
         if (department.isNotEmpty()) {
-            "Nominal lines reflect the ${state.labels.departmentLabel(department)} department defaults plus the OT, " +
-                "premiums, rentals and allowances on this deal."
+            str(S.dm_nom_info_note, state.labels.departmentLabel(department))
         } else {
-            "Select a department in Step 2 to see the dept-specific defaults; the table below builds from the active " +
-                "agreement and deal-authored rentals/allowances."
+            str(S.desktop_dm_select_a_department_in_step_2_to)
         },
         icon = ZillitIcons.Check,
         modifier = Modifier.padding(bottom = 14.dp),
     )
-    CardBlock(title = "Labour Nominals", tone = BuilderTone.Gold) {
+    CardBlock(title = str(S.dm_nom_card_codes), tone = BuilderTone.Gold) {
         val p = bp
         val shape = RoundedCornerShape(10.dp)
         Column(Modifier.fillMaxWidth().clip(shape).border(1.dp, p.hairline, shape)) {
             Row(Modifier.fillMaxWidth().background(p.infoBox).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                HeadCell("Element", Modifier.weight(1f))
-                HeadCell("Override", Modifier.width(OVERRIDE_WIDTH.dp))
+                HeadCell(str(S.dm_nom_table_element), Modifier.weight(1f))
+                HeadCell(str(S.dm_nom_table_override), Modifier.width(OVERRIDE_WIDTH.dp))
             }
             if (lines.isEmpty()) {
                 EmptyNote(
-                    "Pick an agreement in Step 1 — the labour-nominal lines populate from its OT and premium rows.",
+                    str(S.desktop_dm_pick_an_agreement_in_step_1_the),
                     Modifier.padding(16.dp),
                 )
             }
@@ -136,20 +136,22 @@ private fun TaxCreditCard(state: DealMemoUiState, form: DealForm, ops: FormOps) 
         (it as? JsonPrimitive)?.content?.takeIf(String::isNotEmpty)
     }
     val tagged = (form["taxCredits"] as? JsonArray)?.firstOrNull()?.let { (it as? JsonPrimitive)?.content }.orEmpty()
-    CardBlock(title = "Tax Credit Tagging", tag = "Per-entity regimes", tone = BuilderTone.Purple) {
+    CardBlock(
+        title = str(S.dm_nom_card_tax_credit),
+        tag = str(S.dm_nom_tax_credit_subtitle),
+        tone = BuilderTone.Purple,
+    ) {
         BuilderAlert(
-            "Tag this deal with the tax-credit regime that applies. Available regimes are configured per company in " +
-                "Production Setup → Companies, and surface here based on the entity selected in Step 1.",
+            str(S.desktop_dm_tag_this_deal_with_the_tax_credit),
             modifier = Modifier.padding(bottom = 12.dp),
         )
         when {
             entity.isEmpty() -> InfoBox {
-                InfoLine("Select a Production Entity in Step 1 to see its available tax-credit regimes.")
+                InfoLine(str(S.desktop_dm_select_a_production_entity_in_step_1))
             }
             regimes.isEmpty() -> InfoBox {
                 InfoLine(
-                    "There is no tax-credit regimes configured. Add them in Production Setup → Companies, then " +
-                        "return here.",
+                    str(S.desktop_dm_there_is_no_tax_credit_regimes_configured),
                 )
             }
             else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -164,11 +166,11 @@ private fun TaxCreditCard(state: DealMemoUiState, form: DealForm, ops: FormOps) 
                     onPick = { tag ->
                         ops.set("taxCredits", JsonArray(if (tag.isEmpty()) emptyList() else listOf(JsonPrimitive(tag))))
                     },
-                    placeholder = "— None —",
+                    placeholder = str(S.desktop_dm_none_placeholder),
                 )
                 if (tagged.isNotEmpty()) {
                     InfoBox {
-                        InfoLine("Tagged for this deal")
+                        InfoLine(str(S.desktop_dm_tagged_for_this_deal))
                         ZillitText(text = tagged, style = DmType.sans(11.sp, FontWeight.SemiBold), color = bp.ink)
                     }
                 }

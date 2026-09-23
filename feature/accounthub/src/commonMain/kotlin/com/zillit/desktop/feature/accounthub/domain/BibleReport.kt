@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -15,16 +17,18 @@ import kotlin.time.Instant
  * filter is the ledger's own vocabulary and hiding a value the server accepts
  * would make this list disagree with the export's.
  */
-enum class LedgerSource(val wire: String, val label: String) {
-    PurchaseOrder("po", "Purchase Order"),
-    Invoice("invoice", "Invoice"),
-    Card("card", "Production Expense Cards"),
-    Cash("cash", "Petty Cash Expenses"),
-    Payroll("payroll", "Payroll"),
+enum class LedgerSource(val wire: String, private val labelKey: String) {
+    PurchaseOrder("po", S.purchase_order),
+    Invoice("invoice", S.ah_run_detail_col_invoice),
+    Card("card", S.ah_card_expenses),
+    Cash("cash", S.ah_cash_expenses),
+    Payroll("payroll", S.dm_step9_title),
 
     /** An accountant's own entry — an accrual, reclass or correction. */
-    ManualJournal("manual_je", "Manual Journal"),
+    ManualJournal("manual_je", S.desktop_manual_journal),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): LedgerSource? = entries.firstOrNull { it.wire == wire }
@@ -43,14 +47,16 @@ enum class LedgerSource(val wire: String, val label: String) {
  * is accepted too, so a server that answers in that vocabulary still gets its
  * colours rather than six grey tags.
  */
-enum class SourceBadge(val code: String, val label: String) {
-    Invoice("INV", "Invoice"),
-    Credit("CRED", "Credit note"),
-    PurchaseOrder("PO", "Purchase order"),
-    Card("CARD", "Production expense card"),
-    Cash("CASH", "Petty cash"),
-    Payroll("PR", "Payroll"),
+enum class SourceBadge(val code: String, private val labelKey: String) {
+    Invoice("INV", S.ah_run_detail_col_invoice),
+    Credit("CRED", S.desktop_credit_note),
+    PurchaseOrder("PO", S.purchase_order),
+    Card("CARD", S.desktop_production_expense_card),
+    Cash("CASH", S.desktop_petty_cash),
+    Payroll("PR", S.dm_step9_title),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(src: String): SourceBadge? {
@@ -86,8 +92,10 @@ data class FilterOption(val value: String, val label: String)
  * list reads alphabetically rather than in the chart's balance-sheet order.
  */
 val BibleAccountTypes: List<FilterOption> =
-    (CoaCostType.entries.map { FilterOption(it.wire, it.label) } + FilterOption("unclassified", "Unclassified"))
-        .sortedBy { it.label }
+    (
+        CoaCostType.entries.map { FilterOption(it.wire, it.label) } +
+            FilterOption("unclassified", str(S.desktop_unclassified))
+        ).sortedBy { it.label }
 
 /**
  * The Tax filter's choices — the web's `mapTaxTypesToOptions`.
@@ -101,7 +109,7 @@ fun bibleTaxOptions(taxTypes: List<TaxType>): List<FilterOption> =
     taxTypes.filter { it.identifier.isNotBlank() }.map { tax ->
         val rate = tax.rate
         FilterOption(tax.identifier, if (rate == null) tax.label else "${tax.label} · ${rate.asRateText()}%")
-    } + FilterOption(OTHER_TAX, "Other")
+    } + FilterOption(OTHER_TAX, str(S.other))
 
 private const val OTHER_TAX = "other"
 
@@ -157,7 +165,7 @@ data class BibleAccount(
     /** The code as printed: "Uncoded", nothing for another bucket, a dash for a missing code. */
     val displayCode: String
         get() = when {
-            isUncoded -> "Uncoded"
+            isUncoded -> str(S.desktop_uncoded)
             isInternalKey -> ""
             else -> code.ifBlank { "—" }
         }
@@ -175,7 +183,7 @@ data class BibleAccount(
 
     /** "1 entry", "12 entries" — the web's count beside the account. */
     val entriesLabel: String
-        get() = "${transactions.size} ${if (transactions.size == 1) "entry" else "entries"}"
+        get() = if (transactions.size == 1) str(S.desktop_one_entry) else str(S.desktop_n_entries, transactions.size)
 
     companion object {
         const val UNCODED = "__uncoded__"
@@ -184,11 +192,11 @@ data class BibleAccount(
 
         /** The web adapter's `SYNTHETIC_NAMES`, plus its null-account bucket. */
         private val NAMES = mapOf(
-            UNCODED to "Uncoded",
-            "__uncoded_budget__" to "Budget — Unallocated",
-            "__payroll_unallocated__" to "Payroll — Unallocated",
-            "__fringes_unallocated__" to "Fringes — Unallocated",
-            UNALLOCATED to "Non-Allocated Items",
+            UNCODED to str(S.desktop_uncoded),
+            "__uncoded_budget__" to str(S.desktop_budget_unallocated),
+            "__payroll_unallocated__" to str(S.desktop_payroll_unallocated),
+            "__fringes_unallocated__" to str(S.desktop_fringes_unallocated),
+            UNALLOCATED to str(S.desktop_non_allocated_items),
         )
 
         private fun isInternal(key: String): Boolean = key.startsWith("__")
@@ -200,7 +208,7 @@ data class BibleAccount(
                 return key.removePrefix("$UNALLOCATED:").trim().ifBlank { NAMES.getValue(UNALLOCATED) }
             }
             val words = key.trim('_').replace('_', ' ').trim()
-            return words.replaceFirstChar { it.uppercase() }.ifBlank { "Unallocated" }
+            return words.replaceFirstChar { it.uppercase() }.ifBlank { str(S.desktop_unallocated) }
         }
     }
 }
@@ -347,9 +355,9 @@ object BiblePeriod {
      */
     fun label(filters: BibleFilters, lockedThrough: String, today: LocalDate): String = when (filters.periodMode) {
         PeriodMode.Current -> parse(lockedThrough)
-            ?.let { "${it.longText()} – ${today.longText()}" }
-            ?: "Till ${today.longText()}"
-        PeriodMode.Custom -> "${longText(filters.fromDate)} – ${longText(filters.toDate)}"
+            ?.let { str(S.ah_rental_format, it.longText(), today.longText()) }
+            ?: str(S.desktop_till_date, today.longText())
+        PeriodMode.Custom -> str(S.ah_rental_format, longText(filters.fromDate), longText(filters.toDate))
     }
 
     /** The Date Range the web opens on: the first of January to today. */
@@ -379,7 +387,12 @@ object BiblePeriod {
 
     private const val FLOOR_YEAR = 2000
     private val ISO_DAY = Regex("^\\d{4}-\\d{2}-\\d{2}$")
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val MONTHS: List<String>
+        get() = listOf(
+            S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+            S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+            S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+        ).map { str(it) }
 }
 
 /** The bible's number and date formats — the web's `fmtAmount` and `epochToDisplay`. */

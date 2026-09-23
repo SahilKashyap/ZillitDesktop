@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallPhase
 
 /**
@@ -90,12 +92,12 @@ private fun MediaPills(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     SplitPill(
         icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
         label = when {
-            state.onHold -> "On hold — resume the call to use your microphone"
-            state.micMuted -> "Unmute"
-            else -> "Mute"
+            state.onHold -> str(S.desktop_call_on_hold_microphone)
+            state.micMuted -> str(S.desktop_unmute)
+            else -> str(S.desktop_mute)
         },
         off = state.micMuted,
-        caretLabel = "Audio settings",
+        caretLabel = str(S.desktop_call_audio_settings),
         caretActive = state.audioPickerOpen,
         enabled = !state.onHold,
         onCaret = { onEvent(CallEvent.ToggleAudioPicker) },
@@ -107,12 +109,12 @@ private fun MediaPills(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     SplitPill(
         icon = if (state.cameraOn) ZillitIcons.Camera else ZillitIcons.CameraOff,
         label = when {
-            state.onHold -> "On hold — resume the call to use your camera"
-            state.cameraOn -> "Turn camera off"
-            else -> "Turn camera on"
+            state.onHold -> str(S.desktop_call_on_hold_camera)
+            state.cameraOn -> str(S.desktop_call_turn_camera_off)
+            else -> str(S.desktop_call_turn_camera_on)
         },
         off = !state.cameraOn,
-        caretLabel = "Video settings",
+        caretLabel = str(S.desktop_call_video_settings),
         caretActive = state.audioPickerOpen,
         enabled = !state.onHold,
         onCaret = { onEvent(CallEvent.ToggleAudioPicker) },
@@ -133,9 +135,9 @@ private fun RoomVerbs(state: CallUiState, onEvent: (CallEvent) -> Unit, connecte
     DockButton(
         icon = ZillitIcons.Hand,
         label = when {
-            state.handsLocked -> "Raising hands is off"
-            state.handRaised -> "Lower hand"
-            else -> "Raise hand"
+            state.handsLocked -> str(S.desktop_call_raising_hands_is_off)
+            state.handRaised -> str(S.desktop_call_lower_hand)
+            else -> str(S.txt_raise_hand)
         },
         active = state.handRaised,
         enabled = connected,
@@ -144,7 +146,7 @@ private fun RoomVerbs(state: CallUiState, onEvent: (CallEvent) -> Unit, connecte
     if (!state.shareLocked) {
         DockButton(
             icon = ZillitIcons.Monitor,
-            label = if (state.media.selfSharing) "Stop presenting" else "Present",
+            label = if (state.media.selfSharing) str(S.desktop_call_stop_presenting) else str(S.desktop_call_present),
             active = state.media.selfSharing,
             enabled = connected,
             onClick = { onEvent(CallEvent.ToggleScreenShare) },
@@ -152,7 +154,11 @@ private fun RoomVerbs(state: CallUiState, onEvent: (CallEvent) -> Unit, connecte
     }
     DockButton(
         icon = ZillitIcons.Smiley,
-        label = if (state.reactionsLocked) "Reactions are off" else "Send a reaction",
+        label = if (state.reactionsLocked) {
+            str(S.desktop_call_reactions_are_off)
+        } else {
+            str(S.desktop_call_send_a_reaction)
+        },
         active = state.reactionBarOpen,
         enabled = connected && !state.reactionsLocked,
         onClick = { onEvent(CallEvent.ToggleReactionBar) },
@@ -168,7 +174,7 @@ private fun RoomVerbs(state: CallUiState, onEvent: (CallEvent) -> Unit, connecte
 private fun OverflowMenu(state: CallUiState, onEvent: (CallEvent) -> Unit, connected: Boolean) {
     DockButton(
         icon = ZillitIcons.MoreHorizontal,
-        label = "More options",
+        label = str(S.dd_cd_more),
         active = state.moreOpen,
         enabled = connected,
         onClick = { onEvent(CallEvent.ToggleMore) },
@@ -178,7 +184,7 @@ private fun OverflowMenu(state: CallUiState, onEvent: (CallEvent) -> Unit, conne
 /** The red pill: 58×44, "Leave call" (`CallRoom.tsx:1856-1864`). */
 @Composable
 private fun HangUp(state: CallUiState, onEvent: (CallEvent) -> Unit) {
-    val label = if (state.phase == CallPhase.Ending) "Close" else "Leave call"
+    val label = if (state.phase == CallPhase.Ending) str(S.close) else str(S.desktop_call_leave_call)
     ZillitTooltip(label) {
         Box(
             modifier = Modifier
@@ -200,7 +206,7 @@ private fun ChatButton(state: CallUiState, onEvent: (CallEvent) -> Unit, connect
     Box(contentAlignment = Alignment.TopEnd) {
         DockButton(
             icon = ZillitIcons.Chat,
-            label = "Chat",
+            label = str(S.chat),
             active = state.chatOpen,
             enabled = connected,
             onClick = { onEvent(CallEvent.ToggleChat) },
@@ -294,7 +300,7 @@ private fun DockButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val tip = if (enabled) label else "Available once the call connects"
+    val tip = if (enabled) label else str(S.desktop_call_available_once_connected)
     ZillitTooltip(tip) {
         RoundAction(
             icon = icon,

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.maps.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.TypeDraft
 
 /**
@@ -31,7 +33,11 @@ internal class TypeController(private val store: MapStore) {
             is MapEvent.Types.NewSubType -> updateForm { copy(newSubType = event.value) }
             MapEvent.Types.AddSubType -> updateForm {
                 val trimmed = newSubType.trim()
-                if (trimmed.isEmpty() || trimmed in subTypes) this else copy(subTypes = subTypes + trimmed, newSubType = "")
+                if (trimmed.isEmpty() || trimmed in subTypes) {
+                    this
+                } else {
+                    copy(subTypes = subTypes + trimmed, newSubType = "")
+                }
             }
             is MapEvent.Types.RemoveSubType -> updateForm {
                 copy(subTypes = subTypes.filterIndexed { index, _ -> index != event.index })
@@ -51,7 +57,12 @@ internal class TypeController(private val store: MapStore) {
         store.update {
             copy(
                 typesPanel = typesPanel.copy(
-                    form = TypeFormState(editId = type.id, name = type.name, icon = type.icon, subTypes = type.subTypes),
+                    form = TypeFormState(
+                        editId = type.id,
+                        name = type.name,
+                        icon = type.icon,
+                        subTypes = type.subTypes,
+                    ),
                 ),
             )
         }
@@ -83,11 +94,12 @@ internal class TypeController(private val store: MapStore) {
             store.update {
                 copy(
                     dialog = MapDialog.Confirm(
-                        title = "Update Location Type",
-                        message = "Updating ${store.state.types.firstOrNull { it.id == editId }?.name ?: form.name} " +
-                            "will change the type classification for associated locations. These locations will " +
-                            "display the updated type label. Do you want to proceed?",
-                        confirmLabel = "Update",
+                        title = str(S.desktop_map_update_type_title),
+                        message = str(
+                            S.desktop_map_update_type_confirm,
+                            store.state.types.firstOrNull { it.id == editId }?.name ?: form.name,
+                        ),
+                        confirmLabel = str(S.update),
                         danger = false,
                         action = ConfirmAction.UpdateType(editId, form),
                     ),
@@ -101,10 +113,10 @@ internal class TypeController(private val store: MapStore) {
             when (val result = store.repository.createType(form.draft())) {
                 is ZillitResult.Failure -> {
                     updateForm { copy(saving = false) }
-                    store.failed(result.error, "Failed to create location type")
+                    store.failed(result.error, str(S.desktop_map_failed_create_type))
                 }
                 is ZillitResult.Success -> {
-                    store.notice("Location type created successfully", NoticeTone.Success)
+                    store.notice(str(S.desktop_map_type_created), NoticeTone.Success)
                     cancel()
                     reload()
                     if (fromDialog) createdForForm?.invoke(form.name.trim())
@@ -116,9 +128,9 @@ internal class TypeController(private val store: MapStore) {
     fun update(typeId: String, form: TypeFormState, done: () -> Unit) {
         store.spawn {
             when (val result = store.repository.updateType(typeId, form.draft())) {
-                is ZillitResult.Failure -> store.failed(result.error, "Failed to update location type")
+                is ZillitResult.Failure -> store.failed(result.error, str(S.desktop_map_failed_update_type))
                 is ZillitResult.Success -> {
-                    store.notice("Location type updated successfully", NoticeTone.Success)
+                    store.notice(str(S.desktop_map_type_updated), NoticeTone.Success)
                     store.update { copy(typesPanel = typesPanel.copy(form = null)) }
                     reload()
                     // A renamed type relabels its locations on the server.
@@ -134,10 +146,9 @@ internal class TypeController(private val store: MapStore) {
         store.update {
             copy(
                 dialog = MapDialog.Confirm(
-                    title = "Delete Location Type",
-                    message = "Deleting ${type.name} will remove its type classification from associated " +
-                        "locations. Those locations will appear without a type label. Do you want to continue?",
-                    confirmLabel = "Delete",
+                    title = str(S.desktop_map_delete_type_title),
+                    message = str(S.desktop_map_delete_type_confirm, type.name),
+                    confirmLabel = str(S.delete),
                     danger = true,
                     action = ConfirmAction.DeleteType(typeId),
                 ),
@@ -148,9 +159,9 @@ internal class TypeController(private val store: MapStore) {
     fun delete(typeId: String, done: () -> Unit) {
         store.spawn {
             when (val result = store.repository.deleteType(typeId)) {
-                is ZillitResult.Failure -> store.failed(result.error, "Failed to delete location type")
+                is ZillitResult.Failure -> store.failed(result.error, str(S.desktop_map_failed_delete_type))
                 is ZillitResult.Success -> {
-                    store.notice("Location type deleted successfully", NoticeTone.Success)
+                    store.notice(str(S.desktop_map_type_deleted), NoticeTone.Success)
                     reload()
                     store.hooks.reloadLocations()
                 }
@@ -163,7 +174,7 @@ internal class TypeController(private val store: MapStore) {
         store.spawn {
             when (val result = store.repository.types()) {
                 is ZillitResult.Success -> store.update { copy(types = result.data) }
-                is ZillitResult.Failure -> store.failed(result.error, "Failed to fetch location types")
+                is ZillitResult.Failure -> store.failed(result.error, str(S.desktop_map_failed_fetch_types))
             }
         }
     }

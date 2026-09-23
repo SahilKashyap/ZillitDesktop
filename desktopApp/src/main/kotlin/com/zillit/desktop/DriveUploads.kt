@@ -13,6 +13,8 @@ import com.zillit.desktop.feature.drive.ui.DriveUploader
 import com.zillit.desktop.feature.drive.ui.PickedFile
 import com.zillit.desktop.feature.drive.ui.UploadTarget
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -49,7 +51,7 @@ import kotlinx.coroutines.withContext
 internal class DriveFilePicker {
 
     suspend fun pick(): List<PickedFile> = withContext(Dispatchers.IO) {
-        val dialog = FileDialog(null as Frame?, "Upload to Drive", FileDialog.LOAD)
+        val dialog = FileDialog(null as Frame?, str(S.desktop_upload_to_drive), FileDialog.LOAD)
         dialog.isMultipleMode = true
         dialog.isVisible = true
         dialog.files.orEmpty().mapNotNull(::describe)
@@ -64,7 +66,7 @@ internal class DriveFilePicker {
      */
     suspend fun pickFolder(): List<PickedFile> = withContext(Dispatchers.IO) {
         val chooser = javax.swing.JFileChooser().apply {
-            dialogTitle = "Upload a folder to Drive"
+            dialogTitle = str(S.desktop_upload_folder_to_drive)
             fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
             isMultiSelectionEnabled = false
         }
@@ -108,12 +110,12 @@ internal class AppDrivePreviewHost(private val httpClient: HttpClient) : DrivePr
                 ZillitResult.Failure(ZillitError.Http(response.status.value, "the file could not be fetched"))
 
             (response.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L) > maxBytes ->
-                ZillitResult.Failure(ZillitError.Validation("This file is too large to preview here."))
+                ZillitResult.Failure(ZillitError.Validation(str(S.desktop_drive_preview_too_large)))
 
             else -> {
                 val bytes: ByteArray = response.body()
                 if (bytes.size > maxBytes) {
-                    ZillitResult.Failure(ZillitError.Validation("This file is too large to preview here."))
+                    ZillitResult.Failure(ZillitError.Validation(str(S.desktop_drive_preview_too_large)))
                 } else {
                     ZillitResult.Success(bytes)
                 }

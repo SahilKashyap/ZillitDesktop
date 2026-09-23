@@ -14,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.LayoutMode
 import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.ToolWindow
@@ -143,12 +145,12 @@ internal fun EmptyWorkspaceMessage() {
         verticalArrangement = Arrangement.Center,
     ) {
         ZillitText(
-            text = "Nothing open",
+            text = str(S.desktop_workspace_nothing_open),
             style = ZillitTheme.typography.titleMedium,
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitText(
-            text = "Pick a tool from the sidebar to open it here.",
+            text = str(S.desktop_workspace_pick_a_tool),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
         )
@@ -168,7 +170,7 @@ private fun MissingTool(route: WorkspaceRoute) {
         verticalArrangement = Arrangement.Center,
     ) {
         ZillitText(
-            text = "Not available yet",
+            text = str(S.desktop_workspace_not_available_yet),
             style = ZillitTheme.typography.titleMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -178,7 +180,7 @@ private fun MissingTool(route: WorkspaceRoute) {
             color = ZillitTheme.colors.textMuted,
         )
         ZillitText(
-            text = "This tool arrives in a later module.",
+            text = str(S.desktop_workspace_tool_arrives_later),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )

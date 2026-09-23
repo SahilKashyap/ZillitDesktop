@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.BatchAssignment
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
@@ -72,7 +74,7 @@ fun CashPromptDialog(
                 value = shown.reason,
                 onValueChange = { onEvent(CashEvent.UpdatePrompt(shown.copy(reason = it))) },
                 label = shown.label,
-                placeholder = "Say what needs correcting",
+                placeholder = str(S.desktop_ce_say_what_needs_correcting),
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -89,7 +91,7 @@ fun CashPromptDialog(
                 ZillitTextField(
                     value = shown.note,
                     onValueChange = { onEvent(CashEvent.UpdatePrompt(shown.copy(note = it))) },
-                    label = "Note (optional)",
+                    label = str(S.notes_optional),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -111,7 +113,7 @@ private fun PromptActions(shown: CashPrompt?, onEvent: (CashEvent) -> Unit) {
     ) {
         Spacer(Modifier.weight(1f))
         ZillitButton(
-            text = "Cancel",
+            text = str(S.cancel),
             onClick = { onEvent(CashEvent.DismissPrompt) },
             variant = ButtonVariant.Tertiary,
         )
@@ -166,7 +168,7 @@ private fun ColumnScope.AssignFields(
     val eligible = BatchAssignment.eligible(assignees, batch)
     if (eligible.isEmpty()) {
         ZillitText(
-            text = "Nobody else on this project can take this batch.",
+            text = str(S.desktop_ce_nobody_else_can_take),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -175,7 +177,7 @@ private fun ColumnScope.AssignFields(
     batch?.assignedTo?.takeIf { it.isNotBlank() }?.let { current ->
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "Currently with ",
+                text = str(S.desktop_ce_currently_with) + " ",
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -198,8 +200,8 @@ private fun ColumnScope.AssignFields(
     ZillitTextField(
         value = prompt.reason,
         onValueChange = { onEvent(CashEvent.AssignReason(it)) },
-        label = "Why it is moving",
-        placeholder = "Recorded on the batch",
+        label = str(S.desktop_ce_why_it_is_moving),
+        placeholder = str(S.desktop_ce_recorded_on_the_batch),
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -213,20 +215,20 @@ private fun CashPrompt?.title(): String = when (this) {
 }
 
 private fun CashPrompt?.subtitle(): String? = when (this) {
-    is CashPrompt.WithReason -> "This is recorded on the batch and shown to whoever submitted it."
+    is CashPrompt.WithReason -> str(S.desktop_ce_reason_shown_to_submitter)
     else -> null
 }
 
 private fun CashPrompt?.confirmLabel(): String = when (this) {
     is CashPrompt.WithReason -> when (action) {
-        ReasonedAction.RejectFloat, ReasonedAction.RejectBatch -> "Reject"
-        ReasonedAction.QueryBatch -> "Send query"
-        ReasonedAction.EscalateBatch -> "Escalate"
+        ReasonedAction.RejectFloat, ReasonedAction.RejectBatch -> str(S.reject)
+        ReasonedAction.QueryBatch -> str(S.desktop_ce_send_query)
+        ReasonedAction.EscalateBatch -> str(S.desktop_ce_escalate)
     }
 
-    is CashPrompt.WithAmount -> "Save"
+    is CashPrompt.WithAmount -> str(S.save)
     is CashPrompt.Assign -> label
-    else -> "Confirm"
+    else -> str(S.confirm)
 }
 
 /**

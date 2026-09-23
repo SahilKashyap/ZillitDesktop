@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.distribution.domain.DISTRIBUTION_PAGE_SIZES
 import com.zillit.desktop.feature.distribution.domain.DistributionColumn
 import com.zillit.desktop.feature.distribution.domain.DistributionUser
@@ -145,9 +147,9 @@ private fun NoColumns(state: DistributionUiState) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         ZillitText(
             text = if (state.unitFilter.isEmpty()) {
-                "No ${state.section.label.lowercase()} distributions on this production yet."
+                str(S.desktop_dist_no_section_distributions_yet, state.section.label.lowercase())
             } else {
-                "Every column is filtered out — clear the filter to see them."
+                str(S.desktop_dist_every_column_filtered_out)
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
@@ -320,13 +322,13 @@ private fun Footer(state: DistributionUiState, onEvent: (DistributionEvent) -> U
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitText(
-            text = "${page.firstIndex}–${page.lastIndex} of ${page.total}",
+            text = str(S.desktop_range_of_total, page.firstIndex, page.lastIndex, page.total),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
         Spacer(Modifier.weight(1f))
         ZillitText(
-            text = "Rows per page",
+            text = str(S.desktop_rows_per_page),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -338,12 +340,12 @@ private fun Footer(state: DistributionUiState, onEvent: (DistributionEvent) -> U
             modifier = Modifier.width(PAGE_SIZE_WIDTH),
         )
         ZillitText(
-            text = "Page ${page.page} of ${page.pageCount}",
+            text = str(S.docusign_page_of, page.page, page.pageCount),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
         ZillitButton(
-            text = "Previous",
+            text = str(S.docusign_tour_prev),
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.ChevronLeft,
@@ -351,7 +353,7 @@ private fun Footer(state: DistributionUiState, onEvent: (DistributionEvent) -> U
             onClick = { onEvent(DistributionEvent.GoToPage(page.page - 1)) },
         )
         ZillitButton(
-            text = "Next",
+            text = str(S.next),
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
             trailingIcon = ZillitIcons.ChevronRight,

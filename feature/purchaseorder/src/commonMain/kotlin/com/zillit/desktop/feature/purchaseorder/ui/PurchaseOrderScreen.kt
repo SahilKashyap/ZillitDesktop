@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.ui.pages.PoAddressesPage
 import com.zillit.desktop.feature.purchaseorder.ui.pages.PoDialogs
 import com.zillit.desktop.feature.purchaseorder.ui.pages.PoDraftsPage
@@ -97,12 +99,12 @@ private fun Console(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitPageHeader(
-                eyebrow = "Transactions",
-                title = "Purchase Orders",
-                description = "Full PO lifecycle — raise, approve, process, post, invoice, and close.",
+                eyebrow = str(S.desktop_transactions),
+                title = str(S.ah_purchase_orders),
+                description = str(S.desktop_po_lifecycle_description),
                 actions = {
                     ZillitButton(
-                        text = "Refresh",
+                        text = str(S.refresh_text),
                         onClick = { onEvent(PoEvent.Refresh) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -118,7 +120,7 @@ private fun Console(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             ZillitSearchField(
                 value = state.search,
                 onValueChange = { onEvent(PoEvent.Search(it)) },
-                placeholder = "Search all POs — by number, vendor, description, amount, code, date, item…",
+                placeholder = str(S.desktop_po_search_placeholder),
                 modifier = Modifier.widthIn(max = SEARCH_WIDTH).fillMaxWidth(),
             )
             TabBar(state, onEvent)
@@ -184,22 +186,22 @@ private fun Page(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         PoDestination.Drafts -> PoDraftsPage(state, onEvent)
         PoDestination.DeliveryAddresses -> PoAddressesPage(state, onEvent)
         PoDestination.Settings -> PoSettingsPage(state, onEvent)
-        PoDestination.Reports -> ComingSoon("Reports")
+        PoDestination.Reports -> ComingSoon(str(S.reports))
         // Both hand off: the tap already sent the host somewhere else, and this
         // is what is behind it if the hand-off could not be taken.
         PoDestination.Vendors -> HandOff(
-            title = "Vendors",
-            message = "Vendors live in the Account Hub. Opening them there…",
+            title = str(S.ah_vendors),
+            message = str(S.desktop_po_vendors_handoff),
             icon = ZillitIcons.Users,
-            action = "Open Vendors",
+            action = str(S.desktop_open_vendors),
             onAction = { onEvent(PoEvent.OpenVendors) },
         )
 
         PoDestination.Invoices -> HandOff(
-            title = "Invoices",
-            message = "Invoices are their own tool. Opening it…",
+            title = str(S.ah_invoices),
+            message = str(S.desktop_po_invoices_handoff),
             icon = ZillitIcons.Receipt,
-            action = "Open Invoices",
+            action = str(S.desktop_open_invoices),
             onAction = { onEvent(PoEvent.OpenInvoices) },
         )
 
@@ -218,12 +220,12 @@ private fun Page(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 @Composable
 private fun PoEntryPlaceholder(onEvent: (PoEvent) -> Unit) {
     ZillitEmptyState(
-        title = "No PO open",
-        message = "Pick an order from the Queue and choose Process to code it and post it to the ledger.",
+        title = str(S.desktop_po_no_po_open),
+        message = str(S.desktop_po_entry_placeholder_message),
         icon = ZillitIcons.Ledger,
         action = {
             ZillitButton(
-                text = "Go to Queue",
+                text = str(S.desktop_go_to_queue),
                 onClick = { onEvent(PoEvent.Open(PoDestination.Queue)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -237,7 +239,7 @@ private fun PoEntryPlaceholder(onEvent: (PoEvent) -> Unit) {
 private fun ComingSoon(title: String) {
     ZillitEmptyState(
         title = title,
-        message = "Coming soon.",
+        message = str(S.ah_coming_soon),
         icon = ZillitIcons.BarChart,
     )
 }
@@ -275,8 +277,7 @@ private fun AssistantBanner() {
             .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
     ) {
         ZillitNotice(
-            text = "Assistant View — Some sections are hidden based on your role. Budget data, cost report " +
-                "impact, cash flow forecasts, and settings are restricted to the Production Accountant.",
+            text = str(S.desktop_po_assistant_view_banner),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Shield,
         )
@@ -303,8 +304,8 @@ internal fun OfflineBanner(state: PoUiState) {
         )
         ZillitText(
             text = when {
-                stale != null -> "Showing the copy saved ${EpochDate.dateTime(stale)} — you are offline."
-                else -> "You are offline. Orders you raise will be sent when you are back."
+                stale != null -> str(S.desktop_po_showing_saved_copy_offline, EpochDate.dateTime(stale))
+                else -> str(S.desktop_po_offline_orders_queued)
             },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,

@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.email.data
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.AttachmentStore
 import com.zillit.desktop.feature.email.domain.safeFileName
 import java.io.File
@@ -45,7 +47,7 @@ class DownloadsAttachmentStore(
                     return@withContext ZillitResult.Failure(
                         ZillitError.Storage(
                             technical = "attachment name is not safe to save",
-                            userMessage = "That file name is not safe to save.",
+                            userMessage = str(S.desktop_email_unsafe_file_name),
                         ),
                     )
                 }
@@ -60,7 +62,7 @@ class DownloadsAttachmentStore(
                 ZillitResult.Failure(
                     ZillitError.Storage(
                         technical = "could not save: ${throwable::class.simpleName}",
-                        userMessage = "Could not save to your Downloads folder.",
+                        userMessage = str(S.desktop_email_downloads_save_failed),
                     ),
                 )
             }

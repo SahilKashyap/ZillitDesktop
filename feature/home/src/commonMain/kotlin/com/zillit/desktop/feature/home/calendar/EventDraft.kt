@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -16,8 +18,8 @@ import kotlin.time.Instant
  * a note to yourself and carries neither invitees nor a call.
  */
 enum class EventAudience(val wireValue: Int, val label: String) {
-    Members(0, "Members"),
-    Personal(1, "Personal"),
+    Members(0, S.members),
+    Personal(1, S.personal),
     ;
 
     companion object {
@@ -34,10 +36,10 @@ enum class EventAudience(val wireValue: Int, val label: String) {
  * location, since half the attendees are travelling to it.
  */
 enum class CallType(val wireValue: String, val label: String) {
-    Audio("audio", "Audio call"),
-    Video("video", "Video call"),
-    InPerson("meet_in_person", "Meet in person"),
-    InPersonAndCall("meet_in_person_call", "Meet in person & call"),
+    Audio("audio", S.audio_call),
+    Video("video", S.video_call),
+    InPerson("meet_in_person", S.meet_in_person),
+    InPersonAndCall("meet_in_person_call", S.meet_in_person_call),
     ;
 
     /** Somewhere to actually turn up to. */
@@ -79,18 +81,17 @@ enum class EventFieldError {
 /** What to show the user. */
 val EventFieldError.message: String
     get() = when (this) {
-        EventFieldError.TitleBlank -> "Give the event a name."
-        EventFieldError.TitleTooShort -> "Titles are at least $MIN_TITLE_LENGTH characters."
-        EventFieldError.DateInvalid -> "Use a date like 2026-08-04."
-        EventFieldError.DateInPast -> "That day has already passed."
-        EventFieldError.StartTimeInvalid -> "Use a time like 09:00."
-        EventFieldError.EndTimeInvalid -> "Use a time like 17:30."
-        EventFieldError.TooShort -> "An event runs for at least $MIN_DURATION_MINUTES minutes."
-        EventFieldError.ReminderPassed ->
-            "That reminder has already passed. Pick a shorter one, or a later start."
-        EventFieldError.CallTypeMissing -> "Say how people are meeting."
-        EventFieldError.LocationMissing -> "Meeting in person needs somewhere to meet."
-        EventFieldError.NoInvitees -> "Invite someone, or make this a personal event."
+        EventFieldError.TitleBlank -> str(S.desktop_cal_give_event_a_name)
+        EventFieldError.TitleTooShort -> str(S.desktop_cal_title_min_length, MIN_TITLE_LENGTH)
+        EventFieldError.DateInvalid -> str(S.desktop_cal_use_a_date_like)
+        EventFieldError.DateInPast -> str(S.desktop_cal_day_already_passed)
+        EventFieldError.StartTimeInvalid -> str(S.desktop_cal_use_a_start_time_like)
+        EventFieldError.EndTimeInvalid -> str(S.desktop_cal_use_an_end_time_like)
+        EventFieldError.TooShort -> str(S.desktop_cal_min_duration, MIN_DURATION_MINUTES)
+        EventFieldError.ReminderPassed -> str(S.desktop_cal_reminder_already_passed)
+        EventFieldError.CallTypeMissing -> str(S.desktop_cal_say_how_meeting)
+        EventFieldError.LocationMissing -> str(S.desktop_cal_in_person_needs_location)
+        EventFieldError.NoInvitees -> str(S.desktop_cal_invite_someone)
     }
 
 /**
@@ -133,7 +134,7 @@ data class EventDraft(
 ) {
     val isEdit: Boolean get() = id != null
 
-    val formTitle: String get() = if (isEdit) "Edit event" else "New event"
+    val formTitle: String get() = if (isEdit) str(S.edit_event) else str(S.new_event)
 
     /** A members event is circulated; a personal one is nobody else's business. */
     val isForMembers: Boolean get() = audience == EventAudience.Members

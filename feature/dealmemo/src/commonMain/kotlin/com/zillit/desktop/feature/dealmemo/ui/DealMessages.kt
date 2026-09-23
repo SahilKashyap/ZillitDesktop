@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.dealmemo.ui
 import com.zillit.desktop.core.localization.LabelKind
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localisedMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Toast wording, resolved the way the web's `showApiSuccess` / `showApiError`
@@ -15,67 +17,69 @@ import com.zillit.desktop.core.localization.localisedMessage
  */
 internal object DealMessages {
 
+    /** The web's fallback keys, each backed by a catalogue key so the toast reads in the app's language. */
     private val ENGLISH: Map<String, String> = mapOf(
-        "deal_activated" to "Deal memo activated",
-        "deal_memo_chased" to "Crew member chased",
-        "deal_deleted" to "Deal memo deleted",
-        "deal_deactivation_scheduled" to "Deactivation scheduled",
-        "deal_saved" to "Deal memo saved",
-        "deal_issued" to "Deal memo issued",
-        "deal_submitted" to "Deal memo sent for approval",
-        "deal_approved" to "Deal memo approved",
-        "deal_rejected" to "Deal memo rejected",
-        "deal_amendment_acknowledged" to "Thanks — your acknowledgement has been recorded.",
-        "failed_to_acknowledge_amendment" to "Couldn't record your acknowledgement. Please try again.",
-        "deal_rules_updated" to "Pay rules updated. The crew member has been asked to acknowledge the change.",
-        "deal_no_rule_fields" to "There was nothing to amend — change at least one pay rule first.",
-        "failed_to_update_deal_rules" to "Couldn't update the pay rules.",
-        "failed_to_update_nominal_codes" to "Couldn't update the nominal codes.",
-        "failed_to_save_personal_details" to "Couldn't save your details.",
-        "failed_to_load_document_for_signing" to "Couldn't load this document for signing.",
-        "failed_to_sign_document" to "Couldn't sign the document.",
-        "failed_to_save_signature" to "Couldn't save the signature for next time.",
-        "deal_resubmitted" to "Deal memo sent for approval again",
-        "nominal_codes_updated" to "Nominal codes updated",
-        "personal_details_saved" to "Your details were saved",
-        "template_saved" to "Setup saved",
-        "template_updated" to "Setup updated",
-        "template_save_failed" to "Couldn't save the setup.",
-        "template_load_failed" to "Couldn't load the setup.",
-        "template_deleted" to "Setup deleted",
-        "template_delete_failed" to "Couldn't delete the setup.",
-        "deal_bank_account_not_updated" to "The deal was saved, but its linked bank account couldn't be updated.",
-        "documents_uploaded" to "Documents uploaded",
-        "document_upload_failed" to "Couldn't save the uploaded documents.",
-        "document_update_failed" to "Couldn't update the document.",
-        "document_delete_failed" to "Couldn't remove the document.",
-        "rates_refreshed" to "Rates refreshed",
-        "notice_template_saved" to "Notice template saved successfully.",
-        "failed_to_load_overview" to "Couldn't load the overview.",
-        "failed_to_load_approval_queue" to "Couldn't load the approval queue.",
-        "failed_to_load_your_deal_memo" to "Couldn't load your deal memo.",
-        "failed_to_load_deal_memo" to "Couldn't load the deal memo.",
-        "export_failed" to "Export failed",
-        "something_went_wrong" to "Something went wrong",
+        "deal_activated" to S.desktop_dm_deal_memo_activated,
+        "deal_memo_chased" to S.desktop_dm_crew_member_chased,
+        "deal_deleted" to S.desktop_dm_deal_memo_deleted,
+        "deal_deactivation_scheduled" to S.desktop_dm_deactivation_scheduled,
+        "deal_saved" to S.desktop_dm_deal_memo_saved,
+        "deal_issued" to S.desktop_dm_deal_memo_issued,
+        "deal_submitted" to S.desktop_dm_deal_memo_sent_for_approval,
+        "deal_approved" to S.desktop_dm_deal_memo_approved,
+        "deal_rejected" to S.desktop_dm_deal_memo_rejected,
+        "deal_amendment_acknowledged" to S.dm_amend_acknowledged,
+        "failed_to_acknowledge_amendment" to S.dm_amend_acknowledge_failed,
+        "deal_rules_updated" to S.desktop_dm_pay_rules_updated_the_crew_member_has,
+        "deal_no_rule_fields" to S.desktop_dm_there_was_nothing_to_amend_change_at,
+        "failed_to_update_deal_rules" to S.desktop_dm_couldnt_update_the_pay_rules,
+        "failed_to_update_nominal_codes" to S.desktop_dm_couldnt_update_the_nominal_codes,
+        "failed_to_save_personal_details" to S.desktop_dm_couldnt_save_your_details,
+        "failed_to_load_document_for_signing" to S.desktop_dm_couldnt_load_this_document_for_signing,
+        "failed_to_sign_document" to S.desktop_dm_couldnt_sign_the_document,
+        "failed_to_save_signature" to S.desktop_dm_couldnt_save_the_signature_for_next_time,
+        "deal_resubmitted" to S.desktop_dm_deal_memo_sent_for_approval_again,
+        "nominal_codes_updated" to S.dm_amend_nominals_saved,
+        "personal_details_saved" to S.desktop_dm_your_details_were_saved,
+        "template_saved" to S.dm_builder_saved,
+        "template_updated" to S.desktop_dm_setup_updated,
+        "template_save_failed" to S.desktop_dm_couldnt_save_the_setup,
+        "template_load_failed" to S.desktop_dm_couldnt_load_the_setup,
+        "template_deleted" to S.desktop_dm_setup_deleted,
+        "template_delete_failed" to S.desktop_dm_couldnt_delete_the_setup,
+        "deal_bank_account_not_updated" to S.desktop_dm_the_deal_was_saved_but_its_linked,
+        "documents_uploaded" to S.desktop_dm_documents_uploaded,
+        "document_upload_failed" to S.desktop_dm_couldnt_save_the_uploaded_documents,
+        "document_update_failed" to S.dm_docs_update_failed,
+        "document_delete_failed" to S.desktop_dm_couldnt_remove_the_document,
+        "rates_refreshed" to S.dm_gpr_refreshed,
+        "notice_template_saved" to S.desktop_dm_notice_template_saved_successfully,
+        "failed_to_load_overview" to S.desktop_dm_couldnt_load_the_overview,
+        "failed_to_load_approval_queue" to S.desktop_dm_couldnt_load_the_approval_queue,
+        "failed_to_load_your_deal_memo" to S.desktop_dm_couldnt_load_your_deal_memo,
+        "failed_to_load_deal_memo" to S.desktop_dm_couldnt_load_the_deal_memo,
+        "export_failed" to S.asset_export_failed,
+        "something_went_wrong" to S.something_went_wrong,
     )
 
-    /** Hard-coded English the web shows for codes that have no translation yet. */
+    /** Hard-coded wording the web shows for codes that have no translation yet, as catalogue keys. */
     private val OVERRIDES: Map<String, String> = mapOf(
-        "deal_reject_reason_required" to "Add a reason before rejecting this deal.",
-        "deal_crew_cannot_reject" to "This deal can no longer be rejected — it has already moved past your stage.",
-        "deal_no_deal_for_user" to "We couldn't find a deal memo assigned to you.",
-        "deal_portal_deal_missing" to "This deal memo link is no longer valid.",
-        "deal_no_pending_amendment" to "There is no pending amendment on this deal memo.",
-        "deal_cannot_edit_cancelled" to "This deal memo has been cancelled and can no longer be edited.",
+        "deal_reject_reason_required" to S.desktop_dm_add_a_reason_before_rejecting_this_deal,
+        "deal_crew_cannot_reject" to S.desktop_dm_this_deal_can_no_longer_be_rejected,
+        "deal_no_deal_for_user" to S.desktop_dm_we_couldnt_find_a_deal_memo_assigned,
+        "deal_portal_deal_missing" to S.desktop_dm_this_deal_memo_link_is_no_longer,
+        "deal_no_pending_amendment" to S.desktop_dm_there_is_no_pending_amendment_on_this,
+        "deal_cannot_edit_cancelled" to S.desktop_dm_this_deal_memo_has_been_cancelled_and,
     )
 
     fun text(serverMessage: String?, fallbackKey: String): String {
         val key = serverMessage?.takeIf { it.isNotBlank() } ?: fallbackKey
-        OVERRIDES[key]?.let { return it }
+        OVERRIDES[key]?.let { return str(it) }
         Labels.current.exact(key, LabelKind.Messages)?.let { return it }
-        return ENGLISH[key] ?: key.localisedMessage()
+        return ENGLISH[key]?.let { str(it) } ?: key.localisedMessage()
     }
 
     fun override(code: String): String? =
-        OVERRIDES[code] ?: ENGLISH[code]?.takeIf { Labels.current.exact(code, LabelKind.Messages) == null }
+        OVERRIDES[code]?.let { str(it) }
+            ?: ENGLISH[code]?.takeIf { Labels.current.exact(code, LabelKind.Messages) == null }?.let { str(it) }
 }

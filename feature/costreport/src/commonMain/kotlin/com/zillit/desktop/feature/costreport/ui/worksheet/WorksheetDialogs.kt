@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CrCompany
 import com.zillit.desktop.feature.costreport.domain.CrCurrency
@@ -91,8 +93,8 @@ private fun LockDialog(
     val colors = ZillitTheme.colors
     val week = state.ws.week
     ZillitDialogShell(
-        title = "Lock Cost Report",
-        subtitle = "Lock through ${week?.label.orEmpty()} — this cannot be undone.",
+        title = str(S.desktop_cr_lock_title),
+        subtitle = str(S.desktop_cr_lock_subtitle, week?.label.orEmpty()),
         icon = ZillitIcons.Shield,
         onDismiss = close,
         visible = modal != null,
@@ -105,14 +107,14 @@ private fun LockDialog(
             ) {
                 ZillitIcon(ZillitIcons.Info, tint = colors.textMuted, size = 13.dp)
                 ZillitText(
-                    "Locked periods cannot be reversed",
+                    str(S.desktop_cr_lock_irreversible),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )
             }
-            ZillitButton(text = "Cancel", onClick = close, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.cancel), onClick = close, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = "Lock",
+                text = str(S.desktop_lock),
                 onClick = { onEvent(WorksheetEvent.ConfirmLock) },
                 variant = ButtonVariant.Danger,
                 leadingIcon = ZillitIcons.Shield,
@@ -120,28 +122,28 @@ private fun LockDialog(
         },
     ) {
         ZillitText(
-            "This locks the cost report through the end of the selected week. No new ETC versions can be saved, " +
-                "and no source documents dated in those weeks can be created or edited.",
+            str(S.desktop_cr_lock_explainer),
             style = ZillitTheme.typography.bodyMedium,
             color = colors.textMuted,
         )
         SummaryTable(
             listOf(
-                "Period" to week?.label.orEmpty(),
-                "Range" to week?.range.orEmpty(),
-                "Budget Version" to (state.reference.budget(state.ws.applied.budgetKey)?.display ?: "—"),
+                str(S.cr_meta_period) to week?.label.orEmpty(),
+                str(S.range) to week?.range.orEmpty(),
+                str(S.desktop_cr_budget_version) to
+                    (state.reference.budget(state.ws.applied.budgetKey)?.display ?: "—"),
             ),
         )
         ZillitTextField(
             value = modal?.note.orEmpty(),
             onValueChange = { onEvent(WorksheetEvent.SetLockNote(it)) },
-            label = "Note (optional)",
-            placeholder = "Why is this period being locked?",
+            label = str(S.dm_rule_note_hint),
+            placeholder = str(S.desktop_cr_lock_reason_hint),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitNotice(
-            text = "Once locked, this period cannot be unlocked. The lock can only move forward to a later week.",
+            text = str(S.desktop_cr_lock_warning),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Warning,
         )
@@ -153,31 +155,35 @@ private fun LockDialog(
 private data class FormatCard(
     val format: ExportFormat,
     val abbreviation: String,
-    val name: String,
-    val description: String,
+    private val nameKey: String,
+    private val descriptionKey: String,
     val colors: List<Color>,
-)
+) {
+    val name: String get() = str(nameKey)
+
+    val description: String get() = str(descriptionKey)
+}
 
 private val FORMAT_CARDS = listOf(
     FormatCard(
         format = ExportFormat.Pdf,
         abbreviation = "PDF",
-        name = "Full Cost Report",
-        description = "Formatted weekly CR with section breakdown and sign-off block",
+        nameKey = S.desktop_cr_full_cost_report,
+        descriptionKey = S.desktop_cr_full_cost_report_desc,
         colors = listOf(Color(0xFFFF7A59), Color(0xFFE23B3B)),
     ),
     FormatCard(
         format = ExportFormat.Xlsx,
         abbreviation = "XLSX",
-        name = "Working Report",
-        description = "Editable .xlsx with all nominal detail and live formulas",
+        nameKey = S.desktop_cr_working_report,
+        descriptionKey = S.desktop_cr_working_report_desc,
         colors = listOf(Color(0xFF34C97A), Color(0xFF138A52)),
     ),
     FormatCard(
         format = ExportFormat.Csv,
         abbreviation = "CSV",
-        name = "Raw Export",
-        description = "Plain comma-separated rows — no formatting, for re-import",
+        nameKey = S.desktop_cr_raw_export,
+        descriptionKey = S.desktop_cr_raw_export_desc,
         colors = listOf(Color(0xFF6AA3FF), Color(0xFF2862E0)),
     ),
 )
@@ -192,8 +198,8 @@ private fun ExportDialog(
     val colors = ZillitTheme.colors
     val week = state.ws.week
     ZillitDialogShell(
-        title = "Export Cost Report",
-        subtitle = "Export ${week?.label.orEmpty()} in your chosen format.",
+        title = str(S.desktop_cr_export_title),
+        subtitle = str(S.desktop_cr_export_subtitle, week?.label.orEmpty()),
         icon = ZillitIcons.Download,
         onDismiss = close,
         visible = modal != null,
@@ -206,20 +212,20 @@ private fun ExportDialog(
             ) {
                 ZillitIcon(ZillitIcons.Info, tint = colors.textMuted, size = 13.dp)
                 ZillitText(
-                    "Download starts immediately",
+                    str(S.desktop_cr_download_starts),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )
             }
-            ZillitButton(text = "Cancel", onClick = close, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.cancel), onClick = close, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = "Export & Download",
+                text = str(S.desktop_cr_export_and_download),
                 onClick = { onEvent(WorksheetEvent.ConfirmExport) },
                 leadingIcon = ZillitIcons.Download,
             )
         },
     ) {
-        SectionCaption("Choose a format")
+        SectionCaption(str(S.desktop_cr_choose_format))
         FORMAT_CARDS.forEach { card ->
             val selected = modal?.format == card.format
             Row(
@@ -270,23 +276,24 @@ private fun ExportDialog(
         }
         SummaryTable(
             rows = listOf(
-                "Budget Version" to (state.reference.budget(state.ws.applied.budgetKey)?.display ?: "—"),
-                "Period" to week?.label.orEmpty(),
-                "Generated by" to (state.generatedBy ?: "—"),
+                str(S.desktop_cr_budget_version) to
+                    (state.reference.budget(state.ws.applied.budgetKey)?.display ?: "—"),
+                str(S.cr_meta_period) to week?.label.orEmpty(),
+                str(S.desktop_cr_generated_by) to (state.generatedBy ?: "—"),
             ),
             trailing = {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ZillitText("Status", style = ZillitTheme.typography.label.copy(
+                    ZillitText(str(S.status), style = ZillitTheme.typography.label.copy(
                         fontWeight = FontWeight.SemiBold,
                     ), color = colors.textMuted,
                         modifier = Modifier.weight(1f))
                     if (state.isLocked) {
-                        ZillitStatusPill(label = "Locked", tone = StatusTone.Neutral)
+                        ZillitStatusPill(label = str(S.docusign_prop_locked), tone = StatusTone.Neutral)
                     } else {
-                        ZillitStatusPill(label = "Open", tone = StatusTone.Done, dot = true)
+                        ZillitStatusPill(label = str(S.recce_open), tone = StatusTone.Done, dot = true)
                     }
                 }
             },
@@ -305,34 +312,34 @@ private fun SaveVersionDialog(
 ) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "Save Version",
+        title = str(S.desktop_cr_save_version_title),
         onDismiss = close,
         visible = modal != null,
         width = 380.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = close,
                 variant = ButtonVariant.Secondary,
                 enabled = !state.savingVersion,
             )
             ZillitButton(
-                text = if (state.savingVersion) "Saving…" else "Save Version",
+                text = if (state.savingVersion) str(S.ah_saving) else str(S.desktop_cr_save_version_title),
                 onClick = { onEvent(WorksheetEvent.ConfirmSaveVersion) },
                 loading = state.savingVersion,
             )
         },
     ) {
         ZillitText(
-            "Snapshot the current cost report state.",
+            str(S.desktop_cr_save_version_explainer),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
         ZillitTextField(
             value = modal?.label.orEmpty(),
             onValueChange = { onEvent(WorksheetEvent.SetVersionLabel(it)) },
-            label = "Label",
-            placeholder = "e.g. End of week 4, Pre-producer review…",
+            label = str(S.ah_lbl_title),
+            placeholder = str(S.desktop_cr_save_version_hint),
             enabled = !state.savingVersion,
             onImeAction = { onEvent(WorksheetEvent.ConfirmSaveVersion) },
             imeAction = androidx.compose.ui.text.input.ImeAction.Done,
@@ -343,9 +350,11 @@ private fun SaveVersionDialog(
 
 // -- publish ------------------------------------------------------------------------------------
 
-private val ALL_COMPANIES = CrCompany(id = "", name = "All Companies — Consolidated")
-private val LIVE_BUDGET = BudgetVersion(id = "", version = "", label = "Live (current)", status = "")
-private val NO_VERSION = EtcVersion(id = "", label = "None — no ETC overrides")
+private val ALL_COMPANIES: CrCompany
+    get() = CrCompany(id = "", name = str(S.desktop_cr_all_companies_consolidated))
+private val LIVE_BUDGET: BudgetVersion
+    get() = BudgetVersion(id = "", version = "", label = str(S.desktop_cr_live_current), status = "")
+private val NO_VERSION: EtcVersion get() = EtcVersion(id = "", label = str(S.desktop_cr_none_no_etc))
 
 @Composable
 private fun PublishDialog(
@@ -359,25 +368,25 @@ private fun PublishDialog(
     val edit = { next: PublishForm -> onEvent(WorksheetEvent.EditPublish(next)) }
     val reference = state.reference
     ZillitDialogShell(
-        title = "Publish Cost Report",
+        title = str(S.desktop_cr_publish_title),
         onDismiss = close,
         visible = modal != null,
         width = 480.dp,
         actions = {
-            ZillitButton(text = "Cancel", onClick = close, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.cancel), onClick = close, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = if (state.posting != null) "Publishing…" else "Publish CR",
+                text = if (state.posting != null) str(S.desktop_publishing) else str(S.desktop_cr_publish_cr),
                 onClick = { onEvent(WorksheetEvent.ConfirmPublish) },
                 loading = state.posting != null,
             )
         },
     ) {
         ZillitText(
-            "Publish a snapshot of the current cost report.",
+            str(S.desktop_cr_publish_explainer),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
-        Field("Cadence") {
+        Field(str(S.cr_meta_cadence)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PostCadence.entries.forEach { cadence ->
                     val active = form.cadence == cadence
@@ -397,7 +406,7 @@ private fun PublishDialog(
                 }
             }
         }
-        Field("Company") {
+        Field(str(S.company)) {
             ZillitSelect(
                 value = reference.companies.firstOrNull { it.id == form.companyId } ?: ALL_COMPANIES,
                 options = listOf(ALL_COMPANIES) + reference.companies,
@@ -406,7 +415,7 @@ private fun PublishDialog(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Field("Budget Version") {
+        Field(str(S.desktop_cr_budget_version)) {
             ZillitSelect(
                 value = reference.budget(form.budgetKey) ?: LIVE_BUDGET,
                 options = listOf(LIVE_BUDGET) + reference.budgets,
@@ -415,7 +424,7 @@ private fun PublishDialog(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Field("Currency") {
+        Field(str(S.asset_currency)) {
             val choices = reference.currencyChoices
             if (choices.isNotEmpty()) {
                 ZillitSelect(
@@ -427,7 +436,7 @@ private fun PublishDialog(
                 )
             }
         }
-        Field("CR Version") {
+        Field(str(S.desktop_cr_cr_version)) {
             ZillitSelect(
                 value = form.versions.firstOrNull { it.id == form.etcVersionId } ?: NO_VERSION,
                 options = listOf(NO_VERSION) + form.versions,
@@ -437,7 +446,7 @@ private fun PublishDialog(
             )
         }
         if (form.cadence == PostCadence.Custom) {
-            Field("Period (custom)") {
+            Field(str(S.desktop_cr_period_custom)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ZillitDateField(
                         value = form.startDate,
@@ -452,16 +461,16 @@ private fun PublishDialog(
                 }
             }
             ZillitText(
-                "End can't be later than today — defaults to today.",
+                str(S.desktop_cr_end_not_later_default),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
         }
-        Field("Post Note (optional)") {
+        Field(str(S.desktop_cr_post_note_optional)) {
             ZillitTextField(
                 value = form.note,
                 onValueChange = { edit(form.copy(note = it)) },
-                placeholder = "Add accountant note to publish with this CR post…",
+                placeholder = str(S.desktop_cr_post_note_hint),
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth().height(84.dp),
             )
@@ -482,25 +491,28 @@ private fun OveragesDialog(
     val symbol = state.symbolFor(state.ws)
     val rows = state.overages
     ZillitDialogShell(
-        title = "Over-Budget Lines — ${state.ws.week?.let { "Week ${it.number}" }.orEmpty()}",
+        title = str(
+            S.desktop_cr_over_budget_title,
+            state.ws.week?.let { str(S.desktop_cr_week_number, it.number) }.orEmpty(),
+        ),
         icon = ZillitIcons.Warning,
         onDismiss = close,
         visible = visible,
         width = 560.dp,
         actions = {
-            ZillitButton(text = "Close", onClick = close, variant = ButtonVariant.Secondary)
-            ZillitButton(text = "Go to Live CR", onClick = { onEvent(WorksheetEvent.GoToLiveCr) })
+            ZillitButton(text = str(S.close), onClick = close, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.desktop_cr_go_to_live_cr), onClick = { onEvent(WorksheetEvent.GoToLiveCr) })
         },
     ) {
         ZillitText(
-            "These lines are tracking over their budget allocation.",
+            str(S.desktop_cr_over_budget_explainer),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
         if (rows.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
                 ZillitText(
-                    "No lines currently over budget",
+                    str(S.desktop_cr_none_over_budget),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -537,19 +549,22 @@ private fun OveragesDialog(
                         modifier = Modifier.weight(1f),
                     )
                     ZillitText(
-                        "($symbol${Money.group(kotlin.math.abs(figures.tv), 0)}) over",
+                        str(
+                            S.desktop_cr_over_amount,
+                            "$symbol${Money.group(kotlin.math.abs(figures.tv), 0)}",
+                        ),
                         style = ZillitTheme.typography.numeric.copy(fontSize = 12.sp),
                         color = CrPalette.over,
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     ZillitText(
-                        "Budget: $symbol${Money.group(figures.bud, 0)}",
+                        str(S.desktop_cr_budget_amount, "$symbol${Money.group(figures.bud, 0)}"),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textSecondary,
                     )
                     ZillitText(
-                        "EFC: $symbol${Money.group(figures.efc, 0)}",
+                        str(S.desktop_cr_efc_amount, "$symbol${Money.group(figures.efc, 0)}"),
                         style = ZillitTheme.typography.bodySmall,
                         color = CrPalette.over,
                     )
@@ -557,7 +572,7 @@ private fun OveragesDialog(
                 ZillitTextField(
                     value = state.flagNotes[header.code].orEmpty(),
                     onValueChange = { onEvent(WorksheetEvent.SetFlagNote(header.code, it)) },
-                    placeholder = "Note for producer…",
+                    placeholder = str(S.desktop_cr_note_for_producer),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -610,13 +625,13 @@ private fun BoxScope.HistoryPanel(
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     ZillitText(
-                        "COST REPORT HISTORY",
+                        str(S.desktop_cr_history_caps),
                         style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = colors.textMuted,
                     )
                     ZillitText(state.projectName, style = ZillitTheme.typography.titleSmall)
                 }
-                ZillitIcon(ZillitIcons.Close, tint = colors.textMuted, size = 14.dp, contentDescription = "Close",
+                ZillitIcon(ZillitIcons.Close, tint = colors.textMuted, size = 14.dp, contentDescription = str(S.close),
                     modifier = Modifier.clip(CircleShape).clickable(onClick = close).padding(6.dp))
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
@@ -624,7 +639,7 @@ private fun BoxScope.HistoryPanel(
             if (rows.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                     ZillitText(
-                        "No history recorded.",
+                        str(S.desktop_dm_no_history_recorded),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )

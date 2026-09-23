@@ -88,6 +88,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import com.zillit.desktop.feature.accounthub.domain.AssetFilters
 
 /**
  * The Account Hub's wire shapes.
@@ -1245,6 +1249,8 @@ data class PurchaseOrderSetupDto(
     @SerialName("default_split_type") val splitType: String? = null,
     @SerialName("po_number_prefix") val numberPrefix: String? = null,
     @SerialName("terms_attachment") val terms: AgreementDocumentDto? = null,
+    /** Each sub-rule independently nullable; the server normalises on read. Read leniently. */
+    @SerialName("asset_filters") val assetFilters: JsonElement? = null,
 ) {
     fun toDomain(): PurchaseOrderSetup = PurchaseOrderSetup(
         descriptionFormat = PoDescriptionFormat.from(descriptionFormat),
@@ -1258,8 +1264,55 @@ data class PurchaseOrderSetupDto(
         // where the web sends null, and a card for a file that is not there
         // reads as one that failed to upload.
         termsDocument = terms?.toDomain()?.takeIf { it.media.isNotBlank() },
+        assetFilters = assetFilters.toAssetFilters(),
     )
 }
+
+/**
+ * The web's `mapAssetFiltersFromDb`: `["*"]` is the server's every-type
+ * sentinel, the same as choosing none; a bound arrives as a number or a
+ * string; a list occasionally arrives JSON-encoded into a string (an unparsed
+ * jsonb column), so each is read through [asStringList].
+ */
+internal fun JsonElement?.toAssetFilters(): AssetFilters {
+    val obj = this as? JsonObject ?: return AssetFilters()
+    val price = obj["price"] as? JsonObject
+    val types = obj["exp_type"].asStringList()
+    return AssetFilters(
+        priceLow = price?.get("low").asAmountText(),
+        priceHigh = price?.get("high").asAmountText(),
+        expTypes = if ("*" in types) emptyList() else types,
+        tags = obj["tags"].asStringList(),
+    )
+}
+
+/** The web's `mapAssetFiltersToDb`: all three unset is null, which clears the rule server-side. */
+internal fun AssetFilters.toJson(): JsonElement {
+    if (isEmpty) return JsonNull
+    val lowBound = low
+    val highBound = high
+    return buildJsonObject {
+        put(
+            "price",
+            if (lowBound == null && highBound == null) {
+                JsonNull
+            } else {
+                buildJsonObject {
+                    put("low", lowBound?.let(::JsonPrimitive) ?: JsonNull)
+                    put("high", highBound?.let(::JsonPrimitive) ?: JsonNull)
+                }
+            },
+        )
+        put("exp_type", if (expTypes.isEmpty()) JsonNull else JsonArray(expTypes.map(::JsonPrimitive)))
+        put("tags", if (tags.isEmpty()) JsonNull else JsonArray(tags.map(::JsonPrimitive)))
+    }
+}
+
+private fun JsonElement?.asAmountText(): String = when (this) {
+    is JsonPrimitive -> if (this is JsonNull) "" else contentOrNull.orEmpty().trim()
+    else -> ""
+}
+
 
 // -- invoices setup ----------------------------------------------------------
 

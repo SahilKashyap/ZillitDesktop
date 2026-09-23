@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
@@ -67,7 +69,7 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     // them would be a second copy of the same order.
     if (state.form != null || state.entry != null) return
     ZillitDialogShell(
-        title = order.number.ifBlank { "Purchase order" },
+        title = order.number.ifBlank { str(S.purchase_order) },
         subtitle = listOfNotNull(
             state.vendorName(order).takeIf { it.isNotBlank() },
             state.departmentName(order.departmentId).takeIf { it.isNotBlank() },
@@ -89,9 +91,12 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         if (order.isLocalOnly) {
             ZillitNotice(
                 text = if (order.local?.failed == true) {
-                    "This order could not be sent: ${order.local.error ?: "the server refused it"}."
+                    str(
+                        S.desktop_po_local_send_failed,
+                        order.local.error ?: str(S.desktop_the_server_refused_it),
+                    )
                 } else {
-                    "Saved on this computer — it will be raised when you are back online."
+                    str(S.desktop_po_queued_offline_row)
                 },
                 tone = if (order.local?.failed == true) StatusTone.Rejected else StatusTone.Pending,
                 icon = ZillitIcons.Warning,
@@ -99,11 +104,11 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         }
         DetailTiles(state, order)
         if (order.description.isNotBlank()) {
-            ZillitSectionLabel("Description")
+            ZillitSectionLabel(str(S.description))
             ZillitText(text = order.description, style = ZillitTheme.typography.bodyMedium)
         }
         if (order.rejectionReason?.isNotBlank() == true) {
-            ZillitSectionLabel("Rejection Reason")
+            ZillitSectionLabel(str(S.ah_float_rejection_reason))
             ZillitText(
                 text = order.rejectionReason,
                 style = ZillitTheme.typography.bodyMedium,
@@ -111,7 +116,7 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             )
         }
         if (order.closureReason?.isNotBlank() == true) {
-            ZillitSectionLabel("Closure reason")
+            ZillitSectionLabel(str(S.desktop_po_closure_reason))
             ZillitText(text = order.closureReason, style = ZillitTheme.typography.bodyMedium)
         }
         LineItems(order)
@@ -126,20 +131,20 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 private fun DetailTiles(state: PoUiState, order: PurchaseOrder) {
     ZillitDivider()
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        Tile("Created By", state.personName(order.raisedBy))
-        Tile("Eff. Date", EpochDate.date(order.effectiveDate))
-        Tile("Delivery Date", EpochDate.date(order.deliveryDate))
-        Tile("Account", order.nominalCode.orEmpty())
-        Tile("Episode", order.episode.orEmpty())
-        Tile("Company", state.companies.firstOrNull { it.id == order.companyId }?.name.orEmpty())
-        Tile("Delivery Address", order.deliveryAddress.orEmpty())
-        Tile("Gross Total", Money.format(order.gross, order.currency))
-        Tile("Tax", Money.format(order.vatAmount, order.currency))
-        Tile("Relieved", if (order.paidAmount > 0) Money.format(order.paidAmount, order.currency) else "")
+        Tile(str(S.ah_lbl_created_by), state.personName(order.raisedBy))
+        Tile(str(S.ah_row_eff_date_upper), EpochDate.date(order.effectiveDate))
+        Tile(str(S.delivery_date), EpochDate.date(order.deliveryDate))
+        Tile(str(S.ah_account_label), order.nominalCode.orEmpty())
+        Tile(str(S.episode), order.episode.orEmpty())
+        Tile(str(S.company), state.companies.firstOrNull { it.id == order.companyId }?.name.orEmpty())
+        Tile(str(S.delivery_address), order.deliveryAddress.orEmpty())
+        Tile(str(S.ah_lbl_gross_total), Money.format(order.gross, order.currency))
+        Tile(str(S.ah_lbl_vat_tax), Money.format(order.vatAmount, order.currency))
+        Tile(str(S.ah_lbl_relieved), if (order.paidAmount > 0) Money.format(order.paidAmount, order.currency) else "")
         // Approval does not email anyone, so this stamp is the only evidence
         // that the vendor has the order at all.
         Tile(
-            "Emailed To Vendor",
+            str(S.desktop_po_emailed_to_vendor),
             if (order.emailed) {
                 EpochDate.dateTime(order.emailAt) +
                     state.personName(order.emailBy).let { name -> if (name.isBlank()) "" else " · $name" }
@@ -147,7 +152,7 @@ private fun DetailTiles(state: PoUiState, order: PurchaseOrder) {
                 ""
             },
         )
-        Tile("Last Updated By", state.personName(order.updatedBy))
+        Tile(str(S.desktop_po_last_updated_by), state.personName(order.updatedBy))
     }
 }
 
@@ -169,16 +174,16 @@ private fun Tile(label: String, value: String) {
 @Composable
 private fun LineItems(order: PurchaseOrder) {
     if (order.lines.isEmpty()) {
-        ZillitSectionLabel("Line Items")
+        ZillitSectionLabel(str(S.ah_line_items))
         ZillitText(
-            text = "No line items",
+            text = str(S.ah_no_line_items),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
         return
     }
     ZillitDivider()
-    ZillitSectionLabel("Line Items")
+    ZillitSectionLabel(str(S.ah_line_items))
     order.lines.forEach { line ->
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
@@ -186,17 +191,17 @@ private fun LineItems(order: PurchaseOrder) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = (if (line.isSplitChild) "↳ " else "") + line.description.ifBlank { "Line" },
+                    text = (if (line.isSplitChild) "↳ " else "") + line.description.ifBlank { str(S.desktop_line) },
                     style = ZillitTheme.typography.bodyMedium,
                     maxLines = 1,
                 )
                 ZillitText(
                     text = listOfNotNull(
-                        "Qty ${line.quantity.trimmed().ifBlank { "1" }}",
-                        "Unit ${Money.format(line.unitPrice, order.currency)}",
+                        str(S.desktop_po_qty_value, line.quantity.trimmed().ifBlank { "1" }),
+                        str(S.desktop_po_unit_value, Money.format(line.unitPrice, order.currency)),
                         line.nominalCode?.takeIf { it.isNotBlank() },
                         line.expenditureType?.takeIf { it.isNotBlank() },
-                        line.vatRate?.let { rate -> "Tax ${rate.trimmed()}%" },
+                        line.vatRate?.let { rate -> str(S.desktop_po_tax_rate_value, rate.trimmed()) },
                     ).joinToString(" · "),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
@@ -208,7 +213,7 @@ private fun LineItems(order: PurchaseOrder) {
     }
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         ZillitText(
-            text = "Amount (Gross)",
+            text = str(S.desktop_po_amount_gross),
             style = ZillitTheme.typography.titleSmall,
             modifier = Modifier.weight(1f),
         )
@@ -220,7 +225,7 @@ private fun LineItems(order: PurchaseOrder) {
 private fun Approvals(order: PurchaseOrder) {
     if (order.approvals.isEmpty()) return
     ZillitDivider()
-    ZillitSectionLabel("Approval Progress")
+    ZillitSectionLabel(str(S.desktop_po_approval_progress))
     order.approvals.sortedBy { it.level }.forEach { step ->
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
@@ -228,13 +233,13 @@ private fun Approvals(order: PurchaseOrder) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitText(
-                text = "${step.level}. ${step.name.ifBlank { "No approver configured for this department" }}",
+                text = "${step.level}. " + step.name.ifBlank { str(S.desktop_po_no_approver_for_department) },
                 style = ZillitTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
             )
             ZillitStatusPill(
-                label = step.decision?.replaceFirstChar { it.uppercase() } ?: "Waiting",
+                label = step.decision?.replaceFirstChar { it.uppercase() } ?: str(S.ah_run_detail_tier_waiting),
                 tone = if (step.decided) StatusTone.Done else StatusTone.Pending,
             )
         }
@@ -245,7 +250,7 @@ private fun Approvals(order: PurchaseOrder) {
 private fun Attachments(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
     if (order.attachments.isEmpty()) return
     ZillitDivider()
-    ZillitSectionLabel("Attachments")
+    ZillitSectionLabel(str(S.attachments))
     order.attachments.forEach { file ->
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
@@ -258,7 +263,7 @@ private fun Attachments(state: PoUiState, order: PurchaseOrder, onEvent: (PoEven
                 maxLines = 1,
             )
             ZillitButton(
-                text = "View Attachment",
+                text = str(S.ah_view_attachment),
                 onClick = { onEvent(PoEvent.OpenAttachment(file)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -272,7 +277,7 @@ private fun Attachments(state: PoUiState, order: PurchaseOrder, onEvent: (PoEven
 private fun History(state: PoUiState) {
     if (state.history.isEmpty()) return
     ZillitDivider()
-    ZillitSectionLabel("History")
+    ZillitSectionLabel(str(S.history))
     state.history.forEach { entry ->
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
@@ -313,16 +318,19 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
         order.status == PoStatus.AwaitingApproval
     ) {
         ZillitButton(
-            text = "Approve",
+            text = str(S.ah_approve),
             onClick = {
                 onEvent(
                     PoEvent.Ask(
                         PoPrompt.Confirm(
                             action = PoConfirmAction.Approve,
                             targetId = order.id,
-                            title = "Approve this order",
-                            message = "${Money.format(order.gross, order.currency)} is committed with " +
-                                state.vendorName(order).ifBlank { "the vendor" } + ".",
+                            title = str(S.desktop_po_approve_this_order),
+                            message = str(
+                                S.desktop_po_approve_message,
+                                Money.format(order.gross, order.currency),
+                                state.vendorName(order).ifBlank { str(S.desktop_po_the_vendor) },
+                            ),
                         ),
                     ),
                 )
@@ -331,15 +339,15 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
             enabled = !state.busy,
         )
         ZillitButton(
-            text = "Reject",
+            text = str(S.ah_reject),
             onClick = {
                 onEvent(
                     PoEvent.Ask(
                         PoPrompt.WithReason(
                             action = com.zillit.desktop.feature.purchaseorder.ui.PoReasonAction.Reject,
                             targetId = order.id,
-                            title = "Reject this order",
-                            label = "Why it is being refused",
+                            title = str(S.desktop_po_reject_this_order),
+                            label = str(S.desktop_timecard_reject_label),
                         ),
                     ),
                 )
@@ -351,7 +359,7 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
     }
     if (PoAccess.canEdit(order, viewer, state.projectSettings.allowAmendAfterApproval)) {
         ZillitButton(
-            text = "Edit",
+            text = str(S.edit),
             onClick = { onEvent(PoEvent.EditOrder(order.id)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -361,7 +369,7 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
     }
     if (PoAccess.canProcess(order, viewer)) {
         ZillitButton(
-            text = "Process",
+            text = str(S.ah_process),
             onClick = { onEvent(PoEvent.ProcessOrder(order.id)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -373,7 +381,7 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
     // duplicate the same document. The processing page allows a resend.
     if (PoAccess.canSendVendorEmail(order, viewer)) {
         ZillitButton(
-            text = "Send to Vendor",
+            text = str(S.desktop_po_send_to_vendor),
             onClick = { onEvent(PoEvent.SendVendorEmail(order.id)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -382,7 +390,7 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
         )
     }
     ZillitButton(
-        text = "View PDF",
+        text = str(S.ah_view_pdf),
         onClick = { onEvent(PoEvent.ViewPdf(order.id)) },
         variant = ButtonVariant.Tertiary,
         size = ButtonSize.Small,
@@ -391,16 +399,18 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
     )
     if (PoAccess.canDelete(order, viewer)) {
         ZillitButton(
-            text = "Delete PO",
+            text = str(S.desktop_po_delete_po),
             onClick = {
                 onEvent(
                     PoEvent.Ask(
                         PoPrompt.Confirm(
                             action = PoConfirmAction.Delete,
                             targetId = order.id,
-                            title = "Delete this order",
-                            message = "${order.number.ifBlank { "This order" }} will be removed. " +
-                                "This action cannot be undone.",
+                            title = str(S.desktop_po_delete_this_order),
+                            message = str(
+                                S.desktop_po_order_will_be_removed,
+                                order.number.ifBlank { str(S.desktop_po_this_order_capital) },
+                            ),
                             destructive = true,
                         ),
                     ),
@@ -418,20 +428,20 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
 private fun PoReassignDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val dialog = state.reassign ?: return
     ZillitDialogShell(
-        title = "Reassign ${dialog.label}",
-        subtitle = "The reason goes on the record, so the hand-off can be traced.",
+        title = str(S.desktop_po_reassign_target, dialog.label),
+        subtitle = str(S.desktop_po_reassign_reason_note),
         onDismiss = { onEvent(PoEvent.DismissReassign) },
         visible = true,
         icon = ZillitIcons.UserPlus,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(PoEvent.DismissReassign) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Reassign",
+                text = str(S.desktop_po_reassign),
                 onClick = { onEvent(PoEvent.ConfirmReassign) },
                 size = ButtonSize.Small,
                 loading = dialog.saving,
@@ -445,7 +455,7 @@ private fun PoReassignDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             onSelect = { onEvent(PoEvent.EditReassign(dialog.copy(userId = it))) },
             label = { id ->
                 id?.let { key -> state.team.firstOrNull { it.id == key }?.let(state::memberLabel) ?: "" }
-                    ?: "Select team member..."
+                    ?: str(S.desktop_select_team_member)
             },
             modifier = Modifier.fillMaxWidth(),
         )
@@ -453,14 +463,14 @@ private fun PoReassignDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             value = dialog.reason.ifBlank { null },
             options = listOf(null) + PoReassignState.REASONS,
             onSelect = { onEvent(PoEvent.EditReassign(dialog.copy(reason = it.orEmpty()))) },
-            label = { it ?: "Select a reason..." },
+            label = { it ?: str(S.desktop_select_a_reason) },
             modifier = Modifier.fillMaxWidth(),
         )
         if (dialog.reason == PoReassignState.OTHER) {
             ZillitTextField(
                 value = dialog.customReason,
                 onValueChange = { onEvent(PoEvent.EditReassign(dialog.copy(customReason = it))) },
-                placeholder = "Enter reason for reassignment...",
+                placeholder = str(S.desktop_po_enter_reassignment_reason),
                 singleLine = false,
             )
         }
@@ -472,20 +482,20 @@ private fun PoReassignDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 private fun PoCloseDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val dialog = state.closePo ?: return
     ZillitDialogShell(
-        title = "Close ${dialog.number}",
-        subtitle = "Closing releases the remaining commitment into ETC. No further invoices can be matched.",
+        title = str(S.desktop_workspace_close_window, dialog.number),
+        subtitle = str(S.desktop_po_close_subtitle),
         onDismiss = { onEvent(PoEvent.DismissClose) },
         visible = true,
         icon = ZillitIcons.Close,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(PoEvent.DismissClose) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Close PO",
+                text = str(S.desktop_po_close_po),
                 onClick = { onEvent(PoEvent.ConfirmClose) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -497,15 +507,15 @@ private fun PoCloseDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         ZillitTextField(
             value = dialog.reason,
             onValueChange = { onEvent(PoEvent.EditClose(dialog.copy(reason = it))) },
-            label = "Reason",
-            placeholder = "Reason for closing (optional)...",
+            label = str(S.reason),
+            placeholder = str(S.desktop_po_reason_for_closing),
             singleLine = false,
         )
         ZillitDateField(
             value = EpochDate.isoDate(dialog.date),
             onValueChange = { iso -> onEvent(PoEvent.EditClose(dialog.copy(date = iso.isoDayToUtcMidnight()))) },
-            label = "Effective Closing Date",
-            helperText = "The period the write-off lands in. Left empty, the server decides.",
+            label = str(S.desktop_po_effective_closing_date),
+            helperText = str(S.desktop_po_write_off_period_hint),
         )
     }
 }
@@ -516,20 +526,23 @@ private fun PoCloseOffDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val dialog = state.closeOff ?: return
     val count = dialog.ids.size
     ZillitDialogShell(
-        title = "Close Off ${dialog.period}",
-        subtitle = "$count PO${if (count == 1) "" else "s"} will be closed",
+        title = str(S.desktop_po_close_off_target, dialog.period),
+        subtitle = str(
+            if (count == 1) S.desktop_po_will_be_closed_one else S.desktop_po_will_be_closed_other,
+            count,
+        ),
         onDismiss = { onEvent(PoEvent.DismissCloseOff) },
         visible = true,
         icon = ZillitIcons.Calendar,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(PoEvent.DismissCloseOff) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Close Off Period",
+                text = str(S.desktop_po_close_off_period),
                 onClick = { onEvent(PoEvent.ConfirmCloseOff) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -541,18 +554,20 @@ private fun PoCloseOffDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         ZillitDateField(
             value = EpochDate.isoDate(dialog.date),
             onValueChange = { iso -> onEvent(PoEvent.EditCloseOff(dialog.copy(date = iso.isoDayToUtcMidnight()))) },
-            label = "Effective Closing Date",
+            label = str(S.desktop_po_effective_closing_date),
         )
         ZillitText(
-            text = "Closing off ${dialog.period} will release any remaining committed amounts from committed " +
-                "spend into ETC. No further invoices can be matched.",
+            text = str(S.desktop_po_close_off_warning, dialog.period),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitCheckbox(
             checked = dialog.confirmed,
             onCheckedChange = { onEvent(PoEvent.EditCloseOff(dialog.copy(confirmed = it))) },
-            label = "I confirm I want to close off $count PO${if (count == 1) "" else "s"}",
+            label = str(
+                if (count == 1) S.desktop_po_confirm_close_off_one else S.desktop_po_confirm_close_off_other,
+                count,
+            ),
         )
     }
 }
@@ -563,19 +578,22 @@ private fun PoBulkDateDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val dialog = state.bulkDate ?: return
     val count = dialog.ids.size
     ZillitDialogShell(
-        title = "Set Effective Date — $count PO${if (count == 1) "" else "s"}",
+        title = str(
+            if (count == 1) S.desktop_po_set_effective_date_one else S.desktop_po_set_effective_date_other,
+            count,
+        ),
         onDismiss = { onEvent(PoEvent.DismissBulkDate) },
         visible = true,
         icon = ZillitIcons.Calendar,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(PoEvent.DismissBulkDate) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Apply",
+                text = str(S.dm_filter_apply),
                 onClick = { onEvent(PoEvent.ConfirmBulkDate) },
                 size = ButtonSize.Small,
                 loading = dialog.saving,
@@ -586,7 +604,7 @@ private fun PoBulkDateDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         ZillitDateField(
             value = EpochDate.isoDate(dialog.date),
             onValueChange = { iso -> onEvent(PoEvent.EditBulkDate(dialog.copy(date = iso.isoDayToUtcMidnight()))) },
-            label = "Effective Date",
+            label = str(S.ah_lbl_eff_date),
         )
     }
 }
@@ -599,19 +617,19 @@ private fun PoAddressDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val address = dialog.address
     val set = { next: PoAddress -> onEvent(PoEvent.EditAddress(next)) }
     ZillitDialogShell(
-        title = if (dialog.id == null) "Add Delivery Address" else "Edit Delivery Address",
+        title = if (dialog.id == null) str(S.add_delivery_address) else str(S.edit_delivery_address),
         onDismiss = { onEvent(PoEvent.DismissAddress) },
         visible = true,
         icon = ZillitIcons.Home,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(PoEvent.DismissAddress) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Save",
+                text = str(S.save),
                 onClick = { onEvent(PoEvent.SaveAddress) },
                 size = ButtonSize.Small,
                 loading = dialog.saving,
@@ -625,13 +643,13 @@ private fun PoAddressDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         ZillitTextField(
             value = address.name,
             onValueChange = { set(address.copy(name = it)) },
-            label = "Recipient Name",
-            placeholder = "Recipient name…",
+            label = str(S.dd_recipient_name),
+            placeholder = str(S.dd_recipient_name),
         )
         ZillitTextField(
             value = address.email,
             onValueChange = { set(address.copy(email = it)) },
-            label = "Email",
+            label = str(S.email),
             placeholder = "email@example.com",
             keyboardType = KeyboardType.Email,
         )
@@ -639,14 +657,14 @@ private fun PoAddressDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             ZillitTextField(
                 value = address.phoneCode,
                 onValueChange = { set(address.copy(phoneCode = it)) },
-                label = "Code",
+                label = str(S.code),
                 placeholder = "+44",
                 modifier = Modifier.width(PHONE_CODE),
             )
             ZillitTextField(
                 value = address.phone,
                 onValueChange = { set(address.copy(phone = it)) },
-                label = "Phone",
+                label = str(S.phone),
                 placeholder = "1753 651700",
                 keyboardType = KeyboardType.Phone,
                 modifier = Modifier.weight(1f),
@@ -655,28 +673,28 @@ private fun PoAddressDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         ZillitTextField(
             value = address.line1,
             onValueChange = { set(address.copy(line1 = it)) },
-            label = "Address Line 1",
-            placeholder = "Street address…",
+            label = str(S.address_line_1),
+            placeholder = str(S.ah_street_hint),
         )
         ZillitTextField(
             value = address.line2,
             onValueChange = { set(address.copy(line2 = it)) },
-            label = "Address Line 2",
-            placeholder = "Suite, unit, building…",
+            label = str(S.address_line_2),
+            placeholder = str(S.ah_suite_hint),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitTextField(
                 value = address.city,
                 onValueChange = { set(address.copy(city = it)) },
-                label = "City",
-                placeholder = "City…",
+                label = str(S.city),
+                placeholder = str(S.city),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = address.state,
                 onValueChange = { set(address.copy(state = it)) },
-                label = "State / County",
-                placeholder = "State / County…",
+                label = str(S.ah_lbl_state_county_row),
+                placeholder = str(S.ah_lbl_state_county_row),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -684,15 +702,15 @@ private fun PoAddressDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             ZillitTextField(
                 value = address.postalCode,
                 onValueChange = { set(address.copy(postalCode = it)) },
-                label = "Postal / Zip Code",
-                placeholder = "Postal code…",
+                label = str(S.desktop_postal_zip_code),
+                placeholder = str(S.ah_lbl_postal_code),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = address.country,
                 onValueChange = { set(address.copy(country = it)) },
-                label = "Country",
-                placeholder = "Select country…",
+                label = str(S.ah_lbl_country),
+                placeholder = str(S.ah_select_country),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -711,13 +729,13 @@ internal fun PoPromptDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             icon = if (prompt.destructive) ZillitIcons.Warning else ZillitIcons.Info,
             actions = {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(PoEvent.DismissPrompt) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    text = "Confirm",
+                    text = str(S.confirm),
                     onClick = { onEvent(PoEvent.ConfirmPrompt) },
                     variant = if (prompt.destructive) ButtonVariant.Danger else ButtonVariant.Primary,
                     size = ButtonSize.Small,
@@ -736,13 +754,13 @@ internal fun PoPromptDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             icon = ZillitIcons.Edit,
             actions = {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(PoEvent.DismissPrompt) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    text = "Confirm",
+                    text = str(S.confirm),
                     onClick = { onEvent(PoEvent.ConfirmPrompt) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -770,22 +788,22 @@ internal fun PoPromptDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
  */
 @Composable
 internal fun PoDocumentPanel(state: PoUiState, order: PurchaseOrder) {
-    ZillitText(text = "PO Preview", style = ZillitTheme.typography.titleSmall)
+    ZillitText(text = str(S.desktop_po_preview), style = ZillitTheme.typography.titleSmall)
     ZillitText(
-        text = order.number.ifBlank { "Not yet numbered" },
+        text = order.number.ifBlank { str(S.desktop_po_not_yet_numbered) },
         style = ZillitTheme.typography.numeric,
     )
     ZillitDivider()
-    Tile("Vendor", state.vendorName(order))
-    Tile("Department", state.departmentName(order.departmentId))
-    Tile("Description", order.description)
-    Tile("Eff. Date", EpochDate.date(order.effectiveDate))
-    Tile("Account", order.nominalCode.orEmpty())
+    Tile(str(S.ah_lbl_vendor), state.vendorName(order))
+    Tile(str(S.department), state.departmentName(order.departmentId))
+    Tile(str(S.description), order.description)
+    Tile(str(S.ah_row_eff_date_upper), EpochDate.date(order.effectiveDate))
+    Tile(str(S.ah_account_label), order.nominalCode.orEmpty())
     ZillitDivider()
     order.lines.forEach { line ->
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = line.description.ifBlank { "Line" },
+                text = line.description.ifBlank { str(S.desktop_line) },
                 style = ZillitTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -795,7 +813,11 @@ internal fun PoDocumentPanel(state: PoUiState, order: PurchaseOrder) {
     }
     ZillitDivider()
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        ZillitText(text = "Gross Total", style = ZillitTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        ZillitText(
+            text = str(S.ah_lbl_gross_total),
+            style = ZillitTheme.typography.titleSmall,
+            modifier = Modifier.weight(1f),
+        )
         ZillitText(text = Money.format(order.gross, order.currency), style = ZillitTheme.typography.titleSmall)
     }
 }
