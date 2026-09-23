@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
@@ -72,6 +74,8 @@ fun SectionShell(
     editable: Boolean = true,
     extraActions: (@Composable RowScope.() -> Unit)? = null,
     leftPanel: (@Composable ColumnScope.() -> Unit)? = null,
+    /** Whether the section's slice has landed; until it has, no editor and no actions. */
+    load: SectionLoad = SectionLoad(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = ZillitTheme.colors
@@ -93,7 +97,9 @@ fun SectionShell(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitText(text = title, style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                if (onSave != null && dirty) Pill(str(S.asset_unsaved), tone = StatusTone.Pending, dot = true)
+                if (onSave != null && dirty && load.ready) {
+                    Pill(str(S.asset_unsaved), tone = StatusTone.Pending, dot = true)
+                }
             }
             FieldHint(description)
             leftPanel?.invoke(this)
@@ -102,6 +108,12 @@ fun SectionShell(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
+            // An editor over a slice that never loaded is an editor over the
+            // empty default, one Save away from writing it over the server's.
+            if (!load.ready) {
+                SectionLoadState(load)
+                return@Column
+            }
             content()
             val canSave = onSave != null && dirty
             if (editable && (canSave || extraActions != null)) {
@@ -130,6 +142,51 @@ fun SectionShell(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * A section's read state, as its shell draws it — see `SliceLoads`.
+ *
+ * [loading] is a first read still in flight; [error] is one that failed, with
+ * [onRetry] to ask again. Neither shows the editor.
+ */
+data class SectionLoad(
+    val loading: Boolean = false,
+    val error: String? = null,
+    val onRetry: (() -> Unit)? = null,
+) {
+    val ready: Boolean get() = !loading && error == null
+}
+
+/**
+ * The stand-in for a section that has not loaded: two placeholder bars while
+ * it is read, or the web's error card with Retry when the read failed.
+ */
+@Composable
+fun SectionLoadState(load: SectionLoad) {
+    val error = load.error
+    if (error != null) {
+        ZillitNotice(
+            text = "${str(S.desktop_hub_couldnt_load_this_section)} $error",
+            tone = StatusTone.Rejected,
+            icon = ZillitIcons.Warning,
+            action = load.onRetry?.let { retry ->
+                {
+                    ZillitButton(
+                        text = str(S.retry),
+                        onClick = retry,
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Small,
+                    )
+                }
+            },
+        )
+    } else if (load.loading) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitSkeletonBar(modifier = Modifier.fillMaxWidth(LOADING_BAR_FILL))
+            ZillitSkeletonBar(modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -356,6 +413,7 @@ private val ExportFormat.purpose: String
     }
 
 private val LEFT_WIDTH = 260.dp
+private const val LOADING_BAR_FILL = 0.6f
 private val ICON_BLOCK = 44.dp
 /** The web's 320px, plus the room Inter needs here to keep each description on one line. */
 private val EXPORT_MENU_WIDTH = 348.dp

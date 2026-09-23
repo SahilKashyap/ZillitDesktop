@@ -3,7 +3,6 @@ package com.zillit.desktop.feature.accounthub.ui.pages
 import androidx.compose.runtime.Composable
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -11,6 +10,7 @@ import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.ChartView
 import com.zillit.desktop.feature.accounthub.ui.HubPage
+import com.zillit.desktop.feature.accounthub.ui.components.HubPageHeader
 import com.zillit.desktop.feature.accounthub.ui.components.CoaIcons
 import com.zillit.desktop.feature.accounthub.ui.components.CoaTabSpec
 import com.zillit.desktop.feature.accounthub.ui.components.CoaUnderlineTabs
@@ -49,7 +49,7 @@ fun ChartOfAccountsPage(
     }
 
     HubPage {
-        ZillitPageHeader(
+        HubPageHeader(
             eyebrow = str(S.desktop_setup),
             title = str(S.desktop_chart_of_accounts),
             description = str(S.desktop_hub_the_nominal_taxonomy_that_drives_cost_report_every_line_item_dashes),

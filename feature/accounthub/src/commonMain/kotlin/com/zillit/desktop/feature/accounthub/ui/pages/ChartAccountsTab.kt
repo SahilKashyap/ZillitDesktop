@@ -48,6 +48,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -108,6 +109,18 @@ internal fun ColumnScope.ChartAccountsTab(
 
     when {
         chart.loading && !chart.loaded -> CoaLoadingCard(str(S.desktop_hub_loading_chart_of_accounts))
+        chart.loadFailed && !chart.loaded -> ZillitNotice(
+            text = str(S.desktop_hub_couldnt_load_chart),
+            tone = StatusTone.Rejected,
+            icon = ZillitIcons.Warning,
+            action = {
+                ZillitButton(
+                    text = str(S.retry),
+                    onClick = { onEvent(AccountHubEvent.Refresh) },
+                    size = ButtonSize.Small,
+                )
+            },
+        )
         chart.isViewEmpty -> CoaEmptyAccounts(canEdit, canImport, importOffered, onEvent)
         else -> {
             val orphans = remember(chart.accounts, chart.view, chart.showInactive) { chart.forest.orphans.size }
@@ -116,8 +129,11 @@ internal fun ColumnScope.ChartAccountsTab(
                 // is hidden — still postable, and invisible on a screen meant to
                 // list every code is worse than shown without their ancestry.
                 ZillitNotice(
-                    text = "$orphans code${if (orphans == 1) "" else "s"} sit under a parent that is not shown " +
-                        "and are listed at the end.",
+                    text = if (orphans == 1) {
+                        str(S.desktop_hub_one_code_under_hidden_parent)
+                    } else {
+                        str(S.desktop_hub_n_codes_under_hidden_parent, orphans)
+                    },
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Warning,
                 )

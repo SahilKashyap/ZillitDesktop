@@ -24,11 +24,13 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AllowanceApplies
 import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
 import com.zillit.desktop.feature.accounthub.domain.EntitlementRow
+import com.zillit.desktop.feature.accounthub.domain.LocalIds
 import com.zillit.desktop.feature.accounthub.domain.PayBasis
 import com.zillit.desktop.feature.accounthub.domain.RentalApplies
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
+import com.zillit.desktop.feature.accounthub.ui.sectionLoad
 import com.zillit.desktop.feature.accounthub.ui.components.CalcField
 import com.zillit.desktop.feature.accounthub.ui.components.CoaCodeField
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
@@ -37,7 +39,6 @@ import com.zillit.desktop.feature.accounthub.ui.components.HubSelect
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.SectionShell
 import com.zillit.desktop.feature.accounthub.ui.components.SubCard
-import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
 
 /**
  * The production's default allowances and equipment rentals — the web's
@@ -72,6 +73,7 @@ internal fun AllowancesSection(
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Allowances)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.Allowances)) },
+        load = state.sectionLoad(SetupSection.Allowances, onEvent),
         editable = editable,
         leftPanel = { AtAGlance(value) },
     ) {
@@ -84,7 +86,6 @@ internal fun AllowancesSection(
                     rental = true,
                     editable = editable,
                     state = state,
-                    onEvent = onEvent,
                     onChange = { next -> onEvent(edit(value.copy(rentals = value.rentals.replaced(index, next)))) },
                     onRemove = { onEvent(edit(value.copy(rentals = value.rentals.without(index)))) },
                 )
@@ -92,7 +93,7 @@ internal fun AllowancesSection(
             if (editable) {
                 Box(Modifier.padding(ZillitTheme.spacing.md)) {
                     GhostAddButton(str(S.dm_allow_add_dialog_title_rental), onClick = {
-                        val added = value.rentals + newRow("rental", value.rentals.size, "week")
+                        val added = value.rentals + newRow("rental", value.takenIds, "week")
                         onEvent(edit(value.copy(rentals = added)))
                     })
                 }
@@ -108,7 +109,6 @@ internal fun AllowancesSection(
                     rental = false,
                     editable = editable,
                     state = state,
-                    onEvent = onEvent,
                     onChange = { next ->
                         onEvent(edit(value.copy(allowances = value.allowances.replaced(index, next))))
                     },
@@ -118,7 +118,7 @@ internal fun AllowancesSection(
             if (editable) {
                 Box(Modifier.padding(ZillitTheme.spacing.md)) {
                     GhostAddButton(str(S.dm_allow_add_dialog_title_allowance), onClick = {
-                        val added = value.allowances + newRow("allow", value.allowances.size, "day")
+                        val added = value.allowances + newRow("allow", value.takenIds, "day")
                         onEvent(edit(value.copy(allowances = added)))
                     })
                 }
@@ -163,10 +163,16 @@ private fun List<EntitlementRow>.without(index: Int) = filterIndexed { i, _ -> i
  *
  * The id is client-side and stable for the life of the edit — the server
  * keeps whatever id it is given, and the row has to be addressable before
- * it is ever saved. The basis is the web's default for the list: rentals are
- * usually weekly, allowances daily.
+ * it is ever saved. Fresh, never positional: "rental-new-2" minted from the
+ * list's length repeated after a delete, and two rows shared an id. The basis
+ * is the web's default for the list: rentals are usually weekly, allowances
+ * daily.
  */
-private fun newRow(kind: String, at: Int, basis: String) = EntitlementRow(id = "$kind-new-$at", basis = basis)
+private fun newRow(kind: String, taken: List<String>, basis: String) =
+    EntitlementRow(id = LocalIds.next("$kind-new", taken), basis = basis)
+
+/** Every id on either list — a new row's must be none of them. */
+private val AllowancesRentals.takenIds: List<String> get() = (allowances + rentals).map { it.id }
 
 /** The column titles over each list, weighted exactly as the rows below them. */
 @Composable
@@ -214,7 +220,6 @@ private fun EntitlementRowFields(
     rental: Boolean,
     editable: Boolean,
     state: AccountHubUiState,
-    onEvent: (AccountHubEvent) -> Unit,
     onChange: (EntitlementRow) -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -303,7 +308,8 @@ private fun EntitlementRowFields(
             placeholder = "GL",
             enabled = editable,
             modifier = Modifier.width(NOMINAL_WIDTH),
-            onCreate = quickCreateHandler(state, onEvent),
+            // Pick an existing code only — the web passes `quickCreate={false}` here.
+            onCreate = null,
         )
         Box(Modifier.width(REMOVE_WIDTH), contentAlignment = Alignment.Center) {
             if (editable) {

@@ -39,6 +39,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -86,8 +87,16 @@ class FormConfigFlowTest {
 
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
-    /** Every request as "METHOD path", so a test can say what was and was not called. */
-    private val sent = mutableListOf<String>()
+    /**
+     * Every request as "METHOD path", so a test can say what was and was not called.
+     *
+     * An immutable list swapped on each request, not a mutable one: the engine
+     * appends from the client's thread while `settle` reads on the test's, and
+     * iterating an `ArrayList` mid-append threw ConcurrentModificationException
+     * — a flake that failed the gate one run in three.
+     */
+    @Volatile
+    private var sent: List<String> = emptyList()
 
     private fun engine() = MockEngine { request: HttpRequestData ->
         val path = request.url.encodedPath

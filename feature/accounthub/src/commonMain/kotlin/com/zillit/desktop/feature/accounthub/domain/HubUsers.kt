@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.localization.localised
+
 /**
  * One person on the production, as every hub picker names them.
  *
@@ -66,9 +68,13 @@ object HubUsers {
     fun search(users: List<HubUser>, term: String): List<HubUser> {
         val needle = term.trim()
         if (needle.isEmpty()) return users
+        // Department and designation arrive as translation keys and are shown
+        // translated, so match the words on screen as well as the raw key.
         return users.filter {
             it.name.contains(needle, true) || it.email.contains(needle, true) ||
-                it.department.contains(needle, true) || it.designation.contains(needle, true)
+                it.department.contains(needle, true) || it.designation.contains(needle, true) ||
+                it.department.localised().contains(needle, true) ||
+                it.designation.localised().contains(needle, true)
         }
     }
 }

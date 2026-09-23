@@ -1,20 +1,29 @@
 package com.zillit.desktop.feature.accounthub.ui.pages
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.localization.localised
@@ -28,8 +37,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDataTable
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
@@ -46,6 +55,7 @@ import com.zillit.desktop.feature.accounthub.domain.IsdCountries
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
 import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.domain.VendorAddress
+import com.zillit.desktop.feature.accounthub.domain.VendorChange
 import com.zillit.desktop.feature.accounthub.domain.VendorTerms
 import com.zillit.desktop.feature.accounthub.domain.sanitisePhone
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
@@ -55,6 +65,7 @@ import com.zillit.desktop.feature.accounthub.ui.UNKNOWN_PERSON
 import com.zillit.desktop.feature.accounthub.ui.HubPage
 import com.zillit.desktop.feature.accounthub.ui.VendorFilter
 import com.zillit.desktop.feature.accounthub.ui.VendorFormPage
+import com.zillit.desktop.feature.accounthub.ui.components.HubPageHeader
 import com.zillit.desktop.feature.accounthub.ui.components.CoaCodeField
 import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
@@ -93,7 +104,7 @@ fun VendorsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     }
 
     HubPage {
-        ZillitPageHeader(
+        HubPageHeader(
             eyebrow = str(S.desktop_management),
             title = str(S.ah_vendors),
             description = str(S.desktop_hub_manage_supplier_records_verify_vendor_details_and_maintain_your_approved),
@@ -121,7 +132,11 @@ fun VendorsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
         // The web's tabs, with "Added by Me" for a department user.
         val tabs = VendorFilter.entries.filter { it != VendorFilter.Mine || !state.viewer.isAccountant }
         ZillitTabStrip(
-            tabs = tabs.map { ZillitTab(it.slug, it.label, count = vendors.countFor(it)) },
+            // A department user's first tab is plain "All", beside "Added by Me" (the web's).
+            tabs = tabs.map { filter ->
+                val label = if (filter == VendorFilter.All && !state.viewer.isAccountant) str(S.all) else filter.label
+                ZillitTab(filter.slug, label, count = vendors.countFor(filter))
+            },
             activeId = vendors.filter.slug,
             onSelect = { slug ->
                 VendorFilter.entries.firstOrNull { it.slug == slug }?.let { onEvent(AccountHubEvent.FilterVendors(it)) }
@@ -184,6 +199,8 @@ private fun vendorColumns(
         width = ColumnWidth.Weight(NAME_WEIGHT),
         cell = { row ->
             Row(
+                // Greyed while its delete is in flight, as the web's row.
+                modifier = Modifier.alpha(if (row.id in state.vendors.deletingIds) DELETING_ALPHA else 1f),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -204,7 +221,8 @@ private fun vendorColumns(
                         )
                         VerificationPill(row.verified)
                     }
-                    val short = listOf(row.address.city, row.address.country)
+                    // City and postcode, the web's `formatAddressShort`.
+                    val short = listOf(row.address.city, row.address.postalCode)
                         .filter { it.isNotBlank() }
                         .joinToString(", ")
                     if (short.isNotBlank()) FieldHint(short)
@@ -258,37 +276,41 @@ private fun vendorColumns(
         },
     ),
     TableColumn(
-        header = "",
+        header = str(S.dd_actions),
         width = ColumnWidth.Fixed(ACTION_COLUMN),
         cell = { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                // Per row, as the web: the accounts team may change any vendor,
-                // and whoever added one may change theirs.
-                if (state.viewer.mayModifyVendor(row)) {
+            if (row.id in state.vendors.deletingIds) {
+                ZillitSpinner(size = 16.dp)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+                    // Per row, as the web: the accounts team may change any vendor,
+                    // and whoever added one may change theirs.
+                    if (state.viewer.mayModifyVendor(row)) {
+                        ZillitIconButton(
+                            icon = ZillitIcons.Edit,
+                            contentDescription = str(S.edit),
+                            onClick = { onEvent(AccountHubEvent.ComposeVendor(row)) },
+                        )
+                        ZillitIconButton(
+                            icon = ZillitIcons.Trash,
+                            contentDescription = str(S.delete),
+                            onClick = { onEvent(AccountHubEvent.AskDeleteVendor(row)) },
+                            tint = ZillitTheme.colors.danger,
+                        )
+                    }
                     ZillitIconButton(
-                        icon = ZillitIcons.Edit,
-                        contentDescription = str(S.edit),
-                        onClick = { onEvent(AccountHubEvent.ComposeVendor(row)) },
+                        icon = ZillitIcons.Clock,
+                        contentDescription = str(S.history),
+                        onClick = { onEvent(AccountHubEvent.OpenVendorHistory(row.id)) },
                     )
-                    ZillitIconButton(
-                        icon = ZillitIcons.Trash,
-                        contentDescription = str(S.delete),
-                        onClick = { onEvent(AccountHubEvent.AskDeleteVendor(row)) },
-                        tint = ZillitTheme.colors.danger,
-                    )
-                }
-                ZillitIconButton(
-                    icon = ZillitIcons.Clock,
-                    contentDescription = str(S.history),
-                    onClick = { onEvent(AccountHubEvent.OpenVendorHistory(row.id)) },
-                )
-                if (!state.viewer.isAccountant && state.viewer.mayList("purchase_order_tool")) {
-                    ZillitButton(
-                        text = str(S.ah_create_po),
-                        onClick = { onEvent(AccountHubEvent.CreatePurchaseOrder(row.id)) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                    )
+                    if (!state.viewer.isAccountant && state.viewer.mayList("purchase_order_tool")) {
+                        ZillitButton(
+                            text = str(S.ah_create_po),
+                            onClick = { onEvent(AccountHubEvent.CreatePurchaseOrder(row.id)) },
+                            variant = ButtonVariant.Tertiary,
+                            size = ButtonSize.Small,
+                        )
+                    }
                 }
             }
         },
@@ -305,7 +327,6 @@ private fun VendorDetailDialog(state: AccountHubUiState, onEvent: (AccountHubEve
     val vendor = vendors.detail
     ZillitDialogShell(
         title = vendor?.display.orEmpty(),
-        subtitle = vendor?.let { verificationLabel(it.verified) },
         icon = ZillitIcons.Users,
         visible = vendor != null,
         onDismiss = { onEvent(AccountHubEvent.OpenVendorDetail(null)) },
@@ -344,6 +365,8 @@ private fun VendorDetailDialog(state: AccountHubUiState, onEvent: (AccountHubEve
         },
     ) {
         if (vendor == null) return@ZillitDialogShell
+        // The web's header badge, large, where a subtitle only said it in words.
+        VerificationPill(vendor.verified)
         ZillitSectionLabel(str(S.contact))
         DetailGrid(
             listOf(
@@ -352,10 +375,15 @@ private fun VendorDetailDialog(state: AccountHubUiState, onEvent: (AccountHubEve
                 str(S.department) to state.departmentName(vendor.departmentId),
                 str(S.phone) to vendor.phone?.display.orEmpty(),
                 str(S.dm_loanout_vat) to vendor.vatNumber,
+                str(S.desktop_default_code) to vendor.defaultCode,
             ),
         )
-        ZillitSectionLabel(str(S.address))
-        ZillitText(text = vendor.address.oneLine.ifBlank { "—" }, style = ZillitTheme.typography.bodyMedium)
+        // No address, no section — the web's, where a dash under a heading
+        // read as an address that failed to load.
+        if (vendor.address.oneLine.isNotBlank()) {
+            ZillitSectionLabel(str(S.address))
+            ZillitText(text = vendor.address.oneLine, style = ZillitTheme.typography.bodyMedium)
+        }
         if (vendor.hasClassification) {
             ZillitSectionLabel(str(S.details))
             DetailGrid(
@@ -370,16 +398,27 @@ private fun VendorDetailDialog(state: AccountHubUiState, onEvent: (AccountHubEve
         }
         VendorBankBlock(vendors, onEvent)
         ZillitSectionLabel(str(S.desktop_audit))
-        AuditRow(str(S.ah_lbl_added_by), vendor.addedBy, vendor.createdAtMillis, state)
-        if (vendor.verified) AuditRow(str(S.ah_lbl_verified_by), vendor.verifiedBy, vendor.verifiedAtMillis, state)
-        if (vendor.updatedBy != null) AuditRow(
-            str(S.dm_nda_col_last_updated),
-            vendor.updatedBy,
-            vendor.updatedAtMillis,
-            state,
+        // Two columns, as the web's audit grid. "Verified by" whenever someone
+        // is recorded, as there — not only while the vendor is still verified.
+        val audits = listOfNotNull(
+            AuditEntry(str(S.ah_lbl_added_by), vendor.addedBy, vendor.createdAtMillis),
+            vendor.verifiedBy?.takeIf { it.isNotBlank() }
+                ?.let { AuditEntry(str(S.ah_lbl_verified_by), it, vendor.verifiedAtMillis, verified = true) },
+            vendor.updatedBy?.let { AuditEntry(str(S.dm_nda_col_last_updated), it, vendor.updatedAtMillis) },
         )
+        audits.chunked(2).forEach { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl),
+            ) {
+                pair.forEach { AuditRow(it, state, Modifier.weight(1f)) }
+                if (pair.size == 1) Box(Modifier.weight(1f))
+            }
+        }
     }
 }
+
+private class AuditEntry(val label: String, val userId: String?, val at: Long?, val verified: Boolean = false)
 
 /**
  * The detail's bank block, read from wherever the vendor's details live.
@@ -436,31 +475,67 @@ private fun DetailGrid(fields: List<Pair<String, String>>) {
     }
 }
 
+/** The web's audit row: a 32px face (ticked when it verified), the name, their job title, the time. */
 @Composable
-private fun AuditRow(label: String, userId: String?, at: Long?, state: AccountHubUiState) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        MonoLabel(label, modifier = Modifier.width(AUDIT_LABEL))
-        val name = userId?.let { state.userName(it) } ?: UNKNOWN_PERSON
-        // Initials for a dash would invent a person.
-        if (name != UNKNOWN_PERSON) ZillitAvatar(name = name, userId = userId, size = 22.dp)
-        ZillitText(text = name, style = ZillitTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-        FieldHint(EpochDate.dateTime(at).ifBlank { "" })
+private fun AuditRow(entry: AuditEntry, state: AccountHubUiState, modifier: Modifier = Modifier) {
+    val colors = ZillitTheme.colors
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        MonoLabel(entry.label)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            val name = entry.userId?.let { state.userName(it) } ?: UNKNOWN_PERSON
+            // Initials for a dash would invent a person.
+            if (name != UNKNOWN_PERSON) {
+                Box {
+                    ZillitAvatar(name = name, userId = entry.userId, size = AUDIT_FACE)
+                    if (entry.verified) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(VERIFIED_TICK)
+                                .clip(CircleShape)
+                                .background(colors.surface)
+                                .padding(2.dp)
+                                .clip(CircleShape)
+                                .background(colors.info),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ZillitIcon(icon = ZillitIcons.Tick, tint = colors.textOnAccent, size = 8.dp)
+                        }
+                    }
+                }
+            }
+            Column {
+                ZillitText(
+                    text = name,
+                    style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                )
+                val role = entry.userId?.let { state.user(it)?.designation?.localised() }.orEmpty()
+                if (role.isNotBlank()) FieldHint(role)
+                EpochDate.dateTime(entry.at).takeIf { it.isNotBlank() }?.let { MonoLabel(it) }
+            }
+        }
     }
 }
 
 // -- the history panel -------------------------------------------------------------------
 
-/** The web's `HistoryPanel`: a side panel, one row per action, "by user (designation)". */
+/**
+ * The web's `HistoryPanel`: "Vendor History", then a timeline — an orange dot
+ * on a rule per action, the action title-cased, "by user (designation)" and
+ * the time under it. A failed read says so here rather than reading as a
+ * vendor with no history.
+ */
+@Suppress("LongMethod") // A panel, read top to bottom; the order is the reading order.
 @Composable
 private fun HistoryPanel(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val vendors = state.vendors
     val vendor = vendors.rows.firstOrNull { it.id == vendors.historyFor }
+    val colors = ZillitTheme.colors
     SubCard(
-        title = str(S.desktop_drive_activity_log),
+        title = str(S.desktop_vendor_history),
         hint = vendor?.display,
         action = { ZillitIconButton(
             icon = ZillitIcons.Close,
@@ -469,39 +544,64 @@ private fun HistoryPanel(state: AccountHubUiState, onEvent: (AccountHubEvent) ->
         ) },
         modifier = Modifier.width(HISTORY_WIDTH).fillMaxHeight(),
     ) {
-        if (vendors.historyLoading) ZillitSpinner()
-        if (vendors.history.isEmpty() && !vendors.historyLoading) FieldHint(str(S.desktop_no_recorded_changes))
-        ZillitScrollColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            vendors.history.forEach { change ->
-                Column {
-                    ZillitText(
-                        text = change.summary.ifBlank { str(S.history_changed) },
-                        style = ZillitTheme.typography.bodyMedium,
-                        maxLines = 2,
-                    )
-                    val actor = change.byName.ifBlank {
-                        change.byId.takeIf { it.isNotBlank() }?.let { state.userName(it) }.orEmpty()
+        val error = vendors.historyError
+        when {
+            vendors.historyLoading -> ZillitSpinner()
+            error != null -> ZillitText(text = error, style = ZillitTheme.typography.bodySmall, color = colors.danger)
+            vendors.history.isEmpty() -> FieldHint(str(S.desktop_no_recorded_changes))
+        }
+        ZillitScrollColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            vendors.history.forEachIndexed { index, change ->
+                Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    // The rail and its dot; the rail stops at the last entry.
+                    Box(modifier = Modifier.width(TIMELINE_GUTTER).fillMaxHeight()) {
+                        if (index < vendors.history.lastIndex) {
+                            Box(
+                                Modifier
+                                    .padding(start = TIMELINE_RAIL_START, top = TIMELINE_DOT_TOP)
+                                    .width(1.dp)
+                                    .fillMaxHeight()
+                                    .background(colors.border),
+                            )
+                        }
+                        Box(
+                            Modifier
+                                .padding(top = TIMELINE_DOT_TOP)
+                                .size(TIMELINE_DOT)
+                                .clip(CircleShape)
+                                .background(colors.accent),
+                        )
                     }
-                    val role = change.byId.takeIf { it.isNotBlank() }
-                        ?.let { state.user(it)?.designation?.localised() }
-                        .orEmpty()
-                    FieldHint(
-                        listOfNotNull(
-                            actor
-                                .takeIf {
-                                    it.isNotBlank() }?.let { if (role.isNotBlank()) "by $it ($role)" else "by $it"
-                                },
-                            EpochDate.dateTime(change.at).takeIf { it.isNotBlank() },
-                        ).joinToString(" · "),
-                    )
-                    if (change.note.isNotBlank()) FieldHint(change.note)
+                    Column(
+                        modifier = Modifier.weight(1f).padding(bottom = ZillitTheme.spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                    ) {
+                        ZillitText(
+                            text = change.summary.ifBlank { str(S.history_changed) },
+                            style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 2,
+                        )
+                        FieldHint(historyActor(state, change))
+                        EpochDate.dateTime(change.at).takeIf { it.isNotBlank() }?.let { FieldHint(it) }
+                        if (change.note.isNotBlank()) FieldHint(change.note)
+                    }
                 }
             }
         }
     }
+}
+
+/**
+ * "by Name (Designation)" — or "by System" for the server's own transitions,
+ * which the web humanises from the `system` sentinel instead of leaking it.
+ */
+private fun historyActor(state: AccountHubUiState, change: VendorChange): String {
+    val system = change.byId.isBlank() || change.byId.equals(SYSTEM_ACTOR, ignoreCase = true)
+    val actor = change.byName.ifBlank {
+        if (system) str(S.tm_system) else state.userName(change.byId)
+    }
+    val role = change.byId.takeIf { !system }?.let { state.user(it)?.designation?.localised() }.orEmpty()
+    return if (role.isNotBlank()) "by $actor ($role)" else "by $actor"
 }
 
 // -- the full-page form ------------------------------------------------------------------
@@ -559,18 +659,21 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                 variant = ButtonVariant.Tertiary,
                 enabled = !page.saving && !page.verifying,
             )
-            ZillitButton(
-                text = if (editing == null) str(S.ah_create_vendor) else str(S.ah_save_changes),
-                onClick = { onEvent(AccountHubEvent.SaveVendor) },
-                variant = if (offerVerify) ButtonVariant.Secondary else ButtonVariant.Primary,
-                loading = page.saving,
-                enabled = !page.saving && !page.verifying,
-            )
+            // One or the other, as the web: an accountant editing an
+            // unverified vendor saves by verifying it.
             if (offerVerify) {
                 ZillitButton(
                     text = str(S.desktop_save_verify),
                     onClick = { onEvent(AccountHubEvent.SaveAndVerifyVendor) },
                     loading = page.verifying,
+                    enabled = !page.saving && !page.verifying,
+                    leadingIcon = ZillitIcons.Tick,
+                )
+            } else {
+                ZillitButton(
+                    text = if (editing == null) str(S.ah_create_vendor) else str(S.ah_save_changes),
+                    onClick = { onEvent(AccountHubEvent.SaveVendor) },
+                    loading = page.saving,
                     enabled = !page.saving && !page.verifying,
                 )
             }
@@ -591,16 +694,12 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             SubCard(title = str(S.desktop_vendor_details)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
+                FieldGrid {
                     FormField(
                         page,
                         "name",
                         str(S.ah_lbl_vendor_company_name),
                         required = true,
-                        modifier = Modifier.weight(1f),
                     ) {
                         ZillitTextField(
                             value = draft.name,
@@ -614,7 +713,6 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                         "contactPerson",
                         str(S.contact_person_value),
                         required = true,
-                        modifier = Modifier.weight(1f),
                     ) {
                         ZillitTextField(
                             value = draft.contactPerson,
@@ -623,12 +721,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             errorText = page.errorFor("contactPerson"),
                         )
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
-                    FormField(page, "email", str(S.email), required = true, modifier = Modifier.weight(1f)) {
+                    FormField(page, "email", str(S.email), required = true) {
                         ZillitTextField(
                             value = draft.email,
                             onValueChange = { update(draft.copy(email = it)) },
@@ -636,7 +729,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             errorText = page.errorFor("email"),
                         )
                     }
-                    FormField(page, "phoneNumber", str(S.phone), modifier = Modifier.weight(1f)) {
+                    FormField(page, "phoneNumber", str(S.phone)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                             // Unset until picked (ZL-20520): the placeholder hints at a
                             // code, the draft holds none, and a number saves without one.
@@ -664,17 +757,11 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             )
                         }
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
                     FormField(
                         page,
                         "vatNumber",
                         str(S.dm_loanout_vat),
                         optional = true,
-                        modifier = Modifier.weight(1f),
                     ) {
                         ZillitTextField(
                             value = draft.vatNumber,
@@ -683,7 +770,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             placeholder = str(S.ah_vat_hint),
                         )
                     }
-                    FormField(page, "departmentId", str(S.department), modifier = Modifier.weight(1f)) {
+                    FormField(page, "departmentId", str(S.department)) {
                         HubSelect(
                             value = state.departmentList.firstOrNull { it.id == draft.departmentId },
                             options = state.departmentList,
@@ -693,29 +780,21 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             clearable = true,
                         )
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
                     FormField(
                         page,
                         "companyType",
                         str(S.desktop_company_type),
                         optional = true,
-                        modifier = Modifier.weight(1f),
                     ) {
-                        HubSelect(
-                            value = draft.companyType.takeIf { it.isNotBlank() },
-                            options = COMPANY_TYPES,
-                            label = { it },
-                            onSelect = { update(draft.copy(companyType = it.orEmpty())) },
-                            placeholder = str(S.select),
-                            clearable = true,
-                            searchable = false,
+                        // Free text, as the web's: a fixed list could neither show
+                        // nor keep a type typed there ("Ltd"), and clearing it lost it.
+                        ZillitTextField(
+                            value = draft.companyType,
+                            onValueChange = { update(draft.copy(companyType = it)) },
+                            placeholder = str(S.ah_company_type_hint),
                         )
                     }
-                    FormField(page, "terms", str(S.desktop_terms), optional = true, modifier = Modifier.weight(1f)) {
+                    FormField(page, "terms", str(S.desktop_terms), optional = true) {
                         HubSelect(
                             value = VendorTerms.entries.firstOrNull { it.wire == draft.terms },
                             options = VendorTerms.entries.toList(),
@@ -732,7 +811,6 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             "defaultCode",
                             str(S.desktop_default_code),
                             optional = true,
-                            modifier = Modifier.weight(1f),
                         ) {
                             CoaCodeField(
                                 value = draft.defaultCode,
@@ -747,26 +825,23 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
             }
 
             SubCard(title = str(S.address)) {
-                FormField(page, "line1", str(S.address_line_1), required = true) {
-                    ZillitTextField(
-                        value = draft.address.line1,
-                        onValueChange = { text -> address { copy(line1 = text) } },
-                        placeholder = str(S.ah_street_hint),
-                        errorText = page.errorFor("line1"),
-                    )
-                }
-                FormField(page, "line2", str(S.address_line_2), optional = true) {
-                    ZillitTextField(
-                        value = draft.address.line2,
-                        onValueChange = { text -> address { copy(line2 = text) } },
-                        placeholder = str(S.ah_suite_hint),
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
-                    FormField(page, "city", str(S.city), required = true, modifier = Modifier.weight(1f)) {
+                FieldGrid {
+                    FormField(page, "line1", str(S.address_line_1), required = true) {
+                        ZillitTextField(
+                            value = draft.address.line1,
+                            onValueChange = { text -> address { copy(line1 = text) } },
+                            placeholder = str(S.ah_street_hint),
+                            errorText = page.errorFor("line1"),
+                        )
+                    }
+                    FormField(page, "line2", str(S.address_line_2), optional = true) {
+                        ZillitTextField(
+                            value = draft.address.line2,
+                            onValueChange = { text -> address { copy(line2 = text) } },
+                            placeholder = str(S.ah_suite_hint),
+                        )
+                    }
+                    FormField(page, "city", str(S.city), required = true) {
                         ZillitTextField(
                             value = draft.address.city,
                             onValueChange = { text -> address { copy(city = text) } },
@@ -780,7 +855,6 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                         "state",
                         str(S.ah_lbl_state_county_row),
                         optional = true,
-                        modifier = Modifier.weight(1f),
                     ) {
                         ZillitTextField(
                             value = draft.address.state,
@@ -789,17 +863,11 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             trailingContent = postcodeSpinner(page),
                         )
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
                     FormField(
                         page,
                         "postalCode",
                         str(S.desktop_postal_zip_code),
                         required = true,
-                        modifier = Modifier.weight(1f),
                     ) {
                         ZillitTextField(
                             value = draft.address.postalCode,
@@ -808,7 +876,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             errorText = page.errorFor("postalCode"),
                         )
                     }
-                    FormField(page, "country", str(S.country), required = true, modifier = Modifier.weight(1f)) {
+                    FormField(page, "country", str(S.country), required = true) {
                         // Unset until picked (ZL-20520), so "Country is required" can
                         // catch a skipped field instead of every vendor saving as UK.
                         HubSelect(
@@ -847,11 +915,8 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                     }
                 },
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
-                    FormField(page, "bankName", str(S.bank_name_label), modifier = Modifier.weight(1f)) {
+                FieldGrid {
+                    FormField(page, "bankName", str(S.bank_name_label)) {
                         ZillitTextField(
                             value = draft.bankName,
                             onValueChange = { update(draft.copy(bankName = it)) },
@@ -859,7 +924,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             errorText = page.errorFor("bankName"),
                         )
                     }
-                    FormField(page, "accountHolderName", str(S.dm_req_account_holder), modifier = Modifier.weight(1f)) {
+                    FormField(page, "accountHolderName", str(S.dm_req_account_holder)) {
                         ZillitTextField(
                             value = draft.accountHolderName,
                             onValueChange = { update(draft.copy(accountHolderName = it)) },
@@ -867,12 +932,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             errorText = page.errorFor("accountHolderName"),
                         )
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
-                    FormField(page, "accountNumber", str(S.account_number), modifier = Modifier.weight(1f)) {
+                    FormField(page, "accountNumber", str(S.account_number)) {
                         ZillitTextField(
                             value = draft.accountNumber,
                             onValueChange = { text ->
@@ -882,7 +942,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             errorText = page.errorFor("accountNumber"),
                         )
                     }
-                    FormField(page, "sortCode", str(S.ah_lbl_sort_code), modifier = Modifier.weight(1f)) {
+                    FormField(page, "sortCode", str(S.ah_lbl_sort_code)) {
                         ZillitTextField(
                             value = com.zillit.desktop.feature.accounthub.domain.SortCode.formatted(draft.sortCode),
                             onValueChange = {
@@ -895,12 +955,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             placeholder = "e.g. 20-48-91",
                         )
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
-                    FormField(page, "ibanCode", str(S.ah_lbl_iban_code), modifier = Modifier.weight(1f)) {
+                    FormField(page, "ibanCode", str(S.ah_lbl_iban_code)) {
                         ZillitTextField(
                             value = draft.ibanCode,
                             onValueChange = { update(draft.copy(ibanCode = it)) },
@@ -908,7 +963,7 @@ private fun VendorFormScreen(state: AccountHubUiState, page: VendorFormPage, onE
                             errorText = page.errorFor("ibanCode"),
                         )
                     }
-                    FormField(page, "swiftCode", str(S.swift_code), modifier = Modifier.weight(1f)) {
+                    FormField(page, "swiftCode", str(S.swift_code)) {
                         ZillitTextField(
                             value = draft.swiftCode,
                             onValueChange = { update(draft.copy(swiftCode = it)) },
@@ -969,18 +1024,6 @@ private fun FormField(
     }
 }
 
-/** The web's company-type options. */
-private val COMPANY_TYPES = listOf(
-    "Limited Company",
-    "Sole Trader",
-    "Partnership",
-    "LLP",
-    "PLC",
-    "Charity",
-    "Public Body",
-    "Other",
-)
-
 /**
  * "Verified" or "Non-Verified" — the web's `VerifiedBadge` / `UnverifiedBadge`.
  *
@@ -989,6 +1032,33 @@ private val COMPANY_TYPES = listOf(
  * desktop had "Not verified" on the row and "Pending Verification" on the
  * detail.
  */
+/**
+ * The web's `grid grid-cols-3` for the form's cards: fields three to a row at
+ * equal widths, each row as tall as its tallest field. The form used to pair
+ * fields two to a row and give each address line a row of its own, which made
+ * it twice the web's height.
+ */
+@Composable
+private fun FieldGrid(content: @Composable () -> Unit) {
+    val gapX = ZillitTheme.spacing.lg
+    val gapY = ZillitTheme.spacing.lg
+    Layout(content = content, modifier = Modifier.fillMaxWidth()) { measurables, constraints ->
+        val gx = gapX.roundToPx()
+        val gy = gapY.roundToPx()
+        val cell = ((constraints.maxWidth - gx * (FORM_COLUMNS - 1)) / FORM_COLUMNS).coerceAtLeast(0)
+        val rows = measurables.map { it.measure(Constraints.fixedWidth(cell)) }.chunked(FORM_COLUMNS)
+        val heights = rows.map { row -> row.maxOf { it.height } }
+        val total = heights.sum() + gy * (rows.size - 1).coerceAtLeast(0)
+        layout(constraints.maxWidth, total) {
+            var y = 0
+            rows.forEachIndexed { index, row ->
+                row.forEachIndexed { column, placeable -> placeable.placeRelative(column * (cell + gx), y) }
+                y += heights[index] + gy
+            }
+        }
+    }
+}
+
 private fun verificationLabel(verified: Boolean): String = if (verified) str(S.ah_verified) else str(S.ah_non_verified)
 
 @Composable
@@ -1009,13 +1079,22 @@ private fun postcodeSpinner(page: VendorFormPage): (@Composable () -> Unit)? =
     }
 
 private val DETAIL_WIDTH = 880.dp
-private val HISTORY_WIDTH = 320.dp
+private val HISTORY_WIDTH = 340.dp
+private val TIMELINE_GUTTER = 20.dp
+private val TIMELINE_DOT = 10.dp
+private val TIMELINE_DOT_TOP = 3.dp
+private val TIMELINE_RAIL_START = 4.5.dp
+private const val SYSTEM_ACTOR = "system"
+
 private val DEPT_COLUMN = 150.dp
 private val ADDED_COLUMN = 170.dp
 private val ACTION_COLUMN = 210.dp
-private val AUDIT_LABEL = 96.dp
+private val AUDIT_FACE = 32.dp
+private val VERIFIED_TICK = 14.dp
 private val DIAL_WIDTH = 120.dp
 private val SPINNER_SIZE = 14.dp
 private const val NAME_WEIGHT = 2f
 private const val DETAIL_COLUMNS = 3
+private const val FORM_COLUMNS = 3
+private const val DELETING_ALPHA = 0.5f
 private const val TAX_NUMBER_MAX = 50

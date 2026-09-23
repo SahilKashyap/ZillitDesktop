@@ -39,6 +39,12 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -49,7 +55,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -68,8 +73,11 @@ import com.zillit.desktop.feature.accounthub.ui.HubPage
 import com.zillit.desktop.feature.accounthub.ui.SetupModal
 import com.zillit.desktop.feature.accounthub.ui.SetupRemoval
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
+import com.zillit.desktop.feature.accounthub.ui.bankLoad
+import com.zillit.desktop.feature.accounthub.ui.sectionLoad
 import com.zillit.desktop.feature.accounthub.ui.SetupTab
 import com.zillit.desktop.feature.accounthub.ui.SpendSetup
+import com.zillit.desktop.feature.accounthub.ui.components.HubPageHeader
 import com.zillit.desktop.feature.accounthub.ui.components.Chip
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
@@ -109,7 +117,7 @@ fun ProductionSetupPage(
     LaunchedEffect(setup.tab) { scroll.scrollTo(0) }
 
     HubPage {
-        ZillitPageHeader(
+        HubPageHeader(
             eyebrow = str(S.desktop_setup),
             title = str(S.ps_production_setup),
             description = str(S.desktop_hub_project_wide_defaults_inherited_by_new_deal_memos_purchase_orders),
@@ -316,6 +324,7 @@ private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         saving = setup.companies.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Companies)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.Companies)) },
+        load = state.sectionLoad(SetupSection.Companies, onEvent),
         editable = editable,
         extraActions = {
             if (editable) {
@@ -395,7 +404,7 @@ private fun CompanyCard(
                 MonoLabel(str(S.desktop_production_co))
                 CompanyTitleRow(company, currencies)
                 if (company.legalName.isNotBlank() && company.legalName.trim() != company.name.trim()) {
-                    FieldHint("Legal name · ${company.legalName}")
+                    FieldHint("${str(S.ps_company_legal_name)} · ${company.legalName}")
                 }
             }
             Column(
@@ -568,6 +577,7 @@ private fun BankAccountsSection(state: AccountHubUiState, onEvent: (AccountHubEv
         title = str(S.desktop_bank_accounts),
         description = str(S.desktop_hub_project_level_bank_accounts_that_payroll_and_vendor_disbursements_default),
         editable = editable,
+        load = state.bankLoad(onEvent),
         extraActions = {
             if (editable) {
                 ZillitButton(
@@ -861,6 +871,7 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
         saving = setup.assetTags.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.AssetTags)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.AssetTags)) },
+        load = state.sectionLoad(SetupSection.AssetTags, onEvent),
         editable = editable,
     ) {
         FieldLabel("Tags · ${tags.size}")
@@ -889,28 +900,7 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
                     }
                 }
             }
-            if (editable) {
-                ZillitTextField(
-                    value = setup.tagDraft,
-                    onValueChange = { text ->
-                        // A comma commits what came before it, as the web's input does.
-                        if (text.endsWith(",")) {
-                            onEvent(AccountHubEvent.EditTagDraft(text))
-                            onEvent(AccountHubEvent.CommitTagDraft)
-                        } else {
-                            onEvent(AccountHubEvent.EditTagDraft(text))
-                        }
-                    },
-                    placeholder = if (tags.isEmpty()) {
-                        str(S.desktop_hub_type_a_tag_and_press_enter_or_comma)
-                    } else {
-                        str(S.desktop_dm_add_another_ellipsis)
-                    },
-                    imeAction = ImeAction.Done,
-                    onImeAction = { onEvent(AccountHubEvent.CommitTagDraft) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            if (editable) TagInput(setup.tagDraft, tags, onEvent)
         }
         if (editable) {
             val suggested = SUGGESTED_TAGS.filter { it !in tags }
@@ -933,6 +923,42 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
             }
         }
     }
+}
+
+/**
+ * The tag input — the web's: a comma or Enter commits, leaving the field
+ * commits what was typed, and Backspace in an empty field takes the last tag.
+ */
+@Composable
+private fun TagInput(draft: String, tags: List<String>, onEvent: (AccountHubEvent) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    ZillitTextField(
+        value = draft,
+        onValueChange = { text ->
+            onEvent(AccountHubEvent.EditTagDraft(text))
+            // A comma commits what came before it, as the web's input does.
+            if (text.endsWith(",")) onEvent(AccountHubEvent.CommitTagDraft)
+        },
+        placeholder = if (tags.isEmpty()) {
+            str(S.desktop_hub_type_a_tag_and_press_enter_or_comma)
+        } else {
+            str(S.desktop_dm_add_another_ellipsis)
+        },
+        imeAction = ImeAction.Done,
+        onImeAction = { onEvent(AccountHubEvent.CommitTagDraft) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focus ->
+                if (focused && !focus.isFocused && draft.isNotBlank()) onEvent(AccountHubEvent.CommitTagDraft)
+                focused = focus.isFocused
+            }
+            .onPreviewKeyEvent { event ->
+                val eraseLast = event.type == KeyEventType.KeyDown && event.key == Key.Backspace &&
+                    draft.isEmpty() && tags.isNotEmpty()
+                if (eraseLast) onEvent(AccountHubEvent.EditAssetTags(tags.dropLast(1)))
+                eraseLast
+            },
+    )
 }
 
 @Composable

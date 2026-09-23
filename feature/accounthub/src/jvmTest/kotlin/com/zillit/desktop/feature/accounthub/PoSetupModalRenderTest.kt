@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -156,7 +157,8 @@ class PoSetupModalRenderTest {
         }
         // Title case: the shared key carries Android's wording.
         onNodeWithText("Expenditure Type").assertIsDisplayed()
-        onAllNodesWithText("All").onFirst().assertIsDisplayed()
+        // The modal is composed last; the page under it has "All" chips of its own.
+        onAllNodesWithText("All").onLast().assertIsDisplayed()
         onNodeWithText("Purchase").assertIsDisplayed()
         onNodeWithText("Consumables").assertIsDisplayed()
         onNodeWithText("Price range").assertIsDisplayed()

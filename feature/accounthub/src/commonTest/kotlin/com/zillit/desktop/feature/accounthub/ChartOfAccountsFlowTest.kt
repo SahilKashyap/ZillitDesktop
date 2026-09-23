@@ -47,6 +47,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlin.concurrent.Volatile
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -85,7 +86,14 @@ class ChartOfAccountsFlowTest {
     /** A chart service: rows by id, breadcrumbs filled from the parent, every call kept. */
     private class ChartService {
         val rows = mutableListOf<JsonObject>()
-        val calls = mutableListOf<Call>()
+
+        /**
+         * Swapped, never mutated: the engine records from the client's thread
+         * while `settle` filters on the test's, and filtering an `ArrayList`
+         * mid-append threw ConcurrentModificationException now and then.
+         */
+        @Volatile
+        var calls: List<Call> = emptyList()
         var cascaded = 0
         var refuseDeletes = false
         private var nextId = 1

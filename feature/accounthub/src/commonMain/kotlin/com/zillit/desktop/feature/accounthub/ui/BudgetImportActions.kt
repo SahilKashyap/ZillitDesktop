@@ -62,7 +62,7 @@ internal class BudgetImportActions(
      * the page's list stands in, and the server stays the authority on clashes.
      */
     private fun open() {
-        if (!vm.mayEdit()) return
+        if (!vm.mayActAsAccountant()) return
         // Read out here: inside the update, `acceptsDrops` would be the state's own field, always false.
         val drops = acceptsDrops
         updateImport { BudgetImportState(open = true, acceptsDrops = drops) }
@@ -75,7 +75,7 @@ internal class BudgetImportActions(
 
     private fun pick() {
         val source = files ?: return
-        if (!vm.mayEdit()) return
+        if (!vm.mayActAsAccountant()) return
         vm.launchWork {
             val file = source.pick(SetupUpload.BudgetImport, multiple = false) { refusal ->
                 updateImport { copy(parseError = refusal) }
@@ -87,7 +87,7 @@ internal class BudgetImportActions(
     /** A file dragged onto the drop zone, held exactly as a picked one. */
     private fun drop(name: String, bytes: ByteArray) {
         val source = files ?: return
-        if (!vm.mayEdit() || vm.setupState.budget.import.uploading) return
+        if (!vm.mayActAsAccountant() || vm.setupState.budget.import.uploading) return
         source.adopt(name, bytes, SetupUpload.BudgetImport) { refusal ->
             updateImport { copy(parseError = refusal) }
         }?.let(::stage)
@@ -106,7 +106,7 @@ internal class BudgetImportActions(
         val source = files ?: return
         val import = vm.setupState.budget.import
         val file = import.picked ?: return
-        if (!import.canParse || !vm.mayEdit()) return
+        if (!import.canParse || !vm.mayActAsAccountant()) return
         updateImport { copy(uploading = true, parseError = null) }
         vm.launchWork {
             when (val stored = source.upload(file, caption = "", purpose = SetupUpload.BudgetImport)) {
@@ -156,7 +156,7 @@ internal class BudgetImportActions(
         val import = vm.setupState.budget.import
         val parsed = import.parsed ?: return
         val upload = import.upload ?: return
-        if (!import.canCommit || !vm.mayEdit()) return
+        if (!import.canCommit || !vm.mayActAsAccountant()) return
 
         updateImport { copy(committing = true, commitError = null) }
         vm.runResult({ vm.repo.commitBudgetImport(upload, parsed, import.meta, import.mode) }, { created ->

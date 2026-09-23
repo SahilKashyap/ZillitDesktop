@@ -150,6 +150,12 @@ data class ChartState(
     val loading: Boolean = false,
     /** True once the chart has answered at least once — the tour's `coaReady`. */
     val loaded: Boolean = false,
+    /**
+     * The last read failed. Without it a failed first read skipped both the
+     * loading and the empty states and drew the search's `No accounts match ""`
+     * under a strip of zeros.
+     */
+    val loadFailed: Boolean = false,
     val accounts: List<CoaAccount> = emptyList(),
     val search: String = "",
     /** On by default, as on the web — a retired code stays discoverable, chipped "Inactive". */

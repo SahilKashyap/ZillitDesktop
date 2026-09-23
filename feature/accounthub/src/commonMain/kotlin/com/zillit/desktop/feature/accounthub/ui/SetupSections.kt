@@ -26,13 +26,21 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
     fun save(section: SetupSection) {
         if (!vm.mayEdit()) return
         val setup = vm.setupState.setup
+        // A section that never loaded holds the empty default; saving it would
+        // write that over what the server has. See SliceLoads.
+        if (section in SliceLoads.TRACKED && !setup.slices.isLoaded(section)) {
+            return vm.fail(str(S.desktop_hub_setup_section_not_loaded))
+        }
         // The web's own gates, applied before the call rather than after the
         // server's refusal — each names the row that is wrong.
         val refusal = when (section) {
             SetupSection.Currencies -> setup.currencies.edited.validationError()
             SetupSection.TaxTypes -> TaxType.problem(setup.taxTypes.edited)
-            SetupSection.Schedule -> str(S.desktop_hub_fix_the_schedule_dates_before_saving)
-                .takeIf { ScheduleRules.hasErrors(setup.schedule.edited.toDomain()) }
+            // A half-typed date reads as unset, so saving it would clear the
+            // stored date somebody was in the middle of changing.
+            SetupSection.Schedule -> str(S.desktop_hub_fix_the_schedule_dates_before_saving).takeIf {
+                setup.schedule.edited.hasHalfTypedDate || ScheduleRules.hasErrors(setup.schedule.edited.toDomain())
+            }
             else -> null
         }
         if (refusal != null) return vm.sendSideEffect(AccountHubEffect.Failed(refusal))
@@ -63,7 +71,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 call = { vm.repo.saveAssetTags(setup.assetTags.edited) },
                 done = { tags -> copy(setup = this.setup.copy(assetTags = this.setup.assetTags.committed(tags))) },
                 failed = { copy(setup = this.setup.copy(assetTags = this.setup.assetTags.copy(saving = false))) },
-                notice = str(S.desktop_asset_tags_saved),
+                notice = str(S.desktop_hub_account_tags_saved),
             )
             SetupSection.Budget -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(budget = this.setup.budget.copy(saving = true))) },
@@ -209,7 +217,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
         val next = when (section) {
             SetupSection.Companies -> setup.copy(companies = setup.companies.reverted())
             SetupSection.Currencies -> setup.copy(currencies = setup.currencies.reverted())
-            SetupSection.TaxTypes -> setup.copy(taxTypes = setup.taxTypes.reverted())
+            SetupSection.TaxTypes -> setup.copy(taxTypes = setup.taxTypes.reverted(), taxCountries = emptySet())
             SetupSection.AssetTags -> setup.copy(assetTags = setup.assetTags.reverted())
             SetupSection.Budget -> setup.copy(budget = setup.budget.reverted())
             SetupSection.Schedule -> setup.copy(schedule = setup.schedule.reverted())

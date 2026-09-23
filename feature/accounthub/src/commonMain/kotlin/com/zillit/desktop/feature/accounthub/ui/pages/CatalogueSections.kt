@@ -58,6 +58,7 @@ import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.CurrencyFilter
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
+import com.zillit.desktop.feature.accounthub.ui.sectionLoad
 import com.zillit.desktop.feature.accounthub.ui.asAmountText
 import com.zillit.desktop.feature.accounthub.ui.components.CoaCodeField
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
@@ -67,6 +68,8 @@ import com.zillit.desktop.feature.accounthub.ui.components.HubSelect
 import com.zillit.desktop.feature.accounthub.ui.components.MonoChip
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.Pill
+import com.zillit.desktop.feature.accounthub.ui.components.SectionLoad
+import com.zillit.desktop.feature.accounthub.ui.components.SectionLoadState
 import com.zillit.desktop.feature.accounthub.ui.components.SectionShell
 import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
 
@@ -96,6 +99,7 @@ internal fun CurrenciesSection(state: AccountHubUiState, onEvent: (AccountHubEve
         saving = setup.currencies.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Currencies)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.Currencies)) },
+        load = state.sectionLoad(SetupSection.Currencies, onEvent),
         editable = editable,
         leftPanel = { SelectedCurrenciesPanel(state, settings, editable, ::edit) },
     ) {
@@ -374,6 +378,7 @@ private fun SelectedCurrencyCard(
 }
 
 /** The right column: search, All / Major chips, and the grid of tiles. */
+@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 private fun CurrencyCatalogue(
     state: AccountHubUiState,
@@ -407,6 +412,12 @@ private fun CurrencyCatalogue(
             }
         }
         when {
+            setup.currencyCatalogue.isEmpty() && setup.currencyCatalogueError != null -> SectionLoadState(
+                SectionLoad(
+                    error = setup.currencyCatalogueError,
+                    onRetry = { onEvent(AccountHubEvent.RetryCatalogues) },
+                ),
+            )
             setup.currencyCatalogue.isEmpty() -> FieldHint(str(S.desktop_loading_currencies))
             shown.isEmpty() -> FieldHint(
                 if (setup.currencySearch.isBlank()) {
@@ -527,15 +538,21 @@ private fun SymbolPill(symbol: String, active: Boolean, size: androidx.compose.u
  * and a ticked rate carries a reclaimable flag and a nominal. Custom rates
  * sit below with a 0–100 guard.
  */
+@Suppress("LongMethod", "CyclomaticComplexMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 internal fun TaxTypesSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val setup = state.setup
     val rows = setup.taxTypes.edited
     val editable = state.viewer.canEdit
     val countries = setup.countryTaxes
-    val chosenCodes = rows.mapNotNull { it.countryCode }.distinct()
+    val chosenCodes = (rows.mapNotNull { it.countryCode } + setup.taxCountries).distinct()
     val available = countries.filter { it.countryCode !in chosenCodes }
-    fun edit(next: List<TaxType>) = onEvent(AccountHubEvent.EditTaxTypes(next))
+    // A country stays chosen when its last rate is unticked; only its chip removes it.
+    fun edit(next: List<TaxType>) {
+        val emptied = chosenCodes.filter { code -> next.none { it.countryCode == code } }
+        emptied.forEach { onEvent(AccountHubEvent.SetTaxCountry(it, chosen = true)) }
+        onEvent(AccountHubEvent.EditTaxTypes(next))
+    }
 
     SectionShell(
         title = str(S.desktop_tax_types),
@@ -544,12 +561,22 @@ internal fun TaxTypesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         saving = setup.taxTypes.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.TaxTypes)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.TaxTypes)) },
+        load = state.sectionLoad(SetupSection.TaxTypes, onEvent),
         editable = editable,
         leftPanel = { TaxSummary(rows, countries) },
     ) {
         FieldLabel(str(S.desktop_countries))
+        if (countries.isEmpty() && setup.countryTaxesError != null) {
+            SectionLoadState(
+                SectionLoad(
+                    error = setup.countryTaxesError,
+                    onRetry = { onEvent(AccountHubEvent.RetryCatalogues) },
+                ),
+            )
+        }
         SelectedCountryChips(chosenCodes, countries, editable) { code ->
-            edit(rows.filterNot { it.countryCode == code })
+            onEvent(AccountHubEvent.EditTaxTypes(rows.filterNot { it.countryCode == code }))
+            onEvent(AccountHubEvent.SetTaxCountry(code, chosen = false))
         }
         if (editable) {
             HubSelect(
@@ -561,6 +588,7 @@ internal fun TaxTypesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
                 // the lot, and unticking one is a click.
                 onSelect = { picked ->
                     if (picked != null) {
+                        onEvent(AccountHubEvent.SetTaxCountry(picked.countryCode, chosen = true))
                         edit(rows + picked.taxes.filter { tax -> rows.none { it.identifier == tax.identifier } })
                     }
                 },

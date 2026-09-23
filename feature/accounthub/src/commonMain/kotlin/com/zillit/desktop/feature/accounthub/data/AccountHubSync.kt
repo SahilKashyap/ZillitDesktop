@@ -32,6 +32,9 @@ internal val HUB_REFRESH_BY_EVENT: Map<SocketEventName, HubArea> = buildMap {
     // carry for them reload the chart page the tab lives on.
     put(SocketEventName("trackingcodes:updated"), HubArea.ChartOfAccounts)
     put(SocketEventName("trackingcodes:deleted"), HubArea.ChartOfAccounts)
+    // Balance Sheet Codes are the chart's other tab; the web reloads on both.
+    put(SocketEventName("balancesheetcode:updated"), HubArea.ChartOfAccounts)
+    put(SocketEventName("balancesheetcode:deleted"), HubArea.ChartOfAccounts)
     listOf(
         "vendor:created",
         "vendor:updated",
@@ -47,6 +50,12 @@ internal val HUB_REFRESH_BY_EVENT: Map<SocketEventName, HubArea> = buildMap {
         "approval_tier:updated",
         "approval_tier:deleted",
     ).forEach { put(SocketEventName(it), HubArea.Approvers) }
+    // The project-settings document changed — another accountant's company,
+    // currency or pay rule, or the deal wizard's inline "+ Add company". The
+    // web re-pulls every setup slice on it (`accountHubListeners`); without
+    // it a company created elsewhere stayed missing until the page reopened,
+    // and the next whole-list company save deleted it.
+    put(SocketEventName("production_setup:updated"), HubArea.ProductionSetup)
 }
 
 /**

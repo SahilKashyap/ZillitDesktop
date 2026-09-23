@@ -460,6 +460,12 @@ fun CoaCodeField(
  * `1500*3+200` becomes `4700` on Enter or when the field is left; thousands
  * are grouped for reading while the field is not focused. The stored value
  * is always the plain number text.
+ *
+ * As on the web, the field never holds garbage: letters are refused as they
+ * are typed, a leading minus is refused unless [allowNegative], and an
+ * expression that does not evaluate — or evaluates below zero — is discarded
+ * on commit, putting back the last good value. It used to commit the text as
+ * typed, which the wire then sent as null (or as a negative rate).
  */
 @Composable
 fun CalcField(
@@ -470,16 +476,23 @@ fun CalcField(
     placeholder: String = "0.00",
     enabled: Boolean = true,
     helperText: String? = null,
+    allowNegative: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     var text by remember(value, focused) { mutableStateOf(if (focused) value else groupAmount(value)) }
     fun commit() {
-        val evaluated = Calc.evaluate(text) ?: text.replace(",", "")
-        onValueChange(evaluated)
+        val committed = Calc.committed(text, previous = value, allowNegative = allowNegative)
+        text = committed
+        onValueChange(committed)
     }
     ZillitTextField(
         value = text,
-        onValueChange = { text = it; if (Calc.isPlainNumber(it)) onValueChange(it.replace(",", "")) },
+        onValueChange = { typed ->
+            if (Calc.accepts(typed, allowNegative)) {
+                text = typed
+                if (Calc.isPlainNumber(typed)) onValueChange(typed.replace(",", ""))
+            }
+        },
         label = label,
         placeholder = placeholder,
         enabled = enabled,
@@ -509,6 +522,28 @@ fun groupAmount(raw: String): String {
 /** A tiny expression evaluator: `+ - * /`, parentheses, decimals, thousands commas. */
 object Calc {
     fun isPlainNumber(text: String): Boolean = text.trim().replace(",", "").toDoubleOrNull() != null
+
+    /**
+     * Whether [typed] may stand in the field at all — calculator characters
+     * only, and no leading minus in a positive-only field (the web's
+     * `isAllowedCalcInput` and its `allowNegative` guard). A minus inside an
+     * expression is fine; only the result is checked, on commit.
+     */
+    fun accepts(typed: String, allowNegative: Boolean = false): Boolean =
+        typed.all { it in ALLOWED } && (allowNegative || !typed.trimStart().startsWith('-'))
+
+    /**
+     * What a commit stores: the evaluated [text], blank for blank, or
+     * [previous] when the text does not evaluate or comes out negative in a
+     * positive-only field — discarded rather than clamped, as on the web.
+     */
+    fun committed(text: String, previous: String, allowNegative: Boolean = false): String {
+        val evaluated = evaluate(text) ?: return previous
+        val number = evaluated.toDoubleOrNull()
+        return if (number != null && number < 0 && !allowNegative) previous else evaluated
+    }
+
+    private const val ALLOWED = "0123456789.,+-*/() "
 
     fun evaluate(text: String): String? {
         val cleaned = text.replace(",", "").replace(" ", "")

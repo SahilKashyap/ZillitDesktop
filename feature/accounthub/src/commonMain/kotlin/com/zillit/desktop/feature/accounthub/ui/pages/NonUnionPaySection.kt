@@ -53,10 +53,10 @@ import com.zillit.desktop.feature.accounthub.domain.PayTrigger
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
+import com.zillit.desktop.feature.accounthub.ui.sectionLoad
 import com.zillit.desktop.feature.accounthub.ui.asAmountText
 import com.zillit.desktop.feature.accounthub.ui.components.CalcField
 import com.zillit.desktop.feature.accounthub.ui.components.CoaCodeField
-import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
 import com.zillit.desktop.feature.accounthub.ui.components.GhostAddButton
@@ -93,6 +93,7 @@ internal fun ColumnScope.NonUnionPaySection(state: AccountHubUiState, onEvent: (
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.NonUnionPay)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.NonUnionPay)) },
+        load = state.sectionLoad(SetupSection.NonUnionPay, onEvent),
         editable = editable,
     ) {
         ApplyScope(state, value, editable, onEvent)
@@ -378,7 +379,7 @@ private fun RuleList(
     ) {
         if (rules.isEmpty()) {
             FieldHint(
-                "No ${kind.label.lowercase()} yet — add the first one.",
+                str(S.desktop_hub_no_x_yet_add_the_first_one, kind.label.lowercase()),
                 Modifier.padding(ZillitTheme.spacing.lg),
             )
         }
@@ -386,8 +387,8 @@ private fun RuleList(
             HoverRow(
                 modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
                 onClick = if (editable) ({ onEvent(AccountHubEvent.ComposePayRule(kind, index)) }) else null,
-                actions = { hovered ->
-                    if (editable && hovered) {
+                actions = { _ ->
+                    if (editable) {
                         ZillitIconButton(
                             icon = ZillitIcons.Edit,
                             contentDescription = str(S.dm_rule_edit),
@@ -481,7 +482,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
     val editor = state.setup.ruleEditor
     val rule = editor?.rule
     val trigger = rule?.singleTrigger ?: PayTrigger()
-    val template = PayRuleTemplate.of(rule?.singleTrigger) ?: editor?.let { PayRuleTemplate.defaultFor(it.kind) }
+    val template = editor?.template
     fun update(next: PayRule) = onEvent(AccountHubEvent.EditPayRule(next))
 
     ZillitDialogShell(
@@ -518,14 +519,9 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
                                 if (rule.label.isBlank() || rule.label == template.label) next.label else rule.label,
                             rateType = if (rule.rateAmount.isBlank()) next.defaultRateType else rule.rateType,
                             rateAmount = rule.rateAmount.ifBlank { next.defaultRateAmount },
-                            triggers = listOf(
-                                next.trigger(
-                                    hours = next.hoursFrom(trigger),
-                                    clock = next.clockFrom(trigger),
-                                    dayKinds = trigger.dayKinds,
-                                    carrying = trigger,
-                                ),
-                            ),
+                            // A switched type starts from its own defaults (the
+                            // web's `defaultForm`), keeping the rule's gates.
+                            triggers = listOf(next.defaultTrigger(carrying = trigger)),
                         ),
                     )
                 }
@@ -545,7 +541,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
         ZillitTextField(
             value = rule.label,
             onValueChange = { update(rule.copy(label = it)) },
-            label = "Name",
+            label = str(S.name),
             placeholder = template.label,
         )
 
@@ -561,7 +557,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             CalcField(
                 value = rule.rateAmount,
                 onValueChange = { update(rule.copy(rateAmount = it)) },
-                label = "Amount",
+                label = str(S.amount),
                 placeholder = "100",
                 modifier = Modifier.weight(1f),
             )
@@ -574,9 +570,13 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             )
         }
 
-        ConditionField(template, trigger) { hours, clock, kinds ->
-            update(rule.copy(triggers = listOf(template.trigger(hours, clock, kinds, trigger))))
-        }
+        ConditionField(
+            template = template,
+            trigger = trigger,
+            text = editor.conditionText,
+            onText = { onEvent(AccountHubEvent.EditPayRuleCondition(it)) },
+            onKinds = { kinds -> update(rule.copy(triggers = listOf(template.conditionFrom("", kinds, trigger)))) },
+        )
 
         val dayTypes = state.setup.dayTypes.edited
         HubSelect(
@@ -603,7 +603,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
         )
 
         ToggleRow(
-            label = "Cap maximum payout",
+            label = str(S.desktop_hub_cap_maximum_payout),
             hint = str(S.desktop_hub_clip_the_computed_payout_to_this_ceiling_per_matched_window),
             checked = rule.capped,
             onCheckedChange = { update(rule.copy(capped = it)) },
@@ -641,7 +641,7 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
         }
 
         ToggleRow(
-            label = "Basic + OT on Top",
+            label = str(S.dm_rule_add_on_top),
             hint = str(S.desktop_hub_pay_this_amount_over_the_basic_rate_rather_than_in),
             checked = rule.isEnhancement,
             onCheckedChange = { update(rule.copy(isEnhancement = it)) },
@@ -651,39 +651,47 @@ private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
             value = rule.nominalCode,
             onValueChange = { update(rule.copy(nominalCode = it)) },
             accounts = state.chart.accounts,
-            label = "Nominal",
+            label = str(S.dm_rule_nominal),
             placeholder = "e.g. 4421",
-            onCreate = quickCreateHandler(state, onEvent),
+            // Pick an existing code only — the web passes `quickCreate={false}` here.
+            onCreate = null,
         )
         ZillitTextField(
             value = rule.note,
             onValueChange = { update(rule.copy(note = it)) },
-            label = "Notes",
+            label = str(S.notes),
             placeholder = str(S.desktop_hub_statute_reference_edge_cases_etc),
             singleLine = false,
         )
     }
 }
 
+/**
+ * The condition's one field. Hours and clock times are bound to [text] — held
+ * as typed beside the trigger it builds — so "5." and "06:0" survive the
+ * keystroke that typed them.
+ */
 @Composable
 private fun ConditionField(
     template: PayRuleTemplate,
     trigger: PayTrigger,
-    onChange: (hours: String, clock: String, kinds: List<PayDayKind>) -> Unit,
+    text: String,
+    onText: (String) -> Unit,
+    onKinds: (List<PayDayKind>) -> Unit,
 ) {
     when (template.field) {
         PayRuleField.None -> Unit
         PayRuleField.Hours -> ZillitTextField(
-            value = template.hoursFrom(trigger),
-            onValueChange = { onChange(it, "", trigger.dayKinds) },
-            label = "Trigger",
-            placeholder = "hours",
+            value = text,
+            onValueChange = onText,
+            label = str(S.desktop_dm_trigger),
+            placeholder = str(S.dm_ds_unit_hours).lowercase(),
             modifier = Modifier.width(FIELD_WIDTH),
         )
         PayRuleField.Clock -> ZillitTextField(
-            value = template.clockFrom(trigger),
-            onValueChange = { onChange("", it, trigger.dayKinds) },
-            label = "Time (HH:MM)",
+            value = text,
+            onValueChange = onText,
+            label = str(S.desktop_hub_time_hh_mm),
             placeholder = "05:00",
             modifier = Modifier.width(FIELD_WIDTH),
         )
@@ -693,11 +701,9 @@ private fun ConditionField(
                 PayDayKind.entries.forEach { kind ->
                     ZillitCheckbox(
                         checked = kind in trigger.dayKinds,
-                        onCheckedChange = { on -> onChange(
-                            "",
-                            "",
-                            if (on) trigger.dayKinds + kind else trigger.dayKinds - kind,
-                        ) },
+                        onCheckedChange = { on ->
+                            onKinds(if (on) trigger.dayKinds + kind else trigger.dayKinds - kind)
+                        },
                         label = kind.label,
                     )
                 }

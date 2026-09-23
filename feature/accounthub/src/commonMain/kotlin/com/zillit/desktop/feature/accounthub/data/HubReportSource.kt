@@ -7,6 +7,7 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
@@ -141,13 +142,12 @@ internal class HubReportSource(
         }
     }
 
-    suspend fun closePeriod(asOfMillis: Long): ZillitResult<PeriodLock> = apiClient.request(
+    suspend fun closePeriod(asOfMillis: Long): ZillitResult<PeriodLock> = apiClient.envelope(
         verb = HttpVerb.Post,
         url = "$costReportBase/lock-period",
-        serializer = JsonElement.serializer(),
         module = RequestModule.ProjectUser,
         body = buildJsonObject { put("as_of", JsonPrimitive(asOfMillis)) },
-    ).map { it.toPeriodLock() ?: PeriodLock() }
+    ).refusedAsFailure().map { data -> data?.toPeriodLock() ?: PeriodLock() }
 
     /**
      * `POST /closing-package/publish { packages: [{ user_ids, emails, reports }] }`.
@@ -175,7 +175,7 @@ internal class HubReportSource(
                 },
             )
         },
-    ).map { }
+    ).refusedAsFailure().map { }
 
     suspend fun budgetVersions(): ZillitResult<List<BudgetVersion>> = apiClient.request(
         verb = HttpVerb.Get,
@@ -334,3 +334,18 @@ internal fun <T> JsonElement.rows(element: KSerializer<T>): List<T> {
 
 /** The trial balance's business refusal over a 200 — the envelope's `status: 0`. */
 private const val TRIAL_BALANCE_REFUSED = 0
+
+/**
+ * A write judged by its envelope, not its HTTP status: `status: 0` over a 200
+ * is the server refusing, with the reason in `message`. Read as success, a
+ * refused publish reported "Recipients have been e-mailed", and a refused close
+ * lost the one message that says which transactions are in the way.
+ */
+private fun ZillitResult<ApiEnvelope>.refusedAsFailure(): ZillitResult<JsonElement?> =
+    flatMap { envelope ->
+        if (envelope.status == 0) {
+            ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message))
+        } else {
+            ZillitResult.Success(envelope.data)
+        }
+    }

@@ -30,7 +30,9 @@ import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
+import com.zillit.desktop.feature.accounthub.ui.components.SectionLoadState
 import com.zillit.desktop.feature.accounthub.ui.components.SubCard
+import com.zillit.desktop.feature.accounthub.ui.sectionLoad
 
 private val CODE_WIDTH = 120.dp
 private val MINUTES_WIDTH = 150.dp
@@ -44,6 +46,7 @@ private val MINUTES_WIDTH = 150.dp
  * endpoint — editing a day type must not re-save the overtime, premium and
  * penalty rules next to it.
  */
+@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 internal fun ColumnScope.DayTypesEditor(
     state: AccountHubUiState,
@@ -52,12 +55,13 @@ internal fun ColumnScope.DayTypesEditor(
     val section = state.setup.dayTypes
     val rows = section.edited
     val editable = state.viewer.canEdit
+    val load = state.sectionLoad(SetupSection.DayTypes, onEvent)
 
     SubCard(
         title = str(S.desktop_day_types),
         hint = str(S.desktop_hub_the_defaults_are_swd_cwd_and_scwd_add_any_custom),
         action = {
-            if (editable && section.dirty) {
+            if (editable && section.dirty && load.ready) {
                 ZillitButton(
                     text = str(S.cancel),
                     onClick = { onEvent(AccountHubEvent.RevertSection(SetupSection.DayTypes)) },
@@ -74,6 +78,12 @@ internal fun ColumnScope.DayTypesEditor(
             }
         },
     ) {
+        // Its own slice: the seeded defaults on screen are not the saved list
+        // until the read lands, and saving them would replace it.
+        if (!load.ready) {
+            SectionLoadState(load)
+            return@SubCard
+        }
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             modifier = Modifier.fillMaxWidth(),
@@ -120,8 +130,10 @@ private fun ColumnScope.DayTypeRow(
     // The three defaults are keyed by code: the pay engine looks a day type up
     // by it, and a renamed SWD is a standard working day nothing recognises.
     // Their figures stay editable — a production that runs a nine-hour
-    // standard day says so here.
-    val locked = DayTypes.isDefault(row)
+    // standard day says so here. Locked by origin, not by the code typed: a
+    // custom row typed as "SWD" used to lock itself, undeletable, while the
+    // duplicate refused the save (the web's `isDefault` is stamped the same way).
+    val locked = DayTypes.isSeededDefault(index, rows)
     val update: (DayType) -> Unit = { next ->
         onEvent(AccountHubEvent.EditDayTypes(rows.toMutableList().also { it[index] = next }))
     }

@@ -46,10 +46,16 @@ enum class HubArea(val slug: String, private val labelKey: String) {
     }
 }
 
-/** One row of the console sidebar. */
+/**
+ * One row of the console sidebar.
+ *
+ * Holds the label's key, not its text: the sidebar is built once when the
+ * console starts, and text resolved then stayed in whatever language the app
+ * had at that moment.
+ */
 data class HubItem(
     val id: String,
-    val label: String,
+    private val labelKey: String,
     val target: HubTarget,
     /**
      * The tool identifier that grants entry, or null for an entry gated only by
@@ -64,10 +70,14 @@ data class HubItem(
      * advertise screens that answer 403.
      */
     val forDepartmentUsers: Boolean = false,
-)
+) {
+    val label: String get() = str(labelKey)
+}
 
-/** A titled group of sidebar rows. */
-data class HubSection(val title: String, val items: List<HubItem>)
+/** A titled group of sidebar rows; the title resolves when drawn, as [HubItem.label] does. */
+data class HubSection(private val titleKey: String, val items: List<HubItem>) {
+    val title: String get() = str(titleKey)
+}
 
 /**
  * The console's navigation.
@@ -83,21 +93,21 @@ object HubNavigation {
     /** Areas this module renders, versus tools it hands off to. */
     val sections: List<HubSection> = listOf(
         HubSection(
-            title = str(S.desktop_setup),
+            titleKey = S.desktop_setup,
             items = listOf(
                 HubItem(
                     id = "production-setup",
-                    label = "Production Setup",
+                    labelKey = S.ps_production_setup,
                     target = HubTarget.Page(HubArea.ProductionSetup),
                 ),
             ),
         ),
         HubSection(
-            title = str(S.desktop_transactions),
+            titleKey = S.desktop_transactions,
             items = listOf(
                 HubItem(
                     id = "purchase-orders",
-                    label = "Purchase Orders",
+                    labelKey = S.ah_purchase_orders,
                     target = HubTarget.Tool("/film-tools/purchase-order", "purchase_order_tool"),
                     gate = "purchase_order_tool",
                     forDepartmentUsers = true,
@@ -106,19 +116,19 @@ object HubNavigation {
                 // `invoices_tool` tile instead); no grid gate of its own there.
                 HubItem(
                     id = "invoices",
-                    label = "Invoices / Accounts Payable",
+                    labelKey = S.desktop_inv_accounts_payable,
                     target = HubTarget.Tool("/film-tools/invoices", "invoices_tool"),
                 ),
                 HubItem(
                     id = "card-expenses",
-                    label = "Production Expense Cards",
+                    labelKey = S.ah_card_expenses,
                     target = HubTarget.Tool("/film-tools/card-expenses", "card_expenses_tool"),
                     gate = "card_expenses_tool",
                     forDepartmentUsers = true,
                 ),
                 HubItem(
                     id = "cash-expenses",
-                    label = "Petty Cash Expenses",
+                    labelKey = S.ah_cash_expenses,
                     target = HubTarget.Tool("/film-tools/cash-expenses", "cash_expenses_tool"),
                     gate = "cash_expenses_tool",
                     forDepartmentUsers = true,
@@ -126,11 +136,11 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = str(S.desktop_payroll_management),
+            titleKey = S.desktop_payroll_management,
             items = listOf(
                 HubItem(
                     id = "payroll",
-                    label = "Payroll",
+                    labelKey = S.dm_section_payroll,
                     target = HubTarget.Tool("/film-tools/payroll", "payroll_tool"),
                     gate = "payroll_tool",
                 ),
@@ -143,7 +153,7 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = str(S.reports),
+            titleKey = S.reports,
             items = listOf(
                 // Cost Report first, then Period Close, which is the web's
                 // own order in this group.
@@ -152,60 +162,52 @@ object HubNavigation {
                 // `/film-tools/cost-report`, which is its read-only sibling.
                 HubItem(
                     id = "cost-report",
-                    label = "Cost Report",
+                    labelKey = S.cr_title,
                     target = HubTarget.Tool("/film-tools/account-hub/cost-report", "cost_report_tool"),
                 ),
                 HubItem(
                     id = "period-close",
-                    label = "Period Close",
+                    labelKey = S.desktop_period_close,
                     target = HubTarget.Page(HubArea.PeriodClose),
                 ),
             ),
         ),
         HubSection(
-            title = str(S.desktop_management),
+            titleKey = S.desktop_management,
             items = listOf(
                 HubItem(
                     id = "vendors",
-                    label = "Vendors",
+                    labelKey = S.ah_vendors,
                     target = HubTarget.Page(HubArea.Vendors),
                 ),
                 // The web files this under Management too, between Vendors and
                 // the reports it has and this port does not.
                 HubItem(
                     id = "trial-balance",
-                    label = "Trial Balance",
+                    labelKey = S.desktop_trial_balance,
                     target = HubTarget.Page(HubArea.TrialBalance),
                 ),
                 HubItem(
                     id = "bible-report",
-                    label = "Bible Report",
+                    labelKey = S.desktop_bible_report,
                     target = HubTarget.Page(HubArea.BibleReport),
                 ),
-                // Also a hand-off. Eight tabs with a two-panel reconciliation
-                // among them: the console's sidebar beside it would leave the
-                // workspace half a screen wide.
+                // Rendered inside the console, sidebar and all, as on the web.
                 HubItem(
                     id = "bank-reconciliation",
-                    label = "Bank Reconciliation",
+                    labelKey = S.desktop_bank_reconciliation,
                     target = HubTarget.Tool(
                         "/film-tools/account-hub/bank-reconciliation",
                         AccountHubViewer.TOOL_IDENTIFIER,
                     ),
                 ),
-                // A hand-off rather than a page, unlike the web, where it
-                // renders inside the hub shell. It reaches HMRC and files a
-                // legal return, so it gets a window of its own here — the same
-                // shape as every other hand-off in this sidebar, and the same
-                // reason the console does not land people in Purchase Orders.
-                //
-                // No `gate`: the web gates it on being an accountant and on no
-                // tool right at all (`protectedRoute.jsx`), which the role
-                // filter above already does. Bank Reconciliation sits above it
-                // on the web too.
+                // Full-bleed, as the web renders it (see `isFullBleed`): its own
+                // top bar carries the way back. No `gate`: the web gates it on
+                // being an accountant and no tool right, which the role filter
+                // already does.
                 HubItem(
                     id = "tax-filing",
-                    label = "Tax Filing",
+                    labelKey = S.desktop_tax_filing,
                     target = HubTarget.Tool(
                         "/film-tools/account-hub/tax-filing",
                         AccountHubViewer.TOOL_IDENTIFIER,
@@ -214,11 +216,11 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = str(S.desktop_configuration),
+            titleKey = S.desktop_configuration,
             items = listOf(
                 HubItem(
                     id = "approvers",
-                    label = "Approvers",
+                    labelKey = S.desktop_approvers,
                     target = HubTarget.Page(HubArea.Approvers),
                 ),
                 // Above Chart of Accounts as on the web, and a page of this
@@ -228,12 +230,12 @@ object HubNavigation {
                 // different thing entirely.
                 HubItem(
                     id = "budget",
-                    label = "Budget",
+                    labelKey = S.budget_text,
                     target = HubTarget.Page(HubArea.Budget),
                 ),
                 HubItem(
                     id = "chart-of-accounts",
-                    label = "Chart of Accounts",
+                    labelKey = S.desktop_chart_of_accounts,
                     target = HubTarget.Page(HubArea.ChartOfAccounts),
                 ),
                 // Last under Configuration, as on the web. A page of the
@@ -241,7 +243,7 @@ object HubNavigation {
                 // nothing outside it.
                 HubItem(
                     id = "form-config",
-                    label = "Forms Configuration",
+                    labelKey = S.desktop_forms_configuration,
                     target = HubTarget.Page(HubArea.FormConfig),
                 ),
             ),
@@ -262,10 +264,15 @@ object HubNavigation {
         sections.mapNotNull { section ->
             val items = section.items.filter { item ->
                 val allowedByRole = viewer.isAccountant || viewer.isAdmin || item.forDepartmentUsers
-                // `mayList`, not `mayOpen`: a row here is an offer, and the
-                // permissive entry rule would advertise every hosted tool to
-                // anyone holding the hub's own right.
-                allowedByRole && viewer.mayList(item.gate)
+                // An accountant's rows ride on the hub's own right, as on the
+                // web (`useAccountHubViewGate`: entered through the hub, every
+                // module is gated on `account_hub_tool` alone). Requiring each
+                // sub-tool's right as well dropped Purchase Orders, the
+                // expenses and Payroll — and the PO landing with them — on any
+                // production whose tool list omits one; the web calls that
+                // "broke entry outright". Everyone else still needs the tool:
+                // `mayList`, not `mayOpen`, because a row is an offer.
+                allowedByRole && (viewer.isAccountant || viewer.mayList(item.gate))
             }
             section.copy(items = items).takeIf { items.isNotEmpty() }
         }
@@ -319,6 +326,36 @@ object HubNavigation {
 
     private fun toolRows(viewer: AccountHubViewer): List<HubItem> =
         visibleTo(viewer).flatMap { it.items }.filter { it.target is HubTarget.Tool }
+
+    /**
+     * Whether a surface is drawn without the console's sidebar.
+     *
+     * The web renders two kinds full-bleed (`AccountHubToolHost.jsx`,
+     * `AccountHubShell.jsx`), and both carry their own way back:
+     *  - the "bare" reports — Cost Report, Trial Balance, Bible Report, Period
+     *    Close and Tax Filing — each with its own back button;
+     *  - the modules with a deeper sidebar of their own — Invoices and Card
+     *    Expenses — where two navigation columns side by side left the content
+     *    half the window (`SELF_NAV_MODULE_PREFIXES`). Only for an accountant:
+     *    a cardholder's view of Card Expenses has no sidebar to go back with.
+     *
+     * Keeping the console's sidebar beside them drew a second back arrow and,
+     * on Period Close, three columns of navigation.
+     */
+    fun isFullBleed(area: HubArea?, embeddedPath: String?, viewer: AccountHubViewer): Boolean =
+        if (embeddedPath != null) {
+            BARE_TOOL_PATHS.any { embeddedPath.startsWith(it) } ||
+                (viewer.isAccountant && SELF_NAV_TOOL_PATHS.any { embeddedPath.startsWith(it) })
+        } else {
+            area in BARE_AREAS
+        }
+
+    private val BARE_AREAS = setOf(HubArea.TrialBalance, HubArea.BibleReport, HubArea.PeriodClose)
+    private val BARE_TOOL_PATHS = listOf(
+        "/film-tools/account-hub/cost-report",
+        "/film-tools/account-hub/tax-filing",
+    )
+    private val SELF_NAV_TOOL_PATHS = listOf("/film-tools/invoices", "/film-tools/card-expenses")
 
     private const val PURCHASE_ORDERS_ID = "purchase-orders"
 }

@@ -47,6 +47,7 @@ import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.BuilderOrigin
 import com.zillit.desktop.feature.accounthub.ui.FormConfigState
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
+import com.zillit.desktop.feature.accounthub.ui.components.FormSectionsSkeleton
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.Pill
 
@@ -193,7 +194,7 @@ private fun PreviewView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
         }
         if (config.dirty) UnsavedBanner(config, canEdit = state.viewer.canEdit, onEvent = onEvent)
         when {
-            config.loading && config.template.sections.isEmpty() -> FormLoadingLine(str(S.dm_nda_loading_template))
+            config.loading && config.template.sections.isEmpty() -> FormSectionsSkeleton()
             config.loadFailed && config.template.sections.isEmpty() -> ZillitNotice(
                 text = "Couldn't load the ${config.module.label} form.",
                 tone = StatusTone.Rejected,

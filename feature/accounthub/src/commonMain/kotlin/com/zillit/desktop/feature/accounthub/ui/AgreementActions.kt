@@ -149,9 +149,14 @@ internal class AgreementActions(
             val stored = mutableListOf<AgreementDocument>()
             val failed = mutableListOf<String>()
             queue.forEach { row ->
-                when (val result = source.upload(row.file, row.description)) {
-                    is ZillitResult.Success ->
-                        stored += result.data.copy(title = row.title, description = row.description)
+                when (val result = source.upload(row.file, row.description.trim())) {
+                    // A cleared title falls back to the file's name, trimmed
+                    // as the web sends it (`row.title.trim() || row.file.name`):
+                    // a document with no title listed as a blank row.
+                    is ZillitResult.Success -> stored += result.data.copy(
+                        title = row.title.trim().ifBlank { row.file.name },
+                        description = row.description.trim(),
+                    )
                     is ZillitResult.Failure -> failed += row.file.name
                 }
             }

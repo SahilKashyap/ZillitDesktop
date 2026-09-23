@@ -22,7 +22,11 @@ data class AssignmentRule(
     /** Whether the server holds this row; a new one has a local id. */
     val persisted: Boolean = false,
 ) {
-    val amountMinValue: Double? get() = amountMin.trim().replace(",", "").toDoubleOrNull()
+    /**
+     * The minimum as the wire takes it. Zero is no minimum — null, as the
+     * web's `amountMin || null` sends it — not a condition every document meets.
+     */
+    val amountMinValue: Double? get() = amountMin.trim().replace(",", "").toDoubleOrNull()?.takeIf { it != 0.0 }
 }
 
 /**

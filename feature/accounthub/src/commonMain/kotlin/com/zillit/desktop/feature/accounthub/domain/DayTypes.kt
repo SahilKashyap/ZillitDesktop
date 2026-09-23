@@ -54,6 +54,14 @@ object DayTypes {
     fun isDefault(dayType: DayType): Boolean = dayType.dayType in defaultCodes
 
     /**
+     * Whether the row at [index] is one of the three by **origin** — [seeded]
+     * always puts them first, in order — rather than by whatever code a
+     * custom row has had typed into it.
+     */
+    fun isSeededDefault(index: Int, rows: List<DayType>): Boolean =
+        index in defaults.indices && rows.getOrNull(index)?.dayType == defaults[index].dayType
+
+    /**
      * What the catalogue refuses to save, or null when it is ready.
      *
      * Two codes the same is the one that matters: the pay engine looks a day

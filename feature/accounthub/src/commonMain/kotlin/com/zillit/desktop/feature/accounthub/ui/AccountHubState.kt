@@ -1,7 +1,6 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.orDash
-import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -47,6 +46,8 @@ import com.zillit.desktop.feature.accounthub.domain.NonUnionPay
 import com.zillit.desktop.feature.accounthub.domain.ParsedBudget
 import com.zillit.desktop.feature.accounthub.domain.PayRule
 import com.zillit.desktop.feature.accounthub.domain.PayRuleKind
+import com.zillit.desktop.feature.accounthub.domain.PayRuleTemplate
+import com.zillit.desktop.feature.accounthub.domain.PayTrigger
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.PayrollDefaults
@@ -166,10 +167,14 @@ data class DateRangeText(val from: String = "", val to: String = "") {
         endDate = IsoDate.toEpochMillis(to),
     )
 
+    /** Neither date half-typed — blank or whole. */
+    val isComplete: Boolean get() = IsoDate.isBlankOrValid(from) && IsoDate.isBlankOrValid(to)
+
     companion object {
+        /** Read in UTC, as they are written — see [IsoDate.fromEpochMillis]. */
         fun from(phase: SchedulePhase) = DateRangeText(
-            from = EpochDate.isoDate(phase.startDate),
-            to = EpochDate.isoDate(phase.endDate),
+            from = IsoDate.fromEpochMillis(phase.startDate),
+            to = IsoDate.fromEpochMillis(phase.endDate),
         )
     }
 }
@@ -213,6 +218,15 @@ data class ScheduleForm(
             customDays = customDays.map { it.toDomain() },
         )
     }
+
+    /**
+     * Whether any date is half-typed. `toDomain` reads such a date as unset, so
+     * saving it would clear a stored date the person was in the middle of
+     * changing.
+     */
+    val hasHalfTypedDate: Boolean
+        get() = listOf(overall, prep, shoot, wrap).any { !it.isComplete } ||
+            customDays.any { !it.dates.isComplete }
 
     companion object {
         fun from(schedule: ProductionSchedule) = ScheduleForm(
@@ -269,6 +283,20 @@ enum class SetupModal(
     val title: String get() = str(titleKey)
     val eyebrow: String get() = str(eyebrowKey)
     val description: String get() = str(descriptionKey)
+
+    companion object {
+        /**
+         * A deep link's `?setup=` value: the slug, or the short name
+         * (`payroll`, `po`, `invoices`). Null for anything else.
+         */
+        fun fromRoute(value: String?): SetupModal? = when (value?.trim()?.lowercase()) {
+            null, "" -> null
+            "payroll", Payroll.slug -> Payroll
+            "po", "purchase_orders", PurchaseOrders.slug -> PurchaseOrders
+            "invoices", Invoices.slug -> Invoices
+            else -> null
+        }
+    }
 }
 
 /** One section in a modal's left nav — `name`, and the mono count chip, or a dash. */
@@ -308,6 +336,13 @@ data class InvoiceMemberDraft(val index: Int?, val member: InvoiceTeamMember = I
 data class PayrollAccountsDraft(
     val rows: List<PayrollAccountRow> = emptyList(),
     val saving: Boolean = false,
+    /** The seeded rows as they opened, by chart id — an unchanged one is not sent. */
+    val seeds: Map<String, PayrollAccountRow> = emptyMap(),
+    /**
+     * Saved codes the chart could not resolve. Listed, never seeded: without a
+     * chart id the row would go as a create for an account that exists.
+     */
+    val unmatched: List<String> = emptyList(),
 )
 
 /** A pay rule being added or edited — the web's `RateRowModal`. */
@@ -315,7 +350,44 @@ data class PayRuleEditor(
     val kind: PayRuleKind,
     val index: Int?,
     val rule: PayRule,
-)
+    /**
+     * The condition's one field as typed — hours or `HH:MM` — held beside the
+     * trigger it builds. Re-deriving the field from stored minutes on every
+     * keystroke turned "5." into "5" and "06:0" into "00:00".
+     */
+    val conditionText: String = "",
+) {
+    /** The template the dialog shows: the rule's own, or its list's default. */
+    val template: PayRuleTemplate
+        get() = PayRuleTemplate.of(rule.singleTrigger) ?: PayRuleTemplate.defaultFor(kind)
+
+    /** Whether the condition is one the dialog's field edits — a single trigger a template recognises. */
+    val editsCondition: Boolean get() = PayRuleTemplate.of(rule.singleTrigger) != null
+
+    /** The text re-read from the trigger, but only once it no longer describes it (a type switch, a revert). */
+    fun synced(): PayRuleEditor {
+        val trigger = rule.singleTrigger ?: return this
+        val shown = template
+        if (shown.textDescribes(conditionText, trigger)) return this
+        return copy(conditionText = shown.conditionText(trigger))
+    }
+
+    /** The field typed into: the text kept as typed, the trigger rebuilt from it. */
+    fun withConditionText(text: String): PayRuleEditor {
+        val trigger = rule.singleTrigger ?: PayTrigger()
+        val next = template.conditionFrom(text, trigger.dayKinds, carrying = trigger)
+        return copy(conditionText = text, rule = rule.copy(triggers = listOf(next)))
+    }
+
+    companion object {
+        /** Opens on [rule], its field filled from the stored condition. */
+        fun open(kind: PayRuleKind, index: Int?, rule: PayRule): PayRuleEditor {
+            val editor = PayRuleEditor(kind, index, rule)
+            val trigger = rule.singleTrigger ?: return editor
+            return editor.copy(conditionText = editor.template.conditionText(trigger))
+        }
+    }
+}
 
 /** A row about to be removed, named so the confirmation can say which. */
 sealed interface SetupRemoval {
@@ -335,12 +407,59 @@ enum class CurrencyFilter(private val labelKey: String) {
     val label: String get() = str(labelKey)
 }
 
+/**
+ * Which Production Setup slices have been read, and which could not be.
+ *
+ * Per section, because each reads its own route and any one can fail alone.
+ * The distinction is a data-safety rule, not a nicety: a section that never
+ * loaded holds the *empty default*, and a save from it writes that default
+ * over what the server has — the companies PATCH replaces the whole list, so
+ * adding one company to a list that failed to load deleted all the others.
+ * Such a section shows an error card with Retry instead of an editor, and
+ * refuses to save (the web shows its error panel instead of the page).
+ */
+data class SliceLoads(
+    val loaded: Set<SetupSection> = emptySet(),
+    /** Asked for and not yet answered, never having loaded — drawn as a placeholder, not an editor. */
+    val pending: Set<SetupSection> = emptySet(),
+    val failed: Map<SetupSection, String> = emptyMap(),
+) {
+    fun isLoaded(section: SetupSection): Boolean = section in loaded
+
+    /** Why the section could not be read, when it never has been. */
+    fun failure(section: SetupSection): String? = failed[section]
+
+    fun isLoading(section: SetupSection): Boolean = section in pending
+
+    /** A read begins. One over a slice that already loaded is a refresh, and changes nothing on screen. */
+    fun requested(section: SetupSection): SliceLoads =
+        if (section in loaded) this else copy(pending = pending + section, failed = failed - section)
+
+    fun succeeded(section: SetupSection): SliceLoads =
+        copy(loaded = loaded + section, pending = pending - section, failed = failed - section)
+
+    /**
+     * A failed read. One that follows a good read changes nothing: the data on
+     * screen is the last the server gave, and blocking it over a refresh that
+     * did not land would take away a working editor.
+     */
+    fun failedWith(section: SetupSection, message: String): SliceLoads =
+        if (section in loaded) this else copy(pending = pending - section, failed = failed + (section to message))
+
+    companion object {
+        /** Every section the page reads on open. The project budget has no surface here. */
+        val TRACKED: Set<SetupSection> = SetupSection.entries.toSet() - SetupSection.Budget
+    }
+}
+
 /** Everything Production Setup holds. */
 data class SetupState(
     val tab: SetupTab = SetupTab.Accounting,
     val loading: Boolean = false,
     /** True once every slice has been asked for — the tour's "unknown ≠ missing" gate. */
     val loaded: Boolean = false,
+    /** Per-section read state — see [SliceLoads]. */
+    val slices: SliceLoads = SliceLoads(),
     val companies: SectionEdit<List<Company>> = SectionEdit(emptyList()),
     val currencies: SectionEdit<CurrencySettings> = SectionEdit(CurrencySettings()),
     val taxTypes: SectionEdit<List<TaxType>> = SectionEdit(emptyList()),
@@ -400,8 +519,14 @@ data class SetupState(
     val banksLoading: Boolean = false,
     /** Null until the bank list has been read at least once — the tour's rule 3. */
     val banksLoaded: Boolean = false,
+    /** Why the bank list could not be read, while it never has been. */
+    val banksError: String? = null,
     val currencyCatalogue: List<ProjectCurrency> = emptyList(),
     val countryTaxes: List<CountryTaxes> = emptyList(),
+    /** Why the currency catalogue could not be read — shown with a Retry, never as endless "Loading…". */
+    val currencyCatalogueError: String? = null,
+    /** Why the countries' tax catalogue could not be read. */
+    val countryTaxesError: String? = null,
     val companyDraft: Company? = null,
     /**
      * The company editor was opened from inside the bank editor's "+ Add
@@ -419,6 +544,14 @@ data class SetupState(
      */
     val bankDraftFromCompany: Boolean = false,
     val bankSaving: Boolean = false,
+    /** A bank delete in flight — the confirm shows it and takes no second press (one DELETE, not two). */
+    val bankDeleting: Boolean = false,
+    /**
+     * The company editor's tax-credit input, as typed and not yet committed.
+     * Held here so Done folds it in — the web commits it on blur; a click on
+     * Done here never blurred it, and the typed regime was lost.
+     */
+    val taxCreditDraft: String = "",
     /** Which bank card has been revealed; the card re-masks itself after five seconds. */
     val revealedBankId: String? = null,
     // -- the drill-down modals --
@@ -426,6 +559,12 @@ data class SetupState(
     val poRules: SectionEdit<List<AssignmentRule>> = SectionEdit(emptyList()),
     val invoiceRules: SectionEdit<List<AssignmentRule>> = SectionEdit(emptyList()),
     val rulesLoading: Boolean = false,
+    /**
+     * The vendors the assignment rules' multi-select offers, read when a
+     * modal opens (the web's `AssignmentRulesSection` loads its own) rather
+     * than borrowed from a Vendors page that may never have been opened.
+     */
+    val ruleVendors: List<Vendor> = emptyList(),
     val invoiceMemberDraft: InvoiceMemberDraft? = null,
     val payrollGroups: List<PayrollGroup> = emptyList(),
     val payrollGroupsLoading: Boolean = false,
@@ -435,6 +574,12 @@ data class SetupState(
     val userPicker: UserPickerState? = null,
     // -- section-local UI --
     val currencyFilter: CurrencyFilter = CurrencyFilter.All,
+    /**
+     * Countries picked in the tax editor, kept while none of their rates is
+     * ticked — the web holds them apart from the rates (`TaxTypesSection`), so
+     * unticking a country's last rate no longer removes the country.
+     */
+    val taxCountries: Set<String> = emptySet(),
     val currencySearch: String = "",
     val tagDraft: String = "",
     val ruleEditor: PayRuleEditor? = null,
@@ -624,6 +769,10 @@ data class VendorsState(
     val selectedId: String? = null,
     val history: List<VendorChange> = emptyList(),
     val historyLoading: Boolean = false,
+    /** Why the history panel is empty, when it is because the read failed — the web prints it there. */
+    val historyError: String? = null,
+    /** Vendors whose delete is in flight: greyed, their actions a spinner, a second delete refused. */
+    val deletingIds: Set<String> = emptySet(),
     val form: VendorForm? = null,
     /** Who is looking, for the "Added by Me" tab. */
     val viewerId: String = "",
@@ -974,9 +1123,18 @@ data class ApprovalsState(
     fun visibleDepartments(departments: List<HubDepartment>): List<HubDepartment> {
         val needle = departmentSearch.trim()
         return departments
-            .filter { needle.isEmpty() || it.name.contains(needle, ignoreCase = true) }
+            // The row shows `name.localised()` — the server sends keys such as
+            // `direction_label` — so the search has to match what is on screen.
+            .filter {
+                needle.isEmpty() ||
+                    it.name.localised().contains(needle, ignoreCase = true) ||
+                    it.name.contains(needle, ignoreCase = true)
+            }
             .filter { dept ->
-                val custom = configFor(dept.id)?.isConfigured == true
+                // Any saved row is an override, as on the web (`!!configs[id]`) —
+                // one with an empty chain too: that department waits forever at a
+                // level with nobody in it, and filing it under "Default" hid that.
+                val custom = configFor(dept.id) != null
                 when (departmentFilter) {
                     DepartmentFilter.All -> true
                     DepartmentFilter.Custom -> custom
@@ -986,7 +1144,7 @@ data class ApprovalsState(
     }
 
     fun customCount(departments: List<HubDepartment>): Int =
-        departments.count { configFor(it.id)?.isConfigured == true }
+        departments.count { configFor(it.id) != null }
 }
 
 // -- shell ----------------------------------------------------------------------

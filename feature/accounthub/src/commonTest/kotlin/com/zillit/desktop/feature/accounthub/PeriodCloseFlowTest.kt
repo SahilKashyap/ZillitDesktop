@@ -9,6 +9,8 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.permissions.ToolAccess
 import com.zillit.desktop.feature.accounthub.data.AccountHubRepositoryImpl
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
+import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
+import com.zillit.desktop.feature.accounthub.domain.ClosingReport
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
@@ -201,7 +203,48 @@ class PeriodCloseFlowTest {
 
         val close = model.state.value.periodClose
         assertEquals("2026-08-30", close.lock.lockedThrough)
-        assertFalse(assertNotNull(close.result).ok)
+        val result = assertNotNull(close.result)
+        assertFalse(result.ok)
+        // A `status: 0` over a 200 carries the only explanation there is.
+        assertTrue(result.message.contains("unposted"), result.message)
+    }
+
+    /**
+     * A reply that names no date still closed the period. The web falls back to
+     * the chosen day (`… || target`); a blank lock here read "No period locked
+     * yet" straight after a close and reset the picker's minimum.
+     */
+    @Test
+    fun `a close answered without a date keeps the chosen day as the lock`() = runTest(dispatcher) {
+        val model = opened(viewModel(engine("2026-08-30", """{"status":1,"data":{}}"""), today = ms("2026-09-01")))
+        model.onEvent(AccountHubEvent.ProposePeriodClose(ms("2026-09-06") + 86_400_000L - 1))
+        model.onEvent(AccountHubEvent.ConfirmPeriodClose)
+        settle { !model.state.value.periodClose.closing && model.state.value.periodClose.result != null }
+
+        assertEquals("2026-09-06", model.state.value.periodClose.lock.lockedThrough)
+    }
+
+    /**
+     * A sent package is cleared, as the web does: leaving it in place with
+     * Publish still lit e-mailed the same people the same reports on a second
+     * click.
+     */
+    @Test
+    fun `a published package is cleared so it cannot be sent twice`() = runTest(dispatcher) {
+        val model = opened(viewModel(engine("2026-08-30", ""), today = ms("2026-09-01")))
+        val pkg = ClosingPackage(
+            id = 1,
+            emails = listOf("producer@zillit.com"),
+            reports = listOf(ClosingReport.CostReport),
+        )
+        model.onEvent(AccountHubEvent.EditPackages(listOf(pkg)))
+        model.onEvent(AccountHubEvent.PublishPackages)
+        settle { model.state.value.periodClose.publish.result != null }
+
+        val publish = model.state.value.periodClose.publish
+        assertTrue(assertNotNull(publish.result).ok)
+        assertEquals(listOf(ClosingPackage(id = 1)), publish.packages)
+        assertTrue(publish.validPackages.isEmpty())
     }
 }
 

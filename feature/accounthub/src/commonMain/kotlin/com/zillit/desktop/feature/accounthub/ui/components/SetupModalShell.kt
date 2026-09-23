@@ -31,6 +31,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
@@ -73,11 +75,16 @@ fun SetupModalShell(
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Reads the document again after [loadError]; null hides the button. */
+    onRetry: (() -> Unit)? = null,
     content: @Composable ColumnScope.(sectionId: String) -> Unit,
 ) {
     val colors = ZillitTheme.colors
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // Nothing is saved from a modal whose document never landed: its fields
+    // hold the defaults, and Save would write those over the stored settings.
+    val canSave = dirty && !saving && !loading && loadError == null
     val activeIndex = sections.indexOfFirst { it.id == activeId }.coerceAtLeast(0)
     val active = sections.getOrNull(activeIndex)
 
@@ -106,8 +113,9 @@ fun SetupModalShell(
                     when {
                         event.type != KeyEventType.KeyDown -> false
                         event.key == Key.Escape -> { onClose(); true }
-                        event.isMetaPressed && event.key == Key.S -> {
-                            if (dirty && !saving) onSave()
+                        // ⌘S on a Mac, Ctrl+S elsewhere — the web binds both.
+                        (event.isMetaPressed || event.isCtrlPressed) && event.key == Key.S -> {
+                            if (canSave) onSave()
                             true
                         }
                         else -> false
@@ -226,7 +234,7 @@ fun SetupModalShell(
                         ) {
                             ZillitSpinner()
                         }
-                        loadError != null -> LoadErrorBody(loadError)
+                        loadError != null -> LoadErrorBody(loadError, onRetry)
                         active != null -> content(active.id)
                     }
                 }
@@ -249,7 +257,7 @@ fun SetupModalShell(
                         text = if (saving) str(S.ah_saving) else str(S.dm_setup_save),
                         onClick = onSave,
                         size = ButtonSize.Small,
-                        enabled = dirty && !saving,
+                        enabled = canSave,
                         loading = saving,
                     )
                 }
@@ -260,7 +268,7 @@ fun SetupModalShell(
 
 /** The web's `ErrorBody`: a title, then what went wrong. */
 @Composable
-private fun LoadErrorBody(message: String) {
+private fun LoadErrorBody(message: String, onRetry: (() -> Unit)?) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         ZillitText(
@@ -269,6 +277,15 @@ private fun LoadErrorBody(message: String) {
             color = colors.danger,
         )
         ZillitText(text = message, style = ZillitTheme.typography.bodySmall, color = colors.danger)
+        if (onRetry != null) {
+            ZillitButton(
+                text = str(S.retry),
+                onClick = onRetry,
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
+            )
+        }
     }
 }
 

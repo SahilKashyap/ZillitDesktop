@@ -19,6 +19,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.accounthub.domain.LocalIds
 import com.zillit.desktop.feature.accounthub.domain.DealCondition
 import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.ScheduleRules
@@ -27,6 +28,7 @@ import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.CustomDayText
 import com.zillit.desktop.feature.accounthub.ui.DateRangeText
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
+import com.zillit.desktop.feature.accounthub.ui.sectionLoad
 import com.zillit.desktop.feature.accounthub.ui.components.DateField
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
@@ -61,6 +63,7 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         saving = setup.schedule.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Schedule)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.Schedule)) },
+        load = state.sectionLoad(SetupSection.Schedule, onEvent),
         editable = editable,
     ) {
         DateRangeRow(str(S.desktop_deal_dates), schedule.overall, editable, errors[ScheduleRules.OVERALL]) {
@@ -103,7 +106,7 @@ internal fun ScheduleSection(state: AccountHubUiState, onEvent: (AccountHubEvent
                     update(
                         schedule.copy(
                             customDays = schedule.customDays + CustomDayText(
-                                id = "custom-${schedule.customDays.size}-${schedule.customDays.hashCode()}",
+                                id = LocalIds.next("custom", schedule.customDays.map { it.id }),
                             ),
                         ),
                     )
@@ -255,6 +258,7 @@ internal fun DealConditionsSection(state: AccountHubUiState, onEvent: (AccountHu
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.DealConditions)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.DealConditions)) },
+        load = state.sectionLoad(SetupSection.DealConditions, onEvent),
         editable = editable,
     ) {
         if (conditions.isEmpty()) EmptyLine(str(S.desktop_hub_no_standard_conditions_yet))
@@ -278,7 +282,8 @@ internal fun DealConditionsSection(state: AccountHubUiState, onEvent: (AccountHu
             text = str(S.desktop_email_rule_add_condition),
             onClick = {
                 onEvent(AccountHubEvent.EditDealConditions(conditions + DealCondition(
-                    id = "cond-new-${conditions.size}",
+                    // Fresh, never positional: a length-derived id repeated after a delete.
+                    id = LocalIds.next("cond-new", conditions.map { it.id }),
                     order = conditions.size + 1,
                 )))
             },
@@ -356,6 +361,7 @@ internal fun PayrollBureausSection(state: AccountHubUiState, onEvent: (AccountHu
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.PayrollBureaus)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.PayrollBureaus)) },
+        load = state.sectionLoad(SetupSection.PayrollBureaus, onEvent),
         editable = editable,
     ) {
         if (bureaus.isEmpty()) EmptyLine(str(S.desktop_hub_no_payroll_bureaux_yet))
@@ -407,7 +413,8 @@ internal fun PayrollBureausSection(state: AccountHubUiState, onEvent: (AccountHu
         GhostAddButton(
             str(S.desktop_add_bureau),
             onClick = {
-                onEvent(AccountHubEvent.EditPayrollBureaus(bureaus + PayrollBureau(id = "bureau-new-${bureaus.size}")))
+                val id = LocalIds.next("bureau-new", bureaus.map { it.id })
+                onEvent(AccountHubEvent.EditPayrollBureaus(bureaus + PayrollBureau(id = id)))
             },
         )
     }
@@ -428,25 +435,24 @@ internal fun PayrollDefaultsSection(state: AccountHubUiState, onEvent: (AccountH
         saving = setup.payrollDefaults.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.PayrollDefaults)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.PayrollDefaults)) },
+        load = state.sectionLoad(SetupSection.PayrollDefaults, onEvent),
         editable = editable,
     ) {
         ToggleRow(
-            label = "Auto-sync signed deals to payroll",
-            hint = str(S.desktop_hub_a_signed_deal_memo_is_pushed_to_payroll_without_a),
+            // The web's three rows, in its words (`PayrollDefaultsSection.ROWS`).
+            label = str(S.dm_pay_auto_sync),
             checked = defaults.autoSync,
             onCheckedChange = { onEvent(AccountHubEvent.EditPayrollDefaults(defaults.copy(autoSync = it))) },
             enabled = editable,
         )
         ToggleRow(
-            label = "Notify payroll when a deal is signed",
-            hint = str(S.desktop_hub_the_payroll_team_is_e_mailed_on_every_signature),
+            label = str(S.dm_pay_notify_contact),
             checked = defaults.notifyPayroll,
             onCheckedChange = { onEvent(AccountHubEvent.EditPayrollDefaults(defaults.copy(notifyPayroll = it))) },
             enabled = editable,
         )
         ToggleRow(
-            label = "Attach the signed PDF",
-            hint = str(S.desktop_hub_the_signed_deal_memo_rides_along_with_that_notification),
+            label = str(S.dm_pay_include_pdf),
             checked = defaults.includePdf,
             onCheckedChange = { onEvent(AccountHubEvent.EditPayrollDefaults(defaults.copy(includePdf = it))) },
             enabled = editable,

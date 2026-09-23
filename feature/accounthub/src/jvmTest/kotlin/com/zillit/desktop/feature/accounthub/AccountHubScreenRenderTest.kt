@@ -190,6 +190,13 @@ class AccountHubScreenRenderTest {
                 // page's title, and the section headings collide with the page
                 // eyebrows ("Configuration", "Setup"). Uppercase because
                 // `ZillitSectionLabel` renders it that way.
+                if (HubNavigation.isFullBleed(area, null, accountant)) {
+                    // Full-bleed, as the web renders the reports: no console
+                    // sidebar, and the page's own title in its own chrome.
+                    onAllNodesWithText("PAYROLL MANAGEMENT").assertCountEquals(0)
+                    onAllNodesWithText(area.label).onFirst().assertIsDisplayed()
+                    return@runComposeUiTest
+                }
                 onAllNodesWithText("PAYROLL MANAGEMENT").onFirst().assertIsDisplayed()
                 // And the open screen's own title, which does appear twice —
                 // once in the sidebar, once as the page header. The sidebar row
@@ -209,7 +216,11 @@ class AccountHubScreenRenderTest {
                         AccountHubScreen(state = state(area), onEvent = {})
                     }
                 }
-                onAllNodesWithText("PAYROLL MANAGEMENT").onFirst().assertIsDisplayed()
+                if (HubNavigation.isFullBleed(area, null, accountant)) {
+                    onAllNodesWithText(area.label).onFirst().assertIsDisplayed()
+                } else {
+                    onAllNodesWithText("PAYROLL MANAGEMENT").onFirst().assertIsDisplayed()
+                }
             }
         }
     }

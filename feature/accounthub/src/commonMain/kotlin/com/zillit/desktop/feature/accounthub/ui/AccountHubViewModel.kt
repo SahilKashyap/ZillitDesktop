@@ -11,7 +11,6 @@ import com.zillit.desktop.feature.accounthub.data.hubRefreshes
 import com.zillit.desktop.feature.accounthub.domain.AccountHubRepository
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
-import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
 import com.zillit.desktop.feature.accounthub.domain.HubBadges
@@ -134,6 +133,7 @@ class AccountHubViewModel(
     private var searchJob: Job? = null
 
     private val setupSections = SetupSections(this)
+    private val setupLoader = SetupLoader(this)
     private val setupUi = SetupUiActions(this)
     private val setupModal = SetupModalActions(this)
     private val ruleImport = RuleImportActions(this)
@@ -154,6 +154,7 @@ class AccountHubViewModel(
         tourActions::onEvent,
         setupUi::onEvent,
         setupModal::onEvent,
+        setupLoader::onEvent,
         ruleImport::onEvent,
         ::onSetupEvent,
         agreementActions::onEvent,
@@ -219,7 +220,13 @@ class AccountHubViewModel(
             listening = true
             launch {
                 hubRefreshes(bus).collect { area ->
-                    if (currentState.area == area) load(area)
+                    when {
+                        currentState.area != area -> Unit
+                        // The slices only: a whole setup load would restart
+                        // the page's spinner and tour for somebody's save.
+                        area == HubArea.ProductionSetup -> setupLoader.loadAll()
+                        else -> load(area)
+                    }
                 }
             }
             formConfigActions.listen(bus)
@@ -275,6 +282,7 @@ class AccountHubViewModel(
                 copy(embedded = embedded?.copy(path = event.path) ?: EmbeddedTool(event.path, ""))
             }
             AccountHubEvent.CloseEmbedded -> setState { copy(embedded = null) }
+            is AccountHubEvent.EmbedTool -> show(event.path, event.title)
             AccountHubEvent.Back -> sendEffect(AccountHubEffect.Back)
             AccountHubEvent.BackToHub -> backToHub()
             AccountHubEvent.OpenTimecardSetup -> show(TIMECARD_TOOL_PATH, str(S.timecards))
@@ -380,64 +388,18 @@ class AccountHubViewModel(
      * whole merged document — see the class doc. Losing an accountant's unsaved
      * tax rates to a currency save is worse than eight parallel gets.
      */
-    @Suppress("LongMethod") // One launch per slice; the list is the contract.
     private fun loadSetup() {
         setState { copy(setup = setup.copy(loading = true, banksLoading = true)) }
 
-        launchResult(repository::companies, { rows ->
-            setState { copy(setup = setup.copy(companies = setup.companies.loaded(rows))) }
-        }, ::report)
-        launchResult(repository::currencies, { settings ->
-            setState { copy(setup = setup.copy(currencies = setup.currencies.loaded(settings))) }
-        }, ::report)
-        launchResult(repository::taxTypes, { rows ->
-            setState { copy(setup = setup.copy(taxTypes = setup.taxTypes.loaded(rows))) }
-        }, ::report)
-        launchResult(repository::assetTags, { tags ->
-            setState { copy(setup = setup.copy(assetTags = setup.assetTags.loaded(tags))) }
-        }, ::report)
-        launchResult(repository::productionSchedule, { schedule ->
-            setState {
-                copy(setup = setup.copy(schedule = setup.schedule.loaded(ScheduleForm.from(schedule))))
-            }
-        }, ::report)
-        launchResult(repository::payrollDefaults, { defaults ->
-            setState {
-                copy(setup = setup.copy(payrollDefaults = setup.payrollDefaults.loaded(defaults)))
-            }
-        }, ::report)
-        launchResult(repository::dealConditions, { rows ->
-            setState { copy(setup = setup.copy(dealConditions = setup.dealConditions.loaded(rows))) }
-        }, ::report)
-        launchResult(repository::payrollBureaus, { rows ->
-            setState { copy(setup = setup.copy(payrollBureaus = setup.payrollBureaus.loaded(rows))) }
-        }, ::report)
-        launchResult(repository::allowancesRentals, { value ->
-            setState { copy(setup = setup.copy(allowances = setup.allowances.loaded(value))) }
-        }, ::report)
-        launchResult(repository::payrollSettings, { value ->
-            setState { copy(setup = setup.copy(payrollSettings = setup.payrollSettings.loaded(value))) }
-        }, ::report)
-        launchResult(repository::purchaseOrderSetup, { value ->
-            setState { copy(setup = setup.copy(poSetup = setup.poSetup.loaded(value))) }
-        }, ::report)
-        launchResult(repository::invoicesSetup, { value ->
-            setState { copy(setup = setup.copy(invoicesSetup = setup.invoicesSetup.loaded(value))) }
-        }, ::report)
-        launchResult(repository::nonUnionPay, { value ->
-            setState { copy(setup = setup.copy(nonUnionPay = setup.nonUnionPay.loaded(value))) }
-        }, ::report)
+        // Each slice on its own route, each recorded as loaded or failed — a
+        // section that never loaded must not save its empty default over the
+        // server's. See [SetupLoader].
+        setupLoader.loadAll()
         // Swallowed: without names the picker shows ids, which is worse to
         // read but never loses a scope the production configured.
         launchResult({ ZillitResult.Success(departments()) }, { rows ->
             setState { copy(setup = setup.copy(departments = rows)) }
         }, { })
-        launchResult(repository::dayTypes, { rows ->
-            // Seeded on read as well as on save, so a fresh project shows the
-            // three defaults rather than an empty catalogue — and so the
-            // section does not read as unsaved the moment it loads.
-            setState { copy(setup = setup.copy(dayTypes = setup.dayTypes.loaded(DayTypes.seeded(rows)))) }
-        }, ::report)
         agreementActions.load()
         loadBanks()
         loadCatalogues()
@@ -455,13 +417,26 @@ class AccountHubViewModel(
     }
 
     internal fun loadBanks() {
+        setState { copy(setup = setup.copy(banksLoading = true, banksError = null)) }
         launchResult(repository::bankAccounts, { rows ->
-            setState { copy(setup = setup.copy(banks = rows, banksLoading = false, banksLoaded = true)) }
+            setState {
+                copy(setup = setup.copy(banks = rows, banksLoading = false, banksLoaded = true, banksError = null))
+            }
         }, { error ->
-            setState { copy(setup = setup.copy(banksLoading = false)) }
-            report(error)
+            // A list that has loaded before stays, and the failure is only
+            // reported; one that never has shows the error card instead of
+            // an empty state that invites adding a bank that may exist.
+            val loadedBefore = currentState.setup.banksLoaded
+            setState {
+                val shown = error.localised().takeUnless { loadedBefore }
+                copy(setup = setup.copy(banksLoading = false, banksError = shown))
+            }
+            if (loadedBefore) report(error)
         })
     }
+
+    /** The drill-down modals, for the removal that re-reads the payroll codes. */
+    internal val setupModalActions: SetupModalActions get() = setupModal
 
     /**
      * Reference catalogues, fetched once.
@@ -470,16 +445,20 @@ class AccountHubViewModel(
      * one section — re-fetching per section is what makes a settings page feel
      * slow for data that is effectively static.
      */
-    private fun loadCatalogues() {
+    internal fun loadCatalogues() {
+        // A failure is held for the section to show with a Retry — an empty
+        // catalogue otherwise read "Loading…" for ever.
         if (currentState.setup.currencyCatalogue.isEmpty()) {
+            setState { copy(setup = setup.copy(currencyCatalogueError = null)) }
             launchResult(repository::currencyCatalogue, { rows ->
                 setState { copy(setup = setup.copy(currencyCatalogue = rows)) }
-            }, ::report)
+            }, { error -> setState { copy(setup = setup.copy(currencyCatalogueError = error.localised())) } })
         }
         if (currentState.setup.countryTaxes.isEmpty()) {
+            setState { copy(setup = setup.copy(countryTaxesError = null)) }
             launchResult(repository::taxesByCountry, { rows ->
                 setState { copy(setup = setup.copy(countryTaxes = rows)) }
-            }, ::report)
+            }, { error -> setState { copy(setup = setup.copy(countryTaxesError = error.localised())) } })
         }
         // The company editor's country picker reads the ISD list the vendor
         // form reads (ZL-20594) — one row per country, not per currency.

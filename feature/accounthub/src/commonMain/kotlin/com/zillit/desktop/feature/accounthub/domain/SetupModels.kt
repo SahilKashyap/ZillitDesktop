@@ -152,6 +152,18 @@ object Companies {
     }
 
     /**
+     * [credits] with the comma-separated regimes in [typed] added — trimmed,
+     * blanks dropped, case-blind de-duplicated (the web's `TaxCreditsField.commit`).
+     */
+    fun withTypedCredits(credits: List<String>, typed: String): List<String> {
+        val next = credits.toMutableList()
+        typed.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { part ->
+            if (next.none { it.equals(part, ignoreCase = true) }) next += part
+        }
+        return next
+    }
+
+    /**
      * The list as the server should receive it.
      *
      * Bank ids that no longer resolve are dropped, and a blank legal name
@@ -353,10 +365,11 @@ object BankAccounts {
         accountant: Boolean,
     ): String? = when {
         draft.name.isBlank() -> str(S.ah_err_bank_name_required)
-        draft.entityId.isNullOrBlank() && draft.accountHolderName.isBlank() ->
-            str(S.desktop_hub_account_holder_company_is_required)
-        !draft.entityId.isNullOrBlank() && companies.none { it.id == draft.entityId } ->
-            str(S.desktop_hub_account_holder_company_is_required)
+        // Always a company, as the web requires (`BankAccountFormModal`): a
+        // free-typed holder name with no company left a bank no company
+        // owned, so no company's currency could be derived from it.
+        draft.entityId.isNullOrBlank() -> str(S.desktop_hub_account_holder_company_is_required)
+        companies.none { it.id == draft.entityId } -> str(S.desktop_hub_account_holder_company_is_required)
         draft.accountNumber.isBlank() -> str(S.ah_err_account_number_required)
         duplicateNumber(draft, banks) -> str(S.desktop_hub_an_account_with_this_number_already_exists)
         accountant && draft.nominalCode.isBlank() -> str(S.desktop_hub_bank_account_nominal_code_is_required)
@@ -591,6 +604,19 @@ data class TaxType(
         }
 
         private const val CUSTOM_PREFIX = "custom_"
+
+        /**
+         * The rows as the web's `denormalize` sends them: a custom rate with
+         * no label is a row somebody started and abandoned, so it is skipped,
+         * and a custom row's text is trimmed. Catalogue rates go as they are.
+         */
+        fun forWire(rows: List<TaxType>): List<TaxType> = rows.mapNotNull { row ->
+            when {
+                !row.isCustom -> row
+                row.label.isBlank() -> null
+                else -> row.copy(type = row.type.trim(), label = row.label.trim(), nominal = row.nominal.trim())
+            }
+        }
     }
 }
 
@@ -1010,6 +1036,27 @@ data class PayrollAccountRow(
     val delete: Boolean = false,
 )
 
+/** The rules the payroll-accounts grid applies before its batch goes — the web's `buildCustomAccountRows`. */
+object PayrollAccounts {
+
+    /**
+     * What the batch sends: new rows, and seeded rows that changed.
+     *
+     * A row with no code is a spare the person never filled. An unchanged
+     * seeded row is not sent at all — with twenty accounts on screen a
+     * one-row edit would otherwise rewrite twenty chart rows, and any seed
+     * value that does not round-trip exactly would silently change accounts
+     * nobody touched.
+     */
+    fun outgoing(rows: List<PayrollAccountRow>, seeds: Map<String, PayrollAccountRow>): List<PayrollAccountRow> =
+        rows.filter { it.code.isNotBlank() }
+            .filterNot { row -> row.id != null && seeds[row.id]?.let { same(it, row) } == true }
+
+    private fun same(a: PayrollAccountRow, b: PayrollAccountRow): Boolean =
+        a.code.trim() == b.code.trim() && a.name.trim() == b.name.trim() && a.lineType == b.lineType &&
+            a.delete == b.delete
+}
+
 // -- purchase order setup ----------------------------------------------------
 
 /** How a purchase order line's description is assembled. */
@@ -1263,12 +1310,43 @@ enum class InvoiceAlert(val wire: String, private val labelKey: String, private 
 /** One person on the accounts-payable team, and what they may do. */
 data class InvoiceTeamMember(
     val userId: String = "",
-    /** Blank while empty; zero and "not set" are different answers. */
+    /**
+     * Blank is **Unlimited** (null on the wire), `0` is **Submit only**, any
+     * other figure is the cap — the web's `posting_limit` contract
+     * (`InvoiceTeamMemberModal`). This screen once read `0` as unlimited, so
+     * a member it showed as "Unlimited" could in fact post nothing.
+     */
     val postingLimit: String = "",
     val runAccess: Boolean = false,
     val overrideAccess: Boolean = false,
     val isSenior: Boolean = false,
-)
+) {
+    val isUnlimited: Boolean get() = postingLimit.isBlank()
+
+    val isSubmitOnly: Boolean get() = postingLimit.trim().toDoubleOrNull() == 0.0
+
+    /**
+     * Senior is full rights: turning it on forces unlimited posting, run and
+     * override access (the web's `setSenior`). Turning it off leaves the rest
+     * as they were, so the person can then narrow them.
+     */
+    fun withSenior(on: Boolean): InvoiceTeamMember =
+        if (on) {
+            copy(isSenior = true, postingLimit = "", runAccess = true, overrideAccess = true)
+        } else {
+            copy(isSenior = false)
+        }
+
+    /** The Unlimited tick: on clears the cap, off starts from submit-only, as the web's checkbox does. */
+    fun withUnlimited(on: Boolean): InvoiceTeamMember = copy(postingLimit = if (on) "" else SUBMIT_ONLY)
+
+    /** As saved: a senior is always unlimited with both rights, whatever the draft held. */
+    fun forWire(): InvoiceTeamMember = if (isSenior) withSenior(true) else this
+
+    companion object {
+        const val SUBMIT_ONLY = "0"
+    }
+}
 
 /** One level of the payment-run sign-off chain. [tier] is 1-based, as shown. */
 data class RunAuthorisationTier(val tier: Int = 1, val userIds: List<String> = emptyList())

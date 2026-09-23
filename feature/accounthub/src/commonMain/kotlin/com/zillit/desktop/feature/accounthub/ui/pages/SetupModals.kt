@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -60,8 +61,16 @@ import com.zillit.desktop.feature.accounthub.ui.SetupModal
 import com.zillit.desktop.feature.accounthub.ui.SetupModalSection
 import com.zillit.desktop.feature.accounthub.ui.SetupRemoval
 import com.zillit.desktop.feature.accounthub.ui.UserPickerPurpose
+import com.zillit.desktop.feature.accounthub.ui.pickerExcluded
+import com.zillit.desktop.feature.accounthub.domain.CoaAccount
+import com.zillit.desktop.feature.accounthub.domain.HubDepartment
+import com.zillit.desktop.feature.accounthub.domain.LocalIds
+import com.zillit.desktop.feature.accounthub.domain.Vendor
+import com.zillit.desktop.core.common.orDash
 import com.zillit.desktop.feature.accounthub.ui.components.AlwaysRow
 import com.zillit.desktop.feature.accounthub.ui.components.CalcField
+import com.zillit.desktop.feature.accounthub.ui.components.Chip
+import com.zillit.desktop.feature.accounthub.ui.components.DashedInsertRail
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
 import com.zillit.desktop.feature.accounthub.ui.components.GhostAddButton
@@ -110,6 +119,7 @@ internal fun SetupModals(
             loadError = modal.loadError,
             onSave = { onEvent(AccountHubEvent.SaveSetupModal) },
             onClose = { onEvent(AccountHubEvent.CloseSetupModal) },
+            onRetry = { onEvent(AccountHubEvent.RetrySetupModal) },
         ) { sectionId ->
             when (modal.modal) {
                 SetupModal.PurchaseOrders -> PoModalBody(sectionId, state, onEvent, canAttach, canOpen)
@@ -149,7 +159,7 @@ private fun sectionsFor(modal: SetupModal, state: AccountHubUiState): List<Setup
         SetupModalSection("rules", str(S.desktop_auto_assignment_rules), state.setup.invoiceRules.edited.size),
     )
     SetupModal.Payroll -> listOf(
-        SetupModalSection("approvers", str(S.approvers_empty), state.setup.payrollSettings.edited.approverIds.size),
+        SetupModalSection("approvers", str(S.desktop_approvers), state.setup.payrollSettings.edited.approverIds.size),
         // One pane since the web's 03f047d47: the pay period, then the two
         // journal choices under dashed dividers.
         SetupModalSection("pay_period", str(S.desktop_pay_period_journal)),
@@ -194,7 +204,7 @@ private fun ColumnScope.PoModalBody(
         }
         "rental" -> SubCard(hint = str(S.desktop_hub_how_rental_pos_are_handled_when_posting_to_the_ledger)) {
             ToggleRow(
-                label = "Auto-split rental POs",
+                label = str(S.desktop_po_auto_split_rentals),
                 hint = str(S.desktop_hub_automatically_detect_and_split_rental_hire_pos_by_period),
                 checked = value.autoSplitRentals,
                 onCheckedChange = { update(value.copy(autoSplitRentals = it)) },
@@ -471,14 +481,25 @@ private fun ColumnScope.InvoicesModalBody(
                     title = str(S.desktop_hub_no_team_members_configured),
                     message = str(S.desktop_hub_add_the_accounts_payable_team_so_invoices_can_be_posted),
                     icon = ZillitIcons.Users,
+                    action = if (editable) {
+                        {
+                            ZillitButton(
+                                text = str(S.desktop_hub_add_first_member),
+                                onClick = { onEvent(AccountHubEvent.ComposeInvoiceMember(null)) },
+                                size = ButtonSize.Small,
+                            )
+                        }
+                    } else {
+                        null
+                    },
                 )
             }
             value.teamMembers.forEachIndexed { index, member ->
                 HoverRow(
                     modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
                     onClick = if (editable) ({ onEvent(AccountHubEvent.ComposeInvoiceMember(index)) }) else null,
-                    actions = { hovered ->
-                        if (editable && hovered) {
+                    actions = { _ ->
+                        if (editable) {
                             ZillitIconButton(
                                 icon = ZillitIcons.Edit,
                                 contentDescription = str(S.edit),
@@ -526,72 +547,7 @@ private fun ColumnScope.InvoicesModalBody(
                 )
             }
         }
-        "runauth" -> SubCard(
-            hint = str(S.desktop_hub_the_sign_off_chain_that_gates_payment_runs_level_by),
-            action = {
-                if (editable) {
-                    GhostAddButton(str(S.desktop_add_level), onClick = {
-                        update(
-                            value.copy(runAuthorisation = value.runAuthorisation + RunAuthorisationTier()).renumbered(),
-                        )
-                    })
-                }
-            },
-        ) {
-            if (value.runAuthorisation.isEmpty()) {
-                ZillitEmptyState(
-                    title = str(S.desktop_hub_no_authorization_levels_yet),
-                    message = str(S.desktop_hub_add_a_level_and_pick_who_signs_it_off),
-                    icon = ZillitIcons.Shield,
-                )
-            }
-            value.runAuthorisation.forEachIndexed { index, tier ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
-                    Pill("Level ${tier.tier}", tone = StatusTone.Progress)
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-                    ) {
-                        if (tier.userIds.isEmpty()) FieldHint(str(S.desktop_email_nobody_yet))
-                        tier.userIds.forEach {
-                            id -> PersonChip(name = state.userName(id), userId = id, role = state.user(id)?.roleLabel)
-                        }
-                    }
-                    if (editable) {
-                        ZillitButton(
-                            text = str(S.add_members),
-                            onClick = { onEvent(AccountHubEvent.OpenUserPicker(
-                                UserPickerPurpose.RunAuthorisation,
-                                index,
-                            )) },
-                            variant = ButtonVariant.Secondary,
-                            size = ButtonSize.Small,
-                            leadingIcon = ZillitIcons.UserPlus,
-                        )
-                        ZillitIconButton(
-                            icon = ZillitIcons.Trash,
-                            contentDescription = str(S.desktop_remove_level),
-                            onClick = {
-                                update(
-                                    value
-                                        .copy(
-                                            runAuthorisation = value.runAuthorisation.filterIndexed { i, _ ->
-                                                i != index
-                                            },
-                                        )
-                                        .renumbered(),
-                                )
-                            },
-                            tint = ZillitTheme.colors.danger,
-                        )
-                    }
-                }
-            }
-        }
+        "runauth" -> RunAuthorisationPane(value, state, editable, onEvent, ::update)
         "rules" -> AssignmentRulesSection(
             rules = state.setup.invoiceRules.edited,
             module = "invoices",
@@ -603,18 +559,117 @@ private fun ColumnScope.InvoicesModalBody(
     }
 }
 
+/** The web's `limitLabel`: null is Unlimited, zero is Submit only, anything else is the cap. */
+/**
+ * The payment-run sign-off chain — the web's `RunAuthSection`: a level per
+ * step, "THEN" between them, an insert rail above, between and below every
+ * level, and a × on each person so one can leave a level without re-picking it.
+ */
+@Suppress("LongMethod", "CyclomaticComplexMethod") // A screen, read top to bottom; the order is the reading order.
+@Composable
+private fun ColumnScope.RunAuthorisationPane(
+    value: InvoicesSetup,
+    state: AccountHubUiState,
+    editable: Boolean,
+    onEvent: (AccountHubEvent) -> Unit,
+    update: (InvoicesSetup) -> Unit,
+) {
+    val levels = value.runAuthorisation
+    fun insertAt(position: Int) = update(
+        value.copy(runAuthorisation = levels.toMutableList().apply { add(position, RunAuthorisationTier()) })
+            .renumbered(),
+    )
+    fun withLevel(index: Int, next: RunAuthorisationTier?) = update(
+        value.copy(
+            runAuthorisation = levels.mapIndexedNotNull { i, tier -> if (i == index) next else tier },
+        ).renumbered(),
+    )
+    SubCard(hint = str(S.desktop_hub_the_sign_off_chain_that_gates_payment_runs_level_by)) {
+        if (levels.isEmpty()) {
+            ZillitEmptyState(
+                title = str(S.desktop_hub_no_authorization_levels_yet),
+                message = str(S.desktop_hub_add_a_level_and_pick_who_signs_it_off),
+                icon = ZillitIcons.Shield,
+                action = if (editable) {
+                    {
+                        ZillitButton(
+                            text = str(S.desktop_hub_add_first_level),
+                            onClick = { insertAt(0) },
+                            size = ButtonSize.Small,
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
+            return@SubCard
+        }
+        if (editable) DashedInsertRail(str(S.desktop_insert_a_level_here)) { insertAt(0) }
+        levels.forEachIndexed { index, tier ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                Pill(str(S.ah_tier_label, tier.tier), tone = StatusTone.Progress)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                ) {
+                    if (tier.userIds.isEmpty()) FieldHint(str(S.desktop_no_approvers_yet))
+                    tier.userIds.forEach { id ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            PersonChip(name = state.userName(id), userId = id, role = state.user(id)?.roleLabel)
+                            if (editable) {
+                                ZillitIconButton(
+                                    icon = ZillitIcons.Close,
+                                    contentDescription = str(S.desktop_remove_approver),
+                                    onClick = { withLevel(index, tier.copy(userIds = tier.userIds - id)) },
+                                )
+                            }
+                        }
+                    }
+                    if (editable) {
+                        ZillitButton(
+                            text = str(S.desktop_hub_add_approvers),
+                            onClick = {
+                                onEvent(AccountHubEvent.OpenUserPicker(UserPickerPurpose.RunAuthorisation, index))
+                            },
+                            variant = ButtonVariant.Secondary,
+                            size = ButtonSize.Small,
+                            leadingIcon = ZillitIcons.UserPlus,
+                        )
+                    }
+                }
+                if (editable) {
+                    ZillitIconButton(
+                        icon = ZillitIcons.Trash,
+                        contentDescription = str(S.desktop_remove_level),
+                        onClick = { withLevel(index, null) },
+                        tint = ZillitTheme.colors.danger,
+                    )
+                }
+            }
+            if (index < levels.lastIndex) Pill(str(S.desktop_email_rule_then))
+            if (editable) DashedInsertRail(str(S.desktop_insert_a_level_here)) { insertAt(index + 1) }
+        }
+    }
+}
+
 private fun postingLimitLabel(member: InvoiceTeamMember, state: AccountHubUiState): String {
     val symbol = state.setup.currencies.saved.default?.symbol.orEmpty()
     return when {
-        member.postingLimit.isBlank() -> str(S.desktop_no_limit_set)
-        member.postingLimit == "0" -> "Unlimited"
-        else -> "Posting limit " +
-            "$symbol${com.zillit.desktop.feature.accounthub.ui.components.groupAmount(member.postingLimit)}"
+        member.isSenior || member.isUnlimited -> str(S.dm_rates_buyout_covers_unlimited)
+        member.isSubmitOnly -> str(S.desktop_submit_only)
+        else -> str(
+            S.desktop_hub_posting_limit_x,
+            "$symbol${com.zillit.desktop.feature.accounthub.ui.components.groupAmount(member.postingLimit)}",
+        )
     }
 }
 
 /** The invoices team-member dialog — the web's `InvoiceTeamMemberModal`. */
-@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
+@Suppress("LongMethod", "CyclomaticComplexMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 private fun InvoiceMemberDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val draft = state.setup.invoiceMemberDraft
@@ -649,42 +704,68 @@ private fun InvoiceMemberDialog(state: AccountHubUiState, onEvent: (AccountHubEv
                 userId = member.userId,
                 role = state.user(member.userId)?.roleLabel,
             )
-            ZillitButton(
-                text = if (member.userId.isBlank()) str(S.desktop_pick) else str(S.change),
-                onClick = { onEvent(AccountHubEvent.OpenUserPicker(UserPickerPurpose.InvoiceTeamMember)) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
+            // The person is fixed once added, as on the web: an edit changes
+            // what they may do, not who they are.
+            if (draft.index == null) {
+                ZillitButton(
+                    text = if (member.userId.isBlank()) str(S.desktop_pick) else str(S.change),
+                    onClick = { onEvent(AccountHubEvent.OpenUserPicker(UserPickerPurpose.InvoiceTeamMember)) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                )
+            }
+        }
+        val symbol = state.setup.currencies.saved.default?.symbol.orEmpty()
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            FieldLabel(
+                "${str(S.desktop_posting_limit)}${if (symbol.isBlank()) "" else " ($symbol)"}",
+                modifier = Modifier.weight(1f),
+            )
+            // Blank is Unlimited, zero is submit-only (the web's contract);
+            // a senior is always unlimited, so the tick is locked for one.
+            ZillitCheckbox(
+                checked = member.isSenior || member.isUnlimited,
+                onCheckedChange = { update(member.withUnlimited(it)) },
+                label = str(S.dm_rates_buyout_covers_unlimited),
+                enabled = !member.isSenior,
             )
         }
         CalcField(
-            value = member.postingLimit,
-            onValueChange = { update(member.copy(postingLimit = it)) },
-            label = "Posting limit",
-            placeholder = "0.00",
-            helperText = str(S.desktop_hub_0_means_unlimited_blank_means_not_set),
+            value = if (member.isSenior || member.isUnlimited) "" else member.postingLimit,
+            onValueChange = { update(member.copy(postingLimit = it.ifBlank { InvoiceTeamMember.SUBMIT_ONLY })) },
+            placeholder = if (member.isSenior || member.isUnlimited) str(S.dm_rates_buyout_covers_unlimited) else "0",
+            enabled = !member.isSenior && !member.isUnlimited,
         )
         ToggleRow(
-            label = "Run access",
-            hint = str(S.desktop_hub_may_start_a_payment_run),
-            checked = member.runAccess,
+            label = str(S.desktop_can_authorise_payment_runs),
+            hint = str(S.desktop_inv_run_access_hint),
+            checked = member.isSenior || member.runAccess,
             onCheckedChange = { update(member.copy(runAccess = it)) },
+            enabled = !member.isSenior,
         )
         ToggleRow(
-            label = "Override access",
-            hint = str(S.desktop_hub_may_post_over_the_limit),
-            checked = member.overrideAccess,
+            label = str(S.desktop_can_override_approvals),
+            hint = str(S.desktop_inv_override_access_hint),
+            checked = member.isSenior || member.overrideAccess,
             onCheckedChange = { update(member.copy(overrideAccess = it)) },
+            enabled = !member.isSenior,
         )
         ToggleRow(
-            label = "Senior",
-            hint = str(S.desktop_hub_counts_as_a_senior_sign_off),
+            label = str(S.desktop_is_senior),
+            hint = str(S.desktop_hub_is_senior_hint),
             checked = member.isSenior,
-            onCheckedChange = { update(member.copy(isSenior = it)) },
+            onCheckedChange = { update(member.withSenior(it)) },
         )
     }
 }
 
-/** The pay-period pair: picking either end moves the other, and a locked period disables both. */
+/**
+ * The pay-period pair — the web's `PayPeriodBody`: "Week starts on" and "Week
+ * ends on", picking either end moves the other, the window spelled out as a
+ * pill, the date it locked on once the first timecard froze it, and a warning
+ * for a stored window that is not seven days.
+ */
+@Suppress("LongMethod") // A form, read top to bottom; the order is the reading order.
 @Composable
 private fun ColumnScope.PayPeriodFields(
     value: PayrollSettings,
@@ -693,42 +774,53 @@ private fun ColumnScope.PayPeriodFields(
 ) {
     val days = (PayrollSettings.MONDAY..PayrollSettings.SUNDAY).toList()
     val enabled = editable && !value.payPeriodLocked
+    value.payPeriodLockedAt?.let { lockedAt ->
+        ZillitNotice(
+            text = str(S.desktop_hub_pay_period_locked_on, EpochDate.date(lockedAt)),
+            tone = StatusTone.Pending,
+            icon = ZillitIcons.Lock,
+        )
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitSelect(
-            value = value.payPeriodStartDay,
-            options = days,
-            onSelect = { day -> update(value.copy(
-                payPeriodStartDay = day,
-                payPeriodEndDay = PayrollSettings.endFor(day),
-            )) },
-            label = { PayrollSettings.dayName(it) },
-            enabled = enabled,
-            modifier = Modifier.weight(1f),
-        )
-        ZillitText(text = "→", style = ZillitTheme.typography.bodyMedium)
-        ZillitSelect(
-            value = value.payPeriodEndDay,
-            options = days,
-            onSelect = { day -> update(value.copy(
-                payPeriodEndDay = day,
-                payPeriodStartDay = PayrollSettings.startFor(day),
-            )) },
-            label = { PayrollSettings.dayName(it) },
-            enabled = enabled,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            FieldLabel(str(S.desktop_hub_week_starts_on))
+            ZillitSelect(
+                value = value.payPeriodStartDay,
+                options = days,
+                onSelect = { day ->
+                    update(value.copy(payPeriodStartDay = day, payPeriodEndDay = PayrollSettings.endFor(day)))
+                },
+                label = { PayrollSettings.dayName(it) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            FieldLabel(str(S.desktop_hub_week_ends_on))
+            ZillitSelect(
+                value = value.payPeriodEndDay,
+                options = days,
+                onSelect = { day ->
+                    update(value.copy(payPeriodEndDay = day, payPeriodStartDay = PayrollSettings.startFor(day)))
+                },
+                label = { PayrollSettings.dayName(it) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
-    if (value.payPeriodLocked) {
+    Pill(value.payPeriodLabel.uppercase(), tone = StatusTone.Pending)
+    if (value.payPeriodEndDay != PayrollSettings.endFor(value.payPeriodStartDay)) {
         ZillitNotice(
-            text = str(S.desktop_hub_the_pay_period_is_fixed_this_production_already_has_timecards),
-            tone = StatusTone.Neutral,
-            icon = ZillitIcons.Info,
+            text = str(S.desktop_hub_pay_period_not_seven_days),
+            tone = StatusTone.Rejected,
+            icon = ZillitIcons.Warning,
         )
     }
+    if (!value.payPeriodLocked) FieldHint(str(S.desktop_hub_pay_period_unlocked_hint))
 }
 
 // -- assignment rules --------------------------------------------------------------
@@ -748,16 +840,20 @@ private fun ColumnScope.AssignmentRulesSection(
     editable: Boolean,
     onChange: (List<AssignmentRule>) -> Unit,
 ) {
-    val team = HubUsers.available(state.users)
+    // The accounts team, as the web's `AVAILABLE_USERS` — who a document can
+    // be routed to — not every accepted crew member.
+    val team = HubUsers.accountsTeam(state.users)
     val departments = state.departmentList
     val leaves = ChartOfAccounts.leaves(state.chart.accounts)
+    // Read by the modal itself; the Vendors page's list when that is all there is.
+    val vendors = state.setup.ruleVendors.ifEmpty { state.vendors.rows }
     SubCard(
         hint = str(S.desktop_hub_if_any_condition_matches_the_document_is_assigned_to_the),
         action = {
             if (editable) {
                 GhostAddButton(str(S.desktop_add_rule), onClick = {
                     onChange(rules + AssignmentRules.newRule(
-                        "rule-new-${rules.size}-${rules.hashCode()}",
+                        LocalIds.next("rule-new", rules.map { it.id }),
                         module,
                         team.firstOrNull()?.id.orEmpty(),
                     ))
@@ -778,14 +874,14 @@ private fun ColumnScope.AssignmentRulesSection(
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitText(
-                        text = "Rule ${index + 1} · Assign to",
+                        text = str(S.desktop_hub_rule_n_assign_to, index + 1),
                         style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         modifier = Modifier.weight(1f),
                     )
                     ZillitCheckbox(
                         checked = rule.isActive,
                         onCheckedChange = { patch(rule.copy(isActive = it)) },
-                        label = "Active",
+                        label = str(S.active),
                         enabled = editable,
                     )
                     if (editable) {
@@ -797,9 +893,14 @@ private fun ColumnScope.AssignmentRulesSection(
                         )
                     }
                 }
+                // A saved assignee who has since left the accounts team is
+                // still shown, so the rule does not read as unassigned.
+                val assignable = team + listOfNotNull(
+                    state.user(rule.assignTo)?.takeIf { user -> team.none { it.id == user.id } },
+                )
                 HubSelect(
-                    value = team.firstOrNull { it.id == rule.assignTo },
-                    options = team,
+                    value = assignable.firstOrNull { it.id == rule.assignTo },
+                    options = assignable,
                     label = { "${it.name} (${it.roleLabel.ifBlank { "—" }})" },
                     onSelect = { patch(rule.copy(assignTo = it?.id.orEmpty())) },
                     placeholder = str(S.desktop_pick_assignee),
@@ -807,9 +908,15 @@ private fun ColumnScope.AssignmentRulesSection(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 FieldLabel(str(S.desktop_hub_if_any_condition_matches))
+                // Every multi-select keeps a saved value its list does not
+                // hold (the web's atoms keep unlisted values): dropped from
+                // the options, it was dropped from the rule on the next edit.
+                val departmentOptions = withUnlisted(departments, rule.departments, { it.id }) {
+                    HubDepartment(id = it, name = it.orDash())
+                }
                 HubMultiSelect(
-                    selected = departments.filter { it.id in rule.departments },
-                    options = departments,
+                    selected = departmentOptions.filter { it.id in rule.departments },
+                    options = departmentOptions,
                     label = { it.name },
                     onChange = { picked -> patch(rule.copy(departments = picked.map { it.id })) },
                     placeholder = str(S.desktop_any_department),
@@ -817,24 +924,25 @@ private fun ColumnScope.AssignmentRulesSection(
                     enabled = editable,
                 )
                 if (showVendors) {
-                    val vendors = state.vendors.rows
+                    val vendorOptions = withUnlisted(vendors, rule.vendors, { it.id }) {
+                        Vendor(id = it, name = it.orDash())
+                    }
                     HubMultiSelect(
-                        selected = vendors.filter { it.id in rule.vendors },
-                        options = vendors,
+                        selected = vendorOptions.filter { it.id in rule.vendors },
+                        options = vendorOptions,
                         label = { it.display },
                         onChange = { picked -> patch(rule.copy(vendors = picked.map { it.id })) },
-                        placeholder = if (vendors.isEmpty()) {
-                            str(S.desktop_hub_any_vendor_open_vendors_once_to_load_the_list_paren)
-                        } else {
-                            str(S.desktop_any_vendor)
-                        },
+                        placeholder = str(S.desktop_any_vendor),
                         fieldLabel = str(S.ah_vendors),
                         enabled = editable,
                     )
                 }
+                val nominalOptions = withUnlisted(leaves, rule.nominalCodes, { it.code }) {
+                    CoaAccount(id = "unlisted-$it", code = it)
+                }
                 HubMultiSelect(
-                    selected = leaves.filter { it.code in rule.nominalCodes },
-                    options = leaves,
+                    selected = nominalOptions.filter { it.code in rule.nominalCodes },
+                    options = nominalOptions,
                     label = { it.display },
                     onChange = { picked -> patch(rule.copy(nominalCodes = picked.map { it.code })) },
                     placeholder = str(S.desktop_any_nominal),
@@ -844,7 +952,7 @@ private fun ColumnScope.AssignmentRulesSection(
                 CalcField(
                     value = rule.amountMin,
                     onValueChange = { patch(rule.copy(amountMin = it)) },
-                    label = "Amount at or above",
+                    label = str(S.desktop_hub_amount_at_or_above),
                     placeholder = str(S.desktop_any_amount),
                     enabled = editable,
                 )
@@ -852,6 +960,17 @@ private fun ColumnScope.AssignmentRulesSection(
         }
     }
 }
+
+/**
+ * [options] and a stand-in for every chosen id they do not hold — shown as
+ * chosen and removable, never silently dropped.
+ */
+private fun <T> withUnlisted(
+    options: List<T>,
+    chosen: List<String>,
+    key: (T) -> String,
+    standIn: (String) -> T,
+): List<T> = options + chosen.distinct().filter { id -> options.none { key(it) == id } }.map(standIn)
 
 // -- payroll ------------------------------------------------------------------------
 
@@ -921,7 +1040,7 @@ private fun ColumnScope.PayrollModalBody(
             }
             SubCard(title = str(S.desktop_journal_grouping)) {
                 ToggleRow(
-                    label = "Group by pay category",
+                    label = str(S.desktop_hub_group_by_pay_category),
                     hint = str(S.desktop_hub_group_the_journal_ledger_rows_into_ots_penalties_premiums_and),
                     checked = value.journalGroupByCategory,
                     onCheckedChange = { update(value.copy(journalGroupByCategory = it)) },
@@ -991,15 +1110,8 @@ private fun ColumnScope.PayrollModalBody(
                             text = state.userName(group.assigneeId),
                             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         )
-                        FieldHint(
-                            listOfNotNull(
-                                group.departmentIds.size
-                                    .takeIf { it > 0 }?.let { "$it department${if (it == 1) "" else "s"}" },
-                                group.designationIds.size
-                                    .takeIf { it > 0 }?.let { "$it designation${if (it == 1) "" else "s"}" },
-                                group.userIds.size.takeIf { it > 0 }?.let { "$it crew" },
-                            ).joinToString(" · ").ifBlank { str(S.desktop_nothing_routed_yet) },
-                        )
+                        // What is routed, by name — the web's chips — not a count.
+                        GroupRouting(group, state)
                     }
                     if (editable) {
                         ZillitIconButton(
@@ -1017,6 +1129,27 @@ private fun ColumnScope.PayrollModalBody(
                 }
             }
         }
+    }
+}
+
+/** A payroll group's departments, designations and crew as chips — the web's `PayrollGroupsBody` row. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GroupRouting(group: com.zillit.desktop.feature.accounthub.domain.PayrollGroup, state: AccountHubUiState) {
+    val departments = state.departmentList
+    val designations = departments.flatMap { it.designations }
+    val names = group.departmentIds.map { id -> departments.firstOrNull { it.id == id }?.name ?: id.orDash() } +
+        group.designationIds.map { id -> designations.firstOrNull { it.id == id }?.name ?: id.orDash() } +
+        group.userIds.map { state.userName(it) }
+    if (names.isEmpty()) {
+        FieldHint(str(S.desktop_nothing_routed_yet))
+        return
+    }
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        names.forEach { Chip(text = it) }
     }
 }
 
@@ -1120,6 +1253,13 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
     ) {
         if (draft == null) return@ZillitDialogShell
         fun update(rows: List<PayrollAccountRow>) = onEvent(AccountHubEvent.EditPayrollAccounts(rows))
+        if (draft.unmatched.isNotEmpty()) {
+            ZillitNotice(
+                text = str(S.desktop_hub_payroll_codes_not_in_chart, draft.unmatched.joinToString(", ")),
+                tone = StatusTone.Pending,
+                icon = ZillitIcons.Warning,
+            )
+        }
         draft.rows.forEachIndexed { index, row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1168,10 +1308,19 @@ private fun PayrollAccountsDialog(state: AccountHubUiState, onEvent: (AccountHub
 @Composable
 private fun SharedUserPicker(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val picker = state.setup.userPicker
+    // Payroll approvers and the AP team come from the accounts team (the
+    // web's ACCOUNTS_TEAM_USERS / AVAILABLE_USERS); a run level may be signed
+    // by anyone accepted, but not by somebody already on another level.
+    val team = HubUsers.accountsTeam(state.users)
+    val onTeam = state.setup.invoicesSetup.edited.teamMembers
+        .filterIndexed { i, _ -> i != state.setup.invoiceMemberDraft?.index }
+        .map { it.userId }
+    val excluded = picker?.let { state.setup.pickerExcluded(it) }.orEmpty()
     val (title, pool) = when (picker?.purpose) {
-        UserPickerPurpose.PayrollApprovers -> str(S.desktop_payroll_approvers) to HubUsers.available(state.users)
-        UserPickerPurpose.InvoiceTeamMember -> str(S.desktop_team_member) to HubUsers.available(state.users)
-        UserPickerPurpose.RunAuthorisation -> "Level ${picker.index + 1} authorisers" to HubUsers.available(state.users)
+        UserPickerPurpose.PayrollApprovers -> str(S.desktop_payroll_approvers) to team
+        UserPickerPurpose.InvoiceTeamMember -> str(S.desktop_team_member) to team.filter { it.id !in onTeam }
+        UserPickerPurpose.RunAuthorisation ->
+            str(S.ah_tier_label, picker.index + 1) to HubUsers.available(state.users).filter { it.id !in excluded }
         UserPickerPurpose.PayrollGroupAssignee ->
             str(S.desktop_accountant) to HubUsers.accountsTeam(state.users).ifEmpty {
                 HubUsers.available(state.users)

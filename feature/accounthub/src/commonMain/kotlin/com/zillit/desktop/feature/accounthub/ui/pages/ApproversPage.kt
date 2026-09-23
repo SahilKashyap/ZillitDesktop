@@ -52,11 +52,11 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSegmented
-import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.rememberAvatar
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
@@ -71,6 +71,7 @@ import com.zillit.desktop.feature.accounthub.ui.BuilderOrigin
 import com.zillit.desktop.feature.accounthub.ui.DepartmentFilter
 import com.zillit.desktop.feature.accounthub.ui.HubPage
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
+import com.zillit.desktop.feature.accounthub.ui.components.ApproverRowsSkeleton
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.Pill
 import com.zillit.desktop.feature.accounthub.ui.components.TipBanner
@@ -239,7 +240,7 @@ private fun ModuleView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> U
                 // This module's chains are on their way. Showing the cards now
                 // would say "No default levels set" about a chain not yet read.
                 approvals.loading && approvals.loadedModule != approvals.module ->
-                    LoadingLine(str(S.desktop_loading_approval_configs))
+                    ApproverRowsSkeleton()
                 else -> {
                     DefaultLevelsCard(state, onEvent)
                     DepartmentsSection(state, onEvent)
@@ -304,7 +305,7 @@ private fun HeroTitle(module: ApprovalModule, modifier: Modifier = Modifier) {
             )
             Column {
                 MonoLabel(str(S.desktop_management), color = colors.accentText)
-                ZillitText(text = str(S.approvers_empty), style = ZillitTheme.typography.displayLarge)
+                ZillitText(text = str(S.desktop_approvers), style = ZillitTheme.typography.displayLarge)
             }
         }
         ZillitText(
@@ -399,18 +400,6 @@ internal fun ApprovalHeroStat(
                 maxLines = 1,
             )
         }
-    }
-}
-
-@Composable
-private fun LoadingLine(text: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxl),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSpinner()
-        FieldHint(text)
     }
 }
 
@@ -815,16 +804,17 @@ private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent
 /** Each module's icon, matching the hub sidebar's. */
 internal val ApprovalModule.icon: ImageVector
     get() = when (this) {
-        ApprovalModule.PurchaseOrders -> ZillitIcons.Receipt
-        ApprovalModule.Invoices -> ZillitIcons.File
-        ApprovalModule.CardExpenses -> ZillitIcons.CreditCard
-        ApprovalModule.CashExpenses -> ZillitIcons.Wallet
-        ApprovalModule.Timecard -> ZillitIcons.Clock
-        ApprovalModule.DealMemo -> ZillitIcons.Edit
+        ApprovalModule.PurchaseOrders -> AhIcons.PurchaseOrder
+        ApprovalModule.Invoices -> AhIcons.Invoice
+        ApprovalModule.CardExpenses -> AhIcons.CardExpense
+        ApprovalModule.CashExpenses -> AhIcons.CashExpense
+        ApprovalModule.Timecard -> AhIcons.Timecard
+        ApprovalModule.DealMemo -> AhIcons.DealMemo
     }
 
 /** The rail's sections, in the web's sidebar order. */
-private val MODULE_GROUPS = listOf(
+/** A getter, so a language switch reaches the headings. */
+private val MODULE_GROUPS get() = listOf(
     str(S.desktop_transactions) to listOf(
         ApprovalModule.PurchaseOrders,
         ApprovalModule.Invoices,

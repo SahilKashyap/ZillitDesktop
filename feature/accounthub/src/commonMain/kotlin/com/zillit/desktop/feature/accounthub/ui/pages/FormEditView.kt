@@ -529,7 +529,8 @@ private class LatestHolder<T : Any> {
     var value: T? = null
 }
 
-private val EDIT_TIPS = listOf(
+/** A getter, so a language switch reaches the tips. */
+private val EDIT_TIPS get() = listOf(
     str(S.desktop_click_a_field) to str(S.desktop_hub_to_edit_its_properties),
     str(S.desktop_add_custom_field_plus) to str(S.desktop_hub_to_create_new_fields),
     str(S.desktop_between_sections_plus) to str(S.desktop_hub_to_insert_a_new_section),

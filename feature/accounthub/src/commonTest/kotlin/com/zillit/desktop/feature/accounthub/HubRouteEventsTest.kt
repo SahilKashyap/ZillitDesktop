@@ -1,8 +1,10 @@
 package com.zillit.desktop.feature.accounthub
 
 import com.zillit.desktop.core.forms.FormModule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
+import com.zillit.desktop.feature.accounthub.ui.SetupModal
 import com.zillit.desktop.feature.accounthub.ui.VendorFilter
 import com.zillit.desktop.feature.accounthub.ui.hubRouteEvents
 import kotlin.test.Test
@@ -72,6 +74,42 @@ class HubRouteEventsTest {
         assertEquals(
             listOf(AccountHubEvent.Open(HubArea.Vendors), AccountHubEvent.FilterVendors(VendorFilter.Verified)),
             hubRouteEvents("/film-tools/account-hub/vendors/verified?action=teleport"),
+        )
+    }
+
+    /** The web's "Set Approval Level" link from the card and petty-cash modules. */
+    @Test
+    fun `approvers lands on the module the link names`() {
+        assertEquals(
+            listOf(
+                AccountHubEvent.Open(HubArea.Approvers),
+                AccountHubEvent.SwitchApprovalModule(ApprovalModule.CardExpenses),
+            ),
+            hubRouteEvents("/film-tools/account-hub/approvers?module=card_expenses"),
+        )
+        // An unknown module still opens the page, on whatever it last showed.
+        assertEquals(
+            listOf(AccountHubEvent.Open(HubArea.Approvers)),
+            hubRouteEvents("/film-tools/account-hub/approvers?module=x"),
+        )
+    }
+
+    /** Payroll's Entry Setup tile opens the settings it edits, in Production Setup. */
+    @Test
+    fun `production setup opens the named settings modal`() {
+        assertEquals(
+            listOf(
+                AccountHubEvent.Open(HubArea.ProductionSetup),
+                AccountHubEvent.OpenSetupModal(SetupModal.Payroll),
+            ),
+            hubRouteEvents("/film-tools/account-hub/production-setup?setup=payroll"),
+        )
+        assertEquals(
+            listOf(
+                AccountHubEvent.Open(HubArea.ProductionSetup),
+                AccountHubEvent.OpenSetupModal(SetupModal.PurchaseOrders),
+            ),
+            hubRouteEvents("/film-tools/account-hub/production-setup?setup=po_setup"),
         )
     }
 }

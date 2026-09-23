@@ -2,10 +2,6 @@ package com.zillit.desktop.feature.accounthub.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,47 +9,40 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
-import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadges
 import com.zillit.desktop.feature.accounthub.domain.HubItem
+import com.zillit.desktop.feature.accounthub.domain.HubNavigation
 import com.zillit.desktop.feature.accounthub.domain.HubSection
 import com.zillit.desktop.feature.accounthub.domain.HubTarget
 import com.zillit.desktop.feature.accounthub.domain.SetupTourIntro
 import com.zillit.desktop.feature.accounthub.domain.SetupTourTarget
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
+import com.zillit.desktop.feature.accounthub.ui.components.HubSideRail
+import com.zillit.desktop.feature.accounthub.ui.components.RailRow
+import com.zillit.desktop.feature.accounthub.ui.components.RailSection
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.pages.ApproversPage
 import com.zillit.desktop.feature.accounthub.ui.pages.BibleReportPage
@@ -115,11 +104,12 @@ fun AccountHubScreen(
             return@Box
         }
 
+        val fullBleed = HubNavigation.isFullBleed(state.area, state.embedded?.path, state.viewer)
         Row(modifier = Modifier.fillMaxSize()) {
-            HubSidebar(state, onEvent)
-            // Vertical, not `ZillitDivider`: that one fills its width, and in a
-            // Row it takes the whole thing and blanks the console.
-            ZillitVerticalDivider()
+            // No rule between them: the web floats the sidebar's cards on the
+            // page itself. Withheld where the surface carries its own way
+            // back, as the web's shell does — see `isFullBleed`.
+            if (!fullBleed) HubSidebar(state, onEvent)
 
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 val shown = state.embedded
@@ -140,7 +130,9 @@ fun AccountHubScreen(
             }
         }
 
-        SetupTourOverlay(state, onEvent)
+        // The tour points at the sidebar, so it waits while the sidebar is
+        // away — the web's `showSetupTour` requires `showHubSidebar`.
+        if (!fullBleed) SetupTourOverlay(state, onEvent)
 
         ZillitToast(
             message = state.notice,
@@ -190,144 +182,39 @@ private fun AccountHubBody(
 // -- sidebar ------------------------------------------------------------------
 
 /**
- * The web's sidebar: the header card, then one card per group with a mono
- * uppercase heading, a peach active row with a 3px rail, and a red badge
- * capped at 99 where a row carries unread work.
+ * The web's sidebar (`AccountHubSidebar.jsx`) on the hub's shared rail: the
+ * header card, then one card per group, each row with its module's own glyph.
  *
  * No theme card, though the web has one: the app's own Settings already
  * switches the theme for every window, and a second switch in one tool's
  * sidebar was removed at the user's request (2026-09-13).
  */
-@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 private fun HubSidebar(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
 ) {
-    val colors = ZillitTheme.colors
-    Column(
-        modifier = Modifier
-            .width(SIDEBAR_WIDTH)
-            .fillMaxHeight()
-            .background(colors.surfaceSunken)
-            .verticalScroll(rememberScrollState())
-            .padding(ZillitTheme.spacing.md),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        SidebarCard {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitIconButton(
-                    icon = ZillitIcons.ArrowLeft,
-                    contentDescription = str(S.desktop_hub_back_to_film_tools),
-                    onClick = { onEvent(AccountHubEvent.Back) },
-                )
-                ZillitText(
-                    text = str(S.ah_account_hub),
-                    style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                    maxLines = 1,
-                )
-            }
-        }
-        state.sections.forEach { section ->
-            SidebarCard {
-                MonoLabel(
-                    text = section.title,
-                    modifier = Modifier.padding(
-                        start = ZillitTheme.spacing.sm,
-                        top = ZillitTheme.spacing.xs,
-                        bottom = ZillitTheme.spacing.xs,
-                    ),
-                )
-                section.items.forEach { item ->
-                    SidebarRow(
-                        item = item,
+    HubSideRail(
+        title = str(S.ah_account_hub),
+        backLabel = str(S.desktop_hub_back_to_film_tools),
+        onBack = { onEvent(AccountHubEvent.Back) },
+        sections = state.sections.map { section ->
+            RailSection(
+                title = section.title,
+                rows = section.items.map { item ->
+                    RailRow(
+                        id = navId(item),
+                        label = item.label,
+                        icon = iconFor(item),
                         active = isActive(item, state),
                         count = HubBadges.countFor(item.id, state.viewer.isAccountant, state.badges),
-                        onClick = { onNavSelect(state, navId(item), onEvent) },
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SidebarCard(content: @Composable ColumnScope.() -> Unit) {
-    val colors = ZillitTheme.colors
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.large)
-            .background(colors.surface)
-            .border(1.dp, colors.border, ZillitTheme.shapes.large)
-            .padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-        content = content,
-    )
-}
-
-@Composable
-private fun SidebarRow(item: HubItem, active: Boolean, count: Int, onClick: () -> Unit) {
-    val colors = ZillitTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            .background(
-                when {
-                    active -> colors.accentSoft
-                    hovered -> colors.surfaceHover
-                    else -> Color.Transparent
                 },
             )
-            .hoverable(interaction)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        // The 3px rail the web draws on the active row.
-        Box(
-            Modifier
-                .width(RAIL)
-                .height(RAIL_HEIGHT)
-                .clip(CircleShape)
-                .background(if (active) colors.accent else Color.Transparent),
-        )
-        ZillitIcon(
-            icon = iconFor(item),
-            tint = if (active) colors.accentText else colors.textSecondary,
-            size = ZillitDimens.iconSmall,
-        )
-        ZillitText(
-            text = item.label,
-            style =
-                ZillitTheme.typography.bodyMedium.copy(
-                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                ),
-            color = if (active) colors.accentText else colors.textSecondary,
-            // "Invoices / Accounts Payable" and "Production Expense Cards"
-            // do not fit a sidebar on one line at this size, and a clipped
-            // navigation label reads as a different screen.
-            maxLines = 2,
-            modifier = Modifier.weight(1f),
-        )
-        if (count > 0) {
-            // Red, capped at 99, as the web's antd badge.
-            ZillitBadge(
-                count = count,
-                background = colors.danger,
-                contentColor = colors.textOnAccent,
-                cap = HubBadges.OVERFLOW,
-            )
-        }
-    }
+        },
+        onSelect = { id -> onNavSelect(state, id, onEvent) },
+        badgeCap = HubBadges.OVERFLOW,
+    )
 }
 
 /**
@@ -364,26 +251,32 @@ private fun navId(item: HubItem): String = when (item.target) {
     is HubTarget.Tool -> item.id
 }
 
-@Suppress("CyclomaticComplexMethod") // A screen, read top to bottom; the order is the reading order.
-private fun iconFor(item: HubItem): ImageVector = when (item.id) {
-    "production-setup" -> ZillitIcons.Settings
-    "purchase-orders" -> ZillitIcons.Receipt
-    "invoices" -> ZillitIcons.File
-    "card-expenses" -> ZillitIcons.CreditCard
-    "cash-expenses" -> ZillitIcons.Wallet
-    "payroll" -> ZillitIcons.Bank
-    "cost-report" -> ZillitIcons.BarChart
-    "period-close" -> ZillitIcons.Clock
-    "vendors" -> ZillitIcons.Users
-    "trial-balance" -> ZillitIcons.Ledger
-    "bible-report" -> ZillitIcons.File
-    "bank-reconciliation" -> ZillitIcons.Bank
-    "tax-filing" -> ZillitIcons.Receipt
-    "approvers" -> ZillitIcons.Shield
-    "budget" -> ZillitIcons.BarChart
-    "chart-of-accounts" -> ZillitIcons.Ledger
-    "form-config" -> ZillitIcons.Edit
-    else -> ZillitIcons.Grid
+/**
+ * Each row's own glyph from the web's Account Hub set — the one
+ * `AccountHubSidebar.jsx` draws for that module. The generic set this used
+ * before gave five pairs of rows the same picture (Invoices and Bible Report,
+ * Payroll and Bank Reconciliation, …).
+ */
+@Suppress("CyclomaticComplexMethod") // One glyph per sidebar row.
+internal fun iconFor(item: HubItem): ImageVector = when (item.id) {
+    "production-setup" -> AhIcons.Settings
+    "purchase-orders" -> AhIcons.PurchaseOrder
+    "invoices" -> AhIcons.Invoice
+    "card-expenses" -> AhIcons.CardExpense
+    "cash-expenses" -> AhIcons.CashExpense
+    "payroll" -> AhIcons.Payroll
+    "cost-report" -> AhIcons.CostReport
+    "period-close" -> AhIcons.Lock
+    "vendors" -> AhIcons.Vendor
+    "trial-balance" -> AhIcons.Ledger
+    "bible-report" -> AhIcons.Document
+    "bank-reconciliation" -> AhIcons.Bank
+    "tax-filing" -> AhIcons.Tax
+    "approvers" -> AhIcons.Approver
+    "budget" -> AhIcons.Coins
+    "chart-of-accounts" -> AhIcons.ChartOfAccounts
+    "form-config" -> AhIcons.Form
+    else -> AhIcons.AccountHub
 }
 
 // -- the setup tour -------------------------------------------------------------
@@ -499,9 +392,6 @@ internal fun HubSection.headingText(): String = title.uppercase()
  * the room a desktop row needs for its icon — "Invoices / Accounts Payable"
  * has to fit, and a clipped navigation label reads as a different screen.
  */
-private val SIDEBAR_WIDTH = 262.dp
-private val RAIL = 3.dp
-private val RAIL_HEIGHT = 14.dp
 private val NOTE_LABEL = 110.dp
 private val INDICATOR = 8.dp
 private val INDICATOR_ACTIVE = 20.dp

@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.IsdCountries
@@ -166,17 +167,18 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
     }
 
     private fun openHistory(id: String?) {
-        vm.update { copy(vendors = vendors.copy(historyFor = id, history = emptyList())) }
+        vm.update { copy(vendors = vendors.copy(historyFor = id, history = emptyList(), historyError = null)) }
         id?.let(::loadHistory)
     }
 
     private fun loadHistory(vendorId: String) {
-        vm.update { copy(vendors = vendors.copy(historyLoading = true)) }
+        vm.update { copy(vendors = vendors.copy(historyLoading = true, historyError = null)) }
         vm.runResult({ vm.repo.vendorHistory(vendorId) }, { rows ->
             vm.update { copy(vendors = vendors.copy(history = rows, historyLoading = false)) }
         }, { error ->
-            vm.update { copy(vendors = vendors.copy(historyLoading = false)) }
-            vm.report(error)
+            // In the panel, not only a toast: "No recorded changes" under a
+            // failed read tells the user the vendor has no history.
+            vm.update { copy(vendors = vendors.copy(historyLoading = false, historyError = error.localised())) }
         })
     }
 
@@ -443,16 +445,25 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
             )
             return
         }
-        vm.update { copy(vendors = vendors.copy(confirmDelete = null)) }
+        if (id in vm.setupState.vendors.deletingIds) return
+        vm.update { copy(vendors = vendors.copy(confirmDelete = null, deletingIds = vendors.deletingIds + id)) }
         vm.runResult({ vm.repo.deleteVendor(id) }, {
             vm.update {
                 copy(
-                    vendors = vendors.copy(selectedId = null, detailId = null, historyFor = null),
+                    vendors = vendors.copy(
+                        selectedId = null,
+                        detailId = null,
+                        historyFor = null,
+                        deletingIds = vendors.deletingIds - id,
+                    ),
                     notice = str(S.desktop_vendor_removed),
                 )
             }
             load()
-        }, vm::report)
+        }, { error ->
+            vm.update { copy(vendors = vendors.copy(deletingIds = vendors.deletingIds - id)) }
+            vm.report(error)
+        })
     }
 
     private companion object {

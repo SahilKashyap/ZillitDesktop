@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -365,7 +366,15 @@ fun HubConfirmDialog(
     }
 }
 
-/** A row that reveals its actions on hover, as the web's tables and cards do. */
+/**
+ * A row that reveals its actions on hover, as the web's tables and cards do.
+ *
+ * Revealed by alpha, never by composing them only while hovered: on the press
+ * Compose re-evaluates hover and reports an exit for that instant, so a button
+ * that exists only while hovered leaves the composition under the pointer and
+ * the click lands on the row instead — Edit still "worked" through the row's
+ * own click, Remove silently did nothing.
+ */
 @Composable
 fun HoverRow(
     modifier: Modifier = Modifier,
@@ -390,7 +399,11 @@ fun HoverRow(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         content()
-        actions(hovered)
+        Row(
+            modifier = Modifier.alpha(if (hovered) 1f else 0f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) { actions(hovered) }
     }
 }
 

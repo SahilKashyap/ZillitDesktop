@@ -21,6 +21,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -243,6 +248,8 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
 
         TaxCreditsField(
             credits = draft.taxCredits,
+            typed = setup.taxCreditDraft,
+            onTyped = { onEvent(AccountHubEvent.EditTaxCreditDraft(it)) },
             onChange = { update(draft.copy(taxCredits = it)) },
         )
 
@@ -425,14 +432,18 @@ private fun CountryPicker(
 /** Free-typed tax-credit chips — the web's `TaxCreditsField` combobox: Enter or comma commits, case-blind. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TaxCreditsField(credits: List<String>, onChange: (List<String>) -> Unit) {
-    var draft by remember { mutableStateOf("") }
-    fun commit() {
-        val parts = draft.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-        val next = credits.toMutableList()
-        parts.forEach { part -> if (next.none { it.equals(part, ignoreCase = true) }) next += part }
+private fun TaxCreditsField(
+    credits: List<String>,
+    typed: String,
+    onTyped: (String) -> Unit,
+    onChange: (List<String>) -> Unit,
+) {
+    // The typed text lives in the setup state, so Done can fold in a regime
+    // that was typed and never entered (see `SetupState.taxCreditDraft`).
+    fun commit(text: String = typed) {
+        val next = Companies.withTypedCredits(credits, text)
         if (next.size != credits.size) onChange(next)
-        draft = ""
+        onTyped("")
     }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         FieldLabel(str(S.dm_nom_card_tax_credit))
@@ -445,15 +456,10 @@ private fun TaxCreditsField(credits: List<String>, onChange: (List<String>) -> U
             }
         }
         ZillitTextField(
-            value = draft,
+            value = typed,
             onValueChange = { text ->
                 // A comma commits what came before it, as the web's input does.
-                if (text.endsWith(",")) {
-                    draft = text.dropLast(1)
-                    commit()
-                } else {
-                    draft = text
-                }
+                if (text.endsWith(",")) commit(text.dropLast(1)) else onTyped(text)
             },
             placeholder = if (credits.isEmpty()) {
                 str(S.desktop_hub_type_a_regime_press_enter_e_g_uk_hetv_paren)
@@ -461,8 +467,14 @@ private fun TaxCreditsField(credits: List<String>, onChange: (List<String>) -> U
                 str(S.desktop_dm_add_another_ellipsis)
             },
             imeAction = ImeAction.Done,
-            onImeAction = ::commit,
-            modifier = Modifier.fillMaxWidth(),
+            onImeAction = { commit() },
+            // Backspace in an empty input peels the last regime, as on the web.
+            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                val peel = event.type == KeyEventType.KeyDown && event.key == Key.Backspace &&
+                    typed.isEmpty() && credits.isNotEmpty()
+                if (peel) onChange(credits.dropLast(1))
+                peel
+            },
         )
     }
 }
@@ -485,7 +497,9 @@ private fun TaxCreditsField(credits: List<String>, onChange: (List<String>) -> U
 internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val setup = state.setup
     val draft = setup.bankDraft
-    val companies = setup.companies.edited
+    // Saved companies only: one still being created has a client-side id that
+    // must never become the bank's `entity_id`.
+    val companies = setup.companies.saved
     val problem = draft?.let {
         BankAccounts.validationError(it, setup.banks, companies, state.viewer.isAccountant)
     }
@@ -752,12 +766,13 @@ internal fun SetupRemovalDialog(state: AccountHubUiState, onEvent: (AccountHubEv
                 "This can't be undone.",
             str(S.delete),
         )
+        // Bank names repeat, so the account's last four tell them apart (the web's confirm).
         is SetupRemoval.BankRow -> Triple(
             str(S.desktop_remove_bank_account),
-            "Remove " +
-                "\"${removal.bank.name.ifBlank { "this account" }}\"? This deletes the record Bank Reconciliation, " +
-                "Vendors and Payroll read. It cannot be undone.",
-            str(S.remove),
+            removal.bank.accountLast4.takeIf { it.isNotBlank() }?.let {
+                str(S.desktop_hub_remove_bank_x_ending_y, removal.bank.name.ifBlank { "—" }, it)
+            } ?: str(S.desktop_hub_remove_bank_x, removal.bank.name.ifBlank { "—" }),
+            str(S.delete),
         )
         is SetupRemoval.AgreementRow -> Triple(
             str(S.desktop_remove_document),
@@ -785,8 +800,10 @@ internal fun SetupRemovalDialog(state: AccountHubUiState, onEvent: (AccountHubEv
         confirmLabel = confirm,
         onConfirm = { onEvent(AccountHubEvent.ConfirmRemove) },
         onDismiss = { onEvent(AccountHubEvent.DismissRemove) },
-        // A company removal is the list being saved; the dialog stays up until it lands.
-        loading = removal is SetupRemoval.CompanyRow && state.setup.companies.saving,
+        // A company removal is the list being saved, a bank's a DELETE in
+        // flight; either way the dialog stays up, and busy, until it lands.
+        loading = (removal is SetupRemoval.CompanyRow && state.setup.companies.saving) ||
+            (removal is SetupRemoval.BankRow && state.setup.bankDeleting),
     )
 }
 

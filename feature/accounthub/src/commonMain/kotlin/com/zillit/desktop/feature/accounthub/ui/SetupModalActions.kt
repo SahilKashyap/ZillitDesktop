@@ -1,24 +1,31 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRules
 import com.zillit.desktop.feature.accounthub.domain.CoaLineType
-import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
-import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
-import com.zillit.desktop.feature.accounthub.domain.PayrollSettings
+import com.zillit.desktop.feature.accounthub.domain.HubArea
+import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
+import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
+import com.zillit.desktop.feature.accounthub.domain.PayrollAccounts
+import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
+import kotlinx.coroutines.async
 
 /**
  * The three drill-down modals — Purchase Orders, Invoices, Payroll.
  *
  * Each is the web's `SetupModalShell` over one settings document plus, for the
- * first two, the module's auto-assignment rules. A save writes the settings
- * when they changed and then diffs the rules, exactly as `POSetupDetail` and
- * `InvoicesSetupDetail` do; closing the modal throws unsaved work away, which
- * is what a modal's close means there too.
+ * first two, the module's auto-assignment rules. Opening one reads its document
+ * afresh, as the web's details do on mount, with the shell's loading and error
+ * states in between — the page's own read may be minutes old, or may have
+ * failed. A save writes the settings when they changed and then diffs the
+ * rules, exactly as `POSetupDetail` and `InvoicesSetupDetail` do; closing the
+ * modal throws unsaved work away, which is what a modal's close means there too.
  */
 @Suppress("TooManyFunctions") // One handler per modal action.
 internal class SetupModalActions(private val vm: AccountHubViewModel) {
@@ -27,6 +34,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
     fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
             is AccountHubEvent.OpenSetupModal -> open(event.modal)
+            AccountHubEvent.RetrySetupModal -> vm.setupState.setup.modal?.let { read(it.modal) }
             AccountHubEvent.CloseSetupModal -> close()
             is AccountHubEvent.SwitchModalSection -> vm.update {
                 copy(setup = setup.copy(modal = setup.modal?.copy(section = event.section)))
@@ -71,27 +79,15 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
 
     // -- open / close / save --------------------------------------------------
 
+    /**
+     * Opens the modal and reads its document. Only over Production Setup: a
+     * deep link sends `Open(ProductionSetup)` first, and a modal opened over
+     * another page would sit hidden in state until that page was left.
+     */
     private fun open(modal: SetupModal) {
-        vm.update {
-            copy(
-                setup = setup.copy(
-                    modal = SetupModalState(
-                        modal = modal,
-                        section = firstSection(modal),
-                        loading = modal != SetupModal.Payroll,
-                    ),
-                ),
-            )
-        }
-        when (modal) {
-            SetupModal.PurchaseOrders -> loadRules(PURCHASE_ORDERS) { rows ->
-                vm.update { copy(setup = setup.copy(poRules = setup.poRules.committed(rows))) }
-            }
-            SetupModal.Invoices -> loadRules(INVOICES) { rows ->
-                vm.update { copy(setup = setup.copy(invoiceRules = setup.invoiceRules.committed(rows))) }
-            }
-            SetupModal.Payroll -> loadPayrollGroups()
-        }
+        if (vm.setupState.area != HubArea.ProductionSetup) return
+        vm.update { copy(setup = setup.copy(modal = SetupModalState(modal = modal, section = firstSection(modal)))) }
+        read(modal)
         // The pickers behind the assign-to fields and the nominal multi-select
         // read the chart, so it is made sure of here.
         vm.chart.ensureLoaded()
@@ -103,24 +99,101 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         SetupModal.Payroll -> "approvers"
     }
 
-    private fun loadRules(module: String, done: (List<AssignmentRule>) -> Unit) {
-        vm.update { copy(setup = setup.copy(rulesLoading = true)) }
-        vm.runResult({ vm.repo.assignmentRules(module) }, { rows ->
-            done(rows)
-            vm.update { copy(setup = setup.copy(rulesLoading = false, modal = setup.modal?.copy(loading = false))) }
-        }, { error ->
-            vm.update {
-                copy(
-                    setup = setup.copy(
-                        rulesLoading = false,
-                        modal = setup.modal?.copy(
-                            loading = false,
-                            loadError = str(S.desktop_hub_failed_to_load_settings),
-                        ),
-                    ),
-                )
+    /**
+     * The document, and the module's rules beside it, read together — the
+     * web's `Promise.all` on mount. Either failing is the modal's load error,
+     * and nothing is editable until a read lands (a modal on defaults is one
+     * Save away from overwriting the stored settings).
+     */
+    private fun read(modal: SetupModal) {
+        vm.update { copy(setup = setup.copy(modal = setup.modal?.copy(loading = true, loadError = null))) }
+        when (modal) {
+            SetupModal.PurchaseOrders -> readWithRules(
+                modal = modal,
+                section = SetupSection.PoSetup,
+                document = vm.repo::purchaseOrderSetup,
+                module = PURCHASE_ORDERS,
+                applyDocument = { copy(poSetup = SectionEdit(it)) },
+                applyRules = { copy(poRules = SectionEdit(it)) },
+            )
+            SetupModal.Invoices -> readWithRules(
+                modal = modal,
+                section = SetupSection.InvoicesSetup,
+                document = vm.repo::invoicesSetup,
+                module = INVOICES,
+                applyDocument = { copy(invoicesSetup = SectionEdit(it)) },
+                applyRules = { copy(invoiceRules = SectionEdit(it)) },
+            )
+            SetupModal.Payroll -> {
+                vm.runResult(vm.repo::payrollSettings, { value ->
+                    settle(modal, SetupSection.PayrollSettings, null) { copy(payrollSettings = SectionEdit(value)) }
+                }, { error -> settle(modal, SetupSection.PayrollSettings, error) { this } })
+                loadPayrollGroups()
             }
-            vm.report(error)
+        }
+    }
+
+    private fun <T> readWithRules(
+        modal: SetupModal,
+        section: SetupSection,
+        document: suspend () -> ZillitResult<T>,
+        module: String,
+        applyDocument: SetupState.(T) -> SetupState,
+        applyRules: SetupState.(List<AssignmentRule>) -> SetupState,
+    ) {
+        vm.update { copy(setup = setup.copy(rulesLoading = true)) }
+        loadRuleVendors()
+        vm.launchWork {
+            val settings = async { document() }
+            val rules = async { vm.repo.assignmentRules(module) }
+            val doc = settings.await()
+            val rows = rules.await()
+            val failure = (doc as? ZillitResult.Failure)?.error ?: (rows as? ZillitResult.Failure)?.error
+            vm.update { copy(setup = setup.copy(rulesLoading = false)) }
+            if (failure != null) {
+                settle(modal, section, failure) { this }
+            } else {
+                val value = (doc as ZillitResult.Success).data
+                val ruleRows = (rows as ZillitResult.Success).data
+                settle(modal, section, null) { applyDocument(value).applyRules(ruleRows) }
+            }
+        }
+    }
+
+    /**
+     * Lands a modal read: on success the document is the new baseline and its
+     * slice counts as loaded; on failure the modal shows the error. A modal
+     * closed or switched meanwhile keeps nothing but the fresh document.
+     */
+    private fun settle(
+        modal: SetupModal,
+        section: SetupSection,
+        error: ZillitError?,
+        applying: SetupState.() -> SetupState,
+    ) = vm.update {
+        val open = setup.modal?.takeIf { it.modal == modal }
+        if (error != null) {
+            copy(setup = setup.copy(modal = open?.copy(loading = false, loadError = error.localised()) ?: setup.modal))
+        } else {
+            val landed = if (open != null) setup.applying() else setup
+            copy(
+                setup = landed.copy(
+                    modal = open?.copy(loading = false, loadError = null) ?: landed.modal,
+                    slices = if (open != null) landed.slices.succeeded(section) else landed.slices,
+                ),
+            )
+        }
+    }
+
+    /**
+     * The vendor list the rules' multi-select offers, read by the modal itself
+     * as the web's `AssignmentRulesSection` does — it was only there when the
+     * Vendors page had been opened first.
+     */
+    private fun loadRuleVendors() {
+        if (vm.setupState.setup.ruleVendors.isNotEmpty()) return
+        vm.runResult({ vm.repo.vendors("") }, { rows ->
+            vm.update { copy(setup = setup.copy(ruleVendors = rows)) }
         })
     }
 
@@ -144,6 +217,9 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
 
     private fun save() {
         val modal = vm.setupState.setup.modal ?: return
+        // Nothing read, nothing to save over: the shell hides the body while
+        // loading or failed, and the shortcut must not reach around it.
+        if (modal.loading || modal.loadError != null) return
         if (!vm.mayEdit()) return
         when (modal.modal) {
             SetupModal.PurchaseOrders -> {
@@ -188,7 +264,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         vm.launchWork {
             diff.removed.forEach { vm.repo.deleteAssignmentRule(it.id) }
             val next = mutableListOf<AssignmentRule>()
-            var failure: com.zillit.desktop.core.common.ZillitError? = null
+            var failure: ZillitError? = null
             for (rule in section.edited) {
                 val result = when {
                     !rule.persisted -> vm.repo.createAssignmentRule(rule.copy(module = module))
@@ -225,19 +301,29 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         copy(setup = setup.copy(invoiceMemberDraft = InvoiceMemberDraft(index, member ?: InvoiceTeamMemberDefault)))
     }
 
+    /**
+     * Commits the dialog. One row per person — the web offers only people not
+     * already on the team — and a senior goes as the full-rights row it is.
+     */
     private fun commitMember() {
         val draft = vm.setupState.setup.invoiceMemberDraft ?: return
         if (draft.member.userId.isBlank()) {
             vm.sendSideEffect(AccountHubEffect.Failed(str(S.desktop_hub_pick_a_team_member)))
             return
         }
+        val members = vm.setupState.setup.invoicesSetup.edited.teamMembers
+        val onTeamAlready = members.withIndex().any { (i, m) -> i != draft.index && m.userId == draft.member.userId }
+        if (onTeamAlready) {
+            vm.fail(str(S.desktop_hub_already_on_the_team))
+            return
+        }
+        val member = draft.member.forWire()
         vm.update {
             val current = setup.invoicesSetup.edited
-            val members = current.teamMembers
-            val next = if (draft.index != null && draft.index in members.indices) {
-                members.mapIndexed { i, m -> if (i == draft.index) draft.member else m }
+            val next = if (draft.index != null && draft.index in current.teamMembers.indices) {
+                current.teamMembers.mapIndexed { i, m -> if (i == draft.index) member else m }
             } else {
-                members + draft.member
+                current.teamMembers + member
             }
             copy(
                 setup = setup.copy(
@@ -280,6 +366,10 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
 
     private fun togglePick(userId: String) = vm.update {
         val picker = setup.userPicker ?: return@update this
+        // Somebody already signing another level is not offered for this one
+        // (the web's `alreadyAssigned`): one person on two levels would sign
+        // the same run twice.
+        if (userId in setup.pickerExcluded(picker)) return@update this
         val next = when {
             userId in picker.selected -> picker.selected - userId
             picker.multiple -> picker.selected + userId
@@ -291,7 +381,7 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
     @Suppress("CyclomaticComplexMethod") // One branch per purpose.
     private fun applyPicker() {
         val picker = vm.setupState.setup.userPicker ?: return
-        val ids = picker.selected
+        val ids = (picker.selected - vm.setupState.setup.pickerExcluded(picker)).distinct()
         vm.update {
             val next = when (picker.purpose) {
                 UserPickerPurpose.PayrollApprovers ->
@@ -373,42 +463,53 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
 
     // -- payroll accounts --------------------------------------------------------
 
-    /** The grid, seeded from the saved codes joined to the chart. */
+    /**
+     * The grid, seeded from the saved codes joined to the chart — the web's
+     * `PayrollAccountsPage` seeding. A code the chart cannot resolve is not
+     * seeded: with no chart id it would be sent as a create for an account
+     * that already exists. It is listed above the grid instead.
+     */
     private fun openPayrollAccounts() {
         val state = vm.setupState
         val byCode = state.chart.accounts.associateBy { it.code.lowercase() }
-        val rows = state.setup.payrollSettings.edited.payrollAccounts.map { code ->
-            val account = byCode[code.lowercase()]
-            PayrollAccountRow(
-                id = account?.id,
-                code = code,
-                name = account?.name.orEmpty(),
-                lineType = account?.lineType ?: CoaLineType.Category,
+        val codes = state.setup.payrollSettings.edited.payrollAccounts
+        val seeded = codes.mapNotNull { code ->
+            val account = byCode[code.lowercase()] ?: return@mapNotNull null
+            PayrollAccountRow(id = account.id, code = code, name = account.name, lineType = account.lineType)
+        }
+        vm.update {
+            copy(
+                setup = setup.copy(
+                    payrollAccounts = PayrollAccountsDraft(
+                        rows = seeded,
+                        seeds = seeded.associateBy { it.id.orEmpty() },
+                        unmatched = codes.filter { byCode[it.lowercase()] == null },
+                    ),
+                ),
             )
         }
-        vm.update { copy(setup = setup.copy(payrollAccounts = PayrollAccountsDraft(rows = rows))) }
         vm.chart.ensureLoaded()
     }
 
+    /**
+     * Sends the new and changed rows only, then re-reads the codes. The
+     * settings the modal holds are left alone: taking the batch's echo as the
+     * whole document threw away approvers and a pay period nobody had saved.
+     */
     private fun savePayrollAccounts() {
         val draft = vm.setupState.setup.payrollAccounts ?: return
         if (!vm.mayEdit()) return
-        val rows = draft.rows.filter { it.code.isNotBlank() }
+        val rows = PayrollAccounts.outgoing(draft.rows, draft.seeds)
         if (rows.isEmpty()) {
             vm.update { copy(setup = setup.copy(payrollAccounts = null)) }
             return
         }
         vm.update { copy(setup = setup.copy(payrollAccounts = draft.copy(saving = true))) }
-        vm.runResult({ vm.repo.updatePayrollAccounts(rows) }, { settings: PayrollSettings ->
+        vm.runResult({ vm.repo.updatePayrollAccounts(rows) }, {
             vm.update {
-                copy(
-                    setup = setup.copy(
-                        payrollSettings = setup.payrollSettings.committed(settings),
-                        payrollAccounts = null,
-                    ),
-                    notice = str(S.desktop_payroll_accounts_saved),
-                )
+                copy(setup = setup.copy(payrollAccounts = null), notice = str(S.desktop_payroll_accounts_saved))
             }
+            reloadPayrollAccounts()
             vm.chart.load()
         }, { error ->
             vm.update { copy(setup = setup.copy(payrollAccounts = draft.copy(saving = false))) }
@@ -416,12 +517,46 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         })
     }
 
+    /**
+     * The saved codes re-read and set on both sides of the section — the web's
+     * `PayrollAccountsBody.load`. They never ride the settings PATCH, so they
+     * change nothing about what the modal has unsaved.
+     */
+    fun reloadPayrollAccounts() {
+        vm.runResult(vm.repo::payrollSettings, { fresh ->
+            vm.update {
+                val section = setup.payrollSettings
+                copy(
+                    setup = setup.copy(
+                        payrollSettings = section.copy(
+                            saved = section.saved.copy(payrollAccounts = fresh.payrollAccounts),
+                            edited = section.edited.copy(payrollAccounts = fresh.payrollAccounts),
+                        ),
+                    ),
+                )
+            }
+        }, vm::report)
+    }
+
     private companion object {
         const val PURCHASE_ORDERS = "purchase_orders"
         const val INVOICES = "invoices"
-        val InvoiceTeamMemberDefault =
-            com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember(postingLimit = "0")
+
+        /** A new member starts submit-only, as the web's dialog does. */
+        val InvoiceTeamMemberDefault = InvoiceTeamMember(postingLimit = InvoiceTeamMember.SUBMIT_ONLY)
     }
+}
+
+/**
+ * Who the open picker must not offer: for a run-authorisation level, everybody
+ * already on another level (the web's `alreadyAssigned`). Nobody otherwise.
+ */
+internal fun SetupState.pickerExcluded(picker: UserPickerState): Set<String> = when (picker.purpose) {
+    UserPickerPurpose.RunAuthorisation -> invoicesSetup.edited.runAuthorisation
+        .filterIndexed { i, _ -> i != picker.index }
+        .flatMap { it.userIds }
+        .toSet()
+    else -> emptySet()
 }
 
 /** The invoices setup with its run levels renumbered — used by the section and the modal alike. */

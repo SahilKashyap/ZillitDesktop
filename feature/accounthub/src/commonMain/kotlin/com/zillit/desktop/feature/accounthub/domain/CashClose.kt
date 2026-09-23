@@ -53,6 +53,10 @@ data class CommitmentWeek(
     val percent: Int = 0,
     val color: String = "",
     val detail: String = "",
+    /** The week spend peaks — the web prints "PEAK WEEK" after the note. */
+    val peak: Boolean = false,
+    /** A studio advance falls due this week — "Netflix advance due". */
+    val netflix: Boolean = false,
 )
 
 /** The heatmap's week headers — fixed on the web too. */

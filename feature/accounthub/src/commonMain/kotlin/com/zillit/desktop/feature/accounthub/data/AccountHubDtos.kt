@@ -369,6 +369,11 @@ internal fun JsonElement?.toDealConditions(): List<DealCondition> {
  * rows that may or may not carry an id. An id-less row is still a bureau.
  */
 internal fun JsonElement?.toPayrollBureaus(): List<PayrollBureau> {
+    // The oldest shape, `{ bureau: "Name" }`: one bureau by name, as the web's
+    // `normalize` reads it. Dropped, the next save stored an empty list over
+    // the production's bureau.
+    val legacyName = ((this as? JsonObject)?.get("bureau") as? JsonPrimitive)?.contentOrNull
+    if (!legacyName.isNullOrBlank()) return listOf(PayrollBureau(id = "bureau-0", title = legacyName))
     val rows = when (this) {
         is JsonArray -> this
         is JsonObject -> this["bureau"] as? JsonArray ?: return emptyList()
@@ -652,11 +657,18 @@ data class VendorChangeDto(
             at = (createdAt ?: created ?: actionAt).epochMillis(),
             byName = (userName ?: actionByName).orEmpty(),
             byId = actionBy.orEmpty(),
-            summary = (message ?: action).orEmpty(),
+            // The web titles the row from `action` ("vendor_verified" →
+            // "Vendor Verified") and never prints `message`; that stays the
+            // fallback for a row with no action.
+            summary = action?.takeIf { it.isNotBlank() }?.let(::titleCaseAction) ?: message.orEmpty(),
             note = note.orEmpty(),
         )
     }
 }
+
+/** The web's `fmtAction`: underscores to spaces, each word capitalised. */
+internal fun titleCaseAction(action: String): String =
+    action.replace('_', ' ').split(' ').joinToString(" ") { word -> word.replaceFirstChar { it.uppercaseChar() } }
 
 // -- approvals --------------------------------------------------------------
 
@@ -1229,6 +1241,8 @@ internal fun JsonElement?.toCashClose(): CashCloseDashboard {
                 percent = row.int("pct") ?: 0,
                 color = row.str("color"),
                 detail = row.str("detail"),
+                peak = (row["peak"] as? JsonPrimitive)?.booleanOrNull == true,
+                netflix = (row["netflix"] as? JsonPrimitive)?.booleanOrNull == true,
             )
         },
     )
@@ -1316,57 +1330,80 @@ private fun JsonElement?.asAmountText(): String = when (this) {
 
 // -- invoices setup ----------------------------------------------------------
 
-@Serializable
-data class InvoiceTeamMemberDto(
-    @SerialName("user_id") val userId: String? = null,
-    @SerialName("posting_limit") val postingLimit: Double? = null,
-    @SerialName("run_access") val runAccess: Boolean? = null,
-    @SerialName("override_access") val overrideAccess: Boolean? = null,
-    @SerialName("is_senior") val isSenior: Boolean? = null,
-) {
-    fun toDomain(): InvoiceTeamMember = InvoiceTeamMember(
-        userId = userId.orEmpty(),
-        postingLimit = postingLimit.asLimitText(),
-        runAccess = runAccess == true,
-        overrideAccess = overrideAccess == true,
-        isSenior = isSenior == true,
-    )
-}
-
-/** Whole limits lose the `.0`; an absent one stays blank rather than becoming zero. */
-private fun Double?.asLimitText(): String = when {
-    this == null -> ""
-    this == toLong().toDouble() -> toLong().toString()
-    else -> toString()
-}
-
-@Serializable
-data class RunAuthorisationDto(
-    @SerialName("tier") val tier: Int? = null,
-    @SerialName("user") val users: List<String>? = null,
-)
-
+/**
+ * The invoices settings document.
+ *
+ * Its three lists arrive as arrays **or as a JSON string holding one** (an
+ * unparsed jsonb column) — the web and the desktop Invoices tool both read
+ * either (`InvoiceSetupWire.arrayOrEncoded`). Typed as lists, one encoded
+ * column failed the whole document, and the modal then opened on defaults.
+ */
 @Serializable
 data class InvoicesSetupDto(
-    @SerialName("team_members") val teamMembers: List<InvoiceTeamMemberDto>? = null,
-    @SerialName("alerts") val alerts: List<String>? = null,
-    @SerialName("run_authorization") val runAuthorisation: List<RunAuthorisationDto>? = null,
+    @SerialName("team_members") val teamMembers: JsonElement? = null,
+    @SerialName("alerts") val alerts: JsonElement? = null,
+    @SerialName("run_authorization") val runAuthorisation: JsonElement? = null,
     /** The name the UI used before the backend settled on `run_authorization`. */
-    @SerialName("run_auth") val legacyRunAuth: List<RunAuthorisationDto>? = null,
+    @SerialName("run_auth") val legacyRunAuth: JsonElement? = null,
 ) {
     fun toDomain(): InvoicesSetup = InvoicesSetup(
-        teamMembers = teamMembers.orEmpty().map { it.toDomain() },
+        teamMembers = teamMembers.arrayOrEncoded().mapNotNull { (it as? JsonObject)?.toTeamMember() },
         // An unknown key is dropped rather than kept: this client cannot show
         // a switch for an alert it has no words for, and round-tripping one
         // invisibly would let it be turned off by a save nobody made.
-        alerts = alerts.orEmpty().mapNotNull(InvoiceAlert::from).toSet(),
-        runAuthorisation = (runAuthorisation ?: legacyRunAuth).orEmpty()
-            .mapIndexed { index, row ->
-                RunAuthorisationTier(tier = row.tier ?: index + 1, userIds = row.users.orEmpty())
+        alerts = alerts.arrayOrEncoded()
+            .mapNotNull { InvoiceAlert.from((it as? JsonPrimitive)?.contentOrNull) }
+            .toSet(),
+        runAuthorisation = (runAuthorisation.takeUnless { it == null || it is JsonNull } ?: legacyRunAuth)
+            .arrayOrEncoded()
+            .mapIndexedNotNull { index, row ->
+                val tier = row as? JsonObject ?: return@mapIndexedNotNull null
+                RunAuthorisationTier(
+                    tier = tier.int("tier") ?: (index + 1),
+                    userIds = tier["user"].arrayOrEncoded()
+                        .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) },
+                )
             }
             .sortedBy { it.tier },
     ).renumbered()
 }
+
+/**
+ * One team member. The posting limit reads as the live Invoices settings
+ * page reads it: null, absent, blank or `"unlimited"` is **Unlimited** (blank
+ * here); a number — zero included, which is submit-only — is kept as typed.
+ */
+private fun JsonObject.toTeamMember(): InvoiceTeamMember? {
+    val id = str("user_id").ifBlank { str("id") }.takeIf { it.isNotBlank() } ?: return null
+    val limit = (this["posting_limit"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull?.trim()
+    return InvoiceTeamMember(
+        userId = id,
+        postingLimit = when {
+            limit.isNullOrBlank() || limit.equals("unlimited", ignoreCase = true) -> ""
+            else -> limit.toDoubleOrNull()?.asLimitText() ?: ""
+        },
+        runAccess = flag("run_access"),
+        overrideAccess = flag("override_access"),
+        isSenior = flag("is_senior"),
+    )
+}
+
+/** `true`, or the string `"true"` an unparsed column sends. */
+private fun JsonObject.flag(key: String): Boolean =
+    (this[key] as? JsonPrimitive)
+        ?.let { it.booleanOrNull ?: it.contentOrNull.equals("true", ignoreCase = true) } == true
+
+/** An array, or an array encoded into a string; anything else is empty. */
+internal fun JsonElement?.arrayOrEncoded(): JsonArray = when (this) {
+    is JsonArray -> this
+    is JsonPrimitive -> contentOrNull?.takeIf { it.isNotBlank() }
+        ?.let { text -> runCatching { accountHubJson.parseToJsonElement(text) }.getOrNull() as? JsonArray }
+        ?: JsonArray(emptyList())
+    else -> JsonArray(emptyList())
+}
+
+/** Whole limits lose the `.0`. */
+private fun Double.asLimitText(): String = if (this == toLong().toDouble()) toLong().toString() else toString()
 
 // -- non-union pay breakdown -------------------------------------------------
 

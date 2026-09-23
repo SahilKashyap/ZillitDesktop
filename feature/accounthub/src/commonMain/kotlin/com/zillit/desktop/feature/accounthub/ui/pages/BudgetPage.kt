@@ -47,7 +47,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -63,6 +62,8 @@ import com.zillit.desktop.feature.accounthub.domain.asTree
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.HubPage
+import com.zillit.desktop.feature.accounthub.ui.components.BudgetSkeleton
+import com.zillit.desktop.feature.accounthub.ui.components.HubPageHeader
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.Pill
@@ -89,19 +90,19 @@ fun BudgetPage(
     canOpenDocuments: Boolean = false,
 ) {
     val budget = state.budget
-    val canEdit = canImport && state.viewer.canEdit
+    // Accountants only, as the web's `BudgetModule`: the commit writes chart
+    // codes, which the service refuses to anyone outside accounts — an admin
+    // included (`accountant_access_only`).
+    val canEdit = canImport && state.viewer.canActAsAccountant
 
     HubPage {
-        ZillitPageHeader(
+        HubPageHeader(
             eyebrow = str(S.desktop_setup),
             title = str(S.budget_text),
             description = str(S.desktop_hub_versioned_project_budgets_that_hang_off_the_chart_of_accounts),
         )
         when {
-            budget.loading && budget.versions.isEmpty() -> LoadingPanel(
-                str(S.desktop_loading_budgets),
-                Modifier.weight(1f),
-            )
+            budget.loading && budget.versions.isEmpty() -> BudgetSkeleton(Modifier.weight(1f))
             budget.versions.isEmpty() -> EmptyBudgets(canEdit, onEvent)
             else -> {
                 VersionsTitle(state, canEdit, onEvent)

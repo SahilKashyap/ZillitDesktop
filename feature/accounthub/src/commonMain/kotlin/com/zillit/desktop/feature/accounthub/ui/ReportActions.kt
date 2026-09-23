@@ -11,6 +11,9 @@ import com.zillit.desktop.feature.accounthub.domain.ClosingReport
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.domain.PeriodLock
 import com.zillit.desktop.feature.accounthub.domain.ReportPeriod
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /**
  * The console's read surfaces: the budget, the two reports and the period
@@ -50,14 +53,6 @@ internal class ReportActions(
             AccountHubEvent.ConfirmPeriodClose -> confirmPeriodClose()
             AccountHubEvent.CancelPeriodClose -> vm.update {
                 copy(periodClose = periodClose.copy(pendingCloseMillis = null))
-            }
-            is AccountHubEvent.ToggleChecklistItem -> vm.update {
-                val cash = periodClose.cashClose
-                val next = if (event.label in cash.checked) cash.checked - event.label else cash.checked + event.label
-                copy(periodClose = periodClose.copy(cashClose = cash.copy(checked = next)))
-            }
-            AccountHubEvent.ResetChecklist -> vm.update {
-                copy(periodClose = periodClose.copy(cashClose = periodClose.cashClose.copy(checked = emptySet())))
             }
             is AccountHubEvent.EditPackages -> editPublish { copy(packages = event.packages) }
             AccountHubEvent.AddPackage -> editPublish {
@@ -207,7 +202,9 @@ internal class ReportActions(
      * reads as two different dates.
      */
     private fun lockedThroughText(lock: PeriodLock): String {
-        val shown = IsoDate.toEpochMillis(lock.lockedThrough)?.let { EpochDate.date(it) }
+        // Noon, not midnight, of the UTC day: midnight formats as the day before
+        // anywhere west of UTC.
+        val shown = IsoDate.toEpochMillis(lock.lockedThrough)?.let { EpochDate.date(it + DAY_MILLIS / 2) }
             ?: lock.lockedThrough
         return if (shown.isBlank()) str(S.desktop_hub_the_lock_has_moved) else str(
             S.desktop_hub_locked_through_x,
@@ -217,13 +214,15 @@ internal class ReportActions(
 
     private fun defaultCloseDate(lock: PeriodLock): String {
         val today = vm.nowMillis().takeIf { it > 0 } ?: defaultPeriod().endMillis
-        val dayAfterLock = IsoDate.toEpochMillis(lock.lockedThrough)?.let { it + DAY_MILLIS }
+        // Noon UTC of the day after the lock, so a zone west of UTC does not
+        // format it as the lock day itself.
+        val dayAfterLock = IsoDate.toEpochMillis(lock.lockedThrough)?.let { it + DAY_MILLIS + DAY_MILLIS / 2 }
         return EpochDate.isoDate(maxOf(today, dayAfterLock ?: today))
     }
 
     /** The earliest date the picker allows — the day after the lock. */
     internal fun minCloseDate(lock: PeriodLock): String? =
-        IsoDate.toEpochMillis(lock.lockedThrough)?.let { EpochDate.isoDate(it + DAY_MILLIS) }
+        IsoDate.toEpochMillis(lock.lockedThrough)?.let { EpochDate.isoDate(it + DAY_MILLIS + DAY_MILLIS / 2) }
 
     private fun switchCloseTab(tab: PeriodCloseTab) {
         vm.update { copy(periodClose = periodClose.copy(tab = tab)) }
@@ -269,7 +268,11 @@ internal class ReportActions(
         val asOf = vm.setupState.periodClose.pendingCloseMillis ?: return
         if (!vm.mayActAsAccountant()) return
         vm.update { copy(periodClose = periodClose.copy(closing = true)) }
-        vm.runResult({ vm.repo.closePeriod(asOf) }, { lock ->
+        vm.runResult({ vm.repo.closePeriod(asOf) }, { answered ->
+            // The web falls back to the chosen date when the reply names none
+            // (`… || target`): a blank lock here would read "No period locked
+            // yet" straight after a close, and reset the picker's minimum.
+            val lock = if (answered.isClosed) answered else answered.copy(lockedThrough = utcIsoDate(asOf))
             vm.update {
                 copy(
                     periodClose = periodClose.copy(
@@ -298,7 +301,10 @@ internal class ReportActions(
 
     // -- publish closing package ----------------------------------------------
 
-    private fun editPublish(change: PublishState.() -> PublishState) = vm.update {
+    /** A user's edit: it also clears the last result, as the web hides its banner on any change. */
+    private fun editPublish(change: PublishState.() -> PublishState) = setPublish { change().copy(result = null) }
+
+    private fun setPublish(change: PublishState.() -> PublishState) = vm.update {
         copy(periodClose = periodClose.copy(publish = periodClose.publish.change()))
     }
 
@@ -309,16 +315,30 @@ internal class ReportActions(
     private fun publish() {
         val publish = vm.setupState.periodClose.publish
         val valid = publish.validPackages
-        if (valid.isEmpty()) return
-        editPublish { copy(publishing = true, result = null) }
+        if (valid.isEmpty() || publish.publishing) return
+        if (!vm.mayActAsAccountant()) return
+        setPublish { copy(publishing = true, result = null) }
         vm.runResult({ vm.repo.publishClosingPackage(valid) }, {
-            editPublish {
-                copy(publishing = false, result = CloseResult(true, publishedText(valid.size)))
+            // Back to one empty package, as the web does: leaving the sent ones
+            // in place with Publish still lit e-mailed the same people the same
+            // reports again on a second click.
+            setPublish {
+                copy(
+                    packages = listOf(ClosingPackage(id = 1)),
+                    nextId = 2,
+                    openMenu = null,
+                    publishing = false,
+                    result = CloseResult(true, publishedText(valid.size)),
+                )
             }
         }, { error ->
-            editPublish { copy(publishing = false, result = CloseResult(false, error.localised())) }
+            setPublish { copy(publishing = false, result = CloseResult(false, error.localised())) }
         })
     }
+
+    /** The UTC day `as_of` falls in — the day the accountant picked, whatever this machine's zone. */
+    private fun utcIsoDate(millis: Long): String =
+        Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.UTC).date.toString()
 
     private fun publishedText(n: Int) =
         if (n == 1) str(S.desktop_hub_published_one_package) else str(S.desktop_hub_published_n_packages, n)

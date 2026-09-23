@@ -84,6 +84,13 @@ sealed interface AccountHubEvent {
     /** An embedded tool asked to close; the console shows its own area again. */
     data object CloseEmbedded : AccountHubEvent
 
+    /**
+     * An embedded tool linked to another tool the console also hosts — PO's
+     * Invoices tab, say. Shown in the console, as the web's nested routes do,
+     * rather than replacing the whole window and losing the sidebar.
+     */
+    data class EmbedTool(val path: String, val title: String) : AccountHubEvent
+
     data object Refresh : AccountHubEvent
 
     data object ClearNotice : AccountHubEvent
@@ -105,6 +112,9 @@ sealed interface AccountHubEvent {
     data class SearchCurrencies(val term: String) : AccountHubEvent
 
     data class EditTaxTypes(val taxTypes: List<TaxType>) : AccountHubEvent
+
+    /** A country chosen in, or removed from, the tax editor — kept even with no rate ticked. */
+    data class SetTaxCountry(val code: String, val chosen: Boolean) : AccountHubEvent
 
     data class EditAssetTags(val tags: List<String>) : AccountHubEvent
 
@@ -229,10 +239,6 @@ sealed interface AccountHubEvent {
 
     data object CancelPeriodClose : AccountHubEvent
 
-    data class ToggleChecklistItem(val label: String) : AccountHubEvent
-
-    data object ResetChecklist : AccountHubEvent
-
     data class EditPackages(val packages: List<ClosingPackage>) : AccountHubEvent
 
     data object AddPackage : AccountHubEvent
@@ -272,7 +278,11 @@ sealed interface AccountHubEvent {
     /** Opens a spend tool on its own settings page. */
     data class OpenSpendSetup(val which: SpendSetup) : AccountHubEvent
 
-    /** Opens one of the three drill-down modals, on its first section. */
+    /**
+     * Opens one of the three drill-down modals, on its first section, and
+     * reads its settings afresh. Honoured only while Production Setup is the
+     * open area — a deep link sends [Open] for it first.
+     */
     data class OpenSetupModal(val modal: SetupModal) : AccountHubEvent
 
     data object CloseSetupModal : AccountHubEvent
@@ -336,6 +346,18 @@ sealed interface AccountHubEvent {
     /** Commit one section. Sections save independently — see [SectionEdit]. */
     data class SaveSection(val section: SetupSection) : AccountHubEvent
 
+    /** Reads one section's slice again after it failed to load — its error card's Retry. */
+    data class RetrySetupSection(val section: SetupSection) : AccountHubEvent
+
+    /** Reads the bank list again after it failed to load. */
+    data object RetryBanks : AccountHubEvent
+
+    /** Reads the currency and tax catalogues again after either failed. */
+    data object RetryCatalogues : AccountHubEvent
+
+    /** Reads the open drill-down modal's settings again after they failed to load. */
+    data object RetrySetupModal : AccountHubEvent
+
     data class RevertSection(val section: SetupSection) : AccountHubEvent
 
     /**
@@ -346,6 +368,9 @@ sealed interface AccountHubEvent {
     data class EditCompany(val company: Company?, val fromBank: Boolean = false) : AccountHubEvent
 
     data class UpdateCompanyDraft(val company: Company) : AccountHubEvent
+
+    /** The company editor's tax-credit input, as typed. */
+    data class EditTaxCreditDraft(val text: String) : AccountHubEvent
 
     /** Persists the draft straight away, as the web's Done does; the dialog stays open on failure. */
     data object CommitCompanyDraft : AccountHubEvent
@@ -398,6 +423,9 @@ sealed interface AccountHubEvent {
     /** Opens the rule editor on a rule (null adds one of [kind]). */
     data class ComposePayRule(val kind: PayRuleKind, val index: Int?) : AccountHubEvent
     data class EditPayRule(val rule: PayRule) : AccountHubEvent
+
+    /** The condition's hours or `HH:MM` field, as typed — held as text beside the trigger. */
+    data class EditPayRuleCondition(val text: String) : AccountHubEvent
     data object CommitPayRule : AccountHubEvent
     data object DismissPayRule : AccountHubEvent
     data class RemovePayRule(val kind: PayRuleKind, val index: Int) : AccountHubEvent

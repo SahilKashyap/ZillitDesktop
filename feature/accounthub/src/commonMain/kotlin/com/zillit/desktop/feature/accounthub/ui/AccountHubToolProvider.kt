@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -15,11 +16,13 @@ import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.workspace.LocalHostedBy
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.core.forms.FormModule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
 import com.zillit.desktop.feature.accounthub.ui.components.ProvideHubFaces
@@ -148,6 +151,9 @@ const val ACCOUNT_HUB_PATH = "/film-tools/account-hub"
  * area, and `/form-config/<module>` opens the forms editor on that module.
  * The bare path, or a slug the console does not have, asks for nothing.
  *
+ * Approvers reads `?module=<wire>` and Production Setup `?setup=<modal>`
+ * (`payroll`, `po`, `invoices`, or the modal's own slug).
+ *
  * Vendors reads the web's own address shape as well: `/vendors/<tab>` opens
  * that tab, `?action=add` the new-vendor form, and `?action=edit&id=<id>` that
  * vendor's form — which is how the web's Invoices suppliers page sends someone
@@ -164,6 +170,16 @@ internal fun hubRouteEvents(path: String): List<AccountHubEvent> {
     return listOfNotNull(
         AccountHubEvent.Open(area),
         module?.takeIf { area == HubArea.FormConfig }?.let(AccountHubEvent::OpenFormConfig),
+        // `?module=card_expenses` — the web's "Set Approval Level" link from the
+        // card and petty-cash modules lands on that module's chain.
+        query["module"]?.takeIf { area == HubArea.Approvers }
+            ?.let { wire -> ApprovalModule.entries.firstOrNull { it.wire == wire } }
+            ?.let(AccountHubEvent::SwitchApprovalModule),
+        // `?setup=payroll` — Payroll's Entry Setup tile opens the settings it
+        // edits, which live here in Production Setup.
+        query["setup"]?.takeIf { area == HubArea.ProductionSetup }
+            ?.let { key -> SetupModal.entries.firstOrNull { it.slug == key || it.slug.startsWith("${key}_") } }
+            ?.let(AccountHubEvent::OpenSetupModal),
     ) + if (area == HubArea.Vendors) vendorRouteEvents(segments.getOrNull(1), query) else emptyList()
 }
 
@@ -196,30 +212,47 @@ private fun AccountHubToolProvider.Embedded(tool: EmbeddedTool, navigator: Windo
             delegate = navigator,
             ownPath = provider.path,
             onRoute = { path -> onEmbeddedEvent(AccountHubEvent.EmbedRoute(path)) },
+            onOtherTool = { path ->
+                val other = resolveTool(path)
+                other?.let { onEmbeddedEvent(AccountHubEvent.EmbedTool(path, it.title)) }
+                other != null
+            },
             onClose = { onEmbeddedEvent(AccountHubEvent.CloseEmbedded) },
         )
     }
-    provider.Content(WorkspaceRoute.Tool(tool.path), inner)
+    // Tells the tool it is inside the console — the web's hub entry, as against
+    // `?entry=tool` from a Film Tools tile — so it shows the console's view.
+    CompositionLocalProvider(LocalHostedBy provides ACCOUNT_HUB_PATH) {
+        provider.Content(WorkspaceRoute.Tool(tool.path), inner)
+    }
 }
 
 /**
  * The navigator an embedded tool is handed.
  *
- * Navigation within the tool's own routes stays inside the console; a route to
- * some other tool, or a new window, goes to the real navigator; closing the
- * tool shows the console's own area again. Titles are the console's to set.
+ * Navigation within the tool's own routes stays inside the console, and so
+ * does a link to another tool the console hosts; anything else, or a new
+ * window, goes to the real navigator — a route below the console's own path
+ * reaches the console that way and opens the page it names. Closing the tool
+ * shows the console's own area again. Titles are the console's to set.
  */
 private class EmbeddedNavigator(
     private val delegate: WindowNavigator,
     private val ownPath: String,
     private val onRoute: (String) -> Unit,
+    /** Shows another hosted tool in the console; false when the console cannot host it. */
+    private val onOtherTool: (String) -> Boolean,
     private val onClose: () -> Unit,
 ) : WindowNavigator {
     override val windowId get() = delegate.windowId
     override val canGoBack: Boolean get() = false
 
     override fun navigate(route: WorkspaceRoute) {
-        if (route.path.startsWith(ownPath)) onRoute(route.path) else delegate.navigate(route)
+        when {
+            route.path.startsWith(ownPath) -> onRoute(route.path)
+            onOtherTool(route.path) -> Unit
+            else -> delegate.navigate(route)
+        }
     }
 
     override fun back() = onClose()

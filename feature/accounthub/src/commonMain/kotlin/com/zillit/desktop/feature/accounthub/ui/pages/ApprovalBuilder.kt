@@ -148,8 +148,8 @@ internal data class BuilderChrome(
     val tip: (department: String?) -> String,
 ) {
     companion object {
-        val Approvers = BuilderChrome(
-            root = str(S.approvers_empty),
+        val Approvers get() = BuilderChrome(
+            root = str(S.desktop_approvers),
             moduleLabel = null,
             allLabel = str(S.desktop_default_approval_levels),
             heading = true,
@@ -157,7 +157,7 @@ internal data class BuilderChrome(
                 if (department == null) {
                     str(S.desktop_hub_configuring_default_approval_levels_for_all_departments_this_baseline_applies)
                 } else {
-                    "Configuring approval levels for $department. This overrides the default configuration."
+                    str(S.desktop_hub_configuring_levels_for_x_overrides_default, department)
                 }
             },
         )
@@ -172,7 +172,7 @@ internal data class BuilderChrome(
                 if (department == null) {
                     str(S.desktop_hub_configuring_approval_levels_for_all_departments_changes_will_apply_uniformly)
                 } else {
-                    "Configuring approval levels for $department."
+                    str(S.desktop_hub_configuring_levels_for_x, department)
                 }
             },
         )
@@ -719,7 +719,9 @@ private class Latest<T : Any> {
 }
 
 /** The validator's whole vocabulary, said the web's way. */
-private val RULE_TYPES = listOf(
+// Getters, so a language switch reaches them: a top-level list built with
+// `str()` keeps the language the app had when the file was first touched.
+private val RULE_TYPES get() = listOf(
     ApprovalRule.DEFAULT to str(S.desktop_email_format_default),
     ApprovalRule.AMOUNT to str(S.desktop_amount_greater_than),
 )

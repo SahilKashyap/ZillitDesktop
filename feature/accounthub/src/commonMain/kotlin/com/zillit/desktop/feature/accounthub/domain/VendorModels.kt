@@ -333,7 +333,10 @@ fun NewVendor.fieldErrors(): Map<String, String> = buildMap {
             phoneNumber.length > MAX_PHONE -> put("phoneNumber", str(S.desktop_max_20_characters))
         }
     }
-    if (address.line1.isBlank()) put("line1", str(S.ah_err_line1_required))
+    when {
+        address.line1.isBlank() -> put("line1", str(S.ah_err_line1_required))
+        address.line1.length > MAX_LINE1 -> put("line1", str(S.desktop_max_200_characters))
+    }
     when {
         address.city.isBlank() -> put("city", str(S.ah_err_city_required))
         address.city.length > MAX_CITY -> put("city", str(S.desktop_max_100_characters))
@@ -359,6 +362,7 @@ fun NewVendor.fieldErrors(): Map<String, String> = buildMap {
 
 private const val MAX_NAME = 200
 private const val MAX_PHONE = 20
+private const val MAX_LINE1 = 200
 private const val MAX_CITY = 100
 private const val MAX_POSTCODE = 20
 

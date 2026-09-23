@@ -130,7 +130,11 @@ enum class PayRuleTemplate(
     // functions, the next person to add a template cannot see what it has to
     // be narrower than.
     fun matches(trigger: PayTrigger): Boolean {
-        val keys = trigger.meaningfulKeys
+        // `increment` is a billing gate like the BDR pair — "Bill in
+        // increments" on any rule — not part of what the condition is. Matched
+        // on, an overtime billed in 15-minute steps stopped reading as
+        // overtime, and the editor fell back to the list's default template.
+        val keys = trigger.meaningfulKeys - "increment"
         val plainShift = !trigger.weekly && !trigger.clock && !trigger.meal && !trigger.mealCurtailed
         return when (this) {
             OvertimeSixthDay ->
@@ -184,15 +188,25 @@ enum class PayRuleTemplate(
      * object but are not part of the condition.
      */
     fun trigger(hours: String, clock: String, dayKinds: List<PayDayKind>, carrying: PayTrigger): PayTrigger {
-        val kept = PayTrigger(bdrMin = carrying.bdrMin, bdrMax = carrying.bdrMax)
+        // The billing increment is carried too (the web's `modelFromBulkRow`
+        // keeps it on the trigger): editing a threshold used to drop it, and
+        // the rule then billed actual minutes.
+        val kept = PayTrigger(
+            bdrMin = carrying.bdrMin,
+            bdrMax = carrying.bdrMax,
+            incrementMinutes = carrying.incrementMinutes,
+        )
         val minutes = hoursToMinutes(hours)
         val time = clockToMinutes(clock)
         return when (this) {
             OvertimeSixthDay -> kept.copy(dayNumber = SIXTH, consecutive = true, afterMinutes = minutes)
             OvertimeSeventhDay -> kept.copy(dayNumber = SEVENTH, consecutive = true, afterMinutes = minutes)
             Overtime -> kept.copy(afterMinutes = minutes)
-            CameraOvertime ->
-                kept.copy(afterMinutes = minutes, camera = true, incrementMinutes = CAMERA_INCREMENT)
+            CameraOvertime -> kept.copy(
+                afterMinutes = minutes,
+                camera = true,
+                incrementMinutes = kept.incrementMinutes ?: CAMERA_INCREMENT,
+            )
             SixthDay -> kept.copy(dayNumber = SIXTH, consecutive = true)
             SeventhDay -> kept.copy(dayNumber = SEVENTH, consecutive = true)
             BankHoliday -> kept.copy(dayKinds = dayKinds)
@@ -204,9 +218,85 @@ enum class PayRuleTemplate(
         }
     }
 
+    /**
+     * The condition's field as the web's `defaultForm` fills it for a new rule
+     * or a switched type — 8 h overtime, 06:00 pre-dawn, a bank holiday.
+     *
+     * Blank would build a zero threshold, and an overtime "after 0 hours"
+     * pays every hour worked.
+     */
+    val defaultText: String
+        get() = when (this) {
+            OvertimeSixthDay, OvertimeSeventhDay -> "0"
+            Overtime -> "8"
+            CameraOvertime -> "11"
+            PreDawn -> "06:00"
+            NightWorkEarlyCall -> "05:00"
+            NightWork -> "22:00"
+            BrokenTurnaround -> "10"
+            MealPenalty -> "6"
+            SixthDay, SeventhDay, BankHoliday, MealCurtailed -> ""
+        }
+
+    /** The day kinds a new rule of this type starts with — a bank holiday, for that template. */
+    val defaultDayKinds: List<PayDayKind>
+        get() = if (this == BankHoliday) listOf(PayDayKind.BankHoliday) else emptyList()
+
+    /**
+     * This template's condition at its defaults, carrying [carrying]'s gates
+     * (increment, BDR) across — what a new rule or a type switch starts from.
+     */
+    fun defaultTrigger(carrying: PayTrigger = PayTrigger()): PayTrigger =
+        conditionFrom(defaultText, defaultDayKinds, carrying)
+
+    /** The condition built from the one text field this template shows. */
+    fun conditionFrom(text: String, dayKinds: List<PayDayKind>, carrying: PayTrigger): PayTrigger = when (field) {
+        PayRuleField.Clock -> trigger(hours = "", clock = text, dayKinds = dayKinds, carrying = carrying)
+        else -> trigger(hours = text, clock = "", dayKinds = dayKinds, carrying = carrying)
+    }
+
+    /** The text the condition field shows for [trigger] — hours, a clock time, or nothing. */
+    fun conditionText(trigger: PayTrigger): String = when (field) {
+        PayRuleField.Hours -> hoursFrom(trigger)
+        PayRuleField.Clock -> clockFrom(trigger)
+        PayRuleField.DayKinds, PayRuleField.None -> ""
+    }
+
+    /**
+     * Whether [text] still describes [trigger] — the field is left alone while
+     * it does, so "5." and "06:0" survive the keystroke that typed them.
+     */
+    fun textDescribes(text: String, trigger: PayTrigger): Boolean = when (field) {
+        PayRuleField.Hours -> hoursToMinutes(text) == (fieldMinutes(trigger) ?: 0)
+        PayRuleField.Clock -> clockToMinutes(text) == (fieldMinutes(trigger) ?: 0)
+        PayRuleField.DayKinds, PayRuleField.None -> true
+    }
+
+    /** The one stored number this template's field edits. */
+    private fun fieldMinutes(trigger: PayTrigger): Int? = when (this) {
+        BrokenTurnaround -> trigger.lessMinutes
+        PreDawn, NightWorkEarlyCall -> trigger.beforeMinutes
+        else -> trigger.afterMinutes
+    }
+
+    /**
+     * Why the typed condition cannot be saved, or null. A clock must read as
+     * `HH:MM` and hours as a number: both used to fall back to zero, and a
+     * half-typed "06:0" saved a midnight premium.
+     */
+    fun conditionProblem(text: String): String? = when (field) {
+        PayRuleField.Hours ->
+            str(S.desktop_hub_pay_rule_hours_invalid).takeIf { text.trim().toDoubleOrNull()?.let { it < 0 } != false }
+        PayRuleField.Clock -> str(S.desktop_hub_pay_rule_time_invalid).takeIf { !CLOCK.matches(text.trim()) }
+        PayRuleField.DayKinds, PayRuleField.None -> null
+    }
+
     companion object {
         private const val SIXTH = 6
         private const val SEVENTH = 7
+
+        /** `H:MM` or `HH:MM`, 00:00–24:00. */
+        private val CLOCK = Regex("^([01]?\\d|2[0-3]):[0-5]\\d$|^24:00$")
 
         /**
          * Which template a stored condition came from, or null when none fits.

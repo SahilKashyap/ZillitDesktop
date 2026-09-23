@@ -7,10 +7,10 @@ import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankAccounts
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.Company
+import com.zillit.desktop.feature.accounthub.domain.LocalIds
 import com.zillit.desktop.feature.accounthub.domain.PayRule
 import com.zillit.desktop.feature.accounthub.domain.PayRuleKind
 import com.zillit.desktop.feature.accounthub.domain.PayRuleTemplate
-import com.zillit.desktop.feature.accounthub.domain.PayTrigger
 import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -36,6 +36,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
             is AccountHubEvent.UpdateCompanyDraft -> vm.update {
                 copy(setup = setup.copy(companyDraft = event.company))
             }
+            is AccountHubEvent.EditTaxCreditDraft -> vm.update { copy(setup = setup.copy(taxCreditDraft = event.text)) }
             AccountHubEvent.DismissCompanyDraft -> vm.update {
                 copy(setup = setup.copy(companyDraft = null, companyDraftFromBank = false))
             }
@@ -54,10 +55,18 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
             }
             is AccountHubEvent.SearchCurrencies -> vm.update { copy(setup = setup.copy(currencySearch = event.term)) }
             is AccountHubEvent.EditTagDraft -> vm.update { copy(setup = setup.copy(tagDraft = event.text)) }
+            is AccountHubEvent.SetTaxCountry -> vm.update {
+                val countries = setup.taxCountries
+                val next = if (event.chosen) countries + event.code else countries - event.code
+                copy(setup = setup.copy(taxCountries = next))
+            }
             AccountHubEvent.CommitTagDraft -> commitTags()
             is AccountHubEvent.ComposePayRule -> composePayRule(event.kind, event.index)
             is AccountHubEvent.EditPayRule -> vm.update {
-                copy(setup = setup.copy(ruleEditor = setup.ruleEditor?.copy(rule = event.rule)))
+                copy(setup = setup.copy(ruleEditor = setup.ruleEditor?.copy(rule = event.rule)?.synced()))
+            }
+            is AccountHubEvent.EditPayRuleCondition -> vm.update {
+                copy(setup = setup.copy(ruleEditor = setup.ruleEditor?.withConditionText(event.text)))
             }
             AccountHubEvent.CommitPayRule -> commitPayRule()
             AccountHubEvent.DismissPayRule -> vm.update { copy(setup = setup.copy(ruleEditor = null)) }
@@ -85,11 +94,23 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
      */
     private fun editCompany(company: Company?, fromBank: Boolean) {
         val setup = vm.setupState.setup
-        val draft = company?.copy(bankIds = Companies.linkedBankIds(company, setup.banks))
-            ?: Company(id = vm.newLocalId("co"))
+        // A company saved before `country_code` was tracked gets it from the
+        // country list by name (the web's `openEdit` hydration), so its UK
+        // fields show and the next save stores the code.
+        val backfilled = company?.takeIf { it.countryCode.isBlank() && it.country.isNotBlank() }?.let { legacy ->
+            vm.setupState.vendors.countries.firstOrNull { it.name.equals(legacy.country.trim(), ignoreCase = true) }
+                ?.let { legacy.copy(countryCode = it.code) }
+        } ?: company
+        // A new company's id is fresh, never a per-session counter: "co-1"
+        // minted again in a later session matched the company an earlier one
+        // had saved as "co-1", and Done then wrote the new one over it. The web
+        // mints `co-<time>-<n>` for the same reason.
+        val draft = backfilled?.copy(bankIds = Companies.linkedBankIds(backfilled, setup.banks))
+            ?: Company(id = LocalIds.next("co", (setup.companies.saved + setup.companies.edited).map { it.id }))
         vm.update {
             copy(
                 setup = this.setup.copy(
+                    taxCreditDraft = "",
                     companyDraft = draft,
                     companyDraftFromBank = fromBank,
                     companyDraftSession = this.setup.companyDraftSession + 1,
@@ -110,7 +131,12 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
      */
     private fun commitCompanyDraft() {
         val setup = vm.setupState.setup
-        val draft = setup.companyDraft ?: return
+        val typed = setup.companyDraft ?: return
+        // A regime typed and not yet entered is kept, as the web's blur keeps it.
+        val draft = typed.copy(taxCredits = Companies.withTypedCredits(typed.taxCredits, setup.taxCreditDraft))
+        if (setup.taxCreditDraft.isNotBlank()) {
+            vm.update { copy(setup = this.setup.copy(companyDraft = draft, taxCreditDraft = "")) }
+        }
         val existing = setup.companies.edited
         val isNew = existing.none { it.id == draft.id }
         // A brand-new draft with no name is the same as cancel.
@@ -119,7 +145,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
             return
         }
         Companies.problem(draft)?.let { return vm.sendSideEffect(AccountHubEffect.Failed(it)) }
-        if (!vm.mayEdit()) return
+        if (!vm.mayEdit() || !companiesLoaded()) return
         val merged = if (isNew) existing + draft else existing.map { if (it.id == draft.id) draft else it }
         val next = Companies.linking(merged, draft.id, draft.bankIds)
         val fromBank = setup.companyDraftFromBank
@@ -150,7 +176,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
      */
     private fun removeCompany(id: String) {
         val setup = vm.setupState.setup
-        if (!vm.mayEdit()) return
+        if (!vm.mayEdit() || !companiesLoaded()) return
         val next = setup.companies.edited.filterNot { it.id == id }
         saveCompanies(next, notice = str(S.desktop_company_removed), shownFirst = false) {
             copy(
@@ -160,6 +186,17 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
                 ),
             )
         }
+    }
+
+    /**
+     * The companies PATCH replaces the whole list, so it is refused until the
+     * list has been read: from a list that failed to load, adding one company
+     * sent a list of one and deleted all the others.
+     */
+    private fun companiesLoaded(): Boolean {
+        if (vm.setupState.setup.slices.isLoaded(SetupSection.Companies)) return true
+        vm.fail(str(S.desktop_hub_setup_section_not_loaded))
+        return false
     }
 
     /**
@@ -205,7 +242,9 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         val host = setup.companyDraft?.takeIf { draft ->
             fromCompany && setup.companies.saved.any { it.id == draft.id }
         }
-        val holder = host ?: setup.companies.edited.singleOrNull()
+        // Saved companies only: one still being created has a client-side id
+        // that must never become a bank's `entity_id`.
+        val holder = host ?: setup.companies.saved.singleOrNull()
         val draft = account ?: BankAccount(
             id = "",
             // A production with one company banks with it; pre-filled so the
@@ -231,7 +270,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         val state = vm.setupState
         val draft = state.setup.bankDraft ?: return
         if (!vm.mayEdit()) return
-        val companies = state.setup.companies.edited
+        val companies = state.setup.companies.saved
         val problem = BankAccounts.validationError(
             draft = draft,
             banks = state.setup.banks,
@@ -284,12 +323,23 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
     private fun Company.linkedTo(saved: BankAccount, created: Boolean): Company =
         if (created && saved.id.isNotBlank() && saved.id !in bankIds) copy(bankIds = bankIds + saved.id) else this
 
+    /** One DELETE per confirm: a second press while the first is in flight is ignored. */
     private fun deleteBank(id: String) {
-        if (!vm.mayEdit()) return
+        if (!vm.mayEdit() || vm.setupState.setup.bankDeleting) return
+        vm.update { copy(setup = setup.copy(bankDeleting = true)) }
         vm.runResult({ vm.repo.deleteBankAccount(id) }, {
-            vm.update { copy(setup = setup.copy(removal = null), notice = str(S.desktop_bank_account_removed)) }
+            vm.update {
+                copy(
+                    setup = setup.copy(removal = null, bankDeleting = false),
+                    notice = str(S.desktop_bank_account_removed),
+                )
+            }
             vm.loadBanks()
-        }, vm::report)
+        }, { error ->
+            // The confirm stays open for a retry, as the web's does.
+            vm.update { copy(setup = setup.copy(bankDeleting = false)) }
+            vm.report(error)
+        })
     }
 
     /** Unmasks one card; re-masks after five seconds, as the web's card does. */
@@ -318,31 +368,30 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
     // -- pay rules ------------------------------------------------------------
 
     private fun composePayRule(kind: PayRuleKind, index: Int?) {
-        val rules = vm.setupState.setup.nonUnionPay.edited.rulesFor(kind)
-        val rule = index?.let { rules.getOrNull(it) } ?: newRule(kind, rules.size)
-        vm.update { copy(setup = setup.copy(ruleEditor = PayRuleEditor(kind, index, rule))) }
+        val pay = vm.setupState.setup.nonUnionPay.edited
+        val rules = pay.rulesFor(kind)
+        val taken = PayRuleKind.entries.flatMap { list -> pay.rulesFor(list).map { it.id } }
+        val rule = index?.let { rules.getOrNull(it) } ?: newRule(kind, taken)
+        vm.update { copy(setup = setup.copy(ruleEditor = PayRuleEditor.open(kind, index, rule))) }
     }
 
     /**
-     * A new rule starts on its list's usual condition and is *not* an
-     * enhancement: the web's rules editor starts "Add on top" unticked, and
-     * the flag is what decides base × a against base × (1 + a) — a default of
-     * true made a 1.5× overtime bill 2.5× on the web once.
+     * A new rule starts on its list's usual condition *at the web's default*
+     * (`defaultForm`: 8 h, 06:00, a bank holiday — never zero, since overtime
+     * "after 0 hours" pays every hour) and is *not* an enhancement: the web's
+     * rules editor starts "Add on top" unticked, and the flag is what decides
+     * base × a against base × (1 + a) — a default of true made a 1.5×
+     * overtime bill 2.5× on the web once. Its id is fresh, never positional.
      */
-    private fun newRule(kind: PayRuleKind, at: Int): PayRule {
+    private fun newRule(kind: PayRuleKind, taken: List<String>): PayRule {
         val template = PayRuleTemplate.defaultFor(kind)
         return PayRule(
-            id = "${kind.wire}-new-$at",
+            id = LocalIds.next(kind.wire, taken),
             label = template.label,
             rateType = template.defaultRateType,
             rateAmount = template.defaultRateAmount,
             basis = template.defaultBasis,
-            triggers = listOf(template.trigger(
-                hours = "",
-                clock = "",
-                dayKinds = emptyList(),
-                carrying = PayTrigger(),
-            )),
+            triggers = listOf(template.defaultTrigger()),
             isEnhancement = false,
         )
     }
@@ -352,6 +401,8 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         val rule = editor.rule
         val problem = when {
             rule.label.isBlank() -> str(S.desktop_email_rule_name_required)
+            editor.editsCondition && editor.template.conditionProblem(editor.conditionText) != null ->
+                editor.template.conditionProblem(editor.conditionText)
             rule.rateAmount.trim().replace(",",
                 "").toDoubleOrNull() == null -> str(S.desktop_hub_give_the_rule_an_amount)
             rule.capped && rule.capAmount.trim().replace(",", "").toDoubleOrNull() == null ->
@@ -419,13 +470,12 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
             vm.sendSideEffect(AccountHubEffect.Failed(message))
             return
         }
-        vm.runResult({ vm.repo.updatePayrollAccounts(listOf(PayrollAccountRow(id = id, delete = true))) }, { settings ->
-            vm.update {
-                copy(
-                    setup = setup.copy(payrollSettings = setup.payrollSettings.committed(settings), removal = null),
-                    notice = str(S.desktop_payroll_account_removed),
-                )
-            }
+        vm.runResult({ vm.repo.updatePayrollAccounts(listOf(PayrollAccountRow(id = id, delete = true))) }, {
+            vm.update { copy(setup = setup.copy(removal = null), notice = str(S.desktop_payroll_account_removed)) }
+            // Only the codes are re-read (the web's PayrollAccountsBody `load`):
+            // taking the whole echo as the settings threw away the approvers
+            // and pay period the modal had unsaved.
+            vm.setupModalActions.reloadPayrollAccounts()
             vm.chart.load()
         }, { error ->
             vm.update { copy(setup = setup.copy(removal = null)) }

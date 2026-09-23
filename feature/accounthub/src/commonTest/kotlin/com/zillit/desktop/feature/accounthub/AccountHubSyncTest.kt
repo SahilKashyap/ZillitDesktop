@@ -57,9 +57,11 @@ class AccountHubSyncTest {
 
     /** Setup has no event of its own on this wire. */
     @Test
-    fun `only the three areas the wire announces are followed`() {
+    fun `only the areas the wire announces are followed`() {
         assertEquals(
-            setOf(HubArea.ChartOfAccounts, HubArea.Vendors, HubArea.Approvers),
+            // Production Setup joined with `production_setup:updated` — the web
+            // re-pulls every setup slice on it.
+            setOf(HubArea.ChartOfAccounts, HubArea.Vendors, HubArea.Approvers, HubArea.ProductionSetup),
             HUB_REFRESH_BY_EVENT.values.toSet(),
         )
     }

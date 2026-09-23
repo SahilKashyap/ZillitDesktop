@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -48,6 +49,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -59,16 +61,18 @@ import com.zillit.desktop.feature.accounthub.domain.HubUsers
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
-import com.zillit.desktop.feature.accounthub.ui.HubPage
 import com.zillit.desktop.feature.accounthub.ui.PeriodCloseTab
 import com.zillit.desktop.feature.accounthub.ui.components.Chip
 import com.zillit.desktop.feature.accounthub.ui.components.DateField
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.HubConfirmDialog
+import com.zillit.desktop.feature.accounthub.ui.components.HubSideRail
+import com.zillit.desktop.feature.accounthub.ui.components.RailRow
+import com.zillit.desktop.feature.accounthub.ui.components.RailSection
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.Pill
 import com.zillit.desktop.feature.accounthub.ui.components.SubCard
-import com.zillit.desktop.feature.accounthub.ui.components.TipBanner
+import com.zillit.desktop.feature.accounthub.domain.CommitmentWeek
 
 /**
  * Closing a period — the web's `PeriodCloseModule`, three tabs down a rail.
@@ -89,72 +93,49 @@ fun PeriodClosePage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit
     val close = state.periodClose
     Row(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
         Rail(close.tab, onEvent)
-        Box(Modifier.width(1.dp).fillMaxHeight().background(ZillitTheme.colors.border))
         when (close.tab) {
             PeriodCloseTab.Close -> CloseForm(state, onEvent, nowMillis)
-            PeriodCloseTab.CashClose -> CashCloseDashboardView(state, onEvent)
+            PeriodCloseTab.CashClose -> CashCloseDashboardView(state)
             PeriodCloseTab.Publish -> PublishView(state, onEvent)
         }
     }
     ConfirmDialog(state, onEvent)
 }
 
+/**
+ * The web's own rail for this page (`PeriodCloseModule.jsx`): it renders
+ * full-bleed, without the hub's sidebar, so the header card's back chip is the
+ * way back to the hub — the web's `/film-tools/account-hub`, not the tools
+ * grid the console's own arrow goes to.
+ */
 @Composable
 private fun Rail(active: PeriodCloseTab, onEvent: (AccountHubEvent) -> Unit) {
-    val colors = ZillitTheme.colors
-    Column(
-        modifier = Modifier
-            .width(RAIL_WIDTH)
-            .fillMaxHeight()
-            .background(colors.surfaceSunken)
-            .padding(ZillitTheme.spacing.md),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        ZillitIconButton(
-            icon = ZillitIcons.ArrowLeft,
-            contentDescription = str(S.desktop_hub_back_to_account_hub),
-            onClick = { onEvent(AccountHubEvent.Back) },
-        )
-        MonoLabel(
-            str(S.desktop_period_close),
-            modifier = Modifier.padding(
-                start = ZillitTheme.spacing.sm,
-                top = ZillitTheme.spacing.sm,
-                bottom = ZillitTheme.spacing.xs,
+    HubSideRail(
+        title = str(S.desktop_period_close),
+        backLabel = str(S.desktop_hub_back_to_account_hub),
+        onBack = { onEvent(AccountHubEvent.BackToHub) },
+        sections = listOf(
+            RailSection(
+                title = str(S.close),
+                rows = PeriodCloseTab.entries.map { tab ->
+                    RailRow(
+                        id = tab.name,
+                        label = tab.label,
+                        icon = when (tab) {
+                            PeriodCloseTab.Close -> AhIcons.Lock
+                            PeriodCloseTab.CashClose -> AhIcons.Bank
+                            PeriodCloseTab.Publish -> AhIcons.Send
+                        },
+                        active = tab == active,
+                    )
+                },
             ),
-        )
-        PeriodCloseTab.entries.forEach { tab ->
-            val on = tab == active
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(ZillitTheme.shapes.medium)
-                    .background(if (on) colors.accentSoft else Color.Transparent)
-                    .clickable { onEvent(AccountHubEvent.SwitchPeriodCloseTab(tab)) }
-                    .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitIcon(
-                    icon = when (tab) {
-                        PeriodCloseTab.Close -> ZillitIcons.Shield
-                        PeriodCloseTab.CashClose -> ZillitIcons.Wallet
-                        PeriodCloseTab.Publish -> ZillitIcons.Send
-                    },
-                    tint = if (on) colors.accentText else colors.textMuted,
-                    size = 16.dp,
-                )
-                ZillitText(
-                    text = tab.label,
-                    style =
-                        ZillitTheme.typography.bodyMedium.copy(
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-                        ),
-                    color = if (on) colors.accentText else colors.textSecondary,
-                )
-            }
-        }
-    }
+        ),
+        onSelect = { id ->
+            PeriodCloseTab.entries.firstOrNull { it.name == id }
+                ?.let { onEvent(AccountHubEvent.SwitchPeriodCloseTab(it)) }
+        },
+    )
 }
 
 // -- close form --------------------------------------------------------------------
@@ -165,7 +146,9 @@ private fun RowScope.CloseForm(state: AccountHubUiState, onEvent: (AccountHubEve
     val close = state.periodClose
     val lock = close.lock
     val colors = ZillitTheme.colors
-    val minDate = IsoDate.toEpochMillis(lock.lockedThrough)?.let { EpochDate.isoDate(it + DAY_MILLIS) }
+    // The day after the lock, read at noon UTC so a zone west of UTC does not
+    // name the lock day itself — which the server refuses.
+    val minDate = IsoDate.toEpochMillis(lock.lockedThrough)?.let { EpochDate.isoDate(it + DAY_MILLIS + DAY_MILLIS / 2) }
     val target = IsoDate.toEpochMillis(close.closeDateText)
     val afterLock = target != null && (IsoDate.toEpochMillis(lock.lockedThrough)?.let { target > it } ?: true)
     val canSubmit = state.viewer.canActAsAccountant && afterLock && !close.closing && !close.loading
@@ -307,10 +290,16 @@ private fun ConfirmDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
     HubConfirmDialog(
         visible = pending != null,
         title = str(S.desktop_close_this_period),
-        message = "Every transaction dated on or before " +
-            "${EpochDate.date(pending).ifBlank { "that date" }} becomes read-only, in every module. " +
-            "There is no way to reopen it." + (if (close.lock.isClosed) " Currently closed through " +
-                "${close.lock.lockedThrough}." else ""),
+        // Both dates in words, and both read at noon UTC of their day: `as_of` is
+        // the chosen day's last UTC millisecond, which east of UTC formats as the
+        // next day — the dialog asked about 7 Sep for a 6 Sep close in India.
+        message = str(S.desktop_hub_close_confirm_message, dayInWords(pending?.let { it - it % DAY_MILLIS })) +
+            if (close.lock.isClosed) {
+                val lockDay = IsoDate.toEpochMillis(close.lock.lockedThrough)
+                " " + str(S.desktop_hub_currently_closed_through_x, dayInWords(lockDay))
+            } else {
+                ""
+            },
         confirmLabel = str(S.desktop_close_period),
         loading = close.closing,
         onConfirm = { onEvent(AccountHubEvent.ConfirmPeriodClose) },
@@ -322,7 +311,7 @@ private fun ConfirmDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -
 
 @Suppress("CyclomaticComplexMethod", "LongMethod") // The dashboard's panels, in the web's order.
 @Composable
-private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+private fun RowScope.CashCloseDashboardView(state: AccountHubUiState) {
     val cash = state.periodClose.cashClose
     val dash = cash.dashboard
     val loading = cash.loading
@@ -404,13 +393,6 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
             Panel(
                 title = str(S.desktop_weekly_close_checklist),
                 icon = ZillitIcons.Check,
-                right = { ZillitButton(
-                    text = str(S.desktop_reset_all),
-                    onClick = { onEvent(AccountHubEvent.ResetChecklist) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Reload,
-                ) },
                 padded = false,
             ) {
                 if (loading) repeat(HEAT_SKELETONS) {
@@ -419,8 +401,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                     )
                 }
                 // Every other panel here says so when it has nothing; without
-                // this one the card is a blank white band under a Reset All
-                // that resets nothing.
+                // this one the card is a blank white band.
                 if (!loading && dash.checklist.isEmpty()) {
                     ZillitText(
                         text = str(S.desktop_hub_no_checklist_for_this_week_yet),
@@ -432,21 +413,20 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                         ),
                     )
                 }
+                // Read-only, as the web's since 2026-09-04: a row is done when
+                // the close endpoint says so. The local ticks and Reset All it
+                // had moved "3 / 8" without saving anything.
                 dash.checklist.forEachIndexed { index, item ->
                     val isDone = item.label in cash.checked
                     if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(ZillitTheme.colors.border))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onEvent(AccountHubEvent.ToggleChecklistItem(item.label)) }
+                            .alpha(if (isDone) DONE_ALPHA else 1f)
                             .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                     ) {
-                        ZillitCheckbox(
-                            checked = isDone,
-                            onCheckedChange = { onEvent(AccountHubEvent.ToggleChecklistItem(item.label)) },
-                        )
                         Column(modifier = Modifier.weight(1f)) {
                             ZillitText(
                                 text = item.label,
@@ -493,13 +473,15 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                         ) {
-                            Pill(
-                                when (row.status) {
-                                    "green" -> "✓"
-                                    "amber" -> "⚠"
-                                    else -> "✗"
+                            // Icons, as the web draws them now, not the ✓ ⚠ ✗ text marks.
+                            ZillitIcon(
+                                icon = when (row.status) {
+                                    "green" -> AhIcons.CheckCircle
+                                    "amber" -> AhIcons.AlertTriangle
+                                    else -> AhIcons.XCircle
                                 },
-                                tone = toneOf(row.status),
+                                tint = colorOf(row.status),
+                                size = 16.dp,
                             )
                             ZillitText(
                                 text = row.supplier,
@@ -541,7 +523,7 @@ private fun RowScope.CashCloseDashboardView(state: AccountHubUiState, onEvent: (
                                 modifier = Modifier.fillMaxWidth().height(8.dp),
                                 fillColor = colorOf(week.color),
                             )
-                            if (week.detail.isNotBlank()) FieldHint(week.detail)
+                            if (week.detail.isNotBlank() || week.peak || week.netflix) WeekNote(week)
                         }
                     }
                 }
@@ -607,8 +589,10 @@ private fun Waterfall(dash: CashCloseDashboard) {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(bar.height.coerceIn(2, CHART_HEIGHT_PX).dp)
+                        // The web lifts a full-height bar by `marginBottom`; padding
+                        // inside the height shortened it by that much instead.
                         .padding(bottom = bar.marginBottom.coerceAtLeast(0).dp)
+                        .height(bar.height.coerceIn(2, CHART_HEIGHT_PX).dp)
                         .clip(ZillitTheme.shapes.small)
                         .background(
                             when (bar.type) {
@@ -1032,7 +1016,6 @@ private fun PackageCard(
 
 private fun plural(count: Int, noun: String) = "$count $noun${if (count == 1) "" else "s"}"
 
-private val RAIL_WIDTH = 220.dp
 private val FORM_WIDTH = 560.dp
 private val PUBLISH_WIDTH = 720.dp
 private val HERO_ICON = 40.dp
@@ -1050,3 +1033,23 @@ private const val SHORT_HEX = 3
 private const val FULL_HEX = 6
 private const val HEX_RADIX = 16
 private const val ALPHA_MASK = 0xFF000000L
+private const val DONE_ALPHA = 0.7f
+
+/** A UTC day (its midnight in millis) in words, read at noon so every zone within ±12h names the same day. */
+private fun dayInWords(utcMidnight: Long?): String =
+    utcMidnight?.let { EpochDate.date(it + DAY_MILLIS / 2) }.orEmpty()
+
+/** The week's note, then the web's two bold flags after it. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WeekNote(week: CommitmentWeek) {
+    val colors = ZillitTheme.colors
+    val flag = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        if (week.detail.isNotBlank()) FieldHint(week.detail)
+        if (week.peak) ZillitText(text = str(S.desktop_hub_peak_week), style = flag, color = colors.danger)
+        if (week.netflix) {
+            ZillitText(text = str(S.desktop_hub_netflix_advance_due), style = flag, color = colors.success)
+        }
+    }
+}

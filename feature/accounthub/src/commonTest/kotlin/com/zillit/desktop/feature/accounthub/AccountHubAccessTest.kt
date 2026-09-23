@@ -299,10 +299,31 @@ class AccountHubAccessTest {
         assertEquals(listOf("cost-report", "period-close"), reports.items.map { it.id })
     }
 
+    /**
+     * The surfaces the web draws without the console's sidebar: the bare
+     * reports, and — for an accountant — the two modules with a sidebar of
+     * their own. Everything else keeps the sidebar.
+     */
+    @Test
+    fun `reports and self-navigating modules are full-bleed`() {
+        val accountant = AccountHubViewer.from(permissions(), "u1", isAccountant = true)
+        val crew = AccountHubViewer.from(permissions(), "u2", isAccountant = false)
+
+        assertTrue(HubNavigation.isFullBleed(HubArea.TrialBalance, null, accountant))
+        assertTrue(HubNavigation.isFullBleed(HubArea.PeriodClose, null, accountant))
+        assertFalse(HubNavigation.isFullBleed(HubArea.ProductionSetup, null, accountant))
+        assertTrue(HubNavigation.isFullBleed(null, "/film-tools/account-hub/cost-report", accountant))
+        assertTrue(HubNavigation.isFullBleed(HubArea.Vendors, "/film-tools/invoices/register", accountant))
+        assertFalse(HubNavigation.isFullBleed(HubArea.Vendors, "/film-tools/purchase-order", accountant))
+        // A cardholder's Card Expenses has no sidebar to go back with.
+        assertFalse(HubNavigation.isFullBleed(null, "/film-tools/card-expenses", crew))
+    }
+
     /** An empty section is dropped rather than rendered as a heading with nothing under it. */
     @Test
     fun `a section whose every row is hidden does not render`() {
-        val viewer = AccountHubViewer.from(permissions(), "u1", isAccountant = true)
+        // An admin outside accounts: the per-tool gate still applies to them.
+        val viewer = AccountHubViewer.from(permissions(isAdmin = true), "u1", isAccountant = false)
 
         val titles = HubNavigation.visibleTo(viewer).map { it.title }
 
@@ -311,6 +332,24 @@ class AccountHubAccessTest {
         assertFalse(titles.contains("Payroll Management"))
         assertTrue(titles.contains("Transactions"))
         assertTrue(titles.contains("Setup"))
+    }
+
+    /**
+     * An accountant's rows ride on the hub's own right alone.
+     *
+     * The web gates every module entered through the hub on `account_hub_tool`
+     * (`useAccountHubViewGate`); requiring each spend tool's right as well hid
+     * Purchase Orders, the expenses and Payroll — and the PO landing — on any
+     * production whose tool list omits them.
+     */
+    @Test
+    fun `an accountant sees the spend and payroll rows without their own rights`() {
+        val viewer = AccountHubViewer.from(permissions(), "u1", isAccountant = true)
+
+        val ids = HubNavigation.visibleTo(viewer).flatMap { it.items }.map { it.id }
+
+        assertTrue(ids.containsAll(listOf("purchase-orders", "card-expenses", "cash-expenses", "payroll")))
+        assertEquals("purchase-orders", HubNavigation.purchaseOrdersRow(viewer)?.id)
     }
 
     /**

@@ -25,7 +25,6 @@ import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
 import com.zillit.desktop.feature.accounthub.domain.TrackingNode
 import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
-import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.NonUnionPay
 import com.zillit.desktop.feature.accounthub.domain.PayRule
@@ -65,7 +64,6 @@ import com.zillit.desktop.feature.accounthub.domain.ProductionSchedule
 import com.zillit.desktop.feature.accounthub.domain.ProjectBudget
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
 import com.zillit.desktop.feature.accounthub.domain.SchedulePhase
-import com.zillit.desktop.feature.accounthub.domain.SortCode
 import com.zillit.desktop.feature.accounthub.domain.TaxType
 import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.domain.Vendor
@@ -133,6 +131,9 @@ class AccountHubRepositoryImpl(
     /** The union agreements the breakdown imports from — see [HubAgreementSource]. */
     private val agreements = HubAgreementSource(apiClient, config)
 
+    /** The PO, invoices and payroll settings documents — see [HubSettingsSource]. */
+    private val settings = HubSettingsSource(apiClient, config)
+
     /** The chart of accounts — see [HubChartSource]. */
     private val chartSource = HubChartSource(apiClient, config)
 
@@ -142,11 +143,8 @@ class AccountHubRepositoryImpl(
     /** The vendor form's country list and postcode lookup — see [VendorPresetSource]. */
     private val presets = VendorPresetSource(apiClient, config)
 
-    /** The invoices service, whose settings this is the only screen to write. */
+    /** The invoices service — its cash-and-close analytics. */
     private val invoicesBase = "${config.apiV2(ZillitService.Invoices).trimEnd('/')}/invoices"
-
-    /** The purchase-order service, which owns its own settings document. */
-    private val poBase = "${config.baseUrl(ZillitService.PurchaseOrder)}/api/v2/purchase-orders"
 
 
     /** Shared reference data, on the core service. */
@@ -166,11 +164,17 @@ class AccountHubRepositoryImpl(
             element = CompanyDto.serializer(),
         ) { it.toDomain() }
 
+    /**
+     * The production's own banks, as the web lists them (`ProductionBanksContext`):
+     * `entity_type=production`, one 200-row page. Unfiltered, the table's vendor
+     * and crew banks came back too and were shown and edited as production ones.
+     */
     override suspend fun bankAccounts(): ZillitResult<List<BankAccount>> = apiClient.request(
         verb = HttpVerb.Get,
         url = "$hubBase/bank-accounts",
         serializer = ListSerializer(BankAccountDto.serializer()),
         module = RequestModule.ProjectUser,
+        queryParameters = mapOf("entity_type" to BankAccount.PRODUCTION, "per_page" to BANKS_PAGE),
     ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     override suspend fun createBankAccount(account: BankAccount): ZillitResult<BankAccount> =
@@ -225,7 +229,7 @@ class AccountHubRepositoryImpl(
         // Rates pinned before sending: a null `exr` is dropped by the service
         // *without* an error — see CurrencySettings.forWire.
         val outgoing = settings.forWire()
-        return apiClient.request(
+        return checked(
             verb = HttpVerb.Patch,
             url = "$settingsBase/project-currencies",
             serializer = ValueDto.serializer(JsonElement.serializer()),
@@ -280,7 +284,7 @@ class AccountHubRepositoryImpl(
     ).map { it.value?.toDomain() ?: NonUnionPay() }
 
     override suspend fun saveNonUnionPay(value: NonUnionPay): ZillitResult<NonUnionPay> =
-        apiClient.request(
+        checked(
             verb = HttpVerb.Patch,
             url = "$settingsBase/non-union-paybreakdown",
             serializer = ValueDto.serializer(NonUnionPayDto.serializer()),
@@ -324,134 +328,21 @@ class AccountHubRepositoryImpl(
         mode: CoaImportMode,
     ) = reports.commitBudgetImport(upload, parsed, meta, mode)
 
-    override suspend fun invoicesSetup(): ZillitResult<InvoicesSetup> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$invoicesBase/settings",
-        serializer = ValueDto.serializer(InvoicesSetupDto.serializer()),
-        module = RequestModule.ProjectUser,
-    ).map { it.value?.toDomain() ?: InvoicesSetup() }
+    // -- the three modal settings documents — see [HubSettingsSource] ----------
 
-    override suspend fun saveInvoicesSetup(setup: InvoicesSetup): ZillitResult<InvoicesSetup> =
-        apiClient.request(
-            verb = HttpVerb.Patch,
-            url = "$invoicesBase/settings",
-            serializer = ValueDto.serializer(InvoicesSetupDto.serializer()),
-            module = RequestModule.ProjectUser,
-            body = buildJsonObject {
-                put("team_members", buildJsonArray { setup.teamMembers.forEach { add(it.toJson()) } })
-                // The enabled keys only — see the domain's note on why this is
-                // a list rather than a map of booleans.
-                put("alerts", buildJsonArray { setup.alerts.forEach { add(JsonPrimitive(it.wire)) } })
-                put(
-                    "run_authorization",
-                    buildJsonArray {
-                        setup.renumbered().runAuthorisation.forEach { tier ->
-                            add(
-                                buildJsonObject {
-                                    put("tier", JsonPrimitive(tier.tier))
-                                    put("user", buildJsonArray { tier.userIds.forEach { add(JsonPrimitive(it)) } })
-                                },
-                            )
-                        }
-                    },
-                )
-            },
-        ).map { it.value?.toDomain() ?: setup }
+    override suspend fun invoicesSetup() = settings.invoicesSetup()
 
-    override suspend fun purchaseOrderSetup(): ZillitResult<PurchaseOrderSetup> = apiClient.request(
-        // The purchase-order service's own route, not an account-hub one: the
-        // settings belong to that module even though this is the only screen
-        // on this client that edits them.
-        verb = HttpVerb.Get,
-        url = "$poBase/settings",
-        serializer = ValueDto.serializer(PurchaseOrderSetupDto.serializer()),
-        module = RequestModule.ProjectUser,
-    ).map { it.value?.toDomain() ?: PurchaseOrderSetup() }
+    override suspend fun saveInvoicesSetup(setup: InvoicesSetup) = settings.saveInvoicesSetup(setup)
 
-    override suspend fun savePurchaseOrderSetup(
-        setup: PurchaseOrderSetup,
-    ): ZillitResult<PurchaseOrderSetup> = apiClient.request(
-        verb = HttpVerb.Patch,
-        url = "$poBase/settings",
-        serializer = ValueDto.serializer(PurchaseOrderSetupDto.serializer()),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("description_format", JsonPrimitive(setup.descriptionFormat.wire))
-            put("auto_split_rentals", JsonPrimitive(setup.autoSplitRentals))
-            put("default_split_type", JsonPrimitive(setup.splitType.wire))
-            put("po_number_prefix", JsonPrimitive(setup.numberPrefix))
-            put("terms_attachment", setup.termsDocument?.toJson() ?: JsonNull)
-            // Null clears the rule — the web's `mapAssetFiltersToDb`, and what
-            // the server normalises an all-empty rule to anyway.
-            put("asset_filters", setup.assetFilters.toJson())
-        },
-    ).map { it.value?.toDomain() ?: setup }
+    override suspend fun purchaseOrderSetup() = settings.purchaseOrderSetup()
 
-    override suspend fun payrollSettings(): ZillitResult<PayrollSettings> = apiClient.request(
-        // Its own route off the hub base, not a project-settings slice: the
-        // row lives in `payroll_settings_metadata` and payroll-server reads it
-        // directly.
-        verb = HttpVerb.Get,
-        url = "$hubBase/payroll-settings",
-        serializer = ValueDto.serializer(PayrollSettingsDto.serializer()),
-        module = RequestModule.ProjectUser,
-    ).map { it.value?.toDomain() ?: PayrollSettings() }
+    override suspend fun savePurchaseOrderSetup(setup: PurchaseOrderSetup) = settings.savePurchaseOrderSetup(setup)
 
-    override suspend fun savePayrollSettings(
-        settings: PayrollSettings,
-    ): ZillitResult<PayrollSettings> = apiClient.request(
-        verb = HttpVerb.Patch,
-        url = "$hubBase/payroll-settings",
-        serializer = ValueDto.serializer(PayrollSettingsDto.serializer()),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("payroll_approvers", buildJsonArray { settings.approverIds.forEach { add(JsonPrimitive(it)) } })
-            // Dropped once locked — see the interface doc.
-            if (!settings.payPeriodLocked) {
-                put(
-                    "pay_period",
-                    buildJsonObject {
-                        put("start_day_of_week", JsonPrimitive(settings.payPeriodStartDay))
-                        put("end_day_of_week", JsonPrimitive(settings.payPeriodEndDay))
-                    },
-                )
-            }
-            put("journal_description_format", JsonPrimitive(settings.journalDescriptionFormat.wire))
-            put("journal_group_by_category", JsonPrimitive(settings.journalGroupByCategory))
-            // `payroll_accounts` is deliberately absent: the plain PATCH ignores
-            // it, and the codes go through `/custom-accounts` so they cannot
-            // drift from the chart.
-        },
-    ).map { it.value?.toDomain() ?: settings }
+    override suspend fun payrollSettings() = settings.payrollSettings()
 
-    override suspend fun updatePayrollAccounts(rows: List<PayrollAccountRow>): ZillitResult<PayrollSettings> =
-        apiClient.request(
-            verb = HttpVerb.Patch,
-            url = "$hubBase/payroll-settings/custom-accounts",
-            serializer = ValueDto.serializer(PayrollSettingsDto.serializer()),
-            module = RequestModule.ProjectUser,
-            body = buildJsonObject {
-                put(
-                    "rows",
-                    buildJsonArray {
-                        rows.forEach { row ->
-                            add(
-                                buildJsonObject {
-                                    row.id?.let { put("id", JsonPrimitive(it)) }
-                                    if (row.delete) {
-                                        put("status", JsonPrimitive("delete"))
-                                    } else {
-                                        put("code", JsonPrimitive(row.code.trim()))
-                                        put("name", JsonPrimitive(row.name.trim()))
-                                        put("line_type", JsonPrimitive(row.lineType.wire))
-                                    }
-                                },
-                            )
-                        }
-                    },
-                )
-            },
-        ).map { it.value?.toDomain() ?: PayrollSettings() }
+    override suspend fun savePayrollSettings(settings: PayrollSettings) = this.settings.savePayrollSettings(settings)
+
+    override suspend fun updatePayrollAccounts(rows: List<PayrollAccountRow>) = settings.updatePayrollAccounts(rows)
 
     // -- payroll groups -----------------------------------------------------
 
@@ -518,7 +409,7 @@ class AccountHubRepositoryImpl(
 
     override suspend fun saveAllowancesRentals(
         value: AllowancesRentals,
-    ): ZillitResult<AllowancesRentals> = apiClient.request(
+    ): ZillitResult<AllowancesRentals> = checked(
         verb = HttpVerb.Patch,
         url = "$settingsBase/allowances-rentals",
         serializer = ValueDto.serializer(AllowancesRentalsDto.serializer()),
@@ -537,7 +428,7 @@ class AccountHubRepositoryImpl(
     override suspend fun saveTaxTypes(taxTypes: List<TaxType>): ZillitResult<List<TaxType>> =
         patchSliceList(
             url = "$settingsBase/tax-types",
-            body = buildJsonArray { taxTypes.forEach { add(it.toJson()) } },
+            body = buildJsonArray { TaxType.forWire(taxTypes).forEach { add(it.toJson()) } },
             element = TaxTypeDto.serializer(),
         ) { it.toDomain() }
 
@@ -546,16 +437,16 @@ class AccountHubRepositoryImpl(
         url = "$settingsBase/asset-tags",
         serializer = valueList(String.serializer()),
         module = RequestModule.ProjectUser,
-    ).map { it.value.orEmpty().filter(String::isNotBlank) }
+    ).map { it.value.orEmpty().normalisedTags() }
 
     override suspend fun saveAssetTags(tags: List<String>): ZillitResult<List<String>> =
-        apiClient.request(
+        checked(
             verb = HttpVerb.Patch,
             url = "$settingsBase/asset-tags",
             serializer = valueList(String.serializer()),
             module = RequestModule.ProjectUser,
-            body = buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } },
-        ).map { it.value.orEmpty() }
+            body = buildJsonArray { tags.normalisedTags().forEach { add(JsonPrimitive(it)) } },
+        ).map { it.value.orEmpty().normalisedTags() }
 
     override suspend fun projectBudget(): ZillitResult<ProjectBudget> = apiClient.request(
         verb = HttpVerb.Get,
@@ -565,7 +456,7 @@ class AccountHubRepositoryImpl(
     ).map { it.value?.toDomain() ?: ProjectBudget() }
 
     override suspend fun saveProjectBudget(budget: ProjectBudget): ZillitResult<ProjectBudget> =
-        apiClient.request(
+        checked(
             verb = HttpVerb.Patch,
             url = "$settingsBase/project-budget",
             serializer = ValueDto.serializer(ProjectBudgetDto.serializer()),
@@ -590,7 +481,7 @@ class AccountHubRepositoryImpl(
      */
     override suspend fun savePayrollBureaus(
         bureaus: List<PayrollBureau>,
-    ): ZillitResult<List<PayrollBureau>> = apiClient.request(
+    ): ZillitResult<List<PayrollBureau>> = checked(
         verb = HttpVerb.Patch,
         url = "$settingsBase/payroll-bureau",
         serializer = ValueDto.serializer(JsonElement.serializer()),
@@ -622,7 +513,7 @@ class AccountHubRepositoryImpl(
      */
     override suspend fun saveDealConditions(
         conditions: List<DealCondition>,
-    ): ZillitResult<List<DealCondition>> = apiClient.request(
+    ): ZillitResult<List<DealCondition>> = checked(
         verb = HttpVerb.Patch,
         url = "$settingsBase/standard-deal-conditions",
         serializer = ValueDto.serializer(JsonElement.serializer()),
@@ -649,7 +540,7 @@ class AccountHubRepositoryImpl(
 
     override suspend fun saveProductionSchedule(
         schedule: ProductionSchedule,
-    ): ZillitResult<ProductionSchedule> = apiClient.request(
+    ): ZillitResult<ProductionSchedule> = checked(
         // POST, not PATCH. The one slice whose write verb differs, and the
         // server answers 405 rather than falling back.
         verb = HttpVerb.Post,
@@ -676,7 +567,7 @@ class AccountHubRepositoryImpl(
 
     override suspend fun savePayrollDefaults(
         defaults: PayrollDefaults,
-    ): ZillitResult<PayrollDefaults> = apiClient.request(
+    ): ZillitResult<PayrollDefaults> = checked(
         verb = HttpVerb.Patch,
         url = "$settingsBase/payroll-defaults",
         serializer = ValueDto.serializer(PayrollDefaultsDto.serializer()),
@@ -800,12 +691,37 @@ class AccountHubRepositoryImpl(
         module = RequestModule.ProjectUser,
     ).map { wrapper -> wrapper.value.orEmpty().mapNotNull(toDomain) }
 
+    /**
+     * A section write, refused on `status: 0` as the web's `handleSave` refuses
+     * anything but `status: 1` — `ApiClient.request` never looks at the status,
+     * so a refusal carrying data read as a save and re-snapshotted the section.
+     */
+    private suspend fun <T> checked(
+        verb: HttpVerb,
+        url: String,
+        serializer: KSerializer<T>,
+        module: RequestModule,
+        body: JsonElement,
+    ): ZillitResult<T> = apiClient.envelope(verb = verb, url = url, module = module, body = body).flatMap { envelope ->
+        val data = envelope.data
+        when {
+            envelope.status == REFUSED -> ZillitResult.Failure(
+                ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message),
+            )
+            data == null -> ZillitResult.Failure(ZillitError.Serialization("response had no data field"))
+            else -> runCatching { accountHubJson.decodeFromJsonElement(serializer, data) }.fold(
+                onSuccess = { ZillitResult.Success(it) },
+                onFailure = { ZillitResult.Failure(ZillitError.Serialization(it.message)) },
+            )
+        }
+    }
+
     private suspend fun <D, T> patchSliceList(
         url: String,
         body: JsonArray,
         element: KSerializer<D>,
         toDomain: (D) -> T?,
-    ): ZillitResult<List<T>> = apiClient.request(
+    ): ZillitResult<List<T>> = checked(
         verb = HttpVerb.Patch,
         url = url,
         serializer = valueList(element),
@@ -832,10 +748,11 @@ class AccountHubRepositoryImpl(
             put("entity_id", account.entityId?.let(::JsonPrimitive) ?: JsonNull)
             put("entity_type", JsonPrimitive(account.entityType))
             put("account_number", account.accountNumber.trim().orNull())
-            // Digits only. The stored form is canonical and the hyphens are a
-            // display convention; persisting the mask would make two accounts
-            // with the same sort code compare unequal.
-            put("sort_code", SortCode.digits(account.sortCode).orNull())
+            // As held: the field strips to digits as it is typed, and a stored
+            // value nobody touched goes back untouched — the web sends
+            // `form.sort_code.trim()`. Re-stripping on every save cut a legacy
+            // or non-UK code to six digits whenever any other field changed.
+            put("sort_code", account.sortCode.trim().orNull())
             put("swift_code", account.swiftCode.trim().orNull())
             put("iban_number", account.ibanNumber.trim().orNull())
             put("cheque_number", account.chequeNumber.trim().orNull())
@@ -852,11 +769,12 @@ class AccountHubRepositoryImpl(
                     }
                 } ?: JsonNull,
             )
-            // Serialised, as the web stores it; untitled rows never persist.
+            // An array, as the web sends it (`serializeAdditionalDetails`); null
+            // when there are none. Untitled rows never persist. The reader still
+            // takes the JSON-string form older clients stored.
             put(
                 "additional_details",
-                BankAccounts.persistable(account.additionalDetails).takeIf { it.isNotEmpty() }
-                    ?.let { JsonPrimitive(accountHubJson.encodeToString(JsonElement.serializer(), it.toJson("field"))) }
+                BankAccounts.persistable(account.additionalDetails).takeIf { it.isNotEmpty() }?.toJson("field")
                     ?: JsonNull,
             )
         },
@@ -962,7 +880,7 @@ private fun String.asAmountJson(): JsonElement =
  * caption, and the agreements row carries an explicit description. The web
  * sends both for the same reason.
  */
-private fun AgreementDocument.toJson(): JsonElement = buildJsonObject {
+internal fun AgreementDocument.toJson(): JsonElement = buildJsonObject {
     put("title", JsonPrimitive(title))
     put("description", JsonPrimitive(description))
     put("caption", JsonPrimitive(description))
@@ -973,20 +891,6 @@ private fun AgreementDocument.toJson(): JsonElement = buildJsonObject {
     put("content_type", JsonPrimitive(contentType))
     put("content_subtype", JsonPrimitive(contentSubtype))
     put("file_size", JsonPrimitive(fileSize))
-}
-
-/**
- * One accounts-payable team member.
- *
- * A blank posting limit is sent as null, not zero: zero is a real limit that
- * lets somebody post nothing, and "not set" is a different answer.
- */
-private fun InvoiceTeamMember.toJson(): JsonElement = buildJsonObject {
-    put("user_id", JsonPrimitive(userId))
-    put("posting_limit", postingLimit.asAmountJson())
-    put("run_access", JsonPrimitive(runAccess))
-    put("override_access", JsonPrimitive(overrideAccess))
-    put("is_senior", JsonPrimitive(isSenior))
 }
 
 /**
@@ -1083,6 +987,13 @@ internal fun VendorPhone.toJson(): JsonElement = buildJsonObject {
 
 }
 
+/**
+ * Tags as the web's `normalizeTags` keeps them, read and written alike:
+ * trimmed, upper-cased, no blanks, no repeats — "camera" and "CAMERA" are one tag.
+ */
+internal fun List<String>.normalisedTags(): List<String> =
+    map { it.trim().uppercase() }.filter { it.isNotEmpty() }.distinct()
+
 /** Blank optional text goes as null: this validator types its fields. */
 internal fun String.orNull(): JsonElement = if (isBlank()) JsonNull else JsonPrimitive(this)
 
@@ -1134,3 +1045,9 @@ internal fun List<com.zillit.desktop.feature.accounthub.domain.ApprovalTier>.toJ
 
 /** A refusal that still answers 200 — the envelope, not the transport, says no. */
 internal const val HTTP_OK = 200
+
+/** The web's page size for the production's bank list. */
+private const val BANKS_PAGE = 200
+
+/** The envelope's refusal over a 200. */
+private const val REFUSED = 0

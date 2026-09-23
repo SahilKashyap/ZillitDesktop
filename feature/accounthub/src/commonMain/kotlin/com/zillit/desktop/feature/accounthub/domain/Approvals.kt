@@ -16,12 +16,15 @@ import com.zillit.desktop.core.strings.str
  * [tool] is the identifier whose view access decides who may be picked as an
  * approver. Invoices has no tool of its own — it lives inside the Purchase
  * Orders module — so it borrows PO's, which is what the web does.
+ *
+ * Labels are the hub sidebar's own, which the web's Approvers page reuses
+ * ("Invoices / Accounts Payable", "Production Expense Cards", …).
  */
 enum class ApprovalModule(val wire: String, private val labelKey: String, val tool: String) {
     PurchaseOrders("purchase_orders", S.ah_purchase_orders, "purchase_order_tool"),
-    Invoices("invoices", S.ah_invoices, "purchase_order_tool"),
-    CardExpenses("card_expenses", S.desktop_card_expenses, "card_expenses_tool"),
-    CashExpenses("cash_expenses", S.desktop_petty_cash, "cash_expenses_tool"),
+    Invoices("invoices", S.desktop_inv_accounts_payable, "purchase_order_tool"),
+    CardExpenses("card_expenses", S.ah_card_expenses, "card_expenses_tool"),
+    CashExpenses("cash_expenses", S.ah_cash_expenses, "cash_expenses_tool"),
     Timecard("timecard", S.timecards, "timecard_tool"),
     DealMemo("deal_memo", S.dm_title, "deal_memo_tool"),
     ;
