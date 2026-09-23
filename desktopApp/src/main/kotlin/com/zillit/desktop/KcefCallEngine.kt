@@ -181,8 +181,6 @@ class KcefCallEngine(
     val surface: StateFlow<Component?> = _surface.asStateFlow()
 
     init {
-        // Before anyone can grant it mid-run — see MediaAccess.screenAccess.
-        scope.launch { MediaAccess.noteScreenAtLaunch() }
         scope.launch {
             // Staggered past the startup burst: CefApp initialisation has a
             // known intermittent native crash when it races other spawning
@@ -355,11 +353,21 @@ class KcefCallEngine(
         text.contains("Permission denied by system", ignoreCase = true) ||
             text.contains("NotAllowed", ignoreCase = true) ->
             str(S.desktop_screen_share_needs_permission)
-        // A window that closed between the pick and the capture. Nothing is
-        // broken; there is just nothing left to share.
+        // "Could not start video source" is also what Chromium says when this
+        // process lacks Screen Recording (prod, 2026-09-23) — so macOS is asked,
+        // about THIS process, once the capture has failed. Never before: a
+        // pre-check that asked a helper blocked every share, because Screen
+        // Recording is judged per process and the helper never has it.
         text.contains("NotReadable", ignoreCase = true) ||
             text.contains("video source", ignoreCase = true) ->
-            str(S.desktop_screen_share_source_gone)
+            if (ScreenCapturePermission.isGranted() == false) {
+                ScreenCapturePermission.request()
+                MediaAccess.openScreenRecordingSettings()
+                str(S.desktop_screen_share_needs_permission)
+            } else {
+                // A window that closed between the pick and the capture.
+                str(S.desktop_screen_share_source_gone)
+            }
         else -> str(S.desktop_screen_share_failed, text)
     }
 
@@ -653,21 +661,6 @@ class KcefCallEngine(
      */
     override suspend fun startScreenShare(sourceId: String?): Boolean {
         val target = browser ?: return false
-        // Asked first: without Screen Recording, Chromium's capture fails
-        // with "Could not start video source", which read to the user as the
-        // window having closed (prod, 2026-09-23, three tries in a row).
-        when (MediaAccess.screenAccess()) {
-            ScreenAccess.NeedsGrant -> {
-                MediaAccess.openScreenRecordingSettings()
-                _events.tryEmit(CallEngineEvent.Degraded(str(S.desktop_screen_share_needs_permission)))
-                return false
-            }
-            ScreenAccess.NeedsRestart -> {
-                _events.tryEmit(CallEngineEvent.Degraded(str(S.desktop_screen_share_restart_needed)))
-                return false
-            }
-            ScreenAccess.Ready, ScreenAccess.Unknown -> Unit
-        }
         run(
             target,
             when {

@@ -19,8 +19,6 @@
 //   zillit-notify --request        ask (the system prompt, if undecided), print granted|denied
 //   zillit-notify --camera         ask macOS for camera access as this app; print the state
 //   zillit-notify --microphone     the same for the microphone
-//   zillit-notify --screen         ask for Screen Recording as this app; print the state
-//   zillit-notify --screen-status  the Screen Recording state, never asking
 //
 // The media modes exist because Chromium never asks. Chrome's own browser
 // process calls AVCaptureDevice.requestAccess before a capture; CEF does not,
@@ -97,22 +95,6 @@ if mode == "--camera" || mode == "--microphone" {
     AVCaptureDevice.requestAccess(for: media) { granted in
         report("\(mode) asked: granted=\(granted)")
         answer(name(of: AVCaptureDevice.authorizationStatus(for: media)))
-    }
-} else if mode == "--screen-status" {
-    // Never prompts: the app reads this once at launch, so that a grant made
-    // while it runs can be told apart — macOS applies Screen Recording to a
-    // process only when it next starts.
-    answer(CGPreflightScreenCaptureAccess() ? "authorized" : "denied")
-} else if mode == "--screen" {
-    // Chromium's desktop capture never asks either; without the grant it
-    // fails with "Could not start video source". The request shows the system
-    // prompt the first time and after that only answers.
-    if CGPreflightScreenCaptureAccess() {
-        answer("authorized")
-    } else {
-        let granted = CGRequestScreenCaptureAccess()
-        report("--screen asked: granted=\(granted)")
-        answer(granted ? "authorized" : "denied")
     }
 } else if mode == "--status" {
     center.getNotificationSettings { settings in answer(name(of: settings.authorizationStatus)) }
