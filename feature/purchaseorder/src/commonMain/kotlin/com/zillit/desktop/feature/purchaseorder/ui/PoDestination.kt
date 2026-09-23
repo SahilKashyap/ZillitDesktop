@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.purchaseorder.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeScope
 import com.zillit.desktop.feature.purchaseorder.domain.PoBadges
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
@@ -24,36 +26,39 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
  */
 enum class PoDestination(
     val slug: String,
-    val label: String,
+    private val labelKey: String,
     /** The web's own path segment; equal to the slug unless the two roles collide on it. */
     val segment: String = slug,
     /** Which of the web's two modules this tab belongs to. */
     val audience: PoAudience = PoAudience.Both,
 ) {
     // -- the accounts console: PurchaseOrdersModule's TABS --------------------
-    AllPos("all-pos-console", "All POs", segment = "all", audience = PoAudience.Accounts),
-    Queue("queue", "Queue", audience = PoAudience.Accounts),
-    Entry("entry", "PO Entry", segment = "po-entry", audience = PoAudience.Accounts),
-    Posted("posted", "Posted", audience = PoAudience.Accounts),
-    Reports("reports", "Reports", audience = PoAudience.Accounts),
-    Settings("settings", "Settings", audience = PoAudience.Accounts),
+    AllPos("all-pos-console", S.ah_tab_all, segment = "all", audience = PoAudience.Accounts),
+    Queue("queue", S.ah_queue, audience = PoAudience.Accounts),
+    Entry("entry", S.desktop_po_entry, segment = "po-entry", audience = PoAudience.Accounts),
+    Posted("posted", S.ah_posted_label, audience = PoAudience.Accounts),
+    Reports("reports", S.reports, audience = PoAudience.Accounts),
+    Settings("settings", S.settings, audience = PoAudience.Accounts),
 
     // -- the department view: DepartmentPOModule's TABS -----------------------
-    DepartmentAllPos("all-pos", "All POs", audience = PoAudience.Department),
-    ApprovalQueue("approval", "Approval Queue", segment = "all", audience = PoAudience.Department),
-    MyPos("my", "My POs", audience = PoAudience.Department),
-    DepartmentPos("department", "My Department POs", audience = PoAudience.Department),
-    Vendors("vendors", "Vendors", audience = PoAudience.Department),
-    Invoices("invoices", "Invoices", audience = PoAudience.Department),
+    DepartmentAllPos("all-pos", S.ah_tab_all, audience = PoAudience.Department),
+    ApprovalQueue("approval", S.ah_approval_queue_tab, segment = "all", audience = PoAudience.Department),
+    MyPos("my", S.ah_tab_my, audience = PoAudience.Department),
+    DepartmentPos("department", S.ah_tab_department, audience = PoAudience.Department),
+    Vendors("vendors", S.ah_vendors, audience = PoAudience.Department),
+    Invoices("invoices", S.ah_invoices, audience = PoAudience.Department),
 
     // -- the right-hand group, shared by both: RIGHT_TABS ---------------------
-    Templates("templates", "Templates"),
-    Drafts("drafts", "PO Drafts"),
-    DeliveryAddresses("delivery-addresses", "Delivery Addresses"),
+    Templates("templates", S.templates),
+    Drafts("drafts", S.ah_tab_po_drafts),
+    DeliveryAddresses("delivery-addresses", S.desktop_delivery_addresses),
 
     /** Raising or editing one — a full-page form, not a tab. */
-    Form("new", "Create PO"),
+    Form("new", S.ah_create_po),
     ;
+
+    /** What the tab strip shows. */
+    val label: String get() = str(labelKey)
 
     /**
      * Whether [viewer] may open this page.
@@ -141,7 +146,10 @@ enum class PoAudience { Accounts, Department, Both }
  * in flight on the production. The sub-tab is part of the address on the web,
  * so it is part of the route here too.
  */
-enum class PoQueueScope(val slug: String, val label: String) {
-    Mine("my", "My Queue"),
-    All("all", "All Queue"),
+enum class PoQueueScope(val slug: String, private val labelKey: String) {
+    Mine("my", S.desktop_my_queue),
+    All("all", S.desktop_all_queue),
+    ;
+
+    val label: String get() = str(labelKey)
 }

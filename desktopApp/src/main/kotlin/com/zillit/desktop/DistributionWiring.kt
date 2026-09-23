@@ -5,6 +5,8 @@ import com.zillit.desktop.core.badges.BadgeDrilldownQuery
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
@@ -162,6 +164,9 @@ private fun AppGraph.Ready.distributionTabUnread(tool: DistributionTool): Flow<M
         .distinctUntilChanged()
 }
 
+/** Bytes in one megabyte, for the size the oversize notice quotes. */
+private const val BYTES_PER_MEGABYTE = 1024.0 * 1024.0
+
 /**
  * The web's `distributeCncMessage`: a PDF past 25 MB will not be mailed to
  * the distribution list, so every accepted admin (not oneself) is told in a
@@ -172,10 +177,8 @@ private suspend fun AppGraph.Ready.tellAdminsOversize(tool: DistributionTool, fi
     val context = projectContext?.context?.value ?: return
     val me = context.profile?.userId
     val admins = context.users.filter { it.isAdmin && it.userId != me && it.hasJoined() }
-    val size = "%.2f MB".format(sizeBytes / (1024.0 * 1024.0))
-    val body = "The file '$fileName' ($size) uploaded to '${tool.title}' exceeds the 25 MB limit for " +
-        "auto-distribution. Crew members in the Distribution List can access the document directly within " +
-        "the module. Please note that external users in the Distribution List will not receive this file via email."
+    val size = "%.2f MB".format(sizeBytes / BYTES_PER_MEGABYTE)
+    val body = str(S.distribute_msg, fileName, size, tool.title)
     admins.forEach { admin ->
         val sent = chatRepository.send(
             receiverId = admin.userId,
@@ -184,7 +187,9 @@ private suspend fun AppGraph.Ready.tellAdminsOversize(tool: DistributionTool, fi
             nowMillis = System.currentTimeMillis(),
         )
         if (sent is ZillitResult.Failure) {
-            ZillitLog.w("DistributionWiring") { "oversize notice to ${admin.userId} not sent: ${sent.error.userMessage}" }
+            ZillitLog.w("DistributionWiring") {
+                "oversize notice to ${admin.userId} not sent: ${sent.error.userMessage}"
+            }
         }
     }
 }

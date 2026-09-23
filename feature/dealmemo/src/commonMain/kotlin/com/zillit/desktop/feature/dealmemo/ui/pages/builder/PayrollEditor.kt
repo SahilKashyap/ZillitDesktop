@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoUiState
 import com.zillit.desktop.feature.dealmemo.ui.builder.BuilderState
@@ -22,12 +24,12 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 
 /** `PAY_FREQUENCIES`. */
-internal val PAY_FREQUENCIES = listOf(
-    "weekly" to "Per Week",
-    "daily" to "Per Day",
-    "shoot" to "Per Shoot Day",
-    "non_shoot" to "Per Non-Shoot Day",
-    "all" to "All Days",
+internal val PAY_FREQUENCIES get() = listOf(
+    "weekly" to str(S.desktop_dm_freq_per_week),
+    "daily" to str(S.desktop_dm_freq_per_day),
+    "shoot" to str(S.desktop_dm_freq_per_shoot_day),
+    "non_shoot" to str(S.desktop_dm_freq_per_non_shoot_day),
+    "all" to str(S.desktop_dm_all_days),
 )
 
 /**
@@ -52,36 +54,34 @@ internal fun PayrollEditor(state: DealMemoUiState, builder: BuilderState, ops: F
     }
     if (settings.loaded && settings.view.payrollBureaus.isEmpty()) {
         Column(Modifier.padding(bottom = 16.dp)) {
-            Field("Payroll bureau") {
+            Field(str(S.desktop_dm_payroll_bureau_lower)) {
                 BuilderInput(
                     value = form.text("bureau"),
                     onValueChange = { ops.set("bureau", it) },
-                    placeholder = "e.g. Sargent-Disc",
+                    placeholder = str(S.desktop_dm_e_g_sargent_disc),
                 )
                 HintText(
-                    "No bureaus are set up for this project yet. What you enter here becomes the project's first " +
-                        "bureau.",
+                    str(S.desktop_dm_no_bureaus_are_set_up_for_this),
                     Modifier.padding(top = 6.dp),
                 )
             }
         }
     }
-    CardBlock(title = "Payroll Bureau / Processing Method") {
+    CardBlock(title = str(S.dm_pay_card_bureau)) {
         when {
             !settings.loaded -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ZillitSpinner(size = 14.dp, color = bp.cta)
-                ZillitText(text = "Loading bureaus…", style = DmType.sans(12.5.sp), color = bp.muted)
+                ZillitText(text = str(S.desktop_dm_loading_bureaus), style = DmType.sans(12.5.sp), color = bp.muted)
             }
             bureaus.isEmpty() -> EmptyNote(
-                "No payroll bureaus configured in Production Setup yet. Add them under Production Setup → Payroll " +
-                    "Bureau to surface them here.",
+                str(S.desktop_dm_no_payroll_bureaus_configured_in_production_setup),
             )
             else -> BuilderGrid(columns = 2) {
                 cell {
-                    Field("Payroll Bureau") {
+                    Field(str(S.desktop_payroll_bureau)) {
                         val options = bureaus.map { row ->
                             val title = DocRead.text(row, "title").orEmpty()
                             val description = DocRead.text(row, "description")
@@ -98,22 +98,22 @@ internal fun PayrollEditor(state: DealMemoUiState, builder: BuilderState, ops: F
                             onPick = { key ->
                                 ops.set("bureau", options.firstOrNull { it.key == key }?.label.orEmpty())
                             },
-                            placeholder = "Select payroll bureau…",
+                            placeholder = str(S.desktop_dm_select_payroll_bureau),
                         )
                     }
                 }
             }
         }
     }
-    CardBlock(title = "Export & Sync Settings") {
+    CardBlock(title = str(S.dm_pay_card_export_sync)) {
         BuilderGrid(columns = 2) {
             cell {
-                Field("First Pay Period Start") {
+                Field(str(S.dm_pay_first_period)) {
                     IsoDateInput(value = form.text("firstPayPeriod"), onChange = { ops.set("firstPayPeriod", it) })
                 }
             }
             cell {
-                Field("Pay Frequency") {
+                Field(str(S.dm_allow_basis)) {
                     NativeSelect(
                         value = form.text("payFrequency"),
                         options = PAY_FREQUENCIES.map { PickOption(it.first, it.second) },

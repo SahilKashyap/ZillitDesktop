@@ -1,14 +1,18 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 
 /** The Filter dialog's "Show" chips — the web's `contentFilter`. */
-enum class ContentFilter(val label: String) {
-    All("All"),
-    Schedules("Schedules"),
-    Events("Events"),
-    Notes("Notes"),
+enum class ContentFilter(private val labelKey: String) {
+    All(S.bs_filter_all),
+    Schedules(S.bs_filter_schedules),
+    Events(S.bs_filter_events),
+    Notes(S.bs_filter_notes),
     ;
+
+    val label: String get() = str(labelKey)
 
     val showsSchedules: Boolean get() = this == All || this == Schedules
     val showsEvents: Boolean get() = this == All || this == Events

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.documentdistribution.domain
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
@@ -19,27 +21,27 @@ interface DocDistTransfer {
 
     /** PUTs bytes into the production's storage under [key]; answers where they landed. */
     suspend fun putObject(key: String, contentType: String, bytes: ByteArray): ZillitResult<DocumentStorage> =
-        unsupported("Uploads are unavailable — this workspace has no file storage configured.")
+        unsupported(str(S.desktop_docdist_uploads_unavailable_no_storage))
 
     /** Reads an object the listing named, through the app's signed fetch. */
     suspend fun fetchObject(storage: DocumentStorage): ZillitResult<ByteArray> =
-        unsupported("This file cannot be opened — the workspace has no file storage configured.")
+        unsupported(str(S.desktop_docdist_no_file_storage_open))
 
     /** A signed GET on the doc-dist service whose answer is a file. */
-    suspend fun getBytes(url: String): ZillitResult<ByteArray> = unsupported(NO_RAW)
+    suspend fun getBytes(url: String): ZillitResult<ByteArray> =
+        unsupported(str(S.desktop_docdist_action_unavailable_desktop))
 
     /** A signed POST whose answer is a file. */
-    suspend fun postBytes(url: String, body: JsonObject): ZillitResult<ByteArray> = unsupported(NO_RAW)
+    suspend fun postBytes(url: String,
+        body: JsonObject): ZillitResult<ByteArray> = unsupported(str(S.desktop_docdist_action_unavailable_desktop))
 
     /** A signed multipart POST — the LOCAL storage upload path. */
     suspend fun postMultipart(url: String, fields: Map<String, String>, file: LocalFile): ZillitResult<JsonElement> =
-        unsupported("Uploads to a server-stored library are not available from the desktop yet.")
+        unsupported(str(S.desktop_docdist_uploads_server_library_unavailable))
 
     companion object {
         /** No I/O at all — tests, and hosts that have not wired storage. */
         val None: DocDistTransfer = object : DocDistTransfer {}
-
-        private const val NO_RAW = "This action is not available from the desktop yet."
 
         private fun <T> unsupported(reason: String): ZillitResult<T> =
             ZillitResult.Failure(ZillitError.Storage(technical = "DocDistTransfer not wired", userMessage = reason))
@@ -58,11 +60,11 @@ interface DocDistHost {
 
     /** Each page as PNG bytes, [targetWidthPx] wide. */
     fun renderPdfPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<ByteArray>> =
-        ZillitResult.Failure(ZillitError.Storage("no PDF renderer", "PDF preview is not available here."))
+        ZillitResult.Failure(ZillitError.Storage("no PDF renderer", str(S.desktop_docdist_pdf_preview_unavailable)))
 
     /** Writes into the user's Downloads folder; answers the path written. */
     suspend fun saveToDownloads(fileName: String, bytes: ByteArray): ZillitResult<String> =
-        ZillitResult.Failure(ZillitError.Storage("no download folder", "Downloads are not available here."))
+        ZillitResult.Failure(ZillitError.Storage("no download folder", str(S.desktop_docdist_downloads_unavailable)))
 
     /** Hands a saved file to the OS. */
     fun openFile(path: String) {}

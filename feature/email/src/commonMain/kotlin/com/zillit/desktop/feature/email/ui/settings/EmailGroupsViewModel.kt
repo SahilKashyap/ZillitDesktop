@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.email.ui.settings
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.data.EMAIL_GROUPS_SYNC_EVENTS
 import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailGroup
@@ -143,7 +145,7 @@ class EmailGroupsViewModel(
         val typed = draft.memberInput.trim()
         if (typed.isEmpty()) return
         if (!typed.looksLikeAddress()) {
-            setState { copy(draft = draft.copy(inputError = "Please enter a valid email")) }
+            setState { copy(draft = draft.copy(inputError = str(S.desktop_please_enter_a_valid_email))) }
             return
         }
         addMember(typed)

@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealDates
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
@@ -79,10 +81,10 @@ fun ApprovalQueuePage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) 
     val queue = state.queue
     val labels = remember(state.people, state.catalogue) { state.labels }
     when {
-        !queue.loaded -> LoadingLine("Loading…")
+        !queue.loaded -> LoadingLine(str(S.dm_loading))
         queue.rows.isEmpty() -> EmptyNote(
-            title = "Nothing waiting on you",
-            body = "Once a deal memo is submitted for approval and reaches your level, it'll land here for sign-off.",
+            title = str(S.desktop_dm_nothing_waiting_on_you),
+            body = str(S.desktop_dm_once_a_deal_memo_is_submitted_for),
         )
         else -> ZillitLazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -102,7 +104,7 @@ private fun QueueCard(state: DealMemoUiState, deal: DealDoc, labels: DealCrewLab
     val (source, hovered) = rememberHover()
     val shape = RoundedCornerShape(16.dp)
     val open = { onEvent(DealMemoEvent.Navigate(DealMemoRoute.Deal(deal.id, from = DealBadgeUnit.ApprovalQueue))) }
-    val name = deal.crewName ?: "Unnamed"
+    val name = deal.crewName ?: str(S.desktop_unnamed)
     val person = labels.labels(deal)
     Row(
         modifier = Modifier
@@ -159,11 +161,14 @@ private fun QueueCard(state: DealMemoUiState, deal: DealDoc, labels: DealCrewLab
             }
         }
         Column(modifier = Modifier.weight(1.3f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            MonoPair("Submitted", DealDates.short(deal.issuedAt ?: deal.updatedAt))
+            MonoPair(str(S.txt_submitted), DealDates.short(deal.issuedAt ?: deal.updatedAt))
             deal.dailyRate?.let { rate ->
                 MonoPair(
-                    "Day Rate",
-                    "${RateFormat.currencySymbol(deal.contractCurrency ?: "GBP")}${RateFormat.groupAmount(rate)}/day",
+                    str(S.dm_rates_day_rate),
+                    str(
+                        S.desktop_dm_amount_per_day,
+                        "${RateFormat.currencySymbol(deal.contractCurrency ?: "GBP")}${RateFormat.groupAmount(rate)}",
+                    ),
                     strong = true,
                 )
             }
@@ -178,13 +183,13 @@ private fun QueueCard(state: DealMemoUiState, deal: DealDoc, labels: DealCrewLab
         ) {
             DmRoundIcon(
                 DmIcons.History,
-                tooltip = "History",
+                tooltip = str(S.dm_row_action_history),
                 onClick = { onEvent(DealMemoEvent.OpenHistory(deal)) },
                 size = 36.dp,
                 radius = 8.dp,
                 iconSize = 16.dp,
             )
-            DmButton("Approve & Sign", onClick = open, style = DmButtonStyle.Approve)
+            DmButton(str(S.dm_action_approve_sign), onClick = open, style = DmButtonStyle.Approve)
         }
     }
 }
@@ -215,25 +220,27 @@ fun MyDealPage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) {
     val mine = state.myDeal
     val deal = mine.deal
     when {
-        !mine.loaded || mine.loading && deal == null -> LoadingLine("Loading your deal memo…")
+        !mine.loaded || mine.loading && deal == null -> LoadingLine(str(S.desktop_dm_loading_your_deal_memo))
         mine.failed -> Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ZillitText(text = "Couldn't load your deal memo.", style = DmType.sans(14.sp), color = dm.ink2)
+            ZillitText(
+                text = str(S.desktop_dm_couldnt_load_your_deal_memo),
+                style = DmType.sans(14.sp),
+                color = dm.ink2,
+            )
             Spacer(Modifier.height(12.dp))
             DmButton(
-                "Retry",
+                str(S.retry),
                 onClick = { onEvent(MyDealEvent.Retry) },
                 style = DmButtonStyle.SmallSecondary,
                 icon = ZillitIcons.Reload,
             )
         }
         deal == null -> EmptyNote(
-            title = "No deal memo on file",
-            body = "You don't have a deal memo for this production yet. The production accountant or the relevant " +
-                "HOD will issue one — once it's issued to you, it'll appear here for you to review and send for " +
-                "approval.",
+            title = str(S.desktop_dm_no_deal_memo_on_file),
+            body = str(S.desktop_dm_you_dont_have_a_deal_memo_for),
         )
         else -> MyDealPreview(state, deal, onEvent)
     }
@@ -247,7 +254,7 @@ private fun MyDealPreview(state: DealMemoUiState, deal: DealDoc, onEvent: (DealM
         DealPreviewActions.rulesFor(state)
     }
     if (preview == null || rules == null) {
-        LoadingLine("Loading your deal memo…")
+        LoadingLine(str(S.desktop_dm_loading_your_deal_memo))
         return
     }
     ZillitScrollColumn(
@@ -310,7 +317,7 @@ fun HistoryPanel(history: HistoryState?, state: DealMemoUiState, onEvent: (DealM
     DmSidePanel(visible = history != null, onDismiss = { onEvent(DealMemoEvent.CloseHistory) }) {
         val current = shown.value ?: return@DmSidePanel
         DmPanelHeader(
-            title = "Deal Memo History",
+            title = str(S.desktop_dm_deal_memo_history),
             subtitle = current.subtitle,
             onClose = { onEvent(DealMemoEvent.CloseHistory) },
         )
@@ -325,7 +332,7 @@ fun HistoryPanel(history: HistoryState?, state: DealMemoUiState, onEvent: (DealM
                 ) {
                     ZillitSpinner(size = 22.dp, color = dm.brand)
                     Spacer(Modifier.height(8.dp))
-                    ZillitText(text = "Loading history…", style = DmType.sans(12.sp), color = dm.ink3)
+                    ZillitText(text = str(S.desktop_loading_history), style = DmType.sans(12.sp), color = dm.ink3)
                 }
                 current.error != null -> ZillitText(
                     text = current.error,
@@ -335,7 +342,7 @@ fun HistoryPanel(history: HistoryState?, state: DealMemoUiState, onEvent: (DealM
                     modifier = Modifier.fillMaxWidth(),
                 )
                 current.entries.isEmpty() -> ZillitText(
-                    text = "No history recorded.",
+                    text = str(S.desktop_dm_no_history_recorded),
                     style = DmType.sans(12.sp),
                     color = dm.ink3,
                     textAlign = TextAlign.Center,
@@ -370,7 +377,11 @@ private fun HistoryEntryRow(
                 style = DmType.sans(12.sp, FontWeight.SemiBold),
                 color = dm.ink,
             )
-            ZillitText(text = "by ${actor(entry.actionBy, state)}", style = DmType.sans(11.sp), color = dm.ink3)
+            ZillitText(
+                text = str(S.dm_history_by_prefix, actor(entry.actionBy, state)),
+                style = DmType.sans(11.sp),
+                color = dm.ink3,
+            )
             ZillitText(
                 text = DealDates.longDateTime(entry.actionAt),
                 style = DmType.mono(10.sp),
@@ -394,7 +405,7 @@ private fun HistoryEntryRow(
 
 /** `System` for the server, the person with their designation when known, else the raw id. */
 private fun actor(userId: String?, state: DealMemoUiState): String {
-    if (userId.isNullOrBlank() || userId == "system") return "System"
+    if (userId.isNullOrBlank() || userId == "system") return str(S.desktop_language_system_short)
     val person = state.people[userId] ?: return userId
     val role = person.designationName?.takeIf { it.isNotBlank() }
         ?.let { DealLabels.formatLabel(it) }
@@ -410,6 +421,6 @@ fun UnbuiltPage(page: DealMemoRoute, onEvent: (DealMemoEvent) -> Unit) {
         BackSquare(onClick = {
             onEvent(DealMemoEvent.Navigate(DealMemoRoute.Tab(DealTab.Deals)))
         })
-        EmptyNote(title = "Opening…", body = page.tail)
+        EmptyNote(title = str(S.dm_nda_opening), body = page.tail)
     }
 }

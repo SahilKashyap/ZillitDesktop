@@ -56,6 +56,8 @@ import com.zillit.desktop.feature.drive.ui.pages.TrashView
 import com.zillit.desktop.feature.drive.ui.pages.UploadSheet
 import com.zillit.desktop.feature.drive.ui.pages.externalFileDrop
 import com.zillit.desktop.feature.drive.ui.pages.CompactHeader
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Drive — `DriveManagement.jsx`.
@@ -127,8 +129,8 @@ private fun DriveScreenBody(
     ) {
         if (state.viewer.isBlocked) {
             ZillitEmptyState(
-                title = "No access to Drive",
-                message = "An administrator has not granted you view rights for the Drive on this project.",
+                title = str(S.desktop_drive_no_access_title),
+                message = str(S.desktop_drive_no_access_message),
                 icon = ZillitIcons.Shield,
             )
             return@Box
@@ -228,14 +230,14 @@ private fun DropOverlay(visible: Boolean, folderName: String) {
                     .padding(ZillitTheme.spacing.xxl),
             ) {
                 ZillitIcon(icon = ZillitIcons.Upload, tint = colors.accent, size = OVERLAY_ICON)
-                ZillitText(text = "Drop files to upload", style = ZillitTheme.typography.titleLarge)
+                ZillitText(text = str(S.dd_drop_title), style = ZillitTheme.typography.titleLarge)
                 ZillitText(
-                    text = "Files will be uploaded to $folderName",
+                    text = str(S.desktop_drive_upload_to_folder, folderName),
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textSecondary,
                 )
                 ZillitText(
-                    text = "Accepted: documents, spreadsheets, presentations, images, video and audio",
+                    text = str(S.desktop_drive_accepted_types),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )

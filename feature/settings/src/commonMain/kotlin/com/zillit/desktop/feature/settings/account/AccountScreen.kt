@@ -20,6 +20,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The account pages, under one frame.
@@ -89,11 +91,11 @@ private fun Header(page: AccountPage, onBack: () -> Unit) {
     ) {
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Back to settings",
+            contentDescription = str(S.desktop_back_to_settings),
             onClick = onBack,
         )
         ZillitPageHeader(
-            eyebrow = "Settings",
+            eyebrow = str(S.settings),
             title = page.tabTitle,
             description = page.blurb,
         )
@@ -104,16 +106,16 @@ private fun Header(page: AccountPage, onBack: () -> Unit) {
 private val AccountPage.blurb: String
     get() = when (this) {
         AccountPage.EditProfile ->
-            "Your name, department and role, as the rest of the crew see them."
+            str(S.desktop_your_profile_detail)
 
         AccountPage.RecoveryEmail ->
-            "Where a recovery code is sent if you lose access to every device you are signed in on."
+            str(S.desktop_recovery_email_blurb)
 
         AccountPage.LinkedDevices ->
-            "Computers and phones signed in to Zillit as you."
+            str(S.desktop_linked_devices_blurb)
 
         AccountPage.InviteCrew ->
-            "Share this project's code so someone can ask to join it."
+            str(S.desktop_invite_crew_detail)
     }
 
 private val CONTENT_MAX_WIDTH = 680.dp

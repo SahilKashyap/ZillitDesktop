@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.CardRules
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
@@ -72,26 +74,26 @@ fun CardDetailPane(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -
 
         if (card.status == CardStatus.Rejected && !card.rejectionReason.isNullOrBlank()) {
             ZillitNotice(
-                text = "Rejected: ${card.rejectionReason}",
+                text = str(S.desktop_rejected_value, card.rejectionReason),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
             )
         }
 
         Column {
-            DetailLine("Holder", state.holderName(card).takeIf { it != "—" } ?: "Unassigned")
-            DetailLine("Authorised limit", money(card.limit, card.currency), emphasised = true)
+            DetailLine(str(S.ah_holder), state.holderName(card).takeIf { it != "—" } ?: str(S.unassigned))
+            DetailLine(str(S.desktop_card_authorised_limit), money(card.limit, card.currency), emphasised = true)
             card.proposedLimit?.takeIf { it > 0 && it != card.limit }?.let {
-                DetailLine("Proposed", money(it, card.currency))
+                DetailLine(str(S.desktop_card_proposed), money(it, card.currency))
             }
-            DetailLine("Remaining", money(card.balance, card.currency))
-            DetailLine("Committed in receipts", money(card.receiptsCommit, card.currency))
-            DetailLine("Raised", date(card.createdAt))
+            DetailLine(str(S.ah_lbl_remaining), money(card.balance, card.currency))
+            DetailLine(str(S.desktop_card_committed_in_receipts), money(card.receiptsCommit, card.currency))
+            DetailLine(str(S.desktop_card_raised), date(card.createdAt))
         }
 
         if (!card.justification.isNullOrBlank()) {
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                FieldGroupLabel("Justification")
+                FieldGroupLabel(str(S.desktop_card_justification))
                 ZillitText(text = card.justification, style = ZillitTheme.typography.bodySmall)
             }
         }
@@ -122,10 +124,10 @@ fun CardDetailPane(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -
         CardFundingSection(detail, card.currency)
 
         ZillitDivider()
-        FieldGroupLabel("History")
+        FieldGroupLabel(str(S.history))
         CardHistoryTrail(
             entries = detail.history,
-            emptyMessage = "Nothing has been done to this card since it was raised.",
+            emptyMessage = str(S.desktop_card_no_history_yet),
         )
     }
 }
@@ -133,27 +135,27 @@ fun CardDetailPane(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -
 /** What has been charged to this card, newest first. */
 @Composable
 private fun CardSpendSection(detail: CardDetail, currency: String?, onEvent: (CardEvent) -> Unit) {
-    FieldGroupLabel("Spend · ${detail.receipts.size} receipt(s)")
+    FieldGroupLabel(str(S.desktop_card_spend_receipts_count, detail.receipts.size))
     if (detail.receipts.isEmpty()) {
-        EmptyLine("Nothing has been charged to this card yet.")
+        EmptyLine(str(S.desktop_card_nothing_charged_yet))
         return
     }
-    DetailLine("Total", money(detail.spend, currency), emphasised = true)
+    DetailLine(str(S.ah_total_label), money(detail.spend, currency), emphasised = true)
     detail.receipts.take(MAX_ROWS).forEach { receipt -> CardReceiptRow(receipt, onEvent) }
     if (detail.receipts.size > MAX_ROWS) {
-        EmptyLine("${detail.receipts.size - MAX_ROWS} more in the transaction ledger.")
+        EmptyLine(str(S.desktop_card_more_in_ledger, detail.receipts.size - MAX_ROWS))
     }
 }
 
 /** Where the money on this card came from. */
 @Composable
 private fun CardFundingSection(detail: CardDetail, currency: String?) {
-    FieldGroupLabel("Funding · ${detail.topUps.size} top-up(s)")
+    FieldGroupLabel(str(S.desktop_card_funding_topups_count, detail.topUps.size))
     if (detail.topUps.isEmpty()) {
-        EmptyLine("No top-ups have been raised against this card.")
+        EmptyLine(str(S.desktop_card_no_topups_raised))
         return
     }
-    DetailLine("Funded to date", money(detail.funded, currency), emphasised = true)
+    DetailLine(str(S.desktop_card_funded_to_date), money(detail.funded, currency), emphasised = true)
     detail.topUps.take(MAX_ROWS).forEach { topUp -> CardTopUpRow(topUp, currency) }
 }
 
@@ -177,7 +179,7 @@ private fun EmptyLine(text: String) {
 @Composable
 private fun BsCodeField(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
     if (!state.viewer.isAccountant) {
-        DetailLine("Control code", card.bsControlCode?.takeIf { it.isNotBlank() } ?: "—")
+        DetailLine(str(S.desktop_card_control_code), card.bsControlCode?.takeIf { it.isNotBlank() } ?: "—")
         return
     }
     val draft = state.cardDetail?.bsControlCode.orEmpty()
@@ -191,12 +193,12 @@ private fun BsCodeField(state: CardUiState, card: ExpenseCard, onEvent: (CardEve
         ZillitTextField(
             value = draft,
             onValueChange = { onEvent(CardEvent.EditBsCode(it)) },
-            label = "Balance-sheet control code",
+            label = str(S.desktop_card_bs_control_code),
             placeholder = "2100",
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Save code",
+            text = str(S.desktop_card_save_code),
             onClick = { onEvent(CardEvent.SaveBsCode(card.id)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -239,7 +241,7 @@ private fun CardLifecycleActions(
         CardPrimaryAction(state, card, onEvent)
         if (editable) {
             ZillitButton(
-                text = "Edit details",
+                text = str(S.txt_edit_details),
                 onClick = { onEvent(CardEvent.OpenCardEdit(card.id)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -249,15 +251,15 @@ private fun CardLifecycleActions(
         }
         if (canOverride) {
             ZillitButton(
-                text = "Override",
+                text = str(S.dm_nom_table_override),
                 onClick = {
                     onEvent(
                         CardEvent.Ask(
                             CardPrompt.Confirm(
                                 CardConfirmAction.OverrideCard,
                                 card.id,
-                                "Override the approval chain",
-                                "The card skips its remaining approvers. This is recorded against your name.",
+                                str(S.desktop_card_override_chain),
+                                str(S.desktop_card_override_card_note),
                             ),
                         ),
                     )
@@ -276,15 +278,15 @@ private fun CardLifecycleActions(
 @Composable
 private fun DeleteRequestButton(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
     ZillitButton(
-        text = "Delete request",
+        text = str(S.av_delete_request),
         onClick = {
             onEvent(
                 CardEvent.Ask(
                     CardPrompt.Confirm(
                         CardConfirmAction.DeleteCard,
                         card.id,
-                        "Delete this card request",
-                        "The request and everything recorded against it go. This cannot be undone.",
+                        str(S.desktop_card_delete_this_request),
+                        str(S.desktop_card_delete_request_note),
                     ),
                 ),
             )
@@ -305,7 +307,7 @@ private fun CardReceiptRow(receipt: CardReceipt, onEvent: (CardEvent) -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = receipt.description.ifBlank { receipt.merchant ?: "Receipt" },
+                text = receipt.description.ifBlank { receipt.merchant ?: str(S.desktop_receipt) },
                 style = ZillitTheme.typography.bodySmall,
                 maxLines = 1,
             )
@@ -351,7 +353,7 @@ private fun CardTopUpRow(topUp: CardTopUp, currency: String?) {
             )
         }
         ZillitStatusPill(
-            label = topUp.status.replaceFirstChar { it.uppercase() }.ifBlank { "Pending" },
+            label = topUp.status.replaceFirstChar { it.uppercase() }.ifBlank { str(S.pending) },
             tone = when (topUp.status) {
                 "completed" -> StatusTone.Done
                 "skipped" -> StatusTone.Neutral
@@ -367,8 +369,8 @@ private fun CardTopUpRow(topUp: CardTopUp, currency: String?) {
 @Composable
 fun CardDetailPlaceholder() {
     ZillitEmptyState(
-        title = "Pick a card",
-        message = "Its spend, its funding and what has been done to it show here.",
+        title = str(S.desktop_card_pick_a_card),
+        message = str(S.desktop_card_pick_a_card_hint),
         icon = ZillitIcons.CreditCard,
     )
 }

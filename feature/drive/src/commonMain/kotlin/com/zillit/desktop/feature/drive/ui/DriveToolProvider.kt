@@ -16,6 +16,8 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * What the Drive asks the machine for: pickers, the browser, the clipboard,
@@ -99,7 +101,8 @@ class DriveToolProvider(
         }
 
         LaunchedEffect(state.section, state.showTrash) {
-            navigator.setTitle("Drive · " + if (state.showTrash) "Trash" else state.section.label)
+            val place = if (state.showTrash) str(S.trash_text) else state.section.label
+            navigator.setTitle(str(S.txt_drive) + " · " + place)
         }
 
         DriveScreen(state = state, onEvent = viewModel::onEvent, onOpenWidget = onOpenWidget, now = host.now)

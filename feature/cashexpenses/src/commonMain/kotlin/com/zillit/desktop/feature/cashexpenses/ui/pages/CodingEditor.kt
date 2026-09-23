@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.EditorLine
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
@@ -55,9 +57,9 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val draft = state.coding
 
     ZillitDialogShell(
-        title = "Code this receipt",
+        title = str(S.desktop_ce_code_this_receipt),
         subtitle = draft?.let {
-            "Receipt total ${Money.format(it.receiptGross, it.currency)}"
+            str(S.desktop_card_receipt_total, Money.format(it.receiptGross, it.currency))
         },
         icon = ZillitIcons.Ledger,
         visible = draft != null,
@@ -86,8 +88,7 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
         if (draft.lines.any { it.autoDeduction }) {
             ZillitNotice(
-                text = "Rows marked automatic are maintained by the project's deduction rules. " +
-                    "They are re-applied on save and cannot be edited here.",
+                text = str(S.desktop_ce_automatic_rows_note),
                 tone = StatusTone.Escalated,
                 icon = ZillitIcons.Info,
             )
@@ -99,7 +100,7 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                text = "Add a line",
+                text = str(S.desktop_add_a_line),
                 onClick = { onEvent(CashEvent.AddCodingLine) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -107,12 +108,12 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             )
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(CashEvent.CloseCoding) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Save coding",
+                text = str(S.desktop_card_save_coding),
                 onClick = { onEvent(CashEvent.SaveCoding) },
                 // Disabled rather than failing on click: the reason is already
                 // on screen in the balance bar, so a refusal here would only
@@ -135,7 +136,7 @@ private fun BalanceBar(draft: CodingDraft) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = "CODED",
+                text = str(S.desktop_ce_coded_caps),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -146,7 +147,7 @@ private fun BalanceBar(draft: CodingDraft) {
         }
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = "RECEIPT",
+                text = str(S.desktop_ce_receipt_caps),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -157,7 +158,11 @@ private fun BalanceBar(draft: CodingDraft) {
         }
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
-                text = if (draft.remaining < 0) "OVER BY" else "LEFT TO CODE",
+                text = if (draft.remaining < 0) {
+                    str(S.desktop_card_over_by_caps)
+                } else {
+                    str(S.desktop_ce_left_to_code_caps)
+                },
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -168,7 +173,11 @@ private fun BalanceBar(draft: CodingDraft) {
             )
         }
         ZillitStatusPill(
-            label = if (draft.balances) "Balanced" else "Does not add up",
+            label = if (draft.balances) {
+                str(S.desktop_card_balanced)
+            } else {
+                str(S.desktop_payroll_does_not_add_up)
+            },
             tone = if (draft.balances) StatusTone.Done else StatusTone.Rejected,
             dot = true,
         )
@@ -207,7 +216,7 @@ private fun CodingRow(
             ZillitTextField(
                 value = line.description,
                 onValueChange = { onChange(line.copy(description = it)) },
-                label = if (index == 0) "What this line covers" else null,
+                label = if (index == 0) str(S.desktop_ce_what_this_line_covers) else null,
                 enabled = !locked,
                 modifier = Modifier.weight(DESCRIPTION_WEIGHT),
             )
@@ -215,7 +224,7 @@ private fun CodingRow(
                 ZillitTextField(
                     value = line.account,
                     onValueChange = { onChange(line.copy(account = it)) },
-                    label = if (index == 0) "Cost code" else null,
+                    label = if (index == 0) str(S.desktop_card_cost_code) else null,
                     enabled = !locked,
                     modifier = Modifier.weight(1f),
                 )
@@ -223,7 +232,7 @@ private fun CodingRow(
                 Column(modifier = Modifier.weight(1f)) {
                     if (index == 0) {
                         ZillitText(
-                            text = "Cost code",
+                            text = str(S.desktop_card_cost_code),
                             style = ZillitTheme.typography.label,
                             color = colors.textSecondary,
                         )
@@ -234,7 +243,7 @@ private fun CodingRow(
                         value = line.account.takeIf { it.isNotBlank() },
                         options = listOf(null) + quickCodes,
                         onSelect = { onChange(line.copy(account = it.orEmpty())) },
-                        label = { it ?: "Choose a code" },
+                        label = { it ?: str(S.desktop_ce_choose_a_code) },
                         enabled = !locked,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -243,7 +252,7 @@ private fun CodingRow(
             ZillitTextField(
                 value = if (line.quantity == 1.0) "" else line.quantity.toString(),
                 onValueChange = { onChange(line.copy(quantity = it.trim().toDoubleOrNull() ?: 1.0)) },
-                label = if (index == 0) "Qty" else null,
+                label = if (index == 0) str(S.ah_lbl_qty) else null,
                 placeholder = "1",
                 keyboardType = KeyboardType.Decimal,
                 enabled = !locked,
@@ -252,7 +261,7 @@ private fun CodingRow(
             ZillitTextField(
                 value = if (line.unitPrice == 0.0) "" else line.unitPrice.toString(),
                 onValueChange = { onChange(line.copy(unitPrice = it.trim().toDoubleOrNull() ?: 0.0)) },
-                label = if (index == 0) "Net" else null,
+                label = if (index == 0) str(S.desktop_net) else null,
                 placeholder = "0.00",
                 keyboardType = KeyboardType.Decimal,
                 enabled = !locked,
@@ -263,7 +272,7 @@ private fun CodingRow(
                 onValueChange = {
                     onChange(line.copy(taxRatePercent = it.trim().toDoubleOrNull() ?: 0.0))
                 },
-                label = if (index == 0) "VAT %" else null,
+                label = if (index == 0) str(S.desktop_ce_vat_percent) else null,
                 placeholder = "20",
                 keyboardType = KeyboardType.Decimal,
                 enabled = !locked,
@@ -277,13 +286,13 @@ private fun CodingRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (locked) {
-                ZillitStatusPill(label = "Automatic", tone = StatusTone.Escalated)
+                ZillitStatusPill(label = str(S.desktop_ce_automatic), tone = StatusTone.Escalated)
             }
             if (line.isSplitChild) {
-                ZillitStatusPill(label = "Split", tone = StatusTone.Progress)
+                ZillitStatusPill(label = str(S.desktop_ce_split), tone = StatusTone.Progress)
             }
             ZillitText(
-                text = "Gross ${Money.format(line.gross, currency)}",
+                text = str(S.desktop_ce_gross_amount, Money.format(line.gross, currency)),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 modifier = Modifier.weight(1f),
@@ -291,7 +300,7 @@ private fun CodingRow(
             )
             if (!locked && !line.isSplitChild) {
                 ZillitButton(
-                    text = "Split in two",
+                    text = str(S.desktop_ce_split_in_two),
                     onClick = { onSplit(2) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -299,7 +308,7 @@ private fun CodingRow(
             }
             if (removable && !locked) {
                 ZillitButton(
-                    text = "Remove",
+                    text = str(S.remove),
                     onClick = onRemove,
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,

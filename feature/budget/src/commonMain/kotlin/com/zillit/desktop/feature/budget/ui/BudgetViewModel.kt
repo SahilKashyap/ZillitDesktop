@@ -6,6 +6,8 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budget.data.BUDGET_CHAT_LIST_EVENTS
 import com.zillit.desktop.feature.budget.data.BUDGET_SYNC_EVENTS
 import com.zillit.desktop.feature.budget.domain.BudgetActivity
@@ -414,7 +416,7 @@ class BudgetViewModel(
         val document = currentState.selected ?: return
         setState { copy(moreMenuOpen = false) }
         if (document.file?.isPresent != true) {
-            setState { copy(error = "There is no file on this budget.") }
+            setState { copy(error = str(S.desktop_budget_no_file)) }
             return
         }
         setState { copy(viewer = viewer()) }
@@ -422,8 +424,8 @@ class BudgetViewModel(
             rights?.ask(mode.title, RightsKind.Download)
             setState {
                 copy(
-                    error = "You do not have download rights for this budget" +
-                        if (rights == null) "." else " — asking an administrator.",
+                    error = str(S.desktop_budget_no_download_rights) +
+                        if (rights == null) "." else str(S.desktop_asking_an_administrator),
                 )
             }
             return
@@ -471,8 +473,8 @@ class BudgetViewModel(
         rights?.ask(mode.title, RightsKind.Post)
         setState {
             copy(
-                error = "You do not have posting rights for ${mode.title}" +
-                    if (rights == null) "." else " — asking an administrator.",
+                error = str(S.desktop_board_no_posting_rights_for, mode.title) +
+                    if (rights == null) "." else str(S.desktop_asking_an_administrator),
             )
         }
         return true
@@ -485,7 +487,7 @@ class BudgetViewModel(
         launch {
             val picked = host.pickPdf() ?: return@launch
             if (!BudgetRules.acceptsFile(picked.name)) {
-                setState { copy(error = "Please select a PDF document.") }
+                setState { copy(error = str(S.desktop_budget_select_pdf)) }
                 return@launch
             }
             val state = currentState
@@ -513,9 +515,9 @@ class BudgetViewModel(
     private fun uploadComplaint(draft: BudgetUploadDraft, context: BudgetContext): String? {
         val date = draft.dateMillis
         return when {
-            date == null -> "Date is required."
-            !BudgetRules.dateIsAllowed(date, nowMillis()) -> "The date cannot be after today."
-            context.isTelevision && draft.episode.isBlank() -> "Episode number is required."
+            date == null -> str(S.desktop_date_is_required)
+            !BudgetRules.dateIsAllowed(date, nowMillis()) -> str(S.desktop_budget_date_after_today)
+            context.isTelevision && draft.episode.isBlank() -> str(S.dd_publish_episode_required)
             else -> null
         }
     }
@@ -553,7 +555,7 @@ class BudgetViewModel(
             )
             when (val answer = repository.post(upload)) {
                 is ZillitResult.Success -> {
-                    setState { copy(busy = false, notice = "Budget uploaded.", selectedChat = null) }
+                    setState { copy(busy = false, notice = str(S.desktop_budget_uploaded), selectedChat = null) }
                     if (draft.sizeBytes > OVERSIZE_BYTES) host.announceOversize(draft.fileName, draft.sizeBytes)
                     afterUpload(answer.data, draft)
                 }
@@ -761,7 +763,7 @@ class BudgetViewModel(
                     setState {
                         copy(
                             members = null,
-                            notice = "Group created successfully.",
+                            notice = str(S.desktop_budget_group_created),
                             chats = if (chats.any { it.key == made.data.key }) chats else chats + made.data,
                             selectedChat = made.data,
                         )

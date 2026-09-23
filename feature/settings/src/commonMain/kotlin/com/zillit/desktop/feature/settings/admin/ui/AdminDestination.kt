@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.settings.admin.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.ui.ProductionFacts
 import com.zillit.desktop.feature.settings.ui.SettingsDestination
 
@@ -16,25 +18,27 @@ import com.zillit.desktop.feature.settings.ui.SettingsDestination
  * [slug] hangs off `/settings/admin/`, matching the paths the other clients use
  * where they have one, so a deep link means the same thing on both.
  */
-enum class AdminDestination(val slug: String, val title: String) {
+enum class AdminDestination(val slug: String, private val titleKey: String) {
 
-    Departments("departments", "Create New Department"),
-    JobTitles("job-titles", "Create New Designation"),
-    CrewOrder("crew-order", "Change Department Listing Order"),
-    Crew("crew", "User Management"),
-    Rights("rights", "User Viewing & Posting Rights Grid"),
-    PreApproved("pre-approved", "Pre-Approved Users"),
-    ToolAvailability("tools", "Customization of tools"),
-    ToolGroups("tool-groups", "Manage Tool Groups"),
-    ProductionName("name", "Edit Project Name"),
-    CompanyDetails("company", "Company Details"),
-    Watermark("watermark", "Watermark Logo of Company"),
-    Sos("sos", "Set/View SOS Receivers"),
-    HomeUnits("home-units", "Create/Update Home Units"),
-    RemoteUnits("remote-units", "Create Remote Shooting Units"),
-    ShootingUnits("shooting-units", "Create Additional Shooting Unit"),
-    DeleteProduction("delete", "Delete Project"),
+    Departments("departments", S.create_new_department),
+    JobTitles("job-titles", S.create_new_designation),
+    CrewOrder("crew-order", S.desktop_change_department_listing_order),
+    Crew("crew", S.txt_user_managment),
+    Rights("rights", S.permission_grid_2),
+    PreApproved("pre-approved", S.pre_approved_users),
+    ToolAvailability("tools", S.project_tools_enable_disable),
+    ToolGroups("tool-groups", S.manage_tool_groups),
+    ProductionName("name", S.edit_project_name),
+    CompanyDetails("company", S.company_details),
+    Watermark("watermark", S.water_mark_logo),
+    Sos("sos", S.set_sos_receivers),
+    HomeUnits("home-units", S.desktop_home_units_title),
+    RemoteUnits("remote-units", S.create_remote_unit),
+    ShootingUnits("shooting-units", S.create_join_unit),
+    DeleteProduction("delete", S.delete_project),
     ;
+
+    val title: String get() = str(titleKey)
 
     /**
      * Whether this production has this page at all.

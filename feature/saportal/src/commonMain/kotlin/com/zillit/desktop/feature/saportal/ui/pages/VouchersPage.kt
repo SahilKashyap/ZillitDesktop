@@ -25,12 +25,14 @@ import com.zillit.desktop.feature.saportal.ui.day
 import com.zillit.desktop.feature.saportal.ui.money
 import com.zillit.desktop.feature.saportal.ui.shift
 import com.zillit.desktop.feature.saportal.ui.title
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** Every day the artiste has worked here, newest first, filterable by state. */
 @Composable
 internal fun ColumnScope.VouchersPage(state: SaUiState, onEvent: (SaEvent) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        FilterChip("All", state.voucherFilter == null) { onEvent(SaEvent.FilterVouchers(null)) }
+        FilterChip(str(S.all), state.voucherFilter == null) { onEvent(SaEvent.FilterVouchers(null)) }
         // Unknown is this client's word for "unrecognised", not a bucket the
         // server has, so it is never offered as a filter.
         VoucherStatus.entries.filter { it != VoucherStatus.Unknown }.forEach { status ->
@@ -43,11 +45,15 @@ internal fun ColumnScope.VouchersPage(state: SaUiState, onEvent: (SaEvent) -> Un
     if (state.vouchers.isEmpty()) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = if (state.voucherFilter == null) "No days yet" else "Nothing in that state",
-                message = if (state.voucherFilter == null) {
-                    "Days appear here once the AD has submitted them."
+                title = if (state.voucherFilter == null) {
+                    str(S.desktop_sa_no_days_yet)
                 } else {
-                    "Try another filter to see your other days."
+                    str(S.desktop_sa_nothing_in_state)
+                },
+                message = if (state.voucherFilter == null) {
+                    str(S.desktop_sa_days_appear)
+                } else {
+                    str(S.desktop_sa_try_another_filter)
                 },
                 icon = ZillitIcons.Info,
             )
@@ -92,7 +98,7 @@ private fun VoucherRow(voucher: Voucher, onEvent: (SaEvent) -> Unit) {
                 VoucherPill(voucher.status)
             }
             ZillitButton(
-                text = "Open",
+                text = str(S.recce_open),
                 onClick = { onEvent(SaEvent.OpenVoucher(voucher.id)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -101,7 +107,7 @@ private fun VoucherRow(voucher: Voucher, onEvent: (SaEvent) -> Unit) {
             // artiste with six days to sign should not have to open each.
             if (voucher.signable) {
                 ZillitButton(
-                    text = "Sign",
+                    text = str(S.sign),
                     onClick = { onEvent(SaEvent.StartSigning(voucher)) },
                     size = ButtonSize.Small,
                 )

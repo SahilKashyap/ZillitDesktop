@@ -13,6 +13,8 @@ import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.SharePicker
 import com.zillit.desktop.feature.calls.ui.ShareSourcePicker
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The "choose what to share" dialog, in a window of its own.
@@ -30,7 +32,7 @@ internal fun ShareSourceWindow(picker: SharePicker, onEvent: (CallEvent) -> Unit
     DialogWindow(
         onCloseRequest = { onEvent(CallEvent.DismissSharePicker) },
         state = state,
-        title = "Share your screen",
+        title = str(S.desktop_share_screen),
     ) {
         // Previews arrive as base64 PNG and are decoded once each. Keyed on
         // the string itself rather than the source id: a re-emitted list is a

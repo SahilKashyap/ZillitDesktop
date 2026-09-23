@@ -10,6 +10,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.AutoPlan
 import com.zillit.desktop.feature.sides.domain.CallSheetRef
 import com.zillit.desktop.feature.sides.domain.ManualPlan
@@ -245,7 +247,7 @@ class SidesRepositoryImpl(
         id = "",
         title = title,
         status = SidesStatus.Error,
-        error = "The service did not return the new sides",
+        error = str(S.desktop_sides_service_no_record),
     )
 
     override suspend fun downloadUrl(id: String, countDownload: Boolean): ZillitResult<String> =

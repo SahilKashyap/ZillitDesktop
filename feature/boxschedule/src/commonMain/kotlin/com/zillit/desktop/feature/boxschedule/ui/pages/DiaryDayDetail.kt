@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
 import com.zillit.desktop.feature.boxschedule.domain.DiaryAudience
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
@@ -84,23 +86,23 @@ internal fun ScheduleDayDetail(
             DetailHeading(block, dayKey, dayNumber, state, mode, onEvent)
             if (!mode.hideEvents) {
                 DetailSection(
-                    title = "Events",
+                    title = str(S.dd_events),
                     icon = ZillitIcons.Clock,
                     count = events.size,
-                    createLabel = "Create Event".takeIf { !mode.readOnly && !mode.hideInlineCreate },
+                    createLabel = str(S.create_event).takeIf { !mode.readOnly && !mode.hideInlineCreate },
                     onCreate = { onEvent(EntryEvent.NewEntry(DiaryKind.Event, dayKey, block.id)) },
-                    empty = "No events yet.",
+                    empty = str(S.desktop_bs_no_events_yet),
                 ) {
                     events.forEach { event -> EntryRow(event, state, mode.readOnly, onEvent, mayCall = false) }
                 }
             }
             DetailSection(
-                title = "Notes",
+                title = str(S.notes),
                 icon = ZillitIcons.Edit,
                 count = notes.size,
-                createLabel = "Create Note".takeIf { !mode.readOnly && !mode.hideInlineCreate },
+                createLabel = str(S.bs_create_note).takeIf { !mode.readOnly && !mode.hideInlineCreate },
                 onCreate = { onEvent(EntryEvent.NewEntry(DiaryKind.Note, dayKey, block.id)) },
-                empty = "No notes yet.",
+                empty = str(S.desktop_no_notes_yet),
             ) {
                 NoteGroups(notes) { note -> EntryRow(note, state, mode.readOnly, onEvent, mayCall = false) }
             }
@@ -124,8 +126,8 @@ private fun DetailHeading(
         Column(Modifier.weight(1f)) {
             ZillitText(
                 text = when {
-                    block.isDayOff -> "Day Off"
-                    dayNumber != null -> "${block.typeName} Day $dayNumber"
+                    block.isDayOff -> str(S.desktop_day_type_day_off)
+                    dayNumber != null -> str(S.desktop_bs_type_day_number, block.typeName, dayNumber)
                     else -> block.typeName
                 },
                 style = serif(18.sp, FontWeight.Bold, spacing = 0.3.sp),
@@ -142,14 +144,14 @@ private fun DetailHeading(
         }
         if (!mode.readOnly) {
             ZillitButton(
-                text = "Edit",
+                text = str(S.edit),
                 onClick = { onEvent(ScheduleEvent.EditSchedule(block.id, dayKey)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Edit,
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 onClick = { onEvent(ScheduleEvent.AskDeleteDay(block.id, dayKey)) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -203,9 +205,9 @@ internal fun DetailSection(
 @Composable
 internal fun NoteGroups(notes: List<DiaryEvent>, row: @Composable (DiaryEvent) -> Unit) {
     val (personal, general) = notes.partition { it.isPersonalNote }
-    if (personal.isNotEmpty()) Caption("Personal Notes")
+    if (personal.isNotEmpty()) Caption(str(S.bs_pdf_notes_label))
     personal.forEach { row(it) }
-    if (general.isNotEmpty()) Caption("General")
+    if (general.isNotEmpty()) Caption(str(S.ce_note_type_general))
     general.forEach { row(it) }
 }
 
@@ -248,14 +250,14 @@ internal fun EntryRow(
         if (!readOnly || joinable) {
             Row(Modifier.padding(top = 10.dp, end = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (joinable) ZillitButton(
-                    "Join",
+                    str(S.txt_join),
                     onClick = { onEvent(PageEvent.JoinCall(entry.listKey)) },
                     size = ButtonSize.Small,
                 )
                 if (!readOnly) {
-                    RowAction("Edit", ZillitIcons.Edit, onClick = { onEvent(EntryEvent.EditEntry(entry.listKey)) })
+                    RowAction(str(S.edit), ZillitIcons.Edit, onClick = { onEvent(EntryEvent.EditEntry(entry.listKey)) })
                     RowAction(
-                        "Remove",
+                        str(S.remove),
                         ZillitIcons.Trash,
                         onClick = { onEvent(EntryEvent.AskDelete(entry.listKey)) },
                         danger = true,
@@ -274,7 +276,7 @@ private fun EntryRowText(entry: DiaryEvent, state: BoxScheduleUiState, showDate:
     val time = if (isEvent) DiaryFormat.timeRange(entry, state.zone) else ""
     if (time.isNotBlank()) ZillitText(time, style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
     ZillitText(
-        text = entry.title.ifBlank { if (isEvent) "(untitled)" else "Untitled note" },
+        text = entry.title.ifBlank { if (isEvent) str(S.new_box_untitled) else str(S.desktop_bs_untitled_note) },
         style = ZillitTheme.typography.titleSmall,
         color = hexColor(entry.textColor) ?: colors.textPrimary,
     )
@@ -303,14 +305,14 @@ private fun EntryBadges(entry: DiaryEvent, state: BoxScheduleUiState) {
         if (entry.kind == DiaryKind.Event) {
             if (entry.callType.isNotBlank()) add(DiaryFormat.callBadge(entry.callType))
             if (entry.reminder.isNotBlank() && entry.reminder != "none") {
-                add("Reminder: ${DiaryFormat.reminderLabel(entry.reminder)}")
+                add(str(S.desktop_bs_reminder_value, DiaryFormat.reminderLabel(entry.reminder)))
             }
             if (entry.timezone.isNotBlank()) add(DiaryFormat.timezoneLabel(entry.timezone))
             if (entry.isRecurring && entry.repeatStatus.isNotBlank() && entry.repeatStatus != "none") {
-                add("Repeats ${entry.repeatStatus}")
+                add(str(S.desktop_bs_repeats_value, entry.repeatStatus))
             }
         }
-        if (entry.calendarSourced) add("From Calendar")
+        if (entry.calendarSourced) add(str(S.desktop_bs_from_calendar))
     }
     if (badges.isEmpty() && !entry.audience.isSet) return
     FlowRow(
@@ -365,7 +367,7 @@ internal fun AudienceChip(audience: DiaryAudience, state: BoxScheduleUiState) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ZillitIcon(icon = ZillitIcons.Users, tint = colors.textMuted, size = 11.dp)
             ZillitText(
-                "Distributed to (${audience.userIds.size})",
+                str(S.desktop_bs_distributed_to_n, audience.userIds.size),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -376,11 +378,11 @@ internal fun AudienceChip(audience: DiaryAudience, state: BoxScheduleUiState) {
             if (rest.isNotEmpty()) {
                 var open by remember { mutableStateOf(false) }
                 Box {
-                    MoreChip("+${rest.size} more", onClick = { open = true })
+                    MoreChip(str(S.desktop_n_more, rest.size), onClick = { open = true })
                     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                         Column(Modifier.width(240.dp).padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             ZillitText(
-                                "${rest.size} more ${if (rest.size == 1) "user" else "users"}",
+                                str(S.desktop_bs_n_more_users, rest.size),
                                 style = ZillitTheme.typography.titleSmall,
                             )
                             rest.forEach { id -> PersonLine(id, state) }
@@ -395,7 +397,7 @@ internal fun AudienceChip(audience: DiaryAudience, state: BoxScheduleUiState) {
 @Composable
 private fun PersonPill(userId: String, state: BoxScheduleUiState) {
     val colors = ZillitTheme.colors
-    val name = state.person(userId)?.fullName?.ifBlank { null } ?: "User"
+    val name = state.person(userId)?.fullName?.ifBlank { null } ?: str(S.user_label)
     Row(
         Modifier
             .clip(RoundedCornerShape(999.dp))
@@ -413,7 +415,7 @@ private fun PersonPill(userId: String, state: BoxScheduleUiState) {
 @Composable
 internal fun PersonLine(userId: String, state: BoxScheduleUiState) {
     val person = state.person(userId)
-    val name = person?.fullName?.ifBlank { null } ?: "User"
+    val name = person?.fullName?.ifBlank { null } ?: str(S.user_label)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ZillitAvatar(name = name, image = rememberDiaryFace(userId), userId = userId, size = LINE_FACE)
         Column {

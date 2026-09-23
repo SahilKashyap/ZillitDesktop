@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** How big the stamp is drawn, relative to the auto-fit size the engine picks. */
 enum class WatermarkSize(val wire: String, val scale: Double) {
     Small("small", SMALL_SCALE),
@@ -74,7 +77,7 @@ data class WatermarkStyle(
 
     /** "Name / Confidential" — the composer's one-line summary of the stamp. */
     fun summary(): String {
-        val first = if (line1 == WatermarkLine.RecipientName) "Name" else line1Custom.ifBlank { "—" }
+        val first = if (line1 == WatermarkLine.RecipientName) str(S.name) else line1Custom.ifBlank { "—" }
         val second = if (line2 == WatermarkLine.Custom) line2Custom else ""
         return if (second.isBlank()) first else "$first / $second"
     }

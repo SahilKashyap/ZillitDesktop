@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
 
 /**
@@ -129,7 +131,7 @@ internal fun CloseDisc(onClose: () -> Unit) {
             .plainClick(source = source, onClick = onClose),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(ZillitIcons.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(12.dp))
+        Icon(ZillitIcons.Close, contentDescription = str(S.close), tint = Color.White, modifier = Modifier.size(12.dp))
     }
 }
 
@@ -243,14 +245,14 @@ internal fun ConfirmModal(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                SheetButton("Cancel", onCancel, kind = ButtonKind.Outline, enabled = !busy, fontSize = 12.sp)
+                SheetButton(str(S.cancel), onCancel, kind = ButtonKind.Outline, enabled = !busy, fontSize = 12.sp)
                 val confirmKind = when {
                     secondaryLabel != null -> ButtonKind.DangerOutline
                     danger -> ButtonKind.Danger
                     else -> ButtonKind.Accent
                 }
                 SheetButton(
-                    if (busy) "Working…" else confirmLabel,
+                    if (busy) str(S.desktop_working_ellipsis) else confirmLabel,
                     onConfirm,
                     kind = confirmKind,
                     enabled = !busy,

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.authoring
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.isNonUnionId
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealCountry
 import com.zillit.desktop.feature.dealmemo.domain.rates.Js
@@ -259,20 +261,21 @@ object BuilderSeeds {
 
     /** `missingSetupFields()`: what Save Setup refuses without. Budget Band is never required here. */
     fun missingSetupFields(form: DealForm, settings: ProjectSettingsView): List<String> = buildList {
-        if (form.text("productionEntity").trim().isEmpty()) add("Production Entity")
+        if (form.text("productionEntity").trim().isEmpty()) add(str(S.desktop_dm_production_entity))
         if (isNonUnionId(form.text("union"))) {
-            if (!settings.hasNonUnionRules) add("Non-Union Pay Rules")
+            if (!settings.hasNonUnionRules) add(str(S.dm_builder_band_nonunion))
             // The three default day types always stand in for an empty project list.
         } else {
-            if (form.text("territory").trim().isEmpty()) add("Territory")
-            if (form.text("union").trim().isEmpty()) add("Agreement")
+            if (form.text("territory").trim().isEmpty()) add(str(S.dm_section_territory))
+            if (form.text("union").trim().isEmpty()) add(str(S.dm_rule_import_agreement))
         }
     }
 
     /** `setupKindLabel`: `Non-Union Setup`, `Union Setup for United Kingdom`, or `Union Setup`. */
     fun setupKindLabel(form: DealForm): String = when {
-        isNonUnionId(form.text("union")) -> "Non-Union Setup"
-        else -> TerritoryCatalogue.label(form.text("territory"))?.let { "Union Setup for $it" } ?: "Union Setup"
+        isNonUnionId(form.text("union")) -> str(S.desktop_dm_non_union_setup)
+        else -> TerritoryCatalogue.label(form.text("territory"))?.let { str(S.desktop_dm_union_setup_for, it) }
+            ?: str(S.desktop_dm_union_setup)
     }
 
     /**

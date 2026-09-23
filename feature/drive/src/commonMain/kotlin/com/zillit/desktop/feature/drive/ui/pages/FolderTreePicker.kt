@@ -35,6 +35,8 @@ import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.FolderNode
 import com.zillit.desktop.feature.drive.domain.flattened
 import com.zillit.desktop.feature.drive.domain.folderTree
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A folder tree to pick a destination from — `MoveToDialog`'s tree and
@@ -66,7 +68,11 @@ internal fun FolderTree(
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         if (searchable && folders.size > SEARCH_THRESHOLD) {
-            ZillitSearchField(value = search, onValueChange = { search = it }, placeholder = "Search folders…")
+            ZillitSearchField(
+                value = search,
+                onValueChange = { search = it },
+                placeholder = str(S.drive_pick_search_folders),
+            )
         }
         val rows = (if (rootLabel != null) 1 else 0) + visible.size
         Column(
@@ -79,7 +85,11 @@ internal fun FolderTree(
             if (rows == 0) {
                 Box(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg), contentAlignment = Alignment.Center) {
                     ZillitText(
-                        text = if (query.isEmpty()) "No folders yet" else "No folders match",
+                        text = if (query.isEmpty()) {
+                            str(S.drive_empty_no_folders)
+                        } else {
+                            str(S.desktop_drive_no_folders_match)
+                        },
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )
@@ -218,7 +228,7 @@ internal fun DestinationField(
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             ZillitChoiceChip(label = rootLabel, selected = !pickExisting, onClick = { onChange(false, null) })
             ZillitChoiceChip(
-                label = "Inside a folder",
+                label = str(S.drive_pick_inside_folder),
                 selected = pickExisting,
                 onClick = { onChange(true, selectedId) },
             )
@@ -232,7 +242,7 @@ internal fun DestinationField(
             )
             if (selectedId == null) {
                 ZillitText(
-                    text = "Pick a folder above.",
+                    text = str(S.desktop_drive_pick_folder_above),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.warning,
                 )

@@ -154,7 +154,8 @@ class PoSetupModalRenderTest {
                 )
             }
         }
-        onNodeWithText("Expenditure type").assertIsDisplayed()
+        // Title case: the shared key carries Android's wording.
+        onNodeWithText("Expenditure Type").assertIsDisplayed()
         onAllNodesWithText("All").onFirst().assertIsDisplayed()
         onNodeWithText("Purchase").assertIsDisplayed()
         onNodeWithText("Consumables").assertIsDisplayed()

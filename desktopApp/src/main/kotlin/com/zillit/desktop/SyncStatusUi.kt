@@ -25,6 +25,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.socket.SocketConnectionState
 import com.zillit.desktop.core.sync.ConnectivityMonitor
 import com.zillit.desktop.core.sync.SyncEngine
@@ -42,31 +44,31 @@ import kotlinx.coroutines.launch
  */
 fun statusText(socket: SocketConnectionState, sync: SyncStatus): String = when {
     !sync.online && sync.pending > 0 ->
-        "Offline — showing what's saved on this computer; ${sync.pending.changes()} will be sent when you're back"
-    !sync.online -> "Offline — showing what's saved on this computer; changes you make will be sent when you're back"
+        str(S.desktop_offline_pending, sync.pending.changes())
+    !sync.online -> str(S.desktop_offline)
     else -> socket.statusLabel()
 }
 
 /** The status bar's clickable summary of the queue, or null when it is empty. */
 fun syncStatusAction(sync: SyncStatus, onClick: () -> Unit): StatusAction? {
     val text = when {
-        sync.syncing -> "Sending ${sync.pending.changes()}…"
-        sync.failed > 0 -> "${sync.failed.changes()} need attention"
-        sync.pending > 0 -> "${sync.pending.changes()} waiting to send"
-        sync.elsewhere > 0 -> "${sync.elsewhere.changes()} waiting in other projects"
+        sync.syncing -> str(S.desktop_sync_sending, sync.pending.changes())
+        sync.failed > 0 -> str(S.desktop_sync_attention, sync.failed.changes())
+        sync.pending > 0 -> str(S.desktop_sync_waiting, sync.pending.changes())
+        sync.elsewhere > 0 -> str(S.desktop_sync_elsewhere, sync.elsewhere.changes())
         else -> return null
     }
     return StatusAction(text = text, attention = sync.failed > 0, onClick = onClick)
 }
 
-private fun Int.changes(): String = if (this == 1) "1 change" else "$this changes"
+private fun Int.changes(): String = if (this == 1) str(S.desktop_one_change) else str(S.desktop_n_changes, this)
 
 private fun SocketConnectionState.statusLabel(): String = when (this) {
-    is SocketConnectionState.Connected -> "Live"
-    SocketConnectionState.Connecting -> "Connecting…"
-    is SocketConnectionState.Reconnecting -> "Reconnecting…"
-    is SocketConnectionState.Failed -> "Live updates paused"
-    SocketConnectionState.Disconnected -> "Live updates off"
+    is SocketConnectionState.Connected -> str(S.desktop_status_live)
+    SocketConnectionState.Connecting -> str(S.txt_connecting)
+    is SocketConnectionState.Reconnecting -> str(S.txt_reconnecting)
+    is SocketConnectionState.Failed -> str(S.desktop_status_paused)
+    SocketConnectionState.Disconnected -> str(S.desktop_status_off)
 }
 
 /**
@@ -90,14 +92,14 @@ fun PendingChangesDialog(
     }
 
     ZillitDialogShell(
-        title = "Pending changes",
-        subtitle = if (status.online) "Sent in the order you made them." else "Waiting for a connection.",
+        title = str(S.desktop_pending_changes),
+        subtitle = if (status.online) str(S.desktop_pending_online) else str(S.desktop_pending_offline),
         icon = ZillitIcons.Send,
         visible = visible,
         onDismiss = onDismiss,
         actions = {
             ZillitButton(
-                text = "Sync now",
+                text = str(S.sync_action_sync_now),
                 variant = ButtonVariant.Secondary,
                 onClick = {
                     scope.launch {
@@ -106,11 +108,11 @@ fun PendingChangesDialog(
                     }
                 },
             )
-            ZillitButton(text = "Close", onClick = onDismiss)
+            ZillitButton(text = str(S.close), onClick = onDismiss)
         },
     ) {
         if (operations.isEmpty()) {
-            ZillitEmptyState(title = "Nothing waiting", message = "Everything you did here has been sent.")
+            ZillitEmptyState(title = str(S.desktop_nothing_waiting), message = str(S.desktop_everything_sent))
         } else {
             operations.forEach { operation ->
                 PendingChangeRow(
@@ -133,20 +135,26 @@ private fun PendingChangeRow(operation: SyncOperation, onRetry: () -> Unit, onDi
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             ZillitText(text = operation.label, style = ZillitTheme.typography.bodyMedium)
             val detail = when (operation.state) {
-                SyncState.Failed -> operation.lastError ?: "Could not be sent."
-                SyncState.Pending -> operation.lastError?.let { "Will retry — $it" } ?: "Waiting to send"
-                SyncState.InFlight -> "Sending…"
-                SyncState.Done -> "Sent"
+                SyncState.Failed -> operation.lastError ?: str(S.desktop_could_not_be_sent)
+                SyncState.Pending -> operation.lastError?.let { str(S.desktop_will_retry, it) }
+                    ?: str(S.desktop_waiting_to_send)
+                SyncState.InFlight -> str(S.dd_busy_sending)
+                SyncState.Done -> str(S.txt_sent)
             }
             ZillitText(text = detail, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
         }
         ZillitStatusPill(label = operation.state.pillLabel(), tone = operation.state.tone(), dot = true)
         if (operation.state == SyncState.Failed) {
-            ZillitButton(text = "Retry", size = ButtonSize.Small, variant = ButtonVariant.Secondary, onClick = onRetry)
+            ZillitButton(
+                text = str(S.retry),
+                size = ButtonSize.Small,
+                variant = ButtonVariant.Secondary,
+                onClick = onRetry,
+            )
         }
         if (operation.state != SyncState.InFlight) {
             ZillitButton(
-                text = "Discard",
+                text = str(S.ah_discard),
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
                 onClick = onDiscard,
@@ -156,10 +164,10 @@ private fun PendingChangeRow(operation: SyncOperation, onRetry: () -> Unit, onDi
 }
 
 private fun SyncState.pillLabel(): String = when (this) {
-    SyncState.Pending -> "Waiting"
-    SyncState.InFlight -> "Sending"
-    SyncState.Failed -> "Failed"
-    SyncState.Done -> "Sent"
+    SyncState.Pending -> str(S.ah_run_detail_tier_waiting)
+    SyncState.InFlight -> str(S.dd_status_sending)
+    SyncState.Failed -> str(S.dd_status_failed)
+    SyncState.Done -> str(S.txt_sent)
 }
 
 private fun SyncState.tone(): StatusTone = when (this) {

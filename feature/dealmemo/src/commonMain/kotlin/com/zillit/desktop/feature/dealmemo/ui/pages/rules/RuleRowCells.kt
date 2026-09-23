@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.rules.BulkRuleRow
 import com.zillit.desktop.feature.dealmemo.domain.rules.RuleNamePresets
 import com.zillit.desktop.feature.dealmemo.domain.rules.RuleOptions
@@ -61,7 +63,7 @@ internal fun RowScope.RuleCellsRow(
             value = row.template?.id.orEmpty(),
             options = RuleTemplate.entries.map { GridOption(it.id, it.label, group = it.group) },
             onPick = { id -> patch(row.withTemplate(RuleTemplate.byId(id))) },
-            placeholder = "Select rule type…",
+            placeholder = str(S.desktop_dm_select_rule_type),
             required = tried && row.template == null,
             menuWidth = 260.dp,
         )
@@ -103,7 +105,7 @@ internal fun RowScope.RuleCellsRow(
     }
     GridCell(8) { IncrementCell(row, patch) }
     GridCell(9, center = true) {
-        ZillitTooltip(text = "Basic + OT on Top — pays base × (1 + amount) instead of base × amount") {
+        ZillitTooltip(text = str(S.desktop_dm_basic_ot_on_top_pays_base_1)) {
             CheckBox(checked = row.isEnhancement, onToggle = { patch(row.copy(isEnhancement = !row.isEnhancement)) })
         }
     }
@@ -127,9 +129,11 @@ internal fun RowScope.RuleCellsRow(
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    GridCell(14) { GridInput(row.note, { patch(row.copy(note = it)) }, "Statute ref, edge cases…") }
+    GridCell(14) { GridInput(row.note, { patch(row.copy(note = it)) }, str(S.desktop_dm_statute_ref_edge_cases)) }
     GridCell(15, center = true) {
-        ZillitTooltip(text = "Remove rule") { GridIcon(ZillitIcons.Trash, onClick = onRemove, danger = true) }
+        ZillitTooltip(text = str(S.desktop_remove_rule)) {
+            GridIcon(ZillitIcons.Trash, onClick = onRemove, danger = true)
+        }
     }
 }
 
@@ -145,9 +149,14 @@ private fun NameCell(row: BulkRuleRow, tried: Boolean, patch: (BulkRuleRow) -> U
     if (custom || (row.label.isNotEmpty() && !isPreset)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(Modifier.weight(1f)) {
-                GridInput(row.label, { patch(row.copy(label = it)) }, "Name", required = tried && row.label.isBlank())
+                GridInput(
+                    row.label,
+                    { patch(row.copy(label = it)) },
+                    str(S.name),
+                    required = tried && row.label.isBlank(),
+                )
             }
-            ZillitTooltip(text = "Clear and pick from the list") {
+            ZillitTooltip(text = str(S.desktop_dm_clear_and_pick_from_the_list)) {
                 GridIcon(ZillitIcons.Close, onClick = {
                     custom = false
                     patch(row.copy(label = ""))
@@ -158,7 +167,7 @@ private fun NameCell(row: BulkRuleRow, tried: Boolean, patch: (BulkRuleRow) -> U
     }
     GridSelect(
         value = if (isPreset) row.label else "",
-        options = presets.map { GridOption(it.label, it.label) } + GridOption(CUSTOM, "Fill in…"),
+        options = presets.map { GridOption(it.label, it.label) } + GridOption(CUSTOM, str(S.dm_rule_fill_in)),
         onPick = { picked ->
             if (picked == CUSTOM) {
                 custom = true
@@ -167,7 +176,9 @@ private fun NameCell(row: BulkRuleRow, tried: Boolean, patch: (BulkRuleRow) -> U
                 presets.firstOrNull { it.label == picked }?.let { patch(row.withPreset(it)) }
             }
         },
-        placeholder = if (row.template != null) "Pick a name…" else "Pick a rule type first…",
+        placeholder = if (row.template != null) str(S.desktop_dm_pick_a_name) else str(
+            S.desktop_dm_pick_a_rule_type_first,
+        ),
         required = tried && row.label.isBlank(),
         menuWidth = 280.dp,
     )
@@ -205,7 +216,7 @@ private fun HoursCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
     if (custom || (value.isNotEmpty() && !preset)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
-                GridInput(value, ::set, "N", mono = true, suffix = "hrs", filter = numberFilter)
+                GridInput(value, ::set, "N", mono = true, suffix = str(S.desktop_dm_hrs_unit), filter = numberFilter)
             }
             GridIcon(ZillitIcons.Close, onClick = {
                 custom = false
@@ -216,9 +227,9 @@ private fun HoursCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
     }
     GridSelect(
         value = value,
-        options = listOf(GridOption("", "N hrs")) +
-            HOURS.map { GridOption(it.toString(), "$it hrs") } +
-            GridOption(CUSTOM, "Fill in…"),
+        options = listOf(GridOption("", str(S.desktop_dm_n_hrs))) +
+            HOURS.map { GridOption(it.toString(), str(S.desktop_dm_n_hrs_option, it)) } +
+            GridOption(CUSTOM, str(S.dm_rule_fill_in)),
         onPick = { picked ->
             if (picked == CUSTOM) {
                 custom = true
@@ -227,7 +238,7 @@ private fun HoursCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
                 set(picked)
             }
         },
-        placeholder = "N hrs",
+        placeholder = str(S.desktop_dm_n_hrs),
         mono = true,
         menuWidth = 140.dp,
     )
@@ -263,8 +274,9 @@ private fun IncrementCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
     }
     GridSelect(
         value = value,
-        options = listOf(GridOption("", "—")) + RuleOptions.INCREMENTS.map { GridOption(it.toString(), "$it mins") } +
-            GridOption(CUSTOM, "Fill in…"),
+        options = listOf(GridOption("", "—")) +
+            RuleOptions.INCREMENTS.map { GridOption(it.toString(), str(S.desktop_dm_n_mins_option, it)) } +
+            GridOption(CUSTOM, str(S.dm_rule_fill_in)),
         onPick = { picked ->
             if (picked == CUSTOM) {
                 custom = true
@@ -300,7 +312,7 @@ private fun DayKindsCell(row: BulkRuleRow, patch: (BulkRuleRow) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = label.ifEmpty { "Any of…" },
+                text = label.ifEmpty { str(S.desktop_dm_any_of) },
                 style = DmType.sans(12.sp),
                 color = if (kinds.isEmpty()) rp.ink3 else rp.ink,
                 maxLines = 1,

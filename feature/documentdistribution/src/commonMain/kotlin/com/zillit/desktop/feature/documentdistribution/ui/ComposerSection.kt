@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistSignature
 import com.zillit.desktop.feature.documentdistribution.domain.HtmlText
@@ -97,7 +99,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
                 composer = ComposerState(
                     open = true,
                     folder = folder,
-                    subject = folder?.let { "Documents — ${it.name}" }.orEmpty(),
+                    subject = folder?.let { str(S.desktop_docdist_documents_subject, it.name) }.orEmpty(),
                     to = to,
                     listId = listId,
                     attachments = attachments,
@@ -189,7 +191,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
             }
             copy(to = to + additions, listId = listId, listsUsed = used, listMenuOpen = false)
         }
-        vm.notice("Added ${additions.size} from \"${list.name}\"")
+        vm.notice(str(S.desktop_docdist_added_n_from_list, additions.size, list.name))
     }
 
     // -- message -------------------------------------------------------------
@@ -201,14 +203,14 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
             body = HtmlText.toPlainText(template.bodyHtml),
             templateMenuOpen = false,
         ) }
-        vm.notice("Loaded \"${template.name}\"")
+        vm.notice(str(S.desktop_docdist_loaded_template, template.name))
     }
 
     fun insertSignature(signatureId: String) {
         val chosen = vm.state.composer.signatures.firstOrNull { it.id == signatureId }
             ?: SYSTEM_SIGNATURE.takeIf { it.id == signatureId }
         edit { copy(signature = chosen, signatureMenuOpen = false) }
-        chosen?.let { vm.notice("Inserted \"${it.title}\"") }
+        chosen?.let { vm.notice(str(S.desktop_docdist_inserted_signature, it.title)) }
     }
 
     fun saveCurrentAsTemplate() {
@@ -272,7 +274,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
         if (raw.isEmpty()) return
         val (accepted, rejected) = SupportedUploads.partition(raw)
         if (rejected.isNotEmpty()) {
-            vm.fail("Skipped ${summariseFileNames(rejected.map { it.name })} — unsupported file type.")
+            vm.fail(str(S.desktop_docdist_skipped_unsupported, summariseFileNames(rejected.map { it.name })))
         }
         if (accepted.isEmpty()) return
         val base = vm.state.composer.totalBytes
@@ -316,13 +318,18 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
                         attached++
                         addFromPicker(listOf(result.data))
                     }
-                    is ZillitResult.Failure -> vm.fail("Failed to upload ${file.name}: ${result.error.userMessage}")
+                    is ZillitResult.Failure ->
+                        vm.fail(str(S.desktop_docdist_failed_to_upload, file.name, result.error.userMessage))
                 }
             }
         } finally {
             edit { copy(uploading = null) }
         }
-        if (attached > 0) vm.notice("Attached ${plural(attached, "file")}")
+        if (attached > 0) {
+            vm.notice(
+                plural(attached, S.desktop_docdist_attached_one_file, S.desktop_docdist_attached_files),
+            )
+        }
     }
 
     // -- watermark wizard --------------------------------------------------------
@@ -332,10 +339,10 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
     fun saveWizard() {
         val draft = vm.state.composer.wizardDraft ?: return
         if (draft.line1 == WatermarkLine.Custom && draft.line1Custom.isBlank()) {
-            return vm.fail("Enter the custom text for line 1")
+            return vm.fail(str(S.dd_watermark_custom_line1_required))
         }
         if (draft.line2 == WatermarkLine.Custom && draft.line2Custom.isBlank()) {
-            return vm.fail("Enter the custom text for line 2")
+            return vm.fail(str(S.dd_watermark_custom_line2_required))
         }
         edit { copy(watermark = draft, wizardDraft = null) }
         shareAppearance(draft)
@@ -371,7 +378,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
     fun send() {
         val state = vm.state
         val composer = state.composer
-        if (composer.uploading != null) return vm.fail("Please wait for the attachment to finish uploading")
+        if (composer.uploading != null) return vm.fail(str(S.desktop_docdist_wait_for_attachment_upload))
         val draft = composer.draft(
             replyTo = state.viewer.userEmail.takeIf { it.isNotBlank() },
             folderId = composer.folder?.id,
@@ -396,7 +403,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
         // the composer can be left open across a rights change.
         if (!state.viewer.canPost) return vm.askForRights(RightsKind.Post)
 
-        val summary = "Sending to ${draft.to.first().name.ifBlank { draft.to.first().email }}" +
+        val summary = str(S.desktop_docdist_sending_to, draft.to.first().name.ifBlank { draft.to.first().email }) +
             (if (draft.to.size > 1) " +${draft.to.size - 1}" else "")
         // Close at once and keep sending: a slow request must not hold the
         // window. The outcome lands as a notice either way.
@@ -405,10 +412,16 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
         vm.run {
             when (val result = vm.repository.send(draft)) {
                 is ZillitResult.Success -> {
-                    vm.notice("Email sent to ${plural(draft.to.size, "recipient")}")
+                    vm.notice(
+                        plural(
+                            draft.to.size,
+                            S.desktop_docdist_email_sent_to_one_recipient,
+                            S.desktop_docdist_email_sent_to_recipients,
+                        ),
+                    )
                     if (vm.state.destination == DocDistDestination.History) vm.reload()
                 }
-                is ZillitResult.Failure -> vm.fail("Send failed: ${result.error.userMessage}")
+                is ZillitResult.Failure -> vm.fail(str(S.desktop_docdist_send_failed_reason, result.error.userMessage))
             }
         }
     }
@@ -428,7 +441,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
             ?: vm.state.contactDistributions.firstOrNull { it.id == distributionId }
             ?: vm.state.viewingEmail?.takeIf { it.id == distributionId }
             ?: return
-        vm.update { copy(busy = "Opening composer…", viewingEmail = null) }
+        vm.update { copy(busy = str(S.dd_sent_emails_opening_composer), viewingEmail = null) }
         vm.run {
             val rehydrated = rehydrate(past)
             vm.update { copy(busy = null) }
@@ -449,8 +462,11 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
             val dropped = past.attachments.count { it.documentId.isNotBlank() } - rehydrated.size
             if (dropped > 0) {
                 vm.notice(
-                    "Copied subject, message and ${plural(rehydrated.size, "attachment")}. " +
-                        "${plural(dropped, "attachment")} no longer available and not carried over.",
+                    str(
+                        S.desktop_docdist_duplicate_copied_some,
+                        plural(rehydrated.size, S.desktop_docdist_one_attachment, S.dd_attachments_line),
+                        plural(dropped, S.desktop_docdist_one_attachment, S.dd_attachments_line),
+                    ),
                 )
             }
         }
@@ -474,10 +490,11 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
 
     companion object {
         /** The platform's own sign-off, as the mail composer's — the phones append theirs. */
-        val SYSTEM_SIGNATURE = DocDistSignature(
-            id = "system-default",
-            title = "Default",
-            bodyHtml = "Sent from Desktop",
-        )
+        val SYSTEM_SIGNATURE: DocDistSignature
+            get() = DocDistSignature(
+                id = "system-default",
+                title = str(S.desktop_email_format_default),
+                bodyHtml = "Sent from Desktop",
+            )
     }
 }

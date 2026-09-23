@@ -47,6 +47,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.plural
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
 import com.zillit.desktop.feature.boxschedule.domain.DiaryPerson
 import com.zillit.desktop.feature.boxschedule.domain.UserPreset
@@ -57,14 +60,14 @@ import com.zillit.desktop.feature.boxschedule.ui.EntryEvent
 import com.zillit.desktop.feature.boxschedule.ui.GuestsDialog
 import com.zillit.desktop.feature.boxschedule.ui.rememberDiaryFace
 
-private data class AudienceTabSpec(val mode: AudienceMode, val label: String, val icon: ImageVector)
+private data class AudienceTabSpec(val mode: AudienceMode, val labelKey: String, val icon: ImageVector)
 
 private val TABS = listOf(
-    AudienceTabSpec(AudienceMode.AllDepartments, "All Depts", ZillitIcons.Grid),
-    AudienceTabSpec(AudienceMode.Departments, "Departments", ZillitIcons.Users),
-    AudienceTabSpec(AudienceMode.Users, "Users", ZillitIcons.User),
-    AudienceTabSpec(AudienceMode.Presets, "Preset", ZillitIcons.StarOutline),
-    AudienceTabSpec(AudienceMode.Self, "Self", ZillitIcons.User),
+    AudienceTabSpec(AudienceMode.AllDepartments, S.invitees_tab_all_depts, ZillitIcons.Grid),
+    AudienceTabSpec(AudienceMode.Departments, S.invitees_tab_departments, ZillitIcons.Users),
+    AudienceTabSpec(AudienceMode.Users, S.invitees_tab_users, ZillitIcons.User),
+    AudienceTabSpec(AudienceMode.Presets, S.invitees_tab_preset, ZillitIcons.StarOutline),
+    AudienceTabSpec(AudienceMode.Self, S.invitees_tab_self, ZillitIcons.User),
 )
 
 /** "Select Invitees" — `SelectInviteesModal`: five tabs, one choice, Done (N). */
@@ -76,13 +79,21 @@ internal fun AudiencePickerDialog(
 ) {
     val done = picker.doneCount(state.people.size)
     ZillitDialogShell(
-        title = "Select Invitees",
+        title = str(S.invitees_title),
         onDismiss = { onEvent(EntryEvent.CloseAudience) },
         visible = true,
         width = 760.dp,
         actions = {
-            ZillitButton("Cancel", onClick = { onEvent(EntryEvent.CloseAudience) }, variant = ButtonVariant.Secondary)
-            ZillitButton("Done ($done)", onClick = { onEvent(EntryEvent.AudienceDone) }, enabled = done > 0)
+            ZillitButton(
+                str(S.cancel),
+                onClick = { onEvent(EntryEvent.CloseAudience) },
+                variant = ButtonVariant.Secondary,
+            )
+            ZillitButton(
+                str(S.invitees_done_count, done),
+                onClick = { onEvent(EntryEvent.AudienceDone) },
+                enabled = done > 0,
+            )
         },
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -94,10 +105,10 @@ internal fun AudiencePickerDialog(
             when (picker.tab) {
                 AudienceMode.AllDepartments -> ConfirmCard(
                     icon = ZillitIcons.Grid,
-                    title = "Invite all ${state.people.size} team members",
-                    subtitle = "Everyone in the project will be invited",
+                    title = str(S.invitees_all_dept_title, state.people.size),
+                    subtitle = str(S.invitees_all_dept_subtitle),
                     on = picker.allDepartments,
-                    offLabel = "Select All",
+                    offLabel = str(S.invitees_select_all),
                     onToggle = { onEvent(EntryEvent.AudienceToggleAllDepartments) },
                 )
                 AudienceMode.Departments -> DepartmentsTab(picker, onEvent)
@@ -105,10 +116,10 @@ internal fun AudiencePickerDialog(
                 AudienceMode.Presets -> PresetsTab(picker, onEvent)
                 AudienceMode.Self -> ConfirmCard(
                     icon = ZillitIcons.User,
-                    title = "Only You",
-                    subtitle = "This event will be visible to you only",
+                    title = str(S.invitees_self_title),
+                    subtitle = str(S.invitees_self_subtitle),
                     on = picker.self,
-                    offLabel = "Select Me",
+                    offLabel = str(S.invitees_select_me),
                     onToggle = { onEvent(EntryEvent.AudienceToggleSelf) },
                 )
                 AudienceMode.None -> Unit
@@ -132,7 +143,7 @@ private fun TabPill(tab: AudienceTabSpec, active: Boolean, onClick: () -> Unit) 
     ) {
         ZillitIcon(icon = tab.icon, tint = if (active) colors.textOnAccent else colors.textSecondary, size = 12.dp)
         ZillitText(
-            tab.label,
+            str(tab.labelKey),
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
             color = if (active) colors.textOnAccent else colors.textSecondary,
         )
@@ -165,7 +176,7 @@ private fun ConfirmCard(
             textAlign = TextAlign.Center,
         )
         ZillitButton(
-            text = if (on) "Selected ✓" else offLabel,
+            text = if (on) str(S.invitees_selected_check) else offLabel,
             onClick = onToggle,
             variant = if (on) ButtonVariant.Primary else ButtonVariant.Secondary,
         )
@@ -190,7 +201,7 @@ private fun SearchWithAll(
         )
         if (showAll) {
             ZillitButton(
-                if (allSelected) "Clear All" else "Select All",
+                str(if (allSelected) S.txt_clear_all else S.invitees_select_all),
                 onClick = onAll,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -208,7 +219,7 @@ private fun DepartmentsTab(picker: AudiencePicker, onEvent: (BoxScheduleEvent) -
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SearchWithAll(
             query = picker.departmentQuery,
-            placeholder = "Search departments...",
+            placeholder = str(S.invitees_search_departments),
             allSelected = allSelected,
             showAll = visibleIds.isNotEmpty(),
             onQuery = { onEvent(EntryEvent.AudienceQuery(it)) },
@@ -218,8 +229,8 @@ private fun DepartmentsTab(picker: AudiencePicker, onEvent: (BoxScheduleEvent) -
         )
         when {
             picker.departmentsLoading -> Loading()
-            picker.departments.isEmpty() -> Empty("No departments yet")
-            visible.isEmpty() -> Empty("No departments match your search")
+            picker.departments.isEmpty() -> Empty(str(S.invitees_no_departments))
+            visible.isEmpty() -> Empty(str(S.desktop_hub_no_departments_match_your_search))
             else -> ScrollList {
                 visible.forEach { department ->
                     SelectRow(
@@ -232,7 +243,7 @@ private fun DepartmentsTab(picker: AudiencePicker, onEvent: (BoxScheduleEvent) -
                         )
                         ZillitIcon(icon = ZillitIcons.Users, tint = ZillitTheme.colors.textMuted, size = 14.dp)
                         ZillitText(
-                            department.name.localised().ifBlank { "Unnamed" },
+                            department.name.localised().ifBlank { str(S.desktop_unnamed) },
                             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
                         )
                     }
@@ -255,7 +266,7 @@ private fun UsersTab(state: BoxScheduleUiState, picker: AudiencePicker, onEvent:
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SearchWithAll(
             query = picker.userQuery,
-            placeholder = "Search users...",
+            placeholder = str(S.invitees_search_users),
             allSelected = allSelected,
             showAll = visibleIds.isNotEmpty(),
             onQuery = { onEvent(EntryEvent.AudienceQuery(it)) },
@@ -264,8 +275,8 @@ private fun UsersTab(state: BoxScheduleUiState, picker: AudiencePicker, onEvent:
             },
         )
         when {
-            state.people.isEmpty() -> Empty("No users yet")
-            visible.isEmpty() -> Empty("No users match your search")
+            state.people.isEmpty() -> Empty(str(S.invitees_no_users))
+            visible.isEmpty() -> Empty(str(S.desktop_bs_no_users_match_search))
             else -> ScrollList {
                 visible.forEach { person ->
                     PersonRow(person, selected = person.id in picker.userIds) {
@@ -299,7 +310,7 @@ internal fun PersonRow(person: DiaryPerson, selected: Boolean, onToggle: () -> U
                             .padding(horizontal = 5.dp, vertical = 1.dp),
                     ) {
                         ZillitText(
-                            "ADMIN",
+                            str(S.desktop_bs_admin_upper),
                             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = colors.accentText,
                         )
@@ -330,17 +341,18 @@ private fun PresetsTab(picker: AudiencePicker, onEvent: (BoxScheduleEvent) -> Un
         ZillitSearchField(
             value = picker.presetQuery,
             onValueChange = { onEvent(EntryEvent.AudienceQuery(it)) },
-            placeholder = "Search presets...",
+            placeholder = str(S.invitees_search_presets),
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitText(
-            "Click the info icon to view preset members",
+            str(S.desktop_bs_preset_info_hint),
             style = ZillitTheme.typography.labelSmall.copy(fontStyle = FontStyle.Italic),
             color = ZillitTheme.colors.textMuted,
         )
         when {
             picker.presetsLoading -> Loading()
-            visible.isEmpty() -> Empty(if (q.isNotEmpty()) "No presets match your search" else "No presets yet")
+            visible.isEmpty() ->
+                Empty(str(if (q.isNotEmpty()) S.desktop_bs_no_presets_match_search else S.invitees_no_presets))
             else -> ScrollList {
                 visible.forEach { preset ->
                     PresetChoice(
@@ -374,14 +386,14 @@ private fun PresetChoice(
                     maxLines = 1,
                 )
                 ZillitText(
-                    "${preset.memberCount} member${if (preset.memberCount == 1) "" else "s"}",
+                    plural(S.invitees_preset_members, preset.memberCount),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )
             }
             ZillitIconButton(
                 icon = ZillitIcons.Info,
-                contentDescription = "View members",
+                contentDescription = str(S.desktop_bs_view_members),
                 onClick = { onEvent(EntryEvent.AudienceMembers(if (expanded) null else preset.id)) },
             )
         }
@@ -403,7 +415,7 @@ internal fun PresetMembers(preset: UserPreset) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (preset.members.isEmpty()) {
-            ZillitText("No members.", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+            ZillitText(str(S.desktop_no_members), style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
         }
         preset.members.forEach { member ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -415,7 +427,7 @@ internal fun PresetMembers(preset: UserPreset) {
                 )
                 Column {
                     ZillitText(
-                        member.fullName.ifBlank { "Unnamed user" },
+                        member.fullName.ifBlank { str(S.desktop_unnamed_user) },
                         style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
                     )
                     member.designation.localised().takeIf { it.isNotBlank() }?.let {
@@ -484,14 +496,18 @@ private fun Empty(text: String) {
 @Composable
 internal fun GuestsDialogView(dialog: GuestsDialog, onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitDialogShell(
-        title = "External Guests",
-        subtitle = "People outside the production, invited by email",
+        title = str(S.external_guests),
+        subtitle = str(S.desktop_bs_external_guests_subtitle),
         onDismiss = { onEvent(EntryEvent.CloseGuests) },
         visible = true,
         width = 460.dp,
         actions = {
-            ZillitButton("Cancel", onClick = { onEvent(EntryEvent.CloseGuests) }, variant = ButtonVariant.Secondary)
-            ZillitButton("Done", onClick = { onEvent(EntryEvent.GuestsDone) })
+            ZillitButton(
+                str(S.cancel),
+                onClick = { onEvent(EntryEvent.CloseGuests) },
+                variant = ButtonVariant.Secondary,
+            )
+            ZillitButton(str(S.done_text), onClick = { onEvent(EntryEvent.GuestsDone) })
         },
     ) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -505,7 +521,7 @@ internal fun GuestsDialogView(dialog: GuestsDialog, onEvent: (BoxScheduleEvent) 
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                "Add",
+                str(S.add),
                 onClick = { onEvent(EntryEvent.AddGuest) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Add,
@@ -514,7 +530,7 @@ internal fun GuestsDialogView(dialog: GuestsDialog, onEvent: (BoxScheduleEvent) 
         }
         if (dialog.emails.isEmpty()) {
             ZillitText(
-                "No external guests added yet.",
+                str(S.desktop_bs_no_external_guests),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -539,7 +555,7 @@ private fun GuestRow(mail: String, onRemove: () -> Unit) {
         ZillitText(mail, style = ZillitTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Remove $mail",
+            contentDescription = str(S.bs_chip_remove, mail),
             onClick = onRemove,
             tint = colors.danger,
         )
@@ -550,22 +566,22 @@ private fun GuestRow(mail: String, onRemove: () -> Unit) {
 @Composable
 internal fun CalendarReminderPrompt(onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Set Reminder on Home Calendar?",
+        title = str(S.desktop_bs_home_calendar_reminder_title),
         onDismiss = { onEvent(EntryEvent.AnswerCalendar(mirror = false)) },
         visible = true,
         icon = ZillitIcons.Bell,
         width = 420.dp,
         actions = {
             ZillitButton(
-                "No",
+                str(S.no),
                 onClick = { onEvent(EntryEvent.AnswerCalendar(mirror = false)) },
                 variant = ButtonVariant.Secondary,
             )
-            ZillitButton("Yes", onClick = { onEvent(EntryEvent.AnswerCalendar(mirror = true)) })
+            ZillitButton(str(S.yes), onClick = { onEvent(EntryEvent.AnswerCalendar(mirror = true)) })
         },
     ) {
         ZillitText(
-            "The event will also appear on your Home calendar, with its reminder.",
+            str(S.desktop_bs_home_calendar_reminder_body),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
         )

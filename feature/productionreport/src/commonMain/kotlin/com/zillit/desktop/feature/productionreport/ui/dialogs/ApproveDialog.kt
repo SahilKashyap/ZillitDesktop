@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
 import com.zillit.desktop.feature.productionreport.ui.ReportDialog
@@ -79,27 +81,27 @@ internal fun ApproveDialog(state: ReportUiState, dialog: ReportDialog.Approve, o
 @Composable
 private fun ApproveChoiceDialog(state: ReportUiState, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
-    ReportModal("Approve Production Report", { onEvent(DialogEvent.Dismiss) }, width = 520.dp) {
+    ReportModal(str(S.desktop_pr_approve_production_report), { onEvent(DialogEvent.Dismiss) }, width = 520.dp) {
         Text(
-            "Choose how to approve this production report:",
+            str(S.desktop_pr_choose_how_to_approve),
             style = reportText(14.sp),
             color = colors.textSecondary,
             modifier = Modifier.padding(bottom = 16.dp),
         )
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ApproveChoice(
-                title = "Approve with Signature",
-                hint = "Draw your signature; it is rendered into the report.",
+                title = str(S.desktop_approve_with_signature),
+                hint = str(S.desktop_pr_approve_with_signature_hint),
                 enabled = !state.busy,
             ) { onEvent(WorkflowEvent.ChooseSignedApproval) }
             ApproveChoice(
-                title = "Approve Without Signature",
-                hint = "Your name and the time are rendered into the report instead.",
+                title = str(S.desktop_approve_without_signature),
+                hint = str(S.desktop_pr_approve_without_signature_hint),
                 enabled = !state.busy,
             ) { onEvent(WorkflowEvent.ApproveWithoutSignature) }
         }
         ReportButton(
-            "Cancel",
+            str(S.cancel),
             { onEvent(DialogEvent.Dismiss) },
             Modifier.fillMaxWidth().padding(top = 12.dp),
             kind = ButtonKind.Ghost,
@@ -133,14 +135,14 @@ private fun SignAndApproveDialog(state: ReportUiState, dialog: ReportDialog.Appr
     fun signaturePng(): ByteArray? = confirmed ?: strokes.takeIf { it.isNotEmpty() }?.let {
         renderSignaturePng(it.toList(), padSize.width, padSize.height, SIGNATURE_STROKE)
     }
-    ReportModal("Approve Production Report", { onEvent(DialogEvent.Dismiss) }, width = 640.dp) {
+    ReportModal(str(S.desktop_pr_approve_production_report), { onEvent(DialogEvent.Dismiss) }, width = 640.dp) {
         val member = state.currentMember
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.elevated)
                 .border(1.dp, colors.border, RoundedCornerShape(12.dp)).padding(12.dp),
         ) {
             Text(
-                "APPROVING AS",
+                str(S.desktop_approving_as_upper),
                 style = reportText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
                 color = colors.textMuted,
             )
@@ -164,7 +166,7 @@ private fun SignAndApproveDialog(state: ReportUiState, dialog: ReportDialog.Appr
             )
         }
         Text(
-            "SIGNATURE",
+            str(S.desktop_signature_upper),
             style = reportText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
             color = colors.textPrimary,
             modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
@@ -183,7 +185,7 @@ private fun SignAndApproveDialog(state: ReportUiState, dialog: ReportDialog.Appr
             ) {
                 if (strokes.isNotEmpty()) {
                     ReportButton(
-                        "Redraw",
+                        str(S.desktop_redraw),
                         { strokes.clear() },
                         kind = ButtonKind.Outline,
                         icon = ReportIcons.Undo,
@@ -191,7 +193,7 @@ private fun SignAndApproveDialog(state: ReportUiState, dialog: ReportDialog.Appr
                         fontSize = 11.sp,
                     )
                     ReportButton(
-                        "Use This Signature",
+                        str(S.desktop_use_this_signature),
                         {
                             confirmed = renderSignaturePng(
                                 strokes.toList(),
@@ -211,7 +213,7 @@ private fun SignAndApproveDialog(state: ReportUiState, dialog: ReportDialog.Appr
         Box(Modifier.fillMaxWidth().padding(top = 16.dp).height(1.dp).background(colors.border))
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ReportButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.Dismiss) },
                 Modifier.weight(1f),
                 kind = ButtonKind.Outline,
@@ -221,7 +223,7 @@ private fun SignAndApproveDialog(state: ReportUiState, dialog: ReportDialog.Appr
             // Locked to the choice made on the chooser: no flip to "without" once here.
             val hasSignature = confirmed != null || strokes.isNotEmpty()
             ReportButton(
-                if (dialog.uploading) "Uploading..." else "Approve with Signature",
+                if (dialog.uploading) str(S.ah_uploading) else str(S.desktop_approve_with_signature),
                 { signaturePng()?.let { onEvent(WorkflowEvent.ApproveWithSignature(it)) } },
                 Modifier.weight(1f),
                 kind = ButtonKind.Approve,
@@ -258,7 +260,7 @@ private fun SignaturePad(strokes: MutableList<List<Offset>>, onSize: (IntSize) -
     ) {
         if (strokes.isEmpty() && current.isEmpty()) {
             Text(
-                "Sign here",
+                str(S.docusign_signing_sign_here),
                 style = reportText(13.sp),
                 color = Color(0xFF98A2B3),
                 modifier = Modifier.align(Alignment.Center),
@@ -292,14 +294,14 @@ private fun ConfirmedSignature(png: ByteArray, onChange: () -> Unit) {
         bitmap?.let {
             Image(
                 it,
-                contentDescription = "Signature",
+                contentDescription = str(S.txt_signature),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth(0.8f).heightIn(max = 230.dp),
             )
         }
         Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
             ReportButton(
-                "Change",
+                str(S.change),
                 onChange,
                 kind = ButtonKind.Outline,
                 icon = ZillitIcons.Close,

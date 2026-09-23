@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.externalusers.domain.DialCode
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
 import com.zillit.desktop.feature.externalusers.domain.ExternalUserBucket
@@ -67,8 +69,8 @@ internal fun ExternalUserForm(
         onEvent(ExternalUsersEvent.DraftChanged(editing.mutation()))
 
     ZillitDialogShell(
-        title = if (editing.isNew) "Add User" else "Edit User",
-        subtitle = if (editing.isNew) "A contact for this production's directory" else draft.fullName,
+        title = if (editing.isNew) str(S.desktop_eu_add_user) else str(S.desktop_eu_edit_user),
+        subtitle = if (editing.isNew) str(S.desktop_eu_form_subtitle) else draft.fullName,
         icon = ZillitIcons.User,
         visible = true,
         onDismiss = { onEvent(ExternalUsersEvent.CancelEdit) },
@@ -83,12 +85,12 @@ internal fun ExternalUserForm(
                 )
             }
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(ExternalUsersEvent.CancelEdit) },
             )
             ZillitButton(
-                text = "Submit",
+                text = str(S.submit),
                 loading = state.isSaving,
                 enabled = !state.isSaving,
                 onClick = { onEvent(ExternalUsersEvent.Submit) },
@@ -99,16 +101,16 @@ internal fun ExternalUserForm(
             ZillitTextField(
                 value = draft.fullName,
                 onValueChange = { value -> change { copy(draft = draft.copy(fullName = value)) } },
-                label = "Full name *",
-                placeholder = "Enter full name",
+                label = str(S.desktop_full_name_required_label),
+                placeholder = str(S.desktop_enter_full_name),
                 errorText = editing.errors["fullName"],
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = draft.email,
                 onValueChange = { value -> change { copy(draft = draft.copy(email = value)) } },
-                label = "Email *",
-                placeholder = "name@example.com",
+                label = str(S.docusign_add_contact_email_label),
+                placeholder = str(S.dm_email_hint),
                 keyboardType = KeyboardType.Email,
                 errorText = editing.errors["email"],
                 modifier = Modifier.weight(1f),
@@ -116,7 +118,7 @@ internal fun ExternalUserForm(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldLabel("Country code")
+                FieldLabel(str(S.dm_loanout_country_code))
                 DialCodePicker(
                     value = draft.countryCode,
                     codes = state.dialCodes,
@@ -131,8 +133,8 @@ internal fun ExternalUserForm(
                     // The web swallows every key but a digit or Backspace.
                     change { copy(draft = draft.copy(phone = value.filter(Char::isDigit))) }
                 },
-                label = "Phone",
-                placeholder = "Digits only",
+                label = str(S.phone),
+                placeholder = str(S.desktop_sos_digits_only),
                 keyboardType = KeyboardType.Phone,
                 errorText = editing.errors["phone"],
                 modifier = Modifier.weight(2f),
@@ -140,18 +142,18 @@ internal fun ExternalUserForm(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldLabel("Gender")
+                FieldLabel(str(S.gender))
                 ZillitSelect(
                     value = Gender.entries.firstOrNull { it.wire == draft.gender.lowercase() }
                         ?: Gender.NonBinary.takeIf { draft.gender.equals("other", ignoreCase = true) },
                     options = listOf(null) + Gender.entries,
                     onSelect = { value -> change { copy(draft = draft.copy(gender = value?.wire.orEmpty())) } },
-                    label = { gender -> gender?.label ?: "Select gender" },
+                    label = { gender -> gender?.label ?: str(S.desktop_select_gender) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldLabel("Type *")
+                FieldLabel(str(S.ce_note_type_label))
                 ZillitSelect(
                     value = editing.bucket,
                     options = listOf(
@@ -169,8 +171,8 @@ internal fun ExternalUserForm(
             ZillitTextField(
                 value = editing.otherType,
                 onValueChange = { value -> change { copy(otherType = value) } },
-                label = "Type *",
-                placeholder = "Enter the type",
+                label = str(S.ce_note_type_label),
+                placeholder = str(S.desktop_enter_the_type),
                 errorText = editing.errors["userType"],
             )
         }
@@ -181,13 +183,13 @@ internal fun ExternalUserForm(
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ZillitText(
-                    text = "ADDITIONAL INFORMATION",
+                    text = str(S.desktop_additional_information_upper),
                     style = ZillitTheme.typography.labelSmall,
                     color = ZillitTheme.colors.textMuted,
                     modifier = Modifier.weight(1f),
                 )
                 ZillitButton(
-                    text = "Add more information",
+                    text = str(S.add_more_information),
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Add,
@@ -204,7 +206,7 @@ internal fun ExternalUserForm(
                         onValueChange = { value ->
                             change { copy(draft = draft.withInfo(index, row.copy(label = value))) }
                         },
-                        placeholder = "Label name",
+                        placeholder = str(S.desktop_label_name),
                         errorText = editing.errors["otherInfo$index"],
                         modifier = Modifier.weight(1f),
                     )
@@ -213,12 +215,12 @@ internal fun ExternalUserForm(
                         onValueChange = { value ->
                             change { copy(draft = draft.withInfo(index, row.copy(value = value))) }
                         },
-                        placeholder = "Description",
+                        placeholder = str(S.description),
                         modifier = Modifier.weight(1f),
                     )
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Remove row ${index + 1}",
+                        contentDescription = str(S.desktop_remove_row_n, index + 1),
                         tint = ZillitTheme.colors.danger,
                         onClick = { onEvent(ExternalUsersEvent.RemoveInfoRow(index)) },
                     )
@@ -239,7 +241,7 @@ private fun CrewFields(
 
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            FieldLabel("Department *")
+            FieldLabel(str(S.dm_step2_department))
             ZillitSelect(
                 value = department,
                 options = listOf(null) + state.departments,
@@ -252,7 +254,7 @@ private fun CrewFields(
                         )
                     }
                 },
-                label = { option -> option?.name?.localised() ?: "Select department" },
+                label = { option -> option?.name?.localised() ?: str(S.ah_select_department) },
                 modifier = Modifier.fillMaxWidth(),
             )
             editing.errors["departmentId"]?.let { FieldError(it) }
@@ -260,14 +262,14 @@ private fun CrewFields(
         // The web shows the designation column only once a department is chosen.
         if (department != null) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldLabel("Designation")
+                FieldLabel(str(S.designation))
                 ZillitSelect(
                     value = department.designations.firstOrNull { it.id == draft.designationId },
                     options = listOf(null) + department.designations,
                     onSelect = { chosen ->
                         change { copy(draft = draft.copy(designationId = chosen?.id.orEmpty())) }
                     },
-                    label = { option -> option?.name?.localised() ?: "Select designation" },
+                    label = { option -> option?.name?.localised() ?: str(S.select_designation) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -340,7 +342,7 @@ private fun DialCodeTrigger(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = value.ifEmpty { "Select code" },
+            text = value.ifEmpty { str(S.desktop_select_code) },
             style = ZillitTheme.typography.bodyMedium,
             color = if (value.isEmpty()) colors.textDisabled else colors.textPrimary,
             maxLines = 1,
@@ -348,7 +350,12 @@ private fun DialCodeTrigger(
         )
         if (value.isNotEmpty() && hovered) {
             Box(Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onClear).padding(2.dp)) {
-                ZillitIcon(ZillitIcons.Close, contentDescription = "Clear code", tint = colors.textMuted, size = 12.dp)
+                ZillitIcon(
+                    ZillitIcons.Close,
+                    contentDescription = str(S.desktop_clear_code),
+                    tint = colors.textMuted,
+                    size = 12.dp,
+                )
             }
         } else {
             ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.textMuted, size = 13.dp)
@@ -372,7 +379,7 @@ private fun DialCodeList(codes: List<DialCode>, selected: String, onPick: (Strin
         ZillitSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Search country or code",
+            placeholder = str(S.desktop_search_country_or_code),
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
         )
         // A FIXED height: a lazy list inside a menu measures its intrinsics on
@@ -381,7 +388,11 @@ private fun DialCodeList(codes: List<DialCode>, selected: String, onPick: (Strin
             if (shown.isEmpty()) {
                 item {
                     ZillitText(
-                        text = if (codes.isEmpty()) "Country codes are still loading" else "No matching country",
+                        text = if (codes.isEmpty()) {
+                            str(S.desktop_country_codes_still_loading)
+                        } else {
+                            str(S.desktop_no_matching_country)
+                        },
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                         modifier = Modifier.padding(10.dp),

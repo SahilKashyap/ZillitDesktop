@@ -16,6 +16,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.recce.ui.pages.RecceDetailPage
 import com.zillit.desktop.feature.recce.ui.pages.RecceFormPage
 import com.zillit.desktop.feature.recce.ui.pages.RecceIndexPage
@@ -55,18 +57,18 @@ fun RecceScreen(state: RecceUiState, onEvent: (RecceEvent) -> Unit, scrollToTop:
 private fun DeleteDialog(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
     val target = state.deleteTarget ?: return
     ZillitDialogShell(
-        title = "Delete recce?",
+        title = str(S.recce_delete_title),
         onDismiss = { onEvent(RecceEvent.CancelDelete) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.recce_cancel),
                 onClick = { onEvent(RecceEvent.CancelDelete) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !state.deleting,
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.recce_delete_confirm),
                 onClick = { onEvent(RecceEvent.ConfirmDelete) },
                 variant = ButtonVariant.Danger,
                 loading = state.deleting,
@@ -75,9 +77,15 @@ private fun DeleteDialog(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
     ) {
         ZillitText(
             text = buildAnnotatedString {
-                append("Delete ")
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(target.label) }
-                append("? This can’t be undone from here.")
+                val message = str(S.desktop_recce_delete_message, target.label)
+                val at = message.indexOf(target.label)
+                if (at < 0) {
+                    append(message)
+                } else {
+                    append(message.substring(0, at))
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(target.label) }
+                    append(message.substring(at + target.label.length))
+                }
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textPrimary,
@@ -90,29 +98,29 @@ private fun DeleteDialog(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
 private fun LeaveDialog(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
     if (!state.leavePrompt) return
     ZillitDialogShell(
-        title = "Save changes before leaving?",
+        title = str(S.desktop_save_changes_before_leaving),
         onDismiss = { onEvent(RecceEvent.KeepEditing) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Keep editing",
+                text = str(S.ah_keep_editing),
                 onClick = { onEvent(RecceEvent.KeepEditing) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Discard",
+                text = str(S.ah_discard),
                 onClick = { onEvent(RecceEvent.DiscardChanges) },
                 variant = ButtonVariant.Danger,
             )
             ZillitButton(
-                text = "Save as Draft",
+                text = str(S.recce_save_draft),
                 onClick = { onEvent(RecceEvent.SaveDraft) },
                 leadingIcon = ZillitIcons.Check,
             )
         },
     ) {
         ZillitText(
-            text = "You have unsaved changes. Save them as a draft so you don't lose your work, or discard and leave.",
+            text = str(S.desktop_unsaved_changes_draft_prompt),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textPrimary,
         )

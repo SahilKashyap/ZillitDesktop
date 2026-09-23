@@ -56,6 +56,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ApprovalCandidates
 import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
 import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
@@ -103,7 +105,7 @@ internal fun ApprovalBuilderView(
     val department = if (config.scope == ApprovalScope.All) {
         null
     } else {
-        config.departmentName.ifBlank { state.departmentName(config.departmentId) }.ifBlank { "Department" }
+        config.departmentName.ifBlank { state.departmentName(config.departmentId) }.ifBlank { str(S.department) }
     }
     Column(modifier = Modifier.fillMaxSize().background(colors.canvas)) {
         BuilderTopBar(config, department, state.approvals.saving, chrome, onEvent)
@@ -147,14 +149,13 @@ internal data class BuilderChrome(
 ) {
     companion object {
         val Approvers = BuilderChrome(
-            root = "Approvers",
+            root = str(S.approvers_empty),
             moduleLabel = null,
-            allLabel = "Default Approval Levels",
+            allLabel = str(S.desktop_default_approval_levels),
             heading = true,
             tip = { department ->
                 if (department == null) {
-                    "Configuring default approval levels for all departments. This baseline applies to every " +
-                        "department without a custom override."
+                    str(S.desktop_hub_configuring_default_approval_levels_for_all_departments_this_baseline_applies)
                 } else {
                     "Configuring approval levels for $department. This overrides the default configuration."
                 }
@@ -163,13 +164,13 @@ internal data class BuilderChrome(
 
         /** Forms Configuration's builder — the web's own crumb and banner, no hero. */
         fun forms(moduleLabel: String) = BuilderChrome(
-            root = "Forms",
+            root = str(S.desktop_forms),
             moduleLabel = moduleLabel,
-            allLabel = "All Departments",
+            allLabel = str(S.all_departments),
             heading = false,
             tip = { department ->
                 if (department == null) {
-                    "Configuring approval levels for all departments. Changes will apply uniformly."
+                    str(S.desktop_hub_configuring_approval_levels_for_all_departments_changes_will_apply_uniformly)
                 } else {
                     "Configuring approval levels for $department."
                 }
@@ -197,7 +198,11 @@ private fun BuilderTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitIconButton(icon = ZillitIcons.ArrowLeft, contentDescription = "Back to approvers list", onClick = close)
+        ZillitIconButton(
+            icon = ZillitIcons.ArrowLeft,
+            contentDescription = str(S.desktop_hub_back_to_approvers_list),
+            onClick = close,
+        )
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
@@ -218,9 +223,9 @@ private fun BuilderTopBar(
                 maxLines = 1,
             )
         }
-        ZillitButton(text = "Cancel", onClick = close, variant = ButtonVariant.Secondary, enabled = !saving)
+        ZillitButton(text = str(S.cancel), onClick = close, variant = ButtonVariant.Secondary, enabled = !saving)
         ZillitButton(
-            text = if (saving) "Saving…" else "Save changes",
+            text = if (saving) str(S.ah_saving) else str(S.dm_setup_save),
             onClick = { onEvent(AccountHubEvent.SaveApprovalConfig) },
             leadingIcon = ZillitIcons.Check,
             loading = saving,
@@ -246,9 +251,9 @@ private fun BuilderHeading(config: ApprovalConfig, department: String?) {
             size = HEADING_TILE,
         )
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            MonoLabel("Management", color = colors.accentText)
+            MonoLabel(str(S.desktop_management), color = colors.accentText)
             ZillitText(
-                text = department?.let { "$it — Approval Levels" } ?: "Default Approval Levels",
+                text = department?.let { "$it — Approval Levels" } ?: str(S.desktop_default_approval_levels),
                 style = ZillitTheme.typography.titleLarge,
                 maxLines = 1,
             )
@@ -267,7 +272,7 @@ private fun BuilderHeading(config: ApprovalConfig, department: String?) {
 /** The dashed line with a round "+" — inserts a level at [position] (0-based). */
 @Composable
 private fun InsertRail(position: Int, onEvent: (AccountHubEvent) -> Unit) {
-    DashedInsertRail("Insert level here") { onEvent(AccountHubEvent.InsertApprovalLevel(position)) }
+    DashedInsertRail(str(S.desktop_insert_level_here)) { onEvent(AccountHubEvent.InsertApprovalLevel(position)) }
 }
 
 /** One level: its number, its rules, "Add more", and "Remove level" while there are others. */
@@ -292,7 +297,12 @@ private fun TierCard(tier: ApprovalTier, levels: Int, state: AccountHubUiState, 
             ZillitText(text = "Level ${tier.order}", style = ZillitTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
             if (levels > 1) {
-                TextAction(text = "Remove level", icon = ZillitIcons.Close, tint = colors.danger, bordered = true) {
+                TextAction(
+                    text = str(S.desktop_remove_level),
+                    icon = ZillitIcons.Close,
+                    tint = colors.danger,
+                    bordered = true,
+                ) {
                     onEvent(AccountHubEvent.RemoveApprovalLevel(tier.order))
                 }
             }
@@ -301,7 +311,7 @@ private fun TierCard(tier: ApprovalTier, levels: Int, state: AccountHubUiState, 
             if (index > 0) ApprovalDashedRule()
             RuleRow(tier, index, rule, state, onEvent)
         }
-        TextAction(text = "Add more", icon = ZillitIcons.Add, tint = colors.accentText, bordered = false) {
+        TextAction(text = str(S.desktop_add_more), icon = ZillitIcons.Add, tint = colors.accentText, bordered = false) {
             onEvent(AccountHubEvent.AddApprovalRule(tier.order))
         }
     }
@@ -395,7 +405,7 @@ private fun RuleRow(
                 }
                 if (rule.isTyped) {
                     ZillitButton(
-                        text = "Add Users",
+                        text = str(S.add_members),
                         onClick = { onEvent(AccountHubEvent.OpenApproverPicker(order, index)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -410,13 +420,13 @@ private fun RuleRow(
                 Box(modifier = Modifier.height(RULE_ROW_HEIGHT), contentAlignment = Alignment.Center) {
                     ZillitIconButton(
                         icon = ZillitIcons.Close,
-                        contentDescription = "Remove this rule",
+                        contentDescription = str(S.desktop_remove_this_rule),
                         onClick = { onEvent(AccountHubEvent.RemoveApprovalRule(order, index)) },
                     )
                 }
             }
         }
-        if (amount) FieldHint("Applicable for all currencies. No exchange rates applied.")
+        if (amount) FieldHint(str(S.desktop_hub_applicable_for_all_currencies_no_exchange_rates_applied))
     }
 }
 
@@ -431,13 +441,13 @@ private fun RuleKindSelect(rule: ApprovalRule, locked: Boolean, onSelect: (Strin
             value = rule.type,
             options = RULE_TYPES.map { it.first },
             onSelect = onSelect,
-            label = { wire -> RULE_TYPES.firstOrNull { it.first == wire }?.second ?: "Select a rule..." },
+            label = { wire -> RULE_TYPES.firstOrNull { it.first == wire }?.second ?: str(S.desktop_select_a_rule) },
             modifier = Modifier.width(RULE_SELECT),
             enabled = !locked,
         )
     }
     if (locked) {
-        ZillitTooltip("This level has a Default rule, so its other rules are \"Amount greater than\".", select)
+        ZillitTooltip(str(S.desktop_hub_this_level_has_a_default_rule_so_its_other_rules), select)
     } else {
         select()
     }
@@ -496,15 +506,18 @@ internal fun ApprovalBuilderDialogs(state: AccountHubUiState, onEvent: (AccountH
     val confirm = rememberLatest(builder?.confirm)
     HubConfirmDialog(
         visible = builder?.confirm != null,
-        title = if (confirm is BuilderConfirm.RevertToGlobal) "Remove all approvers?" else "Empty approval levels",
+        title = if (confirm is BuilderConfirm.RevertToGlobal) {
+            str(S.desktop_remove_all_approvers)
+        } else {
+            str(S.desktop_empty_approval_levels)
+        },
         message = when (confirm) {
             is BuilderConfirm.EmptyLevels -> ApprovalSequence.compactionMessage(confirm.levels)
             is BuilderConfirm.RevertToGlobal ->
-                "You've removed all approvers from every level. Saving will delete this department's approval " +
-                    "levels, so it will use the global (default) approvers. Do you want to continue?"
+                str(S.desktop_hub_youve_removed_all_approvers_from_every_level_saving_will_delete)
             null -> ""
         },
-        confirmLabel = "Save",
+        confirmLabel = str(S.save),
         danger = confirm is BuilderConfirm.RevertToGlobal,
         loading = approvals.saving,
         onConfirm = { onEvent(AccountHubEvent.ConfirmApprovalSave) },
@@ -539,11 +552,11 @@ private fun ApproverPicker(state: AccountHubUiState, builder: ApprovalBuilder?, 
         width = PICKER_WIDTH,
         scrollable = false,
         actions = {
-            ZillitButton(text = "Cancel", onClick = close, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.cancel), onClick = close, variant = ButtonVariant.Tertiary)
             ZillitButton(
                 text = when (picked.size) {
-                    0 -> "Add users"
-                    1 -> "Add 1 user"
+                    0 -> str(S.add_members)
+                    1 -> str(S.desktop_add_1_user)
                     else -> "Add ${picked.size} users"
                 },
                 onClick = { onEvent(AccountHubEvent.AddPickedApprovers) },
@@ -554,7 +567,7 @@ private fun ApproverPicker(state: AccountHubUiState, builder: ApprovalBuilder?, 
         ZillitSearchField(
             value = search,
             onValueChange = { onEvent(AccountHubEvent.SearchApproverPicker(it)) },
-            placeholder = "Search users...",
+            placeholder = str(S.invitees_search_users),
             modifier = Modifier.fillMaxWidth(),
         )
         if (picked.isNotEmpty()) {
@@ -566,7 +579,7 @@ private fun ApproverPicker(state: AccountHubUiState, builder: ApprovalBuilder?, 
             }
         }
         if (approvals.candidateIds == null) {
-            FieldHint("Checking who has view access — the accounts team is shown meanwhile.")
+            FieldHint(str(S.desktop_hub_checking_who_has_view_access_the_accounts_team_is_shown))
         }
         PickerList(shown, taken, picked) { id -> onEvent(AccountHubEvent.ToggleApproverPick(id)) }
     }
@@ -578,7 +591,7 @@ private fun PickerList(shown: List<HubUser>, taken: Set<String>, picked: List<St
         modifier = Modifier.fillMaxWidth().heightIn(max = PICKER_LIST).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        if (shown.isEmpty()) FieldHint("No users found", Modifier.padding(ZillitTheme.spacing.lg))
+        if (shown.isEmpty()) FieldHint(str(S.no_user_found), Modifier.padding(ZillitTheme.spacing.lg))
         shown.forEach { user ->
             PickerRow(
                 user = user,
@@ -590,6 +603,7 @@ private fun PickerList(shown: List<HubUser>, taken: Set<String>, picked: List<St
     }
 }
 
+@Suppress("LongMethod") // A row, read left to right; the order is the reading order.
 @Composable
 private fun PickerRow(user: HubUser, added: Boolean, picked: Boolean, onToggle: () -> Unit) {
     val colors = ZillitTheme.colors
@@ -631,7 +645,7 @@ private fun PickerRow(user: HubUser, added: Boolean, picked: Boolean, onToggle: 
                     maxLines = 1,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (user.isAdmin) Pill("Admin", tone = StatusTone.Pending)
+                if (user.isAdmin) Pill(str(S.admin), tone = StatusTone.Pending)
             }
             if (user.roleLabel.isNotBlank()) {
                 ZillitText(
@@ -644,7 +658,11 @@ private fun PickerRow(user: HubUser, added: Boolean, picked: Boolean, onToggle: 
         }
         when {
             picked -> ZillitIcon(icon = ZillitIcons.Check, tint = colors.accent, size = PICK_ICON)
-            added -> ZillitText(text = "Added", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            added -> ZillitText(
+                text = str(S.history_added),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
         }
     }
 }
@@ -701,7 +719,10 @@ private class Latest<T : Any> {
 }
 
 /** The validator's whole vocabulary, said the web's way. */
-private val RULE_TYPES = listOf(ApprovalRule.DEFAULT to "Default", ApprovalRule.AMOUNT to "Amount greater than")
+private val RULE_TYPES = listOf(
+    ApprovalRule.DEFAULT to str(S.desktop_email_format_default),
+    ApprovalRule.AMOUNT to str(S.desktop_amount_greater_than),
+)
 
 private const val ADDED_ALPHA = 0.45f
 private val BUILDER_MAX_WIDTH = 1040.dp

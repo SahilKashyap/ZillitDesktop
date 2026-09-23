@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.EnvelopeField
 import com.zillit.desktop.feature.esignature.domain.EsignFormat
 import com.zillit.desktop.feature.esignature.domain.FieldAnswer
@@ -95,7 +97,7 @@ internal fun SigningPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                 when {
                     signing.notPdf -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         ZillitText(
-                            "This envelope's document could not be previewed as a PDF.",
+                            str(S.desktop_ds_this_envelope_s_document_could_not_be_previewed),
                             color = colors.textMuted,
                         )
                     }
@@ -135,14 +137,14 @@ private fun SigningHeader(signing: SigningState, onEvent: (EsignEvent) -> Unit) 
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ZillitIconButton(ZillitIcons.ArrowLeft, "Back", onClick = { onEvent(EsignEvent.Back) })
+            ZillitIconButton(ZillitIcons.ArrowLeft, str(S.docusign_back), onClick = { onEvent(EsignEvent.Back) })
             Column(Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ZillitText(
-                        signing.envelope.title.ifBlank { "Document" },
+                        signing.envelope.title.ifBlank { str(S.docusign_section_document) },
                         style = ZillitTheme.typography.titleMedium,
                         maxLines = 1,
                         modifier = Modifier.widthIn(max = 520.dp),
@@ -151,14 +153,14 @@ private fun SigningHeader(signing: SigningState, onEvent: (EsignEvent) -> Unit) 
                 }
                 ZillitText(
                     when {
-                        signing.mode == SigningMode.Plain -> "The original document, as uploaded"
+                        signing.mode == SigningMode.Plain -> str(S.desktop_ds_the_original_document_as_uploaded)
                         signing.mode == SigningMode.ViewSigned -> if (signing.envelope.status.wire == "completed") {
-                            "Signed copy"
+                            str(S.desktop_ds_signed_copy)
                         } else {
-                            "Read-only · values submitted so far"
+                            str(S.desktop_ds_read_only_values_submitted_so_far)
                         }
                         signing.me != null -> "Signing as ${signing.me.name.ifBlank { signing.me.email }}"
-                        else -> "Preview"
+                        else -> str(S.preview)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
@@ -179,7 +181,7 @@ private fun SigningHeader(signing: SigningState, onEvent: (EsignEvent) -> Unit) 
                 ) {
                     ZillitIconButton(
                         ZillitIcons.ChevronLeft,
-                        "Previous field",
+                        str(S.desktop_ds_previous_field),
                         onClick = { onEvent(EsignEvent.PrevField) },
                         size = 24.dp,
                     )
@@ -187,26 +189,26 @@ private fun SigningHeader(signing: SigningState, onEvent: (EsignEvent) -> Unit) 
                         if (current != null) {
                             "${current.type.label} · ${signing.currentIndex + 1} / ${signing.visibleFields.size}"
                         } else {
-                            "No fields"
+                            str(S.desktop_no_fields)
                         },
                         style = ZillitTheme.typography.label,
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
                     ZillitIconButton(
                         ZillitIcons.ChevronRight,
-                        "Next field",
+                        str(S.desktop_ds_next_field),
                         onClick = { onEvent(EsignEvent.NextField) },
                         size = 24.dp,
                     )
                 }
                 ZillitButton(
-                    "Decline",
+                    str(S.docusign_signing_decline),
                     onClick = { onEvent(EsignEvent.StartDecline) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    "Finish & Submit",
+                    str(S.docusign_signing_finish_submit),
                     onClick = { onEvent(EsignEvent.FinishSigning) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Check,
@@ -292,7 +294,7 @@ private fun androidx.compose.foundation.layout.BoxScope.PageOverlays(
                                         .padding(horizontal = 4.dp),
                                 ) {
                                     ZillitText(
-                                        "Optional",
+                                        str(S.docusign_signing_optional),
                                         style = ZillitTheme.typography.labelSmall.copy(fontSize = 8.sp),
                                         color = colors.textMuted,
                                     )
@@ -300,8 +302,8 @@ private fun androidx.compose.foundation.layout.BoxScope.PageOverlays(
                             }
                             ZillitText(
                                 when {
-                                    field.type == FieldType.SignHere -> "Sign here"
-                                    field.type == FieldType.InitialHere -> "Initial"
+                                    field.type == FieldType.SignHere -> str(S.docusign_signing_sign_here)
+                                    field.type == FieldType.InitialHere -> str(S.docusign_place_field_initial)
                                     else -> field.label.ifBlank { field.type.label }
                                 },
                                 style = ZillitTheme.typography.labelSmall.copy(fontSize = 9.sp),
@@ -399,7 +401,7 @@ private fun ReadOnlyPanel(signing: SigningState, state: EsignUiState) {
             color = colors.textSecondary,
         )
         Hairline()
-        ZillitText("SIGNERS", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+        ZillitText(str(S.signers), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         envelope.signers.forEachIndexed { i, s ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.size(8.dp).clip(CircleShape).background(signerColor(i)))
@@ -426,7 +428,7 @@ private fun ReadOnlyPanel(signing: SigningState, state: EsignUiState) {
         if (signing.mode == SigningMode.Sign && signing.me?.signed == true) {
             Hairline()
             ZillitText(
-                "You have already signed this document.",
+                str(S.desktop_ds_you_have_already_signed_this_document),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.success,
             )
@@ -434,7 +436,7 @@ private fun ReadOnlyPanel(signing: SigningState, state: EsignUiState) {
         if (signing.mode == SigningMode.Sign && signing.me == null && !signing.needsConsent) {
             Hairline()
             ZillitText(
-                "You are not a signer on this envelope — showing it read-only.",
+                str(S.desktop_ds_you_are_not_a_signer_on_this_envelope),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -458,7 +460,7 @@ private fun SignPanel(signing: SigningState, state: EsignUiState, onEvent: (Esig
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                if (signing.hasOptional) "Fields to sign" else "Required fields",
+                if (signing.hasOptional) str(S.desktop_ds_fields_to_sign) else str(S.desktop_ds_required_fields),
                 style = ZillitTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
@@ -517,7 +519,7 @@ private fun SignPanel(signing: SigningState, state: EsignUiState, onEvent: (Esig
         val current = signing.current
         if (current == null) {
             ZillitText(
-                "Nothing to fill — everything on this document is stamped by the service.",
+                str(S.desktop_ds_nothing_to_fill_everything_on_this_document_is),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -528,20 +530,20 @@ private fun SignPanel(signing: SigningState, state: EsignUiState, onEvent: (Esig
         Hairline()
         ZillitText(
             if (signing.allRequiredDone) {
-                "Everything required is done. Click Finish & Submit to send your signatures."
+                str(S.desktop_ds_everything_required_is_done_click_finish_submit_to)
             } else {
-                "Complete every required field to unlock Finish & Submit."
+                str(S.desktop_ds_complete_every_required_field_to_unlock_finish_submit)
             },
             style = ZillitTheme.typography.bodySmall,
             color = if (signing.allRequiredDone) colors.success else colors.textMuted,
         )
         ZillitText(
-            "By clicking Finish & Submit you consent to sign this document electronically.",
+            str(S.desktop_ds_by_clicking_finish_submit_you_consent_to_sign),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
         ZillitButton(
-            "Finish & Submit",
+            str(S.docusign_signing_finish_submit),
             onClick = { onEvent(EsignEvent.FinishSigning) },
             leadingIcon = ZillitIcons.Check,
             enabled = signing.canFinish,
@@ -578,15 +580,15 @@ private fun CurrentFieldCard(
                 )
             }
             when {
-                field.locked -> ZillitTag("Locked · pre-filled", tone = TagTone.Neutral)
-                field.required -> ZillitTag("Required", tone = TagTone.Accent)
-                else -> ZillitTag("Optional", tone = TagTone.Neutral)
+                field.locked -> ZillitTag(str(S.desktop_ds_locked_pre_filled), tone = TagTone.Neutral)
+                field.required -> ZillitTag(str(S.docusign_signing_required), tone = TagTone.Accent)
+                else -> ZillitTag(str(S.docusign_signing_optional), tone = TagTone.Neutral)
             }
         }
         FieldInput(signing, field, answer, state, onEvent)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ZillitButton(
-                "Prev",
+                str(S.docusign_prev),
                 onClick = { onEvent(EsignEvent.PrevField) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -595,14 +597,14 @@ private fun CurrentFieldCard(
             Spacer(Modifier.weight(1f))
             if (answer != null && !field.locked) {
                 ZillitButton(
-                    "Clear",
+                    str(S.txt_clear),
                     onClick = { onEvent(EsignEvent.Answer(field.id, null)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
             }
             ZillitButton(
-                "Done & Next",
+                str(S.docusign_signing_done_next),
                 onClick = { onEvent(EsignEvent.NextField) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -645,7 +647,11 @@ private fun FieldInput(
                     BytesImage(signing.images[mark.image.media], field.type.label, Modifier.fillMaxSize().padding(6.dp))
                 } else {
                     ZillitText(
-                        if (field.type == FieldType.SignHere) "Click to sign" else "Click to initial",
+                        if (field.type == FieldType.SignHere) {
+                            str(S.desktop_ds_click_to_sign)
+                        } else {
+                            str(S.desktop_ds_click_to_initial)
+                        },
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )
@@ -662,7 +668,11 @@ private fun FieldInput(
                 )
             }
             ZillitButton(
-                if (mark == null) (if (field.type == FieldType.SignHere) "Sign here" else "Add initials") else "Change",
+                when {
+                    mark != null -> str(S.docusign_change)
+                    field.type == FieldType.SignHere -> str(S.docusign_signing_sign_here)
+                    else -> str(S.txt_add_initials)
+                },
                 onClick = { onEvent(EsignEvent.OpenPad) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Edit,
@@ -694,7 +704,7 @@ private fun FieldInput(
                 }
             }
             ZillitButton(
-                if (mark == null) "Choose file" else "Replace",
+                if (mark == null) str(S.desktop_choose_file) else str(S.replace),
                 onClick = { onEvent(EsignEvent.PickUploadForField) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
@@ -727,23 +737,23 @@ private fun FieldInput(
             value = field.options.firstOrNull { it.id == (answer as? FieldAnswer.Chosen)?.optionId },
             options = listOf<FieldOption?>(null) + field.options,
             onSelect = { opt -> onEvent(EsignEvent.Answer(field.id, opt?.let { FieldAnswer.Chosen(it.id) })) },
-            label = { it?.label ?: "Select an option" },
+            label = { it?.label ?: str(S.docusign_field_select_option) },
             modifier = Modifier.fillMaxWidth(),
         )
         field.type == FieldType.Date -> ZillitDateField(
             value = (answer as? FieldAnswer.Typed)?.text.orEmpty(),
             onValueChange = { onEvent(EsignEvent.Answer(field.id, if (it.isBlank()) null else FieldAnswer.Typed(it))) },
-            label = field.label.ifBlank { "Date" },
+            label = field.label.ifBlank { str(S.date) },
         )
         field.type.isAutoStamped -> ZillitText(
-            "Stamped with the date when you submit — nothing to fill.",
+            str(S.desktop_ds_stamped_with_the_date_when_you_submit_nothing),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
         field.type == FieldType.FullName -> ZillitTextField(
             value = (answer as? FieldAnswer.Typed)?.text ?: state.currentUserEmail.let { signing.me?.name.orEmpty() },
             onValueChange = { onEvent(EsignEvent.Answer(field.id, FieldAnswer.Typed(it))) },
-            label = "Full name",
+            label = str(S.full_name),
         )
         else -> {
             val text = (answer as? FieldAnswer.Typed)?.text.orEmpty()
@@ -758,7 +768,7 @@ private fun FieldInput(
                     FieldType.Phone -> "+44 20 7946 0000"
                     FieldType.Number -> "1,500.00"
                     FieldType.Url -> "https://"
-                    else -> "Type here"
+                    else -> str(S.desktop_ds_type_here)
                 },
                 keyboardType = when (field.type) {
                     FieldType.Email -> KeyboardType.Email
@@ -813,8 +823,8 @@ private fun RadioRow(option: FieldOption, selected: Boolean, onSelect: () -> Uni
 private fun ConsentGate(signing: SigningState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "Digital Signature Request",
-        subtitle = "Please confirm before you begin signing.",
+        title = str(S.desktop_ds_digital_signature_request),
+        subtitle = str(S.desktop_ds_please_confirm_before_you_begin_signing),
         visible = signing.needsConsent && !signing.declining && !signing.finished,
         onDismiss = { onEvent(EsignEvent.Back) },
         scrollable = false,
@@ -826,9 +836,9 @@ private fun ConsentGate(signing: SigningState, onEvent: (EsignEvent) -> Unit) {
                 Modifier.fillMaxWidth().clip(ZillitTheme.shapes.medium).background(colors.surfaceSunken)
                     .border(1.dp, colors.border, ZillitTheme.shapes.medium).padding(12.dp),
             ) {
-                ZillitText("DOCUMENT", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+                ZillitText(str(S.document), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
                 ZillitText(
-                    signing.envelope.title.ifBlank { "Untitled document" },
+                    signing.envelope.title.ifBlank { str(S.docusign_send_confirm_untitled) },
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                 )
@@ -841,10 +851,9 @@ private fun ConsentGate(signing: SigningState, onEvent: (EsignEvent) -> Unit) {
                 }
             }
             listOf(
-                "By accepting, you agree to sign this document electronically. " +
-                    "Your digital signature is legally binding.",
-                "Your acceptance is recorded with the date and time, and appears in the audit trail.",
-                "You can decline instead — the sender is notified and the document is marked as rejected.",
+                str(S.desktop_ds_consent_legally_binding),
+                str(S.desktop_ds_your_acceptance_is_recorded_with_the_date_and),
+                str(S.desktop_ds_you_can_decline_instead_the_sender_is_notified),
             ).forEach { line ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
                     Box(
@@ -863,7 +872,7 @@ private fun ConsentGate(signing: SigningState, onEvent: (EsignEvent) -> Unit) {
             }
             Hairline()
             ZillitButton(
-                "Accept & Continue",
+                str(S.desktop_ds_accept_continue),
                 onClick = { onEvent(EsignEvent.Consent) },
                 leadingIcon = ZillitIcons.Check,
                 loading = signing.consenting,
@@ -871,7 +880,7 @@ private fun ConsentGate(signing: SigningState, onEvent: (EsignEvent) -> Unit) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ZillitButton(
-                    "Go back",
+                    str(S.dm_nda_go_back),
                     onClick = { onEvent(EsignEvent.Back) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -879,7 +888,7 @@ private fun ConsentGate(signing: SigningState, onEvent: (EsignEvent) -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
                 ZillitButton(
-                    "Decline",
+                    str(S.docusign_signing_decline),
                     onClick = { onEvent(EsignEvent.StartDecline) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -896,7 +905,7 @@ private fun PadDialog(signing: SigningState, state: EsignUiState, onEvent: (Esig
     val field = signing.current
     val forSignature = field?.type != FieldType.InitialHere
     ZillitDialogShell(
-        title = if (forSignature) "Your signature" else "Your initials",
+        title = if (forSignature) str(S.docusign_picker_your_signature) else str(S.docusign_picker_your_initials),
         subtitle = field?.let { "${it.label.ifBlank { it.type.label }} · page ${it.page}" },
         visible = pad != null && field != null,
         onDismiss = { onEvent(EsignEvent.ClosePad) },
@@ -905,14 +914,14 @@ private fun PadDialog(signing: SigningState, state: EsignUiState, onEvent: (Esig
         width = 560.dp,
         actions = {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(EsignEvent.ClosePad) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             if (pad?.mode != PadMode.Saved) {
                 ZillitButton(
-                    "Apply",
+                    str(S.dm_filter_apply),
                     onClick = { onEvent(EsignEvent.ApplyPad) },
                     size = ButtonSize.Small,
                     enabled = pad?.canApply == true,
@@ -944,8 +953,8 @@ private fun PadDialog(signing: SigningState, state: EsignUiState, onEvent: (Esig
 @Composable
 private fun DeclineDialog(signing: SigningState, onEvent: (EsignEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Decline to sign?",
-        subtitle = "The sender is notified and the envelope is marked as rejected for everyone.",
+        title = str(S.docusign_decline_title),
+        subtitle = str(S.desktop_ds_the_sender_is_notified_and_the_envelope_is),
         visible = signing.declining,
         onDismiss = { onEvent(EsignEvent.CancelDecline) },
         scrollable = false,
@@ -953,13 +962,13 @@ private fun DeclineDialog(signing: SigningState, onEvent: (EsignEvent) -> Unit) 
         width = 460.dp,
         actions = {
             ZillitButton(
-                "Keep signing",
+                str(S.desktop_ds_keep_signing),
                 onClick = { onEvent(EsignEvent.CancelDecline) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                "Decline",
+                str(S.docusign_signing_decline),
                 onClick = { onEvent(EsignEvent.ConfirmDecline) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -969,8 +978,8 @@ private fun DeclineDialog(signing: SigningState, onEvent: (EsignEvent) -> Unit) 
         ZillitTextField(
             value = signing.declineReason,
             onValueChange = { onEvent(EsignEvent.EditDeclineReason(it)) },
-            label = "Reason (optional)",
-            placeholder = "Tell the sender why you're declining…",
+            label = str(S.av_reason_optional),
+            placeholder = str(S.docusign_decline_reason_hint),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -997,21 +1006,19 @@ private fun FinishedScreen(signing: SigningState, onEvent: (EsignEvent) -> Unit)
             ) {
                 ZillitIcon(ZillitIcons.Check, tint = colors.success, size = 30.dp)
             }
-            ZillitText("Signing complete", style = ZillitTheme.typography.titleLarge)
+            ZillitText(str(S.desktop_ds_signing_complete_2), style = ZillitTheme.typography.titleLarge)
             ZillitText(
                 if (remaining > 0) {
-                    "Your signature is recorded. $remaining other signer${if (remaining == 1) "" else "s"} " +
-                        "still need to sign; you'll be notified when the document is finalised."
+                    str(S.desktop_ds_signed_awaiting_others, remaining)
                 } else {
-                    "Your signature is recorded. The signed document will be available once the service " +
-                        "has finalised it."
+                    str(S.desktop_ds_signed_awaiting_service)
                 },
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textSecondary,
                 textAlign = TextAlign.Center,
             )
             ZillitButton(
-                "Back to documents",
+                str(S.desktop_ds_back_to_documents),
                 onClick = { onEvent(EsignEvent.Back) },
                 leadingIcon = ZillitIcons.ArrowLeft,
             )

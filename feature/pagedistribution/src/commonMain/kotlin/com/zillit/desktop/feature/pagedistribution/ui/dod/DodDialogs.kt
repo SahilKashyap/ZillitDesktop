@@ -57,6 +57,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.PageColour
@@ -88,9 +90,9 @@ internal fun DodDialogs(
     state.move?.let { DodMoveDialog(state, onEvent) }
     state.confirmDelete?.let { document ->
         ConfirmDialog(
-            title = "Delete document",
-            body = "Are you sure you want to delete \"${document.displayName()}\"? It moves to the history.",
-            confirm = "Yes, delete",
+            title = str(S.desktop_dist_delete_document),
+            body = str(S.desktop_dist_delete_confirm_body_long, document.displayName()),
+            confirm = str(S.desktop_dist_delete_confirm_yes),
             danger = true,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmDelete) },
@@ -104,9 +106,9 @@ internal fun DodDialogs(
             document.episode.ifBlank { document.sceneNumber }.ifBlank { null },
         )
         ConfirmDialog(
-            title = "Publish to Document Distribution",
-            body = "File \"${document.displayName()}\" under ${path.joinToString(" / ")}?",
-            confirm = "Publish",
+            title = str(S.dd_publish_confirm_title),
+            body = str(S.desktop_dist_publish_confirm_body, document.displayName(), path.joinToString(" / ")),
+            confirm = str(S.publish),
             danger = false,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmPublish) },
@@ -142,11 +144,12 @@ private fun DodFolderDialog(
             .collect { onEvent(DistributionEvent.LoadMore) }
     }
     ZillitDialogShell(
-        title = open.folder.key.ifBlank { "Untitled folder" },
+        title = open.folder.key.ifBlank { str(S.drive_untitled_folder) },
         subtitle = when {
-            !live -> "Deleted documents"
-            open.documents.isEmpty() -> "Schedule D.O.D"
-            else -> "${open.documents.size} document${if (open.documents.size == 1) "" else "s"}"
+            !live -> str(S.desktop_dist_deleted_documents)
+            open.documents.isEmpty() -> str(S.dd_pub_dest_dod_card)
+            open.documents.size == 1 -> str(S.desktop_dist_document_count_one, open.documents.size)
+            else -> str(S.dd_publish_n_documents, open.documents.size)
         },
         icon = ZillitIcons.Folder,
         onDismiss = { onEvent(DistributionEvent.CloseFolder) },
@@ -156,14 +159,14 @@ private fun DodFolderDialog(
         actions = {
             if (live) {
                 ZillitButton(
-                    text = "Upload here",
+                    text = str(S.desktop_location_upload_here),
                     onClick = { onEvent(DistributionEvent.PickPdf()) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Paperclip,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CloseFolder) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -182,8 +185,8 @@ private fun DodFolderDialog(
                 state.loading && open.documents.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
                 open.documents.isEmpty() -> ZillitEmptyState(
-                    title = "No documents in this folder",
-                    message = if (live) "Upload a PDF here to start it." else null,
+                    title = str(S.desktop_docdist_no_documents_in_folder),
+                    message = if (live) str(S.desktop_dod_folder_empty_message) else null,
                     icon = ZillitIcons.File,
                 )
                 else -> LazyColumn(
@@ -226,7 +229,7 @@ internal fun DodDocumentCard(
     resolveUser: (String) -> String?,
 ) {
     val colors = ZillitTheme.colors
-    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { "Unknown user" }
+    val uploader = resolveUser(document.createdBy) ?: document.createdBy.ifBlank { str(S.unkone_user) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -239,13 +242,13 @@ internal fun DodDocumentCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
         ) {
-            Ribbon(text = "Uploaded on: ${DistributionDates.dateTime(document.createdMs)}")
+            Ribbon(text = str(S.desktop_dist_uploaded_on_prefix, DistributionDates.dateTime(document.createdMs)))
             Row(
                 modifier = Modifier.padding(ZillitTheme.spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (document.deleted) ZillitStatusPill(label = "Deleted", tone = StatusTone.Rejected)
+                if (document.deleted) ZillitStatusPill(label = str(S.drive_deleted_default), tone = StatusTone.Rejected)
                 DodMoreMenu(state, document, onEvent)
             }
         }
@@ -263,9 +266,9 @@ internal fun DodDocumentCard(
                 size = CARD_AVATAR,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                Fact(label = "Uploaded by", value = uploader)
-                if (state.viewer.isTelevision) Fact(label = "Episode", value = document.episode.ifBlank { "—" })
-                Fact(label = "Name", value = document.name.ifBlank { "—" })
+                Fact(label = str(S.txt_uploaded_by), value = uploader)
+                if (state.viewer.isTelevision) Fact(label = str(S.episode), value = document.episode.ifBlank { "—" })
+                Fact(label = str(S.name), value = document.name.ifBlank { "—" })
                 // The folder listing carries no attachment on the wire; only
                 // a name or size that is actually known earns the line.
                 val fileFacts = listOfNotNull(
@@ -354,45 +357,45 @@ private fun DodMoreMenu(state: DistributionUiState, document: DistDocument, onEv
         ) {
             ZillitIcon(icon = ZillitIcons.Paperclip, tint = colors.textOnAccent, size = FACT_ICON)
             ZillitText(
-                text = "More",
+                text = str(S.more),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textOnAccent,
             )
         }
         val entries = buildList {
             add(
-                ZillitMenuEntry.Action("View", ZillitIcons.Eye, ZillitMenuTone.Primary) {
+                ZillitMenuEntry.Action(str(S.view), ZillitIcons.Eye, ZillitMenuTone.Primary) {
                     onEvent(DistributionEvent.View(document))
                 },
             )
             if (live && state.viewer.mayPublish) {
                 add(
-                    ZillitMenuEntry.Action("Publish to Doc Distribution", ZillitIcons.Send, ZillitMenuTone.Info) {
+                    ZillitMenuEntry.Action(str(S.dd_publish_to_distribution), ZillitIcons.Send, ZillitMenuTone.Info) {
                         onEvent(DistributionEvent.Publish(document))
                     },
                 )
             }
             if (live) {
                 add(
-                    ZillitMenuEntry.Action("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) {
+                    ZillitMenuEntry.Action(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) {
                         onEvent(DistributionEvent.Delete(document))
                     },
                 )
             }
             add(
-                ZillitMenuEntry.Action("Download", ZillitIcons.Download, ZillitMenuTone.Neutral) {
+                ZillitMenuEntry.Action(str(S.download), ZillitIcons.Download, ZillitMenuTone.Neutral) {
                     onEvent(DistributionEvent.Download(document))
                 },
             )
             if (live && state.viewer.isAdmin) {
                 add(ZillitMenuEntry.Divider)
                 add(
-                    ZillitMenuEntry.Action("Download count", ZillitIcons.BarChart, ZillitMenuTone.Neutral) {
+                    ZillitMenuEntry.Action(str(S.download_count), ZillitIcons.BarChart, ZillitMenuTone.Neutral) {
                         onEvent(DistributionEvent.ShowCounts(document, downloads = true))
                     },
                 )
                 add(
-                    ZillitMenuEntry.Action("View count", ZillitIcons.Users, ZillitMenuTone.Neutral) {
+                    ZillitMenuEntry.Action(str(S.view_count), ZillitIcons.Users, ZillitMenuTone.Neutral) {
                         onEvent(DistributionEvent.ShowCounts(document, downloads = false))
                     },
                 )
@@ -400,7 +403,7 @@ private fun DodMoreMenu(state: DistributionUiState, document: DistDocument, onEv
             if (live) {
                 add(ZillitMenuEntry.Divider)
                 add(
-                    ZillitMenuEntry.Action("Move to folder…", ZillitIcons.Folder, ZillitMenuTone.Approve) {
+                    ZillitMenuEntry.Action(str(S.move_to_folder), ZillitIcons.Folder, ZillitMenuTone.Approve) {
                         onEvent(DistributionEvent.Move(document))
                     },
                 )
@@ -438,20 +441,20 @@ private fun DodUploadDialog(state: DistributionUiState, onEvent: (DistributionEv
     val editor = state.upload ?: return
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "Upload D.O.D",
-        subtitle = "Choose the folder it files under",
+        title = str(S.upload_dod),
+        subtitle = str(S.desktop_dod_upload_subtitle),
         icon = ZillitIcons.Upload,
         onDismiss = { onEvent(DistributionEvent.CancelUpload) },
         visible = true,
         width = UPLOAD_DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DistributionEvent.CancelUpload) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Upload",
+                text = str(S.upload),
                 onClick = { onEvent(DistributionEvent.SubmitUpload) },
                 leadingIcon = ZillitIcons.Upload,
                 loading = editor.saving,
@@ -477,7 +480,7 @@ private fun DodUploadDialog(state: DistributionUiState, onEvent: (DistributionEv
                 contentAlignment = Alignment.Center,
             ) {
                 ZillitText(
-                    text = "PDF",
+                    text = str(S.av_pdf),
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = colors.danger,
                 )
@@ -489,7 +492,7 @@ private fun DodUploadDialog(state: DistributionUiState, onEvent: (DistributionEv
                     maxLines = 1,
                 )
                 ZillitText(
-                    text = "File size: ${formatBytes(editor.bytes.size.toString())}",
+                    text = str(S.desktop_dist_file_size, formatBytes(editor.bytes.size.toString())),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -502,16 +505,16 @@ private fun DodUploadDialog(state: DistributionUiState, onEvent: (DistributionEv
             ZillitTextField(
                 value = editor.episode,
                 onValueChange = { onEvent(DistributionEvent.UploadChanged(episode = it)) },
-                label = "Episode number",
-                placeholder = "1 or 1,2",
-                helperText = "Required on a television production.",
+                label = str(S.txt_episode_number),
+                placeholder = str(S.desktop_dist_episode_placeholder),
+                helperText = str(S.desktop_dist_required_on_television),
                 modifier = Modifier.width(FIELD_WIDTH),
             )
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             ZillitText(
-                text = "Page colour (optional)",
+                text = str(S.desktop_dist_page_colour_optional),
                 style = ZillitTheme.typography.label,
                 color = colors.textSecondary,
             )
@@ -548,15 +551,15 @@ private fun FolderNamePicker(
         ZillitTextField(
             value = name,
             onValueChange = { onEvent(DistributionEvent.UploadChanged(name = it, nameFromPick = false)) },
-            label = "Folder name",
-            placeholder = "Type a name",
+            label = str(S.folder_name),
+            placeholder = str(S.desktop_dist_folder_name_hint),
             leadingIcon = ZillitIcons.Folder,
             helperText = if (fromPick) {
-                "Existing folder."
+                str(S.drive_pick_existing_folder)
             } else {
-                "Pick an existing folder below, or type a new one — new names are title-cased."
+                str(S.desktop_dist_pick_existing_folder_titlecased)
             },
-            errorText = if (name.isBlank()) "Name is required" else null,
+            errorText = if (name.isBlank()) str(S.name_is_required) else null,
             modifier = Modifier.fillMaxWidth(),
         )
         // Nothing to offer once the only match is the picked folder itself.
@@ -650,7 +653,7 @@ internal fun DodCountsDialog(
         .map { row -> row to (resolveUser(row.userId) ?: row.userId) }
         .filter { (_, name) -> query.isBlank() || name.contains(query.trim(), ignoreCase = true) }
     ZillitDialogShell(
-        title = if (counts.downloads) "Download count" else "View count",
+        title = if (counts.downloads) str(S.download_count) else str(S.view_count),
         subtitle = counts.document.displayName(),
         icon = if (counts.downloads) ZillitIcons.Download else ZillitIcons.Eye,
         onDismiss = { onEvent(DistributionEvent.CloseCounts) },
@@ -658,7 +661,7 @@ internal fun DodCountsDialog(
         width = COUNTS_DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CloseCounts) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -667,7 +670,7 @@ internal fun DodCountsDialog(
         ZillitSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Search by name",
+            placeholder = str(S.desktop_search_by_name),
             modifier = Modifier.fillMaxWidth(),
         )
         when {
@@ -677,9 +680,9 @@ internal fun DodCountsDialog(
             ) { ZillitSpinner() }
             rows.isEmpty() -> ZillitEmptyState(
                 title = when {
-                    query.isNotBlank() -> "Nobody matches"
-                    counts.downloads -> "Nobody has downloaded this yet"
-                    else -> "Nobody has viewed this yet"
+                    query.isNotBlank() -> str(S.desktop_nobody_matches)
+                    counts.downloads -> str(S.desktop_dist_nobody_downloaded_bare)
+                    else -> str(S.desktop_dist_nobody_viewed_bare)
                 },
                 icon = ZillitIcons.Users,
             )
@@ -709,9 +712,9 @@ internal fun DodCountsDialog(
                             )
                             ZillitText(
                                 text = if (counts.downloads) {
-                                    "Download count: ${row.downloadCount}"
+                                    str(S.desktop_dist_download_count_value, row.downloadCount)
                                 } else {
-                                    "View count: ${row.viewCount}"
+                                    str(S.desktop_dist_view_count_value, row.viewCount)
                                 },
                                 style = ZillitTheme.typography.bodySmall,
                                 color = colors.textSecondary,
@@ -736,7 +739,7 @@ private fun DodMoveDialog(state: DistributionUiState, onEvent: (DistributionEven
     val colors = ZillitTheme.colors
     val candidates = state.folders.filter { !it.deleted && it.key.isNotBlank() && it.key != move.document.name }
     ZillitDialogShell(
-        title = "Select folder to move",
+        title = str(S.select_folder_to_move),
         subtitle = move.document.displayName(),
         icon = ZillitIcons.Folder,
         onDismiss = { onEvent(DistributionEvent.CancelMove) },
@@ -744,12 +747,12 @@ private fun DodMoveDialog(state: DistributionUiState, onEvent: (DistributionEven
         width = MOVE_DIALOG_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DistributionEvent.CancelMove) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Move",
+                text = str(S.move),
                 onClick = { onEvent(DistributionEvent.ConfirmMove) },
                 enabled = move.target != null && !move.saving,
                 loading = move.saving,
@@ -757,7 +760,7 @@ private fun DodMoveDialog(state: DistributionUiState, onEvent: (DistributionEven
         },
     ) {
         if (candidates.isEmpty()) {
-            ZillitEmptyState(title = "No other folders to move to", icon = ZillitIcons.Folder)
+            ZillitEmptyState(title = str(S.desktop_dist_no_other_folders_bare), icon = ZillitIcons.Folder)
             return@ZillitDialogShell
         }
         Column {
@@ -800,7 +803,7 @@ internal fun DistDocument.fileName(): String? =
     attachment?.name?.ifBlank { null } ?: originalName.ifBlank { null }
 
 /** The name the confirms and titles show — the file's, else a stand-in. */
-internal fun DistDocument.displayName(): String = fileName() ?: "Document"
+internal fun DistDocument.displayName(): String = fileName() ?: str(S.document)
 
 /** A stringified byte count as "1.2 MB"; null when unknown. */
 internal fun formatBytes(size: String?): String? {

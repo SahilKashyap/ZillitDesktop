@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealDates
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
@@ -115,12 +117,12 @@ private fun ActionsRow(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit)
         DmSearchPill(
             value = state.deals.search,
             onValueChange = { onEvent(DealsEvent.Search(it)) },
-            placeholder = "Search deal memos — by crew, reference, designation…",
+            placeholder = str(S.desktop_dm_search_deal_memos_by_crew_reference_designation),
             modifier = Modifier.weight(1f),
         )
         ExportTrigger(state, onEvent)
         DmButton(
-            text = "Deal Memo Setup",
+            text = str(S.dm_setup_title),
             onClick = { onEvent(DealMemoEvent.Navigate(DealMemoRoute.SetupHub())) },
             style = DmButtonStyle.Cta,
             icon = ZillitIcons.Settings,
@@ -136,7 +138,7 @@ private fun ExportTrigger(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Un
     val drop = with(LocalDensity.current) { 52.dp.roundToPx() }
     Box {
         DmButton(
-            text = if (exporting != null) "Exporting…" else "Export",
+            text = if (exporting != null) str(S.desktop_exporting) else str(S.asset_export),
             onClick = { open.value = !open.value },
             style = DmButtonStyle.Ghost,
             icon = DmIcons.Export,
@@ -147,28 +149,28 @@ private fun ExportTrigger(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Un
                 open.value = false
                 onEvent(DealsEvent.Export(kind))
             }
-            DmMenuGroupTitle("Deal Register")
+            DmMenuGroupTitle(str(S.desktop_dm_deal_register))
             DmMenuItem(
-                "Export PDF",
-                "Formatted document, print-ready",
+                str(S.recce_export_pdf),
+                str(S.desktop_hub_formatted_document_print_ready),
                 "PDF",
                 Color(0xFFFF7A59) to Color(0xFFE23B3B),
                 { pick(DealExport.RegisterPdf) },
                 ".pdf",
             )
             DmMenuItem(
-                "Export Excel",
-                "Editable spreadsheet with live data",
+                str(S.desktop_dm_export_excel),
+                str(S.desktop_hub_editable_spreadsheet_with_live_data),
                 "XLSX",
                 Color(0xFF34C97A) to Color(0xFF138A52),
                 { pick(DealExport.RegisterExcel) },
                 ".xlsx",
             )
             DmMenuSeparator()
-            DmMenuGroupTitle("Crew Documents")
+            DmMenuGroupTitle(str(S.desktop_dm_crew_documents))
             DmMenuItem(
-                "Starter Forms",
-                "One signed start form per crew — all deals in the project",
+                str(S.desktop_dm_starter_forms),
+                str(S.desktop_dm_one_signed_start_form_per_crew_all),
                 "ZIP",
                 Color(0xFF8B7FF5) to Color(0xFF5A4BD6),
                 { pick(DealExport.StartForms) },
@@ -184,24 +186,24 @@ private fun CreateTrigger(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Un
     val drop = with(LocalDensity.current) { 52.dp.roundToPx() }
     Box {
         DmButton(
-            text = "Create Deal Memo",
+            text = str(S.dm_wizard_title),
             onClick = { onEvent(DealsEvent.RequestCreateMenu) },
             style = DmButtonStyle.Cta,
             icon = ZillitIcons.Add,
             loading = deals.checkingSetups,
         )
         DmDropPanel(open = deals.createMenuOpen, onDismiss = { onEvent(DealsEvent.CloseCreateMenu) }, offsetY = drop) {
-            DmMenuGroupTitle("Create Deal Memo")
+            DmMenuGroupTitle(str(S.dm_wizard_title))
             DmMenuItem(
-                "Union",
-                "Start from one of the project's union setups",
+                str(S.dm_label_union),
+                str(S.dm_create_union_sub),
                 "U",
                 Color(0xFFF8A03A) to Color(0xFFE8861A),
                 { onEvent(DealsEvent.CreateFrom(SetupGroup.Union)) },
             )
             DmMenuItem(
-                "Non-Union",
-                "Start from one of the project's non-union setups",
+                str(S.dm_create_non_union),
+                str(S.dm_create_non_union_sub),
                 "NU",
                 Color(0xFF5B8DEF) to Color(0xFF2862E0),
                 { onEvent(DealsEvent.CreateFrom(SetupGroup.NonUnion)) },
@@ -220,7 +222,10 @@ private fun QuickFilters(state: DealMemoUiState, labels: DealCrewLabels, onEvent
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            DmEyebrow("Quick filters:", modifier = Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
+            DmEyebrow(
+                str(S.dm_nda_quick_filters),
+                modifier = Modifier.align(Alignment.CenterVertically).padding(end = 4.dp),
+            )
             DealQuickFilter.entries.forEach { filter ->
                 DmFilterPill(
                     filter.label,
@@ -233,15 +238,15 @@ private fun QuickFilters(state: DealMemoUiState, labels: DealCrewLabels, onEvent
             listOf<DepartmentOption?>(null) + DealListRules.departmentOptions(deals.rows, labels)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            DmLabelled("Dept:") {
+            DmLabelled(str(S.ah_dept_label)) {
                 DmSelectPill(
                     value = options.firstOrNull { it?.id == deals.departmentId },
                     options = options,
-                    label = { it?.label ?: "All" },
+                    label = { it?.label ?: str(S.dm_filter_all) },
                     onSelect = { onEvent(DealsEvent.Department(it?.id)) },
                 )
             }
-            DmLabelled("Sort:") {
+            DmLabelled(str(S.ah_sort_label)) {
                 DmSelectPill(
                     value = deals.sort,
                     options = DealSort.entries,
@@ -272,12 +277,11 @@ private fun NominalBanner(count: Int) {
         val one = count == 1
         ZillitText(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("$count deal${if (one) "" else "s"}") }
-                append(
-                    " ${if (one) "has" else "have"} nominal coding pending — their payroll will not appear in the " +
-                        "Cost Report's Payroll committed column until the codes are added. Open pending nominal " +
-                        "deal and update the nominals.",
-                )
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                    append(if (one) str(S.desktop_dm_one_deal) else str(S.desktop_dm_n_deals, count))
+                }
+                append(" " + if (one) str(S.desktop_dm_nominal_pending_banner_one)
+                    else str(S.desktop_dm_nominal_pending_banner_many))
             },
             style = DmType.sans(12.5.sp),
             color = if (ZillitTheme.colors.isDark) {
@@ -289,14 +293,14 @@ private fun NominalBanner(count: Int) {
     }
 }
 
-private val COLUMNS = listOf(
-    DmColumn("Reference", width = 124.dp),
-    DmColumn("Crew Member", weight = 1.4f),
-    DmColumn("Department / Designation", weight = 1.4f),
-    DmColumn("Day Rate", width = 112.dp),
-    DmColumn("Type", width = 118.dp),
-    DmColumn("Period", width = 178.dp),
-    DmColumn("Status", weight = 1.7f),
+private val COLUMNS get() = listOf(
+    DmColumn(str(S.desktop_reference), width = 124.dp),
+    DmColumn(str(S.crew_member), weight = 1.4f),
+    DmColumn(str(S.desktop_dm_department_designation), weight = 1.4f),
+    DmColumn(str(S.dm_rates_day_rate), width = 112.dp),
+    DmColumn(str(S.type), width = 118.dp),
+    DmColumn(str(S.cr_meta_period), width = 178.dp),
+    DmColumn(str(S.dm_label_status), weight = 1.7f),
     DmColumn("", width = 206.dp, alignEnd = true),
 )
 
@@ -311,8 +315,8 @@ private fun DealsTable(
     DmCard(modifier = modifier.fillMaxWidth()) {
         DmTableHeader(COLUMNS)
         when {
-            state.deals.loading && !state.deals.loaded -> TableMessage(loading = true, text = "Loading…")
-            rows.isEmpty() -> TableMessage(loading = false, text = "No deal memos match this filter.")
+            state.deals.loading && !state.deals.loaded -> TableMessage(loading = true, text = str(S.dm_loading))
+            rows.isEmpty() -> TableMessage(loading = false, text = str(S.desktop_dm_no_deal_memos_match_this_filter))
             else -> ZillitLazyColumn(modifier = Modifier.fillMaxWidth()) {
                 items(rows, key = { it.id.ifBlank { it.hashCode().toString() } }) { deal ->
                     DealRow(state, deal, labels, onEvent)
@@ -368,7 +372,7 @@ private fun DealRow(state: DealMemoUiState, deal: DealDoc, labels: DealCrewLabel
                         maxLines = 1,
                     )
                     // Under the name rather than beside it, so a long name is not cut to fit the chip.
-                    if (deal.externalFlag) DmBadge("External", DmTone.Amber)
+                    if (deal.externalFlag) DmBadge(str(S.dm_nda_chip_external), DmTone.Amber)
                 }
             }
         }
@@ -418,8 +422,14 @@ private fun DealRow(state: DealMemoUiState, deal: DealDoc, labels: DealCrewLabel
 private fun StatusCell(state: DealMemoUiState, deal: DealDoc) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         DmStatusBadge(deal.status)
-        if (deal.isDeactivating) DmBadge("Deactivating · ${DealDates.shortUtc(deal.lastPayDate)}", DmTone.Amber)
-        if (state.viewer.isAccountant && DealListRules.nominalsPending(deal)) DmBadge("Pending Nominals", DmTone.Amber)
+        if (deal.isDeactivating) DmBadge(
+            str(S.desktop_dm_deactivating_on, DealDates.shortUtc(deal.lastPayDate)),
+            DmTone.Amber,
+        )
+        if (state.viewer.isAccountant && DealListRules.nominalsPending(deal)) DmBadge(
+            str(S.dm_pending_nominals_chip),
+            DmTone.Amber,
+        )
     }
 }
 
@@ -438,7 +448,7 @@ private fun RowActions(state: DealMemoUiState, deal: DealDoc, onEvent: (DealMemo
         if (DealListRules.canActivate(deal)) {
             val running = deals.activatingId == deal.id
             DmButton(
-                text = if (running) "Activating…" else "Activate",
+                text = if (running) str(S.desktop_dm_activating) else str(S.dm_action_activate),
                 onClick = { onEvent(DealsEvent.Activate(deal)) },
                 style = DmButtonStyle.SmallGreen,
                 icon = ZillitIcons.Check,
@@ -451,26 +461,30 @@ private fun RowActions(state: DealMemoUiState, deal: DealDoc, onEvent: (DealMemo
             val overdue = DealListRules.chaseOverdue(deal, deals.loadedAt)
             DmButton(
                 text = when {
-                    running -> "Chasing…"
-                    overdue -> "Chase · Overdue"
-                    else -> "Chase"
+                    running -> str(S.dm_row_action_chasing)
+                    overdue -> str(S.dm_row_action_chase_overdue)
+                    else -> str(S.dm_row_action_chase)
                 },
                 onClick = { onEvent(DealsEvent.Chase(deal)) },
                 style = DmButtonStyle.SmallPrimary,
                 icon = ZillitIcons.Bell,
                 loading = running,
                 tooltip = if (overdue) {
-                    "Details overdue — chase the crew member to complete them"
+                    str(S.desktop_dm_details_overdue_chase_the_crew_member_to)
                 } else {
-                    "Chase the crew member to complete their details"
+                    str(S.desktop_dm_chase_the_crew_member_to_complete_their)
                 },
             )
         }
-        DmRoundIcon(DmIcons.History, tooltip = "History", onClick = { onEvent(DealMemoEvent.OpenHistory(deal)) })
+        DmRoundIcon(
+            DmIcons.History,
+            tooltip = str(S.dm_row_action_history),
+            onClick = { onEvent(DealMemoEvent.OpenHistory(deal)) },
+        )
         if (DealListRules.canDelete(deal, state.rights.canPost, state.viewer.userId)) {
             DmRoundIcon(
                 ZillitIcons.Trash,
-                tooltip = if (deal.rawStatus == "draft") "Delete draft" else "Delete deal memo",
+                tooltip = if (deal.rawStatus == "draft") str(S.ah_cd_delete_draft) else str(S.dm_delete_dialog_title),
                 onClick = { onEvent(DealsEvent.AskDelete(deal)) },
                 danger = true,
             )
@@ -485,10 +499,10 @@ private fun DeleteConfirmation(state: DealMemoUiState, onEvent: (DealMemoEvent) 
     if (pending != null) shown.value = pending
     DmConfirm(
         visible = pending != null,
-        title = "Delete Deal Memo",
+        title = str(S.dm_delete_dialog_title),
         message = shown.value?.let(DealListRules::deleteMessage).orEmpty(),
-        confirmLabel = "Delete",
-        loadingLabel = "Deleting...",
+        confirmLabel = str(S.dm_nda_delete),
+        loadingLabel = str(S.dm_hub_deleting),
         loading = state.deals.deleting,
         onConfirm = { onEvent(DealsEvent.ConfirmDelete) },
         onCancel = { onEvent(DealsEvent.CancelDelete) },
@@ -504,11 +518,11 @@ private fun SetupGate(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) 
     val group = shown.value?.group
     DmModal(
         visible = gate != null,
-        title = "Set up Deal Memo first",
+        title = str(S.dm_no_setup_title),
         onDismiss = { onEvent(DealsEvent.CloseSetupGate) },
         footer = {
             DmButton(
-                "Open Deal Memo Setup",
+                str(S.dm_no_setup_action),
                 onClick = { onEvent(DealsEvent.OpenSetupFromGate) },
                 style = DmButtonStyle.ModalPrimary,
             )
@@ -517,20 +531,19 @@ private fun SetupGate(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) 
         Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
             if (group != null) {
                 ZillitText(
-                    text = "${group.label} setup is pending.",
+                    text = str(S.desktop_dm_group_setup_is_pending, group.label),
                     style = DmType.sans(14.sp, FontWeight.SemiBold),
                     color = dm.ink,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
             }
             val which = when (group) {
-                SetupGroup.Union -> "Union"
-                SetupGroup.NonUnion -> "Non-union"
-                null -> "Union or Non-union"
+                SetupGroup.Union -> str(S.dm_label_union)
+                SetupGroup.NonUnion -> str(S.dm_create_non_union)
+                null -> str(S.desktop_dm_union_or_non_union)
             }
             ZillitText(
-                text = "You need to go to Deal Memo Setup to fill up Production Entity, select $which and fill " +
-                    "accordingly.",
+                text = str(S.dm_no_setup_body, which),
                 style = DmType.sans(13.sp, FontWeight.Medium).copy(lineHeight = 20.sp),
                 color = dm.ink2,
             )

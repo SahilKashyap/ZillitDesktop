@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.calls.data.livekit
 
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
@@ -210,7 +212,7 @@ data class LiveKitActiveCall(
     val inCallCount: Int get() = inCallUsers.size.takeIf { it > 0 } ?: inCallUserIds.size
 
     /** The room's name, else the caller's — what the Calls tab titles it. */
-    val title: String get() = chatRoomName.ifBlank { callerName }.ifBlank { "Ongoing call" }
+    val title: String get() = chatRoomName.ifBlank { callerName }.ifBlank { str(S.desktop_ongoing_call) }
 }
 
 /**

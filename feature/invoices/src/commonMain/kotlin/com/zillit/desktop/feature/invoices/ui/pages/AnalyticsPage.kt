@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.InvoiceAnalytics
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 
@@ -64,7 +66,7 @@ private fun StatRow(data: InvoiceAnalytics) {
         tiles = listOf(
             {
                 ZillitStatTile(
-                    label = "Total AP Spend",
+                    label = str(S.desktop_total_ap_spend),
                     value = stats.totalApSpend.ifBlank { "—" },
                     sub = stats.totalApSubtitle.ifBlank { "production total" },
                     modifier = statTile,
@@ -72,7 +74,7 @@ private fun StatRow(data: InvoiceAnalytics) {
             },
             {
                 ZillitStatTile(
-                    label = "Avg Invoice",
+                    label = str(S.desktop_avg_invoice),
                     value = stats.averageInvoice.ifBlank { "—" },
                     sub = stats.averageInvoiceSubtitle.ifBlank { null },
                     modifier = statTile,
@@ -80,7 +82,7 @@ private fun StatRow(data: InvoiceAnalytics) {
             },
             {
                 ZillitStatTile(
-                    label = "On-Time Payment",
+                    label = str(S.desktop_on_time_payment),
                     value = stats.onTimePayment.ifBlank { "—" },
                     sub = stats.onTimeSubtitle.ifBlank { null },
                     tone = StatusTone.Done,
@@ -89,7 +91,7 @@ private fun StatRow(data: InvoiceAnalytics) {
             },
             {
                 ZillitStatTile(
-                    label = "AP Days",
+                    label = str(S.desktop_ap_days),
                     value = stats.apDays.ifBlank { "—" },
                     sub = stats.apDaysSubtitle.ifBlank { "avg days to payment" },
                     modifier = statTile,
@@ -102,13 +104,13 @@ private fun StatRow(data: InvoiceAnalytics) {
 @Composable
 private fun SummaryRow(data: InvoiceAnalytics) {
     val summary = data.summary
-    ZillitSectionCard(title = "Cost Report Impact of AP", icon = ZillitIcons.Ledger) {
+    ZillitSectionCard(title = str(S.desktop_cost_report_impact_of_ap), icon = ZillitIcons.Ledger) {
         StatGrid(
             columns = ANALYTICS_COLUMNS,
             tiles = listOf(
                 {
                     ZillitStatTile(
-                        label = "Posted to Ledger",
+                        label = str(S.cr_posted_to_ledger),
                         value = summary.posted.ifBlank { "—" },
                         sub = summary.postedSubtitle.ifBlank { null },
                         tone = StatusTone.Done,
@@ -117,7 +119,7 @@ private fun SummaryRow(data: InvoiceAnalytics) {
                 },
                 {
                     ZillitStatTile(
-                        label = "Pending Post",
+                        label = str(S.desktop_pending_post),
                         value = summary.pending.ifBlank { "—" },
                         sub = summary.pendingSubtitle.ifBlank { null },
                         tone = StatusTone.Pending,
@@ -126,7 +128,7 @@ private fun SummaryRow(data: InvoiceAnalytics) {
                 },
                 {
                     ZillitStatTile(
-                        label = "Estimated Unknowns",
+                        label = str(S.desktop_estimated_unknowns),
                         value = summary.unknown.ifBlank { "—" },
                         sub = summary.unknownSubtitle.ifBlank { null },
                         tone = StatusTone.Rejected,
@@ -135,7 +137,7 @@ private fun SummaryRow(data: InvoiceAnalytics) {
                 },
                 {
                     ZillitStatTile(
-                        label = "Total Projected AP",
+                        label = str(S.desktop_total_projected_ap),
                         value = summary.projected.ifBlank { "—" },
                         sub = summary.projectedSubtitle.ifBlank { null },
                         modifier = statTile,
@@ -148,21 +150,21 @@ private fun SummaryRow(data: InvoiceAnalytics) {
 
 @Composable
 private fun DepartmentTable(state: InvoicesUiState, data: InvoiceAnalytics) {
-    ZillitSectionCard(title = "Spend by Department", icon = ZillitIcons.File) {
+    ZillitSectionCard(title = str(S.ah_spend_by_department), icon = ZillitIcons.File) {
         if (data.departments.isEmpty()) {
-            Muted("Nothing attributed to a department yet.")
+            Muted(str(S.desktop_inv_nothing_attributed_to_department))
             return@ZillitSectionCard
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.xs),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            Caption("Department", Modifier.weight(2f))
-            Caption("Posted", Modifier.weight(1f))
-            Caption("Pending", Modifier.weight(1f))
-            Caption("Unattributed", Modifier.weight(1f))
-            Caption("Projected", Modifier.weight(1f))
-            Caption("Variance", Modifier.weight(1f))
+            Caption(str(S.department), Modifier.weight(2f))
+            Caption(str(S.ah_step_posted), Modifier.weight(1f))
+            Caption(str(S.pending), Modifier.weight(1f))
+            Caption(str(S.desktop_unattributed), Modifier.weight(1f))
+            Caption(str(S.desktop_projected), Modifier.weight(1f))
+            Caption(str(S.desktop_variance), Modifier.weight(1f))
         }
         data.departments.forEach { row ->
             ZillitDivider()
@@ -193,9 +195,9 @@ private fun DepartmentTable(state: InvoicesUiState, data: InvoiceAnalytics) {
 /** Each vendor's share, as a bar the width of its own percentage. */
 @Composable
 private fun VendorSpendPanel(data: InvoiceAnalytics) {
-    ZillitSectionCard(title = "Top Vendors by Spend", icon = ZillitIcons.Users) {
+    ZillitSectionCard(title = str(S.desktop_top_vendors_by_spend), icon = ZillitIcons.Users) {
         if (data.vendors.isEmpty()) {
-            Muted("No vendor spend yet.")
+            Muted(str(S.desktop_no_vendor_spend_yet))
             return@ZillitSectionCard
         }
         data.vendors.forEachIndexed { index, vendor ->
@@ -209,7 +211,7 @@ private fun VendorSpendPanel(data: InvoiceAnalytics) {
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitText(
-                        text = vendor.name.ifBlank { "Unknown" },
+                        text = vendor.name.ifBlank { str(S.desktop_unknown) },
                         style = ZillitTheme.typography.bodyMedium,
                         maxLines = 1,
                         modifier = Modifier.weight(1f),

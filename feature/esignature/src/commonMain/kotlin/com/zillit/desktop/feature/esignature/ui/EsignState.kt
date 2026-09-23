@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.esignature.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.AuditEntry
 import com.zillit.desktop.feature.esignature.domain.BulkJob
 import com.zillit.desktop.feature.esignature.domain.Envelope
@@ -19,11 +21,14 @@ import com.zillit.desktop.feature.esignature.domain.EsignUnread
 import com.zillit.desktop.feature.esignature.domain.StoredFile
 
 /** The four top-level segments (the web's Segmented control). */
-enum class EsignSurface(val label: String) {
-    Manage("Upload Document"),
-    Sign("Sign Documents"),
-    Templates("Templates"),
-    Bulk("Bulk Sends"),
+enum class EsignSurface(private val labelKey: String) {
+    Manage(S.upload_document),
+    Sign(S.docusign_segment_sign_documents),
+    Templates(S.docusign_segment_templates),
+    Bulk(S.docusign_segment_bulk),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** Which full-page surface is up. The lists are the home; the rest stack on it. */
@@ -33,27 +38,43 @@ enum class EsignPageKind { Lists, Editor, Detail, Signing }
 enum class ListLayout { List, Card }
 
 /** The manager's outer tabs. */
-enum class ManageOuterTab(val label: String) {
-    Active("E-Signature"),
-    Completed("Completed"),
-    Rejected("Rejected"),
+enum class ManageOuterTab(private val labelKey: String) {
+    Active(S.desktop_ds_e_signature),
+    Completed(S.completed),
+    Rejected(S.rejected),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** Under the Active tab. */
-enum class ManageInnerTab(val label: String) { Sent("Sent"), Draft("Draft") }
+enum class ManageInnerTab(private val labelKey: String) {
+    Sent(S.txt_sent),
+    Draft(S.txt_draft),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** The Sent tab's chips. */
-enum class SentFilter(val label: String, val help: String) {
-    All("All", "Every envelope you sent. All of them in one place."),
-    Awaiting("Awaiting", "Nobody has signed these yet. Still waiting for the first signature."),
-    InProgress("In progress", "Some people signed already. A few more still need to."),
+enum class SentFilter(private val labelKey: String, private val helpKey: String) {
+    All(S.filter_all, S.ds_sent_filter_all_tooltip),
+    Awaiting(S.ds_sent_filter_awaiting, S.ds_sent_filter_awaiting_tooltip),
+    InProgress(S.ds_sent_filter_in_progress, S.ds_sent_filter_in_progress_tooltip),
+    ;
+
+    val label: String get() = str(labelKey)
+    val help: String get() = str(helpKey)
 }
 
 /** The receiver's tabs. */
-enum class SignBucket(val wire: String, val label: String) {
-    Action("received", "Action Required"),
-    Completed("completed", "Completed"),
-    Rejected("rejected", "Rejected"),
+enum class SignBucket(val wire: String, private val labelKey: String) {
+    Action("received", S.docusign_receiver_tab_action),
+    Completed("completed", S.completed),
+    Rejected("rejected", S.rejected),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The manager's wire buckets — all fetched together, as the web does. */
@@ -123,18 +144,17 @@ enum class EditorStep { Prepare, Place }
  * Manual: each click opens a popover asking who and what. Fast place: arm a
  * signer and a type first, then every click drops one.
  */
-enum class PlacementMode(val wire: String, val label: String, val help: String) {
-    Manual(
-        "manual",
-        "Generic document",
-        "No signer labels on the page. Each click asks which signer fills the field.",
-    ),
+enum class PlacementMode(val wire: String, private val labelKey: String, private val helpKey: String) {
+    Manual("manual", S.desktop_ds_generic_document, S.desktop_ds_no_signer_labels_on_the_page_each_click),
     FastPlace(
         "fastPlace",
-        "Pre-printed signing slots",
-        "Deal memos and forms with labelled slots. Arm a signer and a field type, then click to drop.",
+        S.desktop_ds_pre_printed_signing_slots,
+        S.desktop_ds_deal_memos_and_forms_with_labelled_slots_arm,
     ),
     ;
+
+    val label: String get() = str(labelKey)
+    val help: String get() = str(helpKey)
 
     companion object {
         fun fromWire(raw: String?): PlacementMode = entries.firstOrNull { it.wire == raw } ?: Manual
@@ -291,7 +311,15 @@ enum class SigningMode {
 }
 
 /** How the pad captures a mark: drawn, typed in a script face, or picked from what is saved. */
-enum class PadMode(val label: String) { Saved("Saved"), Draw("Draw"), Type("Type"), Upload("Upload") }
+enum class PadMode(private val labelKey: String) {
+    Saved(S.saved),
+    Draw(S.docusign_create_tab_draw),
+    Type(S.type),
+    Upload(S.upload),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 data class PadState(
     val mode: PadMode = PadMode.Saved,

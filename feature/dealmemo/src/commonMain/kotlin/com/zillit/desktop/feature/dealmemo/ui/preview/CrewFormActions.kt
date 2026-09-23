@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui.preview
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewDraft
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewField
@@ -161,7 +163,7 @@ internal class CrewFormActions(private val vm: DealMemoViewModel, private val pa
         val existing = passportList(draft.crewDetails["passport_attachment"])
         val room = PASSPORT_MAX - existing.size
         if (room <= 0) {
-            vm.toast("You can upload up to 2 files.", DealToastTone.Error)
+            vm.toast(str(S.desktop_dm_you_can_upload_up_to_2_files), DealToastTone.Error)
             return
         }
         vm.work {
@@ -171,7 +173,7 @@ internal class CrewFormActions(private val vm: DealMemoViewModel, private val pa
                 file.name.substringAfterLast('.', "").lowercase() in PASSPORT_TYPES || file.mime in PASSPORT_MIMES
             }
             if (accepted.isEmpty()) {
-                vm.toast("Please upload a PDF, JPG or PNG file.", DealToastTone.Error)
+                vm.toast(str(S.dm_edit_personal_passport_type), DealToastTone.Error)
                 return@work
             }
             updateForm { copy(uploading = true) }
@@ -191,7 +193,7 @@ internal class CrewFormActions(private val vm: DealMemoViewModel, private val pa
             }
             updateForm { copy(uploading = false) }
             if (uploaded.any { it == null }) {
-                vm.toast("Couldn't upload the passport / ID. Please try again.", DealToastTone.Error)
+                vm.toast(str(S.desktop_dm_couldnt_upload_the_passport_id_please_try), DealToastTone.Error)
                 return@work
             }
             val current = vm.ui.preview?.crewDraft ?: return@work

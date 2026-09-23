@@ -74,6 +74,8 @@ import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.media.PreviewResult
 import com.zillit.desktop.core.media.PreviewItem
 import com.zillit.desktop.core.media.MediaPreviewDialog
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.domain.BoardRow
@@ -425,12 +427,12 @@ private fun DropOverlay() {
                 size = DROP_ICON,
             )
             ZillitText(
-                text = "Drop to attach",
+                text = str(S.desktop_board_drop_to_attach),
                 style = ZillitTheme.typography.titleSmall,
                 color = ZillitTheme.colors.textPrimary,
             )
             ZillitText(
-                text = "The file posts to this board with your next message.",
+                text = str(S.desktop_board_drop_hint),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -452,8 +454,8 @@ private fun ForwardPicker(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Un
     val targets = state.tabs.filter { it.kind != HomeUnitKind.Calendar }
 
     ZillitDialogShell(
-        title = "Forward to",
-        subtitle = "A copy posts to the board you choose.",
+        title = str(S.desktop_email_forward_to),
+        subtitle = str(S.desktop_board_forward_subtitle),
         icon = ZillitIcons.Send,
         visible = state.forwarding != null,
         onDismiss = { onEvent(HomeFeedEvent.CancelForward) },
@@ -486,7 +488,7 @@ private fun ForwardPicker(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Un
                 )
                 if (!unit.canPost && !state.isAdmin) {
                     ZillitText(
-                        text = "no posting rights",
+                        text = str(S.desktop_board_no_posting_rights_chip),
                         style = ZillitTheme.typography.labelSmall,
                         color = ZillitTheme.colors.textMuted,
                     )
@@ -506,7 +508,7 @@ private fun PublishPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent)
     var shown by remember { mutableStateOf(state.distributionPrompt) }
     if (state.distributionPrompt != null) shown = state.distributionPrompt
     ZillitDialogShell(
-        title = "Publish to Document Distribution",
+        title = str(S.dd_publish_confirm_title),
         icon = ZillitIcons.Upload,
         visible = state.distributionPrompt != null,
         onDismiss = { onEvent(HomeFeedEvent.DismissPublish) },
@@ -514,16 +516,16 @@ private fun PublishPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent)
         actions = {
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Secondary,
                 onClick = { onEvent(HomeFeedEvent.DismissPublish) },
             )
-            ZillitButton(text = "Publish", onClick = { onEvent(HomeFeedEvent.ConfirmPublish) })
+            ZillitButton(text = str(S.publish), onClick = { onEvent(HomeFeedEvent.ConfirmPublish) })
         },
     ) {
-        val name = shown?.attachment?.fileName?.takeIf { it.isNotBlank() } ?: "this file"
+        val name = shown?.attachment?.fileName?.takeIf { it.isNotBlank() } ?: str(S.dd_generic_file_name)
         ZillitText(
-            text = "\"$name\" to the Document Distribution library?",
+            text = str(S.desktop_board_publish_question, name),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textPrimary,
         )
@@ -542,7 +544,7 @@ private fun PublishPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent)
 @Composable
 private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Unit) {
     val prompt = state.callSheetPrompt
-    val unitLabel = state.selectedUnit?.label ?: "Call Sheet"
+    val unitLabel = state.selectedUnit?.label ?: str(S.cs_app_name)
     // Remembered across the exit so the fading card keeps its last words.
     var confirming by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
@@ -551,7 +553,7 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
         picking = prompt.picking
     }
     ZillitDialogShell(
-        title = if (picking) "Replace which document?" else "Alert",
+        title = if (picking) str(S.desktop_board_replace_which_document) else str(S.alert),
         icon = ZillitIcons.Warning,
         visible = prompt != null,
         onDismiss = { onEvent(HomeFeedEvent.CallSheetDismiss) },
@@ -562,11 +564,9 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
             picking -> ReplaceTargetList(prompt?.targets.orEmpty(), onEvent)
             else -> ZillitText(
                 text = if (!confirming) {
-                    "Are you uploading a document in continuation of the existing $unitLabel, " +
-                        "or uploading a new $unitLabel? Please choose below."
+                    str(S.desktop_board_callsheet_continuation_question, unitLabel)
                 } else {
-                    "Doing this will send all current data posted here to History. " +
-                        "It will be replaced with the new upload. Do you still want to proceed?"
+                    str(S.desktop_board_callsheet_new_warning)
                 },
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textPrimary,
@@ -587,18 +587,18 @@ private fun RowScope.PromptActions(
         Spacer(Modifier.weight(1f))
         when {
             picking -> ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
             )
             !confirming -> {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     variant = ButtonVariant.Tertiary,
                     onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
                 )
                 ZillitButton(
-                    text = "Continuation",
+                    text = str(S.continuation),
                     variant = ButtonVariant.Secondary,
                     onClick = { onEvent(HomeFeedEvent.CallSheetContinuation) },
                 )
@@ -606,21 +606,21 @@ private fun RowScope.PromptActions(
                 // single live document rather than send the whole unit to
                 // History. Only offered when there is something to swap.
                 ZillitButton(
-                    text = "Replace one…",
+                    text = str(S.desktop_board_replace_one),
                     variant = ButtonVariant.Secondary,
                     enabled = prompt?.targets?.isNotEmpty() == true,
                     onClick = { onEvent(HomeFeedEvent.CallSheetPickReplacement) },
                 )
-                ZillitButton(text = "New", onClick = { onEvent(HomeFeedEvent.CallSheetNew) })
+                ZillitButton(text = str(S.ah_txn_filter_new), onClick = { onEvent(HomeFeedEvent.CallSheetNew) })
             }
             else -> {
                 ZillitButton(
-                    text = "No",
+                    text = str(S.no),
                     variant = ButtonVariant.Secondary,
                     onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
                 )
                 ZillitButton(
-                    text = "Yes",
+                    text = str(S.yes),
                     variant = ButtonVariant.Danger,
                     onClick = { onEvent(HomeFeedEvent.CallSheetReplaceConfirmed) },
                 )
@@ -636,13 +636,13 @@ private fun ReplaceTargetList(targets: List<Notice>, onEvent: (HomeFeedEvent) ->
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = "The chosen document goes to History; your upload takes its place.",
+            text = str(S.desktop_board_replace_one_hint),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
         targets.forEach { target ->
             ZillitButton(
-                text = target.attachment?.fileName?.ifBlank { null } ?: target.body.ifBlank { "Document" },
+                text = target.attachment?.fileName?.ifBlank { null } ?: target.body.ifBlank { str(S.document) },
                 variant = ButtonVariant.Secondary,
                 onClick = { onEvent(HomeFeedEvent.CallSheetReplaceOne(target.id)) },
                 modifier = Modifier.fillMaxWidth(),
@@ -676,8 +676,8 @@ private fun ReadByPanel(
     var showUnread by remember(current?.noticeId) { mutableStateOf(false) }
 
     ZillitDialogShell(
-        title = "Read by",
-        subtitle = if (current?.commentId != null) "For one reply of the post." else null,
+        title = str(S.read_byr),
+        subtitle = if (current?.commentId != null) str(S.desktop_board_read_by_reply_subtitle) else null,
         icon = ZillitIcons.Check,
         visible = view != null,
         onDismiss = { onEvent(HomeFeedEvent.DismissReadBy) },
@@ -685,8 +685,8 @@ private fun ReadByPanel(
     ) {
         if (current != null) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ReadByTab("Read", current.lists?.read?.size, !showUnread) { showUnread = false }
-                ReadByTab("Unread", current.lists?.unread?.size, showUnread) { showUnread = true }
+                ReadByTab(str(S.read), current.lists?.read?.size, !showUnread) { showUnread = false }
+                ReadByTab(str(S.unread_txt), current.lists?.unread?.size, showUnread) { showUnread = true }
             }
 
             ReadByContent(current.lists, showUnread, resolveAuthor, loadAvatar)
@@ -714,7 +714,7 @@ private fun NotifyUnreadFooter(count: Int, onEvent: (HomeFeedEvent) -> Unit) {
     ) {
         ZillitText(
             text = if (arming) {
-                "Send a notification to $count ${if (count == 1) "person" else "people"}?"
+                if (count == 1) str(S.desktop_board_notify_one_person) else str(S.desktop_board_notify_people, count)
             } else {
                 ""
             },
@@ -724,13 +724,13 @@ private fun NotifyUnreadFooter(count: Int, onEvent: (HomeFeedEvent) -> Unit) {
         )
         if (arming) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { arming = false },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Send",
+                text = str(S.send),
                 onClick = {
                     arming = false
                     onEvent(HomeFeedEvent.NotifyUnread)
@@ -739,7 +739,7 @@ private fun NotifyUnreadFooter(count: Int, onEvent: (HomeFeedEvent) -> Unit) {
             )
         } else {
             ZillitButton(
-                text = "Notify",
+                text = str(S.notify),
                 onClick = { arming = true },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -758,7 +758,7 @@ private fun ReadByContent(
 ) {
     when {
         lists == null -> ZillitText(
-            text = "Loading…",
+            text = str(S.ah_loading),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -767,9 +767,9 @@ private fun ReadByContent(
             if (rows.isEmpty()) {
                 ZillitText(
                     text = if (showUnread) {
-                        "Everyone with access has read this."
+                        str(S.desktop_board_everyone_read)
                     } else {
-                        "No one has read this yet."
+                        str(S.desktop_chat_no_one_has_read_yet)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
@@ -826,7 +826,7 @@ private fun ReceiptRow(
     val resolved = resolveAuthor(receipt.userId)
     val name = receipt.userName?.takeIf { it.isNotBlank() }
         ?: resolved
-        ?: "Unknown crew member"
+        ?: str(S.desktop_board_unknown_crew_member)
     val role = receipt.designation?.takeIf { it.isNotBlank() }
 
     Column {
@@ -955,7 +955,7 @@ private fun Composer(
 
         if (draft.showsCounter) {
             ZillitText(
-                text = "${draft.remaining} characters left",
+                text = str(S.desktop_board_characters_left, draft.remaining),
                 style = ZillitTheme.typography.labelSmall,
                 color = if (draft.isOverLimit) colors.danger else colors.textMuted,
             )
@@ -1004,15 +1004,15 @@ private fun ComposerInput(
                 value = draft.text,
                 onValueChange = { onEvent(HomeFeedEvent.DraftChanged(it)) },
                 placeholder = when {
-                    state.editing != null -> "Rewrite the reply…"
-                    state.replyTo != null -> "Write a reply…"
-                    draft.media != null -> "Add a caption…"
-                    else -> "Write to the board…"
+                    state.editing != null -> str(S.desktop_board_rewrite_reply_placeholder)
+                    state.replyTo != null -> str(S.desktop_board_write_reply_placeholder)
+                    draft.media != null -> str(S.desktop_media_add_caption)
+                    else -> str(S.desktop_board_write_placeholder)
                 },
                 shape = RoundedCornerShape(COMPOSER_RADIUS),
                 containerColor = ZillitTheme.colors.surfaceSunken,
                 singleLine = false,
-                errorText = if (draft.isOverLimit) "Too long by ${-draft.remaining}" else null,
+                errorText = if (draft.isOverLimit) str(S.desktop_board_too_long_by, -draft.remaining) else null,
                 // The send lives *inside* the pill, on its trailing edge — the
                 // one filled control on the bar, and it reads as part of the
                 // thing it sends rather than a button that happens to sit
@@ -1045,9 +1045,9 @@ private fun SendButton(state: HomeFeedUiState, onClick: () -> Unit) {
     ZillitIconButton(
         icon = ZillitIcons.Send,
         contentDescription = when {
-            state.editing != null -> "Save"
-            state.replyTo != null -> "Send the reply"
-            else -> "Post"
+            state.editing != null -> str(S.save)
+            state.replyTo != null -> str(S.desktop_board_send_the_reply)
+            else -> str(S.txt_post)
         },
         onClick = onClick,
         enabled = state.draft.canSend && !state.isSending,
@@ -1075,7 +1075,7 @@ private fun ReplyBar(parent: Notice, authorLabel: String?, onCancel: () -> Unit)
     ) {
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = authorLabel?.let { "Replying to $it" } ?: "Replying",
+                text = authorLabel?.let { str(S.desktop_replying_to, it) } ?: str(S.desktop_board_replying),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
             )
@@ -1091,7 +1091,7 @@ private fun ReplyBar(parent: Notice, authorLabel: String?, onCancel: () -> Unit)
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Cancel the reply",
+            contentDescription = str(S.desktop_cancel_the_reply),
             onClick = onCancel,
         )
     }
@@ -1112,14 +1112,14 @@ private fun MediaButtons(enabled: Boolean, documentsOnly: Boolean, onEvent: (Hom
         } else {
             com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS
         },
-        contentDescription = "Attach a file",
+        contentDescription = str(S.desktop_attach_a_file),
         enabled = enabled,
         onPick = { kind -> onEvent(HomeFeedEvent.AttachKind(kind)) },
     )
     if (documentsOnly) return
     ZillitIconButton(
         icon = ZillitIcons.Mic,
-        contentDescription = "Record a voice message",
+        contentDescription = str(S.desktop_record_a_voice_message),
         onClick = { onEvent(HomeFeedEvent.StartRecording) },
         enabled = enabled,
     )
@@ -1147,13 +1147,13 @@ private fun LocationButton(enabled: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
     if (picker != null) {
         ZillitIconButton(
             icon = ZillitIcons.Pin,
-            contentDescription = "Share a location",
+            contentDescription = str(S.desktop_share_a_location),
             onClick = {
                 scope.launch {
                     // The rights gate is the view model's, on the event —
                     // the state that enabled this button can be stale by the
                     // time the picker closes, which on a map is a while.
-                    picker.pick(title = "Share a location")
+                    picker.pick(title = str(S.desktop_share_a_location))
                         ?.let { onEvent(HomeFeedEvent.AttachLocation(it.toGeoPoint())) }
                 }
             },
@@ -1191,7 +1191,7 @@ private fun TypedLocationButton(enabled: Boolean, onEvent: (HomeFeedEvent) -> Un
     Box {
         ZillitIconButton(
             icon = ZillitIcons.Pin,
-            contentDescription = "Share a location",
+            contentDescription = str(S.desktop_share_a_location),
             onClick = { open = true; input = "" },
             enabled = enabled,
         )
@@ -1205,12 +1205,12 @@ private fun TypedLocationButton(enabled: Boolean, onEvent: (HomeFeedEvent) -> Un
                 ZillitTextField(
                     value = input,
                     onValueChange = { input = it },
-                    placeholder = "34.05, -118.24 — or paste a Maps link",
+                    placeholder = str(S.desktop_board_location_placeholder),
                     modifier = Modifier.fillMaxWidth(),
                     // Wrong before it is finished; only a filled field that
                     // still parses to nothing earns the correction.
                     errorText = if (input.isNotBlank() && parsed == null) {
-                        "Coordinates like 34.05, -118.24 or a maps.google.com link."
+                        str(S.desktop_board_location_hint)
                     } else {
                         null
                     },
@@ -1223,12 +1223,12 @@ private fun TypedLocationButton(enabled: Boolean, onEvent: (HomeFeedEvent) -> Un
                     ),
                 ) {
                     ZillitButton(
-                        text = "Cancel",
+                        text = str(S.cancel),
                         variant = ButtonVariant.Tertiary,
                         onClick = { open = false },
                     )
                     ZillitButton(
-                        text = "Attach location",
+                        text = str(S.desktop_board_attach_location),
                         variant = ButtonVariant.Primary,
                         enabled = parsed != null,
                         onClick = {
@@ -1253,7 +1253,7 @@ private fun EmojiButton(
     Box {
         ZillitIconButton(
             icon = ZillitIcons.Smiley,
-            contentDescription = "Insert an emoji",
+            contentDescription = str(S.desktop_insert_an_emoji),
             onClick = { onOpenChange(true) },
             enabled = enabled,
         )
@@ -1293,14 +1293,14 @@ private fun EditBar(onCancel: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "Editing your reply",
+            text = str(S.desktop_board_editing_your_reply),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.accentText,
             modifier = Modifier.weight(1f),
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Cancel the edit",
+            contentDescription = str(S.desktop_board_cancel_the_edit),
             onClick = onCancel,
         )
     }
@@ -1326,7 +1326,7 @@ private fun LocationChip(point: GeoPoint, onRemove: () -> Unit) {
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Remove the location",
+            contentDescription = str(S.desktop_board_remove_the_location),
             onClick = onRemove,
         )
     }
@@ -1392,7 +1392,7 @@ private fun AttachedChip(picked: PickedMedia, onRemove: () -> Unit) {
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Remove attachment",
+            contentDescription = str(S.dd_cd_remove_attachment),
             onClick = onRemove,
         )
     }
@@ -1494,7 +1494,11 @@ private fun PinnedBanner(
         PinWell()
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = if (pinned.size > 1) "Pinned · ${index + 1} of ${pinned.size}" else "Pinned",
+                text = if (pinned.size > 1) {
+                    str(S.desktop_board_pinned_index, index + 1, pinned.size)
+                } else {
+                    str(S.desktop_board_pinned)
+                },
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
             )
@@ -1513,7 +1517,7 @@ private fun PinnedBanner(
         if (pinned.size > 1) {
             ZillitIconButton(
                 icon = ZillitIcons.ChevronDown,
-                contentDescription = "Next pinned post",
+                contentDescription = str(S.desktop_board_next_pinned_post),
                 onClick = { index = (index + 1) % pinned.size },
             )
         }
@@ -1562,13 +1566,17 @@ private fun HistoryToggle(isHistory: Boolean, onEvent: (HomeFeedEvent) -> Unit) 
             size = TAB_ICON,
         )
         ZillitText(
-            text = if (isHistory) "Showing published history" else "Live call sheet",
+            text = if (isHistory) {
+                str(S.desktop_board_showing_published_history)
+            } else {
+                str(S.desktop_board_live_call_sheet)
+            },
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = if (isHistory) "Back to board" else "History",
+            text = if (isHistory) str(S.desktop_board_back_to_board) else str(S.history),
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
             onClick = { onEvent(HomeFeedEvent.ShowHistory(!isHistory)) },
@@ -1625,7 +1633,7 @@ private fun UnitTabs(
         val searching = state.searchQuery != null
         ZillitIconButton(
             icon = ZillitIcons.Search,
-            contentDescription = "Search this board",
+            contentDescription = str(S.desktop_board_search_this_board),
             tint = if (searching) colors.accent else null,
             onClick = {
                 onEvent(
@@ -1720,7 +1728,7 @@ private fun BoardSearchBar(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> U
         ZillitTextField(
             value = state.searchQuery.orEmpty(),
             onValueChange = { onEvent(HomeFeedEvent.SearchChanged(it)) },
-            placeholder = "Search this board…",
+            placeholder = str(S.desktop_board_search_this_board_ellipsis),
             leadingIcon = ZillitIcons.Search,
             shape = ZillitTheme.shapes.pill,
             containerColor = ZillitTheme.colors.surfaceSunken,
@@ -1729,27 +1737,27 @@ private fun BoardSearchBar(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> U
         ZillitText(
             text = when {
                 state.searchQuery.orEmpty().trim().length < MIN_QUERY_LENGTH -> ""
-                matches.isEmpty() -> "No matches"
-                else -> "${state.searchIndex + 1} of ${matches.size}"
+                matches.isEmpty() -> str(S.dm_picker_empty)
+                else -> str(S.docusign_field_of, state.searchIndex + 1, matches.size)
             },
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Previous match",
+            contentDescription = str(S.desktop_board_previous_match),
             onClick = { onEvent(HomeFeedEvent.StepSearch(forward = false)) },
             enabled = matches.isNotEmpty(),
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronRight,
-            contentDescription = "Next match",
+            contentDescription = str(S.desktop_board_next_match),
             onClick = { onEvent(HomeFeedEvent.StepSearch(forward = true)) },
             enabled = matches.isNotEmpty(),
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close search",
+            contentDescription = str(S.desktop_board_close_search),
             onClick = { onEvent(HomeFeedEvent.CloseSearch) },
         )
     }
@@ -1846,13 +1854,13 @@ private fun NoPostingRightsRow(unit: HomeUnit, onEvent: (HomeFeedEvent) -> Unit)
             size = TAB_ICON,
         )
         ZillitText(
-            text = "You do not have posting rights for ${unit.label}.",
+            text = str(S.desktop_board_no_posting_rights_for, unit.label),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Ask an admin",
+            text = str(S.desktop_ask_an_admin),
             onClick = { onEvent(HomeFeedEvent.RequestPostingRights) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -2007,7 +2015,7 @@ private fun KebabButton(onPress: () -> Unit) {
             .clip(CircleShape)
             .background(if (hovered) ZillitTheme.colors.surfaceSunken else Color.Transparent)
             .hoverable(hover)
-            .semantics { contentDescription = "Message actions"; role = Role.Button }
+            .semantics { contentDescription = str(S.desktop_board_message_actions); role = Role.Button }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown().consume()
@@ -2097,26 +2105,26 @@ private fun noticeMenuItems(
 private fun replyItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
     if (!ui.canReply) return@buildList
     add(
-        NoticeMenuItem("Reply", ZillitIcons.Reply, ZillitMenuTone.Primary) {
+        NoticeMenuItem(str(S.reply), ZillitIcons.Reply, ZillitMenuTone.Primary) {
             ui.onEvent(HomeFeedEvent.StartReply(notice.id))
         },
     )
     // Android `Home.kt:1339`: pictures only.
     if (notice.kind == NoticeKind.Image && notice.attachment != null) {
-        add(NoticeMenuItem("Image Reply", ZillitIcons.Photo, ZillitMenuTone.Primary) { ui.onImageReply(notice) })
+        add(NoticeMenuItem(str(S.image_reply), ZillitIcons.Photo, ZillitMenuTone.Primary) { ui.onImageReply(notice) })
     }
 }
 
 /** Copy on any words (iOS), Download on any file — gated by the model on `download_access`. */
 private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
     if (notice.body.isNotBlank()) {
-        add(NoticeMenuItem("Copy", ZillitIcons.Copy) { copyTextToClipboard(notice.body) })
+        add(NoticeMenuItem(str(S.copy), ZillitIcons.Copy) { copyTextToClipboard(notice.body) })
     }
     val file = notice.attachment ?: return@buildList
     val isFile = notice.kind != NoticeKind.Text && notice.kind != NoticeKind.Location
     if (isFile && notice.sendState == NoticeSendState.Sent) {
         add(
-            NoticeMenuItem("Download", ZillitIcons.Download) {
+            NoticeMenuItem(str(S.download), ZillitIcons.Download) {
                 ui.onEvent(HomeFeedEvent.OpenAttachment(notice.id, file, download = true))
             },
         )
@@ -2124,7 +2132,7 @@ private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = build
         // rights on the Distribution tool (Android `Home.kt:1349`, `:2171`).
         if (ui.isCallSheet && ui.canPublishToDistribution) {
             add(
-                NoticeMenuItem("Publish to Doc Distribution", ZillitIcons.Upload, ZillitMenuTone.Info) {
+                NoticeMenuItem(str(S.dd_publish_to_distribution), ZillitIcons.Upload, ZillitMenuTone.Info) {
                     ui.onEvent(HomeFeedEvent.StartPublish(notice.id))
                 },
             )
@@ -2145,13 +2153,25 @@ private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = build
  */
 private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
     if (!ui.isCallSheet && ui.canReply) {
-        add(NoticeMenuItem("Forward…", ZillitIcons.Forward) { ui.onEvent(HomeFeedEvent.StartForward(notice.id)) })
+        add(
+            NoticeMenuItem(str(S.desktop_forward_ellipsis), ZillitIcons.Forward) {
+                ui.onEvent(HomeFeedEvent.StartForward(notice.id))
+            },
+        )
     }
-    add(NoticeMenuItem("Read by…", ZillitIcons.Eye) { ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id)) })
-    add(NoticeMenuItem("Gallery", ZillitIcons.Grid) { ui.onEvent(HomeFeedEvent.ShowLibrary) })
+    add(
+        NoticeMenuItem(str(S.desktop_read_by_ellipsis), ZillitIcons.Eye) {
+            ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id))
+        },
+    )
+    add(NoticeMenuItem(str(S.gallery), ZillitIcons.Grid) { ui.onEvent(HomeFeedEvent.ShowLibrary) })
     if (ui.canPin(notice)) {
         add(
-            NoticeMenuItem(if (notice.isPinned) "Unpin" else "Pin", ZillitIcons.Pin, ZillitMenuTone.Info) {
+            NoticeMenuItem(
+                if (notice.isPinned) str(S.desktop_board_unpin) else str(S.desktop_board_pin),
+                ZillitIcons.Pin,
+                ZillitMenuTone.Info,
+            ) {
                 ui.onEvent(HomeFeedEvent.TogglePin(notice.id))
             },
         )
@@ -2167,10 +2187,10 @@ private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buil
  */
 private fun ownerItems(notice: Notice, ui: BoardUi, onArmDelete: () -> Unit): List<NoticeMenuItem> = buildList {
     if (notice.body.isNotBlank() && ui.canEditNotice(notice)) {
-        add(NoticeMenuItem("Edit", ZillitIcons.Edit) { ui.onEvent(HomeFeedEvent.StartEditNotice(notice.id)) })
+        add(NoticeMenuItem(str(S.edit), ZillitIcons.Edit) { ui.onEvent(HomeFeedEvent.StartEditNotice(notice.id)) })
     }
     if (ui.canActOnNotice(notice)) {
-        add(NoticeMenuItem("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) { onArmDelete() })
+        add(NoticeMenuItem(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) { onArmDelete() })
     }
 }
 
@@ -2303,13 +2323,13 @@ private fun DeleteConfirmRow(prompt: String, onConfirm: () -> Unit, onDismiss: (
             color = ZillitTheme.colors.textMuted,
         )
         ZillitText(
-            text = "Yes",
+            text = str(S.yes),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.danger,
             modifier = Modifier.clickable(onClick = onConfirm),
         )
         ZillitText(
-            text = "No",
+            text = str(S.no),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textPrimary,
             modifier = Modifier.clickable(onClick = onDismiss),
@@ -2353,7 +2373,7 @@ private fun NoticeThread(notice: Notice, ui: BoardUi) {
     ) {
         if (notice.sendState == NoticeSendState.Sent && ui.canReply) {
             ActionPill(
-                label = "Reply",
+                label = str(S.reply),
                 icon = ZillitIcons.Reply,
                 tint = ZillitTheme.colors.accentText,
                 background = ZillitTheme.colors.accentSoft,
@@ -2363,14 +2383,14 @@ private fun NoticeThread(notice: Notice, ui: BoardUi) {
         val count = notice.commentCount
         if (count > 0) {
             ZillitText(
-                text = if (count == 1) "1 reply" else "$count replies",
+                text = if (count == 1) str(S.desktop_board_one_reply) else str(S.desktop_board_reply_count, count),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
         }
         if (notice.sendState == NoticeSendState.Failed) {
             ActionPill(
-                label = "Try again",
+                label = str(S.docusign_token_gateway_retry),
                 icon = ZillitIcons.Reload,
                 tint = ZillitTheme.colors.danger,
                 background = ZillitTheme.colors.dangerSoft,
@@ -2462,7 +2482,7 @@ private fun BoardArea(
 ) {
     val unit = state.selectedUnit
     when {
-        state.isLoadingUnits -> Loading("Loading…")
+        state.isLoadingUnits -> Loading(str(S.ah_loading))
 
         // Full-screen only when there is nothing else to show — an action
         // error over a loaded board is the popup's job, and replacing the
@@ -2470,8 +2490,8 @@ private fun BoardArea(
         state.error != null && state.notices.isEmpty() -> Centred(state.error)
 
         unit == null -> Empty(
-            title = "No units yet",
-            message = "No units are shared with you in this project yet.",
+            title = str(S.desktop_board_no_units_yet),
+            message = str(S.desktop_board_no_units_shared),
             icon = ZillitIcons.Users,
         )
 
@@ -2480,14 +2500,14 @@ private fun BoardArea(
         unit.kind == HomeUnitKind.Calendar ->
             calendar?.invoke() ?: CalendarPlaceholder(unit)
 
-        state.isLoadingNotices && state.notices.isEmpty() -> Loading("Loading posts…")
+        state.isLoadingNotices && state.notices.isEmpty() -> Loading(str(S.desktop_board_loading_posts))
 
         state.notices.isEmpty() -> Empty(
-            title = "Nothing posted yet",
+            title = str(S.desktop_board_nothing_posted_yet),
             message = if (unit.canPost) {
-                "Be the first to post to ${unit.label}."
+                str(S.desktop_board_be_first_to_post, unit.label)
             } else {
-                "Nothing has been posted to ${unit.label} yet."
+                str(S.desktop_board_nothing_posted_to_yet, unit.label)
             },
             icon = ZillitIcons.Chat,
         )
@@ -2570,14 +2590,14 @@ private fun NoticeHeader(notice: Notice, ui: BoardUi) {
                 val percent = notice.localId?.let(ui.uploadProgress)
                 ZillitTag(
                     when {
-                        percent == null -> "Sending"
-                        percent >= UPLOAD_DONE_PERCENT -> "Processing…"
-                        else -> "Uploading $percent%"
+                        percent == null -> str(S.dd_status_sending)
+                        percent >= UPLOAD_DONE_PERCENT -> str(S.desktop_processing_ellipsis)
+                        else -> str(S.drive_uploads_status_uploading_format, percent)
                     },
                     tone = TagTone.Neutral,
                 )
             }
-            NoticeSendState.Failed -> ZillitTag("Not sent", tone = TagTone.Danger)
+            NoticeSendState.Failed -> ZillitTag(str(S.txt_not_send), tone = TagTone.Danger)
             NoticeSendState.Sent -> Unit
         }
     }
@@ -2601,12 +2621,12 @@ private fun PinnedChip() {
     ) {
         ZillitIcon(
             icon = ZillitIcons.Pin,
-            contentDescription = "Pinned",
+            contentDescription = str(S.desktop_board_pinned),
             tint = ZillitTheme.colors.accent,
             size = PIN_GLYPH,
         )
         ZillitText(
-            text = "Pinned",
+            text = str(S.desktop_board_pinned),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.accentText,
         )
@@ -2690,20 +2710,28 @@ private fun commentMenuItems(
 ): () -> List<NoticeMenuItem> = {
     buildList {
         if (comment.body.isNotBlank()) {
-            add(NoticeMenuItem("Copy", ZillitIcons.Copy) { copyTextToClipboard(comment.body) })
+            add(NoticeMenuItem(str(S.copy), ZillitIcons.Copy) { copyTextToClipboard(comment.body) })
         }
         // A reply has its own receipts — Android's `Read By User` on the
         // comment menu, the same route with the reply's id.
-        add(NoticeMenuItem("Read by…", ZillitIcons.Eye) { onEvent(HomeFeedEvent.ShowReadBy(parentId, comment.id)) })
+        add(
+            NoticeMenuItem(str(S.desktop_read_by_ellipsis), ZillitIcons.Eye) {
+                onEvent(HomeFeedEvent.ShowReadBy(parentId, comment.id))
+            },
+        )
         if (canAct) {
             if (comment.kind == NoticeKind.Text) {
                 add(
-                    NoticeMenuItem("Edit reply", ZillitIcons.Edit) {
+                    NoticeMenuItem(str(S.desktop_board_edit_reply), ZillitIcons.Edit) {
                         onEvent(HomeFeedEvent.StartEditComment(parentId, comment.id))
                     },
                 )
             }
-            add(NoticeMenuItem("Delete reply", ZillitIcons.Trash, ZillitMenuTone.Danger) { onArmDelete() })
+            add(
+                NoticeMenuItem(str(S.desktop_board_delete_reply), ZillitIcons.Trash, ZillitMenuTone.Danger) {
+                    onArmDelete()
+                },
+            )
         }
     }
 }
@@ -2763,7 +2791,7 @@ private fun CommentActions(
             // Only text replies are rewritable — there is no editing a photo.
             if (comment.kind == NoticeKind.Text) {
                 ZillitText(
-                    text = "Edit",
+                    text = str(S.edit),
                     style = ZillitTheme.typography.labelSmall,
                     color = ZillitTheme.colors.accentText,
                     modifier = Modifier.clickable {
@@ -2772,7 +2800,7 @@ private fun CommentActions(
                 )
             }
             ZillitText(
-                text = "Delete",
+                text = str(S.delete),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
                 modifier = Modifier.clickable { onConfirmingChange(true) },
@@ -2816,7 +2844,7 @@ private fun NoticeFooter(notice: Notice) {
 @Composable
 private fun EditedMark() {
     ZillitText(
-        text = "Edited",
+        text = str(S.edited),
         style = ZillitTheme.typography.labelSmall,
         color = ZillitTheme.colors.textMuted,
     )
@@ -2842,7 +2870,7 @@ private fun CalendarPlaceholder(unit: HomeUnit) {
                 size = EMPTY_ICON,
             )
             ZillitText(
-                text = "${unit.label} arrives with the calendar module.",
+                text = str(S.desktop_board_unit_arrives_with_calendar, unit.label),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -2907,7 +2935,7 @@ private fun Empty(title: String, message: String, icon: androidx.compose.ui.grap
 internal val HIGHLIGHT = Color(0xFFFFC94D)
 
 /** Both phones' delete confirmation, word for word (`DeleteConfirmPop`, `are_you_sure_delete`). */
-private const val DELETE_PROMPT = "Are you sure you want to delete?"
+private val DELETE_PROMPT: String get() = str(S.are_you_sure_you_want_to_delete)
 private val LOCATION_PICKER_WIDTH = 340.dp
 private val FORWARD_PICKER_WIDTH = 340.dp
 private val CALL_SHEET_PROMPT_WIDTH = 440.dp

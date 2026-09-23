@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.formsignature.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A file as this backend stores it — an S3 (or Box) descriptor, never bytes.
  *
@@ -85,11 +88,13 @@ data class SignedCopy(
  * spellings, and `getDocumentType` renders anything else as a reference
  * document, which is also the default branch here.
  */
-enum class StandardFormType(val wire: String, val label: String) {
-    Contract("contract", "Contract"),
-    Other("other_document", "Other Document"),
-    Reference("reference_document", "Reference Document"),
+enum class StandardFormType(val wire: String, private val labelKey: String) {
+    Contract("contract", S.contract_text),
+    Other("other_document", S.other_form_txt),
+    Reference("reference_document", S.reference_form_txt),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(raw: String?): StandardFormType =
@@ -117,10 +122,12 @@ data class SignSpot(
     val key: String get() = "${kind.wire}_$page"
 }
 
-enum class SignSpotKind(val wire: String, val label: String) {
-    Signature("signature", "Signature"),
-    Initials("initials", "Initials"),
+enum class SignSpotKind(val wire: String, private val labelKey: String) {
+    Signature("signature", S.signature_txt),
+    Initials("initials", S.docusign_saved_sig_initials),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(raw: String?): SignSpotKind =
@@ -193,11 +200,13 @@ data class SignDocument(
 }
 
 /** The three lists of the for-signature area, in the web's segment order. */
-enum class SignDocumentTab(val wire: String, val label: String) {
-    Uploaded("send-for-signature", "Send for Signature"),
-    Received("received-for-signature", "Received for Signature"),
-    Finalized("fully-signed-document", "Fully Signed Document"),
+enum class SignDocumentTab(val wire: String, private val labelKey: String) {
+    Uploaded("send-for-signature", S.send_for_sign),
+    Received("received-for-signature", S.txt_received_for_sign),
+    Finalized("fully-signed-document", S.txt_fully_signed_doc),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** The badge ledger's `level_1` for this tab; the sent list has none. */
     val readLevel: String? get() = when (this) {

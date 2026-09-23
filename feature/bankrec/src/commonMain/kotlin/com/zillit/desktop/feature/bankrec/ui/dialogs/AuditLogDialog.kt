@@ -30,6 +30,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.AuditAction
 import com.zillit.desktop.feature.bankrec.domain.AuditExportFormat
 import com.zillit.desktop.feature.bankrec.domain.BankRecDirectory
@@ -61,8 +63,8 @@ internal fun AuditLogDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
     val audit = rememberLast(state.fraudPage.audit) ?: return
     val people = LocalBankRecPeople.current
     ZillitDialogShell(
-        title = "Audit Log",
-        subtitle = "Fraud reviews, imports, re-runs and deleted periods",
+        title = str(S.desktop_audit_log),
+        subtitle = str(S.desktop_br_audit_subtitle),
         onDismiss = { onEvent(BankRecEvent.CloseAuditLog) },
         visible = state.fraudPage.audit != null,
         icon = ZillitIcons.Shield,
@@ -72,7 +74,7 @@ internal fun AuditLogDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Un
         when {
             audit.loading -> BrSkeletonRows(6)
             audit.entries.isEmpty() -> ZillitText(
-                "No audit log entries yet.",
+                str(S.desktop_br_audit_empty),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -117,7 +119,11 @@ private fun Filters(
             value = filters.bankAccountId,
             options = listOf("") + state.bankAccounts.map { it.id },
             label = { id ->
-                if (id.isBlank()) "All Banks" else state.account(id)?.displayName?.ifBlank { null } ?: "Bank"
+                if (id.isBlank()) {
+                    str(S.desktop_all_banks)
+                } else {
+                    state.account(id)?.displayName?.ifBlank { null } ?: str(S.desktop_bank)
+                }
             },
         ) { onEvent(BankRecEvent.FilterAuditLog(filters.copy(bankAccountId = it))) }
         FilterSelect(
@@ -125,7 +131,7 @@ private fun Filters(
             options = listOf("") + periods.map { it.periodId },
             label = { id ->
                 if (id.isBlank()) {
-                    "All Periods"
+                    str(S.desktop_all_periods)
                 } else {
                     BankRecFormat.monthLabel(periods.firstOrNull { it.periodId == id }?.periodMillis)
                 }
@@ -134,12 +140,12 @@ private fun Filters(
         FilterSelect(
             value = filters.performedBy,
             options = listOf("") + users,
-            label = { id -> if (id.isBlank()) "All Users" else people.person(id)?.name ?: "Unknown user" },
+            label = { id -> if (id.isBlank()) str(S.all_users) else people.person(id)?.name ?: str(S.unkone_user) },
         ) { onEvent(BankRecEvent.FilterAuditLog(filters.copy(performedBy = it))) }
         FilterSelect(
             value = filters.action,
             options = listOf("") + actions,
-            label = { action -> if (action.isBlank()) "All Types" else AuditAction.labelFor(action) },
+            label = { action -> if (action.isBlank()) str(S.bs_all_types) else AuditAction.labelFor(action) },
         ) { onEvent(BankRecEvent.FilterAuditLog(filters.copy(action = it))) }
         ZillitText(
             "$shown of ${audit.entries.size} entries",
@@ -171,7 +177,7 @@ private fun ExportMenu(audit: AuditLogState, onEvent: (BankRecEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Box {
         ZillitButton(
-            text = audit.exporting?.let { "Exporting ${it.label}…" } ?: "Export",
+            text = audit.exporting?.let { str(S.desktop_exporting_named, it.label) } ?: str(S.asset_export),
             onClick = { onEvent(BankRecEvent.ShowAuditExportMenu(!audit.exportMenu)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -186,7 +192,12 @@ private fun ExportMenu(audit: AuditLogState, onEvent: (BankRecEvent) -> Unit) {
         ) {
             AuditExportFormat.entries.forEach { format ->
                 DropdownMenuItem(
-                    text = { ZillitText("Export ${format.label}", style = ZillitTheme.typography.bodyMedium) },
+                    text = {
+                        ZillitText(
+                            str(S.desktop_docdist_export_named, format.label),
+                            style = ZillitTheme.typography.bodyMedium,
+                        )
+                    },
                     onClick = { onEvent(BankRecEvent.ExportAuditLog(format)) },
                 )
             }
@@ -205,8 +216,7 @@ private fun Tip() {
     ) {
         ZillitIcon(ZillitIcons.Info, tint = colors.accentText, size = 13.dp)
         ZillitText(
-            "Use the filters above to narrow down the log entries. Exports will only include the filtered results " +
-                "as shown here.",
+            str(S.desktop_br_audit_filter_hint),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textSecondary,
         )
@@ -245,7 +255,7 @@ private fun AuditTable(
         rowPadding = 9.dp,
         empty = {
             ZillitText(
-                "No entries match these filters.",
+                str(S.desktop_br_audit_no_match),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -253,20 +263,20 @@ private fun AuditTable(
             )
         },
         columns = listOf(
-            sortable("Date / Time", AuditSort.CreatedAt, 128) { entry ->
+            sortable(str(S.desktop_date_time), AuditSort.CreatedAt, 128) { entry ->
                 ZillitText(BankRecFormat.dateTime(entry.createdAtMillis), style = figure, color = colors.textSecondary)
             },
-            BrColumn("Bank", width = 150.dp) { entry ->
+            BrColumn(str(S.desktop_bank), width = 150.dp) { entry ->
                 BrBankIdentity(entry.bankName, sortCode = entry.bankSortCode, compact = true)
             },
-            BrColumn("Account No.", width = 92.dp) { entry ->
+            BrColumn(str(S.desktop_dm_account_no), width = 92.dp) { entry ->
                 ZillitText(
                     entry.bankAccountNumber.ifBlank { BankRecFormat.DASH },
                     style = figure,
                     color = colors.textSecondary,
                 )
             },
-            sortable("Action", AuditSort.Action, 168) { entry ->
+            sortable(str(S.txt_action), AuditSort.Action, 168) { entry ->
                 ZillitText(
                     AuditAction.labelFor(entry.action),
                     style = small.copy(fontWeight = FontWeight.SemiBold),
@@ -274,8 +284,10 @@ private fun AuditTable(
                     maxLines = 2,
                 )
             },
-            BrColumn("By", width = 160.dp) { entry -> ZillitText(byLine(entry, people), style = small, maxLines = 2) },
-            BrColumn("Fraud Type", width = 128.dp) { entry ->
+            BrColumn(str(S.cr_meta_by), width = 160.dp) { entry ->
+                ZillitText(byLine(entry, people), style = small, maxLines = 2)
+            },
+            BrColumn(str(S.desktop_fraud_type), width = 128.dp) { entry ->
                 ZillitText(
                     entry.fraudType.replace('_', ' ')
                         .replaceFirstChar { it.uppercase() }.ifBlank { BankRecFormat.DASH },
@@ -283,16 +295,16 @@ private fun AuditTable(
                     maxLines = 2,
                 )
             },
-            sortable("Risk", AuditSort.Risk, 64) { entry ->
+            sortable(str(S.desktop_risk), AuditSort.Risk, 64) { entry ->
                 ZillitText(entry.riskScore?.toString() ?: BankRecFormat.DASH, style = mono(11.5.sp, FontWeight.Bold))
             },
-            BrColumn("Period", width = 72.dp) { entry ->
+            BrColumn(str(S.cr_meta_period), width = 72.dp) { entry ->
                 ZillitText(BankRecFormat.monthLabel(entry.periodMillis), style = small, color = colors.textSecondary)
             },
-            BrColumn("Description", width = 280.dp) { entry ->
+            BrColumn(str(S.description), width = 280.dp) { entry ->
                 ZillitText(entry.detail.ifBlank { BankRecFormat.DASH }, style = small, maxLines = 3)
             },
-            sortable("Amount", AuditSort.Amount, 104, BrAlign.End) { entry ->
+            sortable(str(S.amount), AuditSort.Amount, 104, BrAlign.End) { entry ->
                 val txn = entry.transaction
                 val code = txn?.currency ?: state.account(entry.bankAccountId)?.currencyCode ?: state.projectCurrency
                 ZillitText(
@@ -300,28 +312,28 @@ private fun AuditTable(
                     style = mono(11.5.sp, FontWeight.Bold),
                 )
             },
-            BrColumn("Txn Date", width = 88.dp) { entry ->
+            BrColumn(str(S.desktop_txn_date), width = 88.dp) { entry ->
                 ZillitText(
                     BankRecFormat.day(entry.transaction?.transactionDateMillis),
                     style = figure,
                     color = colors.textSecondary,
                 )
             },
-            sortable("Vendor", AuditSort.Vendor, 140) { entry ->
+            sortable(str(S.ah_lbl_vendor), AuditSort.Vendor, 140) { entry ->
                 ZillitText(
                     entry.transaction?.vendorName?.ifBlank { null } ?: BankRecFormat.DASH,
                     style = small,
                     maxLines = 2,
                 )
             },
-            BrColumn("Method", width = 76.dp) { entry ->
+            BrColumn(str(S.desktop_method), width = 76.dp) { entry ->
                 ZillitText(
                     entry.transaction?.paymentMethod?.uppercase()?.ifBlank { null } ?: BankRecFormat.DASH,
                     style = mono(10.5.sp),
                     color = colors.textSecondary,
                 )
             },
-            BrColumn("Reference", width = 120.dp) { entry ->
+            BrColumn(str(S.desktop_reference), width = 120.dp) { entry ->
                 ZillitText(
                     entry.transaction?.reference?.ifBlank { null } ?: BankRecFormat.DASH,
                     style = mono(10.5.sp),
@@ -359,7 +371,7 @@ private fun SortHeader(title: String, sort: AuditSort, audit: AuditLogState) {
 /** "Name · Designation" — never the id the service stores. */
 private fun byLine(entry: FraudAuditEntry, people: BankRecDirectory): String {
     if (entry.performedBy.isBlank()) return BankRecFormat.DASH
-    val person = people.person(entry.performedBy) ?: return "Unknown user"
+    val person = people.person(entry.performedBy) ?: return str(S.unkone_user)
     val designation = designationLabel(person.designation)
     return if (designation.isBlank()) person.name else "${person.name} · $designation"
 }

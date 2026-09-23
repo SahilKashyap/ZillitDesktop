@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.EditorSelection
 import com.zillit.desktop.feature.productionreport.domain.MetadataUpdate
 import com.zillit.desktop.feature.productionreport.domain.PageCell
@@ -144,7 +146,7 @@ internal class DocumentController(private val ctx: ReportContext) {
         val doc = editor.document
         val removed = doc.rows.getOrNull(row) ?: return
         val label = removed.cells.mapNotNull { it.title.trim().ifEmpty { null } }.joinToString(", ")
-            .ifEmpty { "Row ${row + 1}" }
+            .ifEmpty { str(S.desktop_row_n, row + 1) }
         val action = UndoAction.Row(removed, row, doc.shared.headerPosition, doc.shared.approversPosition)
         applyRemoval(
             editor = editor,
@@ -172,7 +174,7 @@ internal class DocumentController(private val ctx: ReportContext) {
             editor = editor,
             document = doc.removeCell(row, cellIndex),
             record = action,
-            label = removed.title.trim().ifEmpty { "Section" },
+            label = removed.title.trim().ifEmpty { str(S.desktop_section) },
             clearsSelection = selected?.row == row,
             systemCells = listOfNotNull(
                 removed.takeIf { it.systemDefault }?.let {
@@ -213,7 +215,11 @@ internal class DocumentController(private val ctx: ReportContext) {
             copy(
                 editor = editor.copy(
                     document = editor.document.updateCell(row, cellIndex) { it.withLineRemoved(line) },
-                    undo = UndoRecord("Row ${line + 1}", UndoAction.Line(row, cellIndex, removed, line), serial),
+                    undo = UndoRecord(
+                        str(S.desktop_row_n, line + 1),
+                        UndoAction.Line(row, cellIndex, removed, line),
+                        serial,
+                    ),
                 ),
             )
         }
@@ -232,7 +238,7 @@ internal class DocumentController(private val ctx: ReportContext) {
                 editor = editor.copy(
                     document = editor.document.updateCell(row, cellIndex) { it.withColumnRemoved(column) },
                     undo = UndoRecord(
-                        spec.label.trim().ifEmpty { "Column ${column + 1}" },
+                        spec.label.trim().ifEmpty { str(S.desktop_column_n, column + 1) },
                         UndoAction.Column(row, cellIndex, spec, values, column),
                         serial,
                     ),
@@ -289,11 +295,11 @@ internal class DocumentController(private val ctx: ReportContext) {
                             editor = this.editor?.copy(savingApprovers = false, initialApproverIds = ids),
                         )
                     }
-                    ctx.toast("Approvers saved for all production reports!")
+                    ctx.toast(str(S.desktop_pr_approvers_saved_all))
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(editor = this.editor?.copy(savingApprovers = false)) }
-                    ctx.toast("Failed to save approvers: ${saved.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_failed_to_save_approvers_reason, saved.error.localised()), isError = true)
                 }
             }
         }
@@ -333,7 +339,7 @@ internal class DocumentController(private val ctx: ReportContext) {
                         editor = editor?.copy(
                             weather = editor.weather?.copy(
                                 fetching = false,
-                                error = result.error.localised().ifBlank { "Failed to fetch weather." },
+                                error = result.error.localised().ifBlank { str(S.desktop_failed_to_fetch_weather) },
                             ),
                         ),
                     )
@@ -356,7 +362,7 @@ internal class DocumentController(private val ctx: ReportContext) {
                         lat,
                         lng,
                         response = response,
-                        error = if (value == null) "No weather data received." else null,
+                        error = if (value == null) str(S.desktop_no_weather_data_received) else null,
                     ),
                     document = if (value == null) current.document else current.document.updateCell(
                         row,

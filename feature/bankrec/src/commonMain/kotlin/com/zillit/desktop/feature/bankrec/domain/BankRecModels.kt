@@ -1,12 +1,16 @@
 package com.zillit.desktop.feature.bankrec.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.roundToInt
 
 /** Whether a reconciliation period is still being worked on. */
-enum class PeriodStatus(val wire: String, val label: String) {
-    InProgress("in_progress", "In Progress"),
-    Complete("complete", "Complete"),
+enum class PeriodStatus(val wire: String, private val labelKey: String) {
+    InProgress("in_progress", S.in_progress),
+    Complete("complete", S.dm_action_complete),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /**
@@ -110,13 +114,15 @@ data class BankPeriod(
 }
 
 /** How a bank line stands against the ledger. */
-enum class TxnStatus(val wire: String, val label: String) {
-    Matched("matched", "Matched"),
-    Suggested("suggested", "Suggested"),
-    Unmatched("unmatched", "Unmatched"),
-    FraudFlag("fraud_flag", "Fraud"),
-    Fx("fx", "FX"),
+enum class TxnStatus(val wire: String, private val labelKey: String) {
+    Matched("matched", S.desktop_matched),
+    Suggested("suggested", S.desktop_suggested),
+    Unmatched("unmatched", S.desktop_dm_unmatched),
+    FraudFlag("fraud_flag", S.desktop_fraud),
+    Fx("fx", S.desktop_fx),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): TxnStatus =
@@ -125,13 +131,21 @@ enum class TxnStatus(val wire: String, val label: String) {
 }
 
 /** What the fraud engine thinks a line is. */
-enum class FraudType(val wire: String, val label: String, val shortLabel: String) {
-    MandateFraud("mandate_fraud", "Mandate / Bank Detail Change", "Mandate Fraud"),
-    SplitPayment("split_payment", "Split Payment", "Split Payment"),
-    UnregisteredPayee("unregistered_payee", "Unregistered Payee", "Unregistered Payee"),
-    RoundLargePayment("round_large_payment", "Round-Number Large Payment", "Round-Number Payment"),
-    DuplicatePayment("duplicate_payment", "Duplicate Payment", "Duplicate Payment"),
+enum class FraudType(val wire: String, private val labelKey: String, private val shortLabelKey: String) {
+    MandateFraud("mandate_fraud", S.desktop_br_fraud_type_mandate, S.desktop_br_fraud_type_mandate_short),
+    SplitPayment("split_payment", S.desktop_br_fraud_type_split, S.desktop_br_fraud_type_split),
+    UnregisteredPayee(
+        "unregistered_payee",
+        S.desktop_br_fraud_type_unregistered,
+        S.desktop_br_fraud_type_unregistered,
+    ),
+    RoundLargePayment("round_large_payment", S.desktop_br_fraud_type_round, S.desktop_br_fraud_type_round_short),
+    DuplicatePayment("duplicate_payment", S.desktop_br_fraud_type_duplicate, S.desktop_br_fraud_type_duplicate),
     ;
+
+    val label: String get() = str(labelKey)
+
+    val shortLabel: String get() = str(shortLabelKey)
 
     companion object {
         fun from(wire: String?): FraudType? = entries.firstOrNull { it.wire == wire?.lowercase() }
@@ -139,12 +153,14 @@ enum class FraudType(val wire: String, val label: String, val shortLabel: String
 }
 
 /** What has been decided about a flagged line or alert. */
-enum class FraudStatus(val wire: String, val label: String) {
-    Active("active", "Active"),
-    Accepted("accepted", "Accepted"),
-    Dismissed("dismissed", "Dismissed"),
-    Escalated("escalated", "Escalated"),
+enum class FraudStatus(val wire: String, private val labelKey: String) {
+    Active("active", S.active),
+    Accepted("accepted", S.accepted),
+    Dismissed("dismissed", S.ah_dismissed_toast),
+    Escalated("escalated", S.ah_escalated),
     ;
+
+    val label: String get() = str(labelKey)
 
     val isActioned: Boolean get() = this != Active
 
@@ -306,11 +322,11 @@ data class LedgerEntry(
     val displayName: String
         get() = when (kind) {
             LedgerEntryKind.Invoice ->
-                vendorName.ifBlank { supplierName }.ifBlank { title }.ifBlank { "Unknown Supplier" }
+                vendorName.ifBlank { supplierName }.ifBlank { title }.ifBlank { str(S.desktop_unknown_supplier) }
 
-            LedgerEntryKind.Transaction -> title.ifBlank { "Quick Add" }
-            LedgerEntryKind.FxPosting -> title.ifBlank { "FX Variance" }
-            LedgerEntryKind.Other -> title.ifBlank { supplierName }.ifBlank { "Unknown" }
+            LedgerEntryKind.Transaction -> title.ifBlank { str(S.desktop_quick_add) }
+            LedgerEntryKind.FxPosting -> title.ifBlank { str(S.desktop_fx_variance) }
+            LedgerEntryKind.Other -> title.ifBlank { supplierName }.ifBlank { str(S.desktop_unknown) }
         }
 
     /**

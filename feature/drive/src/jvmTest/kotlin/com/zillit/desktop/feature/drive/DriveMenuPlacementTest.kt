@@ -41,7 +41,7 @@ class DriveMenuPlacementTest {
     fun `the menu opens at the pointer when there is room beneath`() = runComposeUiTest {
         val opened = state.copy(menu = ItemMenuState(file, 300f, 250f))
         setContent { ZillitTheme { DriveScreen(state = opened, onEvent = {}) } }
-        val row = onNodeWithText("Edit info").fetchSemanticsNode().boundsInWindow
+        val row = onNodeWithText("Edit Info").fetchSemanticsNode().boundsInWindow
         assertTrue(row.top in 250f..420f && row.left in 300f..360f, "menu row at $row")
     }
 
@@ -52,7 +52,7 @@ class DriveMenuPlacementTest {
     ) {
         val opened = state.copy(menu = ItemMenuState(file, 900f, 300f))
         setContent { ZillitTheme { DriveScreen(state = opened, onEvent = {}) } }
-        val row = onNodeWithText("Edit info").fetchSemanticsNode().boundsInWindow
+        val row = onNodeWithText("Edit Info").fetchSemanticsNode().boundsInWindow
         assertTrue(row.top in 300f..700f && row.left in 900f..1000f, "menu row at $row")
     }
 

@@ -42,6 +42,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.PdfPageImage
 import com.zillit.desktop.feature.formsignature.domain.SignSpot
 import com.zillit.desktop.feature.formsignature.domain.SignSpotKind
@@ -72,7 +74,7 @@ internal fun PageCanvas(
     ) {
         Image(
             bitmap = bitmap,
-            contentDescription = "Page ${page.page}",
+            contentDescription = str(S.desktop_page_n, page.page),
             modifier = Modifier.size(widthDp, heightDp),
             contentScale = ContentScale.FillBounds,
         )
@@ -111,7 +113,7 @@ internal fun BoxScope.PlaceholderBox(page: PdfPageImage, spot: SignSpot, onClick
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            text = if (spot.kind == SignSpotKind.Signature) "Add Signature" else "Add Initials",
+            text = if (spot.kind == SignSpotKind.Signature) str(S.add_signature) else str(S.txt_add_initials),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
             color = edge,
         )
@@ -192,9 +194,11 @@ internal fun BoxScope.DraggableBox(
                 modifier = Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-12).dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                onConfirm?.let { TinyAction(ZillitIcons.Tick, Color(0xFF10B981), "Confirm placement", it) }
-                onCancel?.let { TinyAction(ZillitIcons.Close, Color(0xFFEF4444), "Cancel", it) }
-                onDelete?.let { TinyAction(ZillitIcons.Close, Color(0xFFEF4444), "Remove", it) }
+                onConfirm?.let {
+                    TinyAction(ZillitIcons.Tick, Color(0xFF10B981), str(S.desktop_fs_confirm_placement), it)
+                }
+                onCancel?.let { TinyAction(ZillitIcons.Close, Color(0xFFEF4444), str(S.cancel), it) }
+                onDelete?.let { TinyAction(ZillitIcons.Close, Color(0xFFEF4444), str(S.remove), it) }
             }
         }
     }
@@ -222,8 +226,13 @@ internal fun BoxScope.PlaceholderLabel(kind: SignSpotKind, fill: Color, edge: Co
     Box(Modifier.fillMaxSize().background(fill), contentAlignment = Alignment.Center) {
         ZillitText(
             text = buildString {
-                append(if (kind == SignSpotKind.Signature) "Signature" else "Initials")
-                append(" placeholder")
+                append(
+                    if (kind == SignSpotKind.Signature) {
+                        str(S.desktop_fs_signature_placeholder)
+                    } else {
+                        str(S.desktop_fs_initials_placeholder)
+                    },
+                )
                 if (!owner.isNullOrBlank()) append(" · ").append(owner)
             },
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
@@ -240,7 +249,7 @@ internal fun BoxScope.MarkImage(png: ByteArray) {
     val bitmap = remember(png.size) { decodeImageBitmap(png) } ?: return
     Image(
         bitmap = bitmap,
-        contentDescription = "Signature",
+        contentDescription = str(S.signature_txt),
         modifier = Modifier.fillMaxSize(),
         contentScale = ContentScale.FillBounds,
     )

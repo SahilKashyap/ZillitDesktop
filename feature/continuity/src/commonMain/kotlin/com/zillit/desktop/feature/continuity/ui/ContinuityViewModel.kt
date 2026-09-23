@@ -9,6 +9,8 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.continuity.domain.ContinuityBadges
 import com.zillit.desktop.feature.continuity.domain.ContinuityCrewMember
 import com.zillit.desktop.feature.continuity.domain.ContinuityDepartment
@@ -324,7 +326,7 @@ class ContinuityViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, forward = null, open = this.open?.doneSelecting()) }
-                    sendEffect(ContinuityEffect.Notice("Scene(s) have been shared successfully."))
+                    sendEffect(ContinuityEffect.Notice(str(S.desktop_continuity_shared_success)))
                     reloadOpen()
                 }
             }
@@ -355,7 +357,7 @@ class ContinuityViewModel(
             val problem = failed
             if (problem == null) {
                 setState { copy(busy = false, forward = null, open = this.open?.doneSelecting()) }
-                sendEffect(ContinuityEffect.Notice("Message forwarded successfully"))
+                sendEffect(ContinuityEffect.Notice(str(S.desktop_message_forwarded_success)))
             } else {
                 setState { copy(busy = false, forward = sheet.copy(sending = false, error = problem.localised())) }
             }
@@ -385,7 +387,7 @@ class ContinuityViewModel(
                             },
                         )
                     }
-                    sendEffect(ContinuityEffect.Notice("Media deleted successfully"))
+                    sendEffect(ContinuityEffect.Notice(str(S.desktop_media_deleted_success)))
                     refresh()
                 }
             }
@@ -410,7 +412,7 @@ class ContinuityViewModel(
                 is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
-                    sendEffect(ContinuityEffect.Notice("Saved to Downloads"))
+                    sendEffect(ContinuityEffect.Notice(str(S.docusign_signing_attachment_saved)))
                 }
             }
         }
@@ -432,7 +434,7 @@ class ContinuityViewModel(
     private fun filesPicked(event: ContinuityEvent.FilesPicked) {
         val (accepted, refused) = event.files.partition { it.isAccepted }
         if (refused.isNotEmpty()) {
-            sendEffect(ContinuityEffect.Notice("Only photos, videos and documents can be uploaded.", success = false))
+            sendEffect(ContinuityEffect.Notice(str(S.desktop_continuity_only_media_upload), success = false))
         }
         if (accepted.isEmpty()) return
         val open = state.value.open
@@ -466,7 +468,7 @@ class ContinuityViewModel(
                     }
                     is ZillitResult.Success -> {
                         setState { copy(busy = false, editor = null) }
-                        sendEffect(ContinuityEffect.Notice("Scene updated successfully"))
+                        sendEffect(ContinuityEffect.Notice(str(S.desktop_scene_updated_success)))
                         refresh()
                         reloadOpen(quiet = true)
                     }
@@ -486,14 +488,13 @@ class ContinuityViewModel(
         val scene = draft.sceneNumber.trim()
         val episode = draft.episode.trim()
         return when {
-            scene.isBlank() -> "Fill the Scene Number"
-            scene.any { it in FORBIDDEN } -> "Special character not allow!"
-            !scene.first().isDigit() ->
-                "Scene number cannot submit without a number. Please fill-in valid scene number."
-            scene.length > FIELD_MAX -> "Scene Number not greater then 15 Number"
-            viewer.isTelevision && episode.isBlank() -> "Episode Number is required"
-            episode.isNotBlank() && !episode.all(Char::isDigit) -> "Episode Number should be a number"
-            episode.length > FIELD_MAX -> "Episode Number not greater then 15 Number"
+            scene.isBlank() -> str(S.desktop_continuity_fill_scene_number)
+            scene.any { it in FORBIDDEN } -> str(S.desktop_special_character_not_allow)
+            !scene.first().isDigit() -> str(S.desktop_continuity_scene_number_needs_digit)
+            scene.length > FIELD_MAX -> str(S.desktop_continuity_scene_number_too_long)
+            viewer.isTelevision && episode.isBlank() -> str(S.desktop_episode_number_required)
+            episode.isNotBlank() && !episode.all(Char::isDigit) -> str(S.desktop_episode_number_numeric)
+            episode.length > FIELD_MAX -> str(S.desktop_continuity_episode_number_too_long)
             else -> null
         }
     }
@@ -523,7 +524,7 @@ class ContinuityViewModel(
             }
         }
         setState { copy(busy = false, editor = null) }
-        sendEffect(ContinuityEffect.Notice("Continuity media has been uploaded."))
+        sendEffect(ContinuityEffect.Notice(str(S.desktop_continuity_media_uploaded)))
         refresh()
         reloadOpen(quiet = true)
     }
@@ -565,7 +566,7 @@ class ContinuityViewModel(
     private fun OpenFolder.doneSelecting() = copy(selecting = false, selected = emptySet())
 
     private companion object {
-        const val MODULE_LABEL = "Continuity"
+        val MODULE_LABEL: String get() = str(S.continuity)
         const val FIELD_MAX = 15
         const val FORBIDDEN = "!@#$%^&*(),.?\":{}|<>"
     }

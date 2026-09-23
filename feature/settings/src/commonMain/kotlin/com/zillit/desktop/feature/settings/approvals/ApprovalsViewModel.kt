@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.settings.approvals
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 
 /**
@@ -334,7 +336,7 @@ class ApprovalsViewModel(
         // must have one chosen, or the person lands on the crew list with a
         // department and no job.
         if (department != null && department.roles.isNotEmpty() && review.roleId.isNullOrBlank()) {
-            setState { copy(review = review.copy(error = "Choose a role in ${department.name}.")) }
+            setState { copy(review = review.copy(error = str(S.desktop_choose_a_role_in_department, department.name))) }
             return
         }
 

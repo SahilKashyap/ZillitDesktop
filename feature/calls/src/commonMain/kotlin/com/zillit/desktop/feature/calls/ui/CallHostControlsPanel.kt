@@ -22,6 +22,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.livekit.Line3InCall
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
 
@@ -57,7 +59,7 @@ fun CallHostControlsPanel(
         ) {
             ZillitIcon(icon = ZillitIcons.Shield, contentDescription = null, tint = CallPalette.text, size = ROW_ICON)
             ZillitText(
-                text = "Host controls",
+                text = str(S.desktop_call_host_controls),
                 style = ZillitTheme.typography.titleSmall,
                 color = CallPalette.text,
                 modifier = Modifier.weight(1f),
@@ -65,7 +67,7 @@ fun CallHostControlsPanel(
             Box(modifier = Modifier.clickable(onClick = onClose)) {
                 ZillitIcon(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Close",
+                    contentDescription = str(S.close),
                     tint = CallPalette.muted,
                     size = ROW_ICON,
                 )
@@ -74,14 +76,16 @@ fun CallHostControlsPanel(
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             PolicySwitches(policy, onPolicy)
             ZillitText(
-                text = "Actions",
+                text = str(S.dd_actions),
                 style = ZillitTheme.typography.labelSmall,
                 color = CallPalette.muted,
                 modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
             )
-            ActionRow(ZillitIcons.MicOff, "Mute everyone") { onAction(Line3InCall.ACTION_MUTE_ALL) }
-            ActionRow(ZillitIcons.Hand, "Lower all hands") { onAction(Line3InCall.ACTION_LOWER_HANDS) }
-            ActionRow(ZillitIcons.Photo, "Clear everyone's background") {
+            ActionRow(ZillitIcons.MicOff, str(S.desktop_call_mute_everyone)) { onAction(Line3InCall.ACTION_MUTE_ALL) }
+            ActionRow(ZillitIcons.Hand, str(S.desktop_call_lower_all_hands)) {
+                onAction(Line3InCall.ACTION_LOWER_HANDS)
+            }
+            ActionRow(ZillitIcons.Photo, str(S.desktop_call_clear_everyones_background)) {
                 onAction(Line3InCall.ACTION_CLEAR_BACKGROUNDS)
             }
         }
@@ -91,25 +95,25 @@ fun CallHostControlsPanel(
 /** The master switch, then the flags it gates — the web's order (`HostControlsPanel.tsx:45-69`). */
 @Composable
 private fun PolicySwitches(policy: LiveKitCallPolicy, onPolicy: (LiveKitCallPolicy) -> Unit) {
-    PolicySwitch("Enable host controls", policy.on, enabled = true) { onPolicy(policy.copy(on = it)) }
+    PolicySwitch(str(S.desktop_call_enable_host_controls), policy.on, enabled = true) { onPolicy(policy.copy(on = it)) }
     val live = policy.on
-    PolicySwitch("Allow chat", policy.chatEnabled, live) { onPolicy(policy.copy(chatEnabled = it)) }
-    PolicySwitch("Allow background effects", policy.bgEffectsAllowed, live) {
+    PolicySwitch(str(S.desktop_call_allow_chat), policy.chatEnabled, live) { onPolicy(policy.copy(chatEnabled = it)) }
+    PolicySwitch(str(S.desktop_call_allow_background_effects), policy.bgEffectsAllowed, live) {
         onPolicy(policy.copy(bgEffectsAllowed = it))
     }
-    PolicySwitch("Lock screen sharing", policy.screenShareLocked, live) {
+    PolicySwitch(str(S.desktop_call_lock_screen_sharing), policy.screenShareLocked, live) {
         onPolicy(policy.copy(screenShareLocked = it))
     }
-    PolicySwitch("Allow joining via link", policy.linkJoinEnabled, live) {
+    PolicySwitch(str(S.desktop_call_allow_joining_via_link), policy.linkJoinEnabled, live) {
         onPolicy(policy.copy(linkJoinEnabled = it))
     }
-    PolicySwitch("Allow raise hand", policy.handRaiseAllowed, live) {
+    PolicySwitch(str(S.desktop_call_allow_raise_hand), policy.handRaiseAllowed, live) {
         onPolicy(policy.copy(handRaiseAllowed = it))
     }
-    PolicySwitch("Allow reactions", policy.reactionsAllowed, live) {
+    PolicySwitch(str(S.desktop_call_allow_reactions), policy.reactionsAllowed, live) {
         onPolicy(policy.copy(reactionsAllowed = it))
     }
-    PolicySwitch("Allow call recording", policy.recordingAllowed, live) {
+    PolicySwitch(str(S.desktop_call_allow_call_recording), policy.recordingAllowed, live) {
         onPolicy(policy.copy(recordingAllowed = it))
     }
 }

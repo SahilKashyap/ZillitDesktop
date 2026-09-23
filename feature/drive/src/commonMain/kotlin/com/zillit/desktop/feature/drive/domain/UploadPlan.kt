@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.drive.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * How one file is cut into parts for the S3 multipart upload.
  *
@@ -106,9 +109,8 @@ data class UploadPlan(
          * pushed and the server has rejected the completion.
          */
         fun rejectionReason(fileName: String, fileSizeBytes: Long): String? = when {
-            fileName.isBlank() -> "That file has no name."
-            fileSizeBytes > MAX_FILE_BYTES ->
-                "\"$fileName\" is larger than the 10 GB limit for a single file."
+            fileName.isBlank() -> str(S.desktop_drive_file_no_name)
+            fileSizeBytes > MAX_FILE_BYTES -> str(S.desktop_drive_file_too_large, fileName)
 
             else -> null
         }

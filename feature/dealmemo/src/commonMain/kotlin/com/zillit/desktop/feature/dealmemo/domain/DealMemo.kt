@@ -1,26 +1,31 @@
 package com.zillit.desktop.feature.dealmemo.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Where a deal is — the server's statuses in the web's order
  * (`dealStatus.js:18-36`, `STATUS_ORDER` at `:62-72`):
  * draft → issued → awaiting_approval → approved → active → completed, with
  * rejected / cancelled / deactivated as branch states.
  */
-enum class DealStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
+enum class DealStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
 
     /** With the crew member: fill in details, sign, send for approval. */
-    Issued("issued", "Issued"),
-    AwaitingApproval("awaiting_approval", "Awaiting Approval"),
-    Approved("approved", "Approved"),
-    Active("active", "Active"),
-    Completed("completed", "Completed"),
-    Rejected("rejected", "Rejected"),
-    Cancelled("cancelled", "Cancelled"),
+    Issued("issued", S.desktop_issued),
+    AwaitingApproval("awaiting_approval", S.dm_filter_status_pending),
+    Approved("approved", S.approved),
+    Active("active", S.active),
+    Completed("completed", S.completed),
+    Rejected("rejected", S.rejected),
+    Cancelled("cancelled", S.cancelled),
 
     /** Crew let go mid-engagement — terminal. */
-    Deactivated("deactivated", "Deactivated"),
+    Deactivated("deactivated", S.dm_filter_status_deactivated),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /** Unknown, blank or missing reads as Draft — `getStatusMeta`'s fallback. */

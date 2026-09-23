@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankAccounts
 import com.zillit.desktop.feature.accounthub.domain.Companies
@@ -121,7 +123,11 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         val merged = if (isNew) existing + draft else existing.map { if (it.id == draft.id) draft else it }
         val next = Companies.linking(merged, draft.id, draft.bankIds)
         val fromBank = setup.companyDraftFromBank
-        saveCompanies(next, notice = if (isNew) "Company added." else "Company saved.", shownFirst = true) {
+        saveCompanies(
+            next,
+            notice = if (isNew) str(S.desktop_company_added) else str(S.desktop_company_saved),
+            shownFirst = true,
+        ) {
             copy(
                 setup = this.setup.copy(
                     companyDraft = null,
@@ -146,7 +152,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         val setup = vm.setupState.setup
         if (!vm.mayEdit()) return
         val next = setup.companies.edited.filterNot { it.id == id }
-        saveCompanies(next, notice = "Company removed.", shownFirst = false) {
+        saveCompanies(next, notice = str(S.desktop_company_removed), shownFirst = false) {
             copy(
                 setup = this.setup.copy(
                     removal = null,
@@ -258,7 +264,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
                             bankSaving = false,
                             companyDraft = setup.companyDraft?.linkedTo(saved, fromCompany && isNew),
                         ),
-                        notice = "Bank account saved.",
+                        notice = str(S.desktop_bank_account_saved),
                     )
                 }
                 vm.loadBanks()
@@ -281,7 +287,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
     private fun deleteBank(id: String) {
         if (!vm.mayEdit()) return
         vm.runResult({ vm.repo.deleteBankAccount(id) }, {
-            vm.update { copy(setup = setup.copy(removal = null), notice = "Bank account removed.") }
+            vm.update { copy(setup = setup.copy(removal = null), notice = str(S.desktop_bank_account_removed)) }
             vm.loadBanks()
         }, vm::report)
     }
@@ -345,10 +351,11 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         val editor = vm.setupState.setup.ruleEditor ?: return
         val rule = editor.rule
         val problem = when {
-            rule.label.isBlank() -> "Give the rule a name."
-            rule.rateAmount.trim().replace(",", "").toDoubleOrNull() == null -> "Give the rule an amount."
+            rule.label.isBlank() -> str(S.desktop_email_rule_name_required)
+            rule.rateAmount.trim().replace(",",
+                "").toDoubleOrNull() == null -> str(S.desktop_hub_give_the_rule_an_amount)
             rule.capped && rule.capAmount.trim().replace(",", "").toDoubleOrNull() == null ->
-                "Give the cap an amount, or turn the cap off."
+                str(S.desktop_hub_give_the_cap_an_amount_or_turn_the_cap_off)
             else -> null
         }
         if (problem != null) {
@@ -394,7 +401,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
             vm.update {
                 copy(
                     setup = setup.copy(payrollGroups = setup.payrollGroups.filterNot { it.id == id }, removal = null),
-                    notice = "Payroll group removed.",
+                    notice = str(S.desktop_payroll_group_removed),
                 )
             }
         }, vm::report)
@@ -408,14 +415,15 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
     private fun removePayrollAccount(removal: SetupRemoval.PayrollAccountCode) {
         val id = removal.accountId
         if (id == null) {
-            vm.sendSideEffect(AccountHubEffect.Failed("${removal.code} is not in the chart of accounts."))
+            val message = str(S.desktop_hub_x_is_not_in_the_chart_of_accounts, removal.code)
+            vm.sendSideEffect(AccountHubEffect.Failed(message))
             return
         }
         vm.runResult({ vm.repo.updatePayrollAccounts(listOf(PayrollAccountRow(id = id, delete = true))) }, { settings ->
             vm.update {
                 copy(
                     setup = setup.copy(payrollSettings = setup.payrollSettings.committed(settings), removal = null),
-                    notice = "Payroll account removed.",
+                    notice = str(S.desktop_payroll_account_removed),
                 )
             }
             vm.chart.load()

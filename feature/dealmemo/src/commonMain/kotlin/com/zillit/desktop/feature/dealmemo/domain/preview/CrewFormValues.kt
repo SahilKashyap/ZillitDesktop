@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.preview
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -20,21 +22,21 @@ import kotlin.time.Instant
  */
 object CrewFormValues {
 
-    val GENDERS = listOf(
-        "female" to "Female",
-        "male" to "Male",
-        "non_binary" to "Non-binary",
-        "other" to "Other",
-        "prefer_not_to_say" to "Prefer not to say",
-    )
+    val GENDERS: List<Pair<String, String>>
+        get() = listOf(
+            "female" to str(S.female),
+            "male" to str(S.male),
+            "non_binary" to str(S.desktop_gender_non_binary),
+            "other" to str(S.other),
+            "prefer_not_to_say" to str(S.desktop_prefer_not_to_say),
+        )
 
     /** Stored as the label itself. */
     val RIGHT_TO_WORK = listOf("Passport", "UK Citizen / Settled Status", "UK Visa", "EU Pre-Settled", "Work Permit")
 
     val NI_CATEGORIES = setOf("A", "B", "C", "D", "E", "F", "H", "I", "J", "K", "L", "M", "N", "S", "V", "X", "Z")
-    const val NI_CATEGORY_HINT = "Not a category letter we recognise — check it, but it will still save."
-    const val PENSION_NOTE = "The crew member's stated wish. The payroll bureau runs the statutory auto-enrolment " +
-        "assessment; dailies fall out of it regardless."
+    val NI_CATEGORY_HINT: String get() = str(S.desktop_dm_ni_category_hint)
+    val PENSION_NOTE: String get() = str(S.desktop_dm_pension_note)
 
     private const val WHOLE_LIMIT = 1e15
 

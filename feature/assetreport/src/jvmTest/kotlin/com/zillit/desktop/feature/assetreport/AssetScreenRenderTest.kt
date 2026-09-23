@@ -273,7 +273,8 @@ class AssetScreenRenderTest {
                 events += it
             },
         )
-        onNodeWithText("Try again").performClick()
+        // "Try Again": the Android key's capitalisation, kept for its 21 translations.
+        onNodeWithText("Try Again").performClick()
         assertTrue(AssetEvent.RetryRecord in events)
     }
 
@@ -305,7 +306,8 @@ class AssetScreenRenderTest {
         onNodeWithText("This asset has changes that haven't been saved. Save them or discard before leaving.")
             .assertExists()
         onNodeWithText("Discard").assertExists()
-        onNodeWithText("Save & leave").performClick()
+        // "Save & Leave": the Android key's capitalisation, kept for its 21 translations.
+        onNodeWithText("Save & Leave").performClick()
         assertEquals(AssetEvent.SaveAndClose, events.last())
     }
 

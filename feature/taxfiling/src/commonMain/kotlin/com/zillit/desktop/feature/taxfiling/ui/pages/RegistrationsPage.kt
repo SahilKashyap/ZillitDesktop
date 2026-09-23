@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.SupportedFiling
 import com.zillit.desktop.feature.taxfiling.domain.TaxFormat
 import com.zillit.desktop.feature.taxfiling.domain.TaxRegistration
@@ -56,7 +58,7 @@ internal fun RegistrationsPage(state: TaxFilingUiState, onEvent: (TaxFilingEvent
     PageTitle(
         icon = ZillitIcons.Hierarchy,
         title = SupportedFiling.MtdVat.title,
-        description = "Register VAT numbers, connect to HMRC, and file Making Tax Digital VAT returns per company.",
+        description = str(S.desktop_tax_registrations_description),
     )
     val registrations = state.named
     when {
@@ -90,20 +92,20 @@ private fun ListHeader(count: Int, onRegister: () -> Unit) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 ZillitText(
-                    text = "Registered companies",
+                    text = str(S.desktop_tax_registered_companies),
                     style = mtdText(16.5.sp, FontWeight.Bold, tracking = (-0.02).em),
                     color = palette.ink,
                 )
                 MtdPill(text = count.toString(), tone = PillTone.Neutral, mono = true)
             }
             ZillitText(
-                text = "Connect a company to HMRC, open it to file a VAT return, or remove it.",
+                text = str(S.desktop_tax_registered_companies_sub),
                 style = mtdText(13.5.sp),
                 color = palette.ink3,
             )
         }
         MtdButton(
-            text = "Register a company",
+            text = str(S.desktop_tax_register_a_company),
             onClick = onRegister,
             variant = MtdButtonVariant.Primary,
             icon = ZillitIcons.Add,
@@ -169,20 +171,20 @@ private fun RegistrationActions(
     ) {
         ConnectionState(registration, connecting, canReachAuthority, onEvent, Modifier.weight(1f))
         MtdButton(
-            text = "Export data",
+            text = str(S.desktop_tax_export_data),
             onClick = { onEvent(TaxFilingEvent.ExportData(registration)) },
             variant = MtdButtonVariant.Ghost,
             size = MtdButtonSize.Small,
         )
         MtdButton(
-            text = "Remove",
+            text = str(S.remove),
             onClick = { onEvent(TaxFilingEvent.AskRemove(registration)) },
             variant = MtdButtonVariant.Danger,
             size = MtdButtonSize.Small,
             icon = ZillitIcons.Trash,
         )
         MtdButton(
-            text = "Open VAT return",
+            text = str(S.desktop_tax_open_vat_return),
             onClick = { onEvent(TaxFilingEvent.Open(registration)) },
             variant = MtdButtonVariant.Secondary,
             size = MtdButtonSize.Small,
@@ -200,7 +202,7 @@ internal fun RegistrationFacts(registration: TaxRegistration, trailing: (@Compos
     val palette = mtdPalette()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         ZillitText(
-            text = "VRN ${TaxFormat.vrn(registration.registrationNumber)}",
+            text = str(S.desktop_tax_vrn_value, TaxFormat.vrn(registration.registrationNumber)),
             style = mtdText(13.sp, FontWeight.SemiBold, mono = true, tracking = 0.02.em),
             color = palette.ink2,
             maxLines = 1,
@@ -243,26 +245,26 @@ private fun ConnectionState(
             registration.connected -> {
                 ZillitIcon(icon = ZillitIcons.Shield, tint = palette.green, size = 15.dp)
                 ZillitText(
-                    text = "Connected to HMRC",
+                    text = str(S.desktop_tax_connected_to_hmrc),
                     style = mtdText(12.5.sp, FontWeight.SemiBold),
                     color = palette.green,
                 )
             }
             connecting -> {
                 MtdButton(
-                    text = "Connecting…",
+                    text = str(S.desktop_connecting_ellipsis),
                     onClick = {},
                     variant = MtdButtonVariant.Primary,
                     size = MtdButtonSize.Small,
                     loading = true,
                 )
                 ZillitText(
-                    text = "Finish signing in to HMRC in your browser.",
+                    text = str(S.desktop_tax_finish_signing_in),
                     style = mtdText(12.sp),
                     color = palette.muted,
                 )
                 MtdButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(TaxFilingEvent.CancelConnect) },
                     variant = MtdButtonVariant.Ghost,
                     size = MtdButtonSize.Small,
@@ -270,14 +272,14 @@ private fun ConnectionState(
             }
             else -> {
                 MtdButton(
-                    text = "Connect to HMRC",
+                    text = str(S.desktop_tax_connect_to_hmrc),
                     onClick = { onEvent(TaxFilingEvent.Connect(registration)) },
                     variant = MtdButtonVariant.Primary,
                     size = MtdButtonSize.Small,
                     icon = ZillitIcons.Link,
                     enabled = canReachAuthority,
                 )
-                ZillitText(text = "required to file a return", style = mtdText(12.sp), color = palette.muted)
+                ZillitText(text = str(S.desktop_tax_required_to_file), style = mtdText(12.sp), color = palette.muted)
             }
         }
     }
@@ -295,14 +297,13 @@ private fun RegistrationsEmpty(onRegister: () -> Unit) {
             MtdIconTile(icon = ZillitIcons.Building, size = 84.dp, iconSize = 40.dp, radius = 24.dp)
             Spacer(Modifier.height(22.dp))
             ZillitText(
-                text = "No companies registered yet",
+                text = str(S.desktop_tax_no_companies),
                 style = mtdText(20.sp, FontWeight.Bold, tracking = (-0.02).em),
                 color = palette.ink,
             )
             Spacer(Modifier.height(8.dp))
             ZillitText(
-                text = "Register a company’s VAT number to connect it to HMRC and file Making Tax Digital " +
-                    "returns. You can register as many companies as you file for.",
+                text = str(S.desktop_tax_no_companies_detail),
                 style = mtdText(14.5.sp),
                 color = palette.ink3,
                 textAlign = TextAlign.Center,
@@ -310,7 +311,7 @@ private fun RegistrationsEmpty(onRegister: () -> Unit) {
             )
             Spacer(Modifier.height(26.dp))
             MtdButton(
-                text = "Register a company",
+                text = str(S.desktop_tax_register_a_company),
                 onClick = onRegister,
                 variant = MtdButtonVariant.Primary,
                 size = MtdButtonSize.Large,
@@ -326,11 +327,11 @@ private fun RegistrationsEmpty(onRegister: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StepHint(1, "Register VRN")
+            StepHint(1, str(S.desktop_tax_register_vrn))
             ZillitIcon(icon = ZillitIcons.ArrowRight, tint = palette.faint, size = 14.dp)
-            StepHint(2, "Connect to HMRC")
+            StepHint(2, str(S.desktop_tax_connect_to_hmrc))
             ZillitIcon(icon = ZillitIcons.ArrowRight, tint = palette.faint, size = 14.dp)
-            StepHint(3, "File VAT return")
+            StepHint(3, str(S.desktop_tax_step_file_return))
         }
     }
 }

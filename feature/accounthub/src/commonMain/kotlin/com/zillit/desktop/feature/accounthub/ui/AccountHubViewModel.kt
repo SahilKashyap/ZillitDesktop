@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.data.hubRefreshes
 import com.zillit.desktop.feature.accounthub.domain.AccountHubRepository
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
@@ -275,9 +277,9 @@ class AccountHubViewModel(
             AccountHubEvent.CloseEmbedded -> setState { copy(embedded = null) }
             AccountHubEvent.Back -> sendEffect(AccountHubEffect.Back)
             AccountHubEvent.BackToHub -> backToHub()
-            AccountHubEvent.OpenTimecardSetup -> show(TIMECARD_TOOL_PATH, "Time Card")
+            AccountHubEvent.OpenTimecardSetup -> show(TIMECARD_TOOL_PATH, str(S.timecards))
             is AccountHubEvent.OpenSpendSetup -> show(event.which.route, event.which.title)
-            is AccountHubEvent.CreatePurchaseOrder -> show(PURCHASE_ORDER_NEW_PATH, "Purchase Orders")
+            is AccountHubEvent.CreatePurchaseOrder -> show(PURCHASE_ORDER_NEW_PATH, str(S.ah_purchase_orders))
             AccountHubEvent.Refresh -> currentState.area?.let(::load)
             AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
             is AccountHubEvent.SwitchSetupTab -> setState { copy(setup = setup.copy(tab = event.tab)) }
@@ -594,7 +596,7 @@ class AccountHubViewModel(
      */
     private fun requireEdit(): Boolean {
         if (currentState.viewer.canEdit) return true
-        sendEffect(AccountHubEffect.Failed("You do not have permission to change this."))
+        sendEffect(AccountHubEffect.Failed(str(S.desktop_hub_you_do_not_have_permission_to_change_this)))
         return false
     }
 
@@ -606,7 +608,7 @@ class AccountHubViewModel(
      */
     private fun requireAccountant(): Boolean {
         if (currentState.viewer.canActAsAccountant) return true
-        sendEffect(AccountHubEffect.Failed("Only the accounts department can do that."))
+        sendEffect(AccountHubEffect.Failed(str(S.desktop_hub_only_the_accounts_department_can_do_that)))
         return false
     }
 

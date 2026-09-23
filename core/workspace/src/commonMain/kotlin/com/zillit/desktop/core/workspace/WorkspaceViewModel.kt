@@ -28,6 +28,15 @@ sealed interface WorkspaceEvent {
     data object CloseAll : WorkspaceEvent
 
     /**
+     * The UI language changed: every window's title is re-asked of its
+     * provider. Titles are stored at open time (a screen may override its
+     * own with [SetTitle]), so nothing else would redraw "Home" as "Accueil".
+     * A screen that set its own title sets it again on its next
+     * recomposition, which the language change also triggers.
+     */
+    data object RefreshTitles : WorkspaceEvent
+
+    /**
      * Every window goes, pinned included — the user left the production.
      *
      * Distinct from [CloseAll], which spares pinned windows because the user
@@ -80,6 +89,13 @@ class WorkspaceViewModel(
             is WorkspaceEvent.SetDirty -> reduce { WorkspaceReducer.setDirty(it, event.id, event.dirty) }
             is WorkspaceEvent.CloseOthers -> reduce { WorkspaceReducer.closeOthers(it, event.id) }
             WorkspaceEvent.CloseAll -> reduce { WorkspaceReducer.closeAll(it) }
+            WorkspaceEvent.RefreshTitles -> reduce { state ->
+                state.copy(
+                    windows = state.windows.map { window ->
+                        registry.resolve(window.route)?.let { window.copy(title = it.titleFor(window.route)) } ?: window
+                    },
+                )
+            }
             WorkspaceEvent.CloseAllForProjectSwitch ->
                 reduce { WorkspaceReducer.closeAll(it, includePinned = true) }
 

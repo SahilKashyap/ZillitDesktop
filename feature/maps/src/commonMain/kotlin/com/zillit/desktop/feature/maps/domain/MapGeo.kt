@@ -1,3 +1,5 @@
+@file:Suppress("MatchingDeclarationName") // The file is named for the subject, the object for the maths.
+
 package com.zillit.desktop.feature.maps.domain
 
 import kotlin.math.PI

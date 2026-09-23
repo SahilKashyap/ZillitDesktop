@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.ui.theme.ReportIcons
 import com.zillit.desktop.feature.productionreport.ui.theme.ReportTheme
 
@@ -94,7 +96,7 @@ internal fun ReportErrorLine(message: String, onRetry: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(message, style = reportText(13.sp), color = colors.red, modifier = Modifier.weight(1f))
-        ReportButton("Retry", onRetry, kind = ButtonKind.DangerOutline, height = 30.dp, fontSize = 12.sp)
+        ReportButton(str(S.retry), onRetry, kind = ButtonKind.DangerOutline, height = 30.dp, fontSize = 12.sp)
     }
 }
 

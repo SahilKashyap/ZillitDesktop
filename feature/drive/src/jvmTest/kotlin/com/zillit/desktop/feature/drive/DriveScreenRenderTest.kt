@@ -153,7 +153,7 @@ class DriveScreenRenderTest {
         setContent { ZillitTheme { DriveScreen(state = current.value, onEvent = {}) } }
         onNodeWithText("Camera Report Day 12.pdf").assertExists()
         // The folder is mine and shared with nobody; the PDF shows its sharees instead.
-        onNodeWithText("Only you").assertExists()
+        onNodeWithText("Only You").assertExists()
 
         current.value = state(folderId = null)
         waitForIdle()
@@ -324,7 +324,7 @@ class DriveScreenRenderTest {
 
         current.value = state().copy(edit = EditDraft(pdf, "Camera Report Day 12", ""))
         waitForIdle()
-        onNodeWithText("Edit file").assertExists()
+        onNodeWithText("Edit File").assertExists()
 
         current.value = state().copy(
             share = ShareState(
@@ -355,7 +355,7 @@ class DriveScreenRenderTest {
             share = ShareState(item = folder, access = AccessDraft(roles = mapOf("u2" to DriveRole.Editor))),
         )
         waitForIdle()
-        onNodeWithText("Manage access").assertExists()
+        onNodeWithText("Manage Access").assertExists()
 
         current.value = state().copy(activityLog = ActivityLogState(open = true, items = listOf(
             DriveActivity("a1", "folder_moved", "Camera Reports", "folder", "Ada Lovelace", "u1", 1_754_000_000_000),
@@ -397,7 +397,7 @@ class DriveScreenRenderTest {
 
         current.value = state().copy(menu = ItemMenuState(pdf, 100f, 100f))
         waitForIdle()
-        onNodeWithText("Edit info").assertExists()
+        onNodeWithText("Edit Info").assertExists()
         onNodeWithText("Move to…").assertExists()
     }
 

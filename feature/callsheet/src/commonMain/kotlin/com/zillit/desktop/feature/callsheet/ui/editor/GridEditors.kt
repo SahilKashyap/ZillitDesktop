@@ -59,6 +59,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.rememberHorizontalResizeCursor
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CELL_TYPES
 import com.zillit.desktop.feature.callsheet.domain.CellValue
 import com.zillit.desktop.feature.callsheet.domain.ColumnSpec
@@ -288,7 +290,7 @@ private fun RemoveMark(description: String, onClick: () -> Unit, size: Int = 10)
 private fun AddButtons(address: CellAddress, onEvent: (SheetEvent) -> Unit) {
     Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SheetButton(
-            "Add Row",
+            str(S.cs_add_row),
             { onEvent(DocumentEvent.AddLine(address.row, address.cell)) },
             kind = ButtonKind.Accent,
             icon = ZillitIcons.Add,
@@ -298,7 +300,7 @@ private fun AddButtons(address: CellAddress, onEvent: (SheetEvent) -> Unit) {
             horizontalPadding = 12.dp,
         )
         SheetButton(
-            "Add Column",
+            str(S.desktop_add_column),
             { onEvent(DocumentEvent.AddColumn(address.row, address.cell)) },
             kind = ButtonKind.Warning,
             height = 32.dp,
@@ -401,7 +403,7 @@ internal fun SectionGridEditor(
                     )
                     if (cell.columns.size > 1) {
                         RemoveMark(
-                            "Remove column",
+                            str(S.desktop_remove_column),
                             { onEvent(DocumentEvent.RemoveColumn(address.row, address.cell, index)) },
                         )
                     }
@@ -450,7 +452,7 @@ internal fun SectionGridEditor(
                 ) {
                     if (cell.rows.size > 1) {
                         RemoveMark(
-                            "Remove row",
+                            str(S.desktop_remove_row),
                             { onEvent(DocumentEvent.RemoveLine(address.row, address.cell, lineIndex)) },
                             size = 11,
                         )
@@ -519,7 +521,7 @@ internal fun TableEditor(
                                 )
                                 if (cell.columns.size > 1) {
                                     RemoveMark(
-                                        "Remove column",
+                                        str(S.desktop_remove_column),
                                         { onEvent(DocumentEvent.RemoveColumn(address.row, address.cell, index)) },
                                         size = 11,
                                     )
@@ -620,7 +622,7 @@ internal fun TableEditor(
                             contentAlignment = Alignment.Center,
                         ) {
                             RemoveMark(
-                                "Remove row",
+                                str(S.desktop_remove_row),
                                 { onEvent(DocumentEvent.RemoveLine(address.row, address.cell, lineIndex)) },
                                 size = 11,
                             )
@@ -701,7 +703,7 @@ private fun ColumnGrip(baseline: () -> List<Double>, onDrag: (travelledPx: Doubl
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
     var dragging by remember { mutableStateOf(false) }
-    ZillitTooltip("Drag to resize column") {
+    ZillitTooltip(str(S.desktop_drag_to_resize_column)) {
         Box(
             Modifier
                 .width(8.dp)
@@ -738,7 +740,7 @@ private fun RowGrip(modifier: Modifier, onStart: () -> Unit, onDrag: (travelledP
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
     var dragging by remember { mutableStateOf(false) }
-    ZillitTooltip("Drag to resize row") {
+    ZillitTooltip(str(S.desktop_drag_to_resize_row)) {
         Box(
             modifier
                 .fillMaxWidth()
@@ -836,7 +838,7 @@ internal fun CrewEditor(
                                 }
                             }
                             index == 0 -> Text(
-                                column.label.ifBlank { "Col 1" },
+                                column.label.ifBlank { str(S.desktop_col_n, 1) },
                                 style = sheetText(14.sp, FontWeight.Bold),
                                 color = colors.textPrimary,
                             )
@@ -852,7 +854,7 @@ internal fun CrewEditor(
                                 )
                                 if (cell.columns.size > 1) {
                                     RemoveMark(
-                                        "Remove column",
+                                        str(S.desktop_remove_column),
                                         { onEvent(DocumentEvent.RemoveColumn(address.row, address.cell, index)) },
                                     )
                                 }
@@ -879,7 +881,7 @@ internal fun CrewEditor(
         }
         if (cell.rows.isEmpty()) {
             Text(
-                "No members in this department",
+                str(S.desktop_no_members_in_department),
                 style = sheetText(14.sp),
                 color = colors.textMeta,
                 textAlign = TextAlign.Center,
@@ -901,7 +903,7 @@ internal fun CrewEditor(
                                 atom?.value.orEmpty(),
                                 set,
                                 Modifier.fillMaxSize(),
-                                placeholder = "Name",
+                                placeholder = str(S.name),
                                 weight = FontWeight.Medium,
                                 ground = colors.elevated,
                                 onFocus = { onEvent(EditorEvent.Focus(lineIndex, index)) },
@@ -933,7 +935,7 @@ internal fun CrewEditor(
                     contentAlignment = Alignment.Center,
                 ) {
                     RemoveMark(
-                        "Remove row",
+                        str(S.desktop_remove_row),
                         { onEvent(DocumentEvent.RemoveLine(address.row, address.cell, lineIndex)) },
                         size = 11,
                     )
@@ -951,9 +953,9 @@ private fun ApplyAll(onApply: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val (source, hovered) = rememberHover()
     Box {
-        ZillitTooltip("Apply to all members in this department") {
+        ZillitTooltip(str(S.desktop_apply_to_all_in_department)) {
             Text(
-                "Apply All",
+                str(S.desktop_apply_all),
                 style = sheetText(9.sp, FontWeight.Medium, 12.sp),
                 color = if (hovered) Color.White else colors.accent,
                 maxLines = 1,
@@ -975,7 +977,7 @@ private fun ApplyAll(onApply: (String) -> Unit) {
             modifier = Modifier.border(1.dp, colors.border, RoundedCornerShape(10.dp)),
         ) {
             Column(Modifier.width(150.dp).padding(horizontal = 4.dp)) {
-                MenuOption("Per HOD") {
+                MenuOption(str(S.desktop_per_hod)) {
                     open = false
                     onApply(SheetTime.PER_HOD)
                 }
@@ -983,7 +985,7 @@ private fun ApplyAll(onApply: (String) -> Unit) {
                     open = false
                     onApply(SheetTime.ON_CALL)
                 }
-                MenuOption("Clear All", danger = true) {
+                MenuOption(str(S.txt_clear_all), danger = true) {
                     open = false
                     onApply("")
                 }
@@ -1006,12 +1008,12 @@ internal fun NotesEditor(cell: PageCell, address: CellAddress, onEvent: (SheetEv
                     row.values.firstOrNull()?.value.orEmpty(),
                     { onEvent(DocumentEvent.SetValue(address.row, address.cell, index, 0, it)) },
                     Modifier.weight(1f),
-                    placeholder = "Enter note",
+                    placeholder = str(S.enter_notes),
                     onFocusChange = { if (it) onEvent(EditorEvent.Focus(index, null)) },
                 )
                 val (source, hovered) = rememberHover()
                 Text(
-                    "Remove",
+                    str(S.remove),
                     style = sheetText(12.sp).copy(textDecoration = if (hovered) TextDecoration.Underline else null),
                     color = colors.red,
                     modifier = Modifier
@@ -1026,14 +1028,14 @@ internal fun NotesEditor(cell: PageCell, address: CellAddress, onEvent: (SheetEv
         }
         if (cell.rows.isEmpty()) {
             Text(
-                "No notes yet.",
+                str(S.desktop_no_notes_yet),
                 style = sheetText(12.sp),
                 color = colors.textMuted,
             )
         }
         Box(Modifier.padding(top = 12.dp)) {
             SheetButton(
-                "Add Note",
+                str(S.add_note),
                 { onEvent(DocumentEvent.AddLine(address.row, address.cell)) },
                 kind = ButtonKind.Accent,
                 icon = ZillitIcons.Add,

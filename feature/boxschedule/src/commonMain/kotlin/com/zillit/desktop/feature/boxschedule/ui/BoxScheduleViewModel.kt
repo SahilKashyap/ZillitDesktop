@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.boxschedule.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleHost
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleRepository
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleViewer
@@ -188,7 +190,11 @@ class BoxScheduleViewModel(
             }
             is PageEvent.SetCalendarMode -> updatePage { copy(calendarMode = event.mode) }
             is PageEvent.SaveDefaultCalendarMode ->
-                saveDefault(DiaryPreferences.CALENDAR_MODE, event.mode.name, "${event.mode.label} View") {
+                saveDefault(
+                    DiaryPreferences.CALENDAR_MODE,
+                    event.mode.name,
+                    str(S.desktop_bs_view_mode_label, event.mode.label),
+                ) {
                     copy(calendarMode = event.mode, defaultCalendarMode = event.mode)
                 }
             is PageEvent.SetListMode -> updatePage { copy(listMode = event.mode) }
@@ -328,7 +334,7 @@ class BoxScheduleViewModel(
     private fun joinCall(listKey: String) {
         val event = currentState.entry(listKey) ?: return
         if (!event.isCallJoinable || !event.hasCallRoom) {
-            notice("This event has no call to join.")
+            notice(str(S.desktop_bs_no_call_to_join))
             return
         }
         sendEffect(

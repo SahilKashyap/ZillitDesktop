@@ -174,7 +174,8 @@ class CrewFormRulesTest {
 
         assertTrue(required.containsAll(CrewRequirements.ALWAYS_REQUIRED))
         assertTrue("bank.account_number" in required && "bank.iban_number" in required)
-        assertTrue("Account number or IBAN" in CrewRequirements.missingLabels(payeUk, draft))
+        // "Account Number" is Android's wording for this field, and its 21 translations come with it.
+        assertTrue("Account Number or IBAN" in CrewRequirements.missingLabels(payeUk, draft))
 
         val filled = draft.withBank("iban_number", JsonPrimitive("GB29NWBK"))
         assertFalse("bank.account_number" in CrewFormRules.requiredPaths(payeUk, filled))

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.data
 
 import com.zillit.desktop.core.common.toEpochMillisOrNull
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
@@ -74,7 +76,7 @@ internal data class FolderDto(
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
         return LibraryFolder(
             id = identifier,
-            name = name.orEmpty().ifBlank { "Untitled folder" },
+            name = name.orEmpty().ifBlank { str(S.drive_untitled_folder) },
             parentId = parentId?.takeIf { it.isNotBlank() },
             folderDate = folderDate.orEmpty().take(ISO_DATE_LENGTH),
             description = description.orEmpty(),
@@ -114,7 +116,7 @@ internal data class DocumentDto(
     fun toDomain(ephemeral: Boolean = false): LibraryDocument? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
         val fileName = listOf(originalName, name)
-            .firstOrNull { !it.isNullOrBlank() } ?: "Untitled"
+            .firstOrNull { !it.isNullOrBlank() } ?: str(S.untitled)
         return LibraryDocument(
             isEphemeral = ephemeral,
             id = identifier,
@@ -228,7 +230,7 @@ internal data class PresetDto(
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
         return DistributionList(
             id = identifier,
-            name = name.orEmpty().ifBlank { "Untitled list" },
+            name = name.orEmpty().ifBlank { str(S.desktop_docdist_untitled_list) },
             recipients = recipients.mapNotNull { it.toRecipient() },
             description = description.orEmpty(),
             updatedAt = updated?.content.toEpochMillisOrNull(),
@@ -281,7 +283,7 @@ internal data class TemplateDto(
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
         return EmailTemplate(
             id = identifier,
-            name = name.orEmpty().ifBlank { "Untitled template" },
+            name = name.orEmpty().ifBlank { str(S.docusign_template_detail_untitled) },
             subject = subject.orEmpty(),
             bodyHtml = body.orEmpty(),
             description = description.orEmpty(),
@@ -480,7 +482,7 @@ internal data class PublishedFileDto(
         val identifier = chatId?.takeIf { it.isNotBlank() } ?: return null
         return PublishedFile(
             chatId = identifier,
-            name = name.orEmpty().ifBlank { "Published file" },
+            name = name.orEmpty().ifBlank { str(S.desktop_docdist_published_file) },
             publishedAt = publishedAt?.takeIf { it > 0 },
         )
     }

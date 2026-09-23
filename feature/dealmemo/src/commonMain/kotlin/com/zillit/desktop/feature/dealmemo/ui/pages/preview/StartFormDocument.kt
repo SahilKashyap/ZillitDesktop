@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.MemoFormat
 import com.zillit.desktop.feature.dealmemo.domain.preview.StartField
 import com.zillit.desktop.feature.dealmemo.domain.preview.StartFormView
@@ -51,7 +53,7 @@ internal fun StartFormDocument(view: StartFormView) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = "CREW START FORM",
+                    text = str(S.desktop_dm_crew_start_form),
                     style = DmType.display(18.sp, FontWeight.Bold, 0.04.em),
                     color = Color.White,
                     maxLines = 1,

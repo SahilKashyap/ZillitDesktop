@@ -60,6 +60,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewDraft
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewField
@@ -111,22 +113,24 @@ private fun Placeholder(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 64.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ZillitText(text = "Couldn't load your deal memo.", style = DmType.sans(14.sp), color = cp.body)
+            ZillitText(
+                text = str(S.desktop_dm_couldnt_load_your_deal_memo),
+                style = DmType.sans(14.sp),
+                color = cp.body,
+            )
             Spacer(Modifier.height(12.dp))
             DmButton(
-                "Retry",
+                str(S.retry),
                 onClick = { onEvent(MyDealEvent.Retry) },
                 style = DmButtonStyle.SmallSecondary,
                 icon = ZillitIcons.Reload,
             )
         }
         mine.loaded && !mine.loading && mine.deal == null -> EmptyNote(
-            title = "No deal memo on file",
-            body = "You don't have a deal memo for this production yet. The production accountant or the relevant " +
-                "HOD will issue one — once it's issued to you, it'll appear here for you to review and send for " +
-                "approval.",
+            title = str(S.desktop_dm_no_deal_memo_on_file),
+            body = str(S.desktop_dm_you_dont_have_a_deal_memo_for),
         )
-        else -> LoadingLine("Loading your deal memo…")
+        else -> LoadingLine(str(S.desktop_dm_loading_your_deal_memo))
     }
 }
 
@@ -227,7 +231,7 @@ private fun TopBar(saving: Boolean, dirty: Boolean, onEvent: (DealMemoEvent) -> 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val (source, hovered) = rememberHover()
                 ZillitText(
-                    text = "MY DEAL",
+                    text = str(S.dm_tab_my_deal),
                     style = DmType.sans(11.sp, FontWeight.Bold, 0.08.em),
                     color = p.amber,
                     modifier = Modifier
@@ -247,14 +251,14 @@ private fun TopBar(saving: Boolean, dirty: Boolean, onEvent: (DealMemoEvent) -> 
                 )
                 ZillitText(text = "/", style = DmType.sans(12.sp), color = p.placeholder)
                 ZillitText(
-                    text = "Complete your details",
+                    text = str(S.dm_crew_complete_details),
                     style = DmType.sans(12.5.sp, FontWeight.SemiBold),
                     color = p.label,
                 )
             }
             Spacer(Modifier.weight(1f))
             AmberButton(
-                text = if (saving) "Saving…" else "Save",
+                text = if (saving) str(S.dm_nda_saving) else str(S.dm_save),
                 enabled = !saving && dirty,
                 loading = saving,
                 height = 34,
@@ -288,7 +292,14 @@ private fun BackButton(enabled: Boolean, onClick: () -> Unit) {
                 },
             ),
         contentAlignment = Alignment.Center,
-    ) { ZillitIcon(ZillitIcons.ChevronLeft, size = 13.dp, tint = p.label, contentDescription = "Back to deal memo") }
+    ) {
+        ZillitIcon(
+            ZillitIcons.ChevronLeft,
+            size = 13.dp,
+            tint = p.label,
+            contentDescription = str(S.desktop_dm_back_to_deal_memo),
+        )
+    }
 }
 
 /** The step rail: positional bullets — done before, active here, upcoming after — every item clickable. */
@@ -307,7 +318,7 @@ private fun StepRail(steps: List<CrewStep>, index: Int, onEvent: (DealMemoEvent)
                 .padding(horizontal = 8.dp, vertical = 18.dp),
         ) {
             ZillitText(
-                text = "YOUR DETAILS — ${steps.size} STEPS",
+                text = str(S.desktop_dm_your_details_n_steps, steps.size),
                 style = DmType.sans(10.5.sp, FontWeight.Bold, 0.12.em),
                 color = p.muted,
                 modifier = Modifier.padding(start = 14.dp, bottom = 14.dp),
@@ -423,7 +434,7 @@ private fun StepHeader(position: Int, count: Int, step: CrewStep) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ZillitText(
-            text = "STEP $position OF $count",
+            text = str(S.docusign_create_sig_step_eyebrow, position, count),
             style = DmType.sans(12.sp, FontWeight.SemiBold, 0.2.em),
             color = p.brand,
             maxLines = 1,
@@ -452,9 +463,9 @@ private fun InfoLine() {
         ZillitIcon(ZillitIcons.Info, size = 11.dp, tint = p.brand, modifier = Modifier.padding(top = 2.dp))
         ZillitText(
             text = buildAnnotatedString {
-                append("Greyed values are managed by your production accountant. Fields marked ")
+                append(str(S.desktop_dm_greyed_values_are_managed_by_your_production) + " ")
                 withStyle(SpanStyle(color = Color(0xFFEF4444))) { append("*") }
-                append(" are required.")
+                append(" " + str(S.desktop_dm_are_required_suffix))
             },
             style = DmType.sans(11.sp).copy(lineHeight = 17.sp),
             color = p.body,
@@ -478,7 +489,7 @@ private fun Footer(
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.cardBorder))
         if (blockedLabels.isNotEmpty()) {
             ZillitText(
-                text = "Fix ${blockedLabels.joinToString(", ")} before saving or continuing.",
+                text = str(S.desktop_dm_fix_fields_before_saving, blockedLabels.joinToString(", ")),
                 style = DmType.sans(11.sp, FontWeight.SemiBold),
                 color = p.error,
                 modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 10.dp),
@@ -486,8 +497,7 @@ private fun Footer(
         }
         if (stillEmpty) {
             ZillitText(
-                text = "Some required fields are still empty — you can save now and finish later, but they're needed " +
-                    "before you can send this for approval.",
+                text = str(S.desktop_dm_some_required_fields_are_still_empty_you),
                 style = DmType.sans(11.sp),
                 color = p.warn,
                 modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 10.dp),
@@ -501,11 +511,19 @@ private fun Footer(
             FooterBack(enabled = position > 1) { onEvent(CrewFormEvent.StepBack) }
             Progress(position, count, Modifier.weight(1f))
             if (last) {
-                AmberButton(text = if (saving) "Saving…" else "Save & Finish", enabled = !saving, loading = saving) {
+                AmberButton(
+                    text = if (saving) str(S.dm_nda_saving) else str(S.desktop_dm_save_finish),
+                    enabled = !saving,
+                    loading = saving,
+                ) {
                     onEvent(CrewFormEvent.Finish)
                 }
             } else {
-                AmberButton(text = "Continue", enabled = true, trailingArrow = true) { onEvent(CrewFormEvent.Continue) }
+                AmberButton(
+                    text = str(S.dm_nda_external_continue),
+                    enabled = true,
+                    trailingArrow = true,
+                ) { onEvent(CrewFormEvent.Continue) }
             }
         }
     }
@@ -537,7 +555,7 @@ private fun FooterBack(enabled: Boolean, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         ZillitIcon(ZillitIcons.ArrowLeft, size = 12.dp, tint = p.teal)
-        ZillitText(text = "Back", style = DmType.sans(13.sp, FontWeight.Bold), color = p.teal)
+        ZillitText(text = str(S.dm_wizard_back), style = DmType.sans(13.sp, FontWeight.Bold), color = p.teal)
     }
 }
 
@@ -557,7 +575,7 @@ private fun Progress(position: Int, count: Int, modifier: Modifier) {
             )
         }
         ZillitText(
-            text = "Step $position of $count",
+            text = str(S.dm_wizard_step_label, position, count),
             style = DmType.mono(11.5.sp, FontWeight.Bold, 0.04.em),
             color = p.muted,
             textAlign = TextAlign.End,
@@ -613,23 +631,23 @@ private fun AmberButton(
 private fun DiscardPrompt(visible: Boolean, saving: Boolean, onEvent: (DealMemoEvent) -> Unit) {
     DmModal(
         visible = visible,
-        title = "Discard changes?",
+        title = str(S.dm_builder_discard_title),
         onDismiss = { onEvent(CrewFormEvent.KeepEditing) },
         maxWidth = 460.dp,
         footer = {
             DmButton(
-                "Keep Editing",
+                str(S.dm_quick_exit_keep),
                 onClick = { onEvent(CrewFormEvent.KeepEditing) },
                 style = DmButtonStyle.ModalNeutral,
             )
             DmButton(
-                "Discard Changes",
+                str(S.desktop_dm_discard_changes),
                 onClick = { onEvent(CrewFormEvent.DiscardChanges) },
                 style = DmButtonStyle.ModalDangerText,
                 enabled = !saving,
             )
             DmButton(
-                text = if (saving) "Saving…" else "Save Changes",
+                text = if (saving) str(S.dm_nda_saving) else str(S.dm_wizard_save_submit),
                 onClick = { onEvent(CrewFormEvent.SaveChanges) },
                 style = DmButtonStyle.ModalPrimary,
                 loading = saving,
@@ -637,8 +655,7 @@ private fun DiscardPrompt(visible: Boolean, saving: Boolean, onEvent: (DealMemoE
         },
     ) {
         ZillitText(
-            text = "You have unsaved changes to your details. Discarding puts every field back to what's currently " +
-                "saved on the deal memo.",
+            text = str(S.desktop_dm_you_have_unsaved_changes_to_your_details),
             style = DmType.sans(12.sp).copy(lineHeight = 19.sp),
             color = cp.body,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),

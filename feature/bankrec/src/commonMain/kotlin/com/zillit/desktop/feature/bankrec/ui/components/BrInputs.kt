@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.CostCentre
 import com.zillit.desktop.feature.bankrec.domain.NominalCode
 import com.zillit.desktop.feature.bankrec.domain.QuickAddForm
@@ -65,7 +67,7 @@ internal fun NominalCodeField(
     onValueChange: (String) -> Unit,
     codes: List<NominalCode>,
     modifier: Modifier = Modifier,
-    placeholder: String = "Search code or name…",
+    placeholder: String = str(S.desktop_br_search_code_or_name),
 ) {
     var focused by remember { mutableStateOf(false) }
     val query = value.trim()
@@ -82,7 +84,7 @@ internal fun NominalCodeField(
             helperText = when {
                 query.isEmpty() -> null
                 known != null -> known.name
-                else -> "Not in the Chart of Accounts — used as typed."
+                else -> str(S.desktop_br_not_in_coa)
             },
             modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
         )
@@ -100,7 +102,7 @@ internal fun NominalCodeField(
                 ) {
                     if (codes.isEmpty()) {
                         ZillitText(
-                            "This project's Chart of Accounts is empty — add codes in Chart of Accounts first.",
+                            str(S.desktop_dm_this_projects_chart_of_accounts_is_empty),
                             style = ZillitTheme.typography.bodySmall,
                             color = colors.textMuted,
                             modifier = Modifier.padding(12.dp),
@@ -257,8 +259,8 @@ internal fun TaxField(
             groups = taxGroups(options),
             label = { id ->
                 when (id) {
-                    "" -> "— Select tax… —"
-                    TaxOption.OTHER -> "Other"
+                    "" -> str(S.desktop_br_select_tax)
+                    TaxOption.OTHER -> str(S.other)
                     else -> options.firstOrNull { it.identifier == id }?.optionLabel ?: id
                 }
             },
@@ -310,7 +312,7 @@ private fun taxGroups(options: List<TaxOption>): List<Pair<String?, List<String>
     val custom = options.filter { it.country.isBlank() }.map { it.identifier } + TaxOption.OTHER
     return listOf<Pair<String?, List<String>>>(null to listOf("")) +
         byCountry.map { (country, rows) -> country to rows.map { it.identifier } } +
-        ("Custom" to custom)
+        (str(S.custom) to custom)
 }
 
 /** A select whose options sit under group headings — a tax type's country. */
@@ -384,7 +386,9 @@ internal fun CostCentreSelect(value: String, onSelect: (String) -> Unit, modifie
         value = value,
         options = listOf("") + CostCentre.entries.map { it.code },
         onSelect = onSelect,
-        label = { code -> CostCentre.entries.firstOrNull { it.code == code }?.label ?: "Select cost centre…" },
+        label = { code ->
+            CostCentre.entries.firstOrNull { it.code == code }?.label ?: str(S.desktop_br_select_cost_centre)
+        },
         modifier = modifier,
     )
 }
@@ -402,8 +406,8 @@ internal fun LockedDateField(
     ZillitDateField(
         value = value,
         onValueChange = onValueChange,
-        errorText = if (blocked) "Must be after $locked — the cost report is locked." else null,
-        helperText = if (!blocked && locked != null) "Locked through $locked" else null,
+        errorText = if (blocked) str(S.desktop_br_must_be_after_lock, locked) else null,
+        helperText = if (!blocked && locked != null) str(S.desktop_hub_locked_through_x, locked) else null,
         modifier = modifier,
     )
 }

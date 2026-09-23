@@ -48,6 +48,8 @@ import com.zillit.desktop.feature.payroll.domain.PayrollLine
 import com.zillit.desktop.feature.payroll.domain.PayrollWeek
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import com.zillit.desktop.feature.payroll.domain.WeekStatus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Payroll tool.
@@ -76,12 +78,12 @@ fun PayrollScreen(
                     .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.lg),
             ) {
                 ZillitPageHeader(
-                    eyebrow = "Payroll",
-                    title = "Payroll Runs",
-                    description = "Check a week's timecards, mark them paid, and post them to the ledger.",
+                    eyebrow = str(S.dm_section_payroll),
+                    title = str(S.desktop_payroll_runs),
+                    description = str(S.desktop_payroll_description),
                     actions = {
                         ZillitButton(
-                            text = "Refresh",
+                            text = str(S.refresh_text),
                             onClick = { onEvent(PayrollEvent.Refresh) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -132,31 +134,35 @@ private fun PayrollBody(
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitStatTile(
-                label = "Crew this week",
+                label = str(S.desktop_payroll_crew_this_week),
                 value = week.crewCount.toString(),
-                sub = "${week.payableLines.size} ready to pay",
+                sub = str(S.desktop_payroll_ready_to_pay_count, week.payableLines.size),
                 icon = ZillitIcons.Users,
                 modifier = Modifier.weight(1f),
             )
             ZillitStatTile(
-                label = "Queried",
+                label = str(S.ah_queried),
                 value = week.queriedCount.toString(),
-                sub = if (week.queriedCount == 0) "Nothing outstanding" else "Held for an answer",
+                sub = if (week.queriedCount == 0) {
+                    str(S.desktop_payroll_nothing_outstanding)
+                } else {
+                    str(S.desktop_payroll_held_for_answer)
+                },
                 tone = if (week.queriedCount == 0) StatusTone.Done else StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
                 modifier = Modifier.weight(1f),
             )
             ZillitStatTile(
-                label = "Gross",
+                label = str(S.desktop_gross),
                 value = Money.format(week.grossTotal, week.currency),
-                sub = "Before deductions",
+                sub = str(S.desktop_payroll_before_deductions),
                 icon = ZillitIcons.Ledger,
                 modifier = Modifier.weight(1f),
             )
             ZillitStatTile(
-                label = "Net to pay",
+                label = str(S.desktop_payroll_net_to_pay),
                 value = Money.format(week.netTotal, week.currency),
-                sub = "After ${Money.format(week.deductionsTotal, week.currency)} deducted",
+                sub = str(S.desktop_payroll_after_deducted, Money.format(week.deductionsTotal, week.currency)),
                 tone = StatusTone.Ready,
                 icon = ZillitIcons.Bank,
                 modifier = Modifier.weight(1f),
@@ -165,8 +171,7 @@ private fun PayrollBody(
 
         if (week.queriedCount > 0) {
             ZillitNotice(
-                text = "${week.queriedCount} timecard(s) are queried. " +
-                    "They are answered on the timecard, not here.",
+                text = str(S.desktop_payroll_queried_notice, week.queriedCount),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
             )
@@ -177,9 +182,9 @@ private fun PayrollBody(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             ZillitSectionCard(
-                title = "Weeks",
+                title = str(S.dm_ds_unit_weeks),
                 icon = ZillitIcons.Ledger,
-                meta = "Most recent first",
+                meta = str(S.desktop_most_recent_first),
                 padded = false,
                 modifier = Modifier.weight(WEEKS_WEIGHT).fillMaxHeight(),
             ) {
@@ -190,8 +195,8 @@ private fun PayrollBody(
                     loading = state.loading && state.weekOptions.isEmpty(),
                     onRowClick = { onEvent(PayrollEvent.SelectWeek(it)) },
                     isSelected = { it == state.weekStarting },
-                    emptyTitle = "No weeks",
-                    emptyMessage = "Weeks appear once the project has a pay period.",
+                    emptyTitle = str(S.desktop_payroll_no_weeks),
+                    emptyMessage = str(S.desktop_payroll_no_weeks_message),
                 )
             }
 
@@ -201,9 +206,12 @@ private fun PayrollBody(
             ) {
                 WeekToolbar(state, week, onEvent, today)
                 ZillitSectionCard(
-                    title = "Crew for ${EpochDate.date(state.weekStarting).ifEmpty { "this week" }}",
+                    title = EpochDate.date(state.weekStarting)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { str(S.desktop_payroll_crew_for_week, it) }
+                        ?: str(S.desktop_payroll_crew_for_this_week),
                     icon = ZillitIcons.Users,
-                    meta = "${state.lines.size} timecard(s) · ${week.status.label}",
+                    meta = str(S.desktop_payroll_timecard_count_status, state.lines.size, week.status.label),
                     padded = false,
                     modifier = Modifier.fillMaxHeight(),
                 ) {
@@ -217,11 +225,11 @@ private fun PayrollBody(
                         isSelected = { it.crewId == state.openCrewId },
                         loading = state.loading,
                         emptyTitle = if (state.search.isBlank()) {
-                            "No timecards this week"
+                            str(S.desktop_payroll_no_timecards_this_week)
                         } else {
-                            "Nobody matches that search"
+                            str(S.desktop_nobody_matches_search)
                         },
-                        emptyMessage = "Timecards for the week appear here as crew submit them.",
+                        emptyMessage = str(S.desktop_payroll_no_timecards_message),
                     )
                 }
             }
@@ -252,16 +260,19 @@ private fun WeekToolbar(
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(PayrollEvent.Search(it)) },
-            placeholder = "Search crew",
+            placeholder = str(S.desktop_search_crew),
             modifier = Modifier.width(SEARCH_WIDTH),
         )
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
                 text = if (state.selection.isEmpty()) {
-                    "${week.postedCount} of ${week.crewCount} posted"
+                    str(S.desktop_payroll_posted_of_crew, week.postedCount, week.crewCount)
                 } else {
-                    "${state.selection.size} selected · " +
-                        Money.format(state.selectedTotal, week.currency)
+                    str(
+                        S.desktop_payroll_selected_total,
+                        state.selection.size,
+                        Money.format(state.selectedTotal, week.currency),
+                    )
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
@@ -278,9 +289,9 @@ private fun WeekToolbar(
 
             ZillitButton(
                 text = if (state.selection.isEmpty()) {
-                    "Select ${week.payableLines.size} approved"
+                    str(S.desktop_payroll_select_approved, week.payableLines.size)
                 } else {
-                    "Mark ${payable.size} paid"
+                    str(S.desktop_payroll_mark_paid, payable.size)
                 },
                 onClick = {
                     if (state.selection.isEmpty()) {
@@ -291,9 +302,11 @@ private fun WeekToolbar(
                                 PayrollPrompt.Confirm(
                                     action = PayrollConfirmAction.MarkPaid,
                                     ids = payable.map { it.id },
-                                    title = "Mark ${payable.size} timecard(s) paid",
-                                    message = "${Money.format(payable.sumOf { it.net }, week.currency)} " +
-                                        "in total. Only approved timecards move; the rest are left alone.",
+                                    title = str(S.desktop_payroll_mark_paid_title, payable.size),
+                                    message = str(
+                                        S.desktop_payroll_mark_paid_message,
+                                        Money.format(payable.sumOf { it.net }, week.currency),
+                                    ),
                                 ),
                             ),
                         )
@@ -306,7 +319,7 @@ private fun WeekToolbar(
 
             if (state.viewer.canPost) {
                 ZillitButton(
-                    text = "Post ${postable.size} to ledger",
+                    text = str(S.desktop_payroll_post_to_ledger_count, postable.size),
                     onClick = {
                         onEvent(
                             PayrollEvent.Ask(
@@ -334,7 +347,7 @@ private fun PayrollPromptDialog(state: PayrollUiState, onEvent: (PayrollEvent) -
     ZillitDialogShell(
         title = when (shown) {
             is PayrollPrompt.Confirm -> shown.title
-            is PayrollPrompt.Post -> "Post ${shown.ids.size} timecard(s) to the ledger"
+            is PayrollPrompt.Post -> str(S.desktop_payroll_post_title, shown.ids.size)
             null -> ""
         },
         icon = ZillitIcons.Info,
@@ -350,8 +363,7 @@ private fun PayrollPromptDialog(state: PayrollUiState, onEvent: (PayrollEvent) -
 
             is PayrollPrompt.Post -> {
                 ZillitText(
-                    text = "The server needs the account this was settled from and the date it takes " +
-                        "effect in the ledger. Neither can be changed afterwards from here.",
+                    text = str(S.desktop_payroll_post_explainer),
                     style = ZillitTheme.typography.bodyMedium,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -361,20 +373,19 @@ private fun PayrollPromptDialog(state: PayrollUiState, onEvent: (PayrollEvent) -
                     onSelect = { onEvent(PayrollEvent.UpdatePrompt(shown.copy(bankId = it))) },
                     label = { id ->
                         state.bankAccounts.firstOrNull { it.id == id }?.display
-                            ?: "Choose the settling account"
+                            ?: str(S.desktop_payroll_choose_settling_account)
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (state.bankAccounts.isEmpty()) {
                     ZillitNotice(
-                        text = "This project has no bank accounts set up, so nothing can be posted. " +
-                            "Add one in Production Setup → Accounting.",
+                        text = str(S.desktop_payroll_no_bank_accounts),
                         tone = StatusTone.Escalated,
                         icon = ZillitIcons.Warning,
                     )
                 }
                 ZillitText(
-                    text = "Effective ${EpochDate.date(shown.effectiveDate)}",
+                    text = str(S.desktop_payroll_effective_date, EpochDate.date(shown.effectiveDate)),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -388,12 +399,12 @@ private fun PayrollPromptDialog(state: PayrollUiState, onEvent: (PayrollEvent) -
         ) {
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(PayrollEvent.DismissPrompt) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (shown is PayrollPrompt.Post) "Post to ledger" else "Confirm",
+                text = if (shown is PayrollPrompt.Post) str(S.ah_post_to_ledger) else str(S.confirm),
                 onClick = { onEvent(PayrollEvent.ConfirmPrompt) },
                 variant = if (shown is PayrollPrompt.Post) ButtonVariant.Danger else ButtonVariant.Primary,
                 // Disabled rather than failing on click: the missing account is
@@ -406,7 +417,7 @@ private fun PayrollPromptDialog(state: PayrollUiState, onEvent: (PayrollEvent) -
 
 @Suppress("MagicNumber") // Column proportions.
 private fun weekColumns(state: PayrollUiState): List<TableColumn<Long>> = listOf(
-    textColumn("Week starting", ColumnWidth.Weight(1.4f)) {
+    textColumn(str(S.desktop_payroll_week_starting), ColumnWidth.Weight(1.4f)) {
         EpochDate.date(it).ifEmpty { "—" }
     },
     TableColumn(
@@ -444,7 +455,7 @@ private fun lineColumns(
         },
     ),
     TableColumn(
-        header = "Crew",
+        header = str(S.crew),
         width = ColumnWidth.Weight(1.5f),
         cell = { line ->
             Column {
@@ -457,7 +468,7 @@ private fun lineColumns(
                 // the row rather than only in a detail nobody opens.
                 if (line.figuresDisagree) {
                     ZillitText(
-                        text = "Figures do not add up",
+                        text = str(S.desktop_payroll_figures_disagree),
                         style = ZillitTheme.typography.labelSmall,
                         color = ZillitTheme.colors.danger,
                         maxLines = 1,
@@ -475,12 +486,16 @@ private fun lineColumns(
             }
         },
     ),
-    textColumn("Basic", ColumnWidth.Weight(1f), numeric = true) { Money.format(it.basicPay, it.currency) },
-    textColumn("Overtime", ColumnWidth.Weight(1f), numeric = true) { Money.format(it.overtimePay, it.currency) },
-    textColumn("Allowances", ColumnWidth.Weight(1f), numeric = true) { Money.format(it.allowances, it.currency) },
-    textColumn("Net", ColumnWidth.Weight(1f), numeric = true) { Money.format(it.net, it.currency) },
+    textColumn(str(S.desktop_payroll_basic), ColumnWidth.Weight(1f), numeric = true) {
+        Money.format(it.basicPay, it.currency)
+    },
+    textColumn(str(S.overtime), ColumnWidth.Weight(1f), numeric = true) { Money.format(it.overtimePay, it.currency) },
+    textColumn(str(S.allowances_label), ColumnWidth.Weight(1f), numeric = true) {
+        Money.format(it.allowances, it.currency)
+    },
+    textColumn(str(S.desktop_net), ColumnWidth.Weight(1f), numeric = true) { Money.format(it.net, it.currency) },
     TableColumn(
-        header = "Status",
+        header = str(S.status),
         width = ColumnWidth.Fixed(LINE_STATUS_COLUMN),
         cell = { ZillitStatusPill(it.status.label, tone = it.status.tone, dot = true) },
     ),
@@ -490,17 +505,19 @@ private fun lineColumns(
         cell = { line ->
             if (state.viewer.canOperate && line.status == TimecardStatus.Paid) {
                 ZillitButton(
-                    text = "Unpay",
+                    text = str(S.desktop_payroll_unpay),
                     onClick = {
                         onEvent(
                             PayrollEvent.Ask(
                                 PayrollPrompt.Confirm(
                                     action = PayrollConfirmAction.MarkUnpaid,
                                     ids = listOf(line.id),
-                                    title = "Return this timecard to approved",
-                                    message = "${Money.format(line.net, line.currency)} for " +
-                                        "${line.crewName.ifBlank { "this crew member" }} " +
-                                        "comes back out of the paid set.",
+                                    title = str(S.desktop_payroll_unpay_title),
+                                    message = str(
+                                        S.desktop_payroll_unpay_message,
+                                        Money.format(line.net, line.currency),
+                                        line.crewName.ifBlank { str(S.desktop_this_crew_member) },
+                                    ),
                                 ),
                             ),
                         )

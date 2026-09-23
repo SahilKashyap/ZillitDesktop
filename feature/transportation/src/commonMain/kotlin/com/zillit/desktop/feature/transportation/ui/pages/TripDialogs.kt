@@ -39,6 +39,8 @@ import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transportation.domain.TransportUser
 import com.zillit.desktop.feature.transportation.domain.TripAction
 import com.zillit.desktop.feature.transportation.domain.TripPassenger
@@ -63,82 +65,90 @@ internal fun TripDialog(state: TransportUiState, onEvent: (TransportEvent) -> Un
     val driving = trip.driverId == state.viewer.userId
     val editable = coordinator && trip.status.isOpen
     ZillitDialogShell(
-        title = "Trip details",
-        subtitle = "Raised by ${state.userName(trip.raisedBy)}",
+        title = str(S.txt_trip_details),
+        subtitle = str(S.desktop_transport_raised_by_name, state.userName(trip.raisedBy)),
         onDismiss = { onEvent(TransportEvent.CloseTrip) },
         visible = true,
         width = DIALOG_WIDE,
         actions = {
-            ZillitButton(text = "Close", onClick = { onEvent(TransportEvent.CloseTrip) },
+            ZillitButton(text = str(S.close), onClick = { onEvent(TransportEvent.CloseTrip) },
                 variant = ButtonVariant.Tertiary)
             when {
                 coordinator && trip.status == TripStatus.Pending -> {
-                    ZillitButton(text = "Reject", onClick = { onEvent(TransportEvent.TripAct(TripAction.Reject)) },
+                    ZillitButton(text = str(S.reject), onClick = { onEvent(TransportEvent.TripAct(TripAction.Reject)) },
                         variant = ButtonVariant.Danger, loading = open.busy)
-                    ZillitButton(text = "Approve", onClick = { onEvent(TransportEvent.TripAct(TripAction.Approve)) },
+                    ZillitButton(text = str(S.approve),
+                        onClick = { onEvent(TransportEvent.TripAct(TripAction.Approve)) },
                         loading = open.busy)
                 }
                 coordinator && trip.status == TripStatus.Assigned -> {
-                    ZillitButton(text = "Cancel trip", onClick = { onEvent(TransportEvent.TripAct(TripAction.Cancel)) },
+                    ZillitButton(text = str(S.txt_cance_trip_title),
+                        onClick = { onEvent(TransportEvent.TripAct(TripAction.Cancel)) },
                         variant = ButtonVariant.Danger, loading = open.busy)
-                    ZillitButton(text = "Update", onClick = { onEvent(TransportEvent.TripAct(TripAction.Update)) },
+                    ZillitButton(text = str(S.update), onClick = { onEvent(TransportEvent.TripAct(TripAction.Update)) },
                         loading = open.busy)
                 }
                 coordinator && trip.status == TripStatus.InProgress -> {
-                    ZillitButton(text = "Update", onClick = { onEvent(TransportEvent.TripAct(TripAction.Update)) },
+                    ZillitButton(text = str(S.update), onClick = { onEvent(TransportEvent.TripAct(TripAction.Update)) },
                         variant = ButtonVariant.Secondary, loading = open.busy)
-                    ZillitButton(text = "Complete trip", onClick = { onEvent(TransportEvent.TripAct(TripAction.End)) },
+                    ZillitButton(text = str(S.txt_complete_trip),
+                        onClick = { onEvent(TransportEvent.TripAct(TripAction.End)) },
                         loading = open.busy)
                 }
                 driving && trip.status == TripStatus.Assigned ->
-                    ZillitButton(text = "Start trip", onClick = { onEvent(TransportEvent.TripAct(TripAction.Start)) },
+                    ZillitButton(text = str(S.txt_start_trip),
+                        onClick = { onEvent(TransportEvent.TripAct(TripAction.Start)) },
                         loading = open.busy)
                 driving && trip.status == TripStatus.InProgress ->
-                    ZillitButton(text = "Complete trip", onClick = { onEvent(TransportEvent.TripAct(TripAction.End)) },
+                    ZillitButton(text = str(S.txt_complete_trip),
+                        onClick = { onEvent(TransportEvent.TripAct(TripAction.End)) },
                         loading = open.busy)
                 !coordinator && trip.status == TripStatus.Pending -> {
                     if (mine) {
-                        ZillitButton(text = "Cancel trip",
+                        ZillitButton(text = str(S.txt_cance_trip_title),
                             onClick = { onEvent(TransportEvent.TripAct(TripAction.Cancel)) },
                             variant = ButtonVariant.Danger, loading = open.busy)
                     }
-                    ZillitButton(text = "Send reminder", onClick = { onEvent(TransportEvent.SendReminder) },
+                    ZillitButton(text = str(S.txt_send_reminder), onClick = { onEvent(TransportEvent.SendReminder) },
                         loading = state.busy)
                 }
                 !coordinator && trip.status == TripStatus.Assigned && mine ->
-                    ZillitButton(text = "Cancel trip", onClick = { onEvent(TransportEvent.TripAct(TripAction.Cancel)) },
+                    ZillitButton(text = str(S.txt_cance_trip_title),
+                        onClick = { onEvent(TransportEvent.TripAct(TripAction.Cancel)) },
                         variant = ButtonVariant.Danger, loading = open.busy)
                 else -> Unit
             }
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            Block(title = "Request", action = {
+            Block(title = str(S.docusign_request_access), action = {
                 ZillitStatusPill(label = trip.status.label, tone = statusTone(trip.status))
             }) {
-                DetailRow("Raised by", state.userName(trip.raisedBy))
-                DetailRow("Priority", trip.priority.ifBlank { "—" })
-                DetailRow("Pickup date", TransportClock.dateTime(trip.firstPickupMs))
-                DetailRow("Passenger count", open.passengers.size.toString())
-                if (trip.startMs > 0) DetailRow("Started", TransportClock.dateTime(trip.startMs))
-                if (trip.endMs > 0) DetailRow("Ended", TransportClock.dateTime(trip.endMs))
+                DetailRow(str(S.txt_raised_by), state.userName(trip.raisedBy))
+                DetailRow(str(S.priority), trip.priority.ifBlank { "—" })
+                DetailRow(str(S.txt_pickup_date), TransportClock.dateTime(trip.firstPickupMs))
+                DetailRow(str(S.passenger_count), open.passengers.size.toString())
+                if (trip.startMs > 0) DetailRow(str(S.desktop_transport_started), TransportClock.dateTime(trip.startMs))
+                if (trip.endMs > 0) DetailRow(str(S.desktop_call_ended_status), TransportClock.dateTime(trip.endMs))
                 if (trip.status == TripStatus.InProgress && trip.driverId != null) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        ZillitButton(text = "Track driver", onClick = { onEvent(TransportEvent.TrackTrip) },
+                        ZillitButton(text = str(S.track_driver), onClick = { onEvent(TransportEvent.TrackTrip) },
                             variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Pin)
                     }
                 }
             }
             if (editable) {
-                SwitchRow("Self assign", "Add yourself as a passenger",
+                SwitchRow(str(S.txt_self_assign), str(S.desktop_transport_add_yourself_passenger),
                     checked = open.passengers.any { it.userId == state.viewer.userId }) {
                     onEvent(TransportEvent.TripSelfAssign(it))
                 }
             }
-            Block(title = "Passengers", action = {
-                if (editable) AddLink("Add passenger") { onEvent(TransportEvent.OpenPassenger(forOpenTrip = true)) }
+            Block(title = str(S.txt_passengers), action = {
+                if (editable) {
+                    AddLink(str(S.txt_add_passenger)) { onEvent(TransportEvent.OpenPassenger(forOpenTrip = true)) }
+                }
             }) {
-                if (open.passengers.isEmpty()) EmptyLine("Add at least one passenger")
+                if (open.passengers.isEmpty()) EmptyLine(str(S.desktop_transport_add_at_least_one_passenger))
                 open.passengers.sortedBy { it.pickupMs }.forEach { p ->
                     PassengerRow(
                         state = state,
@@ -160,12 +170,14 @@ internal fun TripDialog(state: TransportUiState, onEvent: (TransportEvent) -> Un
                 }
             }
             if (open.passengers.isNotEmpty()) {
-                Block(title = "CC users", action = {
+                Block(title = str(S.txt_cc_users), action = {
                     if (editable) {
-                        AddLink("Add CC user") { onEvent(TransportEvent.OpenPeoplePicker(PickPurpose.TripCc)) }
+                        AddLink(str(S.desktop_transport_add_cc_user)) {
+                            onEvent(TransportEvent.OpenPeoplePicker(PickPurpose.TripCc))
+                        }
                     }
                 }) {
-                    if (open.ccUsers.isEmpty()) EmptyLine("No CC users")
+                    if (open.ccUsers.isEmpty()) EmptyLine(str(S.desktop_transport_no_cc_users))
                     open.ccUsers.forEach { id ->
                         PersonRow(state, id, trailing = {
                             if (editable) RemoveButton({ onEvent(TransportEvent.TripRemoveCc(id)) })
@@ -178,13 +190,13 @@ internal fun TripDialog(state: TransportUiState, onEvent: (TransportEvent) -> Un
             if (open.confirm != null) {
                 val cancelling = open.confirm == TripAction.Cancel
                 ZillitNotice(
-                    text = if (cancelling) "Cancel this trip? The driver and passengers will be told." else
-                        "Reject this request? The person who raised it will be told.",
+                    text = if (cancelling) str(S.desktop_transport_cancel_trip_confirm)
+                        else str(S.desktop_transport_reject_request_confirm),
                     tone = StatusTone.Rejected,
                     action = {
-                        ZillitButton(text = "No", onClick = { onEvent(TransportEvent.TripDismissConfirm) },
+                        ZillitButton(text = str(S.no), onClick = { onEvent(TransportEvent.TripDismissConfirm) },
                             variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
-                        ZillitButton(text = "Yes", onClick = { onEvent(TransportEvent.TripAct(open.confirm)) },
+                        ZillitButton(text = str(S.yes), onClick = { onEvent(TransportEvent.TripAct(open.confirm)) },
                             variant = ButtonVariant.Danger, size = ButtonSize.Small, loading = open.busy)
                     },
                 )
@@ -244,21 +256,24 @@ internal fun PassengerRow(
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textPrimary,
             )
-            PlaceLine("From", p.pickup.address, p.pickup.mapsUrl, openLink)
-            PlaceLine("To", p.dropOff.address, p.dropOff.mapsUrl, openLink)
-            ZillitText(text = "Pickup time: ${TransportClock.clockText(p.pickupMs).ifBlank { "—" }}",
+            PlaceLine(str(S.fromText), p.pickup.address, p.pickup.mapsUrl, openLink)
+            PlaceLine(str(S.toText), p.dropOff.address, p.dropOff.mapsUrl, openLink)
+            ZillitText(text = str(S.desktop_transport_pickup_time_colon,
+                TransportClock.clockText(p.pickupMs).ifBlank { "—" }),
                 style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
             if (showDriverStatus) {
                 ZillitText(
-                    text = "Driver status: ${p.driverStatus.ifBlank { "Not available" }.humanStatus()}",
+                    text = str(S.desktop_transport_driver_status_colon,
+                        if (p.driverStatus.isBlank()) str(S.not_available) else p.driverStatus.humanStatus()),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.accentText,
                 )
             }
         }
-        if (onEdit != null) ZillitIconButton(icon = ZillitIcons.Edit, contentDescription = "Edit passenger",
+        if (onEdit != null) ZillitIconButton(icon = ZillitIcons.Edit,
+            contentDescription = str(S.desktop_transport_edit_passenger),
             onClick = onEdit, tint = colors.accent)
-        if (onRemove != null) RemoveButton(onRemove, "Remove passenger")
+        if (onRemove != null) RemoveButton(onRemove, str(S.desktop_transport_remove_passenger))
     }
 }
 
@@ -289,14 +304,16 @@ internal fun VehicleBlock(
     onEvent: (TransportEvent) -> Unit,
 ) {
     val vehicle = state.vehicle(vehicleId)
-    Block(title = "Vehicle details", action = {
+    Block(title = str(S.txt_vehicle_details), action = {
         if (editable) {
-            AddLink(if (vehicle == null) "Assign vehicle" else "Update vehicle") {
+            AddLink(if (vehicle == null) str(S.desktop_transport_assign_vehicle_link)
+                else str(S.desktop_transport_update_vehicle)) {
                 onEvent(TransportEvent.OpenVehiclePicker(target))
             }
         }
     }) {
-        if (vehicle == null) EmptyLine("Vehicle not assigned yet") else VehicleRow(state, vehicle, forTrip = true)
+        if (vehicle == null) EmptyLine(str(S.txt_vehicle_not_assigned))
+        else VehicleRow(state, vehicle, forTrip = true)
     }
 }
 
@@ -310,14 +327,16 @@ internal fun DriverBlock(
     onEvent: (TransportEvent) -> Unit,
 ) {
     val driver = state.user(driverId)
-    Block(title = "Driver details", action = {
+    Block(title = str(S.txt_driver_details), action = {
         if (editable) {
-            AddLink(if (driver == null) "Assign driver" else "Update driver") {
+            AddLink(if (driver == null) str(S.txt_assign_driver)
+                else str(S.desktop_transport_update_driver)) {
                 onEvent(TransportEvent.OpenDriverPicker(target))
             }
         }
     }) {
-        if (driver == null) EmptyLine("Driver not assigned yet") else DriverRow(state, driver, onEvent, forTrip = true)
+        if (driver == null) EmptyLine(str(S.txt_driver_not_assigned))
+        else DriverRow(state, driver, onEvent, forTrip = true)
     }
 }
 
@@ -332,29 +351,29 @@ internal fun RaiseDialog(state: TransportUiState, onEvent: (TransportEvent) -> U
         onEvent(TransportEvent.RaiseChanged(updated))
     }
     ZillitDialogShell(
-        title = "Raise pickup request",
+        title = str(S.txt_create_request),
         onDismiss = { onEvent(TransportEvent.CancelRaise) },
         visible = true,
         width = DIALOG_WIDE,
         actions = {
-            ZillitButton(text = "Cancel", onClick = { onEvent(TransportEvent.CancelRaise) },
+            ZillitButton(text = str(S.cancel), onClick = { onEvent(TransportEvent.CancelRaise) },
                 variant = ButtonVariant.Tertiary)
-            ZillitButton(text = "Submit", onClick = { onEvent(TransportEvent.SubmitRaise) },
+            ZillitButton(text = str(S.submit), onClick = { onEvent(TransportEvent.SubmitRaise) },
                 loading = editor.saving, enabled = editor.passengers.isNotEmpty())
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitNotice(
-                text = "Once raised, the request appears under Pickup requests, where it can be tracked and " +
-                    "updated until the trip is complete.",
+                text = str(S.desktop_transport_raise_hint),
                 tone = StatusTone.Pending,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 verticalAlignment = Alignment.Bottom) {
                 ZillitDateField(value = editor.pickupYmd, onValueChange = { change(editor.copy(pickupYmd = it)) },
-                    label = "Pickup date", modifier = Modifier.width(FIELD))
+                    label = str(S.txt_pickup_date), modifier = Modifier.width(FIELD))
                 Column(Modifier.width(FIELD)) {
-                    ZillitText(text = "Priority", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                    ZillitText(text = str(S.priority), style = ZillitTheme.typography.bodySmall,
+                        color = colors.textMuted)
                     ZillitSelect(
                         value = editor.priority,
                         options = TripPriority.entries,
@@ -364,13 +383,13 @@ internal fun RaiseDialog(state: TransportUiState, onEvent: (TransportEvent) -> U
                     )
                 }
             }
-            SwitchRow("Self assign", "Travel on this request yourself",
+            SwitchRow(str(S.txt_self_assign), str(S.desktop_transport_travel_yourself),
                 checked = editor.passengers.any { it.userId == state.viewer.userId },
                 enabled = editor.pickupYmd.isNotBlank()) { onEvent(TransportEvent.RaiseSelfAssign(it)) }
-            Block(title = "Passengers", action = {
-                AddLink("Add passenger") { onEvent(TransportEvent.OpenPassenger(forOpenTrip = false)) }
+            Block(title = str(S.txt_passengers), action = {
+                AddLink(str(S.txt_add_passenger)) { onEvent(TransportEvent.OpenPassenger(forOpenTrip = false)) }
             }) {
-                if (editor.passengers.isEmpty()) EmptyLine("Add at least one passenger")
+                if (editor.passengers.isEmpty()) EmptyLine(str(S.desktop_transport_add_at_least_one_passenger))
                 editor.passengers.forEach { p ->
                     PassengerRow(state, p, openLink,
                         onEdit = { onEvent(TransportEvent.OpenPassenger(forOpenTrip = false, edit = p)) },
@@ -378,12 +397,12 @@ internal fun RaiseDialog(state: TransportUiState, onEvent: (TransportEvent) -> U
                     ZillitDivider()
                 }
             }
-            Block(title = "CC users", action = {
-                AddLink("Add CC user", enabled = editor.passengers.isNotEmpty()) {
+            Block(title = str(S.txt_cc_users), action = {
+                AddLink(str(S.desktop_transport_add_cc_user), enabled = editor.passengers.isNotEmpty()) {
                     onEvent(TransportEvent.OpenPeoplePicker(PickPurpose.RaiseCc))
                 }
             }) {
-                if (editor.ccUsers.isEmpty()) EmptyLine("No CC users")
+                if (editor.ccUsers.isEmpty()) EmptyLine(str(S.desktop_transport_no_cc_users))
                 editor.ccUsers.forEach { id ->
                     PersonRow(state, id, trailing = { RemoveButton({ onEvent(TransportEvent.RaiseRemoveCc(id)) }) })
                 }
@@ -412,18 +431,19 @@ internal fun PassengerDialog(state: TransportUiState, onEvent: (TransportEvent) 
     val fixed = pe.selfAssign || pe.isEdit
     val selectedUser = state.user(pe.userId)
     ZillitDialogShell(
-        title = if (pe.isEdit) "Edit passenger" else "Add passenger",
+        title = if (pe.isEdit) str(S.desktop_transport_edit_passenger) else str(S.txt_add_passenger),
         onDismiss = { onEvent(TransportEvent.CancelPassenger) },
         visible = true,
         actions = {
-            ZillitButton(text = "Cancel", onClick = { onEvent(TransportEvent.CancelPassenger) },
+            ZillitButton(text = str(S.cancel), onClick = { onEvent(TransportEvent.CancelPassenger) },
                 variant = ButtonVariant.Tertiary)
-            ZillitButton(text = if (pe.isEdit) "Update" else "Add",
+            ZillitButton(text = if (pe.isEdit) str(S.update) else str(S.add),
                 onClick = { onEvent(TransportEvent.SubmitPassenger) })
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitText(text = "Passenger name", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+            ZillitText(text = str(S.txt_passenger_name), style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted)
             if (fixed) {
                 ZillitTextField(
                     value = (selectedUser ?: me)?.let { "${it.fullName} (${it.designationLabel})" } ?: "",
@@ -436,22 +456,26 @@ internal fun PassengerDialog(state: TransportUiState, onEvent: (TransportEvent) 
                     value = candidates.firstOrNull { it.userId == pe.userId },
                     options = listOf<TransportUser?>(null) + candidates,
                     onSelect = { change(pe.copy(userId = it?.userId.orEmpty())) },
-                    label = { it?.let { u -> "${u.fullName} (${u.designationLabel})" } ?: "Pick a passenger" },
+                    label = {
+                        it?.let { u -> "${u.fullName} (${u.designationLabel})" }
+                            ?: str(S.desktop_transport_pick_passenger)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            PlaceField(label = "Pickup location", address = pe.pickupAddress, lat = pe.pickupLat,
+            PlaceField(label = str(S.txt_pickup_location), address = pe.pickupAddress, lat = pe.pickupLat,
                 lng = pe.pickupLng) { address, lat, lng ->
                 change(pe.copy(pickupAddress = address, pickupLat = lat, pickupLng = lng))
             }
-            PlaceField(label = "Drop location", address = pe.dropAddress, lat = pe.dropLat,
+            PlaceField(label = str(S.txt_drop_location), address = pe.dropAddress, lat = pe.dropLat,
                 lng = pe.dropLng) { address, lat, lng ->
                 change(pe.copy(dropAddress = address, dropLat = lat, dropLng = lng))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(value = pe.dateYmd, onValueChange = {}, readOnly = true, label = "Pickup date",
+                ZillitTextField(value = pe.dateYmd, onValueChange = {}, readOnly = true, label = str(S.txt_pickup_date),
                     modifier = Modifier.width(FIELD))
-                ZillitTextField(value = pe.time, onValueChange = { change(pe.copy(time = it)) }, label = "Pickup time",
+                ZillitTextField(value = pe.time, onValueChange = { change(pe.copy(time = it)) },
+                    label = str(S.txt_pickup_time),
                     placeholder = "HH:mm", modifier = Modifier.width(SMALL))
             }
         }
@@ -501,22 +525,25 @@ internal fun PlaceField(
             label = label,
             // The coordinates read back as text once they are known, rather
             // than as two more inputs: they are a result here, not a question.
-            helperText = if (known) "$lat, $lng" else "Pick on the map, or paste a Google Maps link",
+            helperText = if (known) "$lat, $lng" else str(S.desktop_transport_pick_on_map_or_paste),
             initial = pickedAt(address, lat, lng),
             modifier = Modifier.fillMaxWidth(),
         )
         if (hasPicker && !manual) {
-            ZillitButton(text = "Enter coordinates", onClick = { manual = true }, variant = ButtonVariant.Tertiary,
+            ZillitButton(text = str(S.desktop_transport_enter_coordinates), onClick = { manual = true },
+                variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small)
         }
         if (manual || !hasPicker) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(value = lat, onValueChange = { onChange(address, it, lng) }, label = "Lat",
+                ZillitTextField(value = lat, onValueChange = { onChange(address, it, lng) },
+                    label = str(S.desktop_transport_lat),
                     modifier = Modifier.width(SMALL))
-                ZillitTextField(value = lng, onValueChange = { onChange(address, lat, it) }, label = "Lng",
+                ZillitTextField(value = lng, onValueChange = { onChange(address, lat, it) },
+                    label = str(S.desktop_transport_lng),
                     modifier = Modifier.width(SMALL))
                 if (!hasPicker) {
-                    ZillitText(text = "No map here — paste a Google Maps link or type the numbers",
+                    ZillitText(text = str(S.desktop_transport_no_map_here),
                         style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
                 }
             }

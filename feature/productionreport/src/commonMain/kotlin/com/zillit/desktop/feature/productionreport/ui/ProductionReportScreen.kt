@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ManageTab
 import com.zillit.desktop.feature.productionreport.ui.components.ProvideReportFaces
 import com.zillit.desktop.feature.productionreport.ui.components.reportText
@@ -108,7 +110,7 @@ private fun ManageArea(state: ReportUiState, onEvent: (ReportEvent) -> Unit, now
 private fun NoAccess() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            "You do not have access to production reports on this production.",
+            str(S.desktop_pr_no_access),
             style = reportText(14.sp),
             color = ReportTheme.colors.textTertiary,
         )

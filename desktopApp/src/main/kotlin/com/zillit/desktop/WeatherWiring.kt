@@ -2,6 +2,8 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.weather.data.GooglePlacesGateway
 import com.zillit.desktop.feature.weather.data.WeatherRepositoryImpl
 import com.zillit.desktop.feature.weather.domain.WeatherPlace
@@ -59,7 +61,7 @@ private fun placeDay(millis: Long, zone: String): String {
     if (millis <= 0) return "—"
     val zoneId = zoneOf(zone)
     val day = Instant.ofEpochMilli(millis).atZone(zoneId).toLocalDate()
-    return if (day == LocalDate.now(zoneId)) "Today" else DAY.format(day)
+    return if (day == LocalDate.now(zoneId)) str(S.today) else DAY.format(day)
 }
 
 /** OpenWeather's IANA name, or this machine's zone for a name Java does not know. */

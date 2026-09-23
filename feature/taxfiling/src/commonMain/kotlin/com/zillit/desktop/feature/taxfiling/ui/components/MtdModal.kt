@@ -54,6 +54,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 private val ModalShape = RoundedCornerShape(18.dp)
 
@@ -208,7 +210,7 @@ private fun ModalHeader(
             )
             if (subtitle != null) ZillitText(text = subtitle, style = mtdText(13.sp), color = palette.ink3)
         }
-        ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Close", onClick = onDismiss, size = 32.dp)
+        ZillitIconButton(icon = ZillitIcons.Close, contentDescription = str(S.close), onClick = onDismiss, size = 32.dp)
     }
 }
 

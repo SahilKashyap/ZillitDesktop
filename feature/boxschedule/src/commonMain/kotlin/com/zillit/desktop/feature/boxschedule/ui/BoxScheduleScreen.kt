@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.domain.DiaryView
 import com.zillit.desktop.feature.boxschedule.ui.pages.AudiencePickerDialog
@@ -120,7 +122,7 @@ fun BoxScheduleScreen(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     action = {
                         ZillitButton(
-                            "Dismiss",
+                            str(S.sync_action_dismiss),
                             onClick = { onEvent(PageEvent.DismissError) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -143,8 +145,8 @@ fun BoxScheduleScreen(
 private fun PageBody(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit) {
     when {
         state.viewer.isBlocked -> ZillitEmptyState(
-            title = "No access",
-            message = "You do not have access to Production Diary/Box Schedule.",
+            title = str(S.dd_publish_no_access_badge),
+            message = str(S.desktop_bs_no_access_message),
             icon = ZillitIcons.Lock,
             modifier = Modifier.fillMaxSize(),
         )
@@ -171,7 +173,7 @@ private fun RefreshingPill(modifier: Modifier) {
     ) {
         ZillitSpinner(size = 12.dp)
         ZillitText(
-            "Refreshing…",
+            str(S.bs_refreshing),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
             color = colors.textMuted,
         )

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.bankrec.domain
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
@@ -26,11 +28,20 @@ object BankRecFormat {
 
     const val DASH = "—"
 
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    private val FULL_MONTHS = listOf(
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December",
-    )
+    private val MONTHS: List<String>
+        get() = listOf(
+            S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+            S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+            S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+        ).map { str(it) }
+
+    private val FULL_MONTHS: List<String>
+        get() = listOf(
+            S.desktop_month_full_january, S.desktop_month_full_february, S.desktop_month_full_march,
+            S.desktop_month_full_april, S.desktop_month_short_may, S.desktop_month_full_june,
+            S.desktop_month_full_july, S.desktop_month_full_august, S.desktop_month_full_september,
+            S.desktop_month_full_october, S.desktop_month_full_november, S.desktop_month_full_december,
+        ).map { str(it) }
 
     // -- money --------------------------------------------------------------
 

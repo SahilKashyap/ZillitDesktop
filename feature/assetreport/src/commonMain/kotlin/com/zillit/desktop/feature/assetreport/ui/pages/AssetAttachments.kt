@@ -67,6 +67,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.ui.AssetDetail
 import com.zillit.desktop.feature.assetreport.ui.AssetEvent
 import com.zillit.desktop.feature.assetreport.ui.AssetMediaLoader
@@ -87,6 +89,7 @@ import kotlinx.coroutines.withContext
  * The whole section takes a drop, not just the zone: a file let go a few
  * pixels outside a dashed border should not vanish into the window.
  */
+@Suppress("LongMethod") // One section, laid out in one place.
 @Composable
 internal fun AttachmentsSection(detail: AssetDetail, media: AssetMediaLoader, onEvent: (AssetEvent) -> Unit) {
     var dragging by remember { mutableStateOf(false) }
@@ -102,13 +105,17 @@ internal fun AttachmentsSection(detail: AssetDetail, media: AssetMediaLoader, on
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Attachments", Modifier.weight(1f))
+            SectionLabel(str(S.attachments), Modifier.weight(1f))
             ZillitText(
                 text = when {
-                    detail.isHydrating -> "Loading…"
+                    detail.isHydrating -> str(S.ah_loading)
                     else -> buildString {
-                        append("${files.size} file${if (files.size == 1) "" else "s"}")
-                        if (detail.pendingCount > 0) append(" · ${detail.pendingCount} pending")
+                        // Singular and plural are separate keys; a leading space in a key is trimmed away.
+                        val count = if (files.size == 1) S.drive_count_file_singular else S.drive_count_file_plural
+                        append(str(count, files.size))
+                        if (detail.pendingCount > 0) {
+                            append(" · ").append(str(S.desktop_card_pending_count, detail.pendingCount))
+                        }
                     }
                 },
                 style = ZillitTheme.typography.numeric.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
@@ -232,7 +239,7 @@ private fun Thumb(
         ) {
             ZillitIcon(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove ${file.name}",
+                contentDescription = str(S.bs_chip_remove, file.name),
                 tint = Color.White,
                 size = 11.dp,
             )
@@ -292,7 +299,7 @@ private fun DropZone(highlighted: Boolean, enabled: Boolean, onClick: () -> Unit
         UploadBadge(box = 36.dp, icon = 18.dp)
         UploadCopy(size = 13f)
         ZillitText(
-            text = "Images or PDF · up to 10MB",
+            text = str(S.desktop_asset_drop_hint),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textDisabled,
         )
@@ -322,7 +329,7 @@ private fun DropTile(highlighted: Boolean, enabled: Boolean, onClick: () -> Unit
         UploadBadge(box = 30.dp, icon = 15.dp)
         UploadCopy(size = 10.5f)
         ZillitText(
-            text = "Images or PDF · up to 10MB",
+            text = str(S.desktop_asset_drop_hint),
             style = ZillitTheme.typography.labelSmall.copy(fontSize = 8.5.sp, lineHeight = 11.sp),
             color = colors.textDisabled,
             textAlign = TextAlign.Center,
@@ -352,7 +359,9 @@ private fun UploadCopy(size: Float) {
     val colors = ZillitTheme.colors
     ZillitText(
         text = buildAnnotatedString {
-            withStyle(SpanStyle(color = colors.accent, fontWeight = FontWeight.Bold)) { append("Click to upload") }
+            withStyle(SpanStyle(color = colors.accent, fontWeight = FontWeight.Bold)) {
+                append(str(S.desktop_click_to_upload))
+            }
             append(" or drag & drop")
         },
         style = ZillitTheme.typography.bodyMedium.copy(
@@ -462,7 +471,7 @@ private fun ViewerCard(
             )
             // Offered once there is something to save, as the web's link appears with its URL.
             if (pages is Pages.Ready) DownloadLink(onDownload)
-            ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Close", onClick = onClose)
+            ZillitIconButton(icon = ZillitIcons.Close, contentDescription = str(S.close), onClick = onClose)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         Box(Modifier.fillMaxWidth().weight(1f).background(colors.surfaceSunken), contentAlignment = Alignment.Center) {
@@ -482,13 +491,13 @@ private fun ViewerBody(file: DraftFile, pages: Pages) {
         ) {
             ZillitSpinner(size = 16.dp)
             ZillitText(
-                text = "Loading attachment…",
+                text = str(S.desktop_dm_loading_attachment),
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textMuted,
             )
         }
         Pages.Failed -> ZillitText(
-            text = "Failed to load attachment",
+            text = str(S.desktop_attachment_load_failed),
             style = ZillitTheme.typography.bodyMedium,
             color = colors.textMuted,
         )
@@ -509,7 +518,7 @@ private fun ViewerBody(file: DraftFile, pages: Pages) {
                 itemsIndexed(pages.pages) { index, page ->
                     Image(
                         bitmap = page,
-                        contentDescription = "${file.name}, page ${index + 1}",
+                        contentDescription = str(S.desktop_file_page_description, file.name, index + 1),
                         contentScale = ContentScale.FillWidth,
                         modifier = Modifier.fillMaxWidth().shadow(2.dp).background(Color.White),
                     )
@@ -536,7 +545,7 @@ private fun DownloadLink(onClick: () -> Unit) {
     ) {
         ZillitIcon(icon = ZillitIcons.Download, tint = colors.accentText, size = 12.dp)
         ZillitText(
-            text = "Download",
+            text = str(S.download),
             style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
             color = colors.accentText,
         )

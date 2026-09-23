@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -28,7 +30,7 @@ class PurchaseOrderToolProvider(
 ) : ToolProvider {
 
     override val path: String = PURCHASE_ORDER_PATH
-    override val title: String = "Purchase Orders"
+    override val title: String get() = str(S.ah_purchase_orders)
     override val icon = ZillitToolIcons.PurchaseOrder
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -78,7 +80,7 @@ class PurchaseOrderToolProvider(
             }
         }
         LaunchedEffect(state.destination) {
-            navigator.setTitle("Purchase Orders · ${state.destination.label}")
+            navigator.setTitle(str(S.desktop_po_window_title, state.destination.label))
         }
 
         PurchaseOrderScreen(state = state, onEvent = viewModel::onEvent)

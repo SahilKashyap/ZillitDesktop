@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -12,22 +14,34 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 /** The page's two views — the web's `activeView` Segmented. Gantt stays hidden there too. */
-enum class DiaryView(val label: String, val hint: String) {
-    Calendar("Calendar View", "Monthly calendar grid"),
-    List("List View", "Table with expandable rows"),
+enum class DiaryView(private val labelKey: String, private val hintKey: String) {
+    Calendar(S.bs_calendar_view, S.desktop_bs_calendar_view_hint),
+    List(S.bs_list_view, S.desktop_bs_list_view_hint),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 }
 
 /** The calendar's zoom — `box-schedule-calendar-mode`. */
-enum class CalendarMode(val label: String, val hint: String) {
-    Month("Month", "Full month grid with all weeks"),
-    Week("Week", "One week at a time with bigger cells"),
-    Day("Day", "Single day focused view with full details"),
+enum class CalendarMode(private val labelKey: String, private val hintKey: String) {
+    Month(S.bs_month, S.dv_month_desc),
+    Week(S.bs_week, S.dv_week_desc),
+    Day(S.bs_day, S.dv_day_desc),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 }
 
 /** The list's grouping — `box-schedule-list-mode`. */
-enum class ListMode(val label: String, val hint: String) {
-    ByDate("By Date", "One row per calendar day in order"),
-    BySchedule("By Schedule", "Grouped by each schedule block"),
+enum class ListMode(private val labelKey: String, private val hintKey: String) {
+    ByDate(S.bs_by_date, S.dv_by_date_desc),
+    BySchedule(S.bs_by_schedule, S.dv_by_schedule_desc),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 }
 
 /**

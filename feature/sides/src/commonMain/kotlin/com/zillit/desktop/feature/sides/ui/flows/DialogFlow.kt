@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.sides.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.ScenePageDraft
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.domain.StoredAttachment
@@ -52,7 +54,7 @@ internal class DialogFlow(
         val pdfOnly = dialog is SidesDialog.UploadDoc
         val allowed = if (pdfOnly) SidesRules.isPdf(file.name) else SidesRules.isPdfOrFdx(file.name)
         if (!allowed) {
-            store.failed(if (pdfOnly) "Only PDF files are allowed" else "Only PDF or .fdx files are allowed")
+            store.failed(if (pdfOnly) str(S.desktop_only_pdf_allowed) else str(S.desktop_only_pdf_fdx_allowed))
             return
         }
         // The web defaults the title to the file's name when none was typed.
@@ -98,7 +100,7 @@ internal class DialogFlow(
 
     private fun addScript(dialog: SidesDialog.AddScript) {
         val title = dialog.title.trim()
-        if (title.isBlank()) return store.failed("Script name is required")
+        if (title.isBlank()) return store.failed(str(S.sides_script_name_required))
         setBusy(true)
         store.runTask {
             val attachment = dialog.file?.let { file ->
@@ -113,7 +115,7 @@ internal class DialogFlow(
             when (val created = store.repository.createScript(title, attachment)) {
                 is ZillitResult.Success -> {
                     store.update { copy(dialog = null) }
-                    store.notice("Script added")
+                    store.notice(str(S.desktop_sides_script_added))
                     scripts.load()
                 }
                 is ZillitResult.Failure -> {
@@ -126,8 +128,8 @@ internal class DialogFlow(
 
     private fun savePage(dialog: SidesDialog.PageEditor) {
         val sceneNumber = dialog.sceneNumber.trim()
-        if (sceneNumber.isBlank()) return store.failed("Scene number (title) is required")
-        if (!dialog.isEdit && dialog.file == null) return store.failed("Please attach a PDF or .fdx file")
+        if (sceneNumber.isBlank()) return store.failed(str(S.sides_scene_number_required))
+        if (!dialog.isEdit && dialog.file == null) return store.failed(str(S.desktop_sides_attach_pdf_fdx))
         setBusy(true)
         store.runTask {
             val attachment = dialog.file?.let { file ->
@@ -145,7 +147,9 @@ internal class DialogFlow(
             when (saved) {
                 is ZillitResult.Success -> {
                     store.update { copy(dialog = null) }
-                    store.notice(if (dialog.isEdit) "Page updated" else "Page added")
+                    store.notice(
+                        if (dialog.isEdit) str(S.desktop_sides_page_updated) else str(S.desktop_sides_page_added),
+                    )
                     scripts.reloadPages(dialog.scriptId)
                 }
                 is ZillitResult.Failure -> {
@@ -173,7 +177,7 @@ internal class DialogFlow(
                 DocKind.CallSheet -> when (val up = store.repository.uploadCallSheet(scriptId, title, attachment)) {
                     is ZillitResult.Success -> {
                         store.update { copy(dialog = null) }
-                        store.notice("Call sheet added! ${up.data.sceneCount} scenes found.")
+                        store.notice(str(S.desktop_sides_call_sheet_added, up.data.sceneCount))
                         auto.callSheetUploaded(up.data.callSheet?.id)
                     }
                     is ZillitResult.Failure -> {
@@ -184,7 +188,7 @@ internal class DialogFlow(
                 DocKind.Schedule -> when (val up = store.repository.uploadSchedule(scriptId, title, attachment)) {
                     is ZillitResult.Success -> {
                         store.update { copy(dialog = null) }
-                        store.notice("Schedule added!")
+                        store.notice(str(S.desktop_sides_schedule_added))
                         auto.scheduleUploaded(up.data?.id)
                     }
                     is ZillitResult.Failure -> {

@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingEvent
 import com.zillit.desktop.feature.taxfiling.ui.components.MtdButton
 import com.zillit.desktop.feature.taxfiling.ui.components.MtdButtonVariant
@@ -40,22 +42,21 @@ internal fun FilingUnavailablePage(onEvent: (TaxFilingEvent) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 ZillitText(
-                    text = "This tax filing isn’t available yet.",
+                    text = str(S.desktop_tax_not_available_yet),
                     style = mtdText(19.sp, FontWeight.Bold, tracking = (-0.015).em),
                     color = palette.ink,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(8.dp))
                 ZillitText(
-                    text = "The filing you requested isn’t enabled for your account. " +
-                        "Head back to choose an available one.",
+                    text = str(S.desktop_tax_not_available_detail),
                     style = mtdText(14.sp),
                     color = palette.ink3,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(22.dp))
                 MtdButton(
-                    text = "Back to Tax Filing",
+                    text = str(S.desktop_tax_back_to_tax_filing),
                     onClick = { onEvent(TaxFilingEvent.ShowCatalog) },
                     variant = MtdButtonVariant.Secondary,
                     icon = ZillitIcons.ChevronLeft,

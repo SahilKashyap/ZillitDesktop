@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.productionreport.domain
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.JsonObject
@@ -60,7 +62,7 @@ interface ReportPublishing {
      * 1:1 C&C chat with [userId]. Hosts without a chat refuse.
      */
     suspend fun sendPdfToChat(userId: String, pdf: ByteArray, fileName: String): ZillitResult<Unit> =
-        ZillitResult.Failure(ZillitError.Validation("Chat sharing isn't available here."))
+        ZillitResult.Failure(ZillitError.Validation(str(S.desktop_chat_sharing_not_available_here)))
 
     /**
      * Stores the PDF and files it in Document Distribution under

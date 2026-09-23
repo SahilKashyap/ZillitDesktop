@@ -21,6 +21,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Asks before a delete.
@@ -113,7 +115,7 @@ internal fun DialogButtons(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
     ) {
-        ZillitButton(text = "Cancel", variant = ButtonVariant.Tertiary, onClick = onDismiss)
+        ZillitButton(text = str(S.cancel), variant = ButtonVariant.Tertiary, onClick = onDismiss)
         ZillitButton(
             text = action,
             variant = variant,
@@ -126,41 +128,40 @@ internal fun DialogButtons(
 
 private val PendingConfirm.title: String
     get() = when (this) {
-        is PendingConfirm.TrashSelected -> "Delete Email"
-        is PendingConfirm.DeleteDrafts -> if (draftIds.size == 1) "Delete Draft" else "Delete Drafts"
-        is PendingConfirm.DeleteOne -> "Confirm Deletion"
+        is PendingConfirm.TrashSelected -> str(S.desktop_email_delete_email_title)
+        is PendingConfirm.DeleteDrafts -> str(if (draftIds.size == 1) S.ah_delete_draft else S.delete_drafts)
+        is PendingConfirm.DeleteOne -> str(S.desktop_email_confirm_deletion)
         is PendingConfirm.Destroy -> if (messageIds.size == 1) {
-            "Delete this message forever?"
+            str(S.desktop_email_delete_message_forever)
         } else {
-            "Delete ${messageIds.size} messages forever?"
+            str(S.desktop_email_delete_n_messages_forever, messageIds.size)
         }
-        PendingConfirm.EmptyTrash -> "Confirmation"
-        is PendingConfirm.DeleteFolder -> "Delete \"${folder.displayName}\"?"
+        PendingConfirm.EmptyTrash -> str(S.confirmation_label)
+        is PendingConfirm.DeleteFolder -> str(S.drive_delete_item_title_format, folder.displayName)
     }
 
 private val PendingConfirm.body: String
     get() = when (this) {
-        is PendingConfirm.TrashSelected -> "Are you sure you want to delete the selected emails?"
-        is PendingConfirm.DeleteDrafts -> "Are you sure you want to delete the selected drafts?"
-        is PendingConfirm.DeleteOne -> "Are you sure you want to delete?"
-        is PendingConfirm.Destroy -> "This cannot be undone."
-        PendingConfirm.EmptyTrash -> "Are you sure you want to empty the Trash folder?"
+        is PendingConfirm.TrashSelected -> str(S.desktop_email_delete_selected_emails_confirm)
+        is PendingConfirm.DeleteDrafts -> str(S.desktop_email_delete_selected_drafts_confirm)
+        is PendingConfirm.DeleteOne -> str(S.are_you_sure_you_want_to_delete)
+        is PendingConfirm.Destroy -> str(S.desktop_cannot_be_undone)
+        PendingConfirm.EmptyTrash -> str(S.desktop_email_empty_trash_confirm)
         // Says what is at stake without overstating what is known: the cached
         // count is a floor, since a partly synced folder holds more.
-        is PendingConfirm.DeleteFolder -> if (cachedCount > 0) {
-            "Are you sure you want to delete this folder? The folder and the mail in it will be deleted — " +
-                "at least $cachedCount message${if (cachedCount == 1) "" else "s"}. This cannot be undone."
-        } else {
-            "Are you sure you want to delete this folder? The folder and any mail in it will be deleted."
+        is PendingConfirm.DeleteFolder -> when {
+            cachedCount == 1 -> str(S.desktop_email_delete_folder_confirm_one)
+            cachedCount > 1 -> str(S.desktop_email_delete_folder_confirm_many, cachedCount)
+            else -> str(S.desktop_email_delete_folder_confirm)
         }
     }
 
 private val PendingConfirm.action: String
     get() = when (this) {
-        is PendingConfirm.TrashSelected, is PendingConfirm.DeleteDrafts, is PendingConfirm.DeleteOne -> "Delete"
-        is PendingConfirm.Destroy -> "Delete forever"
-        PendingConfirm.EmptyTrash -> "Yes, Empty"
-        is PendingConfirm.DeleteFolder -> "Delete"
+        is PendingConfirm.TrashSelected, is PendingConfirm.DeleteDrafts, is PendingConfirm.DeleteOne -> str(S.delete)
+        is PendingConfirm.Destroy -> str(S.desktop_delete_forever)
+        PendingConfirm.EmptyTrash -> str(S.desktop_email_yes_empty)
+        is PendingConfirm.DeleteFolder -> str(S.delete)
     }
 
 private val DIALOG_WIDTH = 420.dp

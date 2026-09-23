@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.ui.DealCoaAccount
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.preview.CoaState
@@ -98,7 +100,7 @@ internal fun CoaCodeField(
     onValueChange: (String) -> Unit,
     coa: CoaState,
     modifier: Modifier = Modifier,
-    placeholder: String = "e.g. 4422",
+    placeholder: String = str(S.dm_nom_override_hint),
     alignEnd: Boolean = true,
     height: Dp = 34.dp,
     borderless: Boolean = false,
@@ -212,14 +214,15 @@ private fun CoaDropdown(
     val shape = RoundedCornerShape(10.dp)
     val typed = query.trim()
     val message = when {
-        coa.failed -> "Couldn't load the Chart of Accounts. Reload to retry."
-        !coa.loaded -> "Loading Chart of Accounts…"
-        coa.accounts.isEmpty() -> "This project's Chart of Accounts is empty — add codes in Chart of Accounts first."
-        pickableCount == 0 ->
-            "${coa.accounts.size} code${if (coa.accounts.size == 1) "" else "s"} loaded, but none can be " +
-            "selected here: only Nominal / Code rows with Posting ticked are offered (header and section rows are " +
-                "group titles)."
-        matches.isEmpty() && typed.isEmpty() -> "Type to filter…"
+        coa.failed -> str(S.desktop_dm_couldnt_load_the_chart_of_accounts_reload)
+        !coa.loaded -> str(S.desktop_dm_loading_chart_of_accounts)
+        coa.accounts.isEmpty() -> str(S.desktop_dm_this_projects_chart_of_accounts_is_empty)
+        pickableCount == 0 -> if (coa.accounts.size == 1) {
+            str(S.desktop_dm_coa_one_code_not_pickable)
+        } else {
+            str(S.desktop_dm_coa_n_codes_not_pickable, coa.accounts.size)
+        }
+        matches.isEmpty() && typed.isEmpty() -> str(S.desktop_dm_type_to_filter)
         else -> null
     }
     // A code the chart doesn't have is still kept — offered as its own row.
@@ -243,7 +246,7 @@ private fun CoaDropdown(
                     item {
                         CoaRow(
                             typed,
-                            "Use code — not in Chart of Accounts",
+                            str(S.desktop_dm_use_code_not_in_chart_of_accounts),
                             highlighted = false,
                             onClick = { onPick(typed) },
                         )

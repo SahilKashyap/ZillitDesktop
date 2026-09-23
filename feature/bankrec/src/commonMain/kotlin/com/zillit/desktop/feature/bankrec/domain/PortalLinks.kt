@@ -1,14 +1,19 @@
 package com.zillit.desktop.feature.bankrec.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** Who a reconciliation summary is being shared with. */
-enum class PortalOrgType(val wire: String, val label: String) {
-    CompletionGuarantor("completion_guarantor", "Completion Guarantor"),
-    Broadcaster("broadcaster", "Broadcaster"),
-    CoProducer("co_producer", "Co-Producer"),
-    ExternalAuditor("external_auditor", "External Auditor"),
-    Investor("investor", "Investor"),
-    Other("other", "Other"),
+enum class PortalOrgType(val wire: String, private val labelKey: String) {
+    CompletionGuarantor("completion_guarantor", S.desktop_br_org_completion_guarantor),
+    Broadcaster("broadcaster", S.desktop_br_org_broadcaster),
+    CoProducer("co_producer", S.desktop_br_org_co_producer),
+    ExternalAuditor("external_auditor", S.desktop_br_org_external_auditor),
+    Investor("investor", S.desktop_br_org_investor),
+    Other("other", S.other),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): PortalOrgType =
@@ -23,14 +28,33 @@ enum class PortalOrgType(val wire: String, val label: String) {
  * are the two that name people: fraud alerts and individual transactions.
  * [shortLabel] is the chip the links table wears.
  */
-enum class PortalPermission(val wire: String, val label: String, val shortLabel: String, val defaultOn: Boolean) {
-    Balances("balances", "Opening & closing balances", "Balances", true),
-    ReconciliationStatus("reconciliation_status", "Reconciliation status & match rate", "Rec. Status", true),
-    Exceptions("exceptions", "Exceptions list (unmatched items)", "Exceptions", true),
-    FxVariance("fx_variance", "FX variance summary", "FX Variance", true),
-    FraudAlerts("fraud_alerts", "Fraud alerts (names redacted by default)", "Fraud (redacted)", false),
-    TransactionDetail("transaction_detail", "Individual transaction detail", "Transactions", false),
+enum class PortalPermission(
+    val wire: String,
+    private val labelKey: String,
+    private val shortLabelKey: String,
+    val defaultOn: Boolean,
+) {
+    Balances("balances", S.desktop_br_perm_balances, S.desktop_balances, true),
+    ReconciliationStatus(
+        "reconciliation_status",
+        S.desktop_br_perm_rec_status,
+        S.desktop_br_perm_rec_status_short,
+        true,
+    ),
+    Exceptions("exceptions", S.desktop_br_perm_exceptions, S.desktop_exceptions, true),
+    FxVariance("fx_variance", S.desktop_br_perm_fx_variance, S.desktop_fx_variance, true),
+    FraudAlerts(
+        "fraud_alerts",
+        S.desktop_br_perm_fraud_alerts,
+        S.desktop_br_perm_fraud_alerts_short,
+        false,
+    ),
+    TransactionDetail("transaction_detail", S.desktop_br_perm_transaction_detail, S.desktop_transactions, false),
     ;
+
+    val label: String get() = str(labelKey)
+
+    val shortLabel: String get() = str(shortLabelKey)
 
     companion object {
         fun from(wire: String?): PortalPermission? =
@@ -41,12 +65,14 @@ enum class PortalPermission(val wire: String, val label: String, val shortLabel:
 }
 
 /** How long a link stays usable. */
-enum class PortalExpiry(val wire: String, val label: String) {
-    SevenDays("7d", "7 days"),
-    FourteenDays("14d", "14 days"),
-    ThirtyDays("30d", "30 days"),
-    Never("none", "No expiry"),
+enum class PortalExpiry(val wire: String, private val labelKey: String) {
+    SevenDays("7d", S.drive_expiry_7d),
+    FourteenDays("14d", S.desktop_14_days),
+    ThirtyDays("30d", S.drive_expiry_30d),
+    Never("none", S.desktop_no_expiry),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): PortalExpiry =
@@ -55,11 +81,13 @@ enum class PortalExpiry(val wire: String, val label: String) {
 }
 
 /** Whether the accountant hears about a view. */
-enum class PortalNotify(val wire: String, val label: String) {
-    FirstView("first_view", "Yes — email me on first view"),
-    EveryView("every_view", "Yes — email me on every view"),
-    None("none", "No notifications"),
+enum class PortalNotify(val wire: String, private val labelKey: String) {
+    FirstView("first_view", S.desktop_br_notify_first_view),
+    EveryView("every_view", S.desktop_br_notify_every_view),
+    None("none", S.no_notifications),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): PortalNotify =
@@ -68,11 +96,13 @@ enum class PortalNotify(val wire: String, val label: String) {
 }
 
 /** Whether a link still works. */
-enum class PortalStatus(val wire: String, val label: String) {
-    Active("active", "Active"),
-    Revoked("revoked", "Revoked"),
-    Expired("expired", "Expired"),
+enum class PortalStatus(val wire: String, private val labelKey: String) {
+    Active("active", S.active),
+    Revoked("revoked", S.desktop_drive_revoked),
+    Expired("expired", S.expired),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /** Anything not active or revoked is expired, as the web reads it. */
@@ -139,10 +169,11 @@ data class PortalLinkDraft(
      * recipient, so it is refused here as the web refuses it.
      */
     fun problem(periodIds: Collection<String>): String? = when {
-        recipientName.isBlank() -> "Give the recipient's name."
-        recipientEmail.isBlank() || !recipientEmail.contains('@') -> "Give the recipient's email address."
-        periodId.isBlank() || periodId !in periodIds -> "Choose the period to share."
-        permissions.isEmpty() -> "Choose at least one thing the recipient may see."
+        recipientName.isBlank() -> str(S.desktop_br_portal_need_recipient_name)
+        recipientEmail.isBlank() || !recipientEmail.contains('@') ->
+            str(S.desktop_br_portal_need_recipient_email)
+        periodId.isBlank() || periodId !in periodIds -> str(S.desktop_br_portal_need_period)
+        permissions.isEmpty() -> str(S.desktop_br_portal_need_permission)
         else -> null
     }
 }

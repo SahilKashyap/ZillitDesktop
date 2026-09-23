@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -104,15 +106,20 @@ fun DealMemoScreen(
         // The rules grid takes over the whole window, over whichever page opened it.
         state.preview?.let { preview ->
             preview.rules?.let {
-                RulesEditorPage(state, it, "Deal Memos · ${preview.deal?.reference ?: "Deal Memo"}", onEvent)
+                RulesEditorPage(
+                    state,
+                    it,
+                    str(S.desktop_dm_deal_memos_eyebrow, preview.deal?.reference ?: str(S.dm_title)),
+                    onEvent,
+                )
             }
         }
         state.builder?.let { builder ->
             builder.rules?.let { editor ->
                 val eyebrow = if (builder.rulesTarget == RulesTarget.Project) {
-                    "Deal Memo Setup · Non-union pay rules"
+                    str(S.desktop_dm_deal_memo_setup_non_union_pay_rules)
                 } else {
-                    "Deal Memos · ${builder.dealReference ?: "New Deal Memo"}"
+                    str(S.desktop_dm_deal_memos_eyebrow, builder.dealReference ?: str(S.dm_quick_new_title))
                 }
                 RulesEditorPage(state, editor, eyebrow, onEvent)
             }
@@ -177,15 +184,14 @@ private fun ModuleHeader(onBack: () -> Unit) {
         BackSquare(onClick = onBack, modifier = Modifier.padding(top = 4.dp))
         Column(modifier = Modifier.padding(bottom = 20.dp)) {
             ZillitText(
-                text = "Deal Memo",
+                text = str(S.dm_title),
                 style = DmType.display(30.sp, FontWeight.Bold, (-0.025).em).copy(lineHeight = 36.sp),
                 color = dm.ink,
                 maxLines = 1,
             )
             Spacer(Modifier.height(4.dp))
             ZillitText(
-                text = "Create and manage crew deal memos — rates, allowances, contract periods, and signature " +
-                    "workflows.",
+                text = str(S.desktop_dm_create_and_manage_crew_deal_memos_rates),
                 style = DmType.sans(14.sp),
                 color = dm.ink2,
                 modifier = Modifier.fillMaxWidth(DESCRIPTION_WIDTH),
@@ -196,7 +202,12 @@ private fun ModuleHeader(onBack: () -> Unit) {
 
 /** The 30 px back square — "Back to film tools". */
 @Composable
-internal fun BackSquare(onClick: () -> Unit, modifier: Modifier = Modifier, size: Int = 30, tooltip: String = "Back") {
+internal fun BackSquare(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Int = 30,
+    tooltip: String = str(S.dm_wizard_back),
+) {
     val (source, hovered) = rememberHover()
     val shape = RoundedCornerShape(8.dp)
     ZillitTooltip(text = tooltip) {
@@ -234,7 +245,7 @@ private fun TabBar(state: DealMemoUiState, active: DealTab, onEvent: (DealMemoEv
             }
             if (state.rights.canPost) {
                 DmButton(
-                    text = "Global Production Rates",
+                    text = str(S.dm_gpr_title),
                     onClick = { onEvent(DealMemoEvent.Navigate(DealMemoRoute.GlobalRates)) },
                     style = DmButtonStyle.GhostSmall,
                     icon = DmIcons.Globe,
@@ -340,7 +351,7 @@ class DealMemoToolProvider(
 ) : ToolProvider {
 
     override val path: String = DEAL_MEMO_PATH
-    override val title: String = "Deal Memo"
+    override val title: String get() = str(S.dm_title)
     override val icon = ZillitToolIcons.DealMemo
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -364,7 +375,7 @@ class DealMemoToolProvider(
                 viewModel.onEvent(DealMemoEvent.OpenPath(route.path))
             }
         }
-        LaunchedEffect(state.page) { navigator.setTitle("Deal Memo · ${pageTitle(state.page)}") }
+        LaunchedEffect(state.page) { navigator.setTitle(str(S.desktop_dm_window_title, pageTitle(state.page))) }
 
         ProvideDealFaces(loadAvatar) {
             DealMemoScreen(state = state, onEvent = viewModel::onEvent)
@@ -373,15 +384,15 @@ class DealMemoToolProvider(
 
     private fun pageTitle(page: DealMemoRoute): String = when (page) {
         is DealMemoRoute.Tab -> page.tab.label
-        is DealMemoRoute.Deal -> "Deal"
-        is DealMemoRoute.NewDeal, is DealMemoRoute.QuickDeal -> "New Deal"
-        is DealMemoRoute.EditDeal -> "Edit Deal"
+        is DealMemoRoute.Deal -> str(S.deal_label)
+        is DealMemoRoute.NewDeal, is DealMemoRoute.QuickDeal -> str(S.dm_new_deal)
+        is DealMemoRoute.EditDeal -> str(S.desktop_dm_edit_deal)
         is DealMemoRoute.TemplateWizard, is DealMemoRoute.TemplateBuilder, DealMemoRoute.FirstSetup,
         is DealMemoRoute.SetupHub,
-        -> "Deal Memo Setup"
-        DealMemoRoute.GlobalRates -> "Global Production Rates"
-        DealMemoRoute.NoticeTemplate -> "Notice Template"
-        DealMemoRoute.CompleteDetails -> "Complete your details"
+        -> str(S.dm_setup_title)
+        DealMemoRoute.GlobalRates -> str(S.dm_gpr_title)
+        DealMemoRoute.NoticeTemplate -> str(S.dm_notice_template_title)
+        DealMemoRoute.CompleteDetails -> str(S.dm_crew_complete_details)
     }
 
     private companion object {

@@ -23,6 +23,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
@@ -51,14 +53,14 @@ import com.zillit.desktop.feature.settings.admin.ui.NameKind
 fun DepartmentsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.Departments.title,
-        description = "Crew choose one of these when they join.",
+        description = str(S.desktop_departments_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
-        search = "Search departments",
+        search = str(S.invitees_search_departments),
         action = {
             ZillitButton(
-                text = "New department",
+                text = str(S.desktop_new_department),
                 onClick = { onEvent(AdminEvent.OpenName(NameKind.Department)) },
                 size = ButtonSize.Small,
             )
@@ -68,10 +70,10 @@ fun DepartmentsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: 
             val rows = state.departmentsMatching
             when {
                 rows.isEmpty() && state.hasLoaded && state.query.isNotBlank() ->
-                    EmptyRow("No department matches “${state.query}”.")
+                    EmptyRow(str(S.desktop_no_department_matches, state.query))
 
                 rows.isEmpty() && state.hasLoaded ->
-                    EmptyRow("This project has no departments yet.")
+                    EmptyRow(str(S.desktop_no_departments_yet_period))
 
                 else -> rows.forEachIndexed { index, department ->
                     if (index > 0) RowRule()
@@ -97,9 +99,9 @@ private fun DepartmentRow(department: Department, onEvent: (AdminEvent) -> Unit)
             )
             ZillitText(
                 text = when (department.jobTitles.size) {
-                    0 -> "No job titles"
-                    1 -> "1 job title"
-                    else -> "${department.jobTitles.size} job titles"
+                    0 -> str(S.desktop_no_job_titles)
+                    1 -> str(S.desktop_job_title_count_one, 1)
+                    else -> str(S.desktop_job_title_count_other, department.jobTitles.size)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
@@ -109,9 +111,9 @@ private fun DepartmentRow(department: Department, onEvent: (AdminEvent) -> Unit)
         if (department.systemDefined) {
             // Says why there is no delete, rather than leaving a gap where the
             // other rows have a button.
-            ZillitTag("Built in", tone = TagTone.Neutral)
+            ZillitTag(str(S.desktop_built_in), tone = TagTone.Neutral)
         } else {
-            RemoveButton("Delete") {
+            RemoveButton(str(S.delete)) {
                 onEvent(
                     AdminEvent.Ask(
                         AdminConfirmation.RemoveDepartment(department.id, department.name.localised()),
@@ -136,13 +138,13 @@ fun JobTitlesPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: ()
 
     AdminPage(
         title = AdminDestination.JobTitles.title,
-        description = "The roles crew can hold inside a department.",
+        description = str(S.desktop_designations_detail),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
         action = {
             ZillitButton(
-                text = "New job title",
+                text = str(S.desktop_new_job_title),
                 onClick = { onEvent(AdminEvent.OpenName(NameKind.JobTitle)) },
                 size = ButtonSize.Small,
                 // Nothing to add it to until a department is picked, and the
@@ -157,7 +159,7 @@ fun JobTitlesPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: ()
         ) {
             RowCard(Modifier.width(PICKER_WIDTH)) {
                 if (state.departments.isEmpty() && state.hasLoaded) {
-                    EmptyRow("No departments yet.")
+                    EmptyRow(str(S.desktop_no_departments_yet))
                 }
                 state.departments.forEachIndexed { index, row ->
                     if (index > 0) RowRule()
@@ -182,10 +184,10 @@ fun JobTitlesPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: ()
 
             RowCard(Modifier.weight(1f)) {
                 when {
-                    department == null -> EmptyRow("Pick a department to see its job titles.")
+                    department == null -> EmptyRow(str(S.desktop_pick_department_for_job_titles))
 
                     department.jobTitles.isEmpty() ->
-                        EmptyRow("${department.name.localised()} has no job titles yet.")
+                        EmptyRow(str(S.desktop_department_has_no_job_titles_yet, department.name.localised()))
 
                     else -> department.jobTitles.forEachIndexed { index, title ->
                         if (index > 0) RowRule()
@@ -201,9 +203,9 @@ fun JobTitlesPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: ()
                                 maxLines = 1,
                             )
                             if (title.systemDefined) {
-                                ZillitTag("Built in", tone = TagTone.Neutral)
+                                ZillitTag(str(S.desktop_built_in), tone = TagTone.Neutral)
                             } else {
-                                RemoveButton("Delete") {
+                                RemoveButton(str(S.delete)) {
                                     onEvent(
                                         AdminEvent.Ask(
                                             AdminConfirmation.RemoveJobTitle(
@@ -246,27 +248,29 @@ fun CrewOrderPage(
 ) {
     val order = state.selection.order
     val changed = state.selection.isReordered(state.departments)
-    val listName = if (isOtherType) "staff list" else "crew list"
 
     AdminPage(
         // The only page whose name depends on the production: Android swaps
         // the same two words (`set_department_priority_staff_list`).
-        title = "Change Department Listing Order for " +
-            if (isOtherType) "Staff List" else "Crew List",
-        description = "The order departments appear in when the $listName is generated.",
+        title = if (isOtherType) str(S.set_department_priority_staff_list) else str(S.desktop_crew_list_order_crew),
+        description = if (isOtherType) {
+            str(S.desktop_crew_list_order_description_staff)
+        } else {
+            str(S.desktop_crew_list_order_description_crew)
+        },
         state = state,
         onEvent = onEvent,
         onBack = onBack,
         action = {
             ZillitButton(
-                text = "Reset",
+                text = str(S.reset),
                 onClick = { onEvent(AdminEvent.ResetOrder) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
                 enabled = changed,
             )
             ZillitButton(
-                text = "Save order",
+                text = str(S.desktop_save_order),
                 onClick = { onEvent(AdminEvent.SaveOrder) },
                 size = ButtonSize.Small,
                 // Nothing moved, nothing to save. A live Save on an unchanged
@@ -278,7 +282,7 @@ fun CrewOrderPage(
     ) {
         if (changed) {
             ZillitText(
-                text = "Not saved yet. The $listName keeps its current order until you save.",
+                text = if (isOtherType) str(S.desktop_order_not_saved_staff) else str(S.desktop_order_not_saved_crew),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.warning,
             )
@@ -286,7 +290,7 @@ fun CrewOrderPage(
 
         RowCard {
             if (order.isEmpty() && state.hasLoaded) {
-                EmptyRow("This project has no departments to order.")
+                EmptyRow(str(S.desktop_no_departments_to_order))
             }
             order.forEachIndexed { index, department ->
                 if (index > 0) RowRule()
@@ -313,14 +317,14 @@ fun CrewOrderPage(
                     // one you happen to click — the label is not visible.
                     ZillitIconButton(
                         icon = ZillitIcons.ChevronDown,
-                        contentDescription = "Move ${department.name.localised()} up",
+                        contentDescription = str(S.desktop_move_up, department.name.localised()),
                         onClick = { onEvent(AdminEvent.MoveDepartment(department.id, -1)) },
                         enabled = index > 0,
                         modifier = Modifier.rotate(HALF_TURN),
                     )
                     ZillitIconButton(
                         icon = ZillitIcons.ChevronDown,
-                        contentDescription = "Move ${department.name.localised()} down",
+                        contentDescription = str(S.desktop_move_down, department.name.localised()),
                         onClick = { onEvent(AdminEvent.MoveDepartment(department.id, 1)) },
                         enabled = index < order.lastIndex,
                     )
@@ -343,14 +347,14 @@ fun CrewOrderPage(
 fun ToolAvailabilityPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.ToolAvailability.title,
-        description = "Switching one off hides it, and everything in it, for everyone.",
+        description = str(S.desktop_tools_page_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
-        search = "Search tools",
+        search = str(S.tools_search_hint),
         action = {
             ZillitButton(
-                text = "Save tools",
+                text = str(S.desktop_save_tools),
                 onClick = { onEvent(AdminEvent.SaveTools) },
                 size = ButtonSize.Small,
                 enabled = !state.isSaving && state.tools.isNotEmpty(),
@@ -362,7 +366,11 @@ fun ToolAvailabilityPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onB
             val rows = state.toolsMatching
             if (rows.isEmpty() && state.hasLoaded) {
                 EmptyRow(
-                    if (state.query.isBlank()) "No tools to configure." else "No tool matches “${state.query}”.",
+                    if (state.query.isBlank()) {
+                        str(S.desktop_no_tools_to_configure)
+                    } else {
+                        str(S.desktop_no_tool_matches, state.query)
+                    },
                 )
             }
             rows.forEachIndexed { index, tool ->
@@ -390,7 +398,7 @@ private fun ToolRow(tool: ProductionTool, onEvent: (AdminEvent) -> Unit) {
             // These two are how an admin undoes a mistake made on this very
             // page. Both phone clients refuse to switch them off, and so does
             // the server.
-            ZillitTag("Always on", tone = TagTone.Neutral)
+            ZillitTag(str(S.desktop_always_on), tone = TagTone.Neutral)
         }
         ZillitCheckbox(
             checked = tool.enabled,
@@ -411,22 +419,22 @@ private fun ToolRow(tool: ProductionTool, onEvent: (AdminEvent) -> Unit) {
 fun ToolGroupsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.ToolGroups.title,
-        description = "The headings tools sit under on the Film Tools grid.",
+        description = str(S.desktop_tool_groups_description),
         state = state,
         onEvent = onEvent,
         onBack = onBack,
         action = {
             ZillitButton(
-                text = "New group",
+                text = str(S.desktop_new_group),
                 onClick = { onEvent(AdminEvent.OpenName(NameKind.ToolGroup)) },
                 size = ButtonSize.Small,
             )
         },
     ) {
-        ZillitSectionLabel("Groups")
+        ZillitSectionLabel(str(S.groups_txt))
         RowCard {
             if (state.toolGroups.isEmpty() && state.hasLoaded) {
-                EmptyRow("No groups on this project.")
+                EmptyRow(str(S.desktop_no_groups_on_project))
             }
             state.toolGroups.forEachIndexed { index, group ->
                 if (index > 0) RowRule()
@@ -434,9 +442,9 @@ fun ToolGroupsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: (
             }
         }
 
-        ZillitSectionLabel("Where each tool sits")
+        ZillitSectionLabel(str(S.desktop_where_each_tool_sits))
         RowCard {
-            if (state.tools.isEmpty() && state.hasLoaded) EmptyRow("No tools to place.")
+            if (state.tools.isEmpty() && state.hasLoaded) EmptyRow(str(S.desktop_no_tools_to_place))
             state.tools.forEachIndexed { index, tool ->
                 if (index > 0) RowRule()
                 ToolPlacementRow(tool, state.toolGroups, onEvent)
@@ -465,14 +473,18 @@ private fun ToolGroupRow(
                 maxLines = 1,
             )
             ZillitText(
-                text = if (inGroup == 1) "1 tool" else "$inGroup tools",
+                text = if (inGroup == 1) {
+                    str(S.desktop_tool_count_one, inGroup)
+                } else {
+                    str(S.desktop_tool_count_other, inGroup)
+                },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
         }
 
         ZillitButton(
-            text = "Rename",
+            text = str(S.rename),
             onClick = {
                 onEvent(
                     AdminEvent.OpenName(
@@ -487,13 +499,13 @@ private fun ToolGroupRow(
         )
 
         when {
-            !group.isDeletable -> ZillitTag("Built in", tone = TagTone.Neutral)
+            !group.isDeletable -> ZillitTag(str(S.desktop_built_in), tone = TagTone.Neutral)
 
             // The server refuses this with `tool_group_in_use`. Checked here so
             // the reader is told what to do rather than shown a rejection.
-            inGroup > 0 -> ZillitTag("Move its tools first", tone = TagTone.Neutral)
+            inGroup > 0 -> ZillitTag(str(S.desktop_move_its_tools_first), tone = TagTone.Neutral)
 
-            else -> RemoveButton("Delete") {
+            else -> RemoveButton(str(S.delete)) {
                 onEvent(
                     AdminEvent.Ask(AdminConfirmation.RemoveToolGroup(group.id, group.name.localised())),
                 )
@@ -535,7 +547,7 @@ private fun ToolPlacementRow(
 }
 
 /** The synthetic option for a tool that belongs to no group. */
-private val UNGROUPED = ToolGroup(id = "", identifier = "", name = "Not in a group")
+private val UNGROUPED: ToolGroup get() = ToolGroup(id = "", identifier = "", name = str(S.desktop_not_in_a_group))
 
 private val PICKER_WIDTH = 260.dp
 private val GROUP_PICKER_WIDTH = 220.dp

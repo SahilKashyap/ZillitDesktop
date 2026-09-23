@@ -37,6 +37,8 @@ import com.zillit.desktop.feature.drive.domain.formatBytes
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.PreviewState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The in-app preview — the web's preview modal for images and its
@@ -61,20 +63,20 @@ internal fun PreviewDialog(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         actions = {
             if (preview?.url != null && preview.kind == PreviewKind.Document) {
                 ZillitButton(
-                    text = "Open in browser",
+                    text = str(S.desktop_drive_open_in_browser),
                     onClick = { onEvent(DriveEvent.OpenPreviewInBrowser) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Link,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DriveEvent.ClosePreview) },
                 variant = ButtonVariant.Tertiary,
             )
             if (canDownload && item != null) {
                 ZillitButton(
-                    text = "Download",
+                    text = str(S.download),
                     onClick = { onEvent(DriveEvent.Download(item)) },
                     leadingIcon = ZillitIcons.Download,
                 )
@@ -102,14 +104,18 @@ private fun PreviewBody(preview: PreviewState) {
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitSpinner(color = Color.White)
-            ZillitText(text = "Loading preview…", style = ZillitTheme.typography.bodySmall, color = Color.White)
+            ZillitText(
+                text = str(S.desktop_loading_preview),
+                style = ZillitTheme.typography.bodySmall,
+                color = Color.White,
+            )
         }
 
         preview.error != null -> Unavailable(preview.error)
         preview.kind == PreviewKind.Image && preview.imageBytes != null -> {
             val bitmap = remember(preview.imageBytes) { decodeImageBitmap(preview.imageBytes) }
             if (bitmap == null) {
-                Unavailable("This image could not be decoded.")
+                Unavailable(str(S.desktop_drive_image_not_decoded))
             } else {
                 Image(
                     bitmap = bitmap,
@@ -122,7 +128,7 @@ private fun PreviewBody(preview: PreviewState) {
 
         preview.kind == PreviewKind.Pdf && preview.pages.isNotEmpty() -> Pages(preview.pages)
         preview.kind == PreviewKind.Text && preview.text != null -> TextBody(preview.text)
-        else -> Unavailable("Preview is not supported for this file type.")
+        else -> Unavailable(str(S.desktop_drive_preview_unsupported_type))
     }
 }
 

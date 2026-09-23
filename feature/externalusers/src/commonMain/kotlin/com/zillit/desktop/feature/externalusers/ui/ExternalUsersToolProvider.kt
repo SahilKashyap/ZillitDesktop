@@ -15,6 +15,8 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * External Users as a workspace tool, at the catalogue's route. The web's own
@@ -32,7 +34,7 @@ class ExternalUsersToolProvider(
 ) : ToolProvider {
 
     override val path: String = EXTERNAL_USERS_PATH
-    override val title: String = "External Users"
+    override val title: String get() = str(S.external_invitees)
     override val icon = ZillitToolIcons.IcInviteUser
     override val openMode: OpenMode = OpenMode.Window
     override val defaultSize: DpSize = DpSize(1150.dp, 740.dp)
@@ -51,7 +53,11 @@ class ExternalUsersToolProvider(
                     is ExternalUsersEffect.Notice -> notice = effect.text
                     is ExternalUsersEffect.ComposeEmail -> {
                         val open = onEmail
-                        if (open == null) notice = "Mail is not available here." else open(effect.address, navigator)
+                        if (open == null) {
+                            notice = str(S.desktop_mail_not_available_here)
+                        } else {
+                            open(effect.address, navigator)
+                        }
                     }
                 }
             }

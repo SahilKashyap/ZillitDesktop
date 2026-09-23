@@ -22,6 +22,8 @@ import com.zillit.desktop.feature.saportal.domain.AccountCheck
 import com.zillit.desktop.feature.saportal.ui.SaUiState
 import com.zillit.desktop.feature.saportal.ui.day
 import com.zillit.desktop.feature.saportal.ui.money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** What has been earned, by the week it was worked, and the holiday pot. */
 @Composable
@@ -30,8 +32,8 @@ internal fun ColumnScope.PayPage(state: SaUiState) {
     if (pay == null) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = "No pay yet",
-                message = "Your weeks appear here once days have been signed.",
+                title = str(S.desktop_sa_no_pay_yet),
+                message = str(S.desktop_sa_no_pay_message),
                 icon = ZillitIcons.Info,
             )
         }
@@ -39,21 +41,21 @@ internal fun ColumnScope.PayPage(state: SaUiState) {
     }
     val currency = state.profile?.currency
 
-    ZillitSectionLabel("Holiday")
+    ZillitSectionLabel(str(S.desktop_holiday))
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitStatTile(label = "Accrued", value = money(pay.holiday.accrued, currency))
-        ZillitStatTile(label = "Paid", value = money(pay.holiday.paid, currency))
-        ZillitStatTile(label = "Total", value = money(pay.holiday.total, currency))
+        ZillitStatTile(label = str(S.desktop_accrued), value = money(pay.holiday.accrued, currency))
+        ZillitStatTile(label = str(S.desktop_paid), value = money(pay.holiday.paid, currency))
+        ZillitStatTile(label = str(S.asset_total), value = money(pay.holiday.total, currency))
     }
 
-    ZillitSectionLabel("By week")
+    ZillitSectionLabel(str(S.desktop_sa_by_week))
     if (pay.runs.isEmpty()) {
         ZillitText(
-            text = "No weeks have been made up yet.",
+            text = str(S.desktop_sa_no_weeks_made_up),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -68,11 +70,11 @@ internal fun ColumnScope.PayPage(state: SaUiState) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     ZillitText(
-                        text = "Week of ${day(run.weekStarting)}",
+                        text = str(S.desktop_sa_week_of, day(run.weekStarting)),
                         style = ZillitTheme.typography.bodyMedium,
                     )
                     ZillitText(
-                        text = "${run.days} day${if (run.days == 1) "" else "s"}",
+                        text = if (run.days == 1) str(S.desktop_one_day) else str(S.ah_days_format, run.days),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textSecondary,
                     )
@@ -98,8 +100,8 @@ internal fun ColumnScope.ProfilePage(state: SaUiState) {
     if (profile == null) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = "No record found",
-                message = "This project has no artiste record for you.",
+                title = str(S.desktop_sa_no_record_title),
+                message = str(S.desktop_sa_no_record_message),
                 icon = ZillitIcons.Info,
             )
         }
@@ -108,7 +110,7 @@ internal fun ColumnScope.ProfilePage(state: SaUiState) {
 
     if (profile.accountStatus.isNotEmpty()) {
         ZillitSectionCard(
-            title = if (profile.complete) "Your details are complete" else "Still needed",
+            title = if (profile.complete) str(S.desktop_sa_details_complete) else str(S.desktop_sa_still_needed),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
@@ -116,7 +118,7 @@ internal fun ColumnScope.ProfilePage(state: SaUiState) {
                     ZillitText(
                         // Named for the consequence, not the rule: this is the
                         // reason a payment sits still.
-                        text = "Payments cannot be made up until these are in place.",
+                        text = str(S.desktop_sa_payments_blocked),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textSecondary,
                     )
@@ -126,27 +128,27 @@ internal fun ColumnScope.ProfilePage(state: SaUiState) {
         }
     }
 
-    ZillitSectionCard(title = "Your details", modifier = Modifier.fillMaxWidth()) {
+    ZillitSectionCard(title = str(S.dm_nda_fill_title), modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            DetailLine("Reference", profile.artisteRef.ifBlank { profile.refNumber })
-            DetailLine("Category", profile.category)
-            DetailLine("Engagement", profile.engagementType)
-            DetailLine("Agency", profile.agencyName)
+            DetailLine(str(S.desktop_reference), profile.artisteRef.ifBlank { profile.refNumber })
+            DetailLine(str(S.av_category), profile.category)
+            DetailLine(str(S.desktop_engagement), profile.engagementType)
+            DetailLine(str(S.desktop_dm_agency), profile.agencyName)
             if (profile.isMinor) {
-                ZillitStatusPill(label = "Minor — chaperone rules apply", tone = StatusTone.Pending)
+                ZillitStatusPill(label = str(S.desktop_sa_minor_chaperone), tone = StatusTone.Pending)
             }
         }
     }
 
-    ZillitSectionCard(title = "Where you are paid", modifier = Modifier.fillMaxWidth()) {
+    ZillitSectionCard(title = str(S.desktop_sa_where_paid), modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            DetailLine("Bank", profile.bank.name)
-            DetailLine("Account name", profile.bank.accountHolderName)
+            DetailLine(str(S.desktop_bank), profile.bank.name)
+            DetailLine(str(S.desktop_account_name), profile.bank.accountHolderName)
             // Shown as stored — the account number is the artiste's own and
             // masking it here would stop them checking it is the right one.
-            DetailLine("Account number", profile.bank.accountNumber)
-            DetailLine("Sort code", profile.bank.sortCode)
-            DetailLine("IBAN", profile.bank.ibanNumber)
+            DetailLine(str(S.account_number), profile.bank.accountNumber)
+            DetailLine(str(S.ah_lbl_sort_code), profile.bank.sortCode)
+            DetailLine(str(S.ah_lbl_iban_row), profile.bank.ibanNumber)
         }
     }
 }
@@ -159,7 +161,7 @@ private fun CheckRow(check: AccountCheck) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitStatusPill(
-            label = if (check.ok) "Done" else "Needed",
+            label = if (check.ok) str(S.done_text) else str(S.desktop_needed),
             tone = if (check.ok) StatusTone.Done else StatusTone.Pending,
         )
         Column(modifier = Modifier.weight(1f)) {

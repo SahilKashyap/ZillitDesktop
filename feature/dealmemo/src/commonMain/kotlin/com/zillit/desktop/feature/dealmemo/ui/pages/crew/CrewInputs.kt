@@ -43,12 +43,15 @@ import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormValues
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealCalc
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
 import com.zillit.desktop.feature.dealmemo.ui.pages.preview.shadowed
 import com.zillit.desktop.feature.dealmemo.ui.pages.rules.BelowStartPosition
+import kotlin.time.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
@@ -57,7 +60,6 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.number
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
-import kotlin.time.Clock
 
 /**
  * A date field over an epoch (`<input type="date">`): typed as DD/MM/YYYY —
@@ -281,8 +283,8 @@ private fun CalendarPanel(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            TextAction("Clear", onClear)
-            if (allowed(today)) TextAction("Today") { onPick(today) }
+            TextAction(str(S.dm_sign_clear), onClear)
+            if (allowed(today)) TextAction(str(S.today)) { onPick(today) }
         }
     }
 }

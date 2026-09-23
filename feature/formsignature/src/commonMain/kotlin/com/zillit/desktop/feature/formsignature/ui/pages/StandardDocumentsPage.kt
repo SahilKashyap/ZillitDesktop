@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.StandardForm
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureUiState
@@ -64,7 +66,7 @@ internal fun StandardDocumentsPage(state: FormSignatureUiState, onEvent: (FormSi
             ZillitSearchField(
                 value = standard.search,
                 onValueChange = { onEvent(FormSignatureEvent.SearchStandard(it)) },
-                placeholder = "Search by id or name",
+                placeholder = str(S.desktop_fs_search_by_id_or_name),
                 modifier = Modifier.width(SEARCH_WIDTH.dp),
             )
             Spacer(Modifier.weight(1f))
@@ -76,7 +78,7 @@ internal fun StandardDocumentsPage(state: FormSignatureUiState, onEvent: (FormSi
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     ZillitButton(
-                        text = if (answers) "Chat with Users" else "Chat with Admins",
+                        text = if (answers) str(S.chat_with_users) else str(S.chat_with_admin_txt),
                         onClick = { onEvent(FormSignatureEvent.OpenChat) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -87,7 +89,7 @@ internal fun StandardDocumentsPage(state: FormSignatureUiState, onEvent: (FormSi
             }
             if (standard.tab == StandardTab.All) {
                 ZillitButton(
-                    text = "Upload Document",
+                    text = str(S.txt_document_add),
                     onClick = { onEvent(FormSignatureEvent.StartUploadForm) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Upload,
@@ -115,17 +117,17 @@ internal fun StandardDocumentsPage(state: FormSignatureUiState, onEvent: (FormSi
                     columns = columns(state, onEvent),
                     onRowClick = { onEvent(FormSignatureEvent.OpenStandardForm(it)) },
                     emptyTitle = if (standard.search.isNotBlank()) {
-                        "No documents match"
+                        str(S.desktop_fs_no_documents_match)
                     } else if (standard.tab == StandardTab.All) {
-                        "No standard documents yet"
+                        str(S.desktop_fs_no_standard_documents_yet)
                     } else {
-                        "Nothing in My Downloads yet"
+                        str(S.desktop_fs_nothing_in_my_downloads)
                     },
                     emptyMessage = when {
                         standard.search.isNotBlank() -> null
                         standard.tab == StandardTab.All ->
-                            "Documents uploaded here are shared with the whole production."
-                        else -> "Use “Add to My Downloads” on the Documents tab to keep a copy you can sign."
+                            str(S.desktop_fs_shared_documents_hint)
+                        else -> str(S.desktop_fs_my_downloads_hint)
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -138,8 +140,10 @@ private fun columns(
     state: FormSignatureUiState,
     onEvent: (FormSignatureEvent) -> Unit,
 ): List<TableColumn<StandardForm>> = listOf(
-    textColumn(header = "ID", width = ColumnWidth.Fixed(ID_WIDTH.dp)) { it.serialNo.ifBlank { "—" } },
-    TableColumn(header = "Name", width = ColumnWidth.Weight(2f)) { form ->
+    textColumn(header = str(S.desktop_id_header), width = ColumnWidth.Fixed(ID_WIDTH.dp)) {
+        it.serialNo.ifBlank { "—" }
+    },
+    TableColumn(header = str(S.name), width = ColumnWidth.Weight(2f)) { form ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ZillitText(
                 text = form.name.ifBlank { "—" },
@@ -153,14 +157,14 @@ private fun columns(
             }
         }
     },
-    textColumn(header = "Type", width = ColumnWidth.Fixed(TYPE_WIDTH.dp)) { it.type.label },
-    textColumn(header = "Uploaded On", width = ColumnWidth.Fixed(DATE_WIDTH.dp), muted = true) {
+    textColumn(header = str(S.type), width = ColumnWidth.Fixed(TYPE_WIDTH.dp)) { it.type.label },
+    textColumn(header = str(S.desktop_uploaded_on), width = ColumnWidth.Fixed(DATE_WIDTH.dp), muted = true) {
         formDateTime(it.createdOn)
     },
-    TableColumn(header = "Uploaded By", width = ColumnWidth.Weight(1.2f)) { form ->
+    TableColumn(header = str(S.txt_uploaded_by), width = ColumnWidth.Weight(1.2f)) { form ->
         PersonChip(name = form.uploaderName, userId = form.uploaderId)
     },
-    TableColumn(header = "Action", width = ColumnWidth.Fixed(ACTIONS_WIDTH.dp)) { form ->
+    TableColumn(header = str(S.txt_action), width = ColumnWidth.Fixed(ACTIONS_WIDTH.dp)) { form ->
         RowActions(state, form, onEvent)
     },
 )
@@ -173,23 +177,23 @@ private fun RowActions(state: FormSignatureUiState, form: StandardForm, onEvent:
         modifier = Modifier.fillMaxWidth(),
     ) {
         ZillitButton(
-            text = "View",
+            text = str(S.view),
             onClick = { onEvent(FormSignatureEvent.OpenStandardForm(form)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
         )
         if (state.standard.tab == StandardTab.All) {
             ZillitButton(
-                text = "Add to My Downloads",
+                text = str(S.add_to_your_documents),
                 onClick = { onEvent(FormSignatureEvent.SelfAssign(form.id)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
             )
         }
-        ZillitTooltip("Check History") {
+        ZillitTooltip(str(S.check_history)) {
             ZillitIconButton(
                 icon = ZillitIcons.Clock,
-                contentDescription = "Check History",
+                contentDescription = str(S.check_history),
                 onClick = { onEvent(FormSignatureEvent.ShowHistory(form)) },
             )
         }
@@ -198,7 +202,7 @@ private fun RowActions(state: FormSignatureUiState, form: StandardForm, onEvent:
         if (state.standard.tab == StandardTab.All) {
             ZillitIconButton(
                 icon = ZillitIcons.Trash,
-                contentDescription = "Delete",
+                contentDescription = str(S.delete),
                 tint = ZillitTheme.colors.danger,
                 onClick = { onEvent(FormSignatureEvent.AskDeleteStandardForm(form.id)) },
             )

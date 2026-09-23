@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The frame every settings sub-page shares: a back arrow, a title, and a
@@ -57,7 +59,7 @@ internal fun SettingsPage(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitIconButton(icon = ZillitIcons.ArrowLeft, contentDescription = "Back", onClick = onBack)
+            ZillitIconButton(icon = ZillitIcons.ArrowLeft, contentDescription = str(S.back), onClick = onBack)
             Column(Modifier.weight(1f)) {
                 ZillitText(text = title, style = ZillitTheme.typography.titleMedium)
                 subtitle?.let {
@@ -146,7 +148,11 @@ internal fun SettingsMessage(
         tone = tone,
         modifier = modifier,
         action = {
-            ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Dismiss", onClick = onDismiss)
+            ZillitIconButton(
+                icon = ZillitIcons.Close,
+                contentDescription = str(S.sync_action_dismiss),
+                onClick = onDismiss,
+            )
         },
     )
 }

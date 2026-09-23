@@ -16,6 +16,8 @@ import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import kotlin.time.Clock
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Invoices as a workspace tool. The web has no standalone route (accountants
@@ -29,7 +31,7 @@ class InvoicesToolProvider(
 ) : ToolProvider {
 
     override val path: String = INVOICES_PATH
-    override val title: String = "Invoices"
+    override val title: String get() = str(S.ah_invoices)
     override val icon = ZillitIcons.Receipt
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

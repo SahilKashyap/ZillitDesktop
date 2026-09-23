@@ -10,6 +10,8 @@ import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.ChatUnit
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
 import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
@@ -286,7 +288,7 @@ class FormSignatureRepositoryImpl(
             answer
         } else {
             ZillitResult.Failure(
-                ZillitError.Validation(answer.data.message?.ifBlank { null } ?: "The request was refused."),
+                ZillitError.Validation(answer.data.message?.ifBlank { null } ?: str(S.desktop_request_refused)),
             )
         }
     }

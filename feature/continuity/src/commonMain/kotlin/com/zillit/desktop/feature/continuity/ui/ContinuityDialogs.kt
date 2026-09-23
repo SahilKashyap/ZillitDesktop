@@ -61,6 +61,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.continuity.domain.ContinuityAttachment
 import com.zillit.desktop.feature.continuity.domain.ContinuityScene
 import com.zillit.desktop.feature.continuity.domain.ContinuityTab
@@ -98,15 +100,15 @@ private fun PickDialog(state: ContinuityUiState, onEvent: (ContinuityEvent) -> U
     val pick = state.pick ?: return
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "Department list continuity",
-        subtitle = "Scene No - ${pick.sceneFolder}",
+        title = str(S.department_list_continuity),
+        subtitle = str(S.desktop_scene_no_value, pick.sceneFolder),
         icon = ZillitIcons.Users,
         onDismiss = { onEvent(ContinuityEvent.ClosePick) },
         visible = true,
         width = PICK_WIDTH,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(ContinuityEvent.ClosePick) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -115,7 +117,7 @@ private fun PickDialog(state: ContinuityUiState, onEvent: (ContinuityEvent) -> U
         ZillitSearchField(
             value = pick.query,
             onValueChange = { onEvent(ContinuityEvent.SearchDepartments(it)) },
-            placeholder = "Search By Department Name",
+            placeholder = str(S.search_by_department_name),
             modifier = Modifier.fillMaxWidth(),
         )
         when {
@@ -123,9 +125,9 @@ private fun PickDialog(state: ContinuityUiState, onEvent: (ContinuityEvent) -> U
                 contentAlignment = Alignment.Center) { ZillitSpinner() }
             state.shownDepartments.isEmpty() -> ZillitEmptyState(
                 title = if (pick.query.isBlank()) {
-                    "No department has forwarded media for this scene"
+                    str(S.desktop_continuity_no_department_forwarded)
                 } else {
-                    "No department matches"
+                    str(S.desktop_continuity_no_department_matches)
                 },
                 icon = ZillitIcons.Users,
             )
@@ -174,8 +176,9 @@ private fun CardsDialog(
     val colors = ZillitTheme.colors
     val department = open.department?.let { state.departmentNames[it.id] ?: it.name }
     ZillitDialogShell(
-        title = "Scene No - ${open.sceneFolder}" + if (department != null) "  /  Department Name : $department" else "",
-        subtitle = "${open.tab.label} · ${open.shown.size} card(s)",
+        title = str(S.desktop_scene_no_value, open.sceneFolder) +
+            if (department != null) "  /  " + str(S.desktop_continuity_department_name_value, department) else "",
+        subtitle = str(S.desktop_continuity_board_subtitle, open.tab.label, open.shown.size),
         icon = ZillitIcons.Photo,
         onDismiss = { onEvent(ContinuityEvent.CloseFolder) },
         visible = true,
@@ -185,29 +188,29 @@ private fun CardsDialog(
         actions = {
             if (open.selecting) {
                 ZillitText(
-                    text = "${open.selected.size} selected",
+                    text = str(S.av_selected_count, open.selected.size),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
                 Spacer(Modifier.weight(1f))
                 ZillitButton(
-                    text = "Forward",
+                    text = str(S.forward),
                     onClick = { onEvent(ContinuityEvent.ForwardSelected) },
                     leadingIcon = ZillitIcons.Forward,
                     enabled = open.selected.isNotEmpty(),
                     loading = state.busy,
                 )
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(ContinuityEvent.CancelSelecting) },
                     variant = ButtonVariant.Tertiary,
                 )
             } else {
                 if (open.tab == ContinuityTab.MyDepartment) {
-                    UploadMenu(onEvent, text = "Upload here", variant = ButtonVariant.Secondary)
+                    UploadMenu(onEvent, text = str(S.desktop_location_upload_here), variant = ButtonVariant.Secondary)
                 }
                 ZillitButton(
-                    text = "Close",
+                    text = str(S.close),
                     onClick = { onEvent(ContinuityEvent.CloseFolder) },
                     variant = ButtonVariant.Tertiary,
                 )
@@ -217,16 +220,20 @@ private fun CardsDialog(
         ZillitSearchField(
             value = open.query,
             onValueChange = { onEvent(ContinuityEvent.SearchCards(it)) },
-            placeholder = "Search by Scene notes / Scene Number",
+            placeholder = str(S.desktop_continuity_search_cards),
             modifier = Modifier.fillMaxWidth(),
         )
         Box(Modifier.fillMaxWidth().height(GALLERY_HEIGHT)) {
             when {
                 open.loading && open.scenes.isEmpty() -> SkeletonCards()
                 open.shown.isEmpty() -> ZillitEmptyState(
-                    title = if (open.query.isBlank()) "No data Found" else "No card matches",
+                    title = if (open.query.isBlank()) {
+                        str(S.no_data_found)
+                    } else {
+                        str(S.desktop_continuity_no_card_matches)
+                    },
                     message = if (open.query.isBlank() && open.tab == ContinuityTab.MyDepartment) {
-                        "Upload a photo, video or document into this scene."
+                        str(S.desktop_continuity_upload_into_scene)
                     } else {
                         null
                     },
@@ -351,7 +358,7 @@ private fun SceneTile(
                         )
                         if (open.tab == ContinuityTab.AllDepartments) {
                             ZillitText(
-                                text = "Department - ${state.departmentLabel(scene.departmentId)}",
+                                text = str(S.desktop_department_value, state.departmentLabel(scene.departmentId)),
                                 style = ZillitTheme.typography.bodySmall,
                                 color = colors.textSecondary,
                                 maxLines = 1,
@@ -374,8 +381,9 @@ private fun SceneTile(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
+                    val uploader = resolveUser(scene.uploadedBy) ?: str(S.desktop_unknown)
                     ZillitText(
-                        text = "${resolveUser(scene.uploadedBy) ?: "Unknown"} · ${formatDate(scene.createdMs)}",
+                        text = "$uploader · ${formatDate(scene.createdMs)}",
                         style = ZillitTheme.typography.labelSmall,
                         color = colors.textMuted,
                         maxLines = 1,
@@ -383,7 +391,7 @@ private fun SceneTile(
                         modifier = Modifier.weight(1f),
                     )
                     ZillitButton(
-                        text = "View More",
+                        text = str(S.txt_view_more),
                         onClick = { onEvent(ContinuityEvent.ShowDetails(scene)) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -415,26 +423,26 @@ private fun TileMenu(
     Box {
         ZillitIconButton(
             icon = ZillitIcons.MoreVertical,
-            contentDescription = "Card actions",
+            contentDescription = str(S.desktop_card_actions),
             onClick = { expanded = true },
         )
         val entries = buildList {
             if (open.tab == ContinuityTab.MyDepartment && owned) {
-                add(ZillitMenuEntry.Action("Edit Details", ZillitIcons.Edit, ZillitMenuTone.Primary) {
+                add(ZillitMenuEntry.Action(str(S.txt_edit_details), ZillitIcons.Edit, ZillitMenuTone.Primary) {
                     onEvent(ContinuityEvent.Edit(scene))
                 })
             }
-            add(ZillitMenuEntry.Action("Forward", ZillitIcons.Forward, ZillitMenuTone.Info) {
+            add(ZillitMenuEntry.Action(str(S.forward), ZillitIcons.Forward, ZillitMenuTone.Info) {
                 onEvent(ContinuityEvent.RequestForward)
             })
             if (scene.attachment != null) {
-                add(ZillitMenuEntry.Action("Download", ZillitIcons.Download, ZillitMenuTone.Neutral) {
+                add(ZillitMenuEntry.Action(str(S.download), ZillitIcons.Download, ZillitMenuTone.Neutral) {
                     onEvent(ContinuityEvent.Download(scene))
                 })
             }
             if (owned) {
                 add(ZillitMenuEntry.Divider)
-                add(ZillitMenuEntry.Action("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) {
+                add(ZillitMenuEntry.Action(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) {
                     onEvent(ContinuityEvent.RequestDelete(scene))
                 })
             }
@@ -464,25 +472,25 @@ private fun TileMenu(
 @Composable
 private fun ForwardIntentDialog(onEvent: (ContinuityEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Forward",
+        title = str(S.forward),
         icon = ZillitIcons.Forward,
         onDismiss = { onEvent(ContinuityEvent.CancelForwardIntent) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(ContinuityEvent.CancelForwardIntent) },
                 variant = ButtonVariant.Tertiary,
             )
-            ZillitButton(text = "Ok", onClick = { onEvent(ContinuityEvent.ConfirmForwardIntent) })
+            ZillitButton(text = str(S.ok), onClick = { onEvent(ContinuityEvent.ConfirmForwardIntent) })
         },
     ) {
         ZillitText(
-            text = "Please note, doing this will make your material visible to all. Do you still want to proceed?",
+            text = str(S.continuity_forward_msg),
             style = ZillitTheme.typography.bodyMedium,
         )
         ZillitText(
-            text = "Tick the cards to forward, then press Forward.",
+            text = str(S.desktop_continuity_tick_cards),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -497,8 +505,8 @@ private fun ForwardDialog(state: ContinuityUiState, sheet: ForwardSheet, onEvent
     val count = open?.selected?.size ?: 0
     val users = sheet.step == ForwardSheet.Step.Users
     ZillitDialogShell(
-        title = "Forward",
-        subtitle = "$count card(s) from Scene No - ${open?.sceneFolder.orEmpty()}",
+        title = str(S.forward),
+        subtitle = str(S.desktop_continuity_cards_from_scene, count, open?.sceneFolder.orEmpty()),
         icon = ZillitIcons.Forward,
         onDismiss = { if (!sheet.sending) onEvent(ContinuityEvent.CloseForward) },
         visible = true,
@@ -506,20 +514,20 @@ private fun ForwardDialog(state: ContinuityUiState, sheet: ForwardSheet, onEvent
         actions = {
             if (users) {
                 ZillitText(
-                    text = "${sheet.selectedUsers.size} selected",
+                    text = str(S.av_selected_count, sheet.selectedUsers.size),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
                 Spacer(Modifier.weight(1f))
                 ZillitButton(
-                    text = "Save",
+                    text = str(S.save),
                     onClick = { onEvent(ContinuityEvent.SendForward) },
                     enabled = sheet.selectedUsers.isNotEmpty(),
                     loading = sheet.sending,
                 )
             }
             ZillitButton(
-                text = if (users) "Cancel" else "Close",
+                text = if (users) str(S.cancel) else str(S.close),
                 onClick = { onEvent(ContinuityEvent.CloseForward) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !sheet.sending,
@@ -530,16 +538,16 @@ private fun ForwardDialog(state: ContinuityUiState, sheet: ForwardSheet, onEvent
         if (!users) {
             if (open?.tab == ContinuityTab.MyDepartment) {
                 ForwardChoice(
-                    title = "All Departments",
-                    detail = "Everyone on the production sees these cards under All Departments.",
+                    title = str(S.all_departments),
+                    detail = str(S.desktop_continuity_all_departments_detail),
                     icon = ZillitIcons.Globe,
                     loading = sheet.sending,
                     onClick = { onEvent(ContinuityEvent.ForwardToAllDepartments) },
                 )
             }
             ForwardChoice(
-                title = "Select Users",
-                detail = "Sends each card as a chat message to the crew you choose.",
+                title = str(S.select_users),
+                detail = str(S.desktop_continuity_select_users_detail),
                 icon = ZillitIcons.Users,
                 loading = false,
                 onClick = { onEvent(ContinuityEvent.ForwardChooseUsers) },
@@ -551,12 +559,12 @@ private fun ForwardDialog(state: ContinuityUiState, sheet: ForwardSheet, onEvent
             ) {
                 ZillitIconButton(
                     icon = ZillitIcons.ArrowLeft,
-                    contentDescription = "Back",
+                    contentDescription = str(S.back),
                     onClick = { onEvent(ContinuityEvent.ForwardBack) },
                     enabled = !sheet.sending,
                 )
                 ZillitText(
-                    text = "Select Users",
+                    text = str(S.select_users),
                     style = ZillitTheme.typography.titleSmall,
                     color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
@@ -564,9 +572,9 @@ private fun ForwardDialog(state: ContinuityUiState, sheet: ForwardSheet, onEvent
                 val everyone = state.shownCrew.map { it.userId }.toSet()
                 ZillitButton(
                     text = if (everyone.isNotEmpty() && sheet.selectedUsers == everyone) {
-                        "Unselect All"
+                        str(S.desktop_unselect_all)
                     } else {
-                        "Select All"
+                        str(S.select_all)
                     },
                     onClick = { onEvent(ContinuityEvent.ToggleAllCrew) },
                     variant = ButtonVariant.Tertiary,
@@ -577,12 +585,12 @@ private fun ForwardDialog(state: ContinuityUiState, sheet: ForwardSheet, onEvent
             ZillitSearchField(
                 value = sheet.userQuery,
                 onValueChange = { onEvent(ContinuityEvent.SearchCrew(it)) },
-                placeholder = "Search",
+                placeholder = str(S.search),
                 modifier = Modifier.fillMaxWidth(),
             )
             val crew = state.shownCrew
             if (crew.isEmpty()) {
-                ZillitEmptyState(title = "No one matches", icon = ZillitIcons.Users)
+                ZillitEmptyState(title = str(S.dm_nda_no_one_matches), icon = ZillitIcons.Users)
             } else {
                 ZillitLazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = CREW_LIST_HEIGHT)) {
                     items(crew, key = { it.userId }) { member ->
@@ -685,7 +693,7 @@ private fun ViewDialog(
         maxHeight = GALLERY_MAX_HEIGHT,
         actions = {
             ZillitButton(
-                text = "View More",
+                text = str(S.txt_view_more),
                 onClick = { onEvent(ContinuityEvent.ShowDetails(scene)) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = ZillitIcons.Info,
@@ -693,7 +701,7 @@ private fun ViewDialog(
             Spacer(Modifier.weight(1f))
             if (attachment != null && (attachment.isVideo || attachment.isDocument)) {
                 ZillitButton(
-                    text = if (attachment.isVideo) "Play" else "Open",
+                    text = if (attachment.isVideo) str(S.desktop_play) else str(S.recce_open),
                     onClick = { onEvent(ContinuityEvent.Open(scene)) },
                     variant = ButtonVariant.Secondary,
                     leadingIcon = if (attachment.isVideo) ZillitIcons.Play else ZillitIcons.File,
@@ -702,25 +710,28 @@ private fun ViewDialog(
             }
             if (attachment != null) {
                 ZillitButton(
-                    text = "Download",
+                    text = str(S.download),
                     onClick = { onEvent(ContinuityEvent.Download(scene)) },
                     leadingIcon = ZillitIcons.Download,
                     loading = state.busy,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(ContinuityEvent.CloseView) },
                 variant = ButtonVariant.Tertiary,
             )
         },
     ) {
         when {
-            attachment == null -> ZillitEmptyState(title = "This card has no file", icon = ZillitIcons.Photo)
+            attachment == null -> ZillitEmptyState(
+                title = str(S.desktop_continuity_card_no_file),
+                icon = ZillitIcons.Photo,
+            )
             attachment.isPdf -> PdfPages(attachment, loadPdfPages)
             attachment.isDocument -> ZillitEmptyState(
-                title = attachment.name.ifBlank { "Document" },
-                message = "Open it in the app your system uses for ${attachment.contentSubtype.uppercase()} files.",
+                title = attachment.name.ifBlank { str(S.document) },
+                message = str(S.desktop_open_in_system_app, attachment.contentSubtype.uppercase()),
                 icon = ZillitIcons.File,
             )
             else -> Box(
@@ -764,8 +775,8 @@ private fun PdfPages(
     val ready = pages
     when {
         failed -> ZillitEmptyState(
-            title = attachment.name.ifBlank { "PDF" },
-            message = "This PDF could not be shown here — use Open to read it in your PDF app.",
+            title = attachment.name.ifBlank { str(S.av_pdf) },
+            message = str(S.desktop_pdf_not_shown),
             icon = ZillitIcons.File,
         )
         ready == null -> Box(Modifier.fillMaxWidth().height(VIEW_HEIGHT), contentAlignment = Alignment.Center) {
@@ -811,7 +822,7 @@ private fun DetailsDialog(
     val onAll = state.open?.tab == ContinuityTab.AllDepartments
     var openSection by remember(scene.id) { mutableStateOf(0) }
     ZillitDialogShell(
-        title = "Details",
+        title = str(S.details),
         subtitle = sceneTitle(scene),
         icon = ZillitIcons.Info,
         onDismiss = { onEvent(ContinuityEvent.CloseDetails) },
@@ -819,42 +830,53 @@ private fun DetailsDialog(
         width = DETAILS_WIDTH,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(ContinuityEvent.CloseDetails) },
                 variant = ButtonVariant.Tertiary,
             )
         },
     ) {
-        FactCard("Scene No", scene.sceneNumber)
-        if (onAll) FactCard("Department Name", state.departmentLabel(scene.departmentId))
-        if (scene.episode.isNotBlank()) FactCard("Episode No", scene.episode)
+        FactCard(str(S.scene_no), scene.sceneNumber)
+        if (onAll) FactCard(str(S.desktop_department_name), state.departmentLabel(scene.departmentId))
+        if (scene.episode.isNotBlank()) FactCard(str(S.episode_no), scene.episode)
         scene.attachment?.let { a ->
             val size = a.fileSize.toLongOrNull()?.takeIf { it > 0 }?.let { " · ${formatBytes(it)}" }.orEmpty()
-            FactCard("File", a.name.ifBlank { a.contentSubtype.uppercase() } + size)
+            FactCard(str(S.file), a.name.ifBlank { a.contentSubtype.uppercase() } + size)
         }
-        FactCard("Uploaded", "${resolveUser(scene.uploadedBy) ?: scene.uploadedBy} · ${formatDate(scene.createdMs)}")
+        FactCard(
+            str(S.sides_uploaded),
+            "${resolveUser(scene.uploadedBy) ?: scene.uploadedBy} · ${formatDate(scene.createdMs)}",
+        )
         Accordion(
-            title = "Description",
+            title = str(S.description),
             open = openSection == 0,
             onToggle = { openSection = if (openSection == 0) -1 else 0 },
         ) {
             if (scene.notes.isBlank()) {
-                ZillitText(text = "No data Found", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                ZillitText(
+                    text = str(S.no_data_found),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
             } else {
                 ZillitText(text = scene.notes, style = ZillitTheme.typography.bodyMedium, color = colors.textPrimary)
             }
         }
         Accordion(
-            title = "More Info",
+            title = str(S.desktop_more_info),
             open = openSection == 1,
             onToggle = { openSection = if (openSection == 1) -1 else 1 },
         ) {
             val rows = buildList {
-                if (scene.actorName.isNotBlank()) add("Actor" to scene.actorName)
+                if (scene.actorName.isNotBlank()) add(str(S.actor) to scene.actorName)
                 scene.talentInfo.forEach { add(it.label to it.value) }
             }
             if (rows.isEmpty()) {
-                ZillitText(text = "No data Found", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                ZillitText(
+                    text = str(S.no_data_found),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
             } else {
                 rows.forEach { (label, value) -> FactCard(label.replaceFirstChar { it.uppercase() }, value) }
             }
@@ -937,11 +959,11 @@ private fun EditorDialog(state: ContinuityUiState, editor: SceneEditor, onEvent:
     val colors = ZillitTheme.colors
     val change = { updated: SceneDraft -> onEvent(ContinuityEvent.DraftChanged(updated)) }
     ZillitDialogShell(
-        title = if (editor.isNew) "Add Scene Details" else "Edit Details",
+        title = if (editor.isNew) str(S.txt_add_details) else str(S.txt_edit_details),
         subtitle = when {
-            !editor.isNew -> "Scene No - ${editor.draft.sceneNumber}"
+            !editor.isNew -> str(S.desktop_scene_no_value, editor.draft.sceneNumber)
             editor.files.size == 1 -> editor.files.first().name
-            else -> "${editor.files.size} files"
+            else -> str(S.drive_files_format, editor.files.size)
         },
         icon = if (editor.isNew) ZillitIcons.Upload else ZillitIcons.Edit,
         onDismiss = { onEvent(ContinuityEvent.CancelEdit) },
@@ -949,7 +971,7 @@ private fun EditorDialog(state: ContinuityUiState, editor: SceneEditor, onEvent:
         width = EDITOR_WIDTH,
         actions = {
             ZillitButton(
-                text = "Add more details",
+                text = str(S.add_more_field),
                 onClick = { onEvent(ContinuityEvent.OpenDetail()) },
                 variant = ButtonVariant.Secondary,
                 leadingIcon = ZillitIcons.Add,
@@ -958,19 +980,19 @@ private fun EditorDialog(state: ContinuityUiState, editor: SceneEditor, onEvent:
             Spacer(Modifier.weight(1f))
             if (editor.saving && editor.files.size > 1) {
                 ZillitText(
-                    text = "${editor.progress} of ${editor.files.size} uploaded",
+                    text = str(S.desktop_upload_progress, editor.progress, editor.files.size),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(ContinuityEvent.CancelEdit) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !editor.saving,
             )
             ZillitButton(
-                text = if (editor.isNew) "Submit" else "Update",
+                text = if (editor.isNew) str(S.submit) else str(S.update),
                 onClick = { onEvent(ContinuityEvent.Save) },
                 loading = editor.saving,
             )
@@ -982,8 +1004,8 @@ private fun EditorDialog(state: ContinuityUiState, editor: SceneEditor, onEvent:
             ZillitTextField(
                 value = editor.draft.sceneNumber,
                 onValueChange = { change(editor.draft.copy(sceneNumber = it.take(FIELD_MAX))) },
-                label = "Scene No",
-                placeholder = "Enter Scene Number",
+                label = str(S.scene_no),
+                placeholder = str(S.desktop_enter_scene_number),
                 maxLength = FIELD_MAX,
                 enabled = !editor.saving,
                 modifier = Modifier.weight(1f),
@@ -992,8 +1014,8 @@ private fun EditorDialog(state: ContinuityUiState, editor: SceneEditor, onEvent:
                 ZillitTextField(
                     value = editor.draft.episode,
                     onValueChange = { change(editor.draft.copy(episode = it.take(FIELD_MAX))) },
-                    label = "Episode No",
-                    placeholder = "Enter Episode Number",
+                    label = str(S.episode_no),
+                    placeholder = str(S.desktop_enter_episode_number),
                     maxLength = FIELD_MAX,
                     enabled = !editor.saving,
                     modifier = Modifier.weight(1f),
@@ -1003,8 +1025,8 @@ private fun EditorDialog(state: ContinuityUiState, editor: SceneEditor, onEvent:
         ZillitTextField(
             value = editor.draft.notes,
             onValueChange = { change(editor.draft.copy(notes = it)) },
-            label = "Scene Notes",
-            placeholder = "Description",
+            label = str(S.desktop_scene_notes),
+            placeholder = str(S.description),
             singleLine = false,
             enabled = !editor.saving,
             modifier = Modifier.fillMaxWidth(),
@@ -1040,13 +1062,13 @@ private fun EditorDialog(state: ContinuityUiState, editor: SceneEditor, onEvent:
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Edit,
-                            contentDescription = "Edit detail",
+                            contentDescription = str(S.desktop_edit_detail),
                             onClick = { onEvent(ContinuityEvent.OpenDetail(index)) },
                             enabled = !editor.saving,
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Trash,
-                            contentDescription = "Remove detail",
+                            contentDescription = str(S.desktop_remove_detail),
                             tint = colors.danger,
                             onClick = { onEvent(ContinuityEvent.RemoveDetail(index)) },
                             enabled = !editor.saving,
@@ -1140,32 +1162,34 @@ private fun InlineError(text: String) {
 @Composable
 private fun DetailDialog(detail: DetailEditor, onEvent: (ContinuityEvent) -> Unit) {
     ZillitDialogShell(
-        title = if (detail.isNew) "Add Scene Details" else "Edit detail",
+        title = if (detail.isNew) str(S.txt_add_details) else str(S.desktop_edit_detail),
         icon = ZillitIcons.Add,
         onDismiss = { onEvent(ContinuityEvent.CancelDetail) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(ContinuityEvent.CancelDetail) },
                 variant = ButtonVariant.Tertiary,
             )
-            ZillitButton(text = "Submit", onClick = { onEvent(ContinuityEvent.SaveDetail) }, enabled = detail.canSave)
+            ZillitButton(text = str(S.submit),
+                onClick = { onEvent(ContinuityEvent.SaveDetail) },
+                enabled = detail.canSave)
         },
     ) {
         ZillitTextField(
             value = detail.label,
             onValueChange = { onEvent(ContinuityEvent.DetailChanged(it.take(LABEL_MAX), detail.value)) },
-            label = "Title",
-            placeholder = "Enter Title",
+            label = str(S.title),
+            placeholder = str(S.desktop_enter_title),
             maxLength = LABEL_MAX,
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
             value = detail.value,
             onValueChange = { onEvent(ContinuityEvent.DetailChanged(detail.label, it.take(VALUE_MAX))) },
-            label = "Description",
-            placeholder = "Enter Description",
+            label = str(S.description),
+            placeholder = str(S.enter_description),
             singleLine = false,
             maxLength = VALUE_MAX,
             modifier = Modifier.fillMaxWidth(),
@@ -1181,28 +1205,28 @@ private fun DeleteDialog(state: ContinuityUiState, onEvent: (ContinuityEvent) ->
     val scene = state.confirmDelete ?: return
     val board = state.open?.tab?.label ?: state.tab.label
     ZillitDialogShell(
-        title = "Delete",
+        title = str(S.delete),
         subtitle = "${sceneTitle(scene)} · $board",
         icon = ZillitIcons.Trash,
         onDismiss = { onEvent(ContinuityEvent.CancelDelete) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(ContinuityEvent.CancelDelete) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Ok",
+                text = str(S.ok),
                 onClick = { onEvent(ContinuityEvent.ConfirmDelete) },
                 variant = ButtonVariant.Danger,
                 loading = state.busy,
             )
         },
     ) {
-        ZillitText(text = "Are you sure you want to delete this Item ?", style = ZillitTheme.typography.bodyMedium)
+        ZillitText(text = str(S.desktop_continuity_delete_item_confirm), style = ZillitTheme.typography.bodyMedium)
         ZillitText(
-            text = "It comes off the $board board only; the other board keeps its copy.",
+            text = str(S.desktop_continuity_delete_board_note, board),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )

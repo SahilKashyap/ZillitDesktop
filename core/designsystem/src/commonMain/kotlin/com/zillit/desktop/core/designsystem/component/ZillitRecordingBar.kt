@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The composer while the microphone is open: a clock, and the two ways out.
@@ -48,18 +50,18 @@ fun ZillitRecordingBar(
                 .background(ZillitTheme.colors.danger),
         )
         ZillitText(
-            text = "Recording " + recordingClock(seconds),
+            text = str(S.desktop_recording_clock, recordingClock(seconds)),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textPrimary,
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Cancel",
+            text = str(S.cancel),
             variant = ButtonVariant.Tertiary,
             onClick = onCancel,
         )
         ZillitButton(
-            text = "Stop",
+            text = str(S.stop),
             variant = ButtonVariant.Primary,
             onClick = onStop,
         )

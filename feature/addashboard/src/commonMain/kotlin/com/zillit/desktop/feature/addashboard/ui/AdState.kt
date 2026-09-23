@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.addashboard.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.addashboard.domain.AdRefresh
 import com.zillit.desktop.feature.addashboard.domain.AdShootDay
 import com.zillit.desktop.feature.addashboard.domain.AdViewer
@@ -10,11 +12,13 @@ import com.zillit.desktop.feature.addashboard.domain.AttendanceStatus
 import com.zillit.desktop.feature.addashboard.domain.SupportingArtistDay
 
 /** The dashboard's sections. */
-enum class AdDestination(val slug: String, val label: String) {
-    Today("today", "Today"),
-    Register("register", "Artiste register"),
-    Days("days", "Shoot days"),
+enum class AdDestination(val slug: String, private val labelKey: String) {
+    Today("today", S.today),
+    Register("register", S.desktop_ad_artiste_register),
+    Days("days", S.desktop_ad_shoot_days),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Which socket refresh kind this page answers to. */
     val refresh: AdRefresh

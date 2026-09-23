@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.taxfiling.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -126,8 +128,8 @@ data class FilingObligation(
  * boxes are what it has spent or reclaimed. There is no direction field on a
  * config row — the box decides.
  */
-const val CREDIT_DIRECTION = "Σ (credit − debit)"
-const val DEBIT_DIRECTION = "Σ (debit − credit)"
+const val CREDIT_DIRECTION = S.desktop_tax_direction_credit
+const val DEBIT_DIRECTION = S.desktop_tax_direction_debit
 
 /**
  * One of HMRC's nine VAT boxes.
@@ -147,52 +149,60 @@ const val DEBIT_DIRECTION = "Σ (debit − credit)"
 enum class VatBox(
     val number: Int,
     val field: String,
-    val label: String,
-    val short: String,
-    val direction: String,
-    val description: String,
+    private val labelKey: String,
+    private val shortKey: String,
+    private val directionKey: String,
+    private val descriptionKey: String,
     val computed: Boolean = false,
     val wholePounds: Boolean = false,
 ) {
     DueOnSales(
-        1, "vatDueSales", "VAT due on sales", "VAT on sales", CREDIT_DIRECTION,
-        "VAT you charged on sales and other outputs during the period.",
+        1, "vatDueSales", S.desktop_tax_box1_label, S.desktop_tax_box1_short, CREDIT_DIRECTION,
+        S.desktop_tax_box1_desc,
     ),
     DueOnAcquisitions(
-        2, "vatDueAcquisitions", "VAT due on acquisitions", "VAT on acquisitions", CREDIT_DIRECTION,
-        "VAT due on goods and services acquired from EU member states (acquisition tax).",
+        2, "vatDueAcquisitions", S.desktop_tax_box2_label, S.desktop_tax_box2_short, CREDIT_DIRECTION,
+        S.desktop_tax_box2_desc,
     ),
     TotalDue(
-        3, "totalVatDue", "Total VAT due", "Total VAT due", "Box 1 + Box 2",
-        "Boxes 1 and 2 added.", computed = true,
+        3, "totalVatDue", S.desktop_tax_box3_label, S.desktop_tax_box3_label, S.desktop_tax_box1_plus_box2,
+        S.desktop_tax_box3_desc, computed = true,
     ),
     ReclaimedOnPurchases(
-        4, "vatReclaimedCurrPeriod", "VAT reclaimed on purchases", "VAT on purchases", DEBIT_DIRECTION,
-        "VAT you can reclaim on purchases and other inputs (including acquisitions).",
+        4, "vatReclaimedCurrPeriod", S.desktop_tax_box4_label, S.desktop_tax_box4_short, DEBIT_DIRECTION,
+        S.desktop_tax_box4_desc,
     ),
     NetDue(
-        5, "netVatDue", "Net VAT to pay to HMRC", "Net VAT", "Box 3 − Box 4",
-        "What is owed, or reclaimed when box 4 is the larger.", computed = true,
+        5, "netVatDue", S.desktop_tax_box5_label, S.desktop_tax_box5_short, S.desktop_tax_box3_minus_box4,
+        S.desktop_tax_box5_desc, computed = true,
     ),
     SalesExVat(
-        6, "totalValueSalesExVAT", "Total value of sales ex-VAT", "Total sales", CREDIT_DIRECTION,
-        "Total value of sales and all other outputs excluding VAT (whole pounds).", wholePounds = true,
+        6, "totalValueSalesExVAT", S.desktop_tax_box6_label, S.desktop_tax_box6_short, CREDIT_DIRECTION,
+        S.desktop_tax_box6_desc, wholePounds = true,
     ),
     PurchasesExVat(
-        7, "totalValuePurchasesExVAT", "Total value of purchases ex-VAT", "Total purchases", DEBIT_DIRECTION,
-        "Total value of purchases and all other inputs excluding VAT (whole pounds).", wholePounds = true,
+        7, "totalValuePurchasesExVAT", S.desktop_tax_box7_label, S.desktop_tax_box7_short, DEBIT_DIRECTION,
+        S.desktop_tax_box7_desc, wholePounds = true,
     ),
     GoodsSuppliedExVat(
-        8, "totalValueGoodsSuppliedExVAT", "Goods supplied to EU ex-VAT", "Goods to EU", CREDIT_DIRECTION,
-        "Total net value of goods supplied to EU member states, excluding VAT (whole pounds).",
+        8, "totalValueGoodsSuppliedExVAT", S.desktop_tax_box8_label, S.desktop_tax_box8_short, CREDIT_DIRECTION,
+        S.desktop_tax_box8_desc,
         wholePounds = true,
     ),
     AcquisitionsExVat(
-        9, "totalAcquisitionsExVAT", "Acquisitions from EU ex-VAT", "Acquisitions from EU", DEBIT_DIRECTION,
-        "Total net value of goods acquired from EU member states, excluding VAT (whole pounds).",
+        9, "totalAcquisitionsExVAT", S.desktop_tax_box9_label, S.desktop_tax_box9_short, DEBIT_DIRECTION,
+        S.desktop_tax_box9_desc,
         wholePounds = true,
     ),
     ;
+
+    val label: String get() = str(labelKey)
+
+    val short: String get() = str(shortKey)
+
+    val direction: String get() = str(directionKey)
+
+    val description: String get() = str(descriptionKey)
 
     /** The config slot this box's mapping is stored under. */
     val slot: String get() = "box$number"
@@ -336,13 +346,10 @@ data class VatDraft(
      */
     val allZeroExplanation: String
         get() = buildString {
-            append("All boxes are £0. Ledger rows for this company in the obligation period: ")
-            append(diagnostics.rowsInScope?.toString() ?: "—")
-            append(".")
+            append(str(S.desktop_tax_all_zero, diagnostics.rowsInScope?.toString() ?: "—"))
             val orphans = diagnostics.nullCompanyRows ?: 0
-            if (orphans > 0) append(" ($orphans project GL row(s) have no company assigned.)")
-            append(" A box with no date range uses the obligation period;")
-            append(" set a per-box date range to include other dates.")
+            if (orphans > 0) append(" " + str(S.desktop_tax_all_zero_orphans, orphans))
+            append(" " + str(S.desktop_tax_all_zero_hint))
         }
 }
 

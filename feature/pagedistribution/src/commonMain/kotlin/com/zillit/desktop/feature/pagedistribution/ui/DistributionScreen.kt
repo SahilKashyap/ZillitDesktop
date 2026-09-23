@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
 import com.zillit.desktop.feature.pagedistribution.domain.DistFolder
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionTab
@@ -92,27 +94,31 @@ fun DistributionScreen(
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitPageHeader(
-                title = state.tool.title + if (state.mode == ListMode.History) " — history" else "",
+                title = if (state.mode == ListMode.History) {
+                    str(S.desktop_dist_title_history, state.tool.title)
+                } else {
+                    state.tool.title
+                },
                 description = when {
-                    state.mode == ListMode.History -> "Records of deleted and replaced documents."
-                    state.isDod -> "D.O.D reports as PDFs, filed into named folders."
-                    else -> "PDFs the project issues — one current copy per list, pages by scene."
+                    state.mode == ListMode.History -> str(S.desktop_dist_history_description)
+                    state.isDod -> str(S.desktop_dist_dod_description)
+                    else -> str(S.desktop_pagedist_description)
                 },
                 actions = {
                     ZillitButton(
-                        text = if (state.mode == ListMode.History) "Back to live" else "History",
+                        text = if (state.mode == ListMode.History) str(S.desktop_dist_back_to_live) else str(S.history),
                         onClick = { onEvent(DistributionEvent.ToggleHistory) },
                         variant = ButtonVariant.Tertiary,
                     )
                     ZillitButton(
-                        text = "Refresh",
+                        text = str(S.refresh_text),
                         onClick = { onEvent(DistributionEvent.Refresh) },
                         variant = ButtonVariant.Tertiary,
                         loading = state.loading,
                     )
                     if (state.mode == ListMode.Live) {
                         ZillitButton(
-                            text = "Upload PDF",
+                            text = str(S.desktop_dist_upload_pdf),
                             onClick = { onEvent(DistributionEvent.PickPdf()) },
                             leadingIcon = ZillitIcons.Upload,
                             loading = state.busy,
@@ -120,14 +126,14 @@ fun DistributionScreen(
                     }
                 },
             )
-            if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to ${state.tool.title}.")
+            if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_dist_no_access, state.tool.title))
             state.error?.let { message ->
                 ZillitNotice(
                     text = message,
                     tone = StatusTone.Rejected,
                     action = {
                         ZillitButton(
-                            text = "Dismiss",
+                            text = str(S.sync_action_dismiss),
                             onClick = { onEvent(DistributionEvent.DismissError) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -164,35 +170,39 @@ private fun SearchBar(state: DistributionUiState, onEvent: (DistributionEvent) -
         ZillitTextField(
             value = state.searchScene,
             onValueChange = { onEvent(DistributionEvent.SearchChanged(scene = it)) },
-            label = "Scene number",
+            label = str(S.txt_scene_number),
             modifier = Modifier.width(SEARCH_WIDTH),
         )
         if (state.viewer.isTelevision) {
             ZillitTextField(
                 value = state.searchEpisode,
                 onValueChange = { onEvent(DistributionEvent.SearchChanged(episode = it)) },
-                label = "Episode",
+                label = str(S.episode),
                 modifier = Modifier.width(EPISODE_WIDTH),
             )
         }
         Column(Modifier.width(SEARCH_WIDTH)) {
-            ZillitText(text = "Colour", style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
+            ZillitText(
+                text = str(S.av_color),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
             ZillitSelect(
                 value = state.searchColour,
                 options = listOf<PageColour?>(null) + PageColour.entries,
                 onSelect = { onEvent(DistributionEvent.SearchColour(it)) },
-                label = { it?.label ?: "Any colour" },
+                label = { it?.label ?: str(S.desktop_dist_any_colour) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         ZillitButton(
-            text = "Search",
+            text = str(S.search),
             onClick = { onEvent(DistributionEvent.RunSearch) },
             variant = ButtonVariant.Secondary,
         )
         if (state.isSearching || state.searchResults != null) {
             ZillitButton(
-                text = "Clear",
+                text = str(S.clear_label),
                 onClick = { onEvent(DistributionEvent.ClearSearch) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -210,9 +220,9 @@ private fun DocumentList(
     if (rows.isEmpty()) {
         ZillitText(
             text = if (state.mode == ListMode.History) {
-                "Nothing in the history yet."
+                str(S.desktop_dist_nothing_in_history_yet)
             } else {
-                "No documents yet — upload the first PDF."
+                str(S.desktop_dist_no_documents_yet)
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
@@ -231,9 +241,9 @@ private fun FolderGrid(state: DistributionUiState, onEvent: (DistributionEvent) 
     if (state.folders.isEmpty()) {
         ZillitText(
             text = if (state.mode == ListMode.History) {
-                "Nothing in the history yet."
+                str(S.desktop_dist_nothing_in_history_yet)
             } else {
-                "No folders yet — upload the first PDF."
+                str(S.desktop_dist_no_folders_yet)
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
@@ -263,13 +273,13 @@ private fun FolderTile(state: DistributionUiState, folder: DistFolder, onEvent: 
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = if (state.isDod) folder.key else "Scene ${folder.key}",
+            text = if (state.isDod) folder.key else str(S.desktop_scene_numbered, folder.key),
             style = ZillitTheme.typography.titleMedium,
             color = colors.textPrimary,
         )
         folder.scheduleType?.let { ZillitStatusPill(label = it.label, tone = StatusTone.Neutral) }
         ZillitText(
-            text = "Uploaded on ${DistributionDates.dateTime(folder.createdMs)}",
+            text = str(S.desktop_dist_uploaded_on_value, DistributionDates.dateTime(folder.createdMs)),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
@@ -282,7 +292,7 @@ private fun SearchResults(state: DistributionUiState, onEvent: (DistributionEven
     val groups = state.searchResults.orEmpty().groupBy { it.folderKey(tab) }
     if (groups.isEmpty()) {
         ZillitText(
-            text = "No pages match.",
+            text = str(S.desktop_dist_no_pages_match),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textMuted,
         )
@@ -304,9 +314,13 @@ private fun SearchResults(state: DistributionUiState, onEvent: (DistributionEven
                     .padding(ZillitTheme.spacing.md),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                ZillitText(text = "Scene $key", style = ZillitTheme.typography.titleMedium, color = colors.textPrimary)
                 ZillitText(
-                    text = "${docs.size} page(s)",
+                    text = str(S.desktop_scene_numbered, key),
+                    style = ZillitTheme.typography.titleMedium,
+                    color = colors.textPrimary,
+                )
+                ZillitText(
+                    text = str(S.desktop_dist_page_count, docs.size),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -340,30 +354,41 @@ internal fun DocumentCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ZillitText(
-                    text = document.attachment?.name?.ifBlank { null } ?: document.originalName.ifBlank { "Document" },
+                    text = document.attachment?.name?.ifBlank { null }
+                        ?: document.originalName.ifBlank { str(S.document) },
                     style = ZillitTheme.typography.titleMedium,
                     color = colors.textPrimary,
                 )
-                if (document.replaced) ZillitStatusPill(label = "Replaced", tone = StatusTone.Neutral)
-                if (document.deleted) ZillitStatusPill(label = "Deleted", tone = StatusTone.Rejected)
+                if (document.replaced) {
+                    ZillitStatusPill(label = str(S.desktop_dist_replaced_pill), tone = StatusTone.Neutral)
+                }
+                if (document.deleted) ZillitStatusPill(label = str(S.drive_deleted_default), tone = StatusTone.Rejected)
             }
             ZillitText(
-                text = "Uploaded on ${DistributionDates.dateTime(document.createdMs)} by " +
-                    (resolveUser(document.createdBy) ?: document.createdBy.ifBlank { "unknown" }),
+                text = str(
+                    S.desktop_dist_uploaded_on_by,
+                    DistributionDates.dateTime(document.createdMs),
+                    resolveUser(document.createdBy) ?: document.createdBy.ifBlank { str(S.desktop_unknown) },
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
             )
             val facts = buildList {
-                if (state.viewer.isTelevision) add("Episode: ${document.episode.ifBlank { "—" }}")
+                if (state.viewer.isTelevision) add(str(S.desktop_dist_fact_episode, document.episode.ifBlank { "—" }))
                 if (single) {
-                    if (document.dateMs > 0) add("Date: ${DistributionDates.date(document.dateMs)}")
-                    if (document.name.isNotBlank()) add("Name: ${document.name}")
+                    if (document.dateMs > 0) add(str(S.desktop_dist_fact_date, DistributionDates.date(document.dateMs)))
+                    if (document.name.isNotBlank()) add(str(S.desktop_dist_fact_name, document.name))
                 } else if (state.isDod) {
-                    add("Folder: ${document.name.ifBlank { "—" }}")
+                    add(str(S.desktop_dist_fact_folder, document.name.ifBlank { "—" }))
                 } else {
-                    add("Scene: ${document.sceneNumber.ifBlank { "—" }}")
-                    if (document.pageNumber.isNotBlank()) add("Page: ${document.pageNumber}")
-                    add("Page date: ${DistributionDates.date(document.userSelectedDateMs).ifBlank { "—" }}")
+                    add(str(S.desktop_dist_fact_scene, document.sceneNumber.ifBlank { "—" }))
+                    if (document.pageNumber.isNotBlank()) add(str(S.desktop_dist_fact_page, document.pageNumber))
+                    add(
+                        str(
+                            S.desktop_dist_fact_page_date,
+                            DistributionDates.date(document.userSelectedDateMs).ifBlank { "—" },
+                        ),
+                    )
                     document.scheduleType?.let { add(it.label) }
                 }
             }
@@ -389,20 +414,22 @@ private fun MoreMenu(
     val single = tab.kind is TabKind.Single
     val folders = tab.kind as? TabKind.Folders
     Box {
-        ZillitIconButton(icon = ZillitIcons.MoreHorizontal, contentDescription = "More", onClick = { open = true })
+        ZillitIconButton(icon = ZillitIcons.MoreHorizontal, contentDescription = str(S.more), onClick = { open = true })
         val items = buildList<Pair<String, DistributionEvent>> {
-            add("View" to DistributionEvent.View(document))
-            add("Download" to DistributionEvent.Download(document))
-            if (live && single && state.viewer.mayPost) add("Replace" to DistributionEvent.PickPdf(replaces = document))
+            add(str(S.view) to DistributionEvent.View(document))
+            add(str(S.download) to DistributionEvent.Download(document))
+            if (live && single && state.viewer.mayPost) {
+                add(str(S.replace) to DistributionEvent.PickPdf(replaces = document))
+            }
             val movable = folders?.canMove == true && state.viewer.mayPost
-            if (live && movable) add("Move…" to DistributionEvent.Move(document))
-            if (live && !single) add("Delete" to DistributionEvent.Delete(document))
+            if (live && movable) add(str(S.desktop_dist_move_ellipsis) to DistributionEvent.Move(document))
+            if (live && !single) add(str(S.delete) to DistributionEvent.Delete(document))
             if (live && state.viewer.mayPublish) {
-                add("Publish to Doc Distribution" to DistributionEvent.Publish(document))
+                add(str(S.dd_publish_to_distribution) to DistributionEvent.Publish(document))
             }
             if (live && state.viewer.isAdmin) {
-                add("View count" to DistributionEvent.ShowCounts(document, downloads = false))
-                add("Download count" to DistributionEvent.ShowCounts(document, downloads = true))
+                add(str(S.view_count) to DistributionEvent.ShowCounts(document, downloads = false))
+                add(str(S.download_count) to DistributionEvent.ShowCounts(document, downloads = true))
             }
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

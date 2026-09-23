@@ -7,6 +7,8 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.feature.saportal.domain.Voucher
 import com.zillit.desktop.feature.saportal.domain.VoucherStatus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** How a voucher's state reads, and in what colour. */
 internal fun VoucherStatus.tone(): StatusTone = when (this) {
@@ -50,6 +52,6 @@ internal fun shift(voucher: Voucher): String {
 /** What a day is called: its role, or its category, or its code. */
 internal fun title(voucher: Voucher): String = listOf(voucher.role, voucher.category)
     .firstOrNull { it.isNotBlank() }
-    ?: voucher.code.ifBlank { "Shoot day" }
+    ?: voucher.code.ifBlank { str(S.cs_shoot_day) }
 
 private const val MINUTES_PER_HOUR = 60

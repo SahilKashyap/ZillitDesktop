@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.media.decodeImageBitmap
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSize
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import kotlin.math.roundToInt
@@ -52,11 +54,17 @@ internal fun WatermarkStyleControls(value: WatermarkStyle, onChange: (WatermarkS
     val c = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            FieldLabel("Size")
+            FieldLabel(str(S.dd_watermark_size))
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 WatermarkSize.entries.forEach { size ->
                     ZillitChoiceChip(
-                        label = size.name,
+                        label = str(
+                            when (size) {
+                                WatermarkSize.Small -> S.dd_watermark_size_small
+                                WatermarkSize.Medium -> S.dd_watermark_size_medium
+                                WatermarkSize.Large -> S.dd_watermark_size_large
+                            },
+                        ),
                         selected = value.size == size,
                         onClick = { onChange(value.copy(size = size)) },
                     )
@@ -64,7 +72,7 @@ internal fun WatermarkStyleControls(value: WatermarkStyle, onChange: (WatermarkS
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            FieldLabel("Colour")
+            FieldLabel(str(S.dd_watermark_color))
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 WatermarkStyle.COLORS.forEach { hex ->
                     val chosen = value.color.equals(hex, ignoreCase = true)
@@ -80,7 +88,7 @@ internal fun WatermarkStyleControls(value: WatermarkStyle, onChange: (WatermarkS
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            FieldLabel("Opacity") {
+            FieldLabel(str(S.dd_watermark_opacity)) {
                 ZillitText(
                     text = "${(value.opacity * PERCENT).roundToInt()}%",
                     style = ZillitTheme.typography.label,

@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The preview between picking a file and sending it — the desktop's
@@ -100,13 +102,17 @@ fun MediaPreviewDialog(
             // off the UI thread so the dialog does not freeze.
             val results = withContext(Dispatchers.Default) { session.results(rasterMeasurer) }
             sending = false
-            if (results != null) onSend(results, session.caption.trim()) else sendError = ENCODE_FAILED
+            if (results != null) {
+                onSend(results, session.caption.trim())
+            } else {
+                sendError = str(S.desktop_media_encode_failed)
+            }
         }
     }
 
     ZillitDialogShell(
-        title = if (editing) "Edit picture" else "Send media",
-        subtitle = if (editing) "Draw, crop, or add text — then Done." else "Check what you picked and add a caption.",
+        title = if (editing) str(S.desktop_media_edit_picture) else str(S.desktop_media_send_media),
+        subtitle = if (editing) str(S.desktop_media_edit_subtitle) else str(S.desktop_media_send_subtitle),
         icon = ZillitIcons.Photo,
         visible = visible,
         onDismiss = { if (editing) session.tool = null else onCancel() },
@@ -157,7 +163,7 @@ private fun ColumnScope.PreviewBody(
     ZillitTextField(
         value = session.caption,
         onValueChange = { session.caption = it },
-        placeholder = "Add a caption…",
+        placeholder = str(S.desktop_media_add_caption),
         singleLine = false,
         maxLength = captionLimit,
         modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
@@ -227,14 +233,14 @@ private fun RowScope.PreviewActions(
     onSend: () -> Unit,
 ) {
     ZillitText(
-        text = error ?: "Media selected: ${session.items.size}",
+        text = error ?: str(S.desktop_media_selected_count, session.items.size),
         style = ZillitTheme.typography.labelSmall,
         color = if (error != null) ZillitTheme.colors.danger else ZillitTheme.colors.textMuted,
     )
     Spacer(Modifier.weight(1f))
-    ZillitButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Secondary, enabled = !sending)
+    ZillitButton(text = str(S.cancel), onClick = onCancel, variant = ButtonVariant.Secondary, enabled = !sending)
     ZillitButton(
-        text = if (sending) "Preparing…" else "Send",
+        text = if (sending) str(S.preparing) else str(S.send),
         onClick = onSend,
         enabled = !sending && session.caption.length <= captionLimit,
         loading = sending,
@@ -247,12 +253,12 @@ private fun RowScope.EditActions(session: MediaPreviewSession) {
     val edit = session.currentEdit
     Spacer(Modifier.weight(1f))
     ZillitButton(
-        text = "Discard edits",
+        text = str(S.desktop_media_discard_edits),
         onClick = { edit?.reset() },
         variant = ButtonVariant.Secondary,
         enabled = edit?.isEdited == true,
     )
-    ZillitButton(text = "Done", onClick = { session.tool = null })
+    ZillitButton(text = str(S.ah_done), onClick = { session.tool = null })
 }
 
 /**
@@ -274,7 +280,6 @@ private fun DecodePictures(session: MediaPreviewSession) {
 
 /** `Constants.TEXT_LIMIT` on Android — the board's caption ceiling; chat passes its own. */
 const val DEFAULT_CAPTION_LIMIT = 2000
-private const val ENCODE_FAILED = "Could not save the edited picture."
 private const val TEXT_PLACE_X = 0.08f
 private const val TEXT_PLACE_Y = 0.4f
 private const val TEXT_LINE_GAP = 1.4f

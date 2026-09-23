@@ -14,6 +14,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -36,7 +38,7 @@ class SidesToolProvider(
 ) : ToolProvider {
 
     override val path: String = SIDES_PATH
-    override val title: String = "Sides"
+    override val title: String get() = str(S.txt_sides)
     override val icon = ZillitToolIcons.ScriptNote
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

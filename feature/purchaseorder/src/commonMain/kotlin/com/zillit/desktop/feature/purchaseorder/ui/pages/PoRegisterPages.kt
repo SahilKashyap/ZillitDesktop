@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoDeliveryAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
@@ -49,14 +51,17 @@ internal fun PoTemplatesPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitSectionCard(
-            title = "Templates",
+            title = str(S.templates),
             icon = ZillitIcons.Grid,
-            meta = "${rows.size} template${if (rows.size == 1) "" else "s"}",
+            meta = str(
+                if (rows.size == 1) S.desktop_po_template_count_one else S.desktop_po_template_count_other,
+                rows.size,
+            ),
             padded = false,
             modifier = Modifier.fillMaxWidth(),
             action = {
                 ZillitButton(
-                    text = "New Template",
+                    text = str(S.dm_template_new),
                     onClick = { onEvent(PoEvent.CreateTemplate) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -70,25 +75,33 @@ internal fun PoTemplatesPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 key = { it.id },
                 loading = state.templatesLoading,
                 virtualised = false,
-                emptyTitle = if (state.search.isBlank()) "No templates yet" else "No templates match your search.",
-                emptyMessage = "Save an order you raise often as a template and it appears here.",
+                emptyTitle = if (state.search.isBlank()) {
+                    str(S.desktop_po_no_templates_yet)
+                } else {
+                    str(S.desktop_po_no_templates_match)
+                },
+                emptyMessage = str(S.desktop_po_templates_empty_message),
             )
         }
     }
 }
 
 private fun templateColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<TableColumn<PoTemplate>> = listOf(
-    textColumn(header = "Template") { it.name },
-    textColumn(header = "Vendor") { template ->
+    textColumn(header = str(S.txt_template)) { it.name },
+    textColumn(header = str(S.ah_lbl_vendor)) { template ->
         template.vendorName.ifBlank {
-            state.vendors.firstOrNull { it.id == template.vendorId }?.name ?: "No vendor"
+            state.vendors.firstOrNull { it.id == template.vendorId }?.name ?: str(S.desktop_po_no_vendor)
         }
     },
-    textColumn(header = "Department", width = ColumnWidth.Fixed(DEPT_COLUMN), muted = true) {
+    textColumn(header = str(S.department), width = ColumnWidth.Fixed(DEPT_COLUMN), muted = true) {
         state.departmentName(it.departmentId).ifBlank { "—" }
     },
-    textColumn(header = "Lines", width = ColumnWidth.Fixed(LINES_WIDTH), numeric = true) { it.lines.size.toString() },
-    textColumn(header = "Amount", width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    textColumn(
+        header = str(S.desktop_po_lines_column),
+        width = ColumnWidth.Fixed(LINES_WIDTH),
+        numeric = true,
+    ) { it.lines.size.toString() },
+    textColumn(header = str(S.amount), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
         Money.format(it.total, it.currency)
     },
     TableColumn(
@@ -97,19 +110,19 @@ private fun templateColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<
         cell = { template ->
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitButton(
-                    text = "Use",
+                    text = str(S.recce_use),
                     onClick = { onEvent(PoEvent.UseTemplate(template.id)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    text = "Edit",
+                    text = str(S.edit),
                     onClick = { onEvent(PoEvent.EditTemplate(template.id)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    text = "Delete",
+                    text = str(S.delete),
                     onClick = { onEvent(PoEvent.DeleteTemplate(template.id)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -146,13 +159,13 @@ internal fun PoDraftsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitStatTile(
-                label = "Total Drafts",
+                label = str(S.desktop_po_total_drafts),
                 value = rows.size.toString(),
                 icon = ZillitIcons.File,
                 modifier = Modifier.weight(1f),
             )
             ZillitStatTile(
-                label = "Draft Value",
+                label = str(S.desktop_po_draft_value),
                 value = rows.totalValue(),
                 sub = rows.currencyNote(),
                 tone = StatusTone.Pending,
@@ -161,7 +174,7 @@ internal fun PoDraftsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             )
         }
         ZillitSectionCard(
-            title = "PO Drafts",
+            title = str(S.ah_tab_po_drafts),
             icon = ZillitIcons.Edit,
             padded = false,
             modifier = Modifier.fillMaxWidth(),
@@ -172,28 +185,32 @@ internal fun PoDraftsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 key = { it.id },
                 loading = state.loading,
                 virtualised = false,
-                emptyTitle = if (state.search.isBlank()) "No drafts" else "No drafts match your search.",
-                emptyMessage = "Save an order without submitting it and it waits here.",
+                emptyTitle = if (state.search.isBlank()) {
+                    str(S.desktop_po_no_drafts)
+                } else {
+                    str(S.desktop_po_no_drafts_match)
+                },
+                emptyMessage = str(S.desktop_po_drafts_empty_message),
             )
         }
     }
 }
 
 private fun draftColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<TableColumn<PurchaseOrder>> = listOf(
-    textColumn(header = "Description") { it.description.ifBlank { "Untitled" } },
-    textColumn(header = "Vendor") { state.vendorName(it).ifBlank { "No vendor" } },
-    textColumn(header = "Amount", width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    textColumn(header = str(S.description)) { it.description.ifBlank { str(S.untitled) } },
+    textColumn(header = str(S.ah_lbl_vendor)) { state.vendorName(it).ifBlank { str(S.desktop_po_no_vendor) } },
+    textColumn(header = str(S.amount), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
         Money.format(it.gross, it.currency)
     },
-    textColumn(header = "Saved", width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
+    textColumn(header = str(S.saved), width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
         EpochDate.date(it.updatedAt ?: it.createdAt).ifBlank { "—" }
     },
     TableColumn(
-        header = "Status",
+        header = str(S.status),
         width = ColumnWidth.Fixed(STATUS_WIDTH),
         cell = { order ->
             ZillitStatusPill(
-                label = if (order.isLocalOnly) "Waiting to send" else order.status.label,
+                label = if (order.isLocalOnly) str(S.desktop_waiting_to_send) else order.status.label,
                 tone = if (order.isLocalOnly) StatusTone.Pending else order.status.tone(),
             )
         },
@@ -208,21 +225,21 @@ private fun draftColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<Tab
                 // form on an id that does not exist yet.
                 if (!order.isLocalOnly) {
                     ZillitButton(
-                        text = "Resume",
+                        text = str(S.desktop_resume),
                         onClick = { onEvent(PoEvent.ResumeDraft(order.id)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
                     )
                     ZillitButton(
-                        text = "Delete",
+                        text = str(S.delete),
                         onClick = {
                             onEvent(
                                 PoEvent.Ask(
                                     com.zillit.desktop.feature.purchaseorder.ui.PoPrompt.Confirm(
                                         action = com.zillit.desktop.feature.purchaseorder.ui.PoConfirmAction.Delete,
                                         targetId = order.id,
-                                        title = "Delete Draft",
-                                        message = "This draft will be removed. This action cannot be undone.",
+                                        title = str(S.ah_delete_draft),
+                                        message = str(S.desktop_po_draft_will_be_removed),
                                         destructive = true,
                                     ),
                                 ),
@@ -255,14 +272,17 @@ internal fun PoAddressesPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitSectionCard(
-            title = "Delivery Addresses",
+            title = str(S.desktop_delivery_addresses),
             icon = ZillitIcons.Home,
-            meta = "${rows.size} address${if (rows.size == 1) "" else "es"}",
+            meta = str(
+                if (rows.size == 1) S.desktop_po_address_count_one else S.desktop_po_address_count_other,
+                rows.size,
+            ),
             padded = false,
             modifier = Modifier.fillMaxWidth(),
             action = {
                 ZillitButton(
-                    text = "Add Address",
+                    text = str(S.desktop_po_add_address),
                     onClick = { onEvent(PoEvent.AddAddress) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -277,11 +297,11 @@ internal fun PoAddressesPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 loading = state.addressesLoading,
                 virtualised = false,
                 emptyTitle = if (state.search.isBlank()) {
-                    "No delivery addresses yet"
+                    str(S.desktop_po_no_addresses_yet)
                 } else {
-                    "No delivery addresses match your search."
+                    str(S.desktop_po_no_addresses_match)
                 },
-                emptyMessage = "Addresses saved from an order's delivery block appear here.",
+                emptyMessage = str(S.desktop_po_addresses_empty_message),
             )
         }
     }
@@ -292,11 +312,11 @@ private fun addressColumns(
     onEvent: (PoEvent) -> Unit,
 ): List<TableColumn<PoDeliveryAddress>> = listOf(
     TableColumn(
-        header = "Contact",
+        header = str(S.contact),
         cell = { row ->
             Column {
                 ZillitText(
-                    text = row.address.name.ifBlank { "No recipient" },
+                    text = row.address.name.ifBlank { str(S.desktop_po_no_recipient) },
                     style = ZillitTheme.typography.bodyMedium,
                     maxLines = 1,
                 )
@@ -312,11 +332,11 @@ private fun addressColumns(
             }
         },
     ),
-    textColumn(header = "Address") { it.address.oneLine.ifBlank { it.label } },
-    textColumn(header = "Created", width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
+    textColumn(header = str(S.address)) { it.address.oneLine.ifBlank { it.label } },
+    textColumn(header = str(S.drive_created), width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
         EpochDate.date(it.createdAt).ifBlank { "—" }
     },
-    textColumn(header = "Last Updated", width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
+    textColumn(header = str(S.desktop_po_last_updated), width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
         EpochDate.date(it.updatedAt).ifBlank { "—" }
     },
     TableColumn(
@@ -325,7 +345,11 @@ private fun addressColumns(
         cell = { row ->
             val mine = row.editableBy(state.viewer)
             ZillitButton(
-                text = if (mine) "Edit address" else "Only the creator or an accountant can edit this",
+                text = if (mine) {
+                    str(S.desktop_po_edit_address)
+                } else {
+                    str(S.desktop_po_only_creator_or_accountant)
+                },
                 onClick = { onEvent(PoEvent.EditAddressRow(row.id)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

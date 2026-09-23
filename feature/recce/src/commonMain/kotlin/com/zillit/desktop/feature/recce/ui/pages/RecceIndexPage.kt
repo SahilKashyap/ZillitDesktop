@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.feature.recce.domain.Recce
 import com.zillit.desktop.feature.recce.domain.RecceClock
@@ -72,21 +74,21 @@ import com.zillit.desktop.feature.recce.ui.components.UnitTag
 internal fun RecceIndexPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
     Column {
         RecceToolHeader(
-            title = "Recce",
+            title = str(S.recce_title),
             onBack = null,
             actions = {
                 ZillitButton(
-                    text = "Create Recce",
+                    text = str(S.recce_create_recce),
                     onClick = { onEvent(RecceEvent.New) },
                     leadingIcon = ZillitIcons.Add,
                 )
             },
         )
         RecceBody {
-            MutedText("Location scout schedules — personnel, timings and locations for every stop.")
+            MutedText(str(S.recce_subtitle))
             Spacer(Modifier.height(16.dp))
             if (state.viewer.isBlocked) {
-                ZillitNotice(text = "You do not have access to the Recce tool.", tone = StatusTone.Rejected)
+                ZillitNotice(text = str(S.desktop_recce_no_access), tone = StatusTone.Rejected)
                 Spacer(Modifier.height(12.dp))
             }
             ErrorNotice(state, onEvent)
@@ -101,7 +103,11 @@ internal fun RecceIndexPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit) 
                     TableHeader()
                     val rows = state.visible
                     if (rows.isEmpty()) {
-                        EmptyRows(if (state.counts.all == 0) "No recces yet" else "No recces match your filters")
+                        EmptyRows(if (state.counts.all == 0) {
+                            str(S.recce_empty_title)
+                        } else {
+                            str(S.desktop_recce_no_match_filters)
+                        })
                     }
                     rows.forEachIndexed { index, recce ->
                         RecceRow(state, recce, last = index == rows.lastIndex, onEvent)
@@ -129,14 +135,14 @@ private fun Toolbar(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
         ZillitSearchField(
             value = state.query,
             onValueChange = { onEvent(RecceEvent.Search(it)) },
-            placeholder = "Search location or rendezvous…",
+            placeholder = str(S.recce_search_hint),
             modifier = Modifier.width(SEARCH_WIDTH),
         )
         ZillitSelect(
             value = state.unitFilter?.let { id -> state.unitsInList.firstOrNull { it.id == id } },
             options = listOf<ProductionUnit?>(null) + state.unitsInList,
             onSelect = { onEvent(RecceEvent.FilterUnit(it?.id)) },
-            label = { it?.name?.localised() ?: "All units" },
+            label = { it?.name?.localised() ?: str(S.recce_unit_all) },
             modifier = Modifier.width(UNIT_WIDTH),
         )
     }
@@ -152,12 +158,12 @@ private fun TableHeader() {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderCell("Recce", Modifier.weight(TITLE_WEIGHT))
-        HeaderCell("Unit", Modifier.weight(1f))
-        HeaderCell("Date", Modifier.weight(1f))
-        HeaderCell("Rendezvous", Modifier.weight(1f))
-        HeaderCell("Stops", Modifier.width(STOPS_WIDTH))
-        HeaderCell("Personnel", Modifier.weight(1f))
+        HeaderCell(str(S.recce_title), Modifier.weight(TITLE_WEIGHT))
+        HeaderCell(str(S.dm_step2_unit), Modifier.weight(1f))
+        HeaderCell(str(S.date), Modifier.weight(1f))
+        HeaderCell(str(S.recce_label_rendezvous), Modifier.weight(1f))
+        HeaderCell(str(S.recce_label_stops), Modifier.width(STOPS_WIDTH))
+        HeaderCell(str(S.desktop_personnel), Modifier.weight(1f))
         Spacer(Modifier.width(ACTIONS_WIDTH))
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
@@ -246,7 +252,7 @@ private fun RecceRow(state: RecceUiState, recce: Recce, last: Boolean, onEvent: 
             ) {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete recce",
+                    contentDescription = str(S.desktop_recce_delete_recce),
                     onClick = { onEvent(RecceEvent.Delete(recce.id)) },
                     tint = if (hovered) colors.danger else colors.textMuted,
                 )
@@ -272,13 +278,13 @@ private fun TitleCell(recce: Recce, modifier: Modifier) {
             ZillitIcon(icon = RecceIcons.MapPin, tint = RecceColors.Brand, size = 18.dp)
         }
         ZillitText(
-            text = recce.title.ifBlank { "Untitled recce" },
+            text = recce.title.ifBlank { str(S.desktop_recce_untitled) },
             style = ZillitTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
             color = colors.textPrimary,
             maxLines = 1,
             modifier = Modifier.weight(1f, fill = false),
         )
-        if (!recce.isPublished) RecceTag(text = "Draft", kind = TagKind.Pending, dot = true)
+        if (!recce.isPublished) RecceTag(text = str(S.draft), kind = TagKind.Pending, dot = true)
     }
 }
 
@@ -321,7 +327,7 @@ private fun Pager(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
         Spacer(Modifier.weight(1f))
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Previous page",
+            contentDescription = str(S.docusign_page_nav_prev_cd),
             onClick = { onEvent(RecceEvent.GoToPage(state.page - 1)) },
             enabled = state.page > 1,
         )
@@ -334,7 +340,7 @@ private fun Pager(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
         }
         ZillitIconButton(
             icon = ZillitIcons.ChevronRight,
-            contentDescription = "Next page",
+            contentDescription = str(S.docusign_page_nav_next_cd),
             onClick = { onEvent(RecceEvent.GoToPage(state.page + 1)) },
             enabled = state.page < state.pageCount,
         )
@@ -412,7 +418,7 @@ internal fun ErrorNotice(state: RecceUiState, onEvent: (RecceEvent) -> Unit) {
             tone = StatusTone.Rejected,
             action = {
                 ZillitButton(
-                    text = "Dismiss",
+                    text = str(S.sync_action_dismiss),
                     onClick = { onEvent(RecceEvent.DismissError) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,

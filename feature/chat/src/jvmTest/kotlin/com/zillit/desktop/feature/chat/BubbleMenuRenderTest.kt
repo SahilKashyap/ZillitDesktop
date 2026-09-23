@@ -126,7 +126,7 @@ class BubbleMenuRenderTest {
             }
         }
         waitForIdle()
-        onNodeWithText("Edit message").assertExists()
+        onNodeWithText("Edit Message").assertExists()
         onNodeWithText("Save").assertIsNotEnabled()
     }
 

@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoRelief
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
@@ -63,8 +65,8 @@ internal fun PoPostedPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         }
         if (rows.isEmpty()) {
             ZillitEmptyState(
-                title = "Nothing posted yet",
-                message = "Orders reach this tab once they are coded and posted to the ledger.",
+                title = str(S.desktop_board_nothing_posted_yet),
+                message = str(S.desktop_po_orders_reach_posted_tab),
                 icon = ZillitIcons.Ledger,
             )
             return@Column
@@ -98,15 +100,19 @@ private fun PeriodCard(
         modifier = modifier.fillMaxWidth(),
         title = period,
         icon = ZillitIcons.Calendar,
-        meta = "${group.size} PO${if (group.size == 1) "" else "s"} · ${group.totalValue()}",
+        meta = str(
+            if (group.size == 1) S.desktop_po_group_meta_one else S.desktop_po_group_meta_other,
+            group.size,
+            group.totalValue(),
+        ),
         padded = false,
         action = {
             if (state.viewer.isSeniorAccountant) {
                 ZillitButton(
                     text = if (closeable.isEmpty()) {
-                        "All POs in this period are already closed."
+                        str(S.desktop_po_period_all_closed)
                     } else {
-                        "Close Off Period"
+                        str(S.desktop_po_close_off_period)
                     },
                     onClick = { onEvent(PoEvent.AskCloseOff(period, closeable)) },
                     variant = ButtonVariant.Secondary,
@@ -121,7 +127,7 @@ private fun PeriodCard(
             columns = postedColumns(state, onEvent),
             key = { it.id },
             onRowClick = { onEvent(PoEvent.OpenOrder(it.id)) },
-            emptyTitle = "Nothing in this period",
+            emptyTitle = str(S.desktop_po_nothing_in_this_period),
             // The page scrolls; each period draws every row it holds.
             virtualised = false,
         )
@@ -130,27 +136,27 @@ private fun PeriodCard(
 
 @Suppress("LongMethod") // A column table; the shape is the documentation.
 private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<TableColumn<PurchaseOrder>> = listOf(
-    textColumn(header = "PO Number", width = ColumnWidth.Fixed(NUMBER_WIDTH), numeric = true) {
+    textColumn(header = str(S.ah_lbl_po_number), width = ColumnWidth.Fixed(NUMBER_WIDTH), numeric = true) {
         it.number.ifBlank { "—" }
     },
-    textColumn(header = "Vendor") { state.vendorName(it).ifBlank { "No vendor" } },
-    textColumn(header = "Department", width = ColumnWidth.Fixed(DEPT_COLUMN), muted = true) {
+    textColumn(header = str(S.ah_lbl_vendor)) { state.vendorName(it).ifBlank { str(S.desktop_po_no_vendor) } },
+    textColumn(header = str(S.department), width = ColumnWidth.Fixed(DEPT_COLUMN), muted = true) {
         state.departmentName(it.departmentId).ifBlank { "—" }
     },
-    textColumn(header = "Amount", width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    textColumn(header = str(S.amount), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
         Money.format(it.gross, it.currency)
     },
-    textColumn(header = "Relieved", width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    textColumn(header = str(S.ah_lbl_relieved), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
         Money.format(it.paidAmount, it.currency)
     },
-    textColumn(header = "Remaining", width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
+    textColumn(header = str(S.ah_lbl_remaining), width = ColumnWidth.Fixed(AMOUNT_WIDTH), numeric = true) {
         Money.format(it.remaining, it.currency)
     },
-    textColumn(header = "Eff. Date", width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
+    textColumn(header = str(S.ah_row_eff_date_upper), width = ColumnWidth.Fixed(DATE_WIDTH), muted = true) {
         EpochDate.date(it.effectiveDate).ifBlank { "—" }
     },
     TableColumn(
-        header = "Status",
+        header = str(S.status),
         width = ColumnWidth.Fixed(STATUS_WIDTH),
         cell = { order -> ZillitStatusPill(label = order.relief.label, tone = order.relief.tone()) },
     ),
@@ -161,7 +167,7 @@ private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<Ta
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 if (PoAccess.canProcess(order, state.viewer)) {
                     ZillitButton(
-                        text = "Process",
+                        text = str(S.ah_process),
                         onClick = { onEvent(PoEvent.ProcessOrder(order.id)) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -169,7 +175,7 @@ private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<Ta
                 }
                 if (order.status != PoStatus.Closed && state.viewer.isSeniorAccountant) {
                     ZillitButton(
-                        text = "Close",
+                        text = str(S.close),
                         onClick = { onEvent(PoEvent.AskClose(order.id)) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -198,11 +204,12 @@ private fun PoRelief.tone(): StatusTone = when (this) {
  * Orders with no effective date keep the web's "Unknown" bucket, last.
  */
 internal fun List<PurchaseOrder>.byPeriod(): List<Pair<String, List<PurchaseOrder>>> {
+    val unknownPeriod = str(S.desktop_unknown)
     val groups = groupBy { order -> order.effectiveDate?.let { EpochDate.isoDate(it).take(PERIOD_KEY) } }
     return groups.entries
         .sortedWith(compareByDescending { it.key ?: "" })
-        .map { (key, orders) -> (key?.periodLabel() ?: "Unknown") to orders }
-        .sortedBy { it.first == "Unknown" }
+        .map { (key, orders) -> (key?.periodLabel() ?: unknownPeriod) to orders }
+        .sortedBy { it.first == unknownPeriod }
 }
 
 /** `2026-03` → `MAR 2026`, the way an accountant names a period. */
@@ -210,9 +217,23 @@ private fun String.periodLabel(): String {
     val parts = split('-')
     val month = parts.getOrNull(1)?.toIntOrNull() ?: return this
     val year = parts.getOrNull(0) ?: return this
-    return "${MONTHS.getOrElse(month - 1) { parts[1] }} $year"
+    val name = MONTH_KEYS.getOrNull(month - 1)?.let { str(it) } ?: parts[1]
+    return "$name $year"
 }
 
-private val MONTHS = listOf("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+private val MONTH_KEYS = listOf(
+    S.desktop_month_short_jan,
+    S.desktop_month_short_feb,
+    S.desktop_month_short_mar,
+    S.desktop_month_short_apr,
+    S.desktop_month_short_may,
+    S.desktop_month_short_jun,
+    S.desktop_month_short_jul,
+    S.desktop_month_short_aug,
+    S.desktop_month_short_sep,
+    S.desktop_month_short_oct,
+    S.desktop_month_short_nov,
+    S.desktop_month_short_dec,
+)
 private const val PERIOD_KEY = 7
 private val ACTION_WIDTH = 170.dp

@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardHistoryEntry
 import com.zillit.desktop.feature.cardexpenses.ui.date
 
@@ -41,7 +43,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.date
 fun CardHistoryTrail(
     entries: List<CardHistoryEntry>,
     modifier: Modifier = Modifier,
-    emptyMessage: String = "Nothing has happened to this yet.",
+    emptyMessage: String = str(S.desktop_card_nothing_happened_yet),
 ) {
     val colors = ZillitTheme.colors
     if (entries.isEmpty()) {
@@ -111,8 +113,8 @@ fun AttachmentSlot(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     busy: Boolean = false,
-    label: String = "Attach receipt",
-    disabledHint: String = "This build cannot open a file picker.",
+    label: String = str(S.desktop_card_attach_receipt),
+    disabledHint: String = str(S.desktop_card_no_file_picker),
 ) {
     val colors = ZillitTheme.colors
     if (fileName.isNullOrBlank()) {
@@ -153,7 +155,7 @@ fun AttachmentSlot(
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Remove",
+            text = str(S.remove),
             onClick = onClear,
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -235,7 +237,7 @@ val DetailPanePadding = PaddingValues(20.dp)
 private fun String.humanised(): String = trim()
     .replace('_', ' ')
     .replace('-', ' ')
-    .ifBlank { "Updated" }
+    .ifBlank { str(S.desktop_updated) }
     .replaceFirstChar { it.uppercase() }
 
 private const val EM_DASH = "—"

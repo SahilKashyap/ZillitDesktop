@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitMeter
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.AlertSeverity
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
@@ -90,7 +92,8 @@ fun ReconciliationPill(
 ) {
     when (reconciliation) {
         null -> WorkflowStatusPill(workflow, modifier)
-        "Reconciled" -> ZillitStatusPill("Reconciled", modifier, StatusTone.Done, dot = true)
+        str(S.desktop_reconciled) ->
+            ZillitStatusPill(str(S.desktop_reconciled), modifier, StatusTone.Done, dot = true)
         else -> ZillitStatusPill(reconciliation, modifier, StatusTone.Pending, dot = true)
     }
 }
@@ -99,9 +102,9 @@ fun ReconciliationPill(
 fun MatchStatusPill(status: MatchStatus, score: Int?, modifier: Modifier = Modifier) {
     ZillitStatusPill(
         label = when {
-            status == MatchStatus.Matched && score != null -> "Matched · $score%"
-            status == MatchStatus.Matched -> "Matched"
-            else -> "No match"
+            status == MatchStatus.Matched && score != null -> str(S.desktop_card_matched_score, score)
+            status == MatchStatus.Matched -> str(S.desktop_matched)
+            else -> str(S.desktop_no_match)
         },
         tone = if (status == MatchStatus.Matched) StatusTone.Done else StatusTone.Pending,
         dot = true,
@@ -117,7 +120,7 @@ fun date(millis: Long?): String = EpochDate.date(millis).ifEmpty { "—" }
 fun cardLabel(card: ExpenseCard): String =
     card.lastFour?.takeIf { it.isNotBlank() }?.let { "•••• $it" }
         ?: card.issuer?.takeIf { it.readsAsAName() }
-        ?: "Card"
+        ?: str(S.ah_my_cards)
 
 /**
  * Whether a string is something to show a person, or a key to look one up by.
@@ -190,14 +193,14 @@ fun CardFace(
                         style = ZillitTheme.typography.titleLarge,
                     )
                     ZillitText(
-                        text = "available of ${money(card.limit, card.currency)}",
+                        text = str(S.desktop_card_available_of, money(card.limit, card.currency)),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textSecondary,
                     )
                 }
                 ZillitText(
                     text = holder?.takeIf { it.isNotBlank() && it != "—" }
-                        ?: card.holderName.ifBlank { "Unassigned" },
+                        ?: card.holderName.ifBlank { str(S.unassigned) },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary,
                     maxLines = 1,

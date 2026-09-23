@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.email.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.EmailMessage
 import com.zillit.desktop.feature.email.domain.EmailSummary
@@ -103,7 +105,11 @@ internal class MailActions(private val host: EmailViewModel) {
         host.forgetOpen(targets.map { it.id })
         host.runOnMailbox(
             block = { moveAll(byFolder, EmailFolder.TRASH) },
-            done = if (targets.size == 1) "Email moved to Trash" else "${targets.size} emails moved to Trash",
+            done = if (targets.size == 1) {
+                str(S.desktop_email_moved_to_trash)
+            } else {
+                str(S.desktop_email_n_moved_to_trash, targets.size)
+            },
             folders = (byFolder.keys + EmailFolder.TRASH).toList(),
         )
     }
@@ -113,7 +119,7 @@ internal class MailActions(private val host: EmailViewModel) {
         host.forgetOpen(ids)
         host.runOnMailbox(
             block = { host.mail.deletePermanently(ids) },
-            done = if (ids.size == 1) "Email deleted" else "${ids.size} emails deleted",
+            done = if (ids.size == 1) str(S.desktop_email_deleted) else str(S.desktop_email_n_deleted, ids.size),
             folders = listOf(EmailFolder.TRASH),
         )
     }
@@ -124,7 +130,11 @@ internal class MailActions(private val host: EmailViewModel) {
         host.update { copy(drafts = drafts.filterNot { it.id in ids }) }
         host.runOnMailbox(
             block = { host.drafts.deleteDrafts(ids) },
-            done = if (ids.size == 1) "Draft deleted" else "${ids.size} drafts deleted",
+            done = if (ids.size == 1) {
+                str(S.desktop_email_draft_deleted)
+            } else {
+                str(S.desktop_email_n_drafts_deleted, ids.size)
+            },
         )
         host.reloadDrafts()
     }
@@ -139,7 +149,7 @@ internal class MailActions(private val host: EmailViewModel) {
                 if (inTrash) host.mail.deletePermanently(listOf(message.id))
                 else host.mail.move(listOf(message.id), folder, EmailFolder.TRASH)
             },
-            done = if (inTrash) "Email deleted" else "Email moved to Trash",
+            done = str(if (inTrash) S.desktop_email_deleted else S.desktop_email_moved_to_trash),
             folders = listOf(folder, EmailFolder.TRASH),
         )
     }
@@ -148,7 +158,7 @@ internal class MailActions(private val host: EmailViewModel) {
         host.forgetOpen(state.messages.map { it.id })
         host.runOnMailbox(
             block = { host.mail.emptyTrash() },
-            done = "Trash emptied",
+            done = str(S.desktop_drive_trash_emptied),
             folders = listOf(EmailFolder.TRASH),
         )
     }
@@ -166,7 +176,7 @@ internal class MailActions(private val host: EmailViewModel) {
         val label = state.folders.firstOrNull { it.name == target }?.displayName ?: target
         host.runOnMailbox(
             block = { moveAll(byFolder, target) },
-            done = "Moved to $label",
+            done = str(S.desktop_email_moved_to, label),
             folders = (byFolder.keys + target).toList(),
         )
     }

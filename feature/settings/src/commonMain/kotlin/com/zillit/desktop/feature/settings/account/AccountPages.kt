@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Where a recovery code goes when every device is gone.
@@ -44,27 +46,25 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 fun RecoveryEmailPage(state: RecoveryEmailState, onEvent: (AccountEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
         ZillitNotice(
-            text = "Zillit signs in a device, not a password. If you lose every device you " +
-                "are signed in on, a code sent to this address is how you get back in — so " +
-                "use one you can reach without this app.",
+            text = str(S.desktop_recovery_email_notice),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Info,
         )
 
-        ZillitSectionCard(title = "Recovery email", icon = ZillitIcons.Mail) {
+        ZillitSectionCard(title = str(S.recovery_email), icon = ZillitIcons.Mail) {
             ZillitTextField(
                 value = state.email,
                 onValueChange = { onEvent(AccountEvent.RecoveryEmailChanged(it)) },
-                label = "Email address",
+                label = str(S.hint_email),
                 placeholder = "you@example.com",
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !state.isSaving,
                 // Only once there is something to be wrong about. Marking an
                 // untouched field invalid is the form scolding someone for not
                 // having typed yet.
-                errorText = "That does not look like an email address."
+                errorText = str(S.desktop_not_an_email_address)
                     .takeIf { state.email.isNotBlank() && !state.isValid },
-                helperText = "The project never sees this address; it is not your Zillit mailbox.",
+                helperText = str(S.desktop_recovery_email_helper),
                 onImeAction = { onEvent(AccountEvent.SaveRecoveryEmail) },
             )
 
@@ -73,8 +73,7 @@ fun RecoveryEmailPage(state: RecoveryEmailState, onEvent: (AccountEvent) -> Unit
             }
             if (state.isSaved) {
                 ZillitNotice(
-                    text = "Saved. Keep the address reachable — a code sent there is the only " +
-                        "way back if you lose your devices.",
+                    text = str(S.desktop_recovery_email_saved_notice),
                     tone = StatusTone.Ready,
                     icon = ZillitIcons.Check,
                 )
@@ -85,7 +84,7 @@ fun RecoveryEmailPage(state: RecoveryEmailState, onEvent: (AccountEvent) -> Unit
                 horizontalArrangement = Arrangement.Absolute.Right,
             ) {
                 ZillitButton(
-                    text = "Save address",
+                    text = str(S.desktop_save_address),
                     enabled = state.canSave,
                     loading = state.isSaving,
                     onClick = { onEvent(AccountEvent.SaveRecoveryEmail) },
@@ -115,24 +114,27 @@ fun LinkedDevicesPage(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
             state.error != null && state.devices.isEmpty() -> ZillitErrorState(
                 message = state.error,
                 onRetry = { onEvent(AccountEvent.ReloadDevices) },
-                title = "Could not read your devices",
+                title = str(S.desktop_could_not_read_devices),
             )
 
             state.devices.isEmpty() -> ZillitEmptyState(
-                title = "Only this computer",
-                message = "Nothing else is signed in to Zillit as you. Devices appear here " +
-                    "once you link them from the phone app.",
+                title = str(S.desktop_only_this_computer),
+                message = str(S.desktop_only_this_computer_message),
                 icon = ZillitIcons.Monitor,
             )
 
             else -> ZillitSectionCard(
-                title = "Signed in",
+                title = str(S.desktop_signed_in),
                 icon = ZillitIcons.Monitor,
-                meta = "${state.devices.size} ${if (state.devices.size == 1) "device" else "devices"}",
+                meta = if (state.devices.size == 1) {
+                    str(S.desktop_device_count_one, state.devices.size)
+                } else {
+                    str(S.desktop_device_count_other, state.devices.size)
+                },
                 padded = false,
                 action = {
                     ZillitButton(
-                        text = "Refresh",
+                        text = str(S.refresh_text),
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Reload,
@@ -177,8 +179,8 @@ private fun DeviceRow(device: LinkedDevice, isUnlinking: Boolean, onEvent: (Acco
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitText(text = device.displayName, style = ZillitTheme.typography.titleSmall)
-                if (device.isThisDevice) ZillitTag("This computer", tone = TagTone.Accent)
-                if (device.isPrimary) ZillitTag("Main device", tone = TagTone.Neutral)
+                if (device.isThisDevice) ZillitTag(str(S.desktop_this_computer), tone = TagTone.Accent)
+                if (device.isPrimary) ZillitTag(str(S.desktop_main_device), tone = TagTone.Neutral)
             }
             if (device.detail.isNotBlank()) {
                 ZillitText(
@@ -191,7 +193,7 @@ private fun DeviceRow(device: LinkedDevice, isUnlinking: Boolean, onEvent: (Acco
 
         if (device.canUnlink) {
             ZillitButton(
-                text = "Sign out",
+                text = str(S.desktop_sign_out),
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 loading = isUnlinking,
@@ -200,7 +202,7 @@ private fun DeviceRow(device: LinkedDevice, isUnlinking: Boolean, onEvent: (Acco
         } else {
             // Says why, rather than showing a button the server would refuse.
             ZillitText(
-                text = "Cannot be signed out",
+                text = str(S.desktop_cannot_be_signed_out),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -210,7 +212,7 @@ private fun DeviceRow(device: LinkedDevice, isUnlinking: Boolean, onEvent: (Acco
 
 @Composable
 private fun LoadingDevices() {
-    ZillitSectionCard(title = "Signed in", icon = ZillitIcons.Monitor) {
+    ZillitSectionCard(title = str(S.desktop_signed_in), icon = ZillitIcons.Monitor) {
         repeat(SKELETON_ROWS) { ZillitSkeletonBar(modifier = Modifier.fillMaxWidth()) }
     }
 }
@@ -228,8 +230,12 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
     val here = device?.isThisDevice == true
 
     ZillitDialogShell(
-        title = if (here) "Sign this computer out?" else "Sign out ${device?.displayName.orEmpty()}?",
-        subtitle = if (here) "You will have to sign in again here." else null,
+        title = if (here) {
+            str(S.desktop_sign_this_computer_out)
+        } else {
+            str(S.desktop_sign_out_device, device?.displayName.orEmpty())
+        },
+        subtitle = if (here) str(S.desktop_sign_in_again_here) else null,
         icon = ZillitIcons.Monitor,
         visible = device != null,
         onDismiss = { onEvent(AccountEvent.DismissUnlink) },
@@ -237,12 +243,9 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
     ) {
         ZillitText(
             text = if (here) {
-                "This is the computer you are using. Signing it out closes Zillit here and " +
-                    "removes the mail and project data stored on it. Your other devices " +
-                    "stay signed in."
+                str(S.desktop_sign_out_here_body)
             } else {
-                "That device is signed out the next time it contacts Zillit. Nothing it has " +
-                    "already sent is affected, and it can be linked again later."
+                str(S.desktop_sign_out_other_device_body)
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
@@ -252,12 +255,12 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(AccountEvent.DismissUnlink) },
             )
             ZillitButton(
-                text = if (here) "Sign out here" else "Sign out",
+                text = if (here) str(S.desktop_sign_out_here) else str(S.desktop_sign_out),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(AccountEvent.ConfirmUnlink) },
             )
@@ -280,7 +283,7 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
 @Composable
 fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
     val code = seed.productionCode
-    val production = seed.productionName.ifBlank { "this project" }
+    val production = seed.productionName.ifBlank { str(S.desktop_this_project) }
     val invite = inviteText(production, code)
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
@@ -288,15 +291,14 @@ fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
             // Nothing to share, said plainly. A copy button that copies "Code: "
             // is worse than an absent one.
             ZillitEmptyState(
-                title = "No project code",
-                message = "This project has no join code, so nobody can be invited with " +
-                    "one. An administrator can check the project's setup.",
+                title = str(S.desktop_no_project_code),
+                message = str(S.desktop_no_project_code_message),
                 icon = ZillitIcons.Info,
             )
             return@Column
         }
 
-        ZillitSectionCard(title = "Project code", icon = ZillitIcons.Tools) {
+        ZillitSectionCard(title = str(S.project_code), icon = ZillitIcons.Tools) {
             // Large and spaced, because this gets read aloud across a set as
             // often as it gets pasted.
             ZillitText(
@@ -306,8 +308,7 @@ fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
             )
             ZillitText(
-                text = "Anyone with this code can ask to join $production. They still have to " +
-                    "be approved — nobody gets in on the code alone.",
+                text = str(S.desktop_invite_code_hint, production),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -315,7 +316,7 @@ fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
             )
         }
 
-        ZillitSectionCard(title = "The message", icon = ZillitIcons.Mail) {
+        ZillitSectionCard(title = str(S.desktop_the_message), icon = ZillitIcons.Mail) {
             ZillitText(
                 text = invite,
                 style = ZillitTheme.typography.bodyMedium,
@@ -326,12 +327,12 @@ fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
             ) {
                 ZillitButton(
-                    text = "Copy the code",
+                    text = str(S.desktop_copy_the_code),
                     variant = ButtonVariant.Tertiary,
                     onClick = { onEvent(AccountEvent.CopyInvite(code)) },
                 )
                 ZillitButton(
-                    text = "Copy the invite",
+                    text = str(S.desktop_copy_the_invite),
                     onClick = { onEvent(AccountEvent.CopyInvite(invite)) },
                 )
             }
@@ -347,8 +348,7 @@ fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
  * can act on and nobody notices sending.
  */
 internal fun inviteText(production: String, code: String): String =
-    "Join $production on Zillit. Install the app, choose “Join a project”, " +
-        "and enter the code $code. An administrator will approve you."
+    str(S.desktop_invite_text, production, code)
 
 /**
  * Leaving the production, as a dialog on the Settings page.
@@ -365,17 +365,15 @@ fun LeaveProductionDialog(
     onEvent: (AccountEvent) -> Unit,
 ) {
     ZillitDialogShell(
-        title = "Leave ${productionName.ifBlank { "this production" }}?",
-        subtitle = "You come off the crew list.",
+        title = str(S.desktop_leave_production_title, productionName.ifBlank { str(S.desktop_this_production_lower) }),
+        subtitle = str(S.desktop_leave_production_subtitle),
         icon = ZillitIcons.Detach,
         visible = state.isConfirming,
         onDismiss = { onEvent(AccountEvent.DismissLeave) },
         width = DIALOG_WIDTH,
     ) {
         ZillitText(
-            text = "You stop receiving this project's notices, call sheets and messages, " +
-                "and it disappears from your list. Coming back means using the project " +
-                "code again and waiting for an administrator to approve you.",
+            text = str(S.desktop_leave_production_body),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -384,8 +382,7 @@ fun LeaveProductionDialog(
             // The one case the other clients warn about, because a production
             // whose last admin leaves cannot approve anyone back in.
             ZillitNotice(
-                text = "You administer this project. Make sure someone else is an " +
-                    "administrator before you leave, or nobody can approve new crew.",
+                text = str(S.desktop_leave_production_admin_warning),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )
@@ -400,13 +397,13 @@ fun LeaveProductionDialog(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Stay",
+                text = str(S.docusign_leave_stay),
                 variant = ButtonVariant.Tertiary,
                 enabled = !state.isLeaving,
                 onClick = { onEvent(AccountEvent.DismissLeave) },
             )
             ZillitButton(
-                text = "Leave project",
+                text = str(S.desktop_leave_project),
                 variant = ButtonVariant.Danger,
                 loading = state.isLeaving,
                 onClick = { onEvent(AccountEvent.ConfirmLeave) },

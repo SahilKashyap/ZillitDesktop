@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import com.zillit.desktop.core.localization.LabelDictionary
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.weather.domain.WeatherCondition
 import kotlin.math.roundToInt
 
@@ -45,11 +47,11 @@ internal fun Int.metresAsMiles(): Int = (this / METRES_PER_MILE).roundToInt()
  * 0–2 low, 3–5 moderate, 6–7 high, 8–10 very high, 11+ extreme.
  */
 internal fun Double.uvBand(): String = when {
-    this < UV_MODERATE -> "Low"
-    this < UV_HIGH -> "Moderate"
-    this < UV_VERY_HIGH -> "High"
-    this < UV_EXTREME -> "Very high"
-    else -> "Extreme"
+    this < UV_MODERATE -> str(S.desktop_weather_uv_low)
+    this < UV_HIGH -> str(S.desktop_weather_uv_moderate)
+    this < UV_VERY_HIGH -> str(S.desktop_weather_uv_high)
+    this < UV_EXTREME -> str(S.desktop_weather_uv_very_high)
+    else -> str(S.desktop_weather_uv_extreme)
 }
 
 /**
@@ -62,19 +64,19 @@ internal class WeatherCopy(private val dictionary: LabelDictionary = LabelDictio
     fun t(key: String, fallback: String): String =
         dictionary.exact(key)?.takeIf { it.isNotBlank() } ?: fallback
 
-    val title get() = t("weather_tool_label", "Weather")
-    val searchCity get() = t("search_city", "Search City")
-    val hourly get() = t("hourly_forecast", "Hourly Forecast")
-    val sevenDay get() = t("Seven_Day_Forecast", "7-Day Forecast")
-    val uv get() = t("UV_text", "UV")
-    val feelsLike get() = t("Feels_like_text", "Feels Like")
-    val humidity get() = t("humidity_text", "Humidity")
-    val wind get() = t("wind_text", "Wind")
-    val pressure get() = t("Air_pressure_text", "Air Pressure")
-    val visibility get() = t("visibility_text", "Visibility")
-    val sunrise get() = t("Sunrise", "Sunrise")
-    val sunset get() = t("Sunset", "Sunset")
-    val loading get() = t("Loading", "Loading")
+    val title get() = t("weather_tool_label", str(S.recce_field_weather))
+    val searchCity get() = t("search_city", str(S.desktop_weather_search_city))
+    val hourly get() = t("hourly_forecast", str(S.hourly_forcast))
+    val sevenDay get() = t("Seven_Day_Forecast", str(S.desktop_weather_seven_day_forecast))
+    val uv get() = t("UV_text", str(S.uv))
+    val feelsLike get() = t("Feels_like_text", str(S.feel_like))
+    val humidity get() = t("humidity_text", str(S.humidity))
+    val wind get() = t("wind_text", str(S.wp_wind))
+    val pressure get() = t("Air_pressure_text", str(S.air_pressure))
+    val visibility get() = t("visibility_text", str(S.visibility))
+    val sunrise get() = t("Sunrise", str(S.sunrise))
+    val sunset get() = t("Sunset", str(S.sunset))
+    val loading get() = t("Loading", str(S.loading_))
 }
 
 /** Recomposes when a language lands, so nothing on screen keeps its fallback. */

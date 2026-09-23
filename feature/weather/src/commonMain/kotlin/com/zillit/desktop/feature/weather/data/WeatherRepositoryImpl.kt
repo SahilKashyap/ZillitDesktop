@@ -9,6 +9,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.json.Json
 
 /**
@@ -77,9 +79,9 @@ class WeatherRepositoryImpl(
         /** A week, today included — the web's "7-Day Forecast". */
         const val DAYS_SHOWN = 7
 
-        const val NO_KEY = "No weather key is configured for this environment."
-        const val REFUSED = "The weather service refused the request."
-        const val NO_READING = "The weather service sent no reading for this place."
-        const val UNREACHABLE = "The weather service could not be reached."
+        val NO_KEY: String get() = str(S.desktop_weather_no_key)
+        val REFUSED: String get() = str(S.desktop_weather_refused)
+        val NO_READING: String get() = str(S.desktop_weather_no_reading)
+        val UNREACHABLE: String get() = str(S.desktop_weather_unreachable)
     }
 }

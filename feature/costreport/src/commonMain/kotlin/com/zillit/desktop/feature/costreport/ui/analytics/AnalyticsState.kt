@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.costreport.ui.analytics
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsBlock
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsModuleMeta
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsOption
@@ -16,7 +18,13 @@ enum class AnalyticsStatus { Loading, Ready, Empty, Error }
 enum class TabStatus { Idle, Loading, Error }
 
 /** The filter panel's period choices; "current period" waits on a period window the page does not have. */
-enum class AnalyticsPeriod(val label: String) { All("All time"), Range("Date range") }
+enum class AnalyticsPeriod(private val labelKey: String) {
+    All(S.desktop_all_time),
+    Range(S.cs_date_range),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** A project currency as the currency chips show it. */
 data class AnalyticsCurrency(val code: String, val symbol: String) {
@@ -108,8 +116,8 @@ data class AnalyticsUiState(
     /** The heading word before "Analytics". */
     val titleWord: String
         get() = when {
-            isOverview -> "Overview"
-            else -> page?.title ?: AnalyticsTitles.titleFor(selected) ?: "Analytics"
+            isOverview -> str(S.ah_overview)
+            else -> page?.title ?: AnalyticsTitles.titleFor(selected) ?: str(S.analytics)
         }
 
     val subtitle: String
@@ -129,25 +137,19 @@ data class AnalyticsUiState(
 
 /** The web's fallback titles, for a response that omits its own. */
 object AnalyticsTitles {
-    private val TITLES = mapOf(
-        "overview" to ("Overview" to "Spend, forecast and exceptions across every module"),
-        "payroll" to ("Payroll" to "Gross, overtime, penalties, premiums and turnaround analytics"),
-        "po" to ("Purchase Orders" to "Commitments, pipeline and vendor spend"),
-        "extras" to (
-            "Extras / Daily Crew" to
-                "Bookings, spend, overtime, penalties, premiums and turnarounds for daily crew"
-            ),
-        "invoices" to ("Invoices" to "Settlement by BACS, Faster Payments, wires and cheques"),
-        "petty" to ("Petty Cash" to "Floats, reconciliation and category spend"),
-        "oop" to ("Out of Pocket" to "Claims reimbursed via BACS and payroll"),
-        "prodcards" to (
-            "Production Expense Cards" to
-                "Company card spend by holder, department and merchant category"
-            ),
+    private val TITLE_KEYS = mapOf(
+        "overview" to (S.ah_overview to S.desktop_cr_overview_sub),
+        "payroll" to (S.dm_section_payroll to S.desktop_cr_payroll_sub),
+        "po" to (S.ah_purchase_orders to S.desktop_cr_po_sub),
+        "extras" to (S.desktop_cr_extras to S.desktop_cr_extras_sub),
+        "invoices" to (S.ah_invoices to S.desktop_cr_invoices_sub),
+        "petty" to (S.desktop_petty_cash to S.desktop_cr_petty_sub),
+        "oop" to (S.desktop_ce_out_of_pocket to S.desktop_cr_oop_sub),
+        "prodcards" to (S.ah_card_expenses to S.desktop_cr_prodcards_sub),
     )
 
-    fun titleFor(id: String): String? = TITLES[id]?.first
-    fun subtitleFor(id: String): String? = TITLES[id]?.second
+    fun titleFor(id: String): String? = TITLE_KEYS[id]?.first?.let { str(it) }
+    fun subtitleFor(id: String): String? = TITLE_KEYS[id]?.second?.let { str(it) }
 }
 
 sealed interface AnalyticsEvent {

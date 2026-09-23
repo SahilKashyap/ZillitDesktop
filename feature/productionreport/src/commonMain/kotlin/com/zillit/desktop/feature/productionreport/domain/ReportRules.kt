@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.productionreport.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -14,16 +16,38 @@ import kotlinx.datetime.toLocalDateTime
  */
 
 /** Manage sub-tabs, in display order. */
-enum class ManageTab(val label: String) { Drafts("Drafts"), Approvals("Approvals"), Published("Published") }
+enum class ManageTab(private val labelKey: String) {
+    Drafts(S.pr_drafts),
+    Approvals(S.pr_approvals),
+    Published(S.pr_published),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** The Approvals sections: one flat row Sent | Received | Finalized. */
-enum class ApprovalSection(val label: String) { Sent("Sent"), Received("Received"), Finalized("Finalized") }
+enum class ApprovalSection(private val labelKey: String) {
+    Sent(S.pr_sent),
+    Received(S.pr_received),
+    Finalized(S.pr_finalized),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** The Drafts chips. */
-enum class DraftChip(val label: String) { All("All"), Drafts("Drafts"), Comments("For Comments") }
+enum class DraftChip(private val labelKey: String) {
+    All(S.filter_all),
+    Drafts(S.pr_drafts),
+    Comments(S.pr_status_for_comments),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** `productionReportToolDisplayName`: posting users see the creation tool's name. */
-fun reportToolName(isPoster: Boolean): String = if (isPoster) "Production Report Creation" else "Production Report"
+fun reportToolName(isPoster: Boolean): String =
+    if (isPoster) str(S.pr_title_creation) else str(S.pr_app_name)
 
 /** Which tabs a VIEW-ONLY user gets — `shared/workflow/workflowTabs.js`. */
 data class ViewOnlyTabs(val drafts: Boolean, val approvals: Boolean)
@@ -336,11 +360,11 @@ fun approvalStatusEntries(approvals: List<ApprovalRequest>, stage: String): List
                 id = request.id,
                 userId = request.assigneeId,
                 name = request.assigneeName.ifBlank { request.assigneeId.ifBlank { "-" } },
-                role = request.role.ifBlank { "Unknown" },
+                role = request.role.ifBlank { str(S.desktop_unknown) },
                 status = request.status.ifBlank { "PENDING" }.uppercase(),
                 actedOn = request.actedOn ?: request.createdOn,
                 reason = request.reason,
-                stage = if (request.isInternal) "Internal" else "Final",
+                stage = if (request.isInternal) str(S.desktop_stage_internal) else str(S.final_),
             )
         }
 

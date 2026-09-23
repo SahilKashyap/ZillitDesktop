@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.LayerSet
 import com.zillit.desktop.feature.taxfiling.ui.components.MtdButton
 import com.zillit.desktop.feature.taxfiling.ui.components.MtdButtonVariant
@@ -61,19 +63,23 @@ internal fun LayersDialog(
 
     MtdModal(
         visible = visible,
-        title = "Layers",
-        subtitle = boxNumber?.let { "Narrow box $it to the ledger entries tagged with these codes." },
+        title = str(S.desktop_layers),
+        subtitle = boxNumber?.let { str(S.desktop_tax_layers_subtitle, it) },
         icon = ZillitIcons.Hierarchy,
         width = 520.dp,
         onDismiss = onDismiss,
         footer = {
             if (draft.isNotEmpty()) {
-                MtdButton(text = "Clear all", onClick = { draft = emptyMap() }, variant = MtdButtonVariant.Ghost)
+                MtdButton(
+                    text = str(S.txt_clear_all),
+                    onClick = { draft = emptyMap() },
+                    variant = MtdButtonVariant.Ghost,
+                )
             }
             Spacer(Modifier.weight(1f))
-            MtdButton(text = "Cancel", onClick = onDismiss, variant = MtdButtonVariant.Ghost)
+            MtdButton(text = str(S.cancel), onClick = onDismiss, variant = MtdButtonVariant.Ghost)
             MtdButton(
-                text = "Save",
+                text = str(S.save),
                 onClick = { onSave(draft.filterKeys { key -> sets.any { it.id == key } }) },
                 variant = MtdButtonVariant.Primary,
             )
@@ -82,7 +88,7 @@ internal fun LayersDialog(
         if (orphans.isNotEmpty()) StaleCallout(orphans.values.toList())
         if (sets.isEmpty()) {
             ZillitText(
-                text = "No layers configured. Add one in Chart of Accounts → Layers.",
+                text = str(S.desktop_tax_no_layers),
                 style = mtdText(13.sp),
                 color = mtdPalette().ink3,
             )
@@ -129,7 +135,7 @@ private fun SetPicker(set: LayerSet, picked: String?, onPick: (String?) -> Unit)
             value = picked,
             options = set.codes.map { MtdOption(it.code, it.pickerLabel, sub = it.description.ifBlank { null }) },
             onChange = onPick,
-            placeholder = "— none —",
+            placeholder = str(S.desktop_tax_none_dash),
             clearable = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -156,13 +162,20 @@ private fun StaleCallout(codes: List<String>) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         ZillitText(
-            text = "${codes.size} stale pick${if (plural) "s" else ""} on this box",
+            text = if (plural) {
+                str(S.desktop_tax_stale_pick_many, codes.size)
+            } else {
+                str(S.desktop_tax_stale_pick_one, codes.size)
+            },
             style = mtdText(12.sp, FontWeight.Bold),
             color = palette.ink,
         )
         ZillitText(
-            text = "The layer${if (plural) "s were" else " was"} removed from Chart of Accounts → Layers. " +
-                "Save will clear ${if (plural) "them" else "it"}.",
+            text = if (plural) {
+                str(S.desktop_tax_stale_pick_detail_many)
+            } else {
+                str(S.desktop_tax_stale_pick_detail_one)
+            },
             style = mtdText(12.sp),
             color = palette.ink2,
         )

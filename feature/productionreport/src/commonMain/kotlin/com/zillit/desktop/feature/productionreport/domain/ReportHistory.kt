@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.productionreport.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 
 /** One line of the History dialog. */
@@ -21,7 +23,7 @@ data class HistoryEntry(
     /** `{stage} {action} on {time} • v{n}` — the dialog's meta line. */
     fun metaLine(formatTime: (Long?) -> String): String = buildString {
         if (stage.isNotEmpty()) append(stage).append(' ')
-        append(action.ifEmpty { "Action" })
+        append(action.ifEmpty { str(S.txt_action) })
         append(" on ").append(formatTime(atMillis))
         if (revisionText.isNotEmpty()) append(" • ").append(revisionText)
     }
@@ -56,10 +58,10 @@ object ReportHistory {
             val version = request.revisionVersion ?: versionById[request.revisionId]
             HistoryEntry(
                 id = request.id,
-                stage = if (request.isInternal) "Internal" else "Final",
-                action = if (request.isApproved) "Approved" else "Rejected",
+                stage = if (request.isInternal) str(S.desktop_stage_internal) else str(S.final_),
+                action = if (request.isApproved) str(S.approved) else str(S.rejected),
                 by = request.assigneeName.ifBlank { request.assigneeId.ifBlank { "-" } },
-                role = request.role.ifBlank { "Unknown" },
+                role = request.role.ifBlank { str(S.desktop_unknown) },
                 atMillis = request.actedOn ?: request.createdOn,
                 reason = request.reason,
                 revisionText = version?.let { "v$it" }.orEmpty(),
@@ -74,8 +76,12 @@ object ReportHistory {
                 val first = requests.first()
                 HistoryEntry(
                     id = "sent_${key.first}_${key.second}",
-                    stage = if (first.isInternal) "Internal" else "Final",
-                    action = if (first.isInternal) "Sent for Comments" else "Sent for Signature",
+                    stage = if (first.isInternal) str(S.desktop_stage_internal) else str(S.final_),
+                    action = if (first.isInternal) {
+                        str(S.desktop_sent_for_comments_action)
+                    } else {
+                        str(S.text_send_for_signature)
+                    },
                     by = detail.summary.createdBy.ifBlank { "-" },
                     role = "",
                     atMillis = first.createdOn,
@@ -99,9 +105,9 @@ object ReportHistory {
             HistoryEntry(
                 id = head.id,
                 stage = "",
-                action = "Reminder Sent",
+                action = str(S.docusign_resend_success),
                 by = sender.name.ifBlank { "-" },
-                role = sender.role.ifBlank { "Unknown" },
+                role = sender.role.ifBlank { str(S.desktop_unknown) },
                 atMillis = head.createdOn,
                 message = head.message,
                 recipients = group.map { it.assigneeName.ifBlank { "assignee" } },
@@ -115,7 +121,7 @@ object ReportHistory {
         val created = HistoryEntry(
             id = "created_${detail.summary.id}",
             stage = "",
-            action = "Created",
+            action = str(S.drive_created),
             by = first.createdBy.ifBlank { detail.summary.createdBy.ifBlank { "-" } },
             role = "",
             atMillis = first.createdOn ?: detail.summary.createdOn,
@@ -125,7 +131,7 @@ object ReportHistory {
             HistoryEntry(
                 id = "updated_${revision.id}",
                 stage = "",
-                action = "Updated",
+                action = str(S.desktop_updated),
                 by = revision.createdBy.ifBlank { detail.summary.createdBy.ifBlank { "-" } },
                 role = "",
                 atMillis = revision.createdOn,

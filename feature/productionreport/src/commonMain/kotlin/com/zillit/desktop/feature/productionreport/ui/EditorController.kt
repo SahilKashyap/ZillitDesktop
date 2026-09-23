@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.CallSheetForDay
 import com.zillit.desktop.feature.productionreport.domain.ComposeReport
 import com.zillit.desktop.feature.productionreport.domain.ComposeReport.withoutApproverCells
@@ -153,10 +155,9 @@ internal class EditorController(private val ctx: ReportContext) {
                     copy(
                         dialog = ReportDialog.Confirm(
                             action = ConfirmAction.NoPublishedCallSheet,
-                            title = "No Published Call Sheet",
-                            message = "No published call sheet was found for the shoot day. " +
-                                "You can still fill in and submit the production report.",
-                            confirmLabel = "OK",
+                            title = str(S.desktop_pr_no_published_call_sheet),
+                            message = str(S.pr_no_call_sheet_found_message),
+                            confirmLabel = str(S.ok),
                             danger = false,
                         ),
                     )
@@ -191,7 +192,7 @@ internal class EditorController(private val ctx: ReportContext) {
                     }
                 }
                 is ZillitResult.Failure -> ctx.toast(
-                    "Failed to load production report: ${result.error.localised()}",
+                    str(S.desktop_pr_failed_to_load, result.error.localised()),
                     isError = true,
                 )
             }
@@ -222,11 +223,11 @@ internal class EditorController(private val ctx: ReportContext) {
                 copy(
                     dialog = ReportDialog.Confirm(
                         action = ConfirmAction.LeaveEditor,
-                        title = "Unsaved Changes",
-                        message = "You have unsaved changes. Would you like to save before leaving?",
-                        confirmLabel = "Discard",
+                        title = str(S.cs_exit_title),
+                        message = str(S.cs_exit_message),
+                        confirmLabel = str(S.cs_exit_discard),
                         danger = true,
-                        secondaryLabel = "Save & Leave",
+                        secondaryLabel = str(S.cs_exit_save_and_leave),
                     ),
                 )
             }
@@ -254,7 +255,7 @@ internal class EditorController(private val ctx: ReportContext) {
         val dialog = ctx.state.dialog as? ReportDialog.DraftName ?: return
         val name = dialog.name.trim()
         if (name.isEmpty()) {
-            ctx.toast("Please enter a draft name.", isError = true)
+            ctx.toast(str(S.desktop_please_enter_a_draft_name), isError = true)
             return
         }
         val editor = ctx.state.editor ?: return
@@ -278,10 +279,9 @@ internal class EditorController(private val ctx: ReportContext) {
                 copy(
                     dialog = ReportDialog.Confirm(
                         action = ConfirmAction.RestartReview(intent),
-                        title = "Restart review?",
-                        message = "This file is already shared for review. Saving will move it back to Draft and " +
-                            "restart the review process. Are you sure you want to continue?",
-                        confirmLabel = "Yes, save",
+                        title = str(S.desktop_restart_review_title),
+                        message = str(S.pr_msg_save_shared_confirm),
+                        confirmLabel = str(S.desktop_yes_save),
                         danger = true,
                     ),
                 )
@@ -332,7 +332,13 @@ internal class EditorController(private val ctx: ReportContext) {
                 is ZillitResult.Success -> {
                     val row = saved.data
                     val id = editor.reportId ?: row.id
-                    ctx.toast(if (editor.reportId != null) "Revision saved!" else "Draft created!")
+                    ctx.toast(
+                        if (editor.reportId != null) {
+                            str(S.desktop_revision_saved)
+                        } else {
+                            str(S.desktop_draft_created)
+                        },
+                    )
                     closeOntoDrafts(
                         row.copy(id = id, name = row.name.ifBlank { name }),
                         wasSent = editor.status?.let { it != ReportStatus.Draft } == true,
@@ -341,7 +347,7 @@ internal class EditorController(private val ctx: ReportContext) {
                 }
                 is ZillitResult.Failure -> {
                     edit { copy(saving = false) }
-                    ctx.toast("Save failed: ${saved.error.localised()}", isError = true)
+                    ctx.toast(str(S.ah_err_save_failed_msg, saved.error.localised()), isError = true)
                 }
             }
         }
@@ -363,12 +369,12 @@ internal class EditorController(private val ctx: ReportContext) {
                 viewer.userId,
             )) {
                 is ZillitResult.Success -> {
-                    ctx.toast("Saved as new draft!")
+                    ctx.toast(str(S.desktop_saved_as_new_draft))
                     closeOntoDrafts(created.data, wasSent = false)
                 }
                 is ZillitResult.Failure -> {
                     edit { copy(saving = false) }
-                    ctx.toast("Save failed: ${created.error.localised()}", isError = true)
+                    ctx.toast(str(S.ah_err_save_failed_msg, created.error.localised()), isError = true)
                 }
             }
         }

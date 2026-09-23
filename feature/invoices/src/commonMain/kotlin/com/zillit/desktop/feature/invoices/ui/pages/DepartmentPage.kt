@@ -28,6 +28,8 @@ import com.zillit.desktop.feature.invoices.ui.DepartmentTab
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.QuickFilter
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The non-accountant view: three tabs, a quick filter, one table. */
 @Composable
@@ -40,7 +42,7 @@ internal fun ColumnScope.DepartmentPage(state: InvoicesUiState, onEvent: (Invoic
         onSelect = { id -> onEvent(InvoicesEvent.SelectDepartmentTab(DepartmentTab.entries.first { it.id == id })) },
     )
     if (state.departmentTab == DepartmentTab.MyDepartment && state.viewer.departmentId.isBlank()) {
-        ZillitNotice(text = "Your crew record has no department, so there is no department board to show.")
+        ZillitNotice(text = str(S.desktop_inv_no_department_board))
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -66,7 +68,7 @@ internal fun ColumnScope.DepartmentPage(state: InvoicesUiState, onEvent: (Invoic
             emptyTitle = if (state.quickFilter == QuickFilter.All) {
                 state.departmentTab.emptyText
             } else {
-                "No ${state.quickFilter.label.lowercase()} invoices"
+                str(S.desktop_inv_no_filter_invoices, state.quickFilter.label.lowercase())
             },
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
@@ -81,7 +83,7 @@ private fun departmentColumns(state: InvoicesUiState, onEvent: (InvoicesEvent) -
                 if (InvoiceRules.canDeleteOwn(invoice, state.viewer)) {
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Delete invoice",
+                        contentDescription = str(S.ah_delete_invoice),
                         tint = ZillitTheme.colors.danger,
                         onClick = { onEvent(InvoicesEvent.RequestDelete(invoice)) },
                     )

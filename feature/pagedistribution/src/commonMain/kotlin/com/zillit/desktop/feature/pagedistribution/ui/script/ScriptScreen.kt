@@ -73,6 +73,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.DistDocument
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.PageColour
@@ -122,7 +124,7 @@ fun ScriptScreen(
                     .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
-                if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to ${state.tool.title}.")
+                if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_dist_no_access, state.tool.title))
                 state.error?.let { message ->
                     ZillitNotice(
                         text = message,
@@ -130,7 +132,7 @@ fun ScriptScreen(
                         icon = ZillitIcons.Warning,
                         action = {
                             ZillitButton(
-                                text = "Dismiss",
+                                text = str(S.sync_action_dismiss),
                                 onClick = { onEvent(DistributionEvent.DismissError) },
                                 variant = ButtonVariant.Tertiary,
                                 size = ButtonSize.Small,
@@ -141,8 +143,7 @@ fun ScriptScreen(
                 // ZL-17014 — the web's history alert.
                 if (!live) {
                     ZillitNotice(
-                        text = "Records of deleted and replaced documents. " +
-                            "They can be viewed and downloaded, not changed.",
+                        text = str(S.desktop_script_history_note),
                         tone = StatusTone.Progress,
                         icon = ZillitIcons.Info,
                     )
@@ -200,31 +201,34 @@ private fun ScriptHeader(state: DistributionUiState, onEvent: (DistributionEvent
                         style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = colors.textPrimary,
                     )
-                    if (!live) ZillitStatusPill(label = "History", tone = StatusTone.Neutral)
+                    if (!live) ZillitStatusPill(label = str(S.history), tone = StatusTone.Neutral)
                     val total = state.tabUnread.values.sum()
                     if (live && total > 0) {
-                        ZillitStatusPill(label = "$total unread", tone = StatusTone.Rejected, dot = true)
+                        ZillitStatusPill(
+                            label = str(S.desktop_unread_count, total),
+                            tone = StatusTone.Rejected,
+                            dot = true,
+                        )
                     }
                 }
                 ZillitText(
                     text = if (live) {
-                        "The current full script, and revised pages filed by scene. " +
-                            "Open a scene to view, download or publish its pages."
+                        str(S.desktop_script_description)
                     } else {
-                        "Replaced scripts and deleted pages, kept for the record."
+                        str(S.desktop_script_history_description)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
             ZillitButton(
-                text = if (live) "History" else "Back to live",
+                text = if (live) str(S.history) else str(S.desktop_dist_back_to_live),
                 onClick = { onEvent(DistributionEvent.ToggleHistory) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = if (live) ZillitIcons.Clock else ZillitIcons.ArrowLeft,
             )
             ZillitButton(
-                text = "Refresh",
+                text = str(S.refresh_text),
                 onClick = { onEvent(DistributionEvent.Refresh) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = ZillitIcons.Reload,
@@ -235,9 +239,9 @@ private fun ScriptHeader(state: DistributionUiState, onEvent: (DistributionEvent
                 val replacing = !state.isFolderTab && state.documents.isNotEmpty()
                 ZillitButton(
                     text = when {
-                        replacing -> "Replace script"
-                        state.isFolderTab -> "Upload page"
-                        else -> "Upload script"
+                        replacing -> str(S.desktop_script_replace_script)
+                        state.isFolderTab -> str(S.upload_page)
+                        else -> str(S.upload_script)
                     },
                     onClick = { onEvent(DistributionEvent.PickPdf()) },
                     leadingIcon = ZillitIcons.Paperclip,
@@ -263,18 +267,17 @@ private fun ScriptList(
     when {
         state.loading && rows.isEmpty() -> SkeletonList()
         rows.isEmpty() -> ZillitEmptyState(
-            title = "No data found",
+            title = str(S.no_data_found),
             message = if (live) {
-                "Upload the full script as a PDF — the crew sees one current copy, " +
-                    "and every replacement keeps the old one in the history."
+                str(S.desktop_script_empty_message)
             } else {
-                "Replaced scripts will be listed here."
+                str(S.desktop_script_replaced_listed)
             },
             icon = ZillitIcons.File,
             action = if (live) {
                 {
                     ZillitButton(
-                        text = "Upload script",
+                        text = str(S.upload_script),
                         onClick = { onEvent(DistributionEvent.PickPdf()) },
                         leadingIcon = ZillitIcons.Paperclip,
                     )
@@ -334,7 +337,7 @@ internal fun ScriptSearchBar(state: DistributionUiState, onEvent: (DistributionE
         ZillitTextField(
             value = state.searchScene,
             onValueChange = { onEvent(DistributionEvent.SearchChanged(scene = it)) },
-            placeholder = "Search by scene number",
+            placeholder = str(S.desktop_dist_search_by_scene),
             leadingIcon = ZillitIcons.Search,
             modifier = Modifier.weight(1f),
             onImeAction = { onEvent(DistributionEvent.RunSearch) },
@@ -343,7 +346,7 @@ internal fun ScriptSearchBar(state: DistributionUiState, onEvent: (DistributionE
             ZillitTextField(
                 value = state.searchEpisode,
                 onValueChange = { onEvent(DistributionEvent.SearchChanged(episode = it)) },
-                placeholder = "Search by episode",
+                placeholder = str(S.desktop_dist_search_by_episode),
                 modifier = Modifier.width(EPISODE_WIDTH),
                 onImeAction = { onEvent(DistributionEvent.RunSearch) },
             )
@@ -366,13 +369,13 @@ internal fun ScriptSearchBar(state: DistributionUiState, onEvent: (DistributionE
                 value = state.searchColour,
                 options = listOf<PageColour?>(null) + PageColour.entries,
                 onSelect = { onEvent(DistributionEvent.SearchColour(it)) },
-                label = { it?.label ?: "Search by colour" },
+                label = { it?.label ?: str(S.search_by_page_color) },
                 modifier = Modifier.weight(1f),
             )
         }
         if (state.isSearching || state.searchResults != null) {
             ZillitButton(
-                text = "Clear",
+                text = str(S.clear_label),
                 onClick = { onEvent(DistributionEvent.ClearSearch) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -388,17 +391,17 @@ private fun ScriptFolderGrid(state: DistributionUiState, onEvent: (DistributionE
     when {
         state.loading && state.folders.isEmpty() -> SkeletonGrid()
         state.folders.isEmpty() -> ZillitEmptyState(
-            title = if (live) "No data found" else "Nothing in the history",
+            title = if (live) str(S.no_data_found) else str(S.desktop_dist_nothing_in_history),
             message = if (live) {
-                "Upload the first revised page — it is filed under the scene number you give it."
+                str(S.desktop_script_pages_empty_message)
             } else {
-                "Deleted pages will be listed here."
+                str(S.desktop_dist_deleted_pages_listed)
             },
             icon = ZillitIcons.Folder,
             action = if (live) {
                 {
                     ZillitButton(
-                        text = "Upload page",
+                        text = str(S.upload_page),
                         onClick = { onEvent(DistributionEvent.PickPdf()) },
                         leadingIcon = ZillitIcons.Paperclip,
                     )
@@ -489,7 +492,7 @@ internal fun SceneFolderCard(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
                 ZillitText(
-                    text = "Scene No :",
+                    text = str(S.scene_no) + " :",
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.textSecondary,
                 )
@@ -502,9 +505,13 @@ internal fun SceneFolderCard(
             }
             ZillitText(
                 text = if (pages > 0) {
-                    "$pages page${if (pages == 1) "" else "s"} match"
+                    if (pages == 1) {
+                        str(S.desktop_dist_pages_match_one, pages)
+                    } else {
+                        str(S.desktop_dist_pages_match_other, pages)
+                    }
                 } else {
-                    "Uploaded On : ${DistributionDates.dateTime(uploadedMs)}"
+                    str(S.desktop_script_uploaded_on_spaced, DistributionDates.dateTime(uploadedMs))
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
@@ -513,14 +520,14 @@ internal fun SceneFolderCard(
             )
             if (pageDateMs > 0) {
                 ZillitText(
-                    text = "Page Date : ${DistributionDates.date(pageDateMs)}",
+                    text = str(S.desktop_script_page_date_spaced, DistributionDates.date(pageDateMs)),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                 )
             }
-            if (deleted) ZillitStatusPill(label = "Deleted", tone = StatusTone.Rejected)
+            if (deleted) ZillitStatusPill(label = str(S.drive_deleted_default), tone = StatusTone.Rejected)
         }
         if (unread > 0) {
             UnreadBadge(
@@ -598,14 +605,14 @@ private fun ScriptSearchDrawer(state: DistributionUiState, onEvent: (Distributio
                     ) {
                         ZillitIcon(icon = ZillitIcons.Search, tint = colors.accent, size = FACT_ICON)
                         ZillitText(
-                            text = "Search",
+                            text = str(S.search),
                             style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = colors.textPrimary,
                             modifier = Modifier.weight(1f),
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Close,
-                            contentDescription = "Close search",
+                            contentDescription = str(S.desktop_board_close_search),
                             onClick = { onEvent(DistributionEvent.ClearSearch) },
                         )
                     }
@@ -642,14 +649,14 @@ private fun SearchResultGrid(
         when {
             state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 ZillitText(
-                    text = "Fetching results…",
+                    text = str(S.desktop_dist_fetching_results),
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textMuted,
                 )
             }
             groups.isEmpty() -> ZillitEmptyState(
-                title = "No data found",
-                message = "No pages match this search.",
+                title = str(S.no_data_found),
+                message = str(S.desktop_dist_no_pages_match_search),
                 icon = ZillitIcons.Search,
             )
             else -> LazyVerticalGrid(
@@ -671,7 +678,7 @@ private fun SearchResultGrid(
                             pages = pages.size,
                         )
                         ZillitText(
-                            text = "View Details",
+                            text = str(S.view_details),
                             style = ZillitTheme.typography.labelSmall,
                             color = colors.accentText,
                             modifier = Modifier.padding(top = ZillitTheme.spacing.xxs),
@@ -760,12 +767,12 @@ private fun DropOverlay(visible: Boolean) {
                 ZillitIcon(icon = ZillitIcons.Upload, tint = colors.accent, size = FOLDER_GLYPH)
                 Spacer(Modifier.height(ZillitTheme.spacing.sm))
                 ZillitText(
-                    text = "Drop a PDF to upload it",
+                    text = str(S.desktop_dist_drop_pdf),
                     style = ZillitTheme.typography.titleMedium,
                     color = colors.textPrimary,
                 )
                 ZillitText(
-                    text = "You will fill in its details next.",
+                    text = str(S.desktop_script_drop_hint),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )

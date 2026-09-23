@@ -1,3 +1,5 @@
+@file:Suppress("MatchingDeclarationName") // The file holds the whole sync wire, not just this table.
+
 package com.zillit.desktop.feature.maps.data
 
 import com.zillit.desktop.core.socket.SocketEventName
@@ -53,7 +55,7 @@ val MAP_SYNC_EVENTS: List<SocketEventName> = listOf(
  * screen). With no production known locally the project test cannot be made
  * and the frame passes; with no device id, the splice is idempotent anyway.
  */
-@Suppress("CyclomaticComplexMethod") // One branch per wire event.
+@Suppress("CyclomaticComplexMethod", "ReturnCount") // One branch per wire event; each guard drops the frame.
 internal fun mapSyncEvent(
     event: String,
     payload: JsonElement?,
@@ -96,6 +98,7 @@ internal fun mapSyncEvent(
  * location frame that does not say is a zone (`?? true`), a location frame a
  * location (`?? false`) — the web's defaults.
  */
+@Suppress("ReturnCount") // Each missing field falls back to a refetch.
 private fun locationChange(event: String, entity: JsonObject?, zoneByDefault: Boolean): MapSyncEvent {
     entity ?: return MapSyncEvent.Refetch(MapList.Locations)
     val isZone = (entity["is_studio_zone"] as? JsonPrimitive)?.contentOrNull

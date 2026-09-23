@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.taxfiling.domain
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -41,11 +43,13 @@ object TaxFormat {
 }
 
 /** The filing frequencies the register dialog offers, in the web's order. */
-enum class TaxFrequency(val wire: String, val label: String) {
-    Monthly("monthly", "Monthly"),
-    Quarterly("quarterly", "Quarterly"),
-    Annual("annual", "Annually"),
+enum class TaxFrequency(val wire: String, private val labelKey: String) {
+    Monthly("monthly", S.ce_monthly),
+    Quarterly("quarterly", S.desktop_quarterly),
+    Annual("annual", S.desktop_annually),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(value: String): TaxFrequency? = entries.firstOrNull { it.wire.equals(value.trim(), true) }

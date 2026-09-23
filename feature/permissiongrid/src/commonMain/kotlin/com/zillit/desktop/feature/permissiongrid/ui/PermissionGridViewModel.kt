@@ -5,6 +5,8 @@ import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.permissiongrid.domain.AccessKind
 import com.zillit.desktop.feature.permissiongrid.domain.GridAxis
 import com.zillit.desktop.feature.permissiongrid.domain.GridPage
@@ -235,7 +237,7 @@ class PermissionGridViewModel(
         rights?.ask(MODULE_LABEL, RightsKind.Post)
         // This screen has no effect channel; its own notice bar is where
         // everything else it has to say already goes.
-        setState { copy(notice = rightsRefusalMessage(MODULE_LABEL, RightsKind.Post, rights != null)) }
+        setState { copy(notice = rightsRefusalMessage(str(S.desktop_pg_title), RightsKind.Post, rights != null)) }
     }
 
     private fun toggle(event: PermissionGridEvent.Toggle) {

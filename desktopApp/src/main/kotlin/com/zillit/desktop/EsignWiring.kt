@@ -3,6 +3,8 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.EsignBadgeLeaf
 import com.zillit.desktop.feature.esignature.domain.EsignBadges
 import kotlinx.coroutines.CoroutineScope
@@ -124,13 +126,13 @@ internal fun AppGraph.Ready.esignRawGet(): suspend (String) -> ZillitResult<Byte
         val bytes = response.readRawBytes()
         val isJson = response.contentType()?.match(ContentType.Application.Json) == true
         if (isJson || !response.status.isSuccess()) {
-            error(esignDeclineMessage(bytes) ?: "The audit trail could not be fetched (${response.status.value}).")
+            error(esignDeclineMessage(bytes) ?: str(S.desktop_audit_trail_failed_status, response.status.value))
         }
         bytes
     }.fold(
         onSuccess = { ZillitResult.Success(it) },
         onFailure = {
-            ZillitResult.Failure(ZillitError.Validation(it.message ?: "The audit trail could not be fetched."))
+            ZillitResult.Failure(ZillitError.Validation(it.message ?: str(S.desktop_audit_trail_failed)))
         },
     )
 }
@@ -206,7 +208,7 @@ internal fun esignPdf(): EsignPdf = object : EsignPdf {
             out.toByteArray()
         }.fold(
             onSuccess = { ZillitResult.Success(it) },
-            onFailure = { ZillitResult.Failure(ZillitError.Validation("The typed signature could not be rendered.")) },
+            onFailure = { ZillitResult.Failure(ZillitError.Validation(str(S.desktop_typed_signature_failed))) },
         )
 }
 
@@ -229,8 +231,8 @@ private const val MIN_TYPED_SIZE = 18f
 /** The OS chooser for what E-Signature asks for: a PDF, a CSV, or an image. */
 internal suspend fun pickEsignFile(kind: EsignPickKind): Pair<String, ByteArray>? = when (kind) {
     EsignPickKind.Pdf -> pickPdf()
-    EsignPickKind.Csv -> pickOne("Choose a CSV", listOf("csv", "txt", "tsv"))
-    EsignPickKind.Image -> pickOne("Choose an image", listOf("png", "jpg", "jpeg"))
+    EsignPickKind.Csv -> pickOne(str(S.desktop_choose_csv), listOf("csv", "txt", "tsv"))
+    EsignPickKind.Image -> pickOne(str(S.desktop_choose_image), listOf("png", "jpg", "jpeg"))
 }
 
 private suspend fun pickOne(title: String, extensions: List<String>): Pair<String, ByteArray>? =
@@ -263,7 +265,7 @@ internal fun AppGraph.Ready.esignSignerOptions(): List<SignerOptionLike> {
     val me = context?.profile?.let { profile ->
         SignerOptionLike(
             userId = profile.userId,
-            fullName = profile.fullName.ifBlank { "Me" },
+            fullName = profile.fullName.ifBlank { str(S.txt_me) },
             email = profile.email.orEmpty(),
         )
     }

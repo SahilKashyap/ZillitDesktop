@@ -34,6 +34,8 @@ import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.ChipTone
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealPreviewRules
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealSigning
@@ -71,9 +73,10 @@ internal fun CrewDealBar(preview: DealPreviewState, rules: DealPreviewRules, onE
                 if (signChips.isNotEmpty()) {
                     val owner = rules.ownerSigning
                     ChipGroup(
-                        label = if (owner) "Documents require your signature" else "Documents require crew signature",
-                        instruction = "Click a document below to sign it. All must be signed before you can send for " +
-                            "approval."
+                        label = if (owner) str(S.desktop_dm_documents_require_your_signature) else str(
+                            S.desktop_dm_documents_require_crew_signature,
+                        ),
+                        instruction = str(S.desktop_dm_click_a_document_below_to_sign_it)
                             .takeIf { owner && signChips.any { it.tone != ChipTone.Done } },
                         chips = signChips,
                         glow = owner,
@@ -81,7 +84,7 @@ internal fun CrewDealBar(preview: DealPreviewState, rules: DealPreviewRules, onE
                     )
                 }
                 if (viewChips.isNotEmpty()) {
-                    ChipGroup("Additional Documents", null, viewChips, glow = false, onEvent = onEvent)
+                    ChipGroup(str(S.dm_docs_title), null, viewChips, glow = false, onEvent = onEvent)
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(pv.innerDivider))
@@ -114,7 +117,7 @@ private fun DecisionRow(
         if (rules.canCrewReject || rules.showSend) VerticalRule(pv.barBorder, 34.dp)
         if (rules.canCrewReject) {
             OutlineButton(
-                text = "Reject",
+                text = str(S.dm_action_reject),
                 onClick = { onEvent(PreviewEvent.OpenReject) },
                 icon = DmIcons.Stop,
                 ink = PreviewInk.RejectInk,
@@ -126,7 +129,7 @@ private fun DecisionRow(
         if (rules.showSend) {
             val sending = preview.action == PreviewAction.Send
             SolidButton(
-                text = "Send for Approval",
+                text = str(S.dm_action_send_approval),
                 onClick = { onEvent(PreviewEvent.SendForApproval) },
                 icon = ZillitIcons.Send,
                 enabled = preview.action == null,
@@ -140,7 +143,7 @@ private fun DecisionRow(
 private fun MoreMenu(preview: DealPreviewState, rules: DealPreviewRules, onEvent: (DealMemoEvent) -> Unit) {
     Box {
         OutlineButton(
-            text = "More",
+            text = str(S.more),
             onClick = { onEvent(PreviewEvent.ToggleMore) },
             trailingIcon = ZillitIcons.ChevronDown,
             horizontal = 14.dp,
@@ -164,21 +167,21 @@ private fun MoreMenu(preview: DealPreviewState, rules: DealPreviewRules, onEvent
                     val checklist = rules.checklist
                     MenuRow(
                         icon = ZillitIcons.Check,
-                        label = "Show Checklist",
-                        sub = "${checklist.count { !it.done }} of ${checklist.size} outstanding",
+                        label = str(S.desktop_dm_show_checklist),
+                        sub = str(S.desktop_dm_n_of_m_outstanding, checklist.count { !it.done }, checklist.size),
                         onClick = { onEvent(PreviewEvent.ShowChecklist) },
                     )
                     MenuRow(
                         icon = ZillitIcons.Eye,
                         label = DealSigning.pdfLabel(rules.deal),
-                        sub = "Open the deal memo PDF",
+                        sub = str(S.desktop_dm_open_the_deal_memo_pdf),
                         onClick = { onEvent(PreviewEvent.ViewPdf) },
                     )
                     if (rules.showHistory) {
                         MenuRow(
                             icon = DmIcons.History,
-                            label = "History",
-                            sub = "Every action taken on this deal memo",
+                            label = str(S.dm_row_action_history),
+                            sub = str(S.desktop_dm_every_action_taken_on_this_deal_memo),
                             onClick = { onEvent(PreviewEvent.History) },
                         )
                     }

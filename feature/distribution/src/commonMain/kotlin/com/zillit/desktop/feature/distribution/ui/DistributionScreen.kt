@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.distribution.domain.DistributionColumn
 import com.zillit.desktop.feature.distribution.domain.DistributionSection
 
@@ -65,12 +67,11 @@ fun DistributionScreen(
     Column(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         ZillitPageHeader(
             title = copy.title,
-            description = "Who is emailed what: tick a person against each Home unit or tool " +
-                "whose uploads should reach them.",
+            description = str(S.desktop_dist_description),
             modifier = Modifier.padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.md),
             actions = {
                 ZillitButton(
-                    text = "Refresh",
+                    text = str(S.refresh_text),
                     onClick = { onEvent(DistributionEvent.Refresh) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -82,8 +83,8 @@ fun DistributionScreen(
 
         if (state.viewer.isBlocked) {
             ZillitEmptyState(
-                title = "No access",
-                message = "You do not have viewing rights on the Distribution List. An administrator can grant them.",
+                title = str(S.dd_publish_no_access_badge),
+                message = str(S.desktop_dist_no_viewing_rights),
                 modifier = Modifier.fillMaxSize(),
             )
             return@Column
@@ -109,7 +110,7 @@ private fun Body(
         state.isLoading && state.users.isEmpty() -> Centred {
             ZillitSpinner()
             ZillitText(
-                text = "Loading the distribution list…",
+                text = str(S.desktop_dist_loading),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -121,16 +122,16 @@ private fun Body(
         )
 
         state.users.isEmpty() -> ZillitEmptyState(
-            title = "Nobody to distribute to",
-            message = "Accepted crew and external users appear here once the production has them.",
+            title = str(S.desktop_dist_nobody_to_distribute_to),
+            message = str(S.desktop_dist_nobody_to_distribute_to_message),
         )
 
         state.rows.isEmpty() -> ZillitEmptyState(
-            title = "No one matches",
+            title = str(S.dm_nda_no_one_matches),
             message = if (state.query.isBlank()) {
-                "No external users on this production yet."
+                str(S.desktop_dist_no_external_users_yet)
             } else {
-                "Nobody is called \"${state.query.trim()}\"."
+                str(S.desktop_nobody_is_called, state.query.trim())
             },
         )
 
@@ -176,7 +177,11 @@ private fun Controls(
             label = { copy.label(it.unitName) },
             onChange = { onEvent(DistributionEvent.UnitFilter(it.map(DistributionColumn::unitId))) },
             placeholder = copy.filterUnits,
-            emptyText = "No ${if (state.section == DistributionSection.Home) "units" else "tools"} to filter",
+            emptyText = if (state.section == DistributionSection.Home) {
+                str(S.desktop_dist_no_units_to_filter)
+            } else {
+                str(S.desktop_dist_no_tools_to_filter)
+            },
             modifier = Modifier.widthIn(min = FILTER_MIN_WIDTH, max = FILTER_MAX_WIDTH),
         )
         ZillitCheckbox(

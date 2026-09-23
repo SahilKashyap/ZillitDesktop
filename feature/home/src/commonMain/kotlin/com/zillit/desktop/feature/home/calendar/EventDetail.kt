@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.home.calendar
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Where this user stands on an event they were invited to.
  *
@@ -28,9 +31,9 @@ fun inviteStatusOf(raw: String?): InviteStatus = when (raw?.lowercase()?.trim())
 /** What the status line says, or null when there is nothing to say. */
 val InviteStatus.message: String?
     get() = when (this) {
-        InviteStatus.Pending -> "Pending invitation"
-        InviteStatus.Accepted -> "You accepted this event"
-        InviteStatus.Rejected -> "You declined this event"
+        InviteStatus.Pending -> str(S.pending_invitation)
+        InviteStatus.Accepted -> str(S.you_accepted)
+        InviteStatus.Rejected -> str(S.you_declined)
         InviteStatus.None -> null
     }
 
@@ -48,9 +51,9 @@ fun durationLabel(startMillis: Long, endMillis: Long): String {
     val remainder = minutes % MINUTES_PER_HOUR
 
     return when {
-        hours == 0L -> "$minutes min"
-        remainder == 0L -> "$hours hr"
-        else -> "$hours hr $remainder min"
+        hours == 0L -> str(S.desktop_cal_duration_minutes, minutes)
+        remainder == 0L -> str(S.desktop_cal_duration_hours, hours)
+        else -> str(S.desktop_cal_duration_hours_minutes, hours, remainder)
     }
 }
 
@@ -62,11 +65,11 @@ fun durationLabel(startMillis: Long, endMillis: Long): String {
  * must not silently read as "None".
  */
 fun reminderLabel(minutesBefore: Int): String = when {
-    minutesBefore <= 0 -> "None"
-    minutesBefore == MINUTES_PER_HOUR.toInt() -> "1 hour before"
+    minutesBefore <= 0 -> str(S.none)
+    minutesBefore == MINUTES_PER_HOUR.toInt() -> str(S.ce_1hr)
     minutesBefore % MINUTES_PER_HOUR.toInt() == 0 ->
-        "${minutesBefore / MINUTES_PER_HOUR} hours before"
-    else -> "$minutesBefore minutes before"
+        str(S.desktop_cal_hours_before, minutesBefore / MINUTES_PER_HOUR)
+    else -> str(S.desktop_cal_minutes_before, minutesBefore)
 }
 
 /**

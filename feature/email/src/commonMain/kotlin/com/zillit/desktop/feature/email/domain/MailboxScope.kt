@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,8 +51,8 @@ data class MailboxIdentity(
 ) {
     val title: String
         get() = when (kind) {
-            MailboxKind.Personal -> "Personal Mailbox"
-            MailboxKind.Accounts -> "Accounts Mailbox"
+            MailboxKind.Personal -> str(S.desktop_email_personal_mailbox)
+            MailboxKind.Accounts -> str(S.email_rule_tab_accounts_mailbox)
         }
 
     /** What the `From:` header says — `Name <address>`, the web's `from` payload. */

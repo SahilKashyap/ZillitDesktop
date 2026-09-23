@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.calls.domain.CallMode
@@ -120,7 +122,7 @@ private fun CrewExternalUserForm(viewModel: ExternalUsersViewModel, onFinished: 
         // success line is an effect and may land a beat after the state does.
         if (!submitting) delay(NOTICE_GRACE_MILLIS)
         val added = submitting || saved?.contains("added", ignoreCase = true) == true
-        onFinished(if (added) saved ?: "User added successfully." else null)
+        onFinished(if (added) saved ?: str(S.desktop_eu_user_added) else null)
     }
     ExternalUserFormDialog(state, viewModel::onEvent)
 }

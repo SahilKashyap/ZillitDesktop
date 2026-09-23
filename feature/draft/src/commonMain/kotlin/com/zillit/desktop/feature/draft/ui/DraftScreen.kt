@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.draft.domain.ElementType
 import com.zillit.desktop.feature.draft.domain.ScriptSummary
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The tool: the production's scripts, or the one that is open. */
 @Composable
@@ -68,20 +70,19 @@ private fun ScriptsPage(state: DraftUiState, onEvent: (DraftEvent) -> Unit) {
                 .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.lg),
         ) {
             ZillitPageHeader(
-                eyebrow = "Writing",
-                title = "Zillit Draft",
-                description = "Write and format screenplays — scene headings, action, dialogue — the way " +
-                    "Final Draft does, saved on this project and exported to PDF, Final Draft or Fountain.",
+                eyebrow = str(S.desktop_writing_section),
+                title = str(S.desktop_zillit_draft),
+                description = str(S.desktop_draft_description),
                 actions = {
                     ZillitButton(
-                        text = "Import",
+                        text = str(S.dm_rule_import_button),
                         onClick = { onEvent(DraftEvent.Import) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Upload,
                     )
                     ZillitButton(
-                        text = "New script",
+                        text = str(S.desktop_draft_new_script),
                         onClick = { onEvent(DraftEvent.StartNew) },
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Add,
@@ -97,8 +98,8 @@ private fun ScriptsPage(state: DraftUiState, onEvent: (DraftEvent) -> Unit) {
                 loading = state.loading && state.scripts.isEmpty(),
                 columns = scriptColumns(onEvent),
                 onRowClick = { onEvent(DraftEvent.Open(it.id)) },
-                emptyTitle = "No scripts on this project yet",
-                emptyMessage = "Start a new script, or import a .fountain or .fdx file.",
+                emptyTitle = str(S.desktop_draft_no_scripts),
+                emptyMessage = str(S.desktop_draft_empty_message),
             )
         }
     }
@@ -106,22 +107,24 @@ private fun ScriptsPage(state: DraftUiState, onEvent: (DraftEvent) -> Unit) {
 }
 
 private fun scriptColumns(onEvent: (DraftEvent) -> Unit): List<TableColumn<ScriptSummary>> = listOf(
-    TableColumn(header = "Title", width = ColumnWidth.Weight(TITLE_WEIGHT)) { script ->
+    TableColumn(header = str(S.title), width = ColumnWidth.Weight(TITLE_WEIGHT)) { script ->
         ZillitText(text = script.title, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
     },
-    textColumn("Pages", ColumnWidth.Fixed(PAGES_COLUMN), numeric = true) { it.pageCount.toString() },
-    textColumn("Scenes", ColumnWidth.Fixed(PAGES_COLUMN), numeric = true) { it.sceneCount.toString() },
-    textColumn("Updated", ColumnWidth.Fixed(DATE_COLUMN), muted = true) { EpochDate.date(it.updatedAtMillis) },
+    textColumn(str(S.pages), ColumnWidth.Fixed(PAGES_COLUMN), numeric = true) { it.pageCount.toString() },
+    textColumn(str(S.av_scenes), ColumnWidth.Fixed(PAGES_COLUMN), numeric = true) { it.sceneCount.toString() },
+    textColumn(str(S.desktop_updated), ColumnWidth.Fixed(DATE_COLUMN), muted = true) {
+        EpochDate.date(it.updatedAtMillis)
+    },
     TableColumn(header = "", width = ColumnWidth.Fixed(ACTIONS_COLUMN)) { script ->
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             ZillitIconButton(
                 icon = ZillitIcons.Edit,
-                contentDescription = "Rename",
+                contentDescription = str(S.rename),
                 onClick = { onEvent(DraftEvent.StartRename(script)) },
             )
             ZillitIconButton(
                 icon = ZillitIcons.Trash,
-                contentDescription = "Delete",
+                contentDescription = str(S.delete),
                 onClick = { onEvent(DraftEvent.RequestDelete(script)) },
                 tint = ZillitTheme.colors.danger,
             )
@@ -133,57 +136,57 @@ private fun scriptColumns(onEvent: (DraftEvent) -> Unit): List<TableColumn<Scrip
 private fun ScriptDialogs(state: DraftUiState, onEvent: (DraftEvent) -> Unit) {
     if (state.creating) {
         ZillitDialogShell(
-            title = "New script",
+            title = str(S.desktop_draft_new_script),
             onDismiss = { onEvent(DraftEvent.CancelNew) },
             visible = true,
             actions = {
-                ZillitButton(text = "Cancel", onClick = { onEvent(DraftEvent.CancelNew) },
+                ZillitButton(text = str(S.cancel), onClick = { onEvent(DraftEvent.CancelNew) },
                     variant = ButtonVariant.Tertiary)
-                ZillitButton(text = "Create", onClick = { onEvent(DraftEvent.CreateNew) })
+                ZillitButton(text = str(S.create), onClick = { onEvent(DraftEvent.CreateNew) })
             },
         ) {
             ZillitTextField(
                 value = state.newTitle,
                 onValueChange = { onEvent(DraftEvent.NewTitleChanged(it)) },
-                label = "Title",
-                placeholder = "Untitled",
+                label = str(S.title),
+                placeholder = str(S.untitled),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
     state.renaming?.let {
         ZillitDialogShell(
-            title = "Rename script",
+            title = str(S.desktop_draft_rename_script),
             onDismiss = { onEvent(DraftEvent.CancelRename) },
             visible = true,
             actions = {
-                ZillitButton(text = "Cancel", onClick = { onEvent(DraftEvent.CancelRename) },
+                ZillitButton(text = str(S.cancel), onClick = { onEvent(DraftEvent.CancelRename) },
                     variant = ButtonVariant.Tertiary)
-                ZillitButton(text = "Rename", onClick = { onEvent(DraftEvent.ConfirmRename) })
+                ZillitButton(text = str(S.rename), onClick = { onEvent(DraftEvent.ConfirmRename) })
             },
         ) {
             ZillitTextField(
                 value = state.renameTitle,
                 onValueChange = { onEvent(DraftEvent.RenameTitleChanged(it)) },
-                label = "Title",
+                label = str(S.title),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
     state.confirmDelete?.let { script ->
         ZillitDialogShell(
-            title = "Delete script",
+            title = str(S.bs_delete_script),
             onDismiss = { onEvent(DraftEvent.CancelDelete) },
             visible = true,
             actions = {
-                ZillitButton(text = "Cancel", onClick = { onEvent(DraftEvent.CancelDelete) },
+                ZillitButton(text = str(S.cancel), onClick = { onEvent(DraftEvent.CancelDelete) },
                     variant = ButtonVariant.Tertiary)
-                ZillitButton(text = "Delete", onClick = { onEvent(DraftEvent.ConfirmDelete) },
+                ZillitButton(text = str(S.delete), onClick = { onEvent(DraftEvent.ConfirmDelete) },
                     variant = ButtonVariant.Danger)
             },
         ) {
             ZillitText(
-                text = "Delete \"${script.title}\"? This cannot be undone.",
+                text = str(S.desktop_draft_delete_confirm, script.title),
                 style = ZillitTheme.typography.bodyMedium,
             )
         }
@@ -221,7 +224,7 @@ private fun EditorToolbar(state: DraftUiState, open: OpenScript, onEvent: (Draft
     ) {
         ZillitIconButton(
             icon = ZillitIcons.ArrowLeft,
-            contentDescription = "Back to scripts",
+            contentDescription = str(S.desktop_draft_back_to_scripts),
             onClick = { onEvent(DraftEvent.CloseScript) },
         )
         if (open.editingTitle) {
@@ -231,10 +234,14 @@ private fun EditorToolbar(state: DraftUiState, open: OpenScript, onEvent: (Draft
                 singleLine = true,
                 modifier = Modifier.width(TITLE_FIELD),
             )
-            ZillitButton(text = "Done", onClick = { onEvent(DraftEvent.FinishEditTitle) }, size = ButtonSize.Small)
+            ZillitButton(
+                text = str(S.done_text),
+                onClick = { onEvent(DraftEvent.FinishEditTitle) },
+                size = ButtonSize.Small,
+            )
         } else {
             ZillitText(
-                text = open.screenplay.title.ifBlank { "Untitled" },
+                text = open.screenplay.title.ifBlank { str(S.untitled) },
                 style = ZillitTheme.typography.titleMedium,
                 color = colors.textPrimary,
                 maxLines = 1,
@@ -253,28 +260,28 @@ private fun EditorToolbar(state: DraftUiState, open: OpenScript, onEvent: (Draft
         Box(Modifier.weight(1f))
         ZillitText(
             text = when {
-                open.dirty -> "Saving…"
-                open.savedAtMillis != null -> "Saved"
+                open.dirty -> str(S.ah_saving)
+                open.savedAtMillis != null -> str(S.saved)
                 else -> ""
             },
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
         ZillitButton(
-            text = "Title page",
+            text = str(S.desktop_draft_title_page),
             onClick = { onEvent(DraftEvent.OpenTitlePage) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
         )
         ZillitButton(
-            text = if (open.navigatorOpen) "Hide navigator" else "Navigator",
+            text = if (open.navigatorOpen) str(S.desktop_draft_hide_navigator) else str(S.desktop_draft_navigator),
             onClick = { onEvent(DraftEvent.ToggleNavigator) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
         )
         Box {
             ZillitButton(
-                text = "Export",
+                text = str(S.asset_export),
                 onClick = { exportOpen = true },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -292,7 +299,12 @@ private fun EditorToolbar(state: DraftUiState, open: OpenScript, onEvent: (Draft
                     )
                 }
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { ZillitText(text = "Send PDF to Drive", style = ZillitTheme.typography.bodyMedium) },
+                    text = {
+                        ZillitText(
+                            text = str(S.desktop_draft_send_pdf_to_drive),
+                            style = ZillitTheme.typography.bodyMedium,
+                        )
+                    },
                     onClick = {
                         exportOpen = false
                         onEvent(DraftEvent.SendToDrive)
@@ -313,7 +325,7 @@ private fun NavigatorPane(open: OpenScript, onEvent: (DraftEvent) -> Unit, modif
     Column(modifier.background(colors.surface)) {
         Box(Modifier.padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs)) {
             ZillitTabStrip(
-                tabs = listOf(ZillitTab("scenes", "Scenes"), ZillitTab("cast", "Cast")),
+                tabs = listOf(ZillitTab("scenes", str(S.av_scenes)), ZillitTab("cast", str(S.desktop_draft_cast))),
                 activeId = tab,
                 onSelect = { tab = it },
             )
@@ -333,14 +345,14 @@ private fun NavigatorPane(open: OpenScript, onEvent: (DraftEvent) -> Unit, modif
                         ZillitText(text = "$number", style = ZillitTheme.typography.labelSmall,
                             color = colors.textMuted)
                         ZillitText(
-                            text = scene.text.ifBlank { "(untitled scene)" },
+                            text = scene.text.ifBlank { str(S.desktop_draft_untitled_scene) },
                             style = ZillitTheme.typography.bodySmall,
                             color = colors.textPrimary,
                             maxLines = 2,
                             modifier = Modifier.weight(1f),
                         )
                         ZillitText(
-                            text = "p${pages.getOrNull(index) ?: 1}",
+                            text = str(S.desktop_draft_page_abbrev, pages.getOrNull(index) ?: 1),
                             style = ZillitTheme.typography.labelSmall,
                             color = colors.textMuted,
                         )
@@ -355,7 +367,11 @@ private fun NavigatorPane(open: OpenScript, onEvent: (DraftEvent) -> Unit, modif
                     ) {
                         ZillitText(text = name, style = ZillitTheme.typography.bodySmall, color = colors.textPrimary)
                         ZillitText(
-                            text = "$lines line${if (lines == 1) "" else "s"}",
+                            text = if (lines == 1) {
+                                str(S.desktop_draft_one_line)
+                            } else {
+                                str(S.desktop_draft_line_count, lines)
+                            },
                             style = ZillitTheme.typography.labelSmall,
                             color = colors.textMuted,
                         )
@@ -365,10 +381,10 @@ private fun NavigatorPane(open: OpenScript, onEvent: (DraftEvent) -> Unit, modif
         }
         ZillitDivider()
         Column(Modifier.padding(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Stat("Pages", open.pageCount.toString())
-            Stat("Scenes", open.sceneCount.toString())
-            Stat("Words", open.screenplay.wordCount.toString())
-            Stat("Cast", open.characters.size.toString())
+            Stat(str(S.pages), open.pageCount.toString())
+            Stat(str(S.av_scenes), open.sceneCount.toString())
+            Stat(str(S.desktop_draft_words), open.screenplay.wordCount.toString())
+            Stat(str(S.desktop_draft_cast), open.characters.size.toString())
         }
     }
 }
@@ -387,31 +403,33 @@ private fun TitlePageDialog(open: OpenScript, onEvent: (DraftEvent) -> Unit) {
     val change = { updated: com.zillit.desktop.feature.draft.domain.TitlePage -> onEvent(DraftEvent
         .TitlePageChanged(updated)) }
     ZillitDialogShell(
-        title = "Title page",
-        subtitle = "What prints before page one.",
+        title = str(S.desktop_draft_title_page),
+        subtitle = str(S.desktop_draft_title_page_subtitle),
         onDismiss = { onEvent(DraftEvent.CloseTitlePage) },
         visible = true,
-        actions = { ZillitButton(text = "Done", onClick = { onEvent(DraftEvent.CloseTitlePage) }) },
+        actions = { ZillitButton(text = str(S.done_text), onClick = { onEvent(DraftEvent.CloseTitlePage) }) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitTextField(value = page.title, onValueChange = { change(page.copy(title = it)) }, label = "Title",
+            ZillitTextField(value = page.title, onValueChange = { change(page.copy(title = it)) }, label = str(S.title),
                 modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitTextField(value = page.credit, onValueChange = { change(page.copy(credit = it)) },
-                    label = "Credit",
+                    label = str(S.desktop_credit),
                     modifier = Modifier.weight(1f))
                 ZillitTextField(value = page.author, onValueChange = { change(page.copy(author = it)) },
-                    label = "Author",
+                    label = str(S.desktop_draft_author),
                     modifier = Modifier.weight(2f))
             }
-            ZillitTextField(value = page.source, onValueChange = { change(page.copy(source = it)) }, label = "Source",
-                placeholder = "Based on…", modifier = Modifier.fillMaxWidth())
+            ZillitTextField(value = page.source, onValueChange = { change(page.copy(source = it)) },
+                label = str(S.av_source),
+                placeholder = str(S.desktop_draft_based_on), modifier = Modifier.fillMaxWidth())
             ZillitTextField(value = page.draftDate, onValueChange = { change(page.copy(draftDate = it)) },
-                label = "Draft date", modifier = Modifier.fillMaxWidth())
+                label = str(S.desktop_draft_draft_date), modifier = Modifier.fillMaxWidth())
             ZillitTextField(value = page.contact, onValueChange = { change(page.copy(contact = it)) },
-                label = "Contact",
+                label = str(S.contact),
                 singleLine = false, modifier = Modifier.fillMaxWidth())
-            ZillitTextField(value = page.notes, onValueChange = { change(page.copy(notes = it)) }, label = "Notes",
+            ZillitTextField(value = page.notes, onValueChange = { change(page.copy(notes = it)) },
+                label = str(S.notes),
                 singleLine = false, modifier = Modifier.fillMaxWidth())
         }
     }

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.authoring
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewUser
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
@@ -26,7 +28,7 @@ data class CrewOption(
     val search: String get() = "$name $role $department"
 
     /** The row's second line. */
-    val subline: String get() = role.ifEmpty { department }.ifEmpty { "Crew" }
+    val subline: String get() = role.ifEmpty { department }.ifEmpty { str(S.crew) }
 }
 
 /**
@@ -114,7 +116,7 @@ object CrewRoles {
         val user = crew.firstOrNull { it.userId == selectedUserId }
         val synthetic = CrewOption(
             userId = selectedUserId,
-            name = user?.fullName?.ifEmpty { null } ?: fallbackName.ifEmpty { "Selected crew member" },
+            name = user?.fullName?.ifEmpty { null } ?: fallbackName.ifEmpty { str(S.desktop_dm_selected_crew_member) },
             role = user?.designationName?.let { DealLabels.formatLabel(it) }.orEmpty(),
             department = user?.departmentName?.let { DealLabels.formatLabel(it) }.orEmpty(),
             pending = user?.status == "pending",

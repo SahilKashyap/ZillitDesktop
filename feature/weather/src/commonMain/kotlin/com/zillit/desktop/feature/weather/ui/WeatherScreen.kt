@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
@@ -97,15 +99,15 @@ fun WeatherScreen(
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         when {
             state.hasNoAccess -> ZillitEmptyState(
-                title = "No weather access",
-                message = "This tool is not shared with you on this project.",
+                title = str(S.desktop_weather_no_access_title),
+                message = str(S.desktop_tool_not_shared_with_you),
                 icon = ZillitIcons.Shield,
                 modifier = Modifier.align(Alignment.Center),
             )
 
             !state.configured -> ZillitEmptyState(
-                title = "Weather is not configured",
-                message = "No weather key is set for this environment, so there is nothing to show.",
+                title = str(S.desktop_weather_not_configured_title),
+                message = str(S.desktop_weather_not_configured_message),
                 icon = ZillitIcons.Warning,
                 modifier = Modifier.align(Alignment.Center),
             )
@@ -174,10 +176,10 @@ private fun TopBarControls(
     ) {
         if (state.canSearch) CitySearch(state.search, copy, onEvent)
         if (state.canSearch) {
-            ZillitTooltip("Use my location") {
+            ZillitTooltip(str(S.map_picker_my_location)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Pin,
-                    contentDescription = "Use my location",
+                    contentDescription = str(S.map_picker_my_location),
                     onClick = { onEvent(WeatherEvent.UseMyLocation) },
                     enabled = !state.locating,
                     size = CONTROL,
@@ -185,24 +187,24 @@ private fun TopBarControls(
             }
         }
         if (onPickPlace != null) {
-            ZillitTooltip("Pick on map") {
+            ZillitTooltip(str(S.av_pick_on_map)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Globe,
-                    contentDescription = "Pick on map",
+                    contentDescription = str(S.av_pick_on_map),
                     onClick = onPickPlace,
                     size = CONTROL,
                 )
             }
         }
         if (state.place != null) {
-            ZillitTooltip("Refresh") {
+            ZillitTooltip(str(S.refresh_text)) {
                 Box(Modifier.size(CONTROL), contentAlignment = Alignment.Center) {
                     if (state.loading) {
                         ZillitSpinner(size = SPINNER_SMALL)
                     } else {
                         ZillitIconButton(
                             icon = ZillitIcons.Reload,
-                            contentDescription = "Refresh",
+                            contentDescription = str(S.refresh_text),
                             onClick = { onEvent(WeatherEvent.Refresh) },
                             size = CONTROL,
                         )
@@ -339,25 +341,27 @@ private fun Body(
                 label = "weatherReport",
             ) { shown -> Forecast(shown, copy, clock, state.busy) }
 
-            state.busy -> Waiting(if (state.locating) "Finding where you are…" else "${copy.loading}…")
+            state.busy -> Waiting(
+                if (state.locating) str(S.desktop_weather_finding_where_you_are) else "${copy.loading}…",
+            )
 
             state.place == null -> ZillitEmptyState(
-                title = "No place chosen",
-                message = "Search for a city, use your location, or pick a point on the map.",
+                title = str(S.desktop_weather_no_place_chosen),
+                message = str(S.desktop_weather_no_place_chosen_message),
                 icon = ZillitIcons.Pin,
                 modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.xxl),
                 action = {
                     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                         if (state.canSearch) {
                             ZillitButton(
-                                text = "Use my location",
+                                text = str(S.map_picker_my_location),
                                 onClick = { onEvent(WeatherEvent.UseMyLocation) },
                                 leadingIcon = ZillitIcons.Pin,
                             )
                         }
                         if (onPickPlace != null) {
                             ZillitButton(
-                                text = "Pick on map",
+                                text = str(S.av_pick_on_map),
                                 onClick = onPickPlace,
                                 variant = ButtonVariant.Secondary,
                                 leadingIcon = ZillitIcons.Globe,
@@ -368,11 +372,16 @@ private fun Body(
             )
 
             else -> ZillitEmptyState(
-                title = "No forecast",
-                message = "Nothing came back for this place.",
+                title = str(S.desktop_weather_no_forecast),
+                message = str(S.desktop_weather_no_forecast_message),
                 icon = ZillitIcons.Warning,
                 modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.xxl),
-                action = { ZillitButton(text = "Try again", onClick = { onEvent(WeatherEvent.Refresh) }) },
+                action = {
+                    ZillitButton(
+                        text = str(S.docusign_token_gateway_retry),
+                        onClick = { onEvent(WeatherEvent.Refresh) },
+                    )
+                },
             )
         }
     }
@@ -409,7 +418,7 @@ private fun ErrorBanner(message: String?, onEvent: (WeatherEvent) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Dismiss",
+                text = str(S.sync_action_dismiss),
                 onClick = { onEvent(WeatherEvent.DismissError) },
                 variant = ButtonVariant.Tertiary,
             )

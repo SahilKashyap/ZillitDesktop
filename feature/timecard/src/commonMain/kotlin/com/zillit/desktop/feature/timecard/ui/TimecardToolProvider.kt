@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -22,7 +24,7 @@ class TimecardToolProvider(
 ) : ToolProvider {
 
     override val path: String = TIMECARD_PATH
-    override val title: String = "Timecards"
+    override val title: String get() = str(S.desktop_timecards)
     override val icon = ZillitToolIcons.Timecard
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -42,7 +44,7 @@ class TimecardToolProvider(
             }
         }
         LaunchedEffect(state.destination) {
-            navigator.setTitle("Timecards · ${state.destination.label}")
+            navigator.setTitle(str(S.desktop_timecards_title_with_page, state.destination.label))
         }
 
         TimecardScreen(state = state, onEvent = viewModel::onEvent)

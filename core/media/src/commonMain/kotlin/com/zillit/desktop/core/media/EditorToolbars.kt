@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Colour swatches, width chips, undo and clear — one row over the canvas.
@@ -40,8 +42,8 @@ fun PenToolbar(pen: PenState, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(ZillitTheme.spacing.sm))
         SizeDots(count = PEN_WIDTHS.size, selected = pen.widthIndex, onSelect = { pen.widthIndex = it })
         Spacer(Modifier.weight(1f))
-        ToolLink(text = "Undo", enabled = pen.strokes.isNotEmpty(), onClick = pen::undo)
-        ToolLink(text = "Clear", enabled = pen.strokes.isNotEmpty(), danger = true, onClick = pen::clear)
+        ToolLink(text = str(S.dd_rt_undo), enabled = pen.strokes.isNotEmpty(), onClick = pen::undo)
+        ToolLink(text = str(S.ah_clear), enabled = pen.strokes.isNotEmpty(), danger = true, onClick = pen::clear)
     }
 }
 
@@ -60,20 +62,20 @@ fun TextToolbar(tool: TextToolState, onPlace: () -> Unit, modifier: Modifier = M
         ZillitTextField(
             value = tool.input,
             onValueChange = { tool.input = it },
-            placeholder = "Type a line, then Add…",
+            placeholder = str(S.desktop_media_text_placeholder),
             onImeAction = onPlace,
             modifier = Modifier.weight(1f).widthIn(min = TEXT_FIELD_MIN_WIDTH),
         )
         ZillitButton(
-            text = "Add",
+            text = str(S.add),
             onClick = onPlace,
             enabled = tool.input.isNotBlank(),
             size = ButtonSize.Small,
         )
         ColorSwatches(selected = tool.color, onSelect = { tool.color = it })
         SizeDots(count = TEXT_SIZES.size, selected = tool.sizeIndex, onSelect = { tool.sizeIndex = it })
-        ToolLink(text = "Undo", enabled = tool.texts.isNotEmpty(), onClick = tool::undo)
-        ToolLink(text = "Clear", enabled = tool.texts.isNotEmpty(), danger = true, onClick = tool::clear)
+        ToolLink(text = str(S.dd_rt_undo), enabled = tool.texts.isNotEmpty(), onClick = tool::undo)
+        ToolLink(text = str(S.ah_clear), enabled = tool.texts.isNotEmpty(), danger = true, onClick = tool::clear)
     }
 }
 
@@ -90,19 +92,19 @@ fun CropToolbar(canApply: Boolean, onApply: () -> Unit, onReset: () -> Unit, mod
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "Drag a rectangle over the picture, then Apply.",
+            text = str(S.desktop_media_crop_hint),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Reset",
+            text = str(S.reset),
             onClick = onReset,
             enabled = canApply,
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
         )
-        ZillitButton(text = "Apply", onClick = onApply, enabled = canApply, size = ButtonSize.Small)
+        ZillitButton(text = str(S.dm_filter_apply), onClick = onApply, enabled = canApply, size = ButtonSize.Small)
     }
 }
 

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.sides.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -25,7 +27,7 @@ object SidesRules {
     /** The chip tooltip: `12  INT. KITCHEN - DAY`, or `Scene 12` when nameless. */
     fun sceneTip(scene: SceneInfo): String {
         val name = sceneName(scene.heading, scene.sceneNumber)
-        return if (name.isEmpty()) "Scene ${scene.sceneNumber}" else "${scene.sceneNumber}  $name"
+        return if (name.isEmpty()) str(S.desktop_scene_numbered, scene.sceneNumber) else "${scene.sceneNumber}  $name"
     }
 
     /**
@@ -105,12 +107,10 @@ object SidesRules {
         orderedScenes: Int,
         rearranging: Boolean,
     ): String = when {
-        !callSheetSelected -> "Select a call sheet above to generate sides."
-        loadingScenes -> "Loading the call sheet’s scenes…"
-        orderedScenes == 0 && rearranging -> "Add at least one scene number to the order field."
-        orderedScenes == 0 ->
-            "This call sheet has no extracted scenes, so there’s nothing to generate. " +
-                "Pick a call sheet that lists scenes, or upload a new one."
+        !callSheetSelected -> str(S.desktop_sides_select_call_sheet_above)
+        loadingScenes -> str(S.desktop_sides_loading_call_sheet_scenes)
+        orderedScenes == 0 && rearranging -> str(S.desktop_sides_add_scene_number)
+        orderedScenes == 0 -> str(S.desktop_sides_call_sheet_no_scenes)
         else -> ""
     }
 

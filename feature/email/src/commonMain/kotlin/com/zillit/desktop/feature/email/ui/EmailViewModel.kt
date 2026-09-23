@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.data.FolderSyncResult
 import com.zillit.desktop.feature.email.data.Mailbox
 import com.zillit.desktop.feature.email.domain.ActiveMailbox
@@ -602,7 +604,9 @@ class EmailViewModel(
                         // The sidebar is server-owned; re-reading it is how the
                         // folder gets its flags and its place in the order.
                         refreshFolders()
-                        setState { copy(notice = if (renamed == null) "Folder created" else "Folder renamed") }
+                        val notice =
+                            if (renamed == null) S.desktop_drive_activity_folder_created else S.dd_folder_renamed
+                        setState { copy(notice = str(notice)) }
                         if (renamed != null && renamed == currentState.selectedFolderName) {
                             setState { copy(selectedFolderName = saved.data) }
                         }
@@ -640,7 +644,7 @@ class EmailViewModel(
                     }
                     currentState.selectedFolder?.let { showFolder(it.name) }
                 }
-                setState { copy(notice = "Folder deleted") }
+                setState { copy(notice = str(S.desktop_drive_activity_folder_deleted)) }
                 refreshFolders()
             },
             onError = { setState { copy(error = it.localised()) } },
@@ -697,7 +701,9 @@ class EmailViewModel(
             block = { target.setEnabled(enabled) },
             onSuccess = {
                 setState {
-                    copy(isSavingConversationView = false, notice = "Conversation view ${if (enabled) "on" else "off"}")
+                    val notice =
+                        if (enabled) S.desktop_email_conversation_view_on else S.desktop_email_conversation_view_off
+                    copy(isSavingConversationView = false, notice = str(notice))
                 }
             },
             onError = { error ->

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui.preview
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.EditAction
 import com.zillit.desktop.feature.dealmemo.domain.rules.BulkRules
 import com.zillit.desktop.feature.dealmemo.domain.rules.NonUnionPayBreakdown
@@ -99,6 +101,6 @@ internal class RulesActions(private val vm: DealMemoViewModel, private val page:
         page.updatePreview { copy(rules = rules?.reducer()) }
 
     private companion object {
-        const val IMPORT_LABEL = "Production's Non-Union Pay Rules"
+        val IMPORT_LABEL: String get() = str(S.desktop_dm_productions_non_union_pay_rules)
     }
 }

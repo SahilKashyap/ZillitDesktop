@@ -119,7 +119,9 @@ class MapRepositoryImpl(
         query: Map<String, Any?> = emptyMap(),
         transform: (JsonElement?) -> T,
     ): ZillitResult<T> =
-        when (val envelope = apiClient.envelope(HttpVerb.Get, url, RequestModule.ProjectUser, queryParameters = query)) {
+        when (
+            val envelope = apiClient.envelope(HttpVerb.Get, url, RequestModule.ProjectUser, queryParameters = query)
+        ) {
             is ZillitResult.Failure -> envelope
             is ZillitResult.Success ->
                 if (envelope.data.status == 0) {

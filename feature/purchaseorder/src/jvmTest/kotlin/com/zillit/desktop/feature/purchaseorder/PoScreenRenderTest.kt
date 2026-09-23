@@ -266,7 +266,7 @@ class PoScreenRenderTest {
             onNodeWithText("New PO").assertExists()
             onNodeWithText("Back to POs").assertExists()
             onNodeWithText("Save Draft").assertExists()
-            onNodeWithText("Save as Template").assertExists()
+            onNodeWithText("Save as template").assertExists()
             onNodeWithText("Create & Submit PO").assertExists()
         }
     }
@@ -289,7 +289,7 @@ class PoScreenRenderTest {
             }
             onNodeWithText("Back to Queue").assertExists()
             onNodeWithText("Post to Ledger").assertExists()
-            onAllNodesWithText("Ledger Total").onFirst().assertExists()
+            onAllNodesWithText("LEDGER TOTAL").onFirst().assertExists()
         }
     }
 }

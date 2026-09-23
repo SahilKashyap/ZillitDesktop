@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.SELECTION_LIMIT_MESSAGE
 
 /** The one-button dialogs — the web's `Modal.info`. */
@@ -34,12 +36,12 @@ import com.zillit.desktop.feature.email.domain.SELECTION_LIMIT_MESSAGE
 internal fun InfoDialog(info: MailInfo, onDismiss: () -> Unit) {
     ModalCard(onDismiss = onDismiss, modifier = Modifier.testTag(INFO_DIALOG_TAG)) {
         val (title, body) = when (info) {
-            MailInfo.SelectionLimit -> "Selection Limited" to SELECTION_LIMIT_MESSAGE
+            MailInfo.SelectionLimit -> str(S.selection_limited) to SELECTION_LIMIT_MESSAGE
         }
         ZillitText(text = title, style = ZillitTheme.typography.titleMedium)
         ZillitText(text = body, style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textSecondary)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            ZillitButton(text = "OK", onClick = onDismiss)
+            ZillitButton(text = str(S.ah_ok), onClick = onDismiss)
         }
     }
 }
@@ -59,7 +61,7 @@ internal fun ConversationViewDialog(
 ) {
     var pending by remember { mutableStateOf<Boolean?>(null) }
     ModalCard(onDismiss = onDismiss, modifier = Modifier.testTag(CONVERSATION_DIALOG_TAG)) {
-        ZillitText(text = "Toggle Conversation View", style = ZillitTheme.typography.titleMedium)
+        ZillitText(text = str(S.desktop_email_toggle_conversation_view), style = ZillitTheme.typography.titleMedium)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -67,11 +69,11 @@ internal fun ConversationViewDialog(
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                 ZillitText(
-                    text = "Conversation View",
+                    text = str(S.email_trailing),
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 )
                 ZillitText(
-                    text = "Enable Conversation View to group all related emails into a single thread.",
+                    text = str(S.email_trailing_sub),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -86,19 +88,21 @@ internal fun ConversationViewDialog(
         val next = pending?.takeIf { it != enabled }
         if (next != null) {
             ZillitText(
-                text = "Turn ${if (next) "on" else "off"} Conversation View? The list will regroup.",
+                text = str(
+                    if (next) S.desktop_email_conversation_view_turn_on else S.desktop_email_conversation_view_turn_off,
+                ),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
             DialogButtons(
-                action = "Apply",
+                action = str(S.dm_filter_apply),
                 loading = saving,
                 onConfirm = { onChange(next) },
                 onDismiss = onDismiss,
             )
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ZillitButton(text = "Close", variant = ButtonVariant.Tertiary, onClick = onDismiss)
+                ZillitButton(text = str(S.close), variant = ButtonVariant.Tertiary, onClick = onDismiss)
             }
         }
     }
@@ -127,23 +131,27 @@ internal fun MailboxTourDialog(onDismiss: () -> Unit) {
             ) {
                 ZillitIcon(current.icon, contentDescription = null, tint = colors.textOnAccent, size = TOUR_ICON)
             }
-            ZillitText(text = current.title, style = ZillitTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            ZillitText(
+                text = str(current.title),
+                style = ZillitTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
             ZillitText(
                 text = "${step + 1} / ${TOUR_STEPS.size}",
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
         }
-        ZillitText(text = current.body, style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary)
+        ZillitText(text = str(current.body), style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary)
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.xs),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
-            if (step > 0) ZillitButton(text = "Back", variant = ButtonVariant.Tertiary, onClick = { step-- })
+            if (step > 0) ZillitButton(text = str(S.back), variant = ButtonVariant.Tertiary, onClick = { step-- })
             if (step < TOUR_STEPS.lastIndex) {
-                ZillitButton(text = "Next", onClick = { step++ }, modifier = Modifier.testTag(TOUR_NEXT_TAG))
+                ZillitButton(text = str(S.next), onClick = { step++ }, modifier = Modifier.testTag(TOUR_NEXT_TAG))
             } else {
-                ZillitButton(text = "Done", onClick = onDismiss, modifier = Modifier.testTag(TOUR_NEXT_TAG))
+                ZillitButton(text = str(S.done_text), onClick = onDismiss, modifier = Modifier.testTag(TOUR_NEXT_TAG))
             }
         }
     }
@@ -151,39 +159,13 @@ internal fun MailboxTourDialog(onDismiss: () -> Unit) {
 
 private class TourStep(val title: String, val body: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
-/** The web's five `mailbox_tour_*` strings. */
+/** The web's five `mailbox_tour_*` strings, as catalogue keys. */
 private val TOUR_STEPS = listOf(
-    TourStep(
-        "Two Mailboxes, One Place",
-        "As an Accounts department member, you now have a shared Accounts Mailbox for this project alongside " +
-            "your personal mailbox. Here's a quick look at how to work with both.",
-        ZillitIcons.Users,
-    ),
-    TourStep(
-        "Switch Mailboxes Here",
-        "Click the switcher at the top of the sidebar to choose between your Personal Mailbox and the shared " +
-            "Accounts Mailbox. An orange highlight means the Accounts Mailbox is active — every folder and " +
-            "email below belongs to it.",
-        ZillitIcons.Mail,
-    ),
-    TourStep(
-        "Unread at a Glance",
-        "Each mailbox shows its own unread count inside the switcher's menu. A small orange dot on the icon " +
-            "means the mailbox you're not viewing has new mail.",
-        ZillitIcons.Bell,
-    ),
-    TourStep(
-        "Send From the Active Mailbox",
-        "New emails are sent from the mailbox shown in the switcher. In the Accounts Mailbox, drafts, contacts, " +
-            "and signatures are shared with your whole department.",
-        ZillitIcons.Send,
-    ),
-    TourStep(
-        "Settings Follow the Mailbox",
-        "Signatures, BCC presets, email forwarding, and conversation view apply to whichever mailbox is active " +
-            "when you change them.",
-        ZillitIcons.Settings,
-    ),
+    TourStep(S.desktop_email_tour_1_title, S.desktop_email_tour_1_body, ZillitIcons.Users),
+    TourStep(S.desktop_email_tour_2_title, S.desktop_email_tour_2_body, ZillitIcons.Mail),
+    TourStep(S.desktop_email_tour_3_title, S.desktop_email_tour_3_body, ZillitIcons.Bell),
+    TourStep(S.desktop_email_tour_4_title, S.desktop_email_tour_4_body, ZillitIcons.Send),
+    TourStep(S.desktop_email_tour_5_title, S.desktop_email_tour_5_body, ZillitIcons.Settings),
 )
 
 internal const val INFO_DIALOG_TAG = "email-info-dialog"

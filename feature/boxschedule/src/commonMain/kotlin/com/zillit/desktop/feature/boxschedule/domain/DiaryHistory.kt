@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.math.abs
@@ -8,13 +10,21 @@ import kotlin.math.abs
  * The diary's history — `GET /box-schedule/activity-log` and `/revisions`,
  * read the way the web's `ActivityLogDrawer` reads them.
  */
-enum class HistoryAction(val wire: String, val label: String, val color: String, val filterLabel: String) {
-    Created("created", "ADDED", "#27AE60", "Added"),
-    Updated("updated", "CHANGED", "#3498DB", "Changed"),
-    Deleted("deleted", "REMOVED", "#E74C3C", "Removed"),
-    Printed("printed", "PRINTED", "#8E44AD", "Printed"),
-    Shared("shared", "SHARED", "#F39C12", "Shared"),
+enum class HistoryAction(
+    val wire: String,
+    private val labelKey: String,
+    val color: String,
+    private val filterLabelKey: String,
+) {
+    Created("created", S.history_label_added, "#27AE60", S.history_added),
+    Updated("updated", S.history_label_changed, "#3498DB", S.history_changed),
+    Deleted("deleted", S.history_label_removed, "#E74C3C", S.history_removed),
+    Printed("printed", S.history_label_printed, "#8E44AD", S.history_printed),
+    Shared("shared", S.history_label_shared, "#F39C12", S.history_shared),
     ;
+
+    val label: String get() = str(labelKey)
+    val filterLabel: String get() = str(filterLabelKey)
 
     companion object {
         fun fromWire(value: String): HistoryAction? = entries.firstOrNull { it.wire == value }
@@ -44,10 +54,10 @@ data class HistoryEntry(
 
     val targetLabel: String
         get() = when (targetType) {
-            "schedule_day" -> "Schedule"
-            "schedule_type" -> "Schedule Type"
-            "event" -> "Event"
-            "note" -> "Note"
+            "schedule_day" -> str(S.history_target_schedule)
+            "schedule_type" -> str(S.history_target_schedule_type)
+            "event" -> str(S.history_target_event)
+            "note" -> str(S.history_target_note)
             else -> targetType
         }
 }

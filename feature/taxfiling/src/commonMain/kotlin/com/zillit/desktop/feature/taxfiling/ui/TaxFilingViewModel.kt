@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.FraudSignalSource
 import com.zillit.desktop.feature.taxfiling.domain.TaxCompany
 import com.zillit.desktop.feature.taxfiling.domain.TaxFileSink
@@ -231,7 +233,7 @@ class TaxFilingViewModel(
     internal fun fail(error: ZillitError) = fail(error.localised())
 
     internal fun refuseWithoutSignals() = fail(
-        "This machine cannot be described to HMRC, which every filing requires. Nothing was sent.",
+        str(S.desktop_tax_no_machine_details),
     )
 
     private companion object {

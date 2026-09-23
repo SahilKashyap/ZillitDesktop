@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.callsheet.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.SavedTemplate
 
 /**
@@ -25,9 +27,9 @@ internal class TemplateController(private val ctx: SheetContext) {
                     copy(
                         dialog = SheetDialog.Confirm(
                             action = ConfirmAction.DeleteTemplate(event.template),
-                            title = "Delete Template",
-                            message = "\"${event.template.name}\" will be removed for everyone in this project.",
-                            confirmLabel = "Delete",
+                            title = str(S.ah_delete_template),
+                            message = str(S.desktop_template_removed_for_everyone, event.template.name),
+                            confirmLabel = str(S.delete),
                             danger = true,
                         ),
                     )
@@ -64,7 +66,10 @@ internal class TemplateController(private val ctx: SheetContext) {
                 is ZillitResult.Success -> {
                     val payload = result.data.payload
                     if (payload == null) {
-                        ctx.toast("Couldn't open template: Template has no content", isError = true)
+                        ctx.toast(
+                            str(S.desktop_could_not_open_template, str(S.desktop_template_has_no_content)),
+                            isError = true,
+                        )
                         return@launchWork
                     }
                     ctx.editor.openNew(
@@ -74,10 +79,10 @@ internal class TemplateController(private val ctx: SheetContext) {
                     )
                 }
                 is ZillitResult.Failure -> if (result.error.isGone()) {
-                    ctx.toast("That template no longer exists — list refreshed.", isError = true)
+                    ctx.toast(str(S.desktop_template_gone_list_refreshed), isError = true)
                     ctx.lists.refreshSavedTemplates()
                 } else {
-                    ctx.toast("Couldn't open template: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_open_template, result.error.localised()), isError = true)
                 }
             }
         }
@@ -87,9 +92,9 @@ internal class TemplateController(private val ctx: SheetContext) {
         if (!ctx.state.isPoster) return
         ctx.launchWork {
             when (val result = ctx.repository.deleteTemplate(template.id)) {
-                is ZillitResult.Success -> ctx.toast("Template deleted.")
+                is ZillitResult.Success -> ctx.toast(str(S.dm_nda_template_deleted))
                 is ZillitResult.Failure -> if (!result.error.isGone()) {
-                    ctx.toast("Delete failed: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_delete_failed_reason, result.error.localised()), isError = true)
                 }
             }
             ctx.lists.refreshSavedTemplates()
@@ -109,13 +114,13 @@ internal class TemplateController(private val ctx: SheetContext) {
         ctx.launchWork {
             when (val result = ctx.repository.createTemplate(editor.document)) {
                 is ZillitResult.Success -> {
-                    val name = result.data?.name?.ifBlank { null } ?: "Draft Template"
-                    ctx.toast("Saved as \"$name\" — visible to everyone who can create call sheets.")
+                    val name = result.data?.name?.ifBlank { null } ?: str(S.desktop_draft_template)
+                    ctx.toast(str(S.desktop_cs_template_saved_as, name))
                     leaveToDrafts()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(editor = this.editor?.copy(savingTemplate = false)) }
-                    ctx.toast("Template save failed: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_template_save_failed_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -130,7 +135,7 @@ internal class TemplateController(private val ctx: SheetContext) {
         ctx.launchWork {
             when (val result = ctx.repository.updateTemplate(template.id, editor.document)) {
                 is ZillitResult.Success -> {
-                    ctx.toast("\"${template.name}\" updated for the whole project.")
+                    ctx.toast(str(S.desktop_template_updated_for_project, template.name))
                     leaveToDrafts()
                 }
                 is ZillitResult.Failure -> {
@@ -141,10 +146,13 @@ internal class TemplateController(private val ctx: SheetContext) {
                         )
                     }
                     if (gone) {
-                        ctx.toast("That template no longer exists — list refreshed.", isError = true)
+                        ctx.toast(str(S.desktop_template_gone_list_refreshed), isError = true)
                         ctx.lists.refreshSavedTemplates()
                     } else {
-                        ctx.toast("Template update failed: ${result.error.localised()}", isError = true)
+                        ctx.toast(
+                            str(S.desktop_template_update_failed_reason, result.error.localised()),
+                            isError = true,
+                        )
                     }
                 }
             }

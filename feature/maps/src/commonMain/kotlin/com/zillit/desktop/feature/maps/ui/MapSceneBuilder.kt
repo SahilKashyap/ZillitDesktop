@@ -20,60 +20,72 @@ internal fun MapUiState.toScene(): MapScene {
     val locationFormOpen = topPanel == MapPanel.LocationForm && locationForm != null
     val editingActiveZone = zoneFormOpen && zoneForm.editId != null && zoneForm.editId == activeZoneId
     return MapScene(
-        markers = filteredLocations.mapNotNull { location ->
-            val point = location.point ?: return@mapNotNull null
-            val style = style(location.type)
-            SceneMarker(
-                id = location.id,
-                name = location.displayName,
-                type = if (location.hasType) location.type else "",
-                icon = style.icon,
-                color = style.colorHex,
-                point = point,
-                address = location.address,
-                subTypes = location.subTypes,
-                sceneNumber = location.sceneNumber,
-                description = location.description,
-            )
-        },
+        markers = sceneMarkers(),
         pinMode = pinMode,
         draggable = pinMode && viewer.mayPost,
         lockedId = movingId,
         pendingMove = pendingMove,
         // The zone being edited is drawn by the form's own circle instead.
-        zone = activeZone?.takeUnless { editingActiveZone }?.let { zone ->
-            zone.point?.let { centre ->
-                SceneZone(
-                    id = zone.id,
-                    name = zone.displayName,
-                    circle = SceneCircle(centre, zone.zoneRadiusMiles),
-                    address = zone.address,
-                    type = zone.type,
-                    streets = zone.intersection?.takeIf { zone.centerPointType == CenterPointType.Intersection }?.label,
-                )
-            }
-        },
+        zone = sceneZone(editingActiveZone),
         draftZone = zoneForm?.takeIf { zoneFormOpen }?.let { form ->
             form.point?.let { SceneCircle(it, form.effectiveRadius) }
         },
         draftPin = locationForm?.takeIf { locationFormOpen }?.point,
-        // The floating control steps aside while the Cities panel or the
-        // search is open, as the web's does (`!showCityPanel && !showSearchBar`).
-        cities = if (citiesLoaded && topPanel != MapPanel.Cities && search == null) {
-            SceneCities(
-                count = cities.size,
-                unread = totalUnread,
-                selectedName = selectedCity?.displayName,
-                selectedCount = filteredLocations.size,
-            )
-        } else {
-            null
-        },
+        cities = sceneCities(),
         guide = guide,
         canPost = viewer.mayPost,
         nonce = snapNonce,
     )
 }
+
+/** One marker per filtered location that has a point, styled by its type. */
+private fun MapUiState.sceneMarkers(): List<SceneMarker> = filteredLocations.mapNotNull { location ->
+    val point = location.point ?: return@mapNotNull null
+    val style = style(location.type)
+    SceneMarker(
+        id = location.id,
+        name = location.displayName,
+        type = if (location.hasType) location.type else "",
+        icon = style.icon,
+        color = style.colorHex,
+        point = point,
+        address = location.address,
+        subTypes = location.subTypes,
+        sceneNumber = location.sceneNumber,
+        description = location.description,
+    )
+}
+
+/** The drawn studio zone, unless the form is drawing its own circle instead. */
+private fun MapUiState.sceneZone(editingActiveZone: Boolean): SceneZone? =
+    activeZone?.takeUnless { editingActiveZone }?.let { zone ->
+        zone.point?.let { centre ->
+            SceneZone(
+                id = zone.id,
+                name = zone.displayName,
+                circle = SceneCircle(centre, zone.zoneRadiusMiles),
+                address = zone.address,
+                type = zone.type,
+                streets = zone.intersection?.takeIf { zone.centerPointType == CenterPointType.Intersection }?.label,
+            )
+        }
+    }
+
+/**
+ * The floating control steps aside while the Cities panel or the search is
+ * open, as the web's does (`!showCityPanel && !showSearchBar`).
+ */
+private fun MapUiState.sceneCities(): SceneCities? =
+    if (citiesLoaded && topPanel != MapPanel.Cities && search == null) {
+        SceneCities(
+            count = cities.size,
+            unread = totalUnread,
+            selectedName = selectedCity?.displayName,
+            selectedCount = filteredLocations.size,
+        )
+    } else {
+        null
+    }
 
 /**
  * Applies another client's change in place — `useMapSocket` and

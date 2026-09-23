@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.BadgeKind
 import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
@@ -81,7 +83,10 @@ internal class CommentsController(private val ctx: ReportContext) {
                 }
                 is ZillitResult.Failure -> {
                     update(thread.copy(loading = false))
-                    if (!quiet) ctx.toast("Couldn't load comments: ${result.error.localised()}", isError = true)
+                    if (!quiet) {
+                        val reason = result.error.localised()
+                        ctx.toast(str(S.desktop_could_not_load_comments_reason, reason), isError = true)
+                    }
                 }
             }
         }
@@ -107,7 +112,7 @@ internal class CommentsController(private val ctx: ReportContext) {
                 }
                 is ZillitResult.Failure -> {
                     update(current.copy(sending = false))
-                    ctx.toast("Couldn't send the comment: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_send_comment_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -140,7 +145,7 @@ internal class CommentsController(private val ctx: ReportContext) {
                 )
                 is ZillitResult.Failure -> {
                     update(current.copy(savingEdit = false))
-                    ctx.toast("Couldn't save the comment: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_save_comment_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -159,7 +164,7 @@ internal class CommentsController(private val ctx: ReportContext) {
                 )
                 is ZillitResult.Failure -> {
                     update(current.copy(deletingId = null))
-                    ctx.toast("Couldn't delete the comment: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_delete_comment_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -182,7 +187,7 @@ internal class CommentsController(private val ctx: ReportContext) {
     }
 
     private companion object {
-        const val LOCKED_NOTE = "Comments are closed on a report approved for publishing."
-        const val READ_ONLY_NOTE = "Only the report's creator and its comment recipients can post here."
+        val LOCKED_NOTE: String get() = str(S.desktop_pr_comments_closed_note)
+        val READ_ONLY_NOTE: String get() = str(S.desktop_pr_comments_read_only_note)
     }
 }

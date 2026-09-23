@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailFolder
 
 data class RuleEditorState(
@@ -108,7 +110,7 @@ class EmailRulesViewModel(
 
     private fun openEditor(rule: EmailRule) {
         if (rule.isNew && currentState.atLimit) {
-            setState { copy(error = "You already have ${EmailRule.MAX_RULES} rules — remove one to add another.") }
+            setState { copy(error = str(S.desktop_email_rules_limit, EmailRule.MAX_RULES)) }
             return
         }
         setState { copy(editor = RuleEditorState(draft = rule), error = null, info = null) }
@@ -131,7 +133,8 @@ class EmailRulesViewModel(
             onSuccess = { saved ->
                 setState {
                     val kept = if (draft.isNew) rules + saved else rules.map { if (it.id == saved.id) saved else it }
-                    copy(editor = null, rules = kept, info = if (draft.isNew) "Rule added" else "Rule saved")
+                    val info = if (draft.isNew) S.desktop_email_rule_added else S.email_rule_saved
+                    copy(editor = null, rules = kept, info = str(info))
                 }
             },
             onError = { failure -> setState { copy(editor = editor.copy(isSaving = false), error = failure.text()) } },
@@ -141,7 +144,9 @@ class EmailRulesViewModel(
     private fun delete(ruleId: String) {
         launchResult(
             block = { repository.delete(ruleId) },
-            onSuccess = { setState { copy(rules = rules.filterNot { it.id == ruleId }, info = "Rule removed") } },
+            onSuccess = {
+                setState { copy(rules = rules.filterNot { it.id == ruleId }, info = str(S.desktop_email_rule_removed)) }
+            },
             onError = { failure -> setState { copy(error = failure.text()) } },
         )
     }

@@ -31,6 +31,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.NominalCoding
 import com.zillit.desktop.feature.dealmemo.domain.preview.NominalRow
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
@@ -57,10 +59,10 @@ internal fun UpdateNominalsModal(state: DealMemoUiState, onEvent: (DealMemoEvent
     if (editor != null && deal != null) shown.value = editor to NominalCoding.rowsFromDeal(deal, editor.form)
     val current = shown.value
     val saving = editor?.saving == true
-    val reference = deal?.reference ?: deal?.crewName ?: "Deal Memo"
+    val reference = deal?.reference ?: deal?.crewName ?: str(S.dm_title)
     DmModal(
         visible = editor != null,
-        title = "Update Nominals — $reference",
+        title = str(S.desktop_dm_update_nominals_for, reference),
         // Escape runs the guarded Cancel; the backdrop does nothing.
         onDismiss = { if (editor?.confirmLeave != true) onEvent(NominalsEvent.Cancel) },
         maxWidth = 1100.dp,
@@ -69,13 +71,13 @@ internal fun UpdateNominalsModal(state: DealMemoUiState, onEvent: (DealMemoEvent
         closeOnBackdrop = false,
         footer = {
             DmButton(
-                "Cancel",
+                str(S.dm_cancel),
                 onClick = { onEvent(NominalsEvent.Cancel) },
                 style = DmButtonStyle.ModalNeutral,
                 enabled = !saving,
             )
             SolidButton(
-                text = if (saving) "Saving…" else "Save",
+                text = if (saving) str(S.dm_nda_saving) else str(S.dm_save),
                 onClick = { onEvent(NominalsEvent.Save) },
                 color = PreviewInk.Brand,
                 hover = PreviewInk.BrandHover,
@@ -121,7 +123,7 @@ private fun LabourNominals(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Labour Nominals",
+                text = str(S.dm_nom_card_codes),
                 style = DmType.sans(14.sp, FontWeight.Bold),
                 color = pv.ink,
                 modifier = Modifier.weight(1f),
@@ -139,7 +141,7 @@ private fun LabourNominals(
         }
         if (rows.isEmpty()) {
             ZillitText(
-                text = "Pick an agreement in Step 1 — the labour-nominal lines populate from its OT and premium rows.",
+                text = str(S.desktop_dm_pick_an_agreement_in_step_1_the),
                 style = DmType.sans(12.5.sp),
                 color = pv.muted,
                 modifier = Modifier.padding(20.dp),
@@ -190,17 +192,17 @@ private fun HeadText(text: String, modifier: Modifier) {
 private fun LeaveConfirm(visible: Boolean, saving: Boolean, onEvent: (DealMemoEvent) -> Unit) {
     DmModal(
         visible = visible,
-        title = "Unsaved changes",
+        title = str(S.dm_nda_unsaved),
         onDismiss = { onEvent(NominalsEvent.StayEditing) },
         maxWidth = 420.dp,
         footer = {
             DmButton(
-                "Discard changes",
+                str(S.desktop_dm_discard_changes_lower),
                 onClick = { onEvent(NominalsEvent.Discard) },
                 style = DmButtonStyle.ModalDangerText,
             )
             DmButton(
-                text = if (saving) "Saving…" else "Save and leave",
+                text = if (saving) str(S.dm_nda_saving) else str(S.desktop_dm_save_and_leave),
                 onClick = { onEvent(NominalsEvent.SaveAndLeave) },
                 style = DmButtonStyle.ModalPrimary,
                 loading = saving,
@@ -218,8 +220,7 @@ private fun LeaveConfirm(visible: Boolean, saving: Boolean, onEvent: (DealMemoEv
                 ZillitIcon(ZillitIcons.Warning, size = 14.dp, tint = Color(0xFFEA580C))
             }
             ZillitText(
-                text = "Your nominal code changes haven't been saved yet. Save them before leaving, or discard them " +
-                    "and close.",
+                text = str(S.desktop_dm_your_nominal_code_changes_havent_been_saved),
                 style = DmType.sans(14.sp).copy(lineHeight = 21.sp),
                 color = pv.muted,
                 modifier = Modifier.weight(1f),

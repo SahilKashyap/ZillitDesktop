@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 
@@ -225,8 +227,8 @@ private fun ToolPanels(state: CallUiState, onEvent: (CallEvent) -> Unit, panel: 
             onSend = { onEvent(CallEvent.SendChat(it)) },
             modifier = panel,
             lockedReason = when {
-                state.chatLocked -> "The host has turned chat off"
-                state.selfChatBlocked -> "The host blocked you from chat"
+                state.chatLocked -> str(S.desktop_call_host_turned_chat_off)
+                state.selfChatBlocked -> str(S.desktop_call_host_blocked_you_from_chat)
                 else -> null
             },
         )
@@ -270,7 +272,7 @@ private fun CallTopBar(state: CallUiState, onEvent: (CallEvent) -> Unit, videoAv
 private fun CallTimer(state: CallUiState) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         ZillitText(
-            text = state.timerText.ifBlank { "Connecting…" },
+            text = state.timerText.ifBlank { str(S.txt_connecting) },
             style = ZillitTheme.typography.numeric
                 .copy(fontSize = TIMER_FONT, fontWeight = FontWeight.Bold),
             color = CallPalette.text,
@@ -319,11 +321,12 @@ private fun TitlePill(state: CallUiState) {
 @Composable
 private fun PeopleButton(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val count = state.connected
-    ZillitTooltip(if (state.session?.is247Call == true) "Call users" else "Call users · Add users") {
+    val tip = if (state.session?.is247Call == true) str(S.desktop_call_users) else str(S.desktop_call_users_add_users)
+    ZillitTooltip(tip) {
         Box(contentAlignment = Alignment.TopEnd) {
             RoundAction(
                 icon = ZillitIcons.Users,
-                label = "Call users",
+                label = str(S.desktop_call_users),
                 background = if (state.rosterOpen) CallPalette.accent else CallPalette.control,
                 tint = if (state.rosterOpen) CallPalette.onAccent else CallPalette.text,
                 size = HEADER_BUTTON,
@@ -384,7 +387,11 @@ private fun HoldPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitIcon(icon = ZillitIcons.Pause, contentDescription = null, tint = CallPalette.onAccent, size = PILL_ICON)
-        ZillitText(text = "Call on hold", style = ZillitTheme.typography.labelSmall, color = CallPalette.onAccent)
+        ZillitText(
+            text = str(S.desktop_call_on_hold_pill),
+            style = ZillitTheme.typography.labelSmall,
+            color = CallPalette.onAccent,
+        )
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(PILL_CORNER))
@@ -400,7 +407,11 @@ private fun HoldPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
                 tint = CallPalette.amberSoft,
                 size = RESUME_ICON,
             )
-            ZillitText(text = "Resume", style = ZillitTheme.typography.labelSmall, color = CallPalette.amberSoft)
+            ZillitText(
+                text = str(S.desktop_resume),
+                style = ZillitTheme.typography.labelSmall,
+                color = CallPalette.amberSoft,
+            )
         }
     }
 }
@@ -416,7 +427,11 @@ private fun GuestsPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     if (waiting == 0) return
     Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleGuests) }) {
         StatusPill(
-            text = "External request${if (waiting > 1) "s" else ""} · $waiting",
+            text = if (waiting > 1) {
+                str(S.desktop_call_external_requests_count, waiting)
+            } else {
+                str(S.desktop_call_external_request_count, waiting)
+            },
             background = if (state.guestsOpen) CallPalette.accent else CallPalette.control,
             foreground = if (state.guestsOpen) CallPalette.onAccent else CallPalette.text,
             icon = ZillitIcons.UserPlus,
@@ -431,8 +446,8 @@ private fun GuestsPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
 @Composable
 private fun RecordingPill(state: CallUiState) {
     val text = when {
-        state.recording -> "You are recording"
-        state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording"
+        state.recording -> str(S.desktop_call_you_are_recording)
+        state.recordedBy.isNotBlank() -> str(S.desktop_call_name_is_recording, state.recordedBy)
         else -> return
     }
     StatusPill(text = text, background = CallPalette.danger, foreground = Color.White)
@@ -445,9 +460,13 @@ private fun RecordingPill(state: CallUiState) {
 @Composable
 private fun HandPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val others = state.session?.participants.orEmpty().filter { it.handRaised }.map { it.name }
-    val names = (if (state.handRaised) listOf("You") else emptyList()) + others.filter { it.isNotBlank() }
+    val names = (if (state.handRaised) listOf(str(S.you)) else emptyList()) + others.filter { it.isNotBlank() }
     if (names.isEmpty()) return
-    val text = if (names.size == 1) "${names.first()} raised their hand" else "${names.size} users raised their hands"
+    val text = if (names.size == 1) {
+        str(S.desktop_call_name_raised_hand, names.first())
+    } else {
+        str(S.desktop_call_n_users_raised_hands, names.size)
+    }
     Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleRoster) }) {
         StatusPill(
             text = text,
@@ -463,14 +482,14 @@ private fun HandPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
 private fun ConnectionPill(state: CallUiState, videoAvailable: Boolean) {
     val (background, foreground, text) = when {
         state.media.connection == EngineConnection.Reconnecting ->
-            Triple(CallPalette.control, CallPalette.text, "Reconnecting…")
+            Triple(CallPalette.control, CallPalette.text, str(S.txt_reconnecting))
         state.media.connection == EngineConnection.Disconnected ||
             state.media.connection == EngineConnection.Failed ->
-            Triple(CallPalette.danger, Color.White, "Connection lost — trying again")
+            Triple(CallPalette.danger, Color.White, str(S.desktop_call_connection_lost))
         state.mediaDegraded ->
-            Triple(CallPalette.amberSoft, CallPalette.onAccent, "No audio on this call")
+            Triple(CallPalette.amberSoft, CallPalette.onAccent, str(S.desktop_call_no_audio))
         state.session?.hasVideo == true && !videoAvailable ->
-            Triple(CallPalette.control, CallPalette.text, "Video is unavailable in this build")
+            Triple(CallPalette.control, CallPalette.text, str(S.desktop_call_video_unavailable_build))
         else -> return
     }
     StatusPill(text = text, background = background, foreground = foreground)
@@ -506,7 +525,7 @@ private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         // or hand the call back to the main window.
         RoundAction(
             icon = ZillitIcons.Minimize,
-            label = "Shrink to thumbnail",
+            label = str(S.desktop_call_shrink_to_thumbnail),
             background = CallPalette.control,
             tint = CallPalette.text,
             size = HEADER_BUTTON,
@@ -514,7 +533,7 @@ private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         )
         RoundAction(
             icon = ZillitIcons.Restore,
-            label = "Move back into Zillit",
+            label = str(S.desktop_call_move_back_into_zillit),
             background = CallPalette.control,
             tint = CallPalette.text,
             size = HEADER_BUTTON,
@@ -525,7 +544,7 @@ private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         // back: offer the way out again, and the pill.
         RoundAction(
             icon = ZillitIcons.Detach,
-            label = "Open in its own window",
+            label = str(S.desktop_call_open_in_its_own_window),
             background = CallPalette.control,
             tint = CallPalette.text,
             size = HEADER_BUTTON,
@@ -533,7 +552,7 @@ private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         )
         RoundAction(
             icon = ZillitIcons.Minimize,
-            label = "Minimise call",
+            label = str(S.desktop_call_minimise_call),
             background = CallPalette.control,
             tint = CallPalette.text,
             size = HEADER_BUTTON,
@@ -568,7 +587,7 @@ private fun NoticeBanner(state: CallUiState, onEvent: (CallEvent) -> Unit) {
             color = CallPalette.text,
         )
         ZillitText(
-            text = "Dismiss",
+            text = str(S.sync_action_dismiss),
             style = ZillitTheme.typography.labelSmall,
             color = CallPalette.muted,
         )
@@ -580,19 +599,19 @@ private fun NoticeBanner(state: CallUiState, onEvent: (CallEvent) -> Unit) {
 /** 1:1 calls are titled by the person; a group by the room. */
 val CallUiState.headerTitle: String
     get() {
-        val session = session ?: return "Call"
+        val session = session ?: return str(S.call)
         return if (session.mode == CallMode.Group) {
-            session.title.ifBlank { "Group call" }
+            session.title.ifBlank { str(S.txt_group_call) }
         } else {
-            session.displayName.ifBlank { session.title.ifBlank { "Call" } }
+            session.displayName.ifBlank { session.title.ifBlank { str(S.call) } }
         }
     }
 
 internal val CallUiState.headerSubtitle: String
     get() {
         val timer = timerText
-        if (timer.isBlank()) return "Connecting…"
-        return "$timer · $connected in call"
+        if (timer.isBlank()) return str(S.txt_connecting)
+        return str(S.desktop_call_title_count_in_call, timer, connected)
     }
 
 /** The web's bar: 54px, 32px circles, 12px name pill (`styles.css:1246-1262`). */

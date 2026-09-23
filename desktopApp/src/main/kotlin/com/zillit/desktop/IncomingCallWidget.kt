@@ -38,6 +38,8 @@ import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.delay
 
 /**
@@ -88,7 +90,7 @@ internal fun ApplicationScope.IncomingCallWidget(
     Window(
         onCloseRequest = { dismissed = true },
         state = windowState,
-        title = "Incoming call",
+        title = str(S.txt_incoming_call),
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         alwaysOnTop = true,
         undecorated = true,
@@ -141,14 +143,14 @@ internal fun IncomingCallCard(
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitButton(
-                text = "Decline",
+                text = str(S.decline),
                 onClick = onDecline,
                 modifier = Modifier.weight(1f),
                 variant = ButtonVariant.Danger,
                 leadingIcon = ZillitIcons.PhoneDown,
             )
             ZillitButton(
-                text = "Accept",
+                text = str(S.accept),
                 onClick = {
                     onAccept()
                     showMain()
@@ -162,7 +164,7 @@ internal fun IncomingCallCard(
 
 /** "Video call · Camera unit" — the kind first, the room only when there is one. */
 internal fun describeCall(room: String, hasVideo: Boolean): String {
-    val kind = if (hasVideo) "Video call" else "Voice call"
+    val kind = if (hasVideo) str(S.txt_video_call_label) else str(S.desktop_voice_call)
     return if (room.isBlank()) kind else "$kind · $room"
 }
 

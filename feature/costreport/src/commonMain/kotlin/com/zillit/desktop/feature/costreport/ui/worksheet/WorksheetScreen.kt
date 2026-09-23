@@ -41,6 +41,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CrCompany
 import com.zillit.desktop.feature.costreport.domain.CrCurrency
@@ -89,7 +91,7 @@ fun WorksheetScreen(
             Box(Modifier.fillMaxSize().padding(24.dp)) {
                 SnapshotPage(
                     view = snapshot,
-                    backLabel = "CR History",
+                    backLabel = str(S.desktop_cr_cr_history),
                     resolveUser = resolveUser,
                     callbacks = SnapshotCallbacks(
                         onBack = { onEvent(WorksheetEvent.CloseSnapshot) },
@@ -110,7 +112,7 @@ fun WorksheetScreen(
                         tone = StatusTone.Rejected,
                         modifier = Modifier.padding(24.dp),
                         action = {
-                            ZillitButton(text = "Retry", onClick = { onEvent(WorksheetEvent.Retry) },
+                            ZillitButton(text = str(S.retry), onClick = { onEvent(WorksheetEvent.Retry) },
                                 variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
                         },
                     )
@@ -126,7 +128,7 @@ fun WorksheetScreen(
             // The entry loader, until the worksheet's first load settles.
             CrLoaderOverlay(
                 visible = !state.ws.loadedOnce && state.reference.error == null,
-                message = "Loading cost report…",
+                message = str(S.desktop_cr_loading_report),
             )
         }
         WorksheetDialogs(state, onEvent, resolveUser)
@@ -142,11 +144,15 @@ fun WorksheetScreen(
         if (progress == null) {
             CrProgressCard(
                 title = when {
-                    state.exportDone -> "File Generated successfully"
-                    state.exporting -> "Generating Cost Report"
+                    state.exportDone -> str(S.desktop_cr_file_generated)
+                    state.exporting -> str(S.desktop_cr_generating_report)
                     else -> null
                 },
-                detail = if (state.exportDone) "File will be auto-downloaded" else "Auto-download on generation",
+                detail = if (state.exportDone) {
+                    str(S.desktop_cr_file_auto_download)
+                } else {
+                    str(S.desktop_cr_auto_download_on_gen)
+                },
                 loading = state.exporting && !state.exportDone,
                 success = state.exportDone,
                 onClose = { onEvent(WorksheetEvent.DismissExport) },
@@ -196,7 +202,7 @@ private fun TopBar(state: WorksheetUiState, onEvent: (WorksheetEvent) -> Unit) {
                 ) {
                     ZillitIcon(ZillitIcons.Reload, tint = CrPalette.FORECAST, size = 12.dp)
                     ZillitText(
-                        "Source data updated · Refresh",
+                        str(S.desktop_cr_source_updated),
                         style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold),
                         color = CrPalette.FORECAST,
                     )
@@ -207,69 +213,83 @@ private fun TopBar(state: WorksheetUiState, onEvent: (WorksheetEvent) -> Unit) {
             CrActionGroup {
                 val canSave = state.ws.pending.versionId != null
                 CrGroupButton(
-                    label = if (state.saving) "Saving…" else "Save",
+                    label = if (state.saving) str(S.ah_saving) else str(S.save),
                     onClick = { onEvent(WorksheetEvent.Save) },
                     icon = ZillitIcons.Check,
                     enabled = canSave,
                     busy = state.saving,
                     tooltip = if (canSave) {
-                        "Update the selected version with current ETC"
+                        str(S.desktop_cr_update_version_tooltip)
                     } else {
-                        "Pick a saved version to enable Save"
+                        str(S.desktop_cr_pick_version_tooltip)
                     },
                 )
                 CrGroupButton(
-                    "Save Version",
+                    str(S.desktop_cr_save_version_title),
                     onClick = { onEvent(WorksheetEvent.OpenSaveVersion) },
                     icon = ZillitIcons.Add,
                 )
-                CrGroupButton("History", onClick = { onEvent(WorksheetEvent.OpenHistory) }, icon = ZillitIcons.Clock)
+                CrGroupButton(
+                    str(S.history),
+                    onClick = { onEvent(WorksheetEvent.OpenHistory) },
+                    icon = ZillitIcons.Clock,
+                )
             }
         }
         CrActionGroup {
             CrGroupButton(
-                label = "Overages",
+                label = str(S.desktop_cr_overages),
                 onClick = { onEvent(WorksheetEvent.OpenOverages) },
                 icon = ZillitIcons.Warning,
                 badge = over.takeIf { it > 0 }?.toString(),
             )
             if (onWorksheet) {
-                val label = week?.let { "Wk ${it.number}" } ?: "week"
+                val label = week?.let { str(S.desktop_cr_week_short_label, it.number) } ?: str(S.week_label)
                 CrGroupButton(
-                    label = if (state.isLocked) "$label locked" else "Lock $label",
+                    label = if (state.isLocked) {
+                        str(S.desktop_cr_x_locked, label)
+                    } else {
+                        str(S.desktop_cr_lock_x, label)
+                    },
                     onClick = { onEvent(WorksheetEvent.OpenLock) },
                     icon = ZillitIcons.Shield,
                     enabled = !state.isLocked && week != null,
                     busy = state.locking,
                     tooltip = if (state.isLocked) {
-                        "${week?.label ?: "Week"} already locked"
+                        str(S.desktop_cr_already_locked, week?.label ?: str(S.weekly))
                     } else {
-                        "Lock ${week?.label ?: "this week"}"
+                        str(S.desktop_cr_lock_x, week?.label ?: str(S.desktop_cr_this_week))
                     },
                 )
                 CrGroupButton(
-                    label = if (state.posting != null) "Publishing…" else "Publish",
+                    label = if (state.posting != null) str(S.desktop_publishing) else str(S.publish),
                     onClick = { onEvent(WorksheetEvent.OpenPublish) },
                     enabled = state.posting == null && !state.reference.metaMissing,
                     busy = state.posting != null,
                     primary = true,
                     tooltip = if (state.posting != null) {
-                        "A publish is in progress…"
+                        str(S.desktop_cr_publish_in_progress)
                     } else {
-                        "Publish a cost report snapshot"
+                        str(S.desktop_cr_publish_snapshot_tooltip)
                     },
                 )
             }
-            CrGroupButton("Export", onClick = { onEvent(WorksheetEvent.OpenExport) }, icon = ZillitIcons.Download)
+            CrGroupButton(
+                str(S.asset_export),
+                onClick = { onEvent(WorksheetEvent.OpenExport) },
+                icon = ZillitIcons.Download,
+            )
         }
     }
 }
 
 // -- filter row -------------------------------------------------------------------------------
 
-private val ALL_COMPANIES = CrCompany(id = "", name = "All Companies — Consolidated")
-private val NO_BUDGET = BudgetVersion(id = "", version = "", label = "— Select budget —", status = "")
-private val LATEST = EtcVersion(id = "", label = "— Latest (unsaved) —")
+private val ALL_COMPANIES: CrCompany
+    get() = CrCompany(id = "", name = str(S.desktop_cr_all_companies_consolidated))
+private val NO_BUDGET: BudgetVersion
+    get() = BudgetVersion(id = "", version = "", label = str(S.desktop_cr_select_budget), status = "")
+private val LATEST: EtcVersion get() = EtcVersion(id = "", label = str(S.desktop_cr_latest_unsaved))
 
 /** Company · Budget · Currency · Version · Period, and Compute while they differ from what is shown. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -294,7 +314,7 @@ internal fun PaneFilterRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        CrFieldCell("Company", Modifier.widthIn(min = 190.dp).weight(1.1f)) {
+        CrFieldCell(str(S.company), Modifier.widthIn(min = 190.dp).weight(1.1f)) {
             ZillitSelect(
                 value = reference.companies.firstOrNull { it.id == picked.companyId } ?: ALL_COMPANIES,
                 options = listOf(ALL_COMPANIES) + reference.companies,
@@ -304,7 +324,7 @@ internal fun PaneFilterRow(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        CrFieldCell("Budget", Modifier.widthIn(min = 220.dp).weight(1.4f)) {
+        CrFieldCell(str(S.budget_text), Modifier.widthIn(min = 220.dp).weight(1.4f)) {
             val selected = reference.budget(picked.budgetKey)
             ZillitSelect(
                 value = selected ?: NO_BUDGET,
@@ -315,7 +335,7 @@ internal fun PaneFilterRow(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        CrFieldCell("Currency", Modifier.widthIn(min = 120.dp).weight(0.7f)) {
+        CrFieldCell(str(S.asset_currency), Modifier.widthIn(min = 120.dp).weight(0.7f)) {
             val choices = reference.currencyChoices
             if (choices.isNotEmpty()) {
                 ZillitSelect(
@@ -331,7 +351,7 @@ internal fun PaneFilterRow(
                 )
             }
         }
-        CrFieldCell("Version", Modifier.widthIn(min = 200.dp).weight(1.1f)) {
+        CrFieldCell(str(S.drive_settings_version), Modifier.widthIn(min = 200.dp).weight(1.1f)) {
             ZillitSelect(
                 value = shown.versions.firstOrNull { it.id == picked.versionId } ?: LATEST,
                 options = listOf(LATEST) + shown.versions,
@@ -344,7 +364,7 @@ internal fun PaneFilterRow(
         val week = shown.week
         if (week != null) {
             val now = currentWeek(nowMillis())
-            CrFieldCell("Period") {
+            CrFieldCell(str(S.cr_meta_period)) {
                 CrPeriodStepper(
                     range = week.range,
                     canGoNext = week.startMs < now.startMs,
@@ -359,7 +379,7 @@ internal fun PaneFilterRow(
         if (shown.dirty || shown.computing) {
             Box(Modifier.height(58.dp), contentAlignment = Alignment.BottomStart) {
                 ZillitButton(
-                    text = if (shown.computing) "Computing…" else "Compute",
+                    text = if (shown.computing) str(S.desktop_cr_computing) else str(S.desktop_cr_compute),
                     onClick = { onEvent(WorksheetEvent.Compute(pane)) },
                     enabled = !disabled && !shown.computing,
                     loading = shown.computing,
@@ -401,14 +421,14 @@ private fun WorksheetPaneView(
                 tone = StatusTone.Rejected,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 action = {
-                    ZillitButton(text = "Retry", onClick = { onEvent(WorksheetEvent.Retry) },
+                    ZillitButton(text = str(S.retry), onClick = { onEvent(WorksheetEvent.Retry) },
                         variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
                 },
             )
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             if (state.reference.metaMissing) {
-                Unavailable("Cost report is unavailable", state.reference.metaMissingMessage)
+                Unavailable(str(S.desktop_cr_unavailable), state.reference.metaMissingMessage)
             } else if (ws.loadedOnce) {
                 val table = remember(ws.sections, ws.overrides, ws.baseline, view) {
                     buildWorksheetTable(
@@ -472,7 +492,7 @@ private fun ControlRow(state: WorksheetUiState, onEvent: (WorksheetEvent) -> Uni
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrGroupLabel("Figures")
+                CrGroupLabel(str(S.desktop_cr_figures))
                 CrSegmented(
                     options = listOf(0 to "${symbol}0", 1 to "${symbol}0.0", 2 to "${symbol}0.00"),
                     selected = view.decimals,
@@ -481,7 +501,7 @@ private fun ControlRow(state: WorksheetUiState, onEvent: (WorksheetEvent) -> Uni
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrGroupLabel("Expand")
+                CrGroupLabel(str(S.desktop_expand))
                 CrSegmented(
                     options = CrViewMode.entries.map { it to it.label },
                     selected = view.viewMode,
@@ -489,14 +509,14 @@ private fun ControlRow(state: WorksheetUiState, onEvent: (WorksheetEvent) -> Uni
                 )
                 val allOpen = view.toggles.allHeadersOpen(ws.sections)
                 ZillitButton(
-                    text = if (allOpen) "Collapse all" else "Expand all",
+                    text = if (allOpen) str(S.ah_collapse_all) else str(S.ah_expand_all),
                     onClick = { onEvent(WorksheetEvent.ToggleExpandAll) },
                     variant = if (allOpen) ButtonVariant.Secondary else ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrGroupLabel("Filter")
+                CrGroupLabel(str(S.filter))
                 CrSegmented(
                     options = CrLineFilter.entries.map { it to it.label },
                     selected = view.filter,
@@ -504,11 +524,11 @@ private fun ControlRow(state: WorksheetUiState, onEvent: (WorksheetEvent) -> Uni
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CrGroupLabel("Find")
+                CrGroupLabel(str(S.desktop_cr_find))
                 ZillitSearchField(
                     value = view.search,
                     onValueChange = { onEvent(WorksheetEvent.Search(WorksheetPane.Worksheet, it)) },
-                    placeholder = "Find code or name",
+                    placeholder = str(S.desktop_cr_find_code_or_name),
                     modifier = Modifier.width(208.dp),
                 )
             }
@@ -529,7 +549,7 @@ private fun AtdGauge(percent: String) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ZillitText(
-            text = "ATD $percent% of budget",
+            text = str(S.desktop_cr_atd_percent, percent),
             style = ZillitTheme.typography.numeric.copy(fontSize = 12.5.sp),
             color = colors.textSecondary,
             maxLines = 1,
@@ -580,7 +600,7 @@ private fun SortChip(label: String, direction: SortDirection, onClear: () -> Uni
                 ZillitIcons.Close,
                 tint = CrPalette.cta,
                 size = 10.dp,
-                contentDescription = "Clear sort",
+                contentDescription = str(S.desktop_cr_clear_sort),
                 modifier = Modifier.clickable(onClick = onClear),
             )
         }

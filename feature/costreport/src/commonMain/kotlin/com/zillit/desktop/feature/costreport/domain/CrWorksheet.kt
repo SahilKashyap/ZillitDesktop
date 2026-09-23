@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.costreport.domain
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToLong
@@ -24,14 +26,26 @@ data class EtcVersion(
     /** `End of week 4 · 12 rows · 05 May, 14:07` — the Version picker's option. */
     val optionLabel: String
         get() = buildString {
-            append(label.ifBlank { "Untitled" })
-            rowCount?.takeIf { it > 0 }?.let { append(" · $it row${if (it == 1) "" else "s"}") }
+            append(label.ifBlank { str(S.untitled) })
+            rowCount?.takeIf { it > 0 }?.let {
+                append(
+                    if (it == 1) {
+                        str(S.desktop_cr_untitled_rows_one, it)
+                    } else {
+                        str(S.desktop_cr_untitled_rows_many, it)
+                    },
+                )
+            }
             CrDates.dayMonthTime(savedAtMs).takeIf { it.isNotBlank() }?.let { append(" · $it") }
         }
 
     /** `End of week 4 · 12 lines` — the Publish dialog's CR Version option. */
     val postOptionLabel: String
-        get() = label.ifBlank { id } + (rowCount?.let { " · $it line${if (it == 1) "" else "s"}" } ?: "")
+        get() = label.ifBlank { id } + (
+            rowCount?.let {
+                if (it == 1) str(S.desktop_cr_lines_one, it) else str(S.desktop_cr_lines_many, it)
+            } ?: ""
+            )
 }
 
 /** One account's saved overrides. A zero means "not set for that column". */
@@ -128,10 +142,15 @@ data class CrLockState(
 }
 
 /** The Publish dialog's cadence pills. */
-enum class PostCadence(val wire: String, val label: String, val progressLabel: String) {
-    Daily("daily", "Daily", "Daily CR"),
-    Weekly("weekly", "Weekly", "Week Ending CR"),
-    Custom("adhoc", "Custom", "Custom CR"),
+enum class PostCadence(val wire: String, private val labelKey: String, private val progressLabelKey: String) {
+    Daily("daily", S.daily, S.desktop_cr_daily_cr),
+    Weekly("weekly", S.ce_weekly, S.desktop_cr_week_ending_cr),
+    Custom("adhoc", S.custom, S.desktop_cr_custom_cr),
+    ;
+
+    val label: String get() = str(labelKey)
+
+    val progressLabel: String get() = str(progressLabelKey)
 }
 
 /**
@@ -157,8 +176,8 @@ data class SnapshotPost(
     val refusal: String?
         get() = when {
             cadence != PostCadence.Custom -> null
-            periodStartMs == null || periodEndMs == null -> "Pick a period start and end for a custom post"
-            periodEndMs < periodStartMs -> "Period end must be on or after period start"
+            periodStartMs == null || periodEndMs == null -> str(S.desktop_cr_pick_period)
+            periodEndMs < periodStartMs -> str(S.desktop_cr_period_end_after_start)
             else -> null
         }
 }
@@ -183,7 +202,7 @@ fun CrOverrides.commit(nominal: CrNominal, column: CrColumn, typed: Double, symb
         CrColumn.Etc -> if (typed < 0) {
             CrEditResult(
                 set(CrColumn.Etc, key, 0.0),
-                "ETC for ${nominal.code} can't be negative. Clamped to ${symbol}0.",
+                str(S.desktop_cr_etc_negative, nominal.code, symbol),
             )
         } else {
             CrEditResult(set(CrColumn.Etc, key, typed))
@@ -196,8 +215,11 @@ fun CrOverrides.commit(nominal: CrNominal, column: CrColumn, typed: Double, symb
             if (etc < 0) {
                 CrEditResult(
                     cleared.set(CrColumn.Etc, key, 0.0),
-                    "EFC for ${nominal.code} can't be below Actuals + Commits " +
-                        "($symbol${Money.group(floor, if (floor % 1.0 == 0.0) 0 else 2)}). Clamped.",
+                    str(
+                        S.desktop_cr_efc_below_floor,
+                        nominal.code,
+                        "$symbol${Money.group(floor, if (floor % 1.0 == 0.0) 0 else 2)}",
+                    ),
                 )
             } else {
                 CrEditResult(cleared.set(CrColumn.Etc, key, etc))

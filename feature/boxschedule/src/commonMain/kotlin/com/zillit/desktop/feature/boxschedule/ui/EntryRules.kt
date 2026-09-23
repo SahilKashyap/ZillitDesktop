@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryAudience
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
@@ -53,29 +55,31 @@ object EntryRules {
         var semantic: String? = null
         val title = form.title.trim()
         when {
-            title.isEmpty() -> errors[EntryField.Title] = "Title is required"
-            title.length < MIN_TITLE -> errors[EntryField.Title] = "Title must be at least 3 characters"
+            title.isEmpty() -> errors[EntryField.Title] = str(S.error_title_required)
+            title.length < MIN_TITLE -> errors[EntryField.Title] = str(S.error_title_min)
         }
         val start = form.startDate
         when {
-            start == null -> errors[EntryField.StartDate] = "Start date is required"
-            !form.isEdit && start < today -> errors[EntryField.StartDate] = "Events can't be created for a past date"
+            start == null -> errors[EntryField.StartDate] = str(S.start_date_required)
+            !form.isEdit && start < today -> errors[EntryField.StartDate] = str(S.desktop_bs_event_past_date)
         }
         if (!form.fullDay) {
-            if (form.startTime == null) errors[EntryField.StartTime] = "Required"
-            if (form.endTime == null) errors[EntryField.EndTime] = "Required"
+            if (form.startTime == null) errors[EntryField.StartTime] = str(S.docusign_prop_required)
+            if (form.endTime == null) errors[EntryField.EndTime] = str(S.docusign_prop_required)
         }
         val end = form.endDate
-        if (start != null && end != null && end < start) errors[EntryField.EndDate] = "End date must be after start"
-        if (form.callType.isBlank()) errors[EntryField.CallType] = "Call type is required"
+        if (start != null && end != null && end < start) {
+            errors[EntryField.EndDate] = str(S.desktop_bs_end_date_after_start)
+        }
+        if (form.callType.isBlank()) errors[EntryField.CallType] = str(S.error_call_type_required)
         if (form.callType == "meet_in_person_call" && form.location.isBlank()) {
-            errors[EntryField.Location] = "Location is required for Meet in Person & Call"
+            errors[EntryField.Location] = str(S.desktop_bs_location_required_meet_call)
         }
         val minutes = durationMinutes(form)
-        if (minutes != null && minutes < MIN_DURATION_MINUTES) semantic = "Event must be at least 15 minutes long"
+        if (minutes != null && minutes < MIN_DURATION_MINUTES) semantic = str(S.desktop_bs_event_min_duration)
         if (!form.isSingleScope && form.repeat != "none" && form.repeatEnd == null) {
-            errors[EntryField.RepeatEnd] = "Required"
-            semantic = semantic ?: "Repeat end date is required for recurring events"
+            errors[EntryField.RepeatEnd] = str(S.docusign_prop_required)
+            semantic = semantic ?: str(S.desktop_bs_repeat_end_required)
         }
         // Distribute To may be skipped only when external guests are the audience.
         val audienceProblem = if (form.audience.mode.wire.isEmpty() && form.guests.isNotEmpty()) {
@@ -91,9 +95,9 @@ object EntryRules {
         val errors = linkedMapOf<EntryField, String>()
         val date = form.noteDate
         when {
-            form.noteTitle.isBlank() -> errors[EntryField.NoteTitle] = "Please enter a title"
-            date == null -> errors[EntryField.NoteDate] = "Please pick a start date"
-            !form.isEdit && date < today -> errors[EntryField.NoteDate] = "Notes can't be created for a past date"
+            form.noteTitle.isBlank() -> errors[EntryField.NoteTitle] = str(S.ce_validation_title_required)
+            date == null -> errors[EntryField.NoteDate] = str(S.ce_validation_start_date_required)
+            !form.isEdit && date < today -> errors[EntryField.NoteDate] = str(S.ce_note_validation_past_date)
         }
         if (!hidesDistribution(form.noteType, noteTypes)) {
             form.audience.problem("note")?.let { errors[EntryField.Audience] = it }
@@ -206,7 +210,8 @@ object EntryRules {
         val blockId = current.substringBefore('|')
         val key = current.substringAfter('|').toLongOrNull() ?: return options
         val block = blocks.firstOrNull { it.id == blockId }
-        val label = block?.let { linkLabel(it, key, zone) } ?: "${DiaryFormat.shortDay(key, zone)} — Schedule day"
+        val label = block?.let { linkLabel(it, key, zone) }
+            ?: str(S.desktop_bs_link_schedule_day_fallback, DiaryFormat.shortDay(key, zone))
         return listOf(DayLink(current, label, key)) + options
     }
 
@@ -243,14 +248,14 @@ object EntryRules {
 
     /** The friendly sentence for a recurring edit's refusal — `editErrorCopy`. */
     fun editErrorCopy(key: String?): String? = when (key) {
-        "event_not_found" -> "This event no longer exists."
-        "occurrence_date_not_in_series" -> "This date isn't part of the recurring series anymore."
-        "occurrence_already_excluded" -> "This date was already removed. Refresh to see the latest."
-        "occurrence_already_moved" -> "This occurrence was already edited as a separate event."
+        "event_not_found" -> str(S.desktop_cal_event_no_longer_exists)
+        "occurrence_date_not_in_series" -> str(S.desktop_bs_err_date_not_in_series)
+        "occurrence_already_excluded" -> str(S.desktop_bs_err_occurrence_removed)
+        "occurrence_already_moved" -> str(S.desktop_bs_err_occurrence_moved)
         "field_not_editable_on_single_occurrence" ->
-            "Recurrence settings can't change when editing a single event. Pick 'All events' to change the schedule."
-        "no_changes_to_apply" -> "Nothing changed — make an edit and try again."
-        "update_transaction_failed" -> "Couldn't save. Try again."
+            str(S.desktop_bs_err_recurrence_single_edit)
+        "no_changes_to_apply" -> str(S.desktop_bs_err_nothing_changed)
+        "update_transaction_failed" -> str(S.asset_save_failed)
         else -> null
     }
 

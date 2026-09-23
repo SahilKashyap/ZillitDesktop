@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
 import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
@@ -88,9 +90,8 @@ internal fun CurrenciesSection(state: AccountHubUiState, onEvent: (AccountHubEve
     fun edit(next: CurrencySettings) = onEvent(AccountHubEvent.EditCurrencies(next))
 
     SectionShell(
-        title = "Project Currencies",
-        description = "Every currency this production transacts in. Drives FX warnings and the currency dropdown on " +
-            "POs and invoices.",
+        title = str(S.desktop_project_currencies),
+        description = str(S.desktop_hub_every_currency_this_production_transacts_in_drives_fx_warnings_and),
         dirty = setup.currencies.dirty,
         saving = setup.currencies.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Currencies)) },
@@ -124,13 +125,13 @@ private fun SelectedCurrenciesPanel(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            MonoLabel("Selected")
+            MonoLabel(str(S.selected))
             Spacer(Modifier.width(ZillitTheme.spacing.xs))
             if (selected.isNotEmpty()) MonoChip(selected.size.toString(), active = true)
             Spacer(Modifier.weight(1f))
             if (editable && selected.isNotEmpty()) {
                 ZillitButton(
-                    text = "Clear all",
+                    text = str(S.docusign_initials_clear_all),
                     onClick = { edit(CurrencySettings()) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -182,10 +183,10 @@ private fun EmptyCurrencies() {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = "No currencies selected yet",
+            text = str(S.desktop_hub_no_currencies_selected_yet),
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
         )
-        FieldHint("Pick at least one from the list →")
+        FieldHint(str(S.desktop_hub_pick_at_least_one_from_the_list_arrow))
     }
 }
 
@@ -220,10 +221,10 @@ private fun DefaultCurrencyPicker(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = "Default currency",
+                    text = str(S.desktop_default_currency),
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 )
-                FieldHint("Pre-fills new transactions across every module.")
+                FieldHint(str(S.desktop_hub_pre_fills_new_transactions_across_every_module))
             }
             if (current != null) {
                 Row(
@@ -329,7 +330,7 @@ private fun SelectedCurrencyCard(
                     text = currency.code,
                     style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                 )
-                if (isDefault) Pill("Default", tone = StatusTone.Pending)
+                if (isDefault) Pill(str(S.desktop_email_format_default), tone = StatusTone.Pending)
             }
             ZillitText(
                 text = currency.country.ifBlank { currency.name },
@@ -339,7 +340,7 @@ private fun SelectedCurrencyCard(
             )
         }
         if (isDefault) {
-            MonoChip("BASE · 1")
+            MonoChip(str(S.desktop_base_1))
         } else {
             // The text is held beside the parsed rate, not derived from it: a
             // field bound to a Double turns "1." back into "1" under the
@@ -357,7 +358,7 @@ private fun SelectedCurrencyCard(
                 },
                 placeholder = "1.00",
                 enabled = editable,
-                errorText = if (invalid) "Required" else null,
+                errorText = if (invalid) str(S.docusign_prop_required) else null,
                 keyboardType = KeyboardType.Decimal,
                 modifier = Modifier.width(RATE_WIDTH),
             )
@@ -386,13 +387,13 @@ private fun CurrencyCatalogue(
     val shown = setup.currencyChoices
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            FieldLabel("Add currencies", modifier = Modifier.weight(1f))
+            FieldLabel(str(S.desktop_add_currencies), modifier = Modifier.weight(1f))
             MonoChip("${shown.size} / ${setup.currencyCatalogue.size}")
         }
         ZillitSearchField(
             value = setup.currencySearch,
             onValueChange = { onEvent(AccountHubEvent.SearchCurrencies(it)) },
-            placeholder = "Search by code, name, country, or symbol…",
+            placeholder = str(S.desktop_hub_search_by_code_name_country_or_symbol),
             modifier = Modifier.fillMaxWidth(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
@@ -406,10 +407,10 @@ private fun CurrencyCatalogue(
             }
         }
         when {
-            setup.currencyCatalogue.isEmpty() -> FieldHint("Loading currencies…")
+            setup.currencyCatalogue.isEmpty() -> FieldHint(str(S.desktop_loading_currencies))
             shown.isEmpty() -> FieldHint(
                 if (setup.currencySearch.isBlank()) {
-                    "No currencies match the current filter."
+                    str(S.desktop_hub_no_currencies_match_the_current_filter)
                 } else {
                     "No currencies match “${setup.currencySearch}”."
                 },
@@ -537,8 +538,8 @@ internal fun TaxTypesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
     fun edit(next: List<TaxType>) = onEvent(AccountHubEvent.EditTaxTypes(next))
 
     SectionShell(
-        title = "Tax Types",
-        description = "Choose which tax rates are available across card expenses and other posting surfaces.",
+        title = str(S.desktop_tax_types),
+        description = str(S.desktop_hub_choose_which_tax_rates_are_available_across_card_expenses_and),
         dirty = setup.taxTypes.dirty,
         saving = setup.taxTypes.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.TaxTypes)) },
@@ -546,7 +547,7 @@ internal fun TaxTypesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         editable = editable,
         leftPanel = { TaxSummary(rows, countries) },
     ) {
-        FieldLabel("Countries")
+        FieldLabel(str(S.desktop_countries))
         SelectedCountryChips(chosenCodes, countries, editable) { code ->
             edit(rows.filterNot { it.countryCode == code })
         }
@@ -564,9 +565,9 @@ internal fun TaxTypesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
                     }
                 },
                 placeholder = when {
-                    countries.isEmpty() -> "Loading countries…"
-                    chosenCodes.isEmpty() -> "Add a country…"
-                    else -> "Add another country…"
+                    countries.isEmpty() -> str(S.desktop_loading_countries)
+                    chosenCodes.isEmpty() -> str(S.desktop_add_a_country)
+                    else -> str(S.desktop_add_another_country)
                 },
                 enabled = countries.isNotEmpty() && available.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
@@ -606,7 +607,7 @@ private fun TaxSummary(rows: List<TaxType>, countries: List<CountryTaxes>) {
                 style = ZillitTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
             )
             Column(modifier = Modifier.padding(bottom = 3.dp)) {
-                MonoLabel("Active rates")
+                MonoLabel(str(S.desktop_active_rates))
                 FieldHint("across ${byCountry.size} ${if (byCountry.size == 1) "country" else "countries"}")
             }
         }
@@ -664,7 +665,7 @@ private fun SelectedCountryChips(
     onRemove: (String) -> Unit,
 ) {
     if (codes.isEmpty()) {
-        FieldHint("No countries yet — add one below.")
+        FieldHint(str(S.desktop_hub_no_countries_yet_add_one_below))
         return
     }
     val colors = ZillitTheme.colors
@@ -804,7 +805,7 @@ private fun CountryRateGroup(
                             edit(rows.map { if (it.identifier == existing.identifier) it.copy(nominal = code) else it })
                         },
                         accounts = state.chart.accounts,
-                        placeholder = "Nominal",
+                        placeholder = str(S.dm_rule_nominal),
                         enabled = editable,
                         modifier = Modifier.width(NOMINAL_WIDTH),
                         onCreate = quickCreateHandler(state, onEvent),
@@ -844,7 +845,7 @@ private fun StoredCountryGroup(code: String, rows: List<TaxType>, editable: Bool
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.weight(1f),
             )
-            FieldHint("not in the catalogue")
+            FieldHint(str(S.desktop_hub_not_in_the_catalogue))
         }
         mine.forEach { tax ->
             Row(
@@ -906,10 +907,10 @@ private fun CustomRates(
 ) {
     val custom = rows.filter { it.isCustom }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = ZillitTheme.spacing.xs)) {
-        FieldLabel("Custom rates", modifier = Modifier.weight(1f))
+        FieldLabel(str(S.desktop_custom_rates), modifier = Modifier.weight(1f))
         if (editable) {
             GhostAddButton(
-                text = "Add custom rate",
+                text = str(S.desktop_add_custom_rate),
                 onClick = {
                     // Minted from what is already there rather than from a
                     // counter, so two sessions cannot both mint custom_3.
@@ -918,7 +919,7 @@ private fun CustomRates(
             )
         }
     }
-    if (custom.isEmpty()) FieldHint("No custom rates.")
+    if (custom.isEmpty()) FieldHint(str(S.desktop_no_custom_rates))
     custom.forEach { tax ->
         fun update(next: TaxType) = edit(rows.map { if (it.identifier == tax.identifier) next else it })
         Row(
@@ -929,21 +930,21 @@ private fun CustomRates(
             ZillitTextField(
                 value = tax.type,
                 onValueChange = { update(tax.copy(type = it)) },
-                placeholder = "Type (e.g. VAT)",
+                placeholder = str(S.desktop_hub_type_e_g_vat_paren),
                 enabled = editable,
                 modifier = Modifier.width(TYPE_WIDTH),
             )
             ZillitTextField(
                 value = tax.label,
                 onValueChange = { update(tax.copy(label = it)) },
-                placeholder = "Rate description",
+                placeholder = str(S.desktop_rate_description),
                 enabled = editable,
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = tax.value,
                 onValueChange = { update(tax.copy(value = it)) },
-                placeholder = "Rate %",
+                placeholder = str(S.desktop_rate_pct),
                 enabled = editable,
                 keyboardType = KeyboardType.Decimal,
                 errorText = if (TaxType.isRateOutOfRange(tax.value)) "0–100" else null,
@@ -959,7 +960,7 @@ private fun CustomRates(
                 value = tax.nominal,
                 onValueChange = { update(tax.copy(nominal = it)) },
                 accounts = state.chart.accounts,
-                placeholder = "Nominal",
+                placeholder = str(S.dm_rule_nominal),
                 enabled = editable,
                 modifier = Modifier.width(NOMINAL_WIDTH),
                 onCreate = quickCreateHandler(state, onEvent),

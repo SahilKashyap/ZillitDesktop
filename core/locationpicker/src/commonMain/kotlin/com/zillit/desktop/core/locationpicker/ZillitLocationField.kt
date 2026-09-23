@@ -13,6 +13,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import kotlinx.coroutines.launch
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A text field with a "Pick on map" affordance.
@@ -64,7 +66,7 @@ fun ZillitLocationField(
         trailingContent = picker?.let {
             {
                 ZillitButton(
-                    text = PICK_ON_MAP,
+                    text = str(S.av_pick_on_map),
                     onClick = {
                         picking = true
                         scope.launch {
@@ -93,6 +95,3 @@ fun ZillitLocationField(
         },
     )
 }
-
-/** Also the button's accessible label, and what the field's render test looks for. */
-private const val PICK_ON_MAP = "Pick on map"

@@ -6,6 +6,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.AwsRequest
 import com.zillit.desktop.core.network.AwsV4Signer
 import com.zillit.desktop.core.network.s3KeyPath
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeMediaSource
 import io.ktor.client.HttpClient
@@ -63,7 +65,7 @@ class S3NoticeMediaSource(
             return ZillitResult.Failure(
                 ZillitError.Storage(
                     technical = "attachment names no bucket/region",
-                    userMessage = "This file cannot be shown — it has no storage location.",
+                    userMessage = str(S.desktop_file_no_storage_location),
                 ),
             )
         }
@@ -80,7 +82,7 @@ class S3NoticeMediaSource(
         val keys = credentials() ?: return@withContext ZillitResult.Failure(
             ZillitError.Storage(
                 technical = "no AWS credentials in the remote configuration",
-                userMessage = "Media is unavailable — this workspace has no file storage configured.",
+                userMessage = str(S.desktop_media_no_file_storage),
             ),
         )
 
@@ -118,7 +120,7 @@ class S3NoticeMediaSource(
                 // Never the key: file names and paths on a production are content.
                 ZillitLog.w(TAG) { "media fetch rejected: ${response.status.value}" }
                 ZillitResult.Failure(
-                    ZillitError.Http(response.status.value, "Could not load this file."),
+                    ZillitError.Http(response.status.value, str(S.desktop_could_not_load_file)),
                 )
             }
         } catch (cancellation: kotlinx.coroutines.CancellationException) {

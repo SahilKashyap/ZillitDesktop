@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
 import com.zillit.desktop.feature.productionreport.domain.BadgeKind
 import com.zillit.desktop.feature.productionreport.domain.BadgeSurface
@@ -469,7 +471,7 @@ internal class ListsController(private val ctx: ReportContext) {
         const val REJECTED = "productionreport:approval:rejected"
         const val RIGHTS_POLLS = 30
         const val RIGHTS_POLL_MS = 1_000L
-        const val REPORT_DELETED_NOTICE = "This production report was deleted."
-        const val REQUEST_VOIDED_NOTICE = "This approval request is no longer active."
+        val REPORT_DELETED_NOTICE: String get() = str(S.desktop_pr_report_deleted_notice)
+        val REQUEST_VOIDED_NOTICE: String get() = str(S.desktop_approval_request_no_longer_active)
     }
 }

@@ -59,6 +59,8 @@ import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.rememberAvatar
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
@@ -125,9 +127,9 @@ private fun ModuleRail(state: AccountHubUiState, onEvent: (AccountHubEvent) -> U
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            ZillitText(text = "Modules", style = ZillitTheme.typography.titleMedium)
+            ZillitText(text = str(S.desktop_modules), style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "Approver configuration",
+                text = str(S.desktop_approver_configuration),
                 style = ZillitTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                 color = colors.textMuted,
             )
@@ -135,7 +137,7 @@ private fun ModuleRail(state: AccountHubUiState, onEvent: (AccountHubEvent) -> U
         ZillitSearchField(
             value = approvals.moduleSearch,
             onValueChange = { onEvent(AccountHubEvent.SearchApprovalModules(it)) },
-            placeholder = "Search modules…",
+            placeholder = str(S.desktop_search_modules),
             modifier = Modifier.fillMaxWidth(),
         )
         groups.forEach { (title, modules) ->
@@ -188,7 +190,7 @@ private fun ModuleCard(module: ApprovalModule, active: Boolean, configured: Bool
             // all: unknown is not "Not started".
             configured?.let {
                 ZillitText(
-                    text = if (it) "Configured" else "Not started",
+                    text = if (it) str(S.desktop_configured) else str(S.desktop_not_started),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                     maxLines = 1,
@@ -211,13 +213,11 @@ private fun ModuleView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> U
         ) {
             ApproversHero(state)
             TipBanner(
-                "Tip — Configure Default Levels first to set a baseline. Then customise specific departments " +
-                    "as needed.",
+                str(S.desktop_hub_tip_configure_default_levels_first_to_set_a_baseline_then),
             )
             if (!state.viewer.canActAsAccountant) {
                 ZillitNotice(
-                    text = "Approval chains are read-only for you — the service restricts changes to the accounts " +
-                        "department, and an admin is not exempt.",
+                    text = str(S.desktop_hub_approval_chains_are_read_only_for_you_the_service_restricts),
                     tone = StatusTone.Neutral,
                     icon = ZillitIcons.Info,
                 )
@@ -230,7 +230,7 @@ private fun ModuleView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> U
                     icon = ZillitIcons.Warning,
                     action = {
                         ZillitButton(
-                            text = "Retry",
+                            text = str(S.retry),
                             onClick = { onEvent(AccountHubEvent.ReloadApprovalConfigs) },
                             size = ButtonSize.Small,
                         )
@@ -239,7 +239,7 @@ private fun ModuleView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> U
                 // This module's chains are on their way. Showing the cards now
                 // would say "No default levels set" about a chain not yet read.
                 approvals.loading && approvals.loadedModule != approvals.module ->
-                    LoadingLine("Loading approval configs…")
+                    LoadingLine(str(S.desktop_loading_approval_configs))
                 else -> {
                     DefaultLevelsCard(state, onEvent)
                     DepartmentsSection(state, onEvent)
@@ -303,8 +303,8 @@ private fun HeroTitle(module: ApprovalModule, modifier: Modifier = Modifier) {
                 size = HERO_TILE,
             )
             Column {
-                MonoLabel("Management", color = colors.accentText)
-                ZillitText(text = "Approvers", style = ZillitTheme.typography.displayLarge)
+                MonoLabel(str(S.desktop_management), color = colors.accentText)
+                ZillitText(text = str(S.approvers_empty), style = ZillitTheme.typography.displayLarge)
             }
         }
         ZillitText(
@@ -442,23 +442,23 @@ private fun DefaultLevelsCard(state: AccountHubUiState, onEvent: (AccountHubEven
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitText(text = "Default Approval Levels", style = ZillitTheme.typography.titleSmall)
+                ZillitText(text = str(S.desktop_default_approval_levels), style = ZillitTheme.typography.titleSmall)
                 ZillitText(
                     text = "all ${state.departmentList.size} departments",
                     style = APPROVAL_MONO,
                     color = colors.textMuted,
                 )
                 Pill(
-                    if (configured) "Configured" else "Not configured",
+                    if (configured) str(S.desktop_configured) else str(S.desktop_not_configured),
                     tone = if (configured) StatusTone.Done else StatusTone.Neutral,
                     dot = true,
                 )
             }
             FieldHint(
                 if (configured) {
-                    "Baseline used by any department without a custom override below."
+                    str(S.desktop_hub_baseline_used_by_any_department_without_a_custom_override_below)
                 } else {
-                    "No default levels set. Departments without custom configs will have no approval flow."
+                    str(S.desktop_hub_no_default_levels_set_departments_without_custom_configs_will_have)
                 },
             )
             if (config != null && configured) {
@@ -472,7 +472,7 @@ private fun DefaultLevelsCard(state: AccountHubUiState, onEvent: (AccountHubEven
         }
         if (state.viewer.canActAsAccountant) {
             ZillitButton(
-                text = if (configured) "Edit" else "Configure",
+                text = if (configured) str(S.edit) else str(S.desktop_configure),
                 onClick = { onEvent(AccountHubEvent.EditDefaultApprovals) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Edit,
@@ -511,7 +511,7 @@ private fun LevelLines(tiers: List<ApprovalTier>, state: AccountHubUiState, meta
                     tier.userIds.forEach { id -> ApproverLine(id, state) }
                     if (tier.userIds.isEmpty()) {
                         ZillitText(
-                            text = "No users assigned",
+                            text = str(S.desktop_no_users_assigned),
                             style = ZillitTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
                             color = colors.textMuted,
                         )
@@ -666,7 +666,7 @@ private fun DepartmentsSection(state: AccountHubUiState, onEvent: (AccountHubEve
             ZillitSearchField(
                 value = approvals.departmentSearch,
                 onValueChange = { onEvent(AccountHubEvent.SearchDepartments(it)) },
-                placeholder = "Search departments…",
+                placeholder = str(S.invitees_search_departments),
                 modifier = Modifier.weight(1f),
             )
             ZillitSegmented(
@@ -688,7 +688,7 @@ private fun DepartmentsSection(state: AccountHubUiState, onEvent: (AccountHubEve
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MonoLabel("Departments")
+            MonoLabel(str(S.departments))
             Box(Modifier.weight(1f).height(1.dp).background(colors.border))
             ZillitText(
                 text = buildAnnotatedString {
@@ -703,8 +703,8 @@ private fun DepartmentsSection(state: AccountHubUiState, onEvent: (AccountHubEve
             )
         }
         when {
-            departments.isEmpty() -> NoDepartmentsLine("No departments on this production.")
-            shown.isEmpty() -> NoDepartmentsLine("No departments match your search")
+            departments.isEmpty() -> NoDepartmentsLine(str(S.desktop_hub_no_departments_on_this_production))
+            shown.isEmpty() -> NoDepartmentsLine(str(S.desktop_hub_no_departments_match_your_search))
             else -> shown.forEach { dept -> DepartmentRow(dept, state, onEvent) }
         }
     }
@@ -731,9 +731,9 @@ private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent
     val effective = own ?: inherited
     val expanded = dept.id in approvals.expanded
     val (status, tone) = when {
-        own != null -> "Custom" to StatusTone.Pending
-        inherited != null -> "Default" to StatusTone.Progress
-        else -> "Not configured" to StatusTone.Neutral
+        own != null -> str(S.custom) to StatusTone.Pending
+        inherited != null -> str(S.desktop_email_format_default) to StatusTone.Progress
+        else -> str(S.desktop_not_configured) to StatusTone.Neutral
     }
     Column(
         modifier = Modifier
@@ -756,7 +756,7 @@ private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent
         ) {
             ZillitIcon(
                 icon = if (expanded) ZillitIcons.ChevronDown else ZillitIcons.ChevronRight,
-                contentDescription = if (expanded) "Collapse" else "Expand",
+                contentDescription = if (expanded) str(S.desktop_collapse) else str(S.desktop_expand),
                 tint = if (expanded) colors.accent else colors.textMuted,
                 size = CHEVRON,
             )
@@ -780,7 +780,7 @@ private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent
             }
             if (expanded && state.viewer.canActAsAccountant) {
                 ZillitButton(
-                    text = "Edit",
+                    text = str(S.edit),
                     onClick = { onEvent(AccountHubEvent.EditDepartmentConfig(dept.id)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -799,13 +799,13 @@ private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent
             ) {
                 if (effective == null) {
                     ZillitText(
-                        text = "No approval levels configured for this department.",
+                        text = str(S.desktop_hub_no_approval_levels_configured_for_this_department),
                         style = ZillitTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
                         color = colors.textMuted,
                     )
                 } else {
                     LevelLines(effective.tiers, state, ::ruleSummary)
-                    if (own == null) FieldHint("Inherited from the default levels.")
+                    if (own == null) FieldHint(str(S.desktop_hub_inherited_from_the_default_levels))
                 }
             }
         }
@@ -825,13 +825,13 @@ internal val ApprovalModule.icon: ImageVector
 
 /** The rail's sections, in the web's sidebar order. */
 private val MODULE_GROUPS = listOf(
-    "Transactions" to listOf(
+    str(S.desktop_transactions) to listOf(
         ApprovalModule.PurchaseOrders,
         ApprovalModule.Invoices,
         ApprovalModule.CardExpenses,
         ApprovalModule.CashExpenses,
     ),
-    "Payroll Management" to listOf(ApprovalModule.Timecard, ApprovalModule.DealMemo),
+    str(S.desktop_payroll_management) to listOf(ApprovalModule.Timecard, ApprovalModule.DealMemo),
 )
 
 /** Monospace counts and asides — "all 12 departments", "L1: 2 · L2: 1". */

@@ -40,6 +40,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.EnvelopeTemplate
 import com.zillit.desktop.feature.esignature.domain.EsignFormat
 import com.zillit.desktop.feature.esignature.ui.EsignEvent
@@ -66,14 +68,14 @@ internal fun TemplatesPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
             ZillitSearchField(
                 value = templates.search,
                 onValueChange = { onEvent(EsignEvent.SearchTemplates(it)) },
-                placeholder = "Search templates by name or description",
+                placeholder = str(S.desktop_ds_search_templates_by_name_or_description),
                 modifier = Modifier.width(320.dp),
             )
             ZillitSelect(
                 value = templates.category,
                 options = listOf<String?>(null) + templates.categories,
                 onSelect = { onEvent(EsignEvent.FilterTemplates(it)) },
-                label = { it?.let(::prettyCategory) ?: "All categories" },
+                label = { it?.let(::prettyCategory) ?: str(S.desktop_ds_all_categories) },
                 modifier = Modifier.width(180.dp),
             )
             Spacer(Modifier.weight(1f))
@@ -83,7 +85,7 @@ internal fun TemplatesPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                 color = colors.textMuted,
             )
             ZillitButton(
-                "New template",
+                str(S.dm_template_new),
                 onClick = { onEvent(EsignEvent.StartTemplate) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
@@ -103,17 +105,21 @@ internal fun TemplatesPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                     ZillitEmptyState(
-                        title = if (templates.items.isEmpty()) "No templates yet" else "No templates match",
-                        message = if (templates.items.isEmpty()) {
-                            "Save an envelope's design once and reuse it for every crew member."
+                        title = if (templates.items.isEmpty()) {
+                            str(S.desktop_po_no_templates_yet)
                         } else {
-                            "Try a different search or category."
+                            str(S.desktop_ds_no_templates_match)
+                        },
+                        message = if (templates.items.isEmpty()) {
+                            str(S.desktop_ds_save_an_envelope_s_design_once_and_reuse)
+                        } else {
+                            str(S.desktop_ds_try_a_different_search_or_category)
                         },
                         icon = ZillitIcons.File,
                         action = if (templates.items.isEmpty()) {
                             {
                                 ZillitButton(
-                                    "New template",
+                                    str(S.dm_template_new),
                                     onClick = { onEvent(EsignEvent.StartTemplate) },
                                     size = ButtonSize.Small,
                                     leadingIcon = ZillitIcons.Add,
@@ -132,9 +138,9 @@ internal fun TemplatesPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
     TemplateDetailDialog(state, onEvent)
     ConfirmDialog(
         visible = templates.confirmDeleteId != null,
-        title = "Delete this template?",
-        body = "Envelopes already created from it are unaffected.",
-        confirmLabel = "Delete",
+        title = str(S.desktop_ds_delete_this_template),
+        body = str(S.desktop_ds_envelopes_already_created_from_it_are_unaffected),
+        confirmLabel = str(S.delete),
         onConfirm = { onEvent(EsignEvent.ConfirmDeleteTemplate) },
         onDismiss = { onEvent(EsignEvent.AskDeleteTemplate(null)) },
     )
@@ -168,7 +174,7 @@ private fun TemplateCard(template: EnvelopeTemplate, state: EsignUiState, onEven
             DocTile()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 ZillitText(
-                    template.name.ifBlank { "Untitled template" },
+                    template.name.ifBlank { str(S.docusign_template_detail_untitled) },
                     style = ZillitTheme.typography.titleSmall,
                     maxLines = 2,
                 )
@@ -201,14 +207,14 @@ private fun TemplateCard(template: EnvelopeTemplate, state: EsignUiState, onEven
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ZillitButton(
-                "Use",
+                str(S.docusign_template_use),
                 onClick = { onEvent(EsignEvent.UseTemplate(template)) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Send,
                 enabled = !busy,
             )
             ZillitButton(
-                "Bulk send",
+                str(S.docusign_bulk_send_title),
                 onClick = { onEvent(EsignEvent.StartBulkSend(template)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Secondary,
@@ -216,7 +222,7 @@ private fun TemplateCard(template: EnvelopeTemplate, state: EsignUiState, onEven
             )
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                "Edit",
+                str(S.edit),
                 onClick = { onEvent(EsignEvent.EditTemplate(template)) },
                 size = ButtonSize.Small,
                 variant = ButtonVariant.Tertiary,
@@ -244,12 +250,12 @@ private fun TemplateTable(items: List<EnvelopeTemplate>, state: EsignUiState, on
             rows = items,
             key = { it.id },
             onRowClick = { onEvent(EsignEvent.ShowTemplate(it)) },
-            emptyTitle = "No templates",
+            emptyTitle = str(S.desktop_ds_no_templates),
             columns = listOf(
-                TableColumn(header = "Template", width = ColumnWidth.Weight(2f)) { template ->
+                TableColumn(header = str(S.txt_template), width = ColumnWidth.Weight(2f)) { template ->
                     Column {
                         ZillitText(
-                            template.name.ifBlank { "Untitled" },
+                            template.name.ifBlank { str(S.untitled) },
                             style = ZillitTheme.typography.bodyMedium,
                             maxLines = 1,
                         )
@@ -261,7 +267,10 @@ private fun TemplateTable(items: List<EnvelopeTemplate>, state: EsignUiState, on
                         )
                     }
                 },
-                TableColumn(header = "Category", width = ColumnWidth.Fixed(150.dp)) { template ->
+                TableColumn(
+                    header = str(S.docusign_template_save_category_label),
+                    width = ColumnWidth.Fixed(150.dp),
+                ) { template ->
                     if (template.category.isNotBlank()) {
                         ZillitTag(prettyCategory(template.category), tone = TagTone.Accent)
                     } else ZillitText(
@@ -270,17 +279,17 @@ private fun TemplateTable(items: List<EnvelopeTemplate>, state: EsignUiState, on
                     )
                 },
                 textColumn(
-                    header = "Roles",
+                    header = str(S.desktop_ds_roles),
                     width = ColumnWidth.Fixed(70.dp),
                     numeric = true,
                 ) { it.signerSlots.toString() },
                 textColumn(
-                    header = "Fields",
+                    header = str(S.docusign_send_confirm_fields_label),
                     width = ColumnWidth.Fixed(70.dp),
                     numeric = true,
                 ) { it.fields.size.toString() },
                 textColumn(
-                    header = "Updated",
+                    header = str(S.desktop_updated),
                     width = ColumnWidth.Fixed(110.dp),
                     muted = true,
                 ) { EsignFormat.date(it.updated ?: it.created) },
@@ -288,27 +297,27 @@ private fun TemplateTable(items: List<EnvelopeTemplate>, state: EsignUiState, on
                     val busy = state.templates.busyId == template.id
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
                         ZillitButton(
-                            "Use",
+                            str(S.docusign_template_use),
                             onClick = { onEvent(EsignEvent.UseTemplate(template)) },
                             size = ButtonSize.Small,
                             enabled = !busy,
                         )
                         ZillitButton(
-                            "Bulk send",
+                            str(S.docusign_bulk_send_title),
                             onClick = { onEvent(EsignEvent.StartBulkSend(template)) },
                             size = ButtonSize.Small,
                             variant = ButtonVariant.Secondary,
                             enabled = !busy,
                         )
                         ZillitButton(
-                            "Edit",
+                            str(S.edit),
                             onClick = { onEvent(EsignEvent.EditTemplate(template)) },
                             size = ButtonSize.Small,
                             variant = ButtonVariant.Tertiary,
                             enabled = !busy,
                         )
                         ZillitButton(
-                            "Delete",
+                            str(S.delete),
                             onClick = { onEvent(EsignEvent.AskDeleteTemplate(template.id)) },
                             size = ButtonSize.Small,
                             variant = ButtonVariant.Tertiary,
@@ -326,7 +335,7 @@ private fun TemplateDetailDialog(state: EsignUiState, onEvent: (EsignEvent) -> U
     val colors = ZillitTheme.colors
     val template = state.templates.detail
     ZillitDialogShell(
-        title = template?.name ?: "Template",
+        title = template?.name ?: str(S.txt_template),
         subtitle = template?.category?.takeIf { it.isNotBlank() }?.let(::prettyCategory),
         visible = template != null,
         onDismiss = { onEvent(EsignEvent.ShowTemplate(null)) },
@@ -336,14 +345,14 @@ private fun TemplateDetailDialog(state: EsignUiState, onEvent: (EsignEvent) -> U
         actions = {
             if (template != null) {
                 ZillitButton(
-                    "Delete",
+                    str(S.delete),
                     onClick = { onEvent(EsignEvent.AskDeleteTemplate(template.id)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Trash,
                 )
                 ZillitButton(
-                    "Duplicate",
+                    str(S.docusign_template_menu_duplicate),
                     onClick = {
                         onEvent(EsignEvent.DuplicateTemplate(template))
                         onEvent(EsignEvent.ShowTemplate(null))
@@ -352,14 +361,14 @@ private fun TemplateDetailDialog(state: EsignUiState, onEvent: (EsignEvent) -> U
                     size = ButtonSize.Small,
                 )
                 ZillitButton(
-                    "Edit",
+                    str(S.edit),
                     onClick = { onEvent(EsignEvent.ShowTemplate(null)); onEvent(EsignEvent.EditTemplate(template)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Edit,
                 )
                 ZillitButton(
-                    "Use template",
+                    str(S.docusign_template_detail_use),
                     onClick = { onEvent(EsignEvent.ShowTemplate(null)); onEvent(EsignEvent.UseTemplate(template)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Send,
@@ -374,19 +383,25 @@ private fun TemplateDetailDialog(state: EsignUiState, onEvent: (EsignEvent) -> U
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textSecondary,
             )
-            KeyValue("Document", template.document?.name ?: "—")
-            KeyValue("Pages", template.pageCount.takeIf { it > 0 }?.toString() ?: "—")
+            KeyValue(str(S.docusign_section_document), template.document?.name ?: "—")
+            KeyValue(str(S.pages), template.pageCount.takeIf { it > 0 }?.toString() ?: "—")
             KeyValue(
-                "Roles",
+                str(S.desktop_ds_roles),
                 template.recipients
                     .joinToString { it.placeholderLabel.ifBlank { it.name.ifBlank { it.role } } }
                     .ifBlank { "—" },
             )
-            KeyValue("Created", EsignFormat.dateTime(template.created))
-            KeyValue("Updated", EsignFormat.dateTime(template.updated))
-            if (template.settings.emailSubject.isNotBlank()) KeyValue("Email subject", template.settings.emailSubject)
+            KeyValue(str(S.drive_created), EsignFormat.dateTime(template.created))
+            KeyValue(str(S.desktop_updated), EsignFormat.dateTime(template.updated))
+            if (template.settings.emailSubject.isNotBlank()) {
+                KeyValue(str(S.desktop_ds_email_subject), template.settings.emailSubject)
+            }
             if (template.fields.isNotEmpty()) {
-                ZillitText("FIELDS", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+                ZillitText(
+                    str(S.docusign_send_confirm_fields_label),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
                 template.fields.groupBy { it.type }.forEach { (type, list) ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

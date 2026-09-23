@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.dealmemo.ui.documents
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** A page rendered for reading or signing, with its size in PDF points. */
 class DealPdfPage(val image: ImageBitmap, val widthPt: Float, val heightPt: Float) {
@@ -27,13 +29,16 @@ data class DealPlacement(val pageIndex: Int, val fx: Double, val fy: Double, val
  * what is stamped.
  */
 @Suppress("MagicNumber") // Each style's size against the others, so every face signs at one visual weight.
-enum class SignatureFont(val label: String, val families: List<String>, val scale: Float) {
-    Formal("Formal", listOf("Snell Roundhand", "Great Vibes", "Segoe Script"), 1.00f),
-    Flowing("Flowing", listOf("Apple Chancery", "Dancing Script", "Lucida Handwriting"), 0.92f),
-    Casual("Casual", listOf("Bradley Hand", "Caveat", "Ink Free"), 1.05f),
-    Slim("Slim", listOf("Savoye LET", "Sacramento", "Gabriola"), 1.10f),
-    Bold("Bold", listOf("Brush Script MT", "Yellowtail", "Mistral"), 0.90f),
-    Natural("Natural", listOf("Zapfino", "Homemade Apple", "Segoe Print"), 0.62f),
+enum class SignatureFont(private val labelKey: String, val families: List<String>, val scale: Float) {
+    Formal(S.docusign_sig_style_formal, listOf("Snell Roundhand", "Great Vibes", "Segoe Script"), 1.00f),
+    Flowing(S.docusign_sig_style_flowing, listOf("Apple Chancery", "Dancing Script", "Lucida Handwriting"), 0.92f),
+    Casual(S.docusign_sig_style_casual, listOf("Bradley Hand", "Caveat", "Ink Free"), 1.05f),
+    Slim(S.docusign_sig_style_slim, listOf("Savoye LET", "Sacramento", "Gabriola"), 1.10f),
+    Bold(S.bold, listOf("Brush Script MT", "Yellowtail", "Mistral"), 0.90f),
+    Natural(S.docusign_sig_style_natural, listOf("Zapfino", "Homemade Apple", "Segoe Print"), 0.62f),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**

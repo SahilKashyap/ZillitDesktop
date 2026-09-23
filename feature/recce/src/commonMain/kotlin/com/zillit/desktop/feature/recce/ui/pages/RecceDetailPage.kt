@@ -50,6 +50,8 @@ import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.media.decodeImageBitmap
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.recce.domain.Recce
 import com.zillit.desktop.feature.recce.domain.RecceClock
 import com.zillit.desktop.feature.recce.domain.RecceStop
@@ -86,32 +88,32 @@ internal fun RecceDetailPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit)
     val recce = state.selected
     Column {
         RecceToolHeader(
-            title = recce?.title?.ifBlank { "Untitled recce" } ?: "Recce",
+            title = recce?.title?.ifBlank { str(S.desktop_recce_untitled) } ?: str(S.recce_title),
             onBack = { onEvent(RecceEvent.Back) },
             titleExtra = { recce?.let { RecceStatusTag(it) } },
             actions = {
                 if (recce != null) {
                     ZillitButton(
-                        text = "Generate PDF",
+                        text = str(S.generate_pdf),
                         onClick = { onEvent(RecceEvent.GeneratePdf) },
                         variant = ButtonVariant.Secondary,
                         leadingIcon = ZillitIcons.Download,
                     )
                     ZillitButton(
-                        text = "Print",
+                        text = str(S.print),
                         onClick = { onEvent(RecceEvent.PrintPdf) },
                         variant = ButtonVariant.Secondary,
                         leadingIcon = ZillitIcons.Print,
                         loading = state.busy,
                     )
                     ZillitButton(
-                        text = "Delete",
+                        text = str(S.delete),
                         onClick = { onEvent(RecceEvent.Delete(recce.id)) },
                         variant = ButtonVariant.Danger,
                         leadingIcon = ZillitIcons.Trash,
                     )
                     ZillitButton(
-                        text = "Edit",
+                        text = str(S.edit),
                         onClick = { onEvent(RecceEvent.Edit(recce.id)) },
                         leadingIcon = ZillitIcons.Edit,
                     )
@@ -147,7 +149,7 @@ private fun MetaRow(state: RecceUiState, recce: Recce) {
         if (unit.isNotBlank()) UnitTag(unit)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ZillitIcon(icon = ZillitIcons.Calendar, tint = colors.textMuted, size = 15.dp)
-            MutedText(RecceClock.longDateLabel(recce.dateMs).ifBlank { "No date set" })
+            MutedText(RecceClock.longDateLabel(recce.dateMs).ifBlank { str(S.desktop_recce_no_date_set) })
         }
     }
 }
@@ -155,25 +157,25 @@ private fun MetaRow(state: RecceUiState, recce: Recce) {
 @Composable
 private fun ImportantInformation(recce: Recce, onEvent: (RecceEvent) -> Unit) {
     RecceCard {
-        RecceCardHead("Important information")
+        RecceCardHead(str(S.important_information))
         Row(Modifier.height(IntrinsicSize.Min)) {
-            InfoCell(ZillitIcons.Clock, "Rendezvous", Modifier.weight(1f)) {
+            InfoCell(ZillitIcons.Clock, str(S.recce_label_rendezvous), Modifier.weight(1f)) {
                 BigValue(RecceClock.hm(recce.rdv.timeMs).ifBlank { "—" })
                 if (recce.rdv.place.isNotBlank()) SubValue(recce.rdv.place)
                 if (recce.rdv.address.isNotBlank()) SubValue(recce.rdv.address)
                 LocationLinks(recce.rdv, small = true, onEvent = onEvent, topPadding = 8.dp)
             }
             CellDivider()
-            InfoCell(RecceIcons.Train, "Nearest station", Modifier.weight(1f)) {
+            InfoCell(RecceIcons.Train, str(S.recce_field_station), Modifier.weight(1f)) {
                 BigValue(recce.station.ifBlank { "—" }, size = 15.sp)
             }
             CellDivider()
-            InfoCell(RecceIcons.Cloud, "Weather", Modifier.weight(1f)) {
+            InfoCell(RecceIcons.Cloud, str(S.recce_label_weather), Modifier.weight(1f)) {
                 BigValue(recce.weather.ifBlank { "—" }, size = 15.sp)
             }
             CellDivider()
-            InfoCell(RecceIcons.MapPin, "Stops", Modifier.weight(1f)) {
-                BigValue("${recce.locationCount} locations", size = 15.sp)
+            InfoCell(RecceIcons.MapPin, str(S.recce_label_stops), Modifier.weight(1f)) {
+                BigValue(str(S.recce_locations_count, recce.locationCount), size = 15.sp)
                 val stops = recce.itinerary
                 if (stops.isNotEmpty()) {
                     val span = listOf(RecceClock.hm(stops.first().timeMs), RecceClock.hm(stops.last().timeMs))
@@ -236,7 +238,7 @@ private fun LocationLinks(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         w3w?.let { W3WChip(words = stop.w3w, onOpen = { onEvent(RecceEvent.OpenUrl(it)) }, small = small) }
-        maps?.let { RecceLink(text = "Map", onClick = { onEvent(RecceEvent.OpenUrl(it)) }) }
+        maps?.let { RecceLink(text = str(S.map), onClick = { onEvent(RecceEvent.OpenUrl(it)) }) }
     }
 }
 
@@ -245,7 +247,7 @@ private fun LocationLinks(
 @Composable
 private fun ScheduleCard(recce: Recce, onEvent: (RecceEvent) -> Unit, modifier: Modifier) {
     RecceCard(modifier) {
-        RecceCardHead("Schedule")
+        RecceCardHead(str(S.schedule))
         Column(Modifier.padding(horizontal = 24.dp, vertical = 22.dp)) {
             if (recce.crewNote.isNotBlank()) {
                 Row(
@@ -266,7 +268,7 @@ private fun ScheduleCard(recce: Recce, onEvent: (RecceEvent) -> Unit, modifier: 
                 }
                 Spacer(Modifier.height(18.dp))
             }
-            if (recce.itinerary.isEmpty()) MutedText("No stops on this recce yet.")
+            if (recce.itinerary.isEmpty()) MutedText(str(S.desktop_recce_no_stops_yet))
             recce.itinerary.forEachIndexed { index, stop ->
                 TimelineStop(index + 1, stop, last = index == recce.itinerary.lastIndex, onEvent)
             }
@@ -378,7 +380,7 @@ private fun StopCard(stop: RecceStop, onEvent: (RecceEvent) -> Unit) {
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             ZillitText(
-                text = stop.place.ifBlank { "Unnamed stop" },
+                text = stop.place.ifBlank { str(S.desktop_recce_unnamed_stop) },
                 style = ZillitTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
                 color = colors.textPrimary,
             )
@@ -407,7 +409,7 @@ private fun RouteCard(route: RouteMapState?) {
     val colors = ZillitTheme.colors
     val image = remember(route?.image) { route?.image?.let(::decodeImageBitmap) }
     RecceCard {
-        RecceCardHead("Route")
+        RecceCardHead(str(S.recce_section_route))
         Box(
             modifier = Modifier.fillMaxWidth().height(ROUTE_HEIGHT).background(colors.surfaceSunken),
             contentAlignment = Alignment.Center,
@@ -415,7 +417,7 @@ private fun RouteCard(route: RouteMapState?) {
             when {
                 image != null -> Image(
                     bitmap = image,
-                    contentDescription = "Route map",
+                    contentDescription = str(S.desktop_recce_route_map),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
@@ -423,9 +425,9 @@ private fun RouteCard(route: RouteMapState?) {
                 else -> Box(Modifier.padding(20.dp), contentAlignment = Alignment.Center) {
                     ZillitText(
                         text = if (route.plotted == 0) {
-                            "Add an address or pick a location on a stop to plot the route here."
+                            str(S.desktop_recce_route_empty)
                         } else {
-                            "The map picture could not be fetched — the pins are still on each stop."
+                            str(S.desktop_recce_route_fetch_failed)
                         },
                         style = ZillitTheme.typography.bodyMedium.copy(fontSize = 12.5.sp, lineHeight = 19.sp),
                         color = colors.textSecondary,
@@ -443,10 +445,12 @@ private fun PersonnelCard(recce: Recce) {
     val colors = ZillitTheme.colors
     val people = recce.realPersonnel
     RecceCard {
-        RecceCardHead("Recce personnel") { RecceTag(text = people.size.toString(), kind = TagKind.Neutral) }
+        RecceCardHead(str(S.recce_section_personnel)) {
+            RecceTag(text = people.size.toString(), kind = TagKind.Neutral)
+        }
         if (people.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-                MutedText("No personnel listed.")
+                MutedText(str(S.desktop_recce_no_personnel))
             }
         }
         people.forEachIndexed { index, person ->
@@ -483,7 +487,7 @@ private fun PersonnelCard(recce: Recce) {
 private fun ContactChip(contact: String) {
     val scope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
-    ZillitTooltip(text = if (copied) "Copied" else "Copy number") {
+    ZillitTooltip(text = if (copied) str(S.dd_copied) else str(S.desktop_copy_number)) {
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(4.dp))

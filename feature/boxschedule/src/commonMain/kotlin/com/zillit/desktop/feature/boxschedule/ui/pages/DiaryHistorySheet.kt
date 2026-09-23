@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
 import com.zillit.desktop.feature.boxschedule.domain.DiaryHistory
@@ -52,10 +54,10 @@ internal fun HistorySheet(state: BoxScheduleUiState, panel: HistoryPanel, onEven
         DiaryHistory.visible(panel.entries, panel.action, panel.day, state.zone)
     }
     DiarySheet(
-        title = "HISTORY",
+        title = str(S.history),
         subtitle = {
             ZillitText(
-                "Everything that changed in the Production Diary/Box Schedule",
+                str(S.history_subtitle),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -79,15 +81,15 @@ internal fun HistorySheet(state: BoxScheduleUiState, panel: HistoryPanel, onEven
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     ZillitText(
-                        if (panel.entries.isEmpty()) "No history yet" else "No matching changes",
+                        if (panel.entries.isEmpty()) str(S.dm_history_empty) else str(S.history_no_match),
                         style = ZillitTheme.typography.titleSmall,
                         color = colors.textSecondary,
                     )
                     ZillitText(
                         if (panel.entries.isEmpty()) {
-                            "Changes to schedules, events, and notes will appear here automatically."
+                            str(S.history_no_history_desc)
                         } else {
-                            "Try a different filter."
+                            str(S.history_no_match_desc)
                         },
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
@@ -113,9 +115,9 @@ private fun HistoryFilters(state: BoxScheduleUiState, panel: HistoryPanel, onEve
                 selected = panel.action ?: options.first(),
                 options = options,
                 onSelect = { onEvent(PanelEvent.FilterHistory(it)) },
-                label = { it?.filterLabel ?: "All Actions" },
+                label = { it?.filterLabel ?: str(S.history_all_actions) },
                 // All Actions is the null choice, which the dropdown draws as its placeholder.
-                placeholder = "All Actions",
+                placeholder = str(S.history_all_actions),
                 modifier = Modifier.weight(1f),
                 menuWidth = 200.dp,
             )
@@ -123,7 +125,7 @@ private fun HistoryFilters(state: BoxScheduleUiState, panel: HistoryPanel, onEve
                 value = panel.day,
                 onPick = { onEvent(PanelEvent.HistoryDay(it)) },
                 today = state.today,
-                placeholder = "Pick a date",
+                placeholder = str(S.history_pick_date),
                 clearable = true,
                 modifier = Modifier.weight(1f),
             )
@@ -180,7 +182,7 @@ private fun HistoryCard(
             Box(Modifier.weight(1f))
             ZillitIconButton(
                 icon = ZillitIcons.Info,
-                contentDescription = "View details",
+                contentDescription = str(S.view_details),
                 onClick = { onEvent(PanelEvent.OpenHistoryDetail(entry.id)) },
             )
         }
@@ -210,7 +212,7 @@ private fun HistoryCard(
 /** The person behind a row — the row's own name, else the crew list's — and their role. */
 private fun performer(entry: HistoryEntry, state: BoxScheduleUiState): Pair<String, String> {
     val person = state.person(entry.performedById)
-    val name = entry.performedByName.ifBlank { person?.fullName.orEmpty() }.ifBlank { "Someone" }
+    val name = entry.performedByName.ifBlank { person?.fullName.orEmpty() }.ifBlank { str(S.history_someone) }
     return name to person?.designation?.localised().orEmpty()
 }
 
@@ -232,7 +234,7 @@ internal fun HistoryDetailDialog(
     val tone = hexColor(entry.known?.color) ?: colors.textMuted
     val (name, designation) = performer(entry, state)
     ZillitDialogShell(
-        title = "“${entry.targetTitle.ifBlank { data.title.ifBlank { "Untitled" } }}”",
+        title = "“${entry.targetTitle.ifBlank { data.title.ifBlank { str(S.untitled) } }}”",
         subtitle = listOfNotNull(
             entry.actionLabel,
             entry.targetLabel.takeIf { it.isNotBlank() },
@@ -255,7 +257,7 @@ internal fun HistoryDetailDialog(
                 )
             }
             ZillitButton(
-                "Close",
+                str(S.close),
                 onClick = { onEvent(PanelEvent.CloseHistoryDetail) },
                 variant = ButtonVariant.Secondary,
             )
@@ -280,7 +282,7 @@ private fun SnapshotRows(state: BoxScheduleUiState, panel: HistoryPanel, data: H
     SnapshotCall(data, state.zone)
     if (data.audience.isSet) AudienceRows(state, panel, data)
     if (data.organizerExcluded) {
-        SnapshotRow(ZillitIcons.User, "Organizer") { Body("Excluded — organizer is not part of this event") }
+        SnapshotRow(ZillitIcons.User, str(S.desktop_bs_organizer)) { Body(str(S.desktop_bs_organizer_excluded)) }
     }
     if (data.externalEmails.isNotEmpty()) {
         SnapshotRow(ZillitIcons.Mail, "External Guests (${data.externalEmails.size})") {
@@ -291,14 +293,16 @@ private fun SnapshotRows(state: BoxScheduleUiState, panel: HistoryPanel, data: H
 
 @Composable
 private fun SnapshotWhat(data: HistorySnapshot, zone: TimeZone) {
-    if (data.eventType.isNotBlank()) SnapshotRow(ZillitIcons.Info, "Type") { SmallBadge(data.eventType.uppercase()) }
+    if (data.eventType.isNotBlank()) {
+        SnapshotRow(ZillitIcons.Info, str(S.type)) { SmallBadge(data.eventType.uppercase()) }
+    }
     if (data.description.isNotBlank()) {
-        SnapshotRow(ZillitIcons.Edit, if (data.eventType == "note") "Note" else "Description") {
+        SnapshotRow(ZillitIcons.Edit, if (data.eventType == "note") str(S.note_label) else str(S.description)) {
             Body(data.description)
         }
     }
     if (data.start > 0 || data.end > 0) {
-        SnapshotRow(ZillitIcons.Clock, if (data.fullDay) "Date" else "When") {
+        SnapshotRow(ZillitIcons.Clock, if (data.fullDay) str(S.date) else str(S.section_when)) {
             when {
                 data.fullDay -> Body(DiaryFormat.shortWeekdayDate(data.start, zone))
                 else -> {
@@ -318,12 +322,12 @@ private fun SnapshotWhat(data: HistorySnapshot, zone: TimeZone) {
 @Composable
 private fun SnapshotSchedule(state: BoxScheduleUiState, data: HistorySnapshot) {
     state.blocks.firstOrNull { it.id == data.scheduleDayId }?.let { day ->
-        SnapshotRow(ZillitIcons.Calendar, "Linked Schedule Day") {
+        SnapshotRow(ZillitIcons.Calendar, str(S.desktop_bs_linked_schedule_day)) {
             Swatched(day.color, day.title.ifBlank { day.typeName })
         }
     }
     state.types.firstOrNull { it.id == data.typeId }?.let { type ->
-        SnapshotRow(ZillitIcons.Settings, "Schedule Type") { Swatched(type.color, type.title) }
+        SnapshotRow(ZillitIcons.Settings, str(S.schedule_type)) { Swatched(type.color, type.title) }
     }
     if (data.calendarDays.isNotEmpty()) {
         SnapshotRow(ZillitIcons.Calendar, "Calendar Days (${data.calendarDays.size})") {
@@ -340,15 +344,15 @@ private fun SnapshotSchedule(state: BoxScheduleUiState, data: HistorySnapshot) {
 
 @Composable
 private fun SnapshotCall(data: HistorySnapshot, zone: TimeZone) {
-    if (data.location.isNotBlank()) SnapshotRow(ZillitIcons.Pin, "Location") { Body(data.location) }
+    if (data.location.isNotBlank()) SnapshotRow(ZillitIcons.Pin, str(S.location)) { Body(data.location) }
     if (data.callType.isNotBlank()) {
-        SnapshotRow(ZillitIcons.Phone, "Call Type") { Body(DiaryFormat.callTypeLabel(data.callType)) }
+        SnapshotRow(ZillitIcons.Phone, str(S.call_type)) { Body(DiaryFormat.callTypeLabel(data.callType)) }
     }
     if (data.reminder.isNotBlank() && data.reminder != "none") {
-        SnapshotRow(ZillitIcons.Bell, "Reminder") { Body(DiaryFormat.reminderLabel(data.reminder)) }
+        SnapshotRow(ZillitIcons.Bell, str(S.reminder)) { Body(DiaryFormat.reminderLabel(data.reminder)) }
     }
     if (data.repeatStatus.isNotBlank() && data.repeatStatus != "none") {
-        SnapshotRow(ZillitIcons.Reload, "Repeat") {
+        SnapshotRow(ZillitIcons.Reload, str(S.repeat)) {
             Body(data.repeatStatus.replaceFirstChar { it.uppercase() })
             if (data.repeatEndDate > 0) Body(
                 "Until ${DiaryFormat.shortWeekdayDate(data.repeatEndDate, zone)}",
@@ -370,8 +374,8 @@ private fun Swatched(hex: String, text: String) {
 @Composable
 private fun AudienceRows(state: BoxScheduleUiState, panel: HistoryPanel, data: HistorySnapshot) {
     val audience = data.audience
-    SnapshotRow(ZillitIcons.Users, "Distribute To") {
-        Body(if (audience.mode == AudienceMode.Presets) "Saved Preset" else audience.mode.label)
+    SnapshotRow(ZillitIcons.Users, str(S.distribute_to)) {
+        Body(if (audience.mode == AudienceMode.Presets) str(S.desktop_bs_saved_preset) else audience.mode.label)
         val names = audience.userIds.mapNotNull { state.person(it)?.fullName?.takeIf { name -> name.isNotBlank() } }
         if (names.isNotEmpty()) {
             FlowRow(
@@ -379,15 +383,20 @@ private fun AudienceRows(state: BoxScheduleUiState, panel: HistoryPanel, data: H
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 names.take(MAX_NAMES).forEach { SmallBadge(it) }
-                if (names.size > MAX_NAMES) Body("+${names.size - MAX_NAMES} more", muted = true)
+                if (names.size > MAX_NAMES) Body(str(S.desktop_n_more, names.size - MAX_NAMES), muted = true)
             }
         }
         val counts = buildList {
-            if (audience.userIds.isNotEmpty() && names.isEmpty()) add(plural(audience.userIds.size, "user"))
-            if (audience.departmentIds.isNotEmpty()) add(plural(audience.departmentIds.size, "department"))
+            if (audience.userIds.isNotEmpty() && names.isEmpty()) {
+                add(str(S.desktop_n_users, audience.userIds.size))
+            }
+            if (audience.departmentIds.isNotEmpty()) {
+                add(str(S.desktop_n_departments, audience.departmentIds.size))
+            }
         }
         if (counts.isNotEmpty()) Body(counts.joinToString(" · "), muted = true)
-        audience.presetId?.let { id -> panel.presets.firstOrNull { it.id == id }?.name }?.let { Body("Preset: $it") }
+        audience.presetId?.let { id -> panel.presets.firstOrNull { it.id == id }?.name }
+            ?.let { Body(str(S.desktop_bs_preset_named, it)) }
     }
 }
 
@@ -417,7 +426,6 @@ private fun Body(text: String, muted: Boolean = false) {
     )
 }
 
-private fun plural(count: Int, noun: String): String = "$count $noun${if (count == 1) "" else "s"}"
 
 private const val MAX_DAYS = 12
 private const val MAX_NAMES = 8

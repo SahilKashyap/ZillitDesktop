@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 
 /** What a bar under a workspace row is about. */
@@ -94,14 +96,14 @@ enum class WorkspaceFilter(val slug: String) {
  */
 object WorkspaceRows {
 
-    private val PAYMENT_LABELS = mapOf(
-        "bacs" to "BACS",
-        "faster_payment" to "Faster Payment",
-        "chaps" to "CHAPS",
-        "swift" to "SWIFT",
-        "direct_debit" to "Direct Debit",
-        "transfer" to "Transfer",
-        "card" to "Card",
+    private val PAYMENT_LABEL_KEYS = mapOf(
+        "bacs" to S.ah_run_card_method_bacs,
+        "faster_payment" to S.desktop_faster_payment,
+        "chaps" to S.desktop_chaps,
+        "swift" to S.desktop_payment_swift,
+        "direct_debit" to S.desktop_direct_debit,
+        "transfer" to S.transfer,
+        "card" to S.ah_my_cards,
     )
 
     /** An invoice's pay method as its code — `faster_payment` is the legacy spelling of `faster`. */
@@ -114,7 +116,7 @@ object WorkspaceRows {
         val invoices = ledger.associateBy { it.entityId }
         val amountCurrency = txn.amountCurrency(accountCurrency)
         val vendor = txn.displayName
-        val payLabel = PAYMENT_LABELS[txn.paymentMethod.lowercase()] ?: txn.paymentMethod
+        val payLabel = PAYMENT_LABEL_KEYS[txn.paymentMethod.lowercase()]?.let { str(it) } ?: txn.paymentMethod
         val reference = listOf(payLabel, txn.statementReference).filter { it.isNotBlank() }.joinToString(" · ")
 
         val (suggestion, matchSuggestion) = suggestions(txn, invoices, vendor, amountCurrency)
@@ -132,7 +134,7 @@ object WorkspaceRows {
 
     private fun tags(txn: BankTransaction): List<RowTag> = buildList {
         if (txn.fraudType != null) {
-            add(RowTag(RowTagKind.Fraud, "FRAUD"))
+            add(RowTag(RowTagKind.Fraud, str(S.desktop_fraud_caps)))
             txn.fraudStatus?.takeIf { it.isActioned }?.let { add(RowTag(RowTagKind.Actioned, it.wire.uppercase())) }
         }
         txn.fx?.let { add(RowTag(RowTagKind.Currency, it.currency.uppercase())) }
@@ -152,36 +154,40 @@ object WorkspaceRows {
             val detail = invoiceDetail(txn, invoices, vendor, currency)
             SuggestionBar(
                 kind = SuggestionKind.Match,
-                text = "Suggested: $detail · $confidence% confidence",
-                action = "Accept",
-                secondAction = "Manual Match",
+                text = str(S.desktop_br_suggested_match, detail, "$confidence%"),
+                action = str(S.accept),
+                secondAction = str(S.desktop_manual_match),
                 viewsInvoice = true,
                 invoiceId = txn.matchedInvoiceIds.first(),
             )
         }
         return when {
-            flagged && !actioned -> SuggestionBar(SuggestionKind.Fraud, warning, action = "Review") to match
+            flagged && !actioned ->
+                SuggestionBar(SuggestionKind.Fraud, warning, action = str(S.av_review)) to match
 
             txn.fraudType != null && txn.status == TxnStatus.Matched -> SuggestionBar(
                 SuggestionKind.Accepted,
-                "Fraud ${actionedWord(txn).lowercase()} & matched to $vendor. Recorded in audit log.",
+                str(S.desktop_br_fraud_accepted_matched, actionedWord(txn).lowercase(), vendor),
             ) to null
 
             txn.fraudType != null -> SuggestionBar(SuggestionKind.Fraud, "${actionedWord(txn)}: $warning") to match
 
             txn.status == TxnStatus.Suggested && txn.matchConfidence != null -> SuggestionBar(
                 kind = SuggestionKind.Match,
-                text = "AI Match: ${invoiceDetail(txn, invoices, vendor, currency)} · " +
-                    "${txn.matchConfidence}% confidence",
-                action = "Accept",
-                secondAction = "Manual Match",
+                text = str(
+                    S.desktop_br_ai_match,
+                    invoiceDetail(txn, invoices, vendor, currency),
+                    "${txn.matchConfidence}%",
+                ),
+                action = str(S.accept),
+                secondAction = str(S.desktop_manual_match),
             ) to null
 
             txn.status == TxnStatus.Unmatched || (txn.fx != null && txn.status != TxnStatus.Matched) -> SuggestionBar(
                 kind = SuggestionKind.Info,
-                text = "Not in Zillit — add or match to ledger?",
-                action = "Quick Add",
-                secondAction = "Manual Match",
+                text = str(S.desktop_br_not_in_zillit),
+                action = str(S.desktop_quick_add),
+                secondAction = str(S.desktop_manual_match),
             ) to null
 
             else -> null to null
@@ -189,31 +195,26 @@ object WorkspaceRows {
     }
 
     private fun actionedWord(txn: BankTransaction): String = when (txn.fraudStatus) {
-        FraudStatus.Dismissed -> "Dismissed"
-        FraudStatus.Escalated -> "Escalated"
-        FraudStatus.Accepted -> "Accepted"
-        else -> "Reviewed"
+        FraudStatus.Dismissed -> str(S.ah_dismissed_toast)
+        FraudStatus.Escalated -> str(S.ah_escalated)
+        FraudStatus.Accepted -> str(S.accepted)
+        else -> str(S.desktop_reviewed)
     }
 
     /** The engine's reason, in the web's words. */
     fun fraudWarning(txn: BankTransaction, vendor: String, currency: String?): String = when (txn.fraudType) {
-        FraudType.MandateFraud ->
-            "Bank account changed from known sort code — supplier not notified. Possible mandate fraud."
+        FraudType.MandateFraud -> str(S.desktop_br_warn_mandate)
 
-        FraudType.SplitPayment ->
-            "⚠ Multiple payments to same vendor same day — possible split payment to avoid approval threshold."
+        FraudType.SplitPayment -> str(S.desktop_br_warn_split)
 
-        FraudType.UnregisteredPayee ->
-            "Payment to unregistered payee — $vendor not found in approved supplier register."
+        FraudType.UnregisteredPayee -> str(S.desktop_br_warn_unregistered, vendor)
 
         FraudType.RoundLargePayment ->
-            "Round-number large payment of ${BankRecFormat.plainMoney(txn.amount, currency)} " +
-                "with no matched invoice reference."
+            str(S.desktop_br_warn_round_large, BankRecFormat.plainMoney(txn.amount, currency))
 
-        FraudType.DuplicatePayment ->
-            "Possible duplicate — same amount paid to $vendor within 7-day window."
+        FraudType.DuplicatePayment -> str(S.desktop_br_warn_duplicate, vendor)
 
-        null -> "Flagged for fraud review."
+        null -> str(S.desktop_br_warn_generic)
     }
 
     /** `Panavision INV-88 · £1,200.00 · BACS`, or the vendor and amount when no invoice is known. */
@@ -223,7 +224,8 @@ object WorkspaceRows {
         vendor: String,
         currency: String?,
     ): String {
-        val fallback = "${vendor.ifBlank { "Unknown" }} · ${BankRecFormat.plainMoney(txn.amount, currency)}"
+        val fallback =
+            "${vendor.ifBlank { str(S.desktop_unknown) }} · ${BankRecFormat.plainMoney(txn.amount, currency)}"
         val found = txn.matchedInvoiceIds.mapNotNull { invoices[it] }
         return when (found.size) {
             0 -> fallback
@@ -315,7 +317,7 @@ object WorkspaceRows {
                 amount to (code ?: fallbackCode)
             })
             val exact = BankRecFormat.money(total, rates.defaultCode) +
-                if (unrated) " · some amounts had no exchange rate (added at face value)" else ""
+                if (unrated) " · " + str(S.desktop_br_total_unrated) else ""
             PanelTotal(BankRecFormat.compactMoney(total, rates.defaultCode), exact, total)
         }
     }
@@ -327,16 +329,18 @@ object WorkspaceRows {
 }
 
 /** The quick-entry tiles, in the web's order. */
-enum class QuickEntryType(val key: String, val label: String) {
-    BankCharge("bankcharge", "Bank Charges"),
-    TaxReturn("vat", "Tax Return"),
-    CardSettle("corp", "Card Settle"),
-    Payroll("payroll", "Payroll"),
-    FxPayment("fx", "FX Payment"),
-    FraudFlag("fraud", "Fraud Flag"),
-    Interest("interest", "Interest"),
-    Other("other", "Other"),
+enum class QuickEntryType(val key: String, private val labelKey: String) {
+    BankCharge("bankcharge", S.desktop_br_exc_bank_charges),
+    TaxReturn("vat", S.desktop_br_exc_tax_return),
+    CardSettle("corp", S.desktop_br_card_settle),
+    Payroll("payroll", S.dm_section_payroll),
+    FxPayment("fx", S.desktop_br_exc_fx_payment),
+    FraudFlag("fraud", S.desktop_fraud_flag),
+    Interest("interest", S.desktop_interest),
+    Other("other", S.other),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         private val BY_EXCEPTION = mapOf(

@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.ui.pages.AlertsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.AnalyticsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardExtensionPage
@@ -109,12 +111,12 @@ private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitPageHeader(
-            eyebrow = "Finance",
-            title = "Production Expense Cards",
-            description = "Your card, your receipts, and where each one has got to.",
+            eyebrow = str(S.desktop_finance),
+            title = str(S.ah_card_expenses),
+            description = str(S.desktop_card_holder_subtitle),
             actions = {
                 ZillitButton(
-                    text = "Refresh",
+                    text = str(S.refresh_text),
                     onClick = { onEvent(CardEvent.Refresh) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,

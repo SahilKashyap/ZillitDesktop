@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * What a purchase order has committed but not yet been invoiced for — the
  * web's `AccrualsPage`, on `/invoices/accruals`.
@@ -26,10 +29,12 @@ data class Accrual(
 }
 
 /** Whether an accrual still stands, or has been reversed once the invoice arrived. */
-enum class AccrualStatus(val wire: String, val label: String) {
-    Accrued("accrued", "Accrued"),
-    Reversed("reversed", "Reversed"),
+enum class AccrualStatus(val wire: String, private val labelKey: String) {
+    Accrued("accrued", S.desktop_accrued),
+    Reversed("reversed", S.desktop_reversed),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): AccrualStatus = entries.firstOrNull { it.wire == wire } ?: Accrued
@@ -37,11 +42,13 @@ enum class AccrualStatus(val wire: String, val label: String) {
 }
 
 /** The web's three chips over the accruals list. */
-enum class AccrualFilter(val label: String, val status: AccrualStatus?) {
-    All("All", null),
-    Active("Active", AccrualStatus.Accrued),
-    Reversed("Reversed", AccrualStatus.Reversed),
+enum class AccrualFilter(private val labelKey: String, val status: AccrualStatus?) {
+    All(S.all, null),
+    Active(S.active, AccrualStatus.Accrued),
+    Reversed(S.desktop_reversed, AccrualStatus.Reversed),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun keeps(accrual: Accrual): Boolean = status == null || accrual.status == status
 }

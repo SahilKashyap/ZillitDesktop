@@ -436,8 +436,11 @@ class SheetWorkflowViewModelTest {
             settle()
 
             assertEquals(listOf("r1" to false), repository.publishes, "the publish call knows CONTINUATION or NEW")
-            val posts = harness.publishing.unitPosts
-            assertEquals(listOf("CallSheet_r1.pdf" to false), posts, "the wipe flag follows the choice")
+            assertEquals(
+                listOf("CallSheet_r1.pdf" to false),
+                harness.publishing.unitPosts,
+                "the wipe flag follows the choice",
+            )
             assertEquals(listOf<String?>("m1"), harness.publishing.replaceChatIds)
         }
 

@@ -8,6 +8,8 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.domain.AssetAttachment
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
 import com.zillit.desktop.feature.assetreport.domain.AssetDirectory
@@ -107,11 +109,13 @@ class AssetViewModel(
     /** A pick from memory, a stored file from the bucket — what thumbnails and the viewer draw. */
     override suspend fun load(file: DraftFile): ZillitResult<ByteArray> = when (file) {
         is DraftFile.Pending -> picks[file.localId]?.let { ZillitResult.Success(it.bytes) }
-            ?: ZillitResult.Failure(ZillitError.Storage(userMessage = "${file.name} is no longer available."))
+            ?: ZillitResult.Failure(
+                ZillitError.Storage(userMessage = str(S.desktop_file_no_longer_available, file.name)),
+            )
         is DraftFile.Saved -> if (file.attachment.isComplete) {
             files.read(file.attachment)
         } else {
-            ZillitResult.Failure(ZillitError.Storage(userMessage = "${file.name} has no stored copy."))
+            ZillitResult.Failure(ZillitError.Storage(userMessage = str(S.desktop_asset_no_stored_copy, file.name)))
         }
     }
 
@@ -161,7 +165,7 @@ class AssetViewModel(
             block = { export.export(format, departmentIds) },
             onSuccess = {
                 setState { copy(exporting = null) }
-                sendEffect(AssetEffect.Notice("Export saved to Downloads.", success = true))
+                sendEffect(AssetEffect.Notice(str(S.desktop_export_saved_downloads), success = true))
             },
             onError = { error -> setState { copy(exporting = null, error = error.localised()) } },
         )
@@ -289,7 +293,7 @@ class AssetViewModel(
             }
             when (saved) {
                 is ZillitResult.Success ->
-                    sendEffect(AssetEffect.Notice("${file.name} saved to Downloads.", success = true))
+                    sendEffect(AssetEffect.Notice(str(S.desktop_cl_saved_to_downloads, file.name), success = true))
                 is ZillitResult.Failure -> setState { copy(error = saved.error.localised()) }
             }
         }
@@ -419,18 +423,19 @@ class AssetViewModel(
     private suspend fun upload(file: DraftFile.Pending): ZillitResult<AssetAttachment> {
         uploads[file.localId]?.let { return ZillitResult.Success(it) }
         val picked = picks[file.localId] ?: return ZillitResult.Failure(
-            ZillitError.Validation("${file.name} is no longer available — add it again."),
+            ZillitError.Validation(str(S.desktop_file_gone_add_again, file.name)),
         )
         return when (val uploaded = files.upload(picked)) {
             is ZillitResult.Failure -> ZillitResult.Failure(
-                (uploaded.error as? ZillitError.Storage) ?: ZillitError.Validation("Upload failed for ${file.name}."),
+                (uploaded.error as? ZillitError.Storage)
+                    ?: ZillitError.Validation(str(S.desktop_upload_failed_for, file.name)),
             )
             // A model with no key, bucket or region points at no file; never persist it.
             is ZillitResult.Success -> if (uploaded.data.isComplete) {
                 uploads[file.localId] = uploaded.data
                 uploaded
             } else {
-                ZillitResult.Failure(ZillitError.Validation("Upload failed for ${file.name}."))
+                ZillitResult.Failure(ZillitError.Validation(str(S.desktop_upload_failed_for, file.name)))
             }
         }
     }
@@ -518,7 +523,7 @@ class AssetViewModel(
 
     private companion object {
         const val TAG = "AssetRegister"
-        const val MODULE_LABEL = "Asset Register"
+        val MODULE_LABEL: String get() = str(S.asset_title)
 
         /** How long the note's Save reads "Saved" — the web's 1.4 s. */
         const val NOTE_SAVED_FLASH_MILLIS = 1_400L

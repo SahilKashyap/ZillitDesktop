@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealOverview
@@ -82,7 +84,7 @@ fun OverviewPage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ZillitSpinner(size = 16.dp, color = Color(0xFF9CA3AF))
-                ZillitText(text = "Loading...", style = DmType.sans(12.sp), color = Color(0xFF9CA3AF))
+                ZillitText(text = str(S.dm_loading), style = DmType.sans(12.sp), color = Color(0xFF9CA3AF))
             }
         }
         data == null -> OverviewFailed(onRetry = { onEvent(OverviewEvent.Retry) })
@@ -96,15 +98,15 @@ private fun OverviewFailed(onRetry: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        ZillitText(text = "Couldn't load the overview.", style = DmType.sans(14.sp), color = dm.ink2)
+        ZillitText(text = str(S.desktop_dm_couldnt_load_the_overview), style = DmType.sans(14.sp), color = dm.ink2)
         Spacer(Modifier.height(8.dp))
         ZillitText(
-            text = "Refresh the page once the deal-memo server is reachable.",
+            text = str(S.desktop_dm_refresh_the_page_once_the_deal_memo),
             style = DmType.sans(12.sp),
             color = dm.ink3,
         )
         Spacer(Modifier.height(12.dp))
-        DmButton("Retry", onClick = onRetry, style = DmButtonStyle.SmallSecondary, icon = ZillitIcons.Reload)
+        DmButton(str(S.retry), onClick = onRetry, style = DmButtonStyle.SmallSecondary, icon = ZillitIcons.Reload)
     }
 }
 
@@ -154,8 +156,8 @@ private fun OverviewCallout() {
         )
         ZillitText(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Deal Memo Overview") }
-                append(" · Track crew contracts, rates, and deal statuses across all departments.")
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(str(S.desktop_dm_deal_memo_overview)) }
+                append(" · " + str(S.desktop_dm_overview_tagline))
             },
             style = DmType.sans(13.5.sp).copy(lineHeight = 19.sp),
             color = dm.amberInk,
@@ -174,12 +176,20 @@ private fun StatCards(data: DealOverview, currency: String) {
             else -> 1
         }
         val cards: List<@Composable (Modifier) -> Unit> = listOf(
-            { m -> StatCard("Total Deals", count(data.total), StatTone.Ink, DmIcons.List, m) },
-            { m -> StatCard("Approved", count(data.approved), StatTone.Green, ZillitIcons.Shield, m) },
-            { m -> StatCard("Awaiting Approval", count(data.awaitingApproval), StatTone.Amber, ZillitIcons.Clock, m) },
+            { m -> StatCard(str(S.desktop_dm_total_deals), count(data.total), StatTone.Ink, DmIcons.List, m) },
+            { m -> StatCard(str(S.dm_overview_approved), count(data.approved), StatTone.Green, ZillitIcons.Shield, m) },
             { m ->
                 StatCard(
-                    "Total Daily Value",
+                    str(S.dm_filter_status_pending),
+                    count(data.awaitingApproval),
+                    StatTone.Amber,
+                    ZillitIcons.Clock,
+                    m,
+                )
+            },
+            { m ->
+                StatCard(
+                    str(S.desktop_dm_total_daily_value),
                     RateFormat.currencySymbol(currency) + RateFormat.groupAmountAuto(data.totalValue),
                     StatTone.Amber,
                     DmIcons.Dollar,
@@ -229,12 +239,12 @@ private fun StatCard(label: String, value: String, tone: StatTone, icon: ImageVe
     }
 }
 
-private val RECENT_COLUMNS = listOf(
-    DmColumn("Reference", width = 140.dp),
-    DmColumn("Crew Member", weight = 1.4f),
-    DmColumn("Position", weight = 1.2f),
-    DmColumn("Rate / Day", width = 120.dp),
-    DmColumn("Status", width = 180.dp),
+private val RECENT_COLUMNS get() = listOf(
+    DmColumn(str(S.desktop_reference), width = 140.dp),
+    DmColumn(str(S.crew_member), weight = 1.4f),
+    DmColumn(str(S.desktop_dm_position), weight = 1.2f),
+    DmColumn(str(S.desktop_dm_rate_day), width = 120.dp),
+    DmColumn(str(S.dm_label_status), width = 180.dp),
 )
 
 @Composable
@@ -245,7 +255,7 @@ private fun RecentDeals(recent: List<DealDoc>, labels: DealCrewLabels, onViewAll
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Recent Deal Memos",
+                text = str(S.desktop_dm_recent_deal_memos),
                 style = DmType.sans(15.5.sp, FontWeight.Bold, (-0.01).em),
                 color = dm.ink,
                 modifier = Modifier.weight(1f),
@@ -255,7 +265,7 @@ private fun RecentDeals(recent: List<DealDoc>, labels: DealCrewLabels, onViewAll
         Box(Modifier.fillMaxWidth().height(1.dp).background(dm.cardBorder))
         DmTableHeader(RECENT_COLUMNS)
         if (recent.isEmpty()) {
-            TableMessage(loading = false, text = "No deal memos yet.")
+            TableMessage(loading = false, text = str(S.dm_notices_empty))
         } else {
             recent.forEachIndexed { index, deal ->
                 if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(dm.cardBorder))
@@ -276,7 +286,7 @@ private fun ViewAllLink(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "View all",
+            text = str(S.desktop_dm_view_all),
             style = DmType.sans(12.5.sp, FontWeight.Bold).copy(
                 textDecoration = if (hovered) TextDecoration.Underline else null,
             ),
@@ -338,11 +348,15 @@ private val BAR_COLOURS = listOf(
 @Composable
 private fun ByDepartment(data: DealOverview, labels: DealCrewLabels) {
     DmCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-        ZillitText(text = "By Department", style = DmType.sans(14.5.sp, FontWeight.Bold, (-0.01).em), color = dm.ink)
+        ZillitText(
+            text = str(S.desktop_dm_by_department),
+            style = DmType.sans(14.5.sp, FontWeight.Bold, (-0.01).em),
+            color = dm.ink,
+        )
         Spacer(Modifier.height(14.dp))
         if (data.departmentBreakdown.isEmpty()) {
             ZillitText(
-                text = "No departments yet.",
+                text = str(S.desktop_no_departments_yet),
                 style = DmType.sans(12.sp).copy(fontStyle = FontStyle.Italic),
                 color = dm.ink3,
             )
@@ -387,13 +401,21 @@ private fun ByDepartment(data: DealOverview, labels: DealCrewLabels) {
 @Composable
 private fun StatusSummary(data: DealOverview) {
     DmCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-        ZillitText(text = "Status Summary", style = DmType.sans(14.5.sp, FontWeight.Bold, (-0.01).em), color = dm.ink)
+        ZillitText(
+            text = str(S.desktop_dm_status_summary),
+            style = DmType.sans(14.5.sp, FontWeight.Bold, (-0.01).em),
+            color = dm.ink,
+        )
         Spacer(Modifier.height(14.dp))
         val rows = listOf(
-            Triple("Active", data.active, dm.green),
-            Triple("Awaiting Approval", data.awaitingApproval, Color(0xFFE8861A)),
-            Triple("Issued", data.issued, dm.teal),
-            Triple("Draft", data.draft, if (ZillitTheme.colors.isDark) Color(0xFF3A4252) else Color(0xFFC9C8C2)),
+            Triple(str(S.dm_overview_active), data.active, dm.green),
+            Triple(str(S.dm_filter_status_pending), data.awaitingApproval, Color(0xFFE8861A)),
+            Triple(str(S.desktop_issued), data.issued, dm.teal),
+            Triple(
+                str(S.dm_overview_draft),
+                data.draft,
+                if (ZillitTheme.colors.isDark) Color(0xFF3A4252) else Color(0xFFC9C8C2),
+            ),
         )
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             rows.forEach { (label, value, colour) ->

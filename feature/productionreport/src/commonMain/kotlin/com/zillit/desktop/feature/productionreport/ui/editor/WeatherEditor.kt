@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ReportTime
 import com.zillit.desktop.feature.productionreport.domain.ReportWeather
 import com.zillit.desktop.feature.productionreport.domain.WeatherValue
@@ -96,12 +98,12 @@ internal fun WeatherEditor(
         } else {
             EmptyWeather(live, address, onEvent)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                PaneEyebrow("Or type manually")
+                PaneEyebrow(str(S.desktop_or_type_manually))
                 ReportInput(
                     raw,
                     { onEvent(DocumentEvent.SetWeatherText(address.row, address.cell, it)) },
                     Modifier.fillMaxWidth(),
-                    placeholder = "e.g. Sunny, 25°C / 77°F, Humidity: 75%",
+                    placeholder = str(S.desktop_weather_manual_hint),
                 )
             }
         }
@@ -154,9 +156,13 @@ private fun EmptyWeather(live: WeatherPanel?, address: CellAddress, onEvent: (Re
         ) {
             Icon(ReportIcons.Cloud, contentDescription = null, tint = colors.accent, modifier = Modifier.size(24.dp))
         }
-        Text("Add Weather Data", style = reportText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
         Text(
-            "Fetch real-time weather or 8-day forecast for your shoot location",
+            str(S.desktop_add_weather_data),
+            style = reportText(14.sp, FontWeight.SemiBold),
+            color = colors.textPrimary,
+        )
+        Text(
+            str(S.desktop_weather_fetch_hint),
             style = reportText(12.sp, lineHeight = 17.sp),
             color = colors.textMuted,
             textAlign = TextAlign.Center,
@@ -165,10 +171,10 @@ private fun EmptyWeather(live: WeatherPanel?, address: CellAddress, onEvent: (Re
         Column(Modifier.widthIn(max = 300.dp).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (picker != null) {
                 ReportButton(
-                    if (fetching) "Fetching..." else "Pick Location on Map",
+                    if (fetching) str(S.desktop_fetching_dots) else str(S.desktop_pick_location_on_map_title),
                     {
                         scope.launch {
-                            picker.pick(null, "Weather location")?.let { place ->
+                            picker.pick(null, str(S.desktop_weather_location))?.let { place ->
                                 onEvent(
                                     DocumentEvent.FetchWeather(
                                         address.row,
@@ -203,7 +209,7 @@ private fun EmptyWeather(live: WeatherPanel?, address: CellAddress, onEvent: (Re
                 }
             } else {
                 ReportButton(
-                    "Enter Coordinates",
+                    str(S.desktop_enter_coordinates),
                     { manual = true },
                     Modifier.fillMaxWidth(),
                     kind = ButtonKind.Outline,
@@ -235,26 +241,26 @@ private fun CoordinatesPanel(fetching: Boolean, onFetch: (Double, Double) -> Uni
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        PaneEyebrow("Manual Coordinates", strong = true)
+        PaneEyebrow(str(S.desktop_manual_coordinates), strong = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ReportInput(
                 lat,
                 { lat = it; invalid = false },
                 Modifier.weight(1f),
-                placeholder = "Latitude",
+                placeholder = str(S.desktop_latitude),
                 textStyle = reportText(13.sp),
             )
             ReportInput(
                 lng,
                 { lng = it; invalid = false },
                 Modifier.weight(1f),
-                placeholder = "Longitude",
+                placeholder = str(S.desktop_longitude),
                 textStyle = reportText(13.sp),
             )
         }
-        if (invalid) Text("Enter valid lat/long.", style = reportText(12.sp), color = colors.red)
+        if (invalid) Text(str(S.desktop_enter_valid_lat_long), style = reportText(12.sp), color = colors.red)
         ReportButton(
-            if (fetching) "Fetching..." else "Fetch Weather",
+            if (fetching) str(S.desktop_fetching_dots) else str(S.desktop_fetch_weather),
             {
                 val latitude = lat.trim().toDoubleOrNull()
                 val longitude = lng.trim().toDoubleOrNull()
@@ -292,7 +298,7 @@ private fun WeatherCard(
         ) {
             Text("📍", style = reportText(12.sp))
             Text(
-                weather.location.ifBlank { "Unknown" },
+                weather.location.ifBlank { str(S.desktop_unknown) },
                 style = reportText(12.sp, FontWeight.Medium),
                 color = Color.White,
                 maxLines = 1,
@@ -369,19 +375,19 @@ private fun WeatherCard(
                 }
             }
             val stats = listOf(
-                Triple("Feels Like", "${weather.feelsLikeC ?: "--"}", "°C"),
-                Triple("Humidity", "${weather.humidity ?: "--"}", "%"),
-                Triple("Wind", "${weather.windKmh ?: "--"}", "km/h"),
+                Triple(str(S.wp_feels_like), "${weather.feelsLikeC ?: "--"}", "°C"),
+                Triple(str(S.wp_humidity), "${weather.humidity ?: "--"}", "%"),
+                Triple(str(S.wp_wind), "${weather.windKmh ?: "--"}", "km/h"),
                 Triple(
-                    "UV Index",
+                    str(S.wp_uv_index),
                     weather.uvi?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "--",
                     "",
                 ),
-                Triple("Pressure", "${weather.pressure ?: "--"}", "hPa"),
+                Triple(str(S.wp_pressure), "${weather.pressure ?: "--"}", "hPa"),
                 if (weather.visibilityMiles != null) {
-                    Triple("Visibility", "${weather.visibilityMiles}", "mi")
+                    Triple(str(S.wp_visibility), "${weather.visibilityMiles}", "mi")
                 } else {
-                    Triple("High/Low", "${weather.tempHighC ?: "--"}/${weather.tempLowC ?: "--"}", "°C")
+                    Triple(str(S.desktop_high_low), "${weather.tempHighC ?: "--"}/${weather.tempLowC ?: "--"}", "°C")
                 },
             )
             stats.chunked(3).forEach { line ->
@@ -390,8 +396,8 @@ private fun WeatherCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SunTile("🌅", "Sunrise", weather.clock(weather.sunrise), Modifier.weight(1f))
-                SunTile("🌇", "Sunset", weather.clock(weather.sunset), Modifier.weight(1f))
+                SunTile("🌅", str(S.wp_sunrise), weather.clock(weather.sunrise), Modifier.weight(1f))
+                SunTile("🌇", str(S.wp_sunset), weather.clock(weather.sunset), Modifier.weight(1f))
             }
         }
         live?.response?.let { response -> ForecastStrip(response, weather, shootYmd, address, onEvent) }
@@ -399,10 +405,10 @@ private fun WeatherCard(
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (picker != null) {
             ReportButton(
-                "Change Location",
+                str(S.desktop_change_location),
                 {
                     scope.launch {
-                        picker.pick(null, "Weather location")?.let { place ->
+                        picker.pick(null, str(S.desktop_weather_location))?.let { place ->
                             onEvent(
                                 DocumentEvent.FetchWeather(
                                     address.row,
@@ -423,7 +429,7 @@ private fun WeatherCard(
             )
         }
         ReportButton(
-            "Clear",
+            str(S.txt_clear),
             { onEvent(DocumentEvent.SetWeatherText(address.row, address.cell, "")) },
             kind = ButtonKind.DangerOutline,
             icon = ZillitIcons.Trash,
@@ -483,10 +489,10 @@ private fun RefreshMark(spinning: Boolean, onClick: () -> Unit) {
     val (source, hovered) = rememberHover()
     val turn = rememberInfiniteTransition()
     val angle by turn.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart))
-    ZillitTooltip("Refresh") {
+    ZillitTooltip(str(S.refresh_text)) {
         Icon(
             ZillitIcons.Reload,
-            contentDescription = "Refresh",
+            contentDescription = str(S.refresh_text),
             tint = Color.White.copy(alpha = if (hovered) 1f else 0.6f),
             modifier = Modifier
                 .size(14.dp)
@@ -529,7 +535,7 @@ private fun ForecastStrip(
                 modifier = Modifier.size(10.dp),
             )
             Text(
-                "SHOOT DAY FORECAST",
+                str(S.desktop_shoot_day_forecast_upper),
                 style = reportText(9.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
                 color = colors.textTertiary,
             )
@@ -540,7 +546,7 @@ private fun ForecastStrip(
                 val enabled = !shootInWindow || day == shoot
                 val active = chosenDay == index || (chosenDay == null && weather.forecastDate == null && index == 0)
                 DayButton(
-                    label = if (index == 0) "Today" else day.dayOfWeek.name.take(3),
+                    label = if (index == 0) str(S.wp_today) else day.dayOfWeek.name.take(3),
                     glyph = weatherGlyph(entry?.let { firstIcon(it) }.orEmpty()),
                     high = entry?.let { tempOf(it, "max") },
                     low = entry?.let { tempOf(it, "min") },
@@ -629,6 +635,6 @@ private fun shortDate(unixSeconds: Long): String {
 
 private fun age(fetchedAt: Long?, nowMillis: Long): String {
     val minutes = fetchedAt?.let { ((nowMillis - it) / MINUTE_MILLIS).coerceAtLeast(0) } ?: return ""
-    return if (minutes < 1) "Now" else "${minutes}m"
+    return if (minutes < 1) str(S.wp_now) else "${minutes}m"
 }
 

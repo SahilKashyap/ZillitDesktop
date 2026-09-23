@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.roundToInt
 
 /** A row being dragged: which, and where the pointer is, in root pixels. */
@@ -124,7 +126,7 @@ internal fun DragChip(drag: DragToFolder) {
             .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = if (drag.target != null) "Drop to move" else "Move conversation",
+            text = str(if (drag.target != null) S.desktop_email_drop_to_move else S.desktop_email_move_conversation),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textOnAccent,
         )

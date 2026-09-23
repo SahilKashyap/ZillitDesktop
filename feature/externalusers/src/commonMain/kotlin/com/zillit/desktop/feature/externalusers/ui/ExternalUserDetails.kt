@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
 import com.zillit.desktop.feature.externalusers.domain.ExternalUserBucket
 import com.zillit.desktop.feature.externalusers.domain.Gender
@@ -44,7 +46,7 @@ internal fun ExternalUserDetails(
     val designation = department?.designations?.firstOrNull { it.id == user.designationId }
 
     ZillitDialogShell(
-        title = "User Details",
+        title = str(S.user_details),
         subtitle = user.fullName,
         icon = ZillitIcons.User,
         visible = true,
@@ -53,7 +55,7 @@ internal fun ExternalUserDetails(
         actions = {
             if (state.viewer.mayEdit(user)) {
                 ZillitButton(
-                    text = "Edit",
+                    text = str(S.edit),
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Edit,
                     onClick = {
@@ -62,24 +64,24 @@ internal fun ExternalUserDetails(
                     },
                 )
             }
-            ZillitButton(text = "Close", onClick = { onEvent(ExternalUsersEvent.CloseDetails) })
+            ZillitButton(text = str(S.close), onClick = { onEvent(ExternalUsersEvent.CloseDetails) })
         },
     ) {
         DescriptionTable {
-            if (user.fullName.isNotBlank()) DescriptionRow("Full Name") { Plain(user.fullName) }
-            if (user.email.isNotBlank()) DescriptionRow("Email") { EmailLink(user.email, onEvent) }
-            DescriptionRow("Phone") { PhoneValue(user.phoneLine) }
-            DescriptionRow("Gender") {
-                Plain(Gender.labelOf(user.gender).ifBlank { "N/A" }, muted = user.gender.isBlank())
+            if (user.fullName.isNotBlank()) DescriptionRow(str(S.full_name)) { Plain(user.fullName) }
+            if (user.email.isNotBlank()) DescriptionRow(str(S.email)) { EmailLink(user.email, onEvent) }
+            DescriptionRow(str(S.phone)) { PhoneValue(user.phoneLine) }
+            DescriptionRow(str(S.gender)) {
+                Plain(Gender.labelOf(user.gender).ifBlank { str(S.na) }, muted = user.gender.isBlank())
             }
             if (user.departmentId.isNotBlank()) {
-                DescriptionRow("Department") { Plain(department?.name?.localised().orEmpty()) }
+                DescriptionRow(str(S.department)) { Plain(department?.name?.localised().orEmpty()) }
             }
             if (user.designationId.isNotBlank()) {
-                DescriptionRow("Designation") { Plain(designation?.name?.localised().orEmpty()) }
+                DescriptionRow(str(S.designation)) { Plain(designation?.name?.localised().orEmpty()) }
             }
             if (user.userType.isNotBlank()) {
-                DescriptionRow("User Type") { Plain(ExternalUserBucket.of(user.userType).typeLabel(user)) }
+                DescriptionRow(str(S.user_type)) { Plain(ExternalUserBucket.of(user.userType).typeLabel(user)) }
             }
             OtherInfoRow(user, onEvent)
         }
@@ -91,7 +93,7 @@ internal fun ExternalUserDetails(
 private fun OtherInfoRow(user: ExternalUser, onEvent: (ExternalUsersEvent) -> Unit) {
     val extras = user.otherInfo.filter { it.value.isNotBlank() }
     if (extras.isEmpty()) return
-    DescriptionRow("Other Info") {
+    DescriptionRow(str(S.desktop_eu_other_info)) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             extras.forEach { row ->
                 Row(

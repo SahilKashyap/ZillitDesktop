@@ -59,6 +59,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealTemplate
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
@@ -70,9 +72,9 @@ import com.zillit.desktop.feature.dealmemo.ui.components.DmConfirm
 import com.zillit.desktop.feature.dealmemo.ui.components.DmConfirmKind
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * Deal Memo Setup (`DMSetupHubPage.jsx`): the Union and Non-Union setups as
@@ -101,17 +103,18 @@ fun SetupHubPage(state: DealMemoUiState, page: DealMemoRoute.SetupHub, onEvent: 
         val target = state.hub.confirmDelete
         DmConfirm(
             visible = target != null,
-            title = "Delete setup?",
-            message = "“${target?.name?.ifEmpty { null } ?: "This setup"}” will be permanently removed. Deals " +
-                "already created from it " +
-                "are not affected. Are you sure you want to delete this?",
-            confirmLabel = "Yes",
-            cancelLabel = "No",
+            title = str(S.dm_hub_delete_title),
+            message = str(
+                S.desktop_dm_delete_setup_message,
+                target?.name?.ifEmpty { null } ?: str(S.desktop_dm_this_setup),
+            ),
+            confirmLabel = str(S.yes),
+            cancelLabel = str(S.no),
             onConfirm = { onEvent(SetupHubEvent.ConfirmDelete) },
             onCancel = { onEvent(SetupHubEvent.CancelDelete) },
             kind = DmConfirmKind.Danger,
             loading = target != null && state.hub.deletingId == target.id,
-            loadingLabel = "Deleting…",
+            loadingLabel = str(S.dm_hub_deleting),
         )
     }
 }
@@ -140,7 +143,7 @@ private fun HubHeader(onEvent: (DealMemoEvent) -> Unit) {
             ) { ZillitIcon(ZillitIcons.ChevronLeft, size = 13.dp, tint = p.ink2) }
             val (crumbSource, crumbHovered) = rememberHover()
             ZillitText(
-                text = "DEAL MEMOS",
+                text = str(S.dm_hub_eyebrow),
                 style = DmType.sans(11.sp, FontWeight.Bold, 0.08.em),
                 color = p.cta,
                 modifier = Modifier
@@ -150,7 +153,7 @@ private fun HubHeader(onEvent: (DealMemoEvent) -> Unit) {
                     .pointerHoverIcon(PointerIcon.Hand),
             )
             ZillitText(text = "/", style = DmType.sans(12.5.sp), color = p.placeholder)
-            ZillitText(text = "Deal Memo Setup", style = DmType.sans(12.5.sp, FontWeight.SemiBold), color = p.ink2)
+            ZillitText(text = str(S.dm_setup_title), style = DmType.sans(12.5.sp, FontWeight.SemiBold), color = p.ink2)
         }
         Rule(p.hairline)
     }
@@ -176,7 +179,7 @@ private fun GroupTabs(selected: SetupGroup, failed: Boolean, onEvent: (DealMemoE
         }
         if (failed) {
             ZillitText(
-                text = "Couldn’t load setups.",
+                text = str(S.desktop_dm_couldnt_load_setups),
                 style = DmType.sans(11.sp),
                 color = p.redHover,
                 modifier = Modifier.padding(start = 12.dp),
@@ -244,7 +247,7 @@ private fun SetupList(state: DealMemoUiState, group: SetupGroup, onEvent: (DealM
         ) {
             Spacer(Modifier.weight(1f))
             SearchBox(state.hub.query) { onEvent(SetupHubEvent.Search(it)) }
-            AmberButton("New setup", trailing = ZillitIcons.Add) { onEvent(SetupHubEvent.NewSetup) }
+            AmberButton(str(S.dm_hub_new_setup), trailing = ZillitIcons.Add) { onEvent(SetupHubEvent.NewSetup) }
         }
         when {
             rows == null -> CardGrid(List(SKELETON_CARDS) { it }) { SkeletonCard() }
@@ -274,7 +277,12 @@ private fun SearchBox(query: String, onChange: (String) -> Unit) {
         ZillitIcon(ZillitIcons.Search, size = 15.dp, tint = p.hubMuted)
         Box(Modifier.weight(1f)) {
             val style = DmType.sans(13.5.sp)
-            if (query.isEmpty()) ZillitText(text = "Search setups…", style = style, color = p.hubMuted, maxLines = 1)
+            if (query.isEmpty()) ZillitText(
+                text = str(S.dm_hub_search_hint),
+                style = style,
+                color = p.hubMuted,
+                maxLines = 1,
+            )
             BasicTextField(
                 value = query,
                 onValueChange = onChange,
@@ -367,7 +375,7 @@ private fun SetupCard(state: DealMemoUiState, template: DealTemplate, busy: Bool
                 contentAlignment = Alignment.Center,
             ) { ZillitIcon(ZillitIcons.File, size = 21.dp, tint = p.cta) }
             ZillitText(
-                text = template.name.ifEmpty { "Untitled setup" },
+                text = template.name.ifEmpty { str(S.desktop_dm_untitled_setup) },
                 style = DmType.sans(15.sp, FontWeight.Bold),
                 color = p.title,
                 maxLines = 1,
@@ -377,7 +385,7 @@ private fun SetupCard(state: DealMemoUiState, template: DealTemplate, busy: Bool
         ZillitText(
             text = buildAnnotatedString {
                 withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = p.title)) {
-                    append(person?.fullName?.ifEmpty { null } ?: "Unknown")
+                    append(person?.fullName?.ifEmpty { null } ?: str(S.desktop_unknown))
                 }
                 person?.designationName?.takeIf { it.isNotEmpty() }?.let { append(" · ${DealLabels.formatLabel(it)}") }
             },
@@ -405,14 +413,14 @@ private fun SetupCard(state: DealMemoUiState, template: DealTemplate, busy: Bool
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            CardIcon(ZillitIcons.Trash, "Delete setup", danger = true, enabled = !busy) {
+            CardIcon(ZillitIcons.Trash, str(S.desktop_dm_delete_setup), danger = true, enabled = !busy) {
                 onEvent(SetupHubEvent.AskDelete(template))
             }
-            CardIcon(ZillitIcons.Edit, "Edit this setup", danger = false, enabled = !busy) {
+            CardIcon(ZillitIcons.Edit, str(S.desktop_dm_edit_this_setup), danger = false, enabled = !busy) {
                 onEvent(SetupHubEvent.Edit(template))
             }
             Spacer(Modifier.weight(1f))
-            AmberButton("Create Deal Memo", trailing = ZillitIcons.ChevronRight, enabled = !busy) {
+            AmberButton(str(S.dm_wizard_title), trailing = ZillitIcons.ChevronRight, enabled = !busy) {
                 onEvent(SetupHubEvent.Use(template))
             }
         }
@@ -484,17 +492,15 @@ private fun EmptyState(query: String, group: SetupGroup) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (query.isNotEmpty()) {
-            ZillitText(text = "No setups match “$query”.", style = DmType.sans(13.sp), color = p.hubMuted)
+            ZillitText(text = str(S.dm_hub_no_match, query), style = DmType.sans(13.sp), color = p.hubMuted)
         } else {
             ZillitText(
-                text = "No setups for ${group.label} yet.",
+                text = str(S.dm_hub_empty, group.label),
                 style = DmType.sans(13.5.sp, FontWeight.SemiBold),
                 color = p.ink2,
             )
             ZillitText(
-                text = "A setup holds the agreement, rates, allowances and conditions a deal memo starts from. Keep " +
-                    "one for Union and one for Non-Union — with both saved you pick which to start from each time, " +
-                    "and you can add a separate setup per production entity.",
+                text = str(S.desktop_dm_a_setup_holds_the_agreement_rates_allowances),
                 style = DmType.sans(12.5.sp).copy(lineHeight = 20.sp),
                 color = p.hubMuted,
                 textAlign = TextAlign.Center,
@@ -541,7 +547,20 @@ private fun createdText(createdAt: Long?): String {
         time.minute.toString().padStart(2, '0')
 }
 
-private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+private val MONTHS get() = listOf(
+    str(S.desktop_month_short_jan),
+    str(S.desktop_month_short_feb),
+    str(S.desktop_month_short_mar),
+    str(S.desktop_month_short_apr),
+    str(S.desktop_month_short_may),
+    str(S.desktop_month_short_jun),
+    str(S.desktop_month_short_jul),
+    str(S.desktop_month_short_aug),
+    str(S.desktop_month_short_sep),
+    str(S.desktop_month_short_oct),
+    str(S.desktop_month_short_nov),
+    str(S.desktop_month_short_dec),
+)
 private val AMBER = listOf(Color(0xFFFC9404), Color(0xFFEA7A0E))
 private val AMBER_HOVER = listOf(Color(0xFFFFA21F), Color(0xFFF1851D))
 private val AMBER_GLOW = Color(0xFFEA7A0E)

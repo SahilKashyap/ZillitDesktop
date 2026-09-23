@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.costreport.ui.analytics
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsFilterSource
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsOption
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsQuery
@@ -211,6 +213,6 @@ class AnalyticsViewModel(
     }
 
     private companion object {
-        const val FAILED = "Failed to load analytics."
+        val FAILED: String get() = str(S.desktop_cr_analytics_failed)
     }
 }

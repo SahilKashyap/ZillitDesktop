@@ -1,24 +1,37 @@
 package com.zillit.desktop.feature.drive.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The two halves of the Drive, as the web's outer tabs split them
  * (`DriveHeader.jsx`): what is mine, and what others have shared with me.
  */
-enum class DriveSection(val label: String, val rootName: String) {
-    MyDrive("My Drive", "Drive"),
-    SharedWithMe("Shared with me", "Shared with me"),
+enum class DriveSection(private val labelKey: String, private val rootNameKey: String) {
+    MyDrive(S.drive_section_my_drive, S.txt_drive),
+    SharedWithMe(S.drive_section_shared_with_me, S.drive_section_shared_with_me),
+    ;
+
+    val label: String get() = str(labelKey)
+    val rootName: String get() = str(rootNameKey)
 }
 
 /** The My Drive narrowing (ZL-19247): everything, or only what I have shared on. */
-enum class MyDriveFilter(val label: String) {
-    All("All"),
-    SharedByMe("Shared by me"),
+enum class MyDriveFilter(private val labelKey: String) {
+    All(S.all),
+    SharedByMe(S.drive_filter_shared_by_me),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The root splits into two tabs; inside a folder both kinds share one list. */
-enum class DriveInnerTab(val label: String) {
-    Folders("Folders"),
-    Files("Files"),
+enum class DriveInnerTab(private val labelKey: String) {
+    Folders(S.folders),
+    Files(S.drive_kind_files),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -282,22 +295,25 @@ fun formatBytes(bytes: Long): String {
 fun relativeTime(millis: Long, now: Long): String {
     val seconds = ((now - millis) / MILLIS_PER_SECOND).coerceAtLeast(0)
     return when {
-        seconds < SECONDS_JUST_NOW -> "just now"
-        seconds < SECONDS_PER_MINUTE -> "a minute ago"
-        seconds < SECONDS_PER_HOUR -> plural(seconds / SECONDS_PER_MINUTE, "minute")
-        seconds < SECONDS_PER_DAY -> plural(seconds / SECONDS_PER_HOUR, "hour")
-        else -> plural(seconds / SECONDS_PER_DAY, "day")
+        seconds < SECONDS_JUST_NOW -> str(S.docusign_template_just_now)
+        seconds < SECONDS_PER_MINUTE -> str(S.drive_time_a_minute_ago)
+        seconds < SECONDS_PER_HOUR -> plural(seconds / SECONDS_PER_MINUTE, AgoUnit.Minute)
+        seconds < SECONDS_PER_DAY -> plural(seconds / SECONDS_PER_HOUR, AgoUnit.Hour)
+        else -> plural(seconds / SECONDS_PER_DAY, AgoUnit.Day)
     }
 }
 
 /** Whether [millis] is within the last seven days — when the web shows relative time. */
 fun isRecent(millis: Long, now: Long): Boolean = now - millis < RECENT_WINDOW_MILLIS
 
-private fun plural(count: Long, unit: String): String = when {
-    count != 1L -> "$count ${unit}s ago"
-    unit == "hour" -> "an hour ago"
-    else -> "a $unit ago"
+private enum class AgoUnit(val oneKey: String, val manyKey: String) {
+    Minute(S.drive_time_a_minute_ago, S.drive_time_minutes_ago),
+    Hour(S.drive_time_an_hour_ago, S.drive_time_hours_ago),
+    Day(S.desktop_drive_time_a_day_ago, S.drive_time_days_ago),
 }
+
+private fun plural(count: Long, unit: AgoUnit): String =
+    if (count != 1L) str(unit.manyKey, count) else str(unit.oneKey)
 
 private const val BYTE_STEP = 1024.0
 private const val DECIMAL_CUTOFF = 10.0

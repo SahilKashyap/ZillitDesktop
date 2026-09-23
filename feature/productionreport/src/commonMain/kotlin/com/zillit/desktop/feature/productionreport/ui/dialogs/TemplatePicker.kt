@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.CellKind
 import com.zillit.desktop.feature.productionreport.domain.PageCell
 import com.zillit.desktop.feature.productionreport.domain.ReportTime
@@ -77,7 +79,7 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
     val pickable = templates.indices.filter { it != createOwn }
     val chosen = templates.getOrNull(dialog.selected)
     ReportModal(
-        title = "Choose a Production Report Template",
+        title = str(S.desktop_pr_choose_template),
         onClose = { onEvent(DialogEvent.Dismiss) },
         modifier = Modifier.fillMaxHeight(PICKER_HEIGHT),
         width = 1080.dp,
@@ -87,7 +89,7 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.width(230.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Pick a starting layout. Every section stays editable after it opens.",
+                    str(S.desktop_template_picker_hint),
                     style = reportText(12.sp, lineHeight = 17.sp),
                     color = colors.textTertiary,
                     modifier = Modifier.padding(bottom = 6.dp),
@@ -137,11 +139,11 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
                     if (chosen != null) {
                         TemplateMiniPreview(
                             chosen.payload,
-                            pageTitle = "PRODUCTION REPORT",
+                            pageTitle = str(S.desktop_production_report_upper),
                             Modifier.widthIn(max = 820.dp),
                         )
                     } else {
-                        Text("No template to preview.", style = reportText(13.sp), color = colors.textMuted)
+                        Text(str(S.desktop_no_template_to_preview), style = reportText(13.sp), color = colors.textMuted)
                     }
                 }
                 ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
@@ -152,7 +154,7 @@ internal fun TemplatePickerDialog(dialog: ReportDialog.TemplatePicker, onEvent: 
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
         ) {
             ReportButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.Dismiss) },
                 kind = ButtonKind.Outline,
                 fontSize = 12.sp,
@@ -247,7 +249,11 @@ internal fun TemplateMiniPreview(payload: SheetPayload, pageTitle: String, modif
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (rows.isEmpty()) {
-            Text("This template has no sections yet.", style = reportText(12.sp), color = Color(0xFF98A2B3))
+            Text(
+                            str(S.desktop_template_has_no_sections),
+                            style = reportText(12.sp),
+                            color = Color(0xFF98A2B3),
+                        )
             return@Column
         }
         if (pageTitle.isNotBlank()) {
@@ -300,7 +306,11 @@ private fun PageBreakLine() {
             .padding(top = 4.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Text("PAGE BREAK", style = reportText(10.sp, FontWeight.Medium).copy(letterSpacing = 0.5.sp), color = dash)
+        Text(
+            str(S.desktop_page_break_upper),
+            style = reportText(10.sp, FontWeight.Medium).copy(letterSpacing = 0.5.sp),
+            color = dash,
+        )
     }
 }
 

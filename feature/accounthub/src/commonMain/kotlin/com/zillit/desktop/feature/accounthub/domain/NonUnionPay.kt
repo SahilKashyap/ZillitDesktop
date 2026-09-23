@@ -1,18 +1,31 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** Which of the three lists a rule belongs to. */
-enum class PayRuleKind(val wire: String, val label: String, val helper: String) {
-    Overtimes("overtimes", "Overtimes", "Rates that fire on a worked-hours or worked-days condition."),
-    Premiums("premiums", "Premiums", "Additive pay for a shift type — night, hazardous, holiday."),
-    Penalties("penalties", "Penalties", "One-off charges for forced calls, missed meals, broken turnaround."),
+enum class PayRuleKind(val wire: String, private val labelKey: String, private val helperKey: String) {
+    Overtimes("overtimes", S.dm_rates_overtimes, S.desktop_hub_rates_that_fire_on_a_worked_hours_or_worked_days),
+    Premiums("premiums", S.dm_rates_premiums, S.desktop_hub_additive_pay_for_a_shift_type_night_hazardous_holiday),
+    Penalties(
+        "penalties",
+        S.dm_rates_penalties,
+        S.desktop_hub_one_off_charges_for_forced_calls_missed_meals_broken_turnaround,
+    ),
+    ;
+
+    val label: String get() = str(labelKey)
+    val helper: String get() = str(helperKey)
 }
 
 /** How a rule's amount is applied to the base rate. */
-enum class PayRateType(val wire: String, val label: String) {
-    Multiplier("multiplier", "Multiplier (×)"),
-    Flat("flat", "Flat amount"),
-    Percentage("percentage", "Percentage (%)"),
+enum class PayRateType(val wire: String, private val labelKey: String) {
+    Multiplier("multiplier", S.desktop_multiplier_paren),
+    Flat("flat", S.desktop_flat_amount),
+    Percentage("percentage", S.desktop_percentage_paren),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): PayRateType = entries.firstOrNull { it.wire == wire } ?: Multiplier
@@ -26,12 +39,14 @@ enum class PayRateType(val wire: String, val label: String) {
  * engine reads either source the same way; only the labels were rewritten to
  * read as a tier rather than a cadence.
  */
-enum class PayRateBasis(val wire: String, val label: String) {
-    Hour("hour", "Hourly rate"),
-    Day("day", "Daily rate"),
-    Week("week", "Weekly rate"),
-    Event("event", "Per event"),
+enum class PayRateBasis(val wire: String, private val labelKey: String) {
+    Hour("hour", S.desktop_hourly_rate),
+    Day("day", S.dm_rates_buyout_daily_rate),
+    Week("week", S.dm_rates_weekly_rate),
+    Event("event", S.desktop_per_event),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): PayRateBasis = entries.firstOrNull { it.wire == wire } ?: Hour
@@ -39,16 +54,18 @@ enum class PayRateBasis(val wire: String, val label: String) {
 }
 
 /** The day kinds the engine recognises. */
-enum class PayDayKind(val wire: String, val label: String) {
-    BankHoliday("bank_holiday", "Bank holiday"),
-    StatutoryHoliday("statutory_holiday", "Statutory holiday"),
-    PublicHoliday("public_holiday", "Public holiday"),
-    Saturday("saturday", "Saturday"),
-    Sunday("sunday", "Sunday"),
-    Idle("idle", "Idle day"),
-    Studio("studio_day", "Studio day"),
-    Distant("distant_day", "Distant day"),
+enum class PayDayKind(val wire: String, private val labelKey: String) {
+    BankHoliday("bank_holiday", S.desktop_bank_holiday),
+    StatutoryHoliday("statutory_holiday", S.desktop_statutory_holiday),
+    PublicHoliday("public_holiday", S.desktop_public_holiday),
+    Saturday("saturday", S.day_saturday),
+    Sunday("sunday", S.day_sunday),
+    Idle("idle", S.desktop_idle_day),
+    Studio("studio_day", S.desktop_studio_day),
+    Distant("distant_day", S.desktop_distant_day),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): PayDayKind? = entries.firstOrNull { it.wire == wire }
@@ -219,11 +236,13 @@ data class NonUnionPay(
  * screen can show neither choice as picked rather than claiming a decision
  * nobody made.
  */
-enum class PayApplyMode(val wire: String?, val label: String) {
-    Unset(null, "Not chosen"),
-    All("all", "Everyone on the production"),
-    Departments("departments", "Chosen departments"),
+enum class PayApplyMode(val wire: String?, private val labelKey: String) {
+    Unset(null, S.desktop_not_chosen),
+    All("all", S.desktop_hub_everyone_on_the_production),
+    Departments("departments", S.desktop_chosen_departments),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): PayApplyMode =

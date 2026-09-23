@@ -14,6 +14,8 @@ import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
@@ -417,7 +419,7 @@ internal fun AppGraph.Ready.productionReportPublishing(permissions: () -> Projec
             replaceChatId: String?,
         ): ZillitResult<Unit> {
             val unitId = permissions().access(PRODUCTION_REPORT_TOOL).unitId?.takeIf { it.isNotBlank() }
-                ?: return ZillitResult.Failure(ZillitError.Validation("Production report unit not found."))
+                ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_production_report_unit_not_found)))
             val stored = when (val upload = reportStorage().upload(fileName, contentType, bytes) {}) {
                 is ZillitResult.Failure -> return upload
                 is ZillitResult.Success -> upload.data
@@ -475,7 +477,7 @@ internal fun replaceableDocuments(rows: JsonElement?): List<ReplaceTarget> =
             val attachment = row["attachment"] as? JsonObject
             val label = attachment?.string("name")?.takeIf { it.isNotBlank() }
                 ?: attachment?.string("original_file_name")?.takeIf { it.isNotBlank() }
-                ?: "Untitled document"
+                ?: str(S.docusign_send_confirm_untitled)
             ReplaceTarget(chatId = id, label = label)
         }
 

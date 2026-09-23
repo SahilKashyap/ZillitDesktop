@@ -23,6 +23,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.addashboard.domain.AdShootDay
 import com.zillit.desktop.feature.addashboard.domain.Artiste
 import com.zillit.desktop.feature.addashboard.domain.ArtisteStatus
@@ -40,11 +42,11 @@ internal fun ColumnScope.RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Un
         ZillitSearchField(
             value = state.registerSearch,
             onValueChange = { onEvent(AdEvent.RegisterSearch(it)) },
-            placeholder = "Search by name, reference or email",
+            placeholder = str(S.desktop_ad_search_register_placeholder),
             modifier = Modifier.width(SEARCH_WIDTH.dp),
         )
         ZillitText(
-            text = "${state.register.size} of ${state.artistes.size}",
+            text = str(S.docusign_field_of, state.register.size, state.artistes.size),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -55,7 +57,7 @@ internal fun ColumnScope.RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Un
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        Chip("All", state.statusFilter == null) { onEvent(AdEvent.FilterStatus(null)) }
+        Chip(str(S.all), state.statusFilter == null) { onEvent(AdEvent.FilterStatus(null)) }
         ArtisteStatus.entries.forEach { status ->
             Chip(status.label, state.statusFilter == status) { onEvent(AdEvent.FilterStatus(status)) }
         }
@@ -64,11 +66,15 @@ internal fun ColumnScope.RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Un
     if (state.register.isEmpty()) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = if (state.artistes.isEmpty()) "No artistes yet" else "Nobody matches",
-                message = if (state.artistes.isEmpty()) {
-                    "Artistes appear here once they have been added to the project."
+                title = if (state.artistes.isEmpty()) {
+                    str(S.desktop_ad_no_artistes_yet)
                 } else {
-                    "Try a different search or filter."
+                    str(S.desktop_nobody_matches)
+                },
+                message = if (state.artistes.isEmpty()) {
+                    str(S.desktop_ad_no_artistes_yet_message)
+                } else {
+                    str(S.desktop_try_a_different_search_or_filter)
                 },
                 icon = ZillitIcons.Users,
             )
@@ -120,14 +126,14 @@ private fun ArtisteRow(artiste: Artiste, onEvent: (AdEvent) -> Unit) {
             // without posting rights by offering to ask an administrator.
             when (artiste.status) {
                 ArtisteStatus.Blocked -> ZillitButton(
-                    text = "Unblock",
+                    text = str(S.desktop_unblock),
                     onClick = { onEvent(AdEvent.Unblock(artiste.id)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                 )
 
                 ArtisteStatus.Verified -> ZillitButton(
-                    text = "Block",
+                    text = str(S.block),
                     onClick = { onEvent(AdEvent.StartBlock(artiste)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -135,12 +141,12 @@ private fun ArtisteRow(artiste: Artiste, onEvent: (AdEvent) -> Unit) {
 
                 else -> {
                     ZillitButton(
-                        text = "Verify",
+                        text = str(S.txt_verify),
                         onClick = { onEvent(AdEvent.Verify(artiste.id)) },
                         size = ButtonSize.Small,
                     )
                     ZillitButton(
-                        text = "Block",
+                        text = str(S.block),
                         onClick = { onEvent(AdEvent.StartBlock(artiste)) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -157,8 +163,8 @@ internal fun ColumnScope.ShootDaysPage(state: AdUiState, onEvent: (AdEvent) -> U
     if (state.shootDays.isEmpty()) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = "No shoot days",
-                message = "Days appear here once the AD department has opened one.",
+                title = str(S.desktop_ad_no_shoot_days),
+                message = str(S.desktop_ad_no_shoot_days_message),
                 icon = ZillitIcons.Calendar,
             )
         }
@@ -185,10 +191,10 @@ private fun ShootDayRow(day: AdShootDay, onEvent: (AdEvent) -> Unit) {
                 )
                 ZillitText(
                     text = listOfNotNull(
-                        day.dayNumber?.let { "Day $it" },
+                        day.dayNumber?.let { str(S.desktop_ad_day_number, it) },
                         day.unitName.takeIf { it.isNotBlank() },
                         day.location.takeIf { it.isNotBlank() },
-                    ).joinToString(" · ").ifEmpty { "No details" },
+                    ).joinToString(" · ").ifEmpty { str(S.desktop_no_details) },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -196,7 +202,7 @@ private fun ShootDayRow(day: AdShootDay, onEvent: (AdEvent) -> Unit) {
             ZillitStatusPill(label = day.status.label, tone = StatusTone.Neutral)
             day.shootDate?.let { date ->
                 ZillitButton(
-                    text = "Open",
+                    text = str(S.recce_open),
                     onClick = { onEvent(AdEvent.ChangeDay(date)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,

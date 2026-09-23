@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.rates.Region
 import com.zillit.desktop.feature.dealmemo.domain.rates.TerritoryCatalogue
 import com.zillit.desktop.feature.dealmemo.ui.BackSquare
@@ -117,7 +119,7 @@ private fun RatesTopBar(refreshing: Boolean, onEvent: (DealMemoEvent) -> Unit) {
             BackSquare(
                 onClick = { onEvent(DealMemoEvent.Navigate(DealMemoRoute.Tab(DealTab.Deals))) },
                 size = 36,
-                tooltip = "Back to All Deals",
+                tooltip = str(S.desktop_dm_back_to_all_deals),
             )
             Column {
                 ZillitText(
@@ -127,20 +129,20 @@ private fun RatesTopBar(refreshing: Boolean, onEvent: (DealMemoEvent) -> Unit) {
                 )
                 Spacer(Modifier.height(3.dp))
                 ZillitText(
-                    text = "Global Production Rates",
+                    text = str(S.dm_gpr_title),
                     style = DmType.sans(18.sp, FontWeight.Bold, (-0.02).em).copy(lineHeight = 20.sp),
                     color = dm.ink,
                 )
             }
         }
         DmButton(
-            text = if (refreshing) "Refreshing…" else "Refresh data",
+            text = if (refreshing) str(S.dm_gpr_refreshing) else str(S.dm_gpr_refresh),
             onClick = { onEvent(RatesEvent.Refresh) },
             style = DmButtonStyle.SmallSecondary,
             icon = ZillitIcons.Reload,
             loading = refreshing,
             enabled = !refreshing,
-            tooltip = "Re-seed agreements, unions & designation rates from source data",
+            tooltip = str(S.desktop_dm_re_seed_agreements_unions_designation_rates_from),
         )
     }
     Box(
@@ -229,7 +231,7 @@ private fun TerritorySidebar(rates: GlobalRatesState, onEvent: (DealMemoEvent) -
             DmSearchPill(
                 value = rates.sidebarSearch,
                 onValueChange = { onEvent(RatesEvent.SidebarSearch(it)) },
-                placeholder = "Search by country, code, or region…",
+                placeholder = str(S.dm_gpr_search_hint),
                 height = 38.dp,
                 compact = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -242,7 +244,7 @@ private fun TerritorySidebar(rates: GlobalRatesState, onEvent: (DealMemoEvent) -
         ) {
             if (tree.isEmpty()) {
                 ZillitText(
-                    text = "No territories match.",
+                    text = str(S.dm_gpr_no_territories),
                     style = DmType.sans(12.5.sp),
                     color = dm.ink3,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 32.dp),
@@ -322,7 +324,7 @@ private fun SidebarRegion(region: Region, rates: GlobalRatesState, onEvent: (Dea
                             color = if (active) Color(0xFFE8861A).copy(alpha = 0.8f) else dm.ink3,
                         )
                     }
-                    ZillitTooltip(text = if (covered) "Has unions" else "Not configured") {
+                    ZillitTooltip(text = if (covered) str(S.desktop_dm_has_unions) else str(S.desktop_not_configured)) {
                         Box(
                             Modifier.size(8.dp).clip(CircleShape).background(
                                 if (covered) Color(0xFF1AA463) else Color(0xFFC9C8C2),
@@ -362,12 +364,11 @@ private fun WelcomeView(rates: GlobalRatesState, onEvent: (DealMemoEvent) -> Uni
     ) {
         ZillitText(
             text = buildAnnotatedString {
-                append("Unions, agreements and rate cards across ")
-                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = dm.ink2)) { append("$total territories") }
-                append(
-                    ". Configure each territory's local rules so deal memos auto-populate with the right rates, " +
-                        "allowances and overtime structure.",
-                )
+                append(str(S.desktop_dm_unions_agreements_and_rate_cards_across) + " ")
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = dm.ink2)) {
+                    append(str(S.desktop_dm_n_territories, total))
+                }
+                append(str(S.desktop_dm_gpr_intro_tail))
             },
             style = DmType.sans(14.sp).copy(lineHeight = 21.sp),
             color = dm.ink3,
@@ -376,29 +377,41 @@ private fun WelcomeView(rates: GlobalRatesState, onEvent: (DealMemoEvent) -> Uni
         Spacer(Modifier.height(24.dp))
         ResponsiveGrid(
             items = listOf(
-                StatSpec(DmIcons.Globe, Palette.Blue, shown.toString(), "Territories", "with published coverage"),
+                StatSpec(
+                    DmIcons.Globe,
+                    Palette.Blue,
+                    shown.toString(),
+                    str(S.dm_gpr_stat_territories),
+                    str(S.dm_gpr_stat_territories_sub),
+                ),
                 StatSpec(
                     ZillitIcons.Shield,
                     Palette.Green,
                     total.toString(),
-                    "In catalogue",
-                    "${total - shown} without coverage yet",
+                    str(S.dm_gpr_stat_catalogue),
+                    str(S.desktop_dm_n_without_coverage_yet, total - shown),
                 ),
-                StatSpec(ZillitIcons.Users, Palette.Purple, tree.size.toString(), "Regions", "with coverage"),
+                StatSpec(
+                    ZillitIcons.Users,
+                    Palette.Purple,
+                    tree.size.toString(),
+                    str(S.dm_gpr_stat_regions),
+                    str(S.dm_gpr_stat_regions_sub),
+                ),
                 StatSpec(
                     ZillitIcons.StarOutline,
                     Palette.Amber,
                     pinned.size.toString(),
-                    "Key territories",
-                    "your most-used markets",
+                    str(S.dm_gpr_stat_key),
+                    str(S.dm_gpr_stat_key_sub),
                 ),
             ),
         ) { spec, modifier -> WelcomeStat(spec, modifier) }
         Spacer(Modifier.height(28.dp))
         BlockHeading(
-            "Key markets",
-            "Key territories",
-            "The territories you shoot in most often. Click any card to open its deal-memo settings.",
+            str(S.desktop_dm_key_markets),
+            str(S.dm_gpr_stat_key),
+            str(S.desktop_dm_the_territories_you_shoot_in_most_often),
         )
         ResponsiveGrid(items = pinned) { id, modifier ->
             KeyTerritoryCard(
@@ -410,10 +423,9 @@ private fun WelcomeView(rates: GlobalRatesState, onEvent: (DealMemoEvent) -> Uni
         }
         Spacer(Modifier.height(32.dp))
         BlockHeading(
-            "All regions",
-            "${tree.size} regions, $shown territories",
-            "Every territory rolls up into a region. Click any territory in the sidebar to configure its unions and " +
-                "rate cards.",
+            str(S.dm_gpr_all_regions),
+            str(S.desktop_dm_regions_territories_count, tree.size, shown),
+            str(S.desktop_dm_every_territory_rolls_up_into_a_region),
         )
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             tree.chunked(3).forEach { row ->
@@ -562,7 +574,7 @@ private fun CoveragePill(covered: Boolean) {
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(tone.dot))
         ZillitText(
-            text = if (covered) "COVERED" else "NOT SET",
+            text = if (covered) "COVERED" else str(S.dm_gpr_not_set),
             style = DmType.sans(10.sp, FontWeight.Bold, 0.06.em),
             color = tone.ink,
         )
@@ -587,7 +599,8 @@ private fun RegionCard(region: Region, covered: Set<String>, modifier: Modifier)
                 withStyle(
                     SpanStyle(fontFamily = ZillitTheme.fonts.mono, fontWeight = FontWeight.SemiBold),
                 ) { append("$total") }
-                append(if (total == 1) " territory" else " territories")
+                append(" " + if (total == 1) str(S.desktop_dm_territory_fallback_word)
+                    else str(S.desktop_dm_territories_suffix))
                 if (coveredCount > 0) {
                     append(" · ")
                     withStyle(
@@ -596,7 +609,7 @@ private fun RegionCard(region: Region, covered: Set<String>, modifier: Modifier)
                             fontWeight = FontWeight.SemiBold,
                         ),
                     ) {
-                        append("$coveredCount covered")
+                        append(str(S.desktop_dm_n_covered, coveredCount))
                     }
                 }
             },

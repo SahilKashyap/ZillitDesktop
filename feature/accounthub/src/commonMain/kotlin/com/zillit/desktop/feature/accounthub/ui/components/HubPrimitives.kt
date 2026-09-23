@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The small pieces the web's hub pages are built from — `atoms.jsx` and the
@@ -123,7 +125,7 @@ fun AlwaysRow(label: String, hint: String, modifier: Modifier = Modifier) {
             ZillitText(text = label, style = ZillitTheme.typography.bodyMedium)
             FieldHint(hint)
         }
-        Pill(text = "Always", tone = StatusTone.Done)
+        Pill(text = str(S.desktop_always), tone = StatusTone.Done)
     }
 }
 
@@ -341,7 +343,7 @@ fun HubConfirmDialog(
     modifier: Modifier = Modifier,
     danger: Boolean = true,
     loading: Boolean = false,
-    cancelLabel: String = "Cancel",
+    cancelLabel: String = str(S.cancel),
 ) {
     ZillitDialogShell(
         title = title,

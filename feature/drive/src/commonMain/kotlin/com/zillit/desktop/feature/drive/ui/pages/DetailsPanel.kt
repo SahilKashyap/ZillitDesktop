@@ -52,6 +52,8 @@ import com.zillit.desktop.feature.drive.ui.DetailsState
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.LocalDriveNow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The details panel — `FileDetailsPanel.jsx`: quick actions, metadata,
@@ -99,8 +101,12 @@ private fun DetailsHeader(item: DriveItem, state: DriveUiState, onEvent: (DriveE
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(text = item.name, style = ZillitTheme.typography.titleSmall, maxLines = 2)
             ZillitText(
-                text = if (item.isFolder) "Folder" else item.extension.uppercase().ifBlank { "File" } +
-                    if (item.sizeBytes > 0) " · ${formatBytes(item.sizeBytes)}" else "",
+                text = if (item.isFolder) {
+                    str(S.drive_type_folder)
+                } else {
+                    item.extension.uppercase().ifBlank { str(S.file) } +
+                        if (item.sizeBytes > 0) " · ${formatBytes(item.sizeBytes)}" else ""
+                },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -108,7 +114,7 @@ private fun DetailsHeader(item: DriveItem, state: DriveUiState, onEvent: (DriveE
         if (state.details.loading) ZillitSpinner(size = ZillitTheme.spacing.lg)
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close details",
+            contentDescription = str(S.desktop_drive_close_details),
             onClick = { onEvent(DriveEvent.ShowDetails(null)) },
         )
     }
@@ -126,7 +132,7 @@ private fun QuickActions(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitButton(
-            text = if (starred) "Favourited" else "Favourite",
+            text = if (starred) str(S.desktop_drive_favourited) else str(S.desktop_drive_favourite),
             onClick = { onEvent(DriveEvent.ToggleFavourite(item.ref)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -134,7 +140,7 @@ private fun QuickActions(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
         )
         if (!item.isFolder && editable) {
             ZillitButton(
-                text = "Copy link",
+                text = str(S.drive_menu_copy_link),
                 onClick = { onEvent(DriveEvent.CopyLink(item)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -143,7 +149,7 @@ private fun QuickActions(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
         }
         if (!item.isFolder && viewer.may(DriveAction.Download, item)) {
             ZillitButton(
-                text = "Download",
+                text = str(S.download),
                 onClick = { onEvent(DriveEvent.Download(item)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -152,7 +158,7 @@ private fun QuickActions(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
         }
         if (item.isEditableDocument && !viewer.isViewOnly(item)) {
             ZillitButton(
-                text = if (editable) "Edit" else "View",
+                text = if (editable) str(S.edit) else str(S.view),
                 onClick = { onEvent(DriveEvent.OpenInEditor(item, editable)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -161,7 +167,7 @@ private fun QuickActions(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
         }
         if (item.isFolder && state.canCreateHere) {
             ZillitButton(
-                text = "Request files",
+                text = str(S.drive_request_files_title),
                 onClick = { onEvent(DriveEvent.OpenFileRequests(item)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -175,36 +181,52 @@ private fun QuickActions(item: DriveItem, state: DriveUiState, onEvent: (DriveEv
 private fun ColumnScope.Metadata(item: DriveItem, state: DriveUiState) {
     val now = LocalDriveNow.current()
     SheetSection {
-        DetailRow("Type") {
+        DetailRow(str(S.type)) {
             ZillitStatusPill(
-                label = if (item.isFolder) "Folder" else item.extension.uppercase().ifBlank { "File" },
+                label = if (item.isFolder) {
+                    str(S.drive_type_folder)
+                } else {
+                    item.extension.uppercase().ifBlank { str(S.file) }
+                },
                 tone = if (item.isFolder) StatusTone.Progress else StatusTone.Neutral,
             )
         }
-        if (!item.isFolder && item.sizeBytes > 0) DetailRow("Size") { Value(formatBytes(item.sizeBytes)) }
+        if (!item.isFolder && item.sizeBytes > 0) {
+            DetailRow(str(S.drive_sort_size)) { Value(formatBytes(item.sizeBytes)) }
+        }
         if (item.isFolder && item.itemCount != null) {
-            DetailRow("Contains") { Value("${item.itemCount} file${if (item.itemCount == 1) "" else "s"}") }
+            DetailRow(str(S.email_rule_op_contains)) {
+                Value(
+                    if (item.itemCount == 1) {
+                        str(S.desktop_drive_contains_one_file)
+                    } else {
+                        str(S.drive_count_file_plural, item.itemCount)
+                    },
+                )
+            }
         }
         item.createdAt?.let { stamp ->
-            DetailRow("Created") {
+            DetailRow(str(S.drive_created)) {
                 ZillitTooltip(text = EpochDate.dateTime(stamp)) { Value(stampLabel(stamp, now)) }
             }
         }
         item.updatedAt?.takeIf { it != item.createdAt }?.let { stamp ->
-            DetailRow("Modified") {
+            DetailRow(str(S.drive_modified)) {
                 ZillitTooltip(text = EpochDate.dateTime(stamp)) { Value(stampLabel(stamp, now)) }
             }
         }
-        DetailRow("Owner") {
+        DetailRow(str(S.drive_owner)) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ZillitIcon(icon = ZillitIcons.User, tint = ZillitTheme.colors.textMuted, size = ZillitTheme.spacing.md)
-                Value(if (state.viewer.owns(item)) "You" else item.uploadedByName.ifBlank { "Unknown" })
+                Value(
+                    if (state.viewer.owns(item)) str(S.you) else item.uploadedByName.ifBlank { str(S.desktop_unknown) },
+                )
             }
         }
-        if (item.description.isNotBlank()) DetailRow("Description") { Value(item.description, lines = 4) }
+        if (item.description.isNotBlank()) DetailRow(str(S.description)) { Value(item.description, lines = 4) }
     }
 }
 
@@ -243,10 +265,10 @@ private fun SectionTitle(text: String, count: Int = 0, trailing: (@Composable ()
 private fun ColumnScope.AccessSection(item: DriveItem, state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val access = state.details.access
     ZillitDivider()
-    SectionTitle("Access", access.size) {
+    SectionTitle(str(S.txt_access), access.size) {
         if (state.viewer.may(DriveAction.Share, item) && state.canCreateHere) {
             ZillitButton(
-                text = "Manage",
+                text = str(S.desktop_drive_manage),
                 onClick = { onEvent(DriveEvent.OpenShare(item)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -258,7 +280,7 @@ private fun ColumnScope.AccessSection(item: DriveItem, state: DriveUiState, onEv
         ZillitText(
             // Not "nobody" — an item with no explicit grants is reachable by
             // admins and by whoever inherits from a parent folder.
-            text = "No access records. Administrators, and anyone with access to a parent folder, can still reach it.",
+            text = str(S.desktop_drive_no_access_records),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -269,7 +291,9 @@ private fun ColumnScope.AccessSection(item: DriveItem, state: DriveUiState, onEv
 
 @Composable
 private fun AccessRow(entry: DriveAccessEntry, forFolder: Boolean, state: DriveUiState) {
-    val name = entry.userName.ifBlank { state.crew.firstOrNull { it.id == entry.userId }?.name ?: "Unknown" }
+    val name = entry.userName.ifBlank {
+        state.crew.firstOrNull { it.id == entry.userId }?.name ?: str(S.desktop_unknown)
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -298,9 +322,9 @@ private fun AccessRow(entry: DriveAccessEntry, forFolder: Boolean, state: DriveU
             )
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                if (entry.permissions.canView) ZillitStatusPill(label = "View", tone = StatusTone.Ready)
-                if (entry.permissions.canEdit) ZillitStatusPill(label = "Edit", tone = StatusTone.Progress)
-                if (entry.permissions.canDownload) ZillitStatusPill(label = "Download", tone = StatusTone.Pending)
+                if (entry.permissions.canView) ZillitStatusPill(label = str(S.view), tone = StatusTone.Ready)
+                if (entry.permissions.canEdit) ZillitStatusPill(label = str(S.edit), tone = StatusTone.Progress)
+                if (entry.permissions.canDownload) ZillitStatusPill(label = str(S.download), tone = StatusTone.Pending)
             }
         }
     }
@@ -322,11 +346,11 @@ private fun ColumnScope.TagsSection(
     onEvent: (DriveEvent) -> Unit,
 ) {
     ZillitDivider()
-    SectionTitle("Tags", details.tags.size)
+    SectionTitle(str(S.drive_tags), details.tags.size)
     val mayTag = viewer.may(DriveAction.Edit, item)
     if (details.tags.isEmpty()) {
         ZillitText(
-            text = "No tags assigned",
+            text = str(S.drive_no_tags_assigned),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -350,7 +374,10 @@ private fun ColumnScope.TagsSection(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val placeholder = DriveTag(id = "", name = if (available.isEmpty()) "No tags available" else "Add a tag…")
+        val placeholder = DriveTag(
+            id = "",
+            name = if (available.isEmpty()) str(S.desktop_drive_no_tags_available) else str(S.desktop_drive_add_a_tag),
+        )
         ZillitSelect(
             value = placeholder,
             options = listOf(placeholder) + available,
@@ -368,14 +395,14 @@ private fun ColumnScope.TagsSection(
         ZillitTextField(
             value = details.tagDraft,
             onValueChange = { onEvent(DriveEvent.TagDraft(it)) },
-            placeholder = "New tag name",
+            placeholder = str(S.desktop_drive_new_tag_name),
             onImeAction = { onEvent(DriveEvent.CreateAndAssignTag) },
             imeAction = ImeAction.Done,
             maxLength = TAG_MAX,
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Create",
+            text = str(S.create),
             onClick = { onEvent(DriveEvent.CreateAndAssignTag) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -407,7 +434,7 @@ private fun TagChip(tag: DriveTag, onRemove: (() -> Unit)?) {
         if (onRemove != null) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove tag ${tag.name}",
+                contentDescription = str(S.desktop_drive_remove_tag, tag.name),
                 onClick = onRemove,
                 size = TAG_REMOVE,
             )
@@ -420,7 +447,7 @@ private fun TagChip(tag: DriveTag, onRemove: (() -> Unit)?) {
 private fun ColumnScope.CommentsSection(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val details = state.details
     ZillitDivider()
-    SectionTitle("Comments", details.comments.size)
+    SectionTitle(str(S.drive_comments), details.comments.size)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -429,14 +456,14 @@ private fun ColumnScope.CommentsSection(state: DriveUiState, onEvent: (DriveEven
         ZillitTextField(
             value = details.commentDraft,
             onValueChange = { onEvent(DriveEvent.CommentDraft(it)) },
-            placeholder = "Add a comment…",
+            placeholder = str(S.drive_add_a_comment_hint),
             onImeAction = { onEvent(DriveEvent.PostComment) },
             imeAction = ImeAction.Send,
             modifier = Modifier.weight(1f),
         )
         ZillitIconButton(
             icon = ZillitIcons.Send,
-            contentDescription = "Post comment",
+            contentDescription = str(S.av_post_comment),
             onClick = { onEvent(DriveEvent.PostComment) },
             enabled = details.commentDraft.isNotBlank(),
             tint = ZillitTheme.colors.accent,
@@ -444,7 +471,7 @@ private fun ColumnScope.CommentsSection(state: DriveUiState, onEvent: (DriveEven
     }
     if (details.comments.isEmpty()) {
         ZillitText(
-            text = "No comments yet",
+            text = str(S.drive_no_comments_yet),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -473,20 +500,20 @@ private fun CommentRow(comment: DriveComment, state: DriveUiState, onEvent: (Dri
             )
             ZillitText(
                 text = comment.createdAt?.let { stampLabel(it, now) }.orEmpty() +
-                    if (comment.edited) " (edited)" else "",
+                    if (comment.edited) " " + str(S.desktop_drive_edited_marker) else "",
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
             if (mine && details.editingCommentId != comment.id) {
                 ZillitIconButton(
                     icon = ZillitIcons.Edit,
-                    contentDescription = "Edit comment",
+                    contentDescription = str(S.drive_cd_edit_comment),
                     onClick = { onEvent(DriveEvent.StartEditComment(comment.id, comment.text)) },
                     size = COMMENT_ACTION,
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete comment",
+                    contentDescription = str(S.drive_cd_delete_comment),
                     onClick = { onEvent(DriveEvent.DeleteComment(comment.id)) },
                     tint = colors.danger,
                     size = COMMENT_ACTION,
@@ -503,13 +530,13 @@ private fun CommentRow(comment: DriveComment, state: DriveUiState, onEvent: (Dri
             )
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitButton(
-                    text = "Save",
+                    text = str(S.save),
                     onClick = { onEvent(DriveEvent.SaveComment) },
                     size = ButtonSize.Small,
                     enabled = details.editingText.isNotBlank(),
                 )
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(DriveEvent.CancelEditComment) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -534,10 +561,10 @@ private fun ColumnScope.VersionsSection(
     onEvent: (DriveEvent) -> Unit,
 ) {
     ZillitDivider()
-    SectionTitle("Versions", versions.size)
+    SectionTitle(str(S.drive_versions), versions.size)
     if (versions.isEmpty()) {
         ZillitText(
-            text = "No previous versions",
+            text = str(S.desktop_drive_no_previous_versions),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -570,19 +597,19 @@ private fun ColumnScope.VersionsSection(
                 )
             }
             if (viewer.may(DriveAction.Download, item)) {
-                ZillitTooltip(text = "Download this version") {
+                ZillitTooltip(text = str(S.desktop_drive_download_this_version)) {
                     ZillitIconButton(
                         icon = ZillitIcons.Download,
-                        contentDescription = "Download version ${version.versionNumber}",
+                        contentDescription = str(S.desktop_drive_download_version_n, version.versionNumber),
                         onClick = { onEvent(DriveEvent.DownloadVersion(item, version.id)) },
                     )
                 }
             }
             if (viewer.may(DriveAction.Edit, item)) {
-                ZillitTooltip(text = "Restore this version") {
+                ZillitTooltip(text = str(S.desktop_drive_restore_this_version)) {
                     ZillitIconButton(
                         icon = ZillitIcons.Reload,
-                        contentDescription = "Restore version ${version.versionNumber}",
+                        contentDescription = str(S.desktop_drive_restore_version_n, version.versionNumber),
                         onClick = { onEvent(DriveEvent.RequestRestoreVersion(item.id, version.id)) },
                     )
                 }
@@ -595,10 +622,10 @@ private fun ColumnScope.VersionsSection(
 @Composable
 private fun ColumnScope.ActivitySection(details: DetailsState) {
     ZillitDivider()
-    SectionTitle("Activity")
+    SectionTitle(str(S.drive_activity))
     if (details.activity.isEmpty()) {
         ZillitText(
-            text = "No activity yet",
+            text = str(S.drive_no_activity_yet),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )

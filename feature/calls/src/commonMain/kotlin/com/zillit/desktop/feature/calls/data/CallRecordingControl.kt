@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.calls.data
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallChatTarget
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallMode
@@ -98,7 +100,7 @@ class CallRecordingControl(
         if (key.isBlank()) return
         if (recording) {
             remoteRecorderKey = key
-            _recordedBy.value = name.ifBlank { "Someone" }
+            _recordedBy.value = name.ifBlank { str(S.history_someone) }
         } else if (remoteRecorderKey == key) {
             remoteRecorderKey = ""
             _recordedBy.value = ""

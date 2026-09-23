@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.costreport.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** The seven figures a wire line carries into the tree (`etc/efc/variance` are dropped, spec §4.1). */
 data class CrLine(
     val atp: Double = 0.0,
@@ -112,22 +115,24 @@ private const val SENTINEL_PREFIX = "__"
 /** The server's marker on a budget line with no COA code — `line.section_id`. */
 private const val CONTRACTUAL_MARKER = "__contractual__"
 
-private val SECTION_LABELS = mapOf(
-    "atl" to "ABOVE THE LINE",
-    "prod" to "PRODUCTION",
-    "post" to "POST PRODUCTION",
-    "other" to "OTHER COSTS",
-    "cont" to "CONTINGENCY",
+private val SECTION_LABEL_KEYS = mapOf(
+    "atl" to S.desktop_above_the_line,
+    "prod" to S.production,
+    "post" to S.desktop_cr_post_production_caps,
+    "other" to S.desktop_cr_other_costs_caps,
+    "cont" to S.desktop_cr_contingency_caps,
 )
 private val CANONICAL_ORDER = listOf("atl", "prod", "post", "other", "cont")
 
-private val SENTINEL_LABELS = mapOf(
-    "__uncoded__" to "Card — Unmatched Transactions",
-    "__uncoded_budget__" to "Budget — Unallocated",
-    "__payroll_unallocated__" to "Payroll — Unallocated",
-    "__fringes_unallocated__" to "Fringes — Unallocated",
-    NULL_BUCKET to "Non-Allocated Items",
+private val SENTINEL_LABEL_KEYS = mapOf(
+    "__uncoded__" to S.desktop_cr_card_unmatched,
+    "__uncoded_budget__" to S.desktop_budget_unallocated,
+    "__payroll_unallocated__" to S.desktop_payroll_unallocated,
+    "__fringes_unallocated__" to S.desktop_fringes_unallocated,
+    NULL_BUCKET to S.desktop_non_allocated_items,
 )
+
+private fun sentinelLabel(key: String): String? = SENTINEL_LABEL_KEYS[key]?.let { str(it) }
 
 /**
  * The key a wire line is summed under: its account, or a named null bucket
@@ -181,7 +186,8 @@ fun buildSections(coa: List<CoaRow>, lines: List<CostLine>): List<CrSection> {
     val sections = roots.map { root ->
         CrSection(
             id = root.code,
-            sec = SECTION_LABELS[root.code.lowercase()] ?: root.name.ifBlank { root.code.uppercase() },
+            sec = SECTION_LABEL_KEYS[root.code.lowercase()]?.let { str(it).uppercase() }
+                ?: root.name.ifBlank { root.code.uppercase() },
             headers = childrenOf[root.id].orEmpty().filter { it.level == CoaLevel.Header }
                 .map { buildHeader(it, childrenOf, summed, used) },
         )
@@ -203,18 +209,23 @@ private fun contractualSection(lines: List<CostLine>): CrSection? {
         val existing = byKey[key]
         byKey[key] = SummedLine(
             key = key,
-            name = existing?.name ?: line.name?.trim()?.takeIf { it.isNotEmpty() } ?: "Contractual Item",
+            name = existing?.name ?: line.name?.trim()?.takeIf { it.isNotEmpty() }
+                ?: str(S.desktop_cr_contractual_item),
             line = (existing?.line ?: CrLine.ZERO) + figures,
         )
     }
     val nominals = byKey.values.map { CrNominal(CrNominal.BUCKET_CODE, it.name.orEmpty(), it.key, it.line) }
     val header = CrHeader(
         code = "CI",
-        name = "Contractual Items",
+        name = str(S.desktop_cr_contractual_items),
         budget = nominals.sumOf { it.line.budget },
         nominals = nominals,
     )
-    return CrSection(id = CrSection.CONTRACTUAL_SECTION_ID, sec = "CONTRACTUAL ITEMS", headers = listOf(header))
+    return CrSection(
+        id = CrSection.CONTRACTUAL_SECTION_ID,
+        sec = str(S.desktop_cr_contractual_items_caps),
+        headers = listOf(header),
+    )
 }
 
 /** atl, prod, post, other, cont first, in that order; everything else after, by code. */
@@ -270,16 +281,21 @@ private fun uncodedSection(rest: Map<String, SummedLine>): CrSection? {
         val bucket = key.startsWith(SENTINEL_PREFIX)
         CrNominal(
             code = if (bucket) CrNominal.BUCKET_CODE else key,
-            name = data.name ?: SENTINEL_LABELS[key] ?: if (bucket) SENTINEL_LABELS.getValue(NULL_BUCKET) else key,
+            name = data.name ?: sentinelLabel(key)
+                ?: if (bucket) str(SENTINEL_LABEL_KEYS.getValue(NULL_BUCKET)) else key,
             account = key,
             line = data.line,
         )
     }.sortedBy { it.code }
     val header = CrHeader(
         code = "NA",
-        name = "Non-Allocated Items",
+        name = str(S.desktop_non_allocated_items),
         budget = nominals.sumOf { it.line.budget },
         nominals = nominals,
     )
-    return CrSection(id = CrSection.UNCODED_SECTION_ID, sec = "NON-ALLOCATED ITEMS", headers = listOf(header))
+    return CrSection(
+        id = CrSection.UNCODED_SECTION_ID,
+        sec = str(S.desktop_non_allocated_items).uppercase(),
+        headers = listOf(header),
+    )
 }

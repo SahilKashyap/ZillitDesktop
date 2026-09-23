@@ -7,6 +7,8 @@ import com.zillit.desktop.core.network.AwsRequest
 import com.zillit.desktop.core.network.AwsV4Signer
 import com.zillit.desktop.core.network.s3KeyPath
 import com.zillit.desktop.core.network.toHex
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.domain.StorageTarget
 import com.zillit.desktop.feature.email.domain.StorageTargetSource
@@ -61,7 +63,7 @@ class S3AttachmentUploader(
         val keys = credentials() ?: return@withContext ZillitResult.Failure(
             ZillitError.Storage(
                 technical = "no AWS credentials in the remote configuration",
-                userMessage = "Attachments are unavailable — this workspace has no file storage configured.",
+                userMessage = str(S.desktop_email_attachments_no_workspace_storage),
             ),
         )
 
@@ -73,7 +75,7 @@ class S3AttachmentUploader(
             return@withContext ZillitResult.Failure(
                 ZillitError.Storage(
                     technical = "suitable-region returned no bucket",
-                    userMessage = "Attachments are unavailable — no storage region was assigned.",
+                    userMessage = str(S.desktop_email_attachments_no_region),
                 ),
             )
         }

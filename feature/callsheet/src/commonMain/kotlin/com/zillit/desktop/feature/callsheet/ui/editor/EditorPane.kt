@@ -79,6 +79,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CellKind
 import com.zillit.desktop.feature.callsheet.domain.EditorSelection
 import com.zillit.desktop.feature.callsheet.domain.PageCell
@@ -176,7 +178,7 @@ private fun PanelHeader(title: String, onClose: () -> Unit, trailing: (@Composab
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                PaneEyebrow("Editing")
+                PaneEyebrow(str(S.desktop_editing))
                 Text(
                     title,
                     style = sheetText(14.sp, FontWeight.SemiBold),
@@ -185,7 +187,7 @@ private fun PanelHeader(title: String, onClose: () -> Unit, trailing: (@Composab
                 )
             }
             trailing?.invoke()
-            CloseSquare(onClose, "Close editor")
+            CloseSquare(onClose, str(S.desktop_close_editor))
         }
         Divider()
     }
@@ -217,7 +219,7 @@ internal fun UndoBar(undo: UndoRecord, onEvent: (SheetEvent) -> Unit, modifier: 
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 buildAnnotatedString {
-                    append("Removed ")
+                    append(str(S.removed))
                     withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(undo.label) }
                 },
                 style = sheetText(12.sp),
@@ -228,7 +230,7 @@ internal fun UndoBar(undo: UndoRecord, onEvent: (SheetEvent) -> Unit, modifier: 
             )
             val (undoSource, undoHovered) = rememberHover()
             Text(
-                "Undo",
+                str(S.dd_rt_undo),
                 style = sheetText(12.sp, FontWeight.SemiBold),
                 color = if (undoHovered) UNDO_HOVER else colors.accent,
                 modifier = Modifier
@@ -276,7 +278,7 @@ internal fun QuickUndoToast(undo: UndoRecord, onEvent: (SheetEvent) -> Unit, mod
         }
         val (source, hovered) = rememberHover()
         Text(
-            "UNDO",
+            str(S.desktop_undo_upper),
             style = sheetText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.3.sp),
             color = if (hovered) UNDO_HOVER else colors.accent,
             modifier = Modifier
@@ -302,12 +304,12 @@ private fun SectionsList(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
         Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "SECTIONS",
+                    str(S.desktop_sections_upper),
                     style = sheetText(12.sp, FontWeight.SemiBold).copy(letterSpacing = 0.6.sp),
                     color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
                 )
-                CloseMark("Hide sidebar") { onEvent(EditorEvent.HideSections) }
+                CloseMark(str(S.desktop_hide_sidebar)) { onEvent(EditorEvent.HideSections) }
             }
             Box(Modifier.padding(bottom = 12.dp)) {
                 val undo = editor.undo
@@ -319,13 +321,16 @@ private fun SectionsList(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
                             editor.sectionSearch,
                             { onEvent(EditorEvent.SetSectionSearch(it)) },
                             Modifier.fillMaxWidth(),
-                            placeholder = "Search sections...",
+                            placeholder = str(S.desktop_search_sections),
                             leadingIcon = ZillitIcons.Search,
                             textStyle = sheetText(12.sp),
                         )
                         if (editor.sectionSearch.isNotEmpty()) {
                             Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp)) {
-                                CloseMark("Clear search", size = 9) { onEvent(EditorEvent.SetSectionSearch("")) }
+                                CloseMark(
+                                    str(S.ah_cd_clear_search),
+                                    size = 9,
+                                ) { onEvent(EditorEvent.SetSectionSearch("")) }
                             }
                         }
                     }
@@ -405,7 +410,7 @@ private fun SortableBlocks(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
 
     if (blocks.isEmpty()) {
         Text(
-            if (query.isEmpty()) "No sections yet — add one from the preview." else "No sections match your search.",
+            if (query.isEmpty()) str(S.desktop_no_sections_yet) else str(S.desktop_no_sections_match_search),
             style = sheetText(12.sp),
             color = colors.textMuted,
             modifier = Modifier.padding(vertical = 8.dp),
@@ -461,24 +466,28 @@ private fun SortableBlocks(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
             }
             when {
                 block == SectionBlock.Header -> BlockCard(
-                    label = "Header",
+                    label = str(S.desktop_header),
                     active = editor.selection == EditorSelection.Shared,
                     handle = handle,
                     modifier = cardModifier,
                 ) {
-                    VirtualLine("Header", "Call sheet title bar", editor.selection == EditorSelection.Shared) {
+                    VirtualLine(
+                        str(S.desktop_header),
+                        str(S.desktop_cs_title_bar),
+                        editor.selection == EditorSelection.Shared,
+                    ) {
                         onEvent(EditorEvent.Select(EditorSelection.Shared))
                     }
                 }
                 block == SectionBlock.Approvers -> BlockCard(
-                    label = "Approvers",
+                    label = str(S.desktop_approvers),
                     active = editor.selection == EditorSelection.Approvers,
                     handle = handle,
                     modifier = cardModifier,
                 ) {
                     VirtualLine(
-                        "Approvers",
-                        "${document.shared.approverIds.size} selected",
+                        str(S.desktop_approvers),
+                        str(S.dd_n_selected, document.shared.approverIds.size),
                         editor.selection == EditorSelection.Approvers,
                     ) { onEvent(EditorEvent.Select(EditorSelection.Approvers)) }
                 }
@@ -489,7 +498,7 @@ private fun SortableBlocks(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
                     val index = (block as SectionBlock.Row).index
                     val selected = editor.selection as? EditorSelection.Cell
                     BlockCard(
-                        label = "Row ${index + 1}",
+                        label = str(S.desktop_row_n, index + 1),
                         active = selected?.row == index,
                         handle = handle,
                         modifier = cardModifier,
@@ -550,10 +559,10 @@ private fun BlockCard(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             val (handleSource, handleHovered) = rememberHover()
-            ZillitTooltip("Drag to reorder") {
+            ZillitTooltip(str(S.dd_cd_drag_handle)) {
                 Icon(
                     SheetIcons.DragHandle,
-                    contentDescription = "Drag to reorder",
+                    contentDescription = str(S.dd_cd_drag_handle),
                     tint = if (handleHovered) Color(0xFF991B1B) else colors.red,
                     modifier = Modifier
                         .size(14.dp)
@@ -564,10 +573,10 @@ private fun BlockCard(
             }
             Text(label, style = sheetText(12.sp), color = colors.textMeta, modifier = Modifier.weight(1f))
             if (onRemove != null) {
-                ZillitTooltip("Remove row") {
+                ZillitTooltip(str(S.desktop_remove_row)) {
                     Icon(
                         ZillitIcons.Close,
-                        contentDescription = "Remove row",
+                        contentDescription = str(S.desktop_remove_row),
                         tint = colors.red,
                         modifier = Modifier.size(10.dp).alpha(if (hovered) 1f else 0f).plainClick(onClick = onRemove),
                     )
@@ -629,21 +638,25 @@ private fun CellLine(cell: PageCell, selected: Boolean, first: Boolean, onSelect
     ) {
         Column(Modifier.weight(1f).plainClick(onClick = onSelect).padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(
-                cell.title.ifBlank { "Untitled" },
+                cell.title.ifBlank { str(S.untitled) },
                 style = sheetText(12.sp, if (selected) FontWeight.SemiBold else FontWeight.Medium),
                 color = if (selected) colors.chipOnText else colors.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${cell.rawKind.ifBlank { cell.kind.wire.ifBlank { "section" } }} • ${cell.columns.size} cols • " +
-                    "${cell.rows.size} rows",
+                str(
+                    S.desktop_cs_cell_shape_summary,
+                    cell.rawKind.ifBlank { cell.kind.wire.ifBlank { "section" } },
+                    cell.columns.size,
+                    cell.rows.size,
+                ),
                 style = sheetText(12.sp),
                 color = if (selected) colors.chipOnText.copy(alpha = 0.7f) else colors.textMeta,
                 maxLines = 1,
             )
         }
-        ZillitTooltip("Remove cell") {
+        ZillitTooltip(str(S.desktop_remove_cell)) {
             Box(
                 Modifier
                     .padding(horizontal = 6.dp)
@@ -653,7 +666,7 @@ private fun CellLine(cell: PageCell, selected: Boolean, first: Boolean, onSelect
             ) {
                 Icon(
                     ZillitIcons.Close,
-                    contentDescription = "Remove cell",
+                    contentDescription = str(S.desktop_remove_cell),
                     tint = colors.red,
                     modifier = Modifier.size(10.dp),
                 )
@@ -671,12 +684,17 @@ private fun BreakLine(modifier: Modifier, onRemove: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         DashedRule(Modifier.weight(1f), accent)
-        Text("PAGE BREAK", style = sheetText(10.sp, FontWeight.SemiBold), color = accent, maxLines = 1)
+        Text(
+            str(S.desktop_page_break_upper),
+            style = sheetText(10.sp, FontWeight.SemiBold),
+            color = accent,
+            maxLines = 1,
+        )
         DashedRule(Modifier.weight(1f), accent)
-        ZillitTooltip("Remove page break") {
+        ZillitTooltip(str(S.desktop_remove_page_break)) {
             Icon(
                 ZillitIcons.Close,
-                contentDescription = "Remove page break",
+                contentDescription = str(S.desktop_remove_page_break),
                 tint = SheetTheme.colors.red,
                 modifier = Modifier.size(10.dp).plainClick(onClick = onRemove),
             )
@@ -706,7 +724,7 @@ private fun RestoreFields(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Divider()
         Text(
-            "RESTORE FIELDS",
+            str(S.desktop_restore_fields_upper),
             style = sheetText(12.sp, FontWeight.SemiBold).copy(letterSpacing = 0.4.sp),
             color = colors.textSecondary,
             modifier = Modifier.padding(top = 4.dp),
@@ -730,7 +748,7 @@ private fun RestoreFields(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        removed.cell.title.ifBlank { "Untitled" },
+                        removed.cell.title.ifBlank { str(S.untitled) },
                         style = sheetText(12.sp, FontWeight.Medium),
                         color = colors.textMeta,
                         maxLines = 1,
@@ -744,7 +762,7 @@ private fun RestoreFields(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
                 }
                 val (source, hovered) = rememberHover()
                 Text(
-                    "Restore",
+                    str(S.drive_restore),
                     style = sheetText(12.sp, FontWeight.Medium)
                         .copy(textDecoration = if (hovered) TextDecoration.Underline else null),
                     color = colors.accent,
@@ -778,13 +796,13 @@ private fun EmptyPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
                 )
             }
             Text(
-                "No section selected",
+                str(S.desktop_no_section_selected),
                 style = sheetText(14.sp, FontWeight.SemiBold),
                 color = colors.textPrimary,
                 modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
             )
             Text(
-                "Click on any section in the preview to start editing its content.",
+                str(S.desktop_click_section_to_edit),
                 style = sheetText(12.sp, lineHeight = 19.sp),
                 color = colors.textTertiary,
                 textAlign = TextAlign.Center,
@@ -792,7 +810,7 @@ private fun EmptyPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SheetButton(
-                    "Sections",
+                    str(S.desktop_sections),
                     { onEvent(EditorEvent.ShowSections) },
                     kind = ButtonKind.Outline,
                     icon = SheetIcons.Table,
@@ -801,7 +819,7 @@ private fun EmptyPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
                     horizontalPadding = 16.dp,
                 )
                 SheetButton(
-                    "Close Editor",
+                    str(S.desktop_close_editor_title),
                     { onEvent(EditorEvent.ClosePane) },
                     kind = ButtonKind.Outline,
                     height = 34.dp,
@@ -820,20 +838,20 @@ private fun EmptyPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
 private fun SharedPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
     val colors = SheetTheme.colors
     val shared = editor.document.shared
-    PanelHeader("Call Sheet Info", onClose = { onEvent(EditorEvent.Select(null)) })
+    PanelHeader(str(S.cs_title_shared_info), onClose = { onEvent(EditorEvent.Select(null)) })
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
-                PaneLabel("Shoot Day")
+                PaneLabel(str(S.cs_shoot_day))
                 SheetInput(shared.shootDayNumber, { onEvent(DocumentEvent.SetShootDay(it)) }, Modifier.fillMaxWidth())
             }
             Column(Modifier.weight(1f)) {
-                PaneLabel("Total Days")
+                PaneLabel(str(S.desktop_total_days))
                 SheetInput(shared.totalDays, { onEvent(DocumentEvent.SetTotalDays(it)) }, Modifier.fillMaxWidth())
             }
         }
         Column {
-            PaneLabel("Date")
+            PaneLabel(str(S.date))
             DateInput(
                 shared.dateMs?.toString().orEmpty(),
                 { picked -> picked?.let { onEvent(DocumentEvent.SetDate(it)) } },
@@ -844,7 +862,7 @@ private fun SharedPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
             )
             if (editor.document.rows.any { row -> row.cells.any { it.renderAs == RenderKind.Weather } }) {
                 Text(
-                    "Changing the date clears the fetched weather — the forecast belonged to the old day.",
+                    str(S.desktop_cs_date_clears_weather),
                     style = sheetText(11.sp, lineHeight = 15.sp),
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 6.dp),
@@ -852,7 +870,7 @@ private fun SharedPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
             }
         }
         Column {
-            PaneLabel("Day Type")
+            PaneLabel(str(S.desktop_day_type))
             var newType by remember { mutableStateOf("") }
             val types = (editor.dayTypes + shared.dayType).filter { it.isNotBlank() }.distinct()
             val add = {
@@ -865,7 +883,7 @@ private fun SharedPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PaneSelect(
                     shared.dayType,
-                    listOf("" to "Select") + types.map { it to it },
+                    listOf("" to str(S.select)) + types.map { it to it },
                     { onEvent(DocumentEvent.SetDayType(it)) },
                     Modifier.weight(1f),
                 )
@@ -873,12 +891,12 @@ private fun SharedPanel(editor: EditorState, onEvent: (SheetEvent) -> Unit) {
                     newType,
                     { newType = it },
                     Modifier.width(88.dp),
-                    placeholder = "New",
+                    placeholder = str(S.continue_new),
                     radius = 4.dp,
                     onEnter = add,
                 )
                 SheetButton(
-                    "Add",
+                    str(S.add),
                     add,
                     kind = ButtonKind.Ghost,
                     icon = ZillitIcons.Add,
@@ -908,12 +926,12 @@ private fun ApproversPanel(state: SheetUiState, editor: EditorState, onEvent: (S
     var adding by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     PanelHeader(
-        "Approvers",
+        str(S.desktop_approvers),
         onClose = { onEvent(EditorEvent.Select(null)) },
         trailing = {
             if (editor.approversDirty && ids.isNotEmpty()) {
                 SheetButton(
-                    if (editor.savingApprovers) "Saving..." else "Save Approvers",
+                    if (editor.savingApprovers) str(S.ah_saving) else str(S.desktop_save_approvers),
                     { onEvent(DocumentEvent.SaveApprovers) },
                     Modifier.padding(end = 8.dp),
                     kind = ButtonKind.Accent,
@@ -953,7 +971,7 @@ private fun ApproversPanel(state: SheetUiState, editor: EditorState, onEvent: (S
             ) { onEvent(DocumentEvent.ToggleApprover(it)) }
             chosen.isEmpty() -> NoApproversCard { adding = true }
             else -> SheetButton(
-                "Add Approver",
+                str(S.desktop_add_approver),
                 { adding = true },
                 kind = ButtonKind.Warning,
                 icon = ZillitIcons.Add,
@@ -975,10 +993,10 @@ private fun MoreApprovers(
 ) {
     val colors = SheetTheme.colors
     HoverCard(
-        title = "Approvers",
+        title = str(S.desktop_approvers),
         trigger = {
             Text(
-                "+${rest.size} more",
+                str(S.desktop_n_more, rest.size),
                 style = sheetText(12.sp, FontWeight.SemiBold),
                 color = colors.accent,
                 modifier = Modifier
@@ -1020,10 +1038,10 @@ private fun MoreApprovers(
                             )
                         }
                     }
-                    ZillitTooltip("Remove approver") {
+                    ZillitTooltip(str(S.desktop_remove_approver)) {
                         Icon(
                             ZillitIcons.Close,
-                            contentDescription = "Remove approver",
+                            contentDescription = str(S.desktop_remove_approver),
                             tint = colors.red,
                             modifier = Modifier.size(11.dp).plainClick { onRemove(member.userId) },
                         )
@@ -1064,20 +1082,20 @@ private fun NoApproversCard(onAdd: () -> Unit) {
             Icon(SheetIcons.UsersAdd, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
         }
         Text(
-            "No approvers yet",
+            str(S.desktop_no_approvers_yet),
             style = sheetText(14.sp, FontWeight.SemiBold),
             color = colors.textPrimary,
             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
         )
         Text(
-            "Add users who will review and approve this call sheet.",
+            str(S.desktop_cs_add_approvers_hint),
             style = sheetText(12.sp, lineHeight = 18.sp),
             color = colors.textTertiary,
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 260.dp).padding(bottom = 16.dp),
         )
         SheetButton(
-            "Add Approver",
+            str(S.desktop_add_approver),
             onAdd,
             kind = ButtonKind.Accent,
             icon = ZillitIcons.Add,
@@ -1116,14 +1134,14 @@ private fun AddApproverList(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Select members to add",
+                str(S.desktop_select_members_to_add),
                 style = sheetText(14.sp, FontWeight.Medium),
                 color = colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
             val (source, hovered) = rememberHover()
             Text(
-                "Close",
+                str(S.close),
                 style = sheetText(12.sp, FontWeight.Medium),
                 color = if (hovered) colors.textPrimary else colors.textMeta,
                 modifier = Modifier.hoverable(source).plainClick(source = source, onClick = onClose),
@@ -1134,7 +1152,7 @@ private fun AddApproverList(
                 search,
                 onSearch,
                 Modifier.fillMaxWidth(),
-                placeholder = "Search by name, role, department...",
+                placeholder = str(S.desktop_search_by_name_role_department),
                 autoFocus = true,
                 leadingIcon = ZillitIcons.Search,
             )
@@ -1142,7 +1160,11 @@ private fun AddApproverList(
         Divider()
         if (candidates.isEmpty()) {
             Text(
-                if (query.isNotEmpty()) "No members match your search" else "All members are already approvers",
+                if (query.isNotEmpty()) {
+                    str(S.desktop_no_members_match_search)
+                } else {
+                    str(S.desktop_all_members_already_approvers)
+                },
                 style = sheetText(14.sp),
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -1184,7 +1206,7 @@ private fun AddApproverList(
                             tint = colors.accent,
                             modifier = Modifier.size(12.dp),
                         )
-                        Text("Add", style = sheetText(14.sp, FontWeight.Medium), color = colors.accent)
+                        Text(str(S.add), style = sheetText(14.sp, FontWeight.Medium), color = colors.accent)
                     }
                 }
             }
@@ -1216,14 +1238,14 @@ private fun CellPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            PaneEyebrow("Editing")
+            PaneEyebrow(str(S.desktop_editing))
             if (!employee && !cell.systemDefault) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        if (cell.hideTitle) "Hidden" else "Visible",
+                        if (cell.hideTitle) str(S.desktop_hidden) else str(S.desktop_visible),
                         style = sheetText(11.sp),
                         color = colors.textTertiary,
                         modifier = Modifier.plainClick {
@@ -1238,31 +1260,35 @@ private fun CellPanel(
             }
             Box(Modifier.weight(1f))
             SheetButton(
-                "Remove",
+                str(S.remove),
                 { onEvent(DocumentEvent.RemoveCell(address.row, address.cell, fromPane = true)) },
                 kind = ButtonKind.DangerOutline,
                 height = 26.dp,
                 fontSize = 11.sp,
                 horizontalPadding = 10.dp,
             )
-            CloseSquare({ onEvent(EditorEvent.Select(null)) }, "Close editor")
+            CloseSquare({ onEvent(EditorEvent.Select(null)) }, str(S.desktop_close_editor))
         }
         if (employee) {
-            ReadOnlyTitle(cell.title.ifBlank { "Department" })
+            ReadOnlyTitle(cell.title.ifBlank { str(S.department) })
         } else {
             val missing = cell.systemDefault && cell.title.isBlank()
             SheetInput(
                 cell.title,
                 { onEvent(DocumentEvent.SetTitle(address.row, address.cell, it)) },
                 Modifier.fillMaxWidth(),
-                placeholder = if (cell.systemDefault) "Section title (required)" else "Section title",
+                placeholder = if (cell.systemDefault) {
+                    str(S.desktop_section_title_required)
+                } else {
+                    str(S.desktop_section_title)
+                },
                 autoFocus = true,
                 error = missing,
                 textStyle = sheetText(14.sp, FontWeight.SemiBold),
             )
             if (missing) {
                 Text(
-                    "Section name is required for default sections.",
+                    str(S.desktop_section_name_required_for_defaults),
                     style = sheetText(11.sp),
                     color = colors.red,
                     modifier = Modifier.padding(top = 4.dp),
@@ -1281,10 +1307,14 @@ private fun CellPanel(
         ) {
             if (!weather) {
                 Column {
-                    PaneLabel("Type")
+                    PaneLabel(str(S.type))
                     PaneSelect(
                         cell.kind.wire.ifBlank { "section" },
-                        listOf("section" to "Section", "table" to "Table", "notes" to "Notes"),
+                        listOf(
+                            "section" to str(S.desktop_section),
+                            "table" to str(S.desktop_table),
+                            "notes" to str(S.notes),
+                        ),
                         { onEvent(DocumentEvent.SetKind(address.row, address.cell, CellKind.fromWire(it))) },
                         Modifier.width(170.dp),
                     )
@@ -1292,9 +1322,9 @@ private fun CellPanel(
             }
             if (orientation) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    PaneEyebrow("Header Orientation", strong = true)
+                    PaneEyebrow(str(S.desktop_header_orientation), strong = true)
                     Segmented(
-                        options = listOf(false to "Horizontal", true to "Vertical"),
+                        options = listOf(false to str(S.desktop_horizontal), true to str(S.desktop_vertical)),
                         selected = cell.isVerticalHeader,
                         onSelect = { onEvent(DocumentEvent.SetVertical(address.row, address.cell, it)) },
                         modifier = Modifier.padding(bottom = 2.dp),
@@ -1319,8 +1349,7 @@ private fun CellPanel(
         cell.kind == CellKind.Table && employee -> CrewEditor(cell, address, state.members, sheetDate, onEvent)
         cell.kind == CellKind.Table -> TableEditor(cell, address, state.members, sheetDate, onEvent)
         else -> Text(
-            "This section's layout (${cell.rawKind.ifBlank { "unknown" }}) can't be edited here — " +
-                "choose a Type above to convert it.",
+            str(S.desktop_layout_not_editable, cell.rawKind.ifBlank { str(S.desktop_unknown_lower) }),
             style = sheetText(12.sp, lineHeight = 18.sp),
             color = colors.textTertiary,
         )
@@ -1349,9 +1378,9 @@ private fun ReadOnlyTitle(name: String) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        ZillitTooltip("Department name is managed by the project — edit it in the project settings.") {
+        ZillitTooltip(str(S.desktop_department_name_managed)) {
             Text(
-                "READ ONLY",
+                str(S.desktop_read_only_upper),
                 style = sheetText(10.sp, FontWeight.Medium, 13.sp).copy(letterSpacing = 0.5.sp),
                 color = colors.textTertiary,
                 modifier = Modifier

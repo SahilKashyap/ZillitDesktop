@@ -248,7 +248,7 @@ class PayrollScreenRenderTest {
                 }
             }
             onNodeWithText("Barclays Current ••••4471").assertExists()
-            onNodeWithText("Post to ledger").assertExists()
+            onNodeWithText("Post to Ledger").assertExists()
         }
     }
 }

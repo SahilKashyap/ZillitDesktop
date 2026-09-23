@@ -167,7 +167,8 @@ class BibleReportRenderTest {
         onNodeWithText("(£200.50)").assertIsDisplayed()
         assertTrue(onAllNodesWithText("Lens set").fetchSemanticsNodes().isEmpty())
         onNodeWithText("Runner").assertIsDisplayed()
-        onNodeWithText("Collapse all").assertIsDisplayed()
+        // Title case: the shared key carries Android's wording.
+        onNodeWithText("Collapse All").assertIsDisplayed()
     }
 
     @Test
@@ -219,7 +220,8 @@ class BibleReportRenderTest {
         var picked: BibleFilters? = null
         setContent(compose(prepared) { if (it is AccountHubEvent.EditBibleFilters) picked = it.filters })
 
-        onNodeWithText("All vendors").performClick()
+        // Title case: the shared key carries Android's wording.
+        onNodeWithText("All Vendors").performClick()
         onNodeWithText("Panavision Ltd").assertIsDisplayed()
         onNodeWithText("VERIFIED").assertIsDisplayed()
         onAllNodesWithText("Sam Hart", substring = true).onFirst().assertIsDisplayed()
@@ -247,7 +249,7 @@ class BibleReportRenderTest {
     fun `the search narrows a long list`() = runComposeUiTest {
         val many = prepared.copy(vendors = (1..30).map { Vendor(id = "v$it", name = "Vendor $it") })
         setContent(compose(many))
-        onNodeWithText("All vendors").performClick()
+        onNodeWithText("All Vendors").performClick()
         // The list's own field, focused on open so the reader can type straight away.
         onNode(hasSetTextAction() and isFocused()).performTextInput("29")
         onNodeWithText("Vendor 29").assertIsDisplayed()

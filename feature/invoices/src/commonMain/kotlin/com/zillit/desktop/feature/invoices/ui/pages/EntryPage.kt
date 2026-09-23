@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.EntryFilter
 import com.zillit.desktop.feature.invoices.domain.EntrySort
 import com.zillit.desktop.feature.invoices.domain.Invoice
@@ -58,7 +60,7 @@ internal fun ColumnScope.EntryPage(
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = "Search by number, vendor, nominal code, amount",
+            placeholder = str(S.desktop_inv_search_entry_queue),
             modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
         )
         ZillitSelect(
@@ -72,7 +74,7 @@ internal fun ColumnScope.EntryPage(
             value = state.payFilter,
             options = listOf<PayMethod?>(null) + PayMethod.entries,
             onSelect = { onEvent(InvoicesEvent.SelectPayFilter(it)) },
-            label = { it?.label ?: "All pay methods" },
+            label = { it?.label ?: str(S.desktop_all_pay_methods) },
             modifier = Modifier.width(ENTRY_SELECT_WIDTH),
         )
     }
@@ -80,7 +82,7 @@ internal fun ColumnScope.EntryPage(
     val rows = state.entryRows
     EntryBulkBar(state, onEvent)
     TableCard(
-        title = "Entry Queue",
+        title = str(S.desktop_entry_queue),
         icon = ZillitIcons.File,
         meta = countMeta(rows.size, "invoice"),
     ) {
@@ -90,8 +92,8 @@ internal fun ColumnScope.EntryPage(
             key = { it.id },
             onRowClick = { if (state.canAccessEntry(it)) onEvent(InvoicesEvent.Open(it)) },
             isSelected = { it.id in state.selected },
-            emptyTitle = "Nothing awaiting entry",
-            emptyMessage = "Approve invoices from the Approval Queue to see them here.",
+            emptyTitle = str(S.desktop_nothing_awaiting_entry),
+            emptyMessage = str(S.desktop_inv_entry_empty_message),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
@@ -115,7 +117,7 @@ private fun EntryFilterRow(state: InvoicesUiState, onEvent: (InvoicesEvent) -> U
         }
     }
     if (!state.viewer.isSenior) {
-        MutedLine("You can only open invoices assigned to you; a senior accountant assigns the rest.")
+        MutedLine(str(S.desktop_inv_only_assigned_note))
     }
 }
 
@@ -123,37 +125,36 @@ private fun EntryFilterRow(state: InvoicesUiState, onEvent: (InvoicesEvent) -> U
 @Composable
 private fun EntryBulkBar(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     if (state.selected.isEmpty()) return
-    val plural = if (state.selected.size == 1) "invoice" else "invoices"
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "${state.selected.size} $plural selected",
+            text = str(S.desktop_inv_n_invoices_selected, state.selected.size),
             style = ZillitTheme.typography.bodySmall,
         )
         ZillitButton(
-            text = "Assign",
+            text = str(S.assign),
             onClick = { onEvent(InvoicesEvent.StartAssign) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
         )
         ZillitButton(
-            text = "Submit for Review",
+            text = str(S.desktop_submit_for_review),
             onClick = { onEvent(InvoicesEvent.ReviewSelected) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
             enabled = !state.busy,
         )
         ZillitButton(
-            text = "Post to ledger",
+            text = str(S.ah_post_to_ledger),
             onClick = { onEvent(InvoicesEvent.PostSelected) },
             size = ButtonSize.Small,
             enabled = !state.busy && state.viewer.mayPost,
         )
         ZillitButton(
-            text = "Clear",
+            text = str(S.ah_clear),
             onClick = { onEvent(InvoicesEvent.ClearSelection) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -177,25 +178,25 @@ private fun entryColumns(
             CellText("—", muted = true)
         }
     },
-    TableColumn("Invoice", ColumnWidth.Weight(1f)) { CellText(it.displayNumber) },
-    TableColumn("Vendor", ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.vendorName(it)) },
-    TableColumn("Description", ColumnWidth.Weight(WEIGHT_WIDEST)) {
+    TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) { CellText(it.displayNumber) },
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.vendorName(it)) },
+    TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
         CellText(it.description.ifBlank { "—" }, muted = it.description.isBlank())
     },
-    TableColumn("Gross", ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
+    TableColumn(str(S.desktop_gross), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
         MoneyText(it.grossAmount, it.currency, state.projectCurrency)
     },
-    TableColumn("Pay Method", ColumnWidth.Fixed(PAY_WIDTH)) {
+    TableColumn(str(S.desktop_pay_method), ColumnWidth.Fixed(PAY_WIDTH)) {
         ZillitStatusPill(label = it.payMethod.label, tone = it.payMethod.tone())
     },
-    TableColumn("Assigned", ColumnWidth.Weight(WEIGHT_NARROW)) { invoice ->
+    TableColumn(str(S.assigned), ColumnWidth.Weight(WEIGHT_NARROW)) { invoice ->
         val name = state.assigneeName(invoice)
-        CellText(name ?: "Unassigned", muted = name == null)
+        CellText(name ?: str(S.unassigned), muted = name == null)
     },
-    TableColumn("Status", ColumnWidth.Weight(WEIGHT_NARROW)) { invoice ->
+    TableColumn(str(S.status), ColumnWidth.Weight(WEIGHT_NARROW)) { invoice ->
         val review = invoice.status == InvoiceStatus.UnderReview
         ZillitStatusPill(
-            label = if (review) "Under Review" else "Ready",
+            label = if (review) str(S.ah_under_review) else str(S.dd_csv_status_ready),
             tone = if (review) StatusTone.Progress else StatusTone.Ready,
         )
     },

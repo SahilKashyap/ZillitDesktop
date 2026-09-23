@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.esignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.Envelope
 import com.zillit.desktop.feature.esignature.domain.EnvelopeDraft
 import com.zillit.desktop.feature.esignature.domain.EnvelopeField
@@ -62,7 +64,7 @@ internal class EditorFlow(private val store: EsignStore) {
         store.requestPick(PickPurpose.Document)
     }
 
-    /** "Use" on a template card: the design becomes a draft the sender adds real people to. */
+    /** str(S.docusign_template_use) on a template card: the design becomes a draft the sender adds real people to. */
     fun useTemplate(template: EnvelopeTemplate) {
         if (store.refusesPost()) return
         val slots = template.recipients.ifEmpty { listOf(EditorRules.placeholder(0)) }.mapIndexed { index, slot ->
@@ -178,7 +180,7 @@ internal class EditorFlow(private val store: EsignStore) {
         val editor = store.current.editor ?: return
         val pages = when (val rendered = store.pdf.renderPages(bytes, PAGE_RENDER_WIDTH)) {
             is ZillitResult.Failure -> {
-                store.failed("Only PDF documents can be sent for e-signature.")
+                store.failed(str(S.desktop_ds_only_pdf_documents_can_be_sent_for_e))
                 return
             }
             is ZillitResult.Success -> rendered.data
@@ -221,7 +223,7 @@ internal class EditorFlow(private val store: EsignStore) {
             when (val pages = store.pdf.renderPages(bytes, PAGE_RENDER_WIDTH)) {
                 is ZillitResult.Failure -> {
                     store.update { copy(editor = editor?.copy(loadingDoc = false)) }
-                    store.failed("The document could not be rendered.")
+                    store.failed(str(S.desktop_ds_the_document_could_not_be_rendered))
                 }
                 is ZillitResult.Success -> store.update {
                     copy(editor = editor?.copy(pages = pages.data, loadingDoc = false))
@@ -235,15 +237,15 @@ internal class EditorFlow(private val store: EsignStore) {
     fun goToPlace() {
         val editor = store.current.editor ?: return
         if (!editor.hasDocument) {
-            store.failed("Please add a document to the envelope")
+            store.failed(str(S.desktop_ds_please_add_a_document_to_the_envelope))
             return
         }
         if (!editor.isTemplate && editor.signers.isEmpty()) {
-            store.failed("Please add at least one signer")
+            store.failed(str(S.desktop_ds_please_add_at_least_one_signer))
             return
         }
         if (editor.loadingDoc) {
-            store.notice("The document is still rendering…")
+            store.notice(str(S.desktop_ds_the_document_is_still_rendering))
             return
         }
         edit { copy(step = EditorStep.Place, selectedField = null, pending = null) }
@@ -302,11 +304,11 @@ internal class EditorFlow(private val store: EsignStore) {
         val editor = store.current.editor ?: return
         val draft = editor.external ?: return
         if (!draft.emailValid) {
-            store.failed("Enter a valid email address.")
+            store.failed(str(S.desktop_enter_valid_email))
             return
         }
         if (editor.recipients.any { it.email.equals(draft.email.trim(), true) && it.role == draft.role }) {
-            store.failed("That person is already on the envelope.")
+            store.failed(str(S.desktop_ds_that_person_is_already_on_the_envelope))
             return
         }
         val person = EditorRules.external(draft, editor.signers.size + 1)
@@ -370,7 +372,7 @@ internal class EditorFlow(private val store: EsignStore) {
         var signers = editor.signerIndexes
         if (signers.isEmpty()) {
             if (!editor.isTemplate) {
-                store.failed("Add a signer to place fields.")
+                store.failed(str(S.desktop_ds_add_a_signer_to_place_fields))
                 return
             }
             // Template authoring lazily seeds "Signer 1" on the first click.
@@ -467,7 +469,11 @@ internal class EditorFlow(private val store: EsignStore) {
                     manage = manage.copy(outer = ManageOuterTab.Active, inner = ManageInnerTab.Draft),
                 )
             }
-            store.notice(if (saved.status.wire == "draft") "Envelope saved as draft" else "Envelope saved")
+            store.notice(if (saved.status.wire == "draft") {
+                str(S.desktop_ds_envelope_saved_as_draft)
+            } else {
+                str(S.desktop_ds_envelope_saved)
+            })
             lists.loadManage()
         }
     }
@@ -504,9 +510,9 @@ internal class EditorFlow(private val store: EsignStore) {
                     }
                     store.notice(
                         if (editor.selfSigns) {
-                            "Envelope sent — you'll counter-sign from Sign Documents once the other signers have signed"
+                            str(S.desktop_ds_envelope_sent_you_ll_counter_sign_from_sign)
                         } else {
-                            "Envelope sent for signing"
+                            str(S.desktop_ds_envelope_sent_for_signing)
                         },
                     )
                     lists.loadBoth()
@@ -563,7 +569,7 @@ internal class EditorFlow(private val store: EsignStore) {
         }
         if (bytes == null) {
             return editor.document?.copy(pageCount = maxOf(editor.document.pageCount, editor.pages.size))
-                ?: run { store.failed("Please add a document to the envelope"); null }
+                ?: run { store.failed(str(S.desktop_ds_please_add_a_document_to_the_envelope)); null }
         }
         val stored = store.orFail { store.transfer.store(fileName, "application/pdf", bytes) } ?: return null
         return stored.copy(name = fileName, pageCount = editor.pages.size, sizeBytes = bytes.size.toLong())
@@ -576,11 +582,11 @@ internal class EditorFlow(private val store: EsignStore) {
         if (store.refusesPost()) return
         EditorRules.optionFieldsMissingLabels(editor.fields).takeIf { it.isNotEmpty() }?.let { bad ->
             edit { copy(invalidFields = bad) }
-            store.failed("Fill in every option label before saving a template.")
+            store.failed(str(S.desktop_ds_fill_in_every_option_label_before_saving_a))
             return
         }
         if (!editor.hasDocument) {
-            store.failed("Please add a document first")
+            store.failed(str(S.desktop_ds_please_add_a_document_first))
             return
         }
         edit {
@@ -606,7 +612,7 @@ internal class EditorFlow(private val store: EsignStore) {
         val editor = store.current.editor ?: return
         val sheet = editor.saveAsTemplate ?: return
         if (sheet.name.isBlank()) {
-            store.failed("Give the template a name.")
+            store.failed(str(S.docusign_template_save_name_required))
             return
         }
         edit { copy(saveAsTemplate = sheet.copy(saving = true)) }
@@ -641,7 +647,11 @@ internal class EditorFlow(private val store: EsignStore) {
                         store.update {
                             copy(editor = null, page = EsignPageKind.Lists, surface = EsignSurface.Templates)
                         }
-                        store.notice(if (editor.templateId != null) "Template updated" else "Template saved")
+                        store.notice(if (editor.templateId != null) {
+                            str(S.cs_update_template_saved)
+                        } else {
+                            str(S.docusign_template_saved)
+                        })
                     } else {
                         edit { copy(saveAsTemplate = null, document = document, pendingBytes = null) }
                         store.notice("Saved as template “${sheet.name.trim()}” — find it under Templates.")

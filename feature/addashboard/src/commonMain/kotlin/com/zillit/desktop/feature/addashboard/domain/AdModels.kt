@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.addashboard.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The production side of supporting artistes: the register, the shoot day,
  * and who was on it.
@@ -11,16 +14,18 @@ package com.zillit.desktop.feature.addashboard.domain
  */
 
 /** What an artiste is booked as. The server's enum, with the web's labels. */
-enum class ArtisteCategory(val wire: String, val label: String) {
-    Chaperone("chaperone", "Chaperone"),
-    Crowd("crowd", "Crowd"),
-    FeaturedArtist("featured_artist", "Featured Artist"),
-    GeneralSa("general_sa", "General SA"),
-    PhotoDouble("photo_double", "Photo Double"),
-    SpecialAbility("special_ability", "Special Ability"),
-    StandIn("stand_in", "Stand-in"),
-    WalkOn("walk_on", "Walk-on"),
+enum class ArtisteCategory(val wire: String, private val labelKey: String) {
+    Chaperone("chaperone", S.desktop_ad_cat_chaperone),
+    Crowd("crowd", S.desktop_ad_cat_crowd),
+    FeaturedArtist("featured_artist", S.desktop_ad_cat_featured_artist),
+    GeneralSa("general_sa", S.desktop_ad_cat_general_sa),
+    PhotoDouble("photo_double", S.desktop_ad_cat_photo_double),
+    SpecialAbility("special_ability", S.desktop_ad_cat_special_ability),
+    StandIn("stand_in", S.desktop_ad_cat_stand_in),
+    WalkOn("walk_on", S.desktop_ad_cat_walk_on),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /**
@@ -37,10 +42,12 @@ enum class ArtisteCategory(val wire: String, val label: String) {
 }
 
 /** How the artiste is engaged, and therefore how they are paid. */
-enum class EngagementType(val wire: String, val label: String) {
-    DirectPaye("direct_paye", "Direct PAYE"),
-    Agency("agency", "Agency"),
+enum class EngagementType(val wire: String, private val labelKey: String) {
+    DirectPaye("direct_paye", S.desktop_ad_engagement_direct_paye),
+    Agency("agency", S.desktop_dm_agency),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /**
@@ -57,12 +64,14 @@ enum class EngagementType(val wire: String, val label: String) {
 }
 
 /** Where an artiste is in onboarding. */
-enum class ArtisteStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Pending("pending", "Pending"),
-    Verified("verified", "Verified"),
-    Blocked("blocked", "Blocked"),
+enum class ArtisteStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
+    Pending("pending", S.pending),
+    Verified("verified", S.ah_verified),
+    Blocked("blocked", S.desktop_ad_status_blocked),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): ArtisteStatus {
@@ -106,15 +115,17 @@ data class Artiste(
  * once a day is submitted it is read-only everywhere, and each editor asks
  * this rather than testing the enum itself.
  */
-enum class AdDayStatus(val wire: String, val label: String, val locked: Boolean) {
-    Draft("draft", "Draft", locked = false),
-    InProgress("in_progress", "In progress", locked = false),
-    Wrapped("wrapped", "Wrapped", locked = false),
-    Submitted("submitted", "Submitted", locked = true),
-    Approved("approved", "Approved", locked = true),
-    Published("published", "Published", locked = true),
-    Unknown("", "—", locked = false),
+enum class AdDayStatus(val wire: String, private val labelKey: String?, val locked: Boolean) {
+    Draft("draft", S.draft, locked = false),
+    InProgress("in_progress", S.in_progress, locked = false),
+    Wrapped("wrapped", S.desktop_ad_day_status_wrapped, locked = false),
+    Submitted("submitted", S.txt_submitted, locked = true),
+    Approved("approved", S.approved, locked = true),
+    Published("published", S.cs_published, locked = true),
+    Unknown("", null, locked = false),
     ;
+
+    val label: String get() = labelKey?.let { str(it) } ?: "—"
 
     companion object {
         fun from(wire: String?): AdDayStatus {
@@ -138,13 +149,15 @@ data class AdShootDay(
 }
 
 /** Whether the artiste turned up. */
-enum class AttendanceStatus(val wire: String, val label: String) {
-    Booked("booked", "Booked"),
-    Present("present", "Present"),
-    NoShow("no_show", "No show"),
-    Cancelled("cancelled", "Cancelled"),
-    Unknown("", "—"),
+enum class AttendanceStatus(val wire: String, private val labelKey: String?) {
+    Booked("booked", S.desktop_ad_attendance_booked),
+    Present("present", S.desktop_call_present),
+    NoShow("no_show", S.desktop_ad_attendance_no_show),
+    Cancelled("cancelled", S.cancelled),
+    Unknown("", null),
     ;
+
+    val label: String get() = labelKey?.let { str(it) } ?: "—"
 
     companion object {
         fun from(wire: String?): AttendanceStatus {
@@ -182,8 +195,8 @@ data class SupportingArtistDay(
     /** How they signed, for the column that says so. */
     val signMethod: String
         get() = when {
-            signStatus.equals("typed", ignoreCase = true) -> "Typed signature"
-            signStatus.equals("external_sign", ignoreCase = true) -> "External signature"
+            signStatus.equals("typed", ignoreCase = true) -> str(S.desktop_ad_typed_signature)
+            signStatus.equals("external_sign", ignoreCase = true) -> str(S.desktop_ad_external_signature)
             else -> ""
         }
 }

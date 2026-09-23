@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.invoices.domain.ApprovalChain
 import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The approval-side mutations — approve, reject, override, chase, delete —
@@ -26,7 +28,11 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(busy = false, detail = detail?.copy(acting = false)) }
-                    vm.notice(if (next >= total) "Invoice approved" else "Approved at tier $next of $total")
+                    vm.notice(if (next >= total) {
+                        str(S.desktop_inv_approved)
+                    } else {
+                        str(S.desktop_inv_approved_at_tier, next, total)
+                    })
                     vm.refresh()
                     vm.refreshDetail(invoice.id)
                 }
@@ -38,7 +44,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
         val d = vm.state.value.detail ?: return
         val reason = d.rejectReason.trim()
         if (reason.isEmpty()) {
-            vm.update { copy(error = "A rejection reason is required") }
+            vm.update { copy(error = str(S.desktop_rejection_reason_required)) }
             return
         }
         vm.update { copy(busy = true, detail = detail?.copy(acting = true)) }
@@ -51,7 +57,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
                     vm.update {
                         copy(busy = false, detail = detail?.copy(acting = false, rejecting = false, rejectReason = ""))
                     }
-                    vm.notice("Invoice rejected")
+                    vm.notice(str(S.desktop_inv_rejected))
                     vm.refresh()
                     vm.refreshDetail(d.invoice.id)
                 }
@@ -72,7 +78,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
                     ApprovalStatus.Approved,
                 )
             }
-            finish(outcome, invoice.id, "Approval chain overridden")
+            finish(outcome, invoice.id, str(S.desktop_inv_approval_chain_overridden))
         }
     }
 
@@ -81,7 +87,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
         vm.update { copy(busy = true, detail = detail?.copy(acting = true)) }
         vm.run {
             val outcome = vm.repo.patchStatus(invoice.id, InvoiceStatus.Approved, ApprovalStatus.Approved)
-            finish(outcome, invoice.id, "Approved for payment")
+            finish(outcome, invoice.id, str(S.desktop_inv_approved_for_payment))
         }
     }
 
@@ -91,7 +97,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
                 is ZillitResult.Failure -> vm.update { copy(error = r.error.localised()) }
                 is ZillitResult.Success -> {
                     vm.update { copy(chased = chased + invoice.id) }
-                    vm.notice("Reminder sent to the next approver")
+                    vm.notice(str(S.desktop_inv_reminder_sent_next_approver))
                 }
             }
         }
@@ -104,7 +110,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
             it.id in s.selected && ApprovalChain.canApprove(it, vm.tiersFor(it), s.viewer.userId)
         }
         if (rows.isEmpty()) {
-            vm.update { copy(error = "None of the selected invoices are waiting on you") }
+            vm.update { copy(error = str(S.desktop_inv_none_selected_waiting_on_you)) }
             return
         }
         vm.update { copy(busy = true) }
@@ -139,7 +145,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
                             detail = detail?.takeIf { it.invoice.id != invoice.id },
                         )
                     }
-                    vm.notice("Invoice deleted")
+                    vm.notice(str(S.desktop_inv_deleted))
                     vm.refresh()
                 }
             }

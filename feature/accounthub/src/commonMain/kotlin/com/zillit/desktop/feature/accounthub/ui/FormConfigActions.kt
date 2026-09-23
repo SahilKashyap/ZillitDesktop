@@ -8,6 +8,8 @@ import com.zillit.desktop.core.forms.FormSection
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.data.formTemplateRefreshes
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
@@ -428,10 +430,10 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
         edit { copy(saving = true) }
         vm.runResult({ vm.repo.saveFormTemplate(module, template) }, {
             edit { if (this.module == module) copy(saved = template, saving = false) else copy(saving = false) }
-            vm.update { copy(notice = "Form template saved successfully.") }
+            vm.update { copy(notice = str(S.desktop_hub_form_template_saved_successfully)) }
         }, { error ->
             edit { copy(saving = false) }
-            fail(error, "Failed to save form template.")
+            fail(error, str(S.desktop_hub_failed_to_save_form_template))
         })
     }
 
@@ -466,10 +468,10 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
                     )
                 }
             }
-            vm.update { copy(notice = "Template reset to defaults.") }
+            vm.update { copy(notice = str(S.desktop_hub_template_reset_to_defaults)) }
         }, { error ->
             edit { copy(resetting = false) }
-            fail(error, "Failed to reset template.")
+            fail(error, str(S.desktop_hub_failed_to_reset_template))
         })
     }
 
@@ -522,4 +524,6 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
 
 /** What an approver load in progress reads as, for the builder's placeholder chrome. */
 internal fun ApproverLoad.scopeLabel(state: AccountHubUiState): String =
-    if (scope == ApprovalScope.All) "All Departments" else state.departmentName(departmentId).ifBlank { "Department" }
+    if (scope == ApprovalScope.All) str(S.all_departments) else state.departmentName(departmentId).ifBlank {
+        str(S.department)
+    }

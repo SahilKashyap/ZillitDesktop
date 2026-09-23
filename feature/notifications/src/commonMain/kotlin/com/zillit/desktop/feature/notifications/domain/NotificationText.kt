@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.notifications.domain
 import com.zillit.desktop.core.common.MessageElement
 import com.zillit.desktop.core.localization.LabelKind
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The raw text-bearing fields of one notification row, before decoding.
@@ -152,7 +154,7 @@ class NotificationDecoder(
         )
 
         /** Shown in place of a body that will not decrypt — never the ciphertext. */
-        const val UNREADABLE = "This notification could not be read."
+        val UNREADABLE: String get() = str(S.desktop_notification_unreadable)
 
         private const val PATH_SEPARATOR = " : "
         private const val EVENT_TIME = "event_time"

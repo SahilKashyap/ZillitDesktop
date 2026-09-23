@@ -9,6 +9,8 @@ import com.zillit.desktop.feature.weather.domain.PlaceSuggestion
 import com.zillit.desktop.feature.weather.domain.WeatherPlace
 import com.zillit.desktop.feature.weather.domain.WeatherPlaces
 import com.zillit.desktop.feature.weather.domain.WeatherRepository
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 
@@ -177,7 +179,7 @@ class WeatherViewModel(
         /** Google's autocomplete is billed per request; a short pause folds a word into one. */
         const val SUGGEST_DEBOUNCE_MS = 300L
 
-        const val NOT_LOCATED = "Your location could not be found. Search for a city instead."
-        const val NOT_RESOLVED = "That place could not be located. Try another."
+        val NOT_LOCATED: String get() = str(S.desktop_weather_not_located)
+        val NOT_RESOLVED: String get() = str(S.desktop_weather_not_resolved)
     }
 }

@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
@@ -157,8 +159,8 @@ private fun ListModes(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> 
             onSelect = { onEvent(PageEvent.SetListMode(it)) },
         )
         DefaultViewMenu(
-            buttonText = "Set as Default",
-            description = "This view will load first every time you open the List view.",
+            buttonText = str(S.bs_set_default),
+            description = str(S.dv_list_desc),
             options = ListMode.entries,
             current = state.page.defaultListMode,
             label = { it.label },
@@ -194,10 +196,10 @@ private fun TableHead(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> 
                 )
             }
         }
-        HeadText("Day", Modifier.width(DAY_COLUMN), TextAlign.Center)
-        HeadText("Date", Modifier.width(DATE_COLUMN))
-        HeadText("Type", Modifier.width(TYPE_COLUMN))
-        HeadText("Details", Modifier.weight(1f))
+        HeadText(str(S.bs_day), Modifier.width(DAY_COLUMN), TextAlign.Center)
+        HeadText(str(S.date), Modifier.width(DATE_COLUMN))
+        HeadText(str(S.type), Modifier.width(TYPE_COLUMN))
+        HeadText(str(S.details), Modifier.weight(1f))
         if (!state.page.selecting) Box(Modifier.width(CHEVRON_COLUMN))
     }
 }
@@ -313,7 +315,7 @@ private fun DayRowLine(
             modifier = Modifier.width(DATE_COLUMN),
         )
         Box(Modifier.width(TYPE_COLUMN)) {
-            TypeChip(if (dayOff) "Day Off" else row.block.typeName, row.block.color, upper = true)
+            TypeChip(if (dayOff) str(S.desktop_day_type_day_off) else row.block.typeName, row.block.color, upper = true)
         }
         ZillitText(
             text = row.block.title.ifBlank { "—" },
@@ -375,9 +377,13 @@ private fun BlockCard(block: ScheduleBlock, state: BoxScheduleUiState, onEvent: 
             BlockCardBody(block, state, allPast)
             if (!allPast && state.mayEdit) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RowAction("Edit", ZillitIcons.Edit, onClick = { onEvent(ScheduleEvent.EditSchedule(block.id)) })
                     RowAction(
-                        "Delete Script",
+                        str(S.edit),
+                        ZillitIcons.Edit,
+                        onClick = { onEvent(ScheduleEvent.EditSchedule(block.id)) },
+                    )
+                    RowAction(
+                        str(S.bs_delete_script),
                         ZillitIcons.Trash,
                         onClick = { onEvent(ScheduleEvent.AskDeleteBlock(block.id)) },
                         danger = true,
@@ -386,8 +392,10 @@ private fun BlockCard(block: ScheduleBlock, state: BoxScheduleUiState, onEvent: 
             }
         }
         val facts = buildList {
-            if (block.createdAt > 0) add("Created: ${DiaryFormat.mediumDate(block.createdAt, state.zone)}")
-            if (block.version > 1) add("Version: ${block.version}")
+            if (block.createdAt > 0) {
+                add(str(S.desktop_fs_created_on, DiaryFormat.mediumDate(block.createdAt, state.zone)))
+            }
+            if (block.version > 1) add(str(S.desktop_bs_version_n, block.version))
         }
         if (facts.isNotEmpty()) {
             Row(
@@ -408,13 +416,13 @@ private fun RowScope.BlockCardBody(block: ScheduleBlock, state: BoxScheduleUiSta
     val days = block.sortedDays
     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TypeChip(block.typeName.ifBlank { "Unknown" }, block.color)
+            TypeChip(block.typeName.ifBlank { str(S.desktop_unknown) }, block.color)
             ZillitText(
-                "${days.size} day${if (days.size == 1) "" else "s"}",
+                str(S.desktop_bs_n_days, days.size),
                 style = ZillitTheme.typography.label,
                 color = colors.textMuted,
             )
-            if (allPast) SmallBadge("Past")
+            if (allPast) SmallBadge(str(S.desktop_bs_past))
         }
         if (block.title.isNotBlank()) {
             ZillitText(
@@ -433,7 +441,7 @@ private fun RowScope.BlockCardBody(block: ScheduleBlock, state: BoxScheduleUiSta
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             days.take(MAX_DATE_TAGS).forEach { day -> DateTag(day, state, swatchColor(block.color)) }
-            if (days.size > MAX_DATE_TAGS) SmallBadge("+${days.size - MAX_DATE_TAGS} more")
+            if (days.size > MAX_DATE_TAGS) SmallBadge(str(S.desktop_n_more, days.size - MAX_DATE_TAGS))
         }
     }
 }
@@ -498,11 +506,11 @@ private fun EntryLine(
         Box(Modifier.width(4.dp).height(54.dp).clip(RoundedCornerShape(2.dp)).background(accent))
         EntryLineText(entry, state, accent)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            RowAction("View", ZillitIcons.Eye, onClick = { onEvent(DayEvent.ViewEntry(entry.listKey)) })
+            RowAction(str(S.view), ZillitIcons.Eye, onClick = { onEvent(DayEvent.ViewEntry(entry.listKey)) })
             if (!past && state.mayEdit) {
-                RowAction("Edit", ZillitIcons.Edit, onClick = { onEvent(EntryEvent.EditEntry(entry.listKey)) })
+                RowAction(str(S.edit), ZillitIcons.Edit, onClick = { onEvent(EntryEvent.EditEntry(entry.listKey)) })
                 RowAction(
-                    "Remove",
+                    str(S.remove),
                     ZillitIcons.Trash,
                     onClick = { onEvent(EntryEvent.AskDelete(entry.listKey)) },
                     danger = true,
@@ -518,7 +526,7 @@ private fun RowScope.EntryLineText(entry: DiaryEvent, state: BoxScheduleUiState,
     val isEvent = entry.kind == DiaryKind.Event
     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         ZillitText(
-            text = if (isEvent) "EVENT" else "NOTE",
+            text = if (isEvent) str(S.desktop_bs_event_upper) else str(S.dd_label_note),
             style = ZillitTheme.typography.labelSmall.copy(
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
@@ -553,15 +561,15 @@ private fun RowScope.EntryLineText(entry: DiaryEvent, state: BoxScheduleUiState,
 private fun NothingYet(mayEdit: Boolean) {
     Column(Modifier.fillMaxWidth().padding(vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         ZillitText(
-            "No schedule days yet",
+            str(S.no_schedule_title),
             style = ZillitTheme.typography.titleMedium,
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitText(
             if (mayEdit) {
-                "Click \"Create Schedule\" to create your production schedule."
+                str(S.desktop_bs_click_create_schedule_hint)
             } else {
-                "No schedules have been created."
+                str(S.desktop_bs_no_schedules_created)
             },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
@@ -573,12 +581,12 @@ private fun NothingYet(mayEdit: Boolean) {
 private fun NothingToShow() {
     Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         ZillitText(
-            "Nothing to show",
+            str(S.desktop_nothing_to_show),
             style = ZillitTheme.typography.titleSmall,
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitText(
-            "Adjust the filter or add a schedule/event.",
+            str(S.desktop_bs_adjust_filter_or_add),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )

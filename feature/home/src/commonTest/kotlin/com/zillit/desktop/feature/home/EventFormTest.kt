@@ -377,7 +377,7 @@ class EventFormTest {
     @Test
     fun `a new draft is not an edit`() {
         assertFalse(EventDraft().isEdit)
-        assertEquals("New event", EventDraft().formTitle)
-        assertEquals("Edit event", EventDraft(id = "e1").formTitle)
+        assertEquals("New Event", EventDraft().formTitle)
+        assertEquals("Edit Event", EventDraft(id = "e1").formTitle)
     }
 }

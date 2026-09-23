@@ -40,8 +40,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.ApprovalStatusEntry
 import com.zillit.desktop.feature.callsheet.domain.HistoryEntry
+import com.zillit.desktop.feature.callsheet.domain.SheetHistory
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
 import com.zillit.desktop.feature.callsheet.domain.reminderSender
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
@@ -94,9 +97,9 @@ internal fun SheetDialogHost(state: SheetUiState, onEvent: (SheetEvent) -> Unit,
         is SheetDialog.ReminderCompose -> ReminderComposeDialog(state, dialog, onEvent)
         is SheetDialog.ReminderView -> ReminderViewDialog(state, dialog, dismiss)
         is SheetDialog.DocDistConfirm -> ConfirmModal(
-            title = "Publish to Document Distribution",
-            message = "Publish \"${dialog.fileName}\" to the Document Distribution library?",
-            confirmLabel = "Publish",
+            title = str(S.dd_publish_confirm_title),
+            message = str(S.desktop_publish_to_dd_question, dialog.fileName),
+            confirmLabel = str(S.cs_publish),
             danger = false,
             onConfirm = { onEvent(WorkflowEvent.ConfirmDocDist) },
             onCancel = dismiss,
@@ -168,7 +171,11 @@ private fun TimelineEntry(entry: HistoryEntry, last: Boolean) {
                     ) {
                         Text(entry.by, style = sheetText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
                         Text(
-                            (if (entry.stage.isNotBlank()) "${entry.stage} · " else "") + meta.label(entry.action),
+                            if (entry.stage.isNotBlank()) {
+                                "${stageLabel(entry.stage)} · " + meta.label(entry.action)
+                            } else {
+                                meta.label(entry.action)
+                            },
                             style = sheetText(10.sp, FontWeight.Medium),
                             color = meta.tint(colors.isDark),
                             modifier = Modifier
@@ -217,7 +224,7 @@ private fun TimelineEntry(entry: HistoryEntry, last: Boolean) {
                         )
                     }
                     if (entry.reason.isNotBlank()) {
-                        ReasonBox(label = "Reason:", reason = entry.reason)
+                        ReasonBox(label = str(S.reason) + ":", reason = entry.reason)
                     }
                 }
             }
@@ -255,7 +262,18 @@ private class ActionMeta(
 ) {
     fun tint(isDark: Boolean) = if (isDark) dark.first else light.first
     fun background(isDark: Boolean) = if (isDark) dark.second else light.second
-    fun label(action: String) = fixedLabel ?: action
+    fun label(action: String) = fixedLabel ?: when (action) {
+        SheetHistory.SENT_FOR_COMMENTS -> str(S.desktop_sent_for_comments_action)
+        SheetHistory.SENT_FOR_SIGNATURE -> str(S.text_send_for_signature)
+        else -> action
+    }
+}
+
+/** A round's stage — the domain's `Internal` / `Final` markers as words. */
+private fun stageLabel(stage: String): String = when (stage) {
+    SheetHistory.STAGE_INTERNAL -> str(S.desktop_stage_internal)
+    SheetHistory.STAGE_FINAL -> str(S.final_)
+    else -> stage
 }
 
 @Suppress("MagicNumber") // The web's action colours, as literals.
@@ -266,19 +284,19 @@ private fun actionMeta(action: String): ActionMeta {
             ZillitIcons.Check,
             Color(0xFF12B76A) to Color(0xFFECFDF3),
             Color(0xFF34D399) to Color(0x2E067647),
-            "Approved",
+            str(S.approved),
         )
         "rejected" in lower -> ActionMeta(
             ZillitIcons.Close,
             Color(0xFFF04438) to Color(0xFFFEF3F2),
             Color(0xFFFDA29B) to Color(0x26F04438),
-            "Rejected",
+            str(S.rejected),
         )
         "reminder" in lower -> ActionMeta(
             ZillitIcons.Bell,
             Color(0xFFB54708) to Color(0xFFFFF7ED),
             Color(0xFFFDB022) to Color(0x2EF79009),
-            "Reminder Sent",
+            str(S.docusign_resend_success),
         )
         "sent" in lower || "signature" in lower || "comment" in lower -> ActionMeta(
             ZillitIcons.Send,
@@ -290,13 +308,13 @@ private fun actionMeta(action: String): ActionMeta {
             SheetIcons.PlusCircle,
             Color(0xFF667085) to Color(0xFFF2F4F7),
             Color(0x99FFFFFF) to Color(0x14FFFFFF),
-            "Created",
+            str(S.drive_created),
         )
         "updated" in lower -> ActionMeta(
             ZillitIcons.Edit,
             Color(0xFF6941C6) to Color(0xFFF4F3FF),
             Color(0xFFB692F6) to Color(0x2E6941C6),
-            "Updated",
+            str(S.desktop_updated),
         )
         else -> ActionMeta(
             ZillitIcons.Edit,
@@ -317,7 +335,7 @@ private fun ApprovalStatusDialog(dialog: SheetDialog.ApprovalStatus, onClose: ()
         val entries = dialog.entries
         if (entries.isEmpty()) {
             Text(
-                "No approval requests found.",
+                str(S.desktop_no_approval_requests_found),
                 style = sheetText(14.sp),
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -331,7 +349,11 @@ private fun ApprovalStatusDialog(dialog: SheetDialog.ApprovalStatus, onClose: ()
             Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("$approved/${entries.size} approved", style = sheetText(12.sp), color = colors.textTertiary)
+            Text(
+                str(S.av_approval_progress, approved, entries.size),
+                style = sheetText(12.sp),
+                color = colors.textTertiary,
+            )
             Box(
                 Modifier.weight(1f).padding(horizontal = 12.dp).height(6.dp).clip(CircleShape)
                     .background(colors.sunken),
@@ -339,7 +361,7 @@ private fun ApprovalStatusDialog(dialog: SheetDialog.ApprovalStatus, onClose: ()
                 Box(Modifier.fillMaxWidth(progress).height(6.dp).background(Color(0xFF12B76A)))
             }
             Text(
-                entries.first().stage.ifBlank { "Final" },
+                stageLabel(entries.first().stage.ifBlank { SheetHistory.STAGE_FINAL }),
                 style = sheetText(12.sp, FontWeight.Medium),
                 color = colors.textPrimary,
             )
@@ -404,21 +426,21 @@ private fun StatusRow(entry: ApprovalStatusEntry) {
             if (dark) Color(0xFF34D399) else Color(0xFF12B76A),
             if (dark) Color(0x2E067647) else Color(0xFFECFDF3),
             if (dark) Color(0x6634D399) else Color(0xFFA6F4C5),
-            "Approved",
+            str(S.approved),
         )
         "REJECTED" -> Chip(
             ZillitIcons.Close,
             if (dark) Color(0xFFFDA29B) else Color(0xFFF04438),
             if (dark) Color(0x26F04438) else Color(0xFFFEF3F2),
             if (dark) Color(0x66FDA29B) else Color(0xFFFDA29B),
-            "Rejected",
+            str(S.rejected),
         )
         else -> Chip(
             ZillitIcons.Clock,
             if (dark) Color(0xFFFDB022) else Color(0xFFF79009),
             if (dark) Color(0x2EF79009) else Color(0xFFFFFAEB),
             if (dark) Color(0x66FDB022) else Color(0xFFFEDF89),
-            "Pending",
+            str(S.pending),
         )
     }
     Row(
@@ -474,7 +496,7 @@ private fun ReminderViewDialog(state: SheetUiState, dialog: SheetDialog.Reminder
     val colors = SheetTheme.colors
     val reminder = dialog.reminder
     val sender = reminderSender(state.members, reminder)
-    SheetModal("Reminder", onClose) {
+    SheetModal(str(S.reminder), onClose) {
         Row(
             Modifier.padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -499,7 +521,7 @@ private fun ReminderViewDialog(state: SheetUiState, dialog: SheetDialog.Reminder
             modifier = Modifier.padding(bottom = 8.dp),
         )
         Text(
-            reminder.message.ifBlank { "You have a pending call sheet approval. Please review it." },
+            reminder.message.ifBlank { str(S.desktop_you_have_pending_call_sheet_approval) },
             style = sheetText(14.sp),
             color = colors.textPrimary,
             modifier = Modifier
@@ -516,7 +538,7 @@ private fun ReminderViewDialog(state: SheetUiState, dialog: SheetDialog.Reminder
 @Composable
 private fun DocDistDoneDialog(dialog: SheetDialog.DocDistDone, onClose: () -> Unit) {
     val colors = SheetTheme.colors
-    SheetModal("Published.", onClose, width = 440.dp) {
+    SheetModal(str(S.dd_publish_success_title), onClose, width = 440.dp) {
         Column(
             Modifier.fillMaxWidth().heightIn(min = 120.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -529,12 +551,12 @@ private fun DocDistDoneDialog(dialog: SheetDialog.DocDistDone, onClose: () -> Un
                 Icon(ZillitIcons.Check, contentDescription = null, tint = colors.green, modifier = Modifier.size(22.dp))
             }
             Text(
-                "\"${dialog.fileName}\" was added to Document Distribution.",
+                str(S.desktop_added_to_document_distribution, dialog.fileName),
                 style = sheetText(14.sp),
                 color = colors.textSecondary,
                 textAlign = TextAlign.Center,
             )
-            SheetButton("OK", onClose, kind = ButtonKind.Accent)
+            SheetButton(str(S.ok), onClose, kind = ButtonKind.Accent)
         }
     }
 }
@@ -575,15 +597,15 @@ private fun MissingTitlesDialog(dialog: SheetDialog.MissingTitles, onEvent: (She
                 }
                 Column {
                     Text(
-                        "Section name required",
+                        str(S.desktop_section_name_required),
                         style = sheetText(16.sp, FontWeight.SemiBold),
                         color = colors.textPrimary,
                     )
                     Text(
                         if (count == 1) {
-                            "1 default section is missing a name. Add a name before saving."
+                            str(S.desktop_one_default_section_missing_name)
                         } else {
-                            "$count default sections are missing a name. Add names before saving."
+                            str(S.desktop_n_default_sections_missing_name, count)
                         },
                         style = sheetText(12.sp, lineHeight = 18.sp),
                         color = colors.textTertiary,
@@ -602,10 +624,18 @@ private fun MissingTitlesDialog(dialog: SheetDialog.MissingTitles, onEvent: (She
                             .plainClick { onEvent(DialogEvent.FixMissingTitle(item)) }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     ) {
-                        Text("Untitled section", style = sheetText(12.sp, FontWeight.SemiBold), color = colors.red)
+                        Text(
+                            str(S.desktop_untitled_section),
+                            style = sheetText(12.sp, FontWeight.SemiBold),
+                            color = colors.red,
+                        )
                         if (item.hint.isNotBlank()) {
                             Row(Modifier.padding(top = 2.dp)) {
-                                Text("First field: ", style = sheetText(12.sp), color = colors.textTertiary)
+                                Text(
+                                    str(S.desktop_first_field) + " ",
+                                    style = sheetText(12.sp),
+                                    color = colors.textTertiary,
+                                )
                                 Text(
                                     item.hint,
                                     style = sheetText(12.sp),
@@ -619,7 +649,7 @@ private fun MissingTitlesDialog(dialog: SheetDialog.MissingTitles, onEvent: (She
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.End) {
-                SheetButton("Close", { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost, fontSize = 14.sp)
+                SheetButton(str(S.close), { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost, fontSize = 14.sp)
             }
         }
     }

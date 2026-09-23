@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.email.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.ContactSource
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailContact
@@ -65,7 +67,7 @@ internal fun readSummary(row: JsonElement): EmailSummary? {
         // browser overwrites that with this value, and the two clients must
         // stack the same rows.
         threadId = calculateThreadId(id, row.headerIds("references"), row.str("in_reply_to")),
-        subject = row.str("subject") ?: "(no subject)",
+        subject = row.str("subject") ?: str(S.no_subject_parenthesis),
         from = row.str("from").orEmpty(),
         to = row.addresses("to"),
         cc = row.addresses("cc"),
@@ -94,7 +96,7 @@ internal fun readMessage(row: JsonElement): EmailMessage? {
         // The same rule the list rows are grouped by, so a message always
         // finds the conversation its row sits in.
         threadId = calculateThreadId(id, references, inReplyTo),
-        subject = row.str("subject") ?: "(no subject)",
+        subject = row.str("subject") ?: str(S.no_subject_parenthesis),
         from = row.str("from").orEmpty(),
         to = row.addresses("to"),
         cc = row.addresses("cc"),
@@ -201,7 +203,7 @@ internal fun readSignature(row: JsonElement): EmailSignature? {
 
     return EmailSignature(
         id = id,
-        title = row.str("signature_title") ?: "Untitled",
+        title = row.str("signature_title") ?: str(S.untitled),
         body = row.str("signature_body").orEmpty(),
         useForNew = row.bool("use_for_new_email"),
         useForReply = row.bool("use_for_reply_and_forward"),

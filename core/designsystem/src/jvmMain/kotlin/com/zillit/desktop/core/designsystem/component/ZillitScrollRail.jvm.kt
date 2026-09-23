@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -60,7 +62,7 @@ actual fun ZillitHorizontalScrollRail(state: ScrollState, modifier: Modifier) {
     ) {
         RailArrow(
             icon = ZillitIcons.ChevronLeft,
-            description = "Scroll left",
+            description = str(S.desktop_scroll_left),
             enabled = state.canScrollBackward,
             state = state,
             travel = stepPx,
@@ -72,7 +74,7 @@ actual fun ZillitHorizontalScrollRail(state: ScrollState, modifier: Modifier) {
         )
         RailArrow(
             icon = ZillitIcons.ChevronRight,
-            description = "Scroll right",
+            description = str(S.desktop_scroll_right),
             enabled = state.canScrollForward,
             state = state,
             travel = -stepPx,
@@ -113,7 +115,7 @@ private fun Rail(
     ) {
         RailArrow(
             icon = ZillitIcons.ChevronUp,
-            description = "Scroll up",
+            description = str(S.desktop_scroll_up),
             enabled = if (reverseLayout) state.canScrollForward else state.canScrollBackward,
             state = state,
             travel = up,
@@ -126,7 +128,7 @@ private fun Rail(
         )
         RailArrow(
             icon = ZillitIcons.ChevronDown,
-            description = "Scroll down",
+            description = str(S.desktop_scroll_down),
             enabled = if (reverseLayout) state.canScrollBackward else state.canScrollForward,
             state = state,
             travel = -up,

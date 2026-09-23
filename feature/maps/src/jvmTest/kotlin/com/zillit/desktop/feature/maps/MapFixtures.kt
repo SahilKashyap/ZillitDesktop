@@ -22,7 +22,13 @@ internal object MapFixtures {
         locationCount = 4,
         hasLocations = true,
     )
-    val pune = MapCity(id = "pune", name = "Pune", description = "Maharashtra, India", coordinates = LatLng(18.5204, 73.8567), locationCount = 2)
+    val pune = MapCity(
+        id = "pune",
+        name = "Pune",
+        description = "Maharashtra, India",
+        coordinates = LatLng(18.5204, 73.8567),
+        locationCount = 2,
+    )
     val goa = MapCity(id = "goa", name = "Goa", description = "India", coordinates = LatLng(15.2993, 74.124))
 
     val types = listOf(
@@ -32,7 +38,13 @@ internal object MapFixtures {
         LocationType("t4", "Parking", subTypes = emptyList()),
     )
 
-    val photo = MapAttachment(media = "map/1/lobby.jpg", bucket = "b", region = "r", name = "lobby.jpg", contentType = "image")
+    val photo = MapAttachment(
+        media = "map/1/lobby.jpg",
+        bucket = "b",
+        region = "r",
+        name = "lobby.jpg",
+        contentType = "image",
+    )
 
     val locations = listOf(
         MapLocation(

@@ -54,6 +54,8 @@ import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.LocalDriveCompact
 import com.zillit.desktop.feature.drive.ui.LocalDriveNow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The grid view — `DriveGridView.jsx`: a card per item, thumbnails where the file has one. */
 @Composable
@@ -164,14 +166,14 @@ private fun GridCard(
                 if (!item.isFolder) {
                     ZillitIconButton(
                         icon = ZillitIcons.Eye,
-                        contentDescription = "Open ${item.name}",
+                        contentDescription = str(S.desktop_drive_open_item, item.name),
                         onClick = { onEvent(DriveEvent.Preview(item)) },
                     )
                 }
                 if (state.viewer.may(DriveAction.Delete, item)) {
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Delete ${item.name}",
+                        contentDescription = str(S.desktop_delete_named, item.name),
                         onClick = { onEvent(DriveEvent.RequestDelete(listOf(item.ref))) },
                         tint = colors.danger,
                     )
@@ -179,7 +181,7 @@ private fun GridCard(
                 var anchor by remember { mutableStateOf(Offset.Zero) }
                 ZillitIconButton(
                     icon = ZillitIcons.MoreHorizontal,
-                    contentDescription = "More actions for ${item.name}",
+                    contentDescription = str(S.desktop_drive_more_actions_for, item.name),
                     onClick = { onEvent(DriveEvent.OpenMenu(item, anchor.x, anchor.y + MENU_DROP)) },
                     modifier = Modifier.onGloballyPositioned { anchor = it.positionInRoot() },
                 )
@@ -219,7 +221,8 @@ private fun GridCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (state.viewer.isSharedWithMe(item)) {
-                    ZillitTooltip(text = "Owned by ${item.uploadedByName.ifBlank { "Unknown" }}") {
+                    val owner = item.uploadedByName.ifBlank { str(S.desktop_unknown) }
+                    ZillitTooltip(text = str(S.desktop_drive_owned_by, owner)) {
                         ZillitAvatar(
                             name = item.uploadedByName.ifBlank { "?" },
                             userId = item.uploadedById,

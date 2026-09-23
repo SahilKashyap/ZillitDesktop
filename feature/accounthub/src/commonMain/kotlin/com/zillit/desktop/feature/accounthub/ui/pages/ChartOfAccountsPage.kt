@@ -5,6 +5,8 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.ChartView
@@ -48,11 +50,9 @@ fun ChartOfAccountsPage(
 
     HubPage {
         ZillitPageHeader(
-            eyebrow = "Setup",
-            title = "Chart of Accounts",
-            description = "The nominal taxonomy that drives Cost Report. Every line item across the platform — " +
-                "purchase orders, invoices, card receipts, cash claims, payroll — codes against this tree. " +
-                "(Budgets now live under the Budget menu item.)",
+            eyebrow = str(S.desktop_setup),
+            title = str(S.desktop_chart_of_accounts),
+            description = str(S.desktop_hub_the_nominal_taxonomy_that_drives_cost_report_every_line_item_dashes),
         )
 
         CoaUnderlineTabs(
@@ -72,8 +72,7 @@ fun ChartOfAccountsPage(
             // admin, so a silently read-only screen here reads as a bug rather
             // than as the rule it is.
             ZillitNotice(
-                text = "The chart is read-only for you — the service restricts changes to the accounts department, " +
-                    "and an admin is not exempt.",
+                text = str(S.desktop_hub_the_chart_is_read_only_for_you_the_service_restricts),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Info,
             )
@@ -89,9 +88,9 @@ fun ChartOfAccountsPage(
     ChartAccountDialog(state, onEvent)
     HubConfirmDialog(
         visible = chart.confirmDeactivate != null,
-        title = "Deactivate code",
+        title = str(S.desktop_deactivate_code),
         message = chart.confirmDeactivate?.let { "Deactivate \"${it.label("·")}\"?" }.orEmpty(),
-        confirmLabel = if (chart.deactivating) "Deactivating…" else "Deactivate",
+        confirmLabel = if (chart.deactivating) str(S.desktop_deactivating) else str(S.dm_notices_deactivate),
         loading = chart.deactivating,
         onConfirm = { onEvent(AccountHubEvent.ConfirmDeactivateAccount) },
         onDismiss = { onEvent(AccountHubEvent.DismissDeactivateAccount) },

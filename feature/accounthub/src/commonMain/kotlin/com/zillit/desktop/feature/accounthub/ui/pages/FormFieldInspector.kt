@@ -43,6 +43,8 @@ import com.zillit.desktop.core.forms.FormFieldType
 import com.zillit.desktop.core.forms.FormSection
 import com.zillit.desktop.core.forms.SelectionType
 import com.zillit.desktop.core.forms.fieldLabelFor
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.FormConfigState
@@ -76,6 +78,7 @@ internal fun FormFieldInspector(
 }
 
 /** An existing field: its badges and Remove, its name, type, source and whether it is required. */
+@Suppress("LongMethod") // One panel, read top to bottom; the order is the reading order.
 @Composable
 private fun FieldPanel(
     state: AccountHubUiState,
@@ -87,7 +90,7 @@ private fun FieldPanel(
 ) {
     val system = field.systemDefault
     SidePanel(
-        title = field.name.ifBlank { "Untitled field" },
+        title = field.name.ifBlank { str(S.desktop_untitled_field) },
         subtitle = "${section.label} — Field #${field.order}",
         onClose = { onEvent(AccountHubEvent.DismissFormField) },
         modifier = modifier,
@@ -98,26 +101,29 @@ private fun FieldPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs + 2.dp),
             ) {
-                FormBadge(if (system) "System" else "Custom", if (system) BadgeTone.System else BadgeTone.Custom)
+                FormBadge(
+                    if (system) str(S.desktop_language_system_short) else str(S.custom),
+                    if (system) BadgeTone.System else BadgeTone.Custom,
+                )
                 FormBadge(field.typeBadge, BadgeTone.Type)
                 Box(Modifier.weight(1f))
                 // One Remove for both kinds, and what it does differs by origin:
                 // a custom field is deleted, a system field only leaves this form.
                 ZillitTooltip(
                     if (system) {
-                        "Take this system field off the form — restore it from “System Fields” when adding a field"
+                        str(S.desktop_hub_take_this_system_field_off_the_form_restore_it_from)
                     } else {
-                        "Delete this custom field"
+                        str(S.desktop_hub_delete_this_custom_field)
                     },
                 ) {
                     RemoveChip(
-                        text = "Remove",
+                        text = str(S.remove),
                         description = if (system) "Take ${field.name} off the form" else "Delete ${field.name}",
                     ) { onEvent(AccountHubEvent.RemoveFormField(section.key, field.id)) }
                 }
             }
 
-            PanelField("Field Name") {
+            PanelField(str(S.desktop_field_name)) {
                 ZillitTextField(
                     value = field.name,
                     onValueChange = { onEvent(AccountHubEvent.SetFormFieldName(section.key, field.id, it)) },
@@ -126,17 +132,17 @@ private fun FieldPanel(
                 KeyHint(field.label)
             }
 
-            PanelField("Type") {
+            PanelField(str(S.type)) {
                 TypeSelect(field.type, enabled = !system) {
                     onEvent(AccountHubEvent.SetFormFieldType(section.key, field.id, it))
                 }
                 // The module's schema owns a system field's type: changing it
                 // would have the form send a date where a number is expected.
-                if (system) FieldHint("A system field's type is part of the module.")
+                if (system) FieldHint(str(S.desktop_hub_a_system_fields_type_is_part_of_the_module))
             }
 
             if (!system && field.type == FormFieldType.Select.wire) {
-                PanelField("Selection Type") {
+                PanelField(str(S.desktop_selection_type)) {
                     SelectionSelect(field.selectionType) {
                         onEvent(AccountHubEvent.SetFormFieldSelection(section.key, field.id, it))
                     }
@@ -166,7 +172,7 @@ private fun MoveToSection(
 ) {
     val sections = config.template.configurable
     if (sections.size < 2 || !state.viewer.canEdit) return
-    PanelField("Section") {
+    PanelField(str(S.desktop_section)) {
         HubSelect(
             value = section,
             options = sections,
@@ -179,7 +185,7 @@ private fun MoveToSection(
             searchable = false,
             modifier = Modifier.fillMaxWidth(),
         )
-        FieldHint("Moves this field to the end of that section.")
+        FieldHint(str(S.desktop_hub_moves_this_field_to_the_end_of_that_section))
     }
 }
 
@@ -196,22 +202,22 @@ private fun NewFieldPanel(
     val focus = remember { FocusRequester() }
     LaunchedEffect(section.key) { runCatching { focus.requestFocus() } }
     SidePanel(
-        title = if (section.isLineItems) "New Column" else "New Field",
+        title = if (section.isLineItems) str(S.desktop_new_column) else str(S.desktop_new_field),
         subtitle = section.label,
         onClose = { onEvent(AccountHubEvent.DismissFormField) },
         modifier = modifier,
     ) {
         PanelBody {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs + 2.dp)) {
-                FormBadge("Custom", BadgeTone.Custom)
+                FormBadge(str(S.custom), BadgeTone.Custom)
                 FormBadge(draft.type, BadgeTone.Type)
             }
 
-            PanelField("Field Name") {
+            PanelField(str(S.desktop_field_name)) {
                 ZillitTextField(
                     value = draft.name,
                     onValueChange = { edit(draft.copy(name = it)) },
-                    placeholder = "Enter field name...",
+                    placeholder = str(S.desktop_enter_field_name),
                     imeAction = ImeAction.Done,
                     onImeAction = { onEvent(AccountHubEvent.AddFormField) },
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
@@ -221,12 +227,12 @@ private fun NewFieldPanel(
                 KeyHint(if (draft.name.isBlank()) "…" else fieldLabelFor(draft.name))
             }
 
-            PanelField("Type") {
+            PanelField(str(S.type)) {
                 TypeSelect(draft.type, enabled = true) { edit(draft.copy(type = it)) }
             }
 
             if (draft.type == FormFieldType.Select.wire) {
-                PanelField("Selection Type") {
+                PanelField(str(S.desktop_selection_type)) {
                     SelectionSelect(draft.selectionType) { edit(draft.copy(selectionType = it)) }
                 }
             }
@@ -234,7 +240,7 @@ private fun NewFieldPanel(
             RequiredRow(draft.required) { edit(draft.copy(required = it)) }
 
             ZillitButton(
-                text = if (section.isLineItems) "Add Column" else "Add Field",
+                text = if (section.isLineItems) str(S.desktop_add_column) else str(S.add_field),
                 onClick = { onEvent(AccountHubEvent.AddFormField) },
                 enabled = draft.isReady,
                 leadingIcon = ZillitIcons.Add,
@@ -389,7 +395,7 @@ private fun SelectionSelect(selectionType: String?, onPick: (String?) -> Unit) {
         options = SelectionType.entries,
         label = { it.label },
         onSelect = { onPick(it?.wire) },
-        placeholder = "Choose selection type...",
+        placeholder = str(S.desktop_choose_selection_type),
         clearable = true,
         searchable = false,
         modifier = Modifier.fillMaxWidth(),
@@ -403,7 +409,7 @@ private fun RequiredRow(checked: Boolean, onChange: (Boolean) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "Required",
+            text = str(S.docusign_prop_required),
             style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
             modifier = Modifier.weight(1f),
         )

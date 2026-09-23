@@ -39,6 +39,8 @@ import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.LocalDriveNow
 import com.zillit.desktop.feature.drive.ui.ShareState
 import com.zillit.desktop.feature.drive.ui.ShareTab
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The share drawer — `ShareDrawer.jsx`. A file has two tabs: the per-user
@@ -50,7 +52,7 @@ internal fun ShareSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val share = state.share
     val item = share?.item
     DriveSideSheet(
-        title = if (item?.isFolder == true) "Manage access" else "Share file",
+        title = if (item?.isFolder == true) str(S.drive_btn_manage_access) else str(S.desktop_drive_share_file),
         subtitle = item?.name,
         visible = share != null,
         onDismiss = { onEvent(DriveEvent.CloseShare) },
@@ -59,12 +61,12 @@ internal fun ShareSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         actions = if (share?.tab == ShareTab.People) {
             {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(DriveEvent.CloseShare) },
                     variant = ButtonVariant.Tertiary,
                 )
                 ZillitButton(
-                    text = "Save access",
+                    text = str(S.desktop_drive_save_access),
                     onClick = { onEvent(DriveEvent.SubmitShare) },
                     loading = share.submitting,
                     enabled = !share.loading,
@@ -98,14 +100,14 @@ private fun PeopleTab(share: ShareState, state: DriveUiState, onEvent: (DriveEve
     val item = share.item
     if (!item.isFolder) {
         ZillitButton(
-            text = "Copy link (24h, view only)",
+            text = str(S.desktop_drive_copy_link_24h),
             onClick = { onEvent(DriveEvent.CopyLink(item)) },
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Copy,
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    ZillitText(text = "Select users", style = ZillitTheme.typography.titleSmall)
+    ZillitText(text = str(S.select_users), style = ZillitTheme.typography.titleSmall)
     if (share.loading) {
         Box(Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg), contentAlignment = Alignment.Center) {
             ZillitSpinner()
@@ -136,16 +138,20 @@ private fun LinkTab(share: ShareState, onEvent: (DriveEvent) -> Unit) {
         ZillitTextField(
             value = form.recipients,
             onValueChange = { onEvent(DriveEvent.ShareLinkRecipients(it)) },
-            label = "Recipients (emails, optional)",
+            label = str(S.drive_link_recipients_label),
             placeholder = "alice@example.com, bob@studio.co — or one per line",
-            helperText = "Recipients receive an email with the link. Leave blank to just generate a link to copy.",
+            helperText = str(S.drive_link_recipients_helper),
             leadingIcon = ZillitIcons.Mail,
             singleLine = false,
             enabled = !form.submitting,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             Column(Modifier.weight(1f)) {
-                ZillitText(text = "Permission", style = ZillitTheme.typography.labelSmall, color = colors.textSecondary)
+                ZillitText(
+                    text = str(S.permission),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                )
                 ZillitSelect(
                     value = form.permission,
                     options = LinkPermission.entries,
@@ -156,24 +162,32 @@ private fun LinkTab(share: ShareState, onEvent: (DriveEvent) -> Unit) {
                 )
             }
             Column(Modifier.weight(1f)) {
-                ZillitText(text = "Expires", style = ZillitTheme.typography.labelSmall, color = colors.textSecondary)
+                ZillitText(
+                    text = str(S.drive_link_expires_label),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                )
                 ZillitSelect(
                     value = EXPIRY_OPTIONS.firstOrNull { it.first == form.expiresInMillis } ?: EXPIRY_OPTIONS[1],
                     options = EXPIRY_OPTIONS,
                     onSelect = { onEvent(DriveEvent.ShareLinkExpiry(it.first)) },
-                    label = { it.second },
+                    label = { str(it.second) },
                     enabled = !form.submitting,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
         Column(Modifier.fillMaxWidth()) {
-            ZillitText(text = "Max views", style = ZillitTheme.typography.labelSmall, color = colors.textSecondary)
+            ZillitText(
+                text = str(S.drive_link_max_views_label),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textSecondary,
+            )
             ZillitSelect(
-                value = VIEW_OPTIONS.firstOrNull { it.first == form.maxViews } ?: VIEW_OPTIONS[0],
+                value = VIEW_OPTIONS.firstOrNull { it == form.maxViews } ?: VIEW_OPTIONS[0],
                 options = VIEW_OPTIONS,
-                onSelect = { onEvent(DriveEvent.ShareLinkMaxViews(it.first)) },
-                label = { it.second },
+                onSelect = { onEvent(DriveEvent.ShareLinkMaxViews(it)) },
+                label = { viewCountLabel(it) },
                 enabled = !form.submitting,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -181,20 +195,19 @@ private fun LinkTab(share: ShareState, onEvent: (DriveEvent) -> Unit) {
         ZillitTextField(
             value = form.message,
             onValueChange = { onEvent(DriveEvent.ShareLinkMessage(it)) },
-            label = "Optional message",
-            placeholder = "Hi — sharing the latest cut for review.",
+            label = str(S.drive_link_message_label),
+            placeholder = str(S.drive_link_message_hint),
             singleLine = false,
             maxLength = MESSAGE_MAX,
             enabled = !form.submitting,
         )
         ZillitText(
-            text = "Anyone who opens this link has their IP address and browser recorded — " +
-                "you can see per-link view counts below.",
+            text = str(S.desktop_drive_link_tracking_note),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
         ZillitButton(
-            text = if (form.recipients.isBlank()) "Generate link" else "Send link by email",
+            text = if (form.recipients.isBlank()) str(S.drive_link_generate) else str(S.drive_link_send_email),
             onClick = { onEvent(DriveEvent.GenerateShareLink) },
             loading = form.submitting,
             leadingIcon = ZillitIcons.Link,
@@ -203,7 +216,7 @@ private fun LinkTab(share: ShareState, onEvent: (DriveEvent) -> Unit) {
     }
 
     ZillitDivider()
-    ZillitText(text = "Active share links", style = ZillitTheme.typography.titleSmall)
+    ZillitText(text = str(S.drive_link_active_links), style = ZillitTheme.typography.titleSmall)
     when {
         form.loadingLinks -> Box(
             Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
@@ -213,7 +226,7 @@ private fun LinkTab(share: ShareState, onEvent: (DriveEvent) -> Unit) {
         }
 
         form.links.isEmpty() -> ZillitText(
-            text = "No active share links for this file yet.",
+            text = str(S.drive_link_no_active),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
@@ -241,40 +254,43 @@ private fun ActiveLinkRow(link: DriveShareLink, onEvent: (DriveEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitStatusPill(
-                label = if (link.permission == LinkPermission.View) "View only" else "View + download",
+                label = link.permission.label,
                 tone = if (link.permission == LinkPermission.View) StatusTone.Progress else StatusTone.Ready,
             )
-            if (expired) ZillitStatusPill(label = "Expired", tone = StatusTone.Pending)
+            if (expired) ZillitStatusPill(label = str(S.expired), tone = StatusTone.Pending)
             if (link.maxViews > 0) ZillitStatusPill(
-                label = "${link.viewCount}/${link.maxViews} views",
+                label = str(S.desktop_drive_views_of_max, link.viewCount, link.maxViews),
                 tone = StatusTone.Neutral,
             )
             Box(Modifier.weight(1f))
-            ZillitTooltip(text = "Copy link") {
+            ZillitTooltip(text = str(S.drive_cd_copy_link)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Copy,
-                    contentDescription = "Copy link",
+                    contentDescription = str(S.drive_cd_copy_link),
                     onClick = { onEvent(DriveEvent.CopyShareLink(link)) },
                     enabled = !expired && link.url.isNotBlank(),
                 )
             }
-            ZillitTooltip(text = "Revoke link") {
+            ZillitTooltip(text = str(S.drive_cd_revoke_link)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Revoke link",
+                    contentDescription = str(S.drive_cd_revoke_link),
                     onClick = { onEvent(DriveEvent.RevokeShareLink(link)) },
                     tint = colors.danger,
                 )
             }
         }
         ZillitText(
-            text = "Expires: " + if (link.expiresOn > 0) EpochDate.dateTime(link.expiresOn) else "Never",
+            text = str(
+                S.drive_expires_format,
+                if (link.expiresOn > 0) EpochDate.dateTime(link.expiresOn) else str(S.never),
+            ),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textSecondary,
         )
         ZillitText(
-            text = "Recipients: ${link.recipients.size}" +
-                if (link.recipients.isNotEmpty()) " · Total views: ${link.viewCount}" else "",
+            text = str(S.desktop_drive_recipients_count, link.recipients.size) +
+                if (link.recipients.isNotEmpty()) " · " + str(S.desktop_drive_total_views, link.viewCount) else "",
             style = ZillitTheme.typography.labelSmall,
             color = colors.textSecondary,
         )
@@ -292,9 +308,9 @@ private fun ActiveLinkRow(link: DriveShareLink, onEvent: (DriveEvent) -> Unit) {
                     )
                     ZillitText(
                         text = if (recipient.viewCount > 0) {
-                            "${recipient.viewCount} view${if (recipient.viewCount == 1) "" else "s"}"
+                            viewCountLabel(recipient.viewCount)
                         } else {
-                            "Not viewed"
+                            str(S.drive_link_not_viewed)
                         },
                         style = ZillitTheme.typography.labelSmall,
                         color = if (recipient.viewCount > 0) colors.success else colors.textMuted,
@@ -307,11 +323,18 @@ private fun ActiveLinkRow(link: DriveShareLink, onEvent: (DriveEvent) -> Unit) {
 
 private const val DAY_MS = 24L * 60 * 60 * 1000
 private val EXPIRY_OPTIONS = listOf(
-    DAY_MS to "24 hours",
-    7 * DAY_MS to "7 days",
-    30 * DAY_MS to "30 days",
-    0L to "Never expires",
+    DAY_MS to S.drive_link_expires_24h,
+    7 * DAY_MS to S.drive_link_expires_7d,
+    30 * DAY_MS to S.drive_link_expires_30d,
+    0L to S.drive_link_never_expires_summary,
 )
-private val VIEW_OPTIONS = listOf(0 to "Unlimited", 1 to "1 view", 3 to "3 views", 10 to "10 views")
+private val VIEW_OPTIONS = listOf(0, 1, 3, 10)
+
+/** "Unlimited", "1 view", "3 views" — the max-views options and a recipient's count. */
+private fun viewCountLabel(count: Int): String = when (count) {
+    0 -> str(S.drive_link_views_unlimited)
+    1 -> str(S.desktop_drive_view_count_one)
+    else -> str(S.desktop_drive_view_count_many, count)
+}
 private val SHARE_WIDTH = 440.dp
 private const val MESSAGE_MAX = 2000

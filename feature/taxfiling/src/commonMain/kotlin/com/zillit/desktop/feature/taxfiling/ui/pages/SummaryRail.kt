@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.TaxFormat
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
 import com.zillit.desktop.feature.taxfiling.domain.VatReturn
@@ -66,18 +68,18 @@ internal fun SummaryRail(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> U
         RailHeader(returnState)
         MtdRule()
         Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 4.dp)) {
-            RailGroup("VAT due") {
+            RailGroup(str(S.desktop_tax_vat_due)) {
                 RailLine(VatBox.DueOnSales, shown)
                 RailLine(VatBox.DueOnAcquisitions, shown)
-                RailLine(VatBox.TotalDue, shown, bold = true, sub = "Box 1 + 2")
+                RailLine(VatBox.TotalDue, shown, bold = true, sub = str(S.desktop_tax_box1_plus_2))
             }
-            RailGroup("VAT reclaimed") {
+            RailGroup(str(S.desktop_tax_vat_reclaimed)) {
                 RailLine(VatBox.ReclaimedOnPurchases, shown)
             }
         }
         NetBlock(shown)
         Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 12.dp)) {
-            RailGroup("Return totals (ex-VAT)") {
+            RailGroup(str(S.desktop_tax_return_totals)) {
                 listOf(VatBox.SalesExVat, VatBox.PurchasesExVat, VatBox.GoodsSuppliedExVat, VatBox.AcquisitionsExVat)
                     .forEach { RailLine(it, shown, muted = true) }
             }
@@ -96,14 +98,14 @@ private fun RailHeader(state: ReturnState) {
     Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "Return summary",
+                text = str(S.desktop_tax_return_summary),
                 style = mtdText(14.5.sp, FontWeight.Bold, tracking = (-0.015).em),
                 color = palette.ink,
                 modifier = Modifier.weight(1f),
             )
             if (period != null) {
                 MtdPill(
-                    text = if (period.isOpen) "Open" else "Fulfilled",
+                    text = if (period.isOpen) str(S.recce_open) else str(S.desktop_tax_fulfilled),
                     tone = if (period.isOpen) PillTone.Open else PillTone.Fulfilled,
                 )
             }
@@ -124,7 +126,7 @@ private fun RailHeader(state: ReturnState) {
             }
             if (period.due.isNotBlank()) {
                 ZillitText(
-                    text = "Due ${period.due}",
+                    text = str(S.desktop_due_on, period.due),
                     style = mtdText(12.sp),
                     color = palette.muted,
                     modifier = Modifier.padding(top = 3.dp),
@@ -164,7 +166,7 @@ private fun RailLine(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ZillitText(
-            text = "BOX ${box.number}",
+            text = str(S.desktop_tax_box_number, box.number),
             style = mtdText(10.5.sp, FontWeight.Bold, mono = true),
             color = palette.muted,
             modifier = Modifier.width(38.dp),
@@ -214,12 +216,15 @@ private fun NetBlock(shown: VatReturn?) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "BOX 5 · NET VAT",
+                text = str(S.desktop_tax_box_net_vat),
                 style = mtdEyebrow(),
                 color = palette.accentText,
                 modifier = Modifier.weight(1f),
             )
-            MtdPill(text = if (payable) "To pay" else "To reclaim", tone = PillTone.Open)
+            MtdPill(
+                text = if (payable) str(S.desktop_tax_to_pay) else str(S.desktop_tax_to_reclaim),
+                tone = PillTone.Open,
+            )
         }
         ZillitText(
             text = shown?.let { TaxFormat.gbp(kotlin.math.abs(it.netSigned)) } ?: "—",
@@ -228,7 +233,11 @@ private fun NetBlock(shown: VatReturn?) {
             modifier = Modifier.padding(top = 8.dp),
         )
         ZillitText(
-            text = "${if (payable) "Payable to HMRC" else "Reclaimable from HMRC"} · Box 3 − Box 4",
+            text = if (payable) {
+                str(S.desktop_tax_payable_to_hmrc)
+            } else {
+                str(S.desktop_tax_reclaimable_from_hmrc)
+            },
             style = mtdText(12.sp),
             color = palette.accentText,
             modifier = Modifier.padding(top = 3.dp),
@@ -249,9 +258,9 @@ private fun RailActions(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> Un
         StatusLine(returnState)
         MtdButton(
             text = when {
-                returnState.calculating -> "Calculating…"
-                returnState.draft != null -> "Recalculate from ledger"
-                else -> "Calculate from ledger"
+                returnState.calculating -> str(S.desktop_tax_calculating)
+                returnState.draft != null -> str(S.desktop_tax_recalculate_from_ledger)
+                else -> str(S.desktop_tax_calculate_from_ledger)
             },
             onClick = { onEvent(TaxFilingEvent.Calculate) },
             variant = MtdButtonVariant.Primary,
@@ -262,7 +271,7 @@ private fun RailActions(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> Un
             full = true,
         )
         MtdButton(
-            text = if (returnState.exporting) "Exporting…" else "Export ledger (.xlsx)",
+            text = if (returnState.exporting) str(S.desktop_exporting) else str(S.desktop_tax_export_ledger),
             onClick = { onEvent(TaxFilingEvent.ExportLedger) },
             variant = MtdButtonVariant.Secondary,
             size = MtdButtonSize.Large,
@@ -272,7 +281,7 @@ private fun RailActions(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> Un
             full = true,
         )
         MtdButton(
-            text = if (returnState.submitting) "Submitting…" else "Submit to HMRC",
+            text = if (returnState.submitting) str(S.ah_submitting) else str(S.desktop_tax_submit_to_hmrc),
             onClick = { onEvent(TaxFilingEvent.AskSubmit) },
             variant = MtdButtonVariant.Green,
             size = MtdButtonSize.Large,
@@ -300,9 +309,13 @@ private fun ConnectNowLine(connecting: Boolean, canReachAuthority: Boolean, onCo
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitText(text = "Connect to HMRC to submit. ", style = mtdText(12.sp), color = palette.ink3)
         ZillitText(
-            text = if (connecting) "Connecting…" else "Connect now",
+            text = str(S.desktop_tax_connect_to_submit) + " ",
+            style = mtdText(12.sp),
+            color = palette.ink3,
+        )
+        ZillitText(
+            text = if (connecting) str(S.desktop_connecting_ellipsis) else str(S.desktop_tax_connect_now),
             style = mtdText(12.sp, FontWeight.SemiBold),
             color = palette.accent,
             modifier = Modifier.clickable(
@@ -327,10 +340,10 @@ private fun StatusLine(state: ReturnState) {
         )
         ZillitText(
             text = when {
-                state.period == null -> "Select an obligation period to calculate."
-                stale -> "Mapping changed — recalculate before submitting."
-                state.draft != null -> "Calculated just now from the ledger"
-                else -> "Calculate to fill from the ledger"
+                state.period == null -> str(S.desktop_tax_status_select_period)
+                stale -> str(S.desktop_tax_status_stale)
+                state.draft != null -> str(S.desktop_tax_status_calculated)
+                else -> str(S.desktop_tax_status_calculate)
             },
             style = mtdText(11.5.sp, if (stale) FontWeight.SemiBold else FontWeight.Normal),
             color = if (stale) palette.amber else palette.muted,

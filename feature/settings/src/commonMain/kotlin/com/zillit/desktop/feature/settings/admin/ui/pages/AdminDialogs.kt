@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.domain.CompanyField
 import com.zillit.desktop.feature.settings.admin.domain.CrewMember
 import com.zillit.desktop.feature.settings.admin.domain.Department
@@ -71,15 +73,15 @@ private fun NameDialog(form: AdminForm.Name, state: AdminUiState, onEvent: (Admi
                 state = state,
                 submittable = form.isValid,
                 onEvent = onEvent,
-                submitLabel = if (form.isRename) "Rename" else "Add",
+                submitLabel = if (form.isRename) str(S.rename) else str(S.add),
             )
         },
     ) {
         ZillitTextField(
             value = form.value,
             onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.Name, it)) },
-            label = "Name",
-            placeholder = "At least three characters",
+            label = str(S.name),
+            placeholder = str(S.desktop_at_least_three_characters),
             errorText = form.error,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -94,17 +96,17 @@ private fun ProductionNameDialog(
     onEvent: (AdminEvent) -> Unit,
 ) {
     ZillitDialogShell(
-        title = "Rename this project",
-        subtitle = "Everyone on it sees the new name.",
+        title = str(S.desktop_rename_this_project),
+        subtitle = str(S.desktop_rename_project_subtitle),
         visible = true,
         onDismiss = { onEvent(AdminEvent.CloseForm) },
-        actions = { FormActions(state, form.isValid, onEvent, submitLabel = "Rename") },
+        actions = { FormActions(state, form.isValid, onEvent, submitLabel = str(S.rename)) },
     ) {
         ZillitTextField(
             value = form.value,
             onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.Name, it)) },
-            label = "Project name",
-            helperText = "Three to twenty-five characters.",
+            label = str(S.project_name),
+            helperText = str(S.desktop_three_to_twenty_five_characters),
             errorText = form.error,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -130,23 +132,23 @@ private fun PreApprovalDialog(
     val department = state.departments.firstOrNull { it.id == form.departmentId }
 
     ZillitDialogShell(
-        title = "Pre-approve someone",
-        subtitle = "They join with the project code and skip the approval queue.",
+        title = str(S.desktop_pre_approve_someone),
+        subtitle = str(S.desktop_pre_approve_subtitle),
         visible = true,
         onDismiss = { onEvent(AdminEvent.CloseForm) },
-        actions = { FormActions(state, form.isValid, onEvent, submitLabel = "Pre-approve") },
+        actions = { FormActions(state, form.isValid, onEvent, submitLabel = str(S.desktop_pre_approve)) },
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitTextField(
                 value = form.firstName,
                 onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.FirstName, it)) },
-                label = "First name",
+                label = str(S.first_name_label),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = form.lastName,
                 onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.LastName, it)) },
-                label = "Last name",
+                label = str(S.last_name_label),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -174,8 +176,8 @@ private fun PreApprovalDialog(
         ZillitTextField(
             value = form.email,
             onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.Email, it)) },
-            label = "Email",
-            helperText = "Optional.",
+            label = str(S.email),
+            helperText = str(S.desktop_optional_dot),
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -183,15 +185,15 @@ private fun PreApprovalDialog(
             ZillitTextField(
                 value = form.countryCode,
                 onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.CountryCode, it)) },
-                label = "Code",
+                label = str(S.code),
                 placeholder = "+44",
                 modifier = Modifier.width(CODE_WIDTH),
             )
             ZillitTextField(
                 value = form.phone,
                 onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.Phone, it)) },
-                label = "Phone",
-                helperText = "Optional, but a number needs its country code.",
+                label = str(S.phone),
+                helperText = str(S.desktop_phone_optional_with_country_code),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -208,12 +210,12 @@ private fun SosDialog(form: AdminForm.Sos, state: AdminUiState, onEvent: (AdminE
 
     ZillitDialogShell(
         title = when (draft.entryType) {
-            SosEntryType.Crew -> "Alert someone on the crew"
-            SosEntryType.Outsider -> "Alert someone outside the project"
+            SosEntryType.Crew -> str(S.desktop_alert_someone_on_crew)
+            SosEntryType.Outsider -> str(S.desktop_alert_someone_outside)
         },
         visible = true,
         onDismiss = { onEvent(AdminEvent.CloseForm) },
-        actions = { FormActions(state, draft.isComplete, onEvent, submitLabel = "Add recipient") },
+        actions = { FormActions(state, draft.isComplete, onEvent, submitLabel = str(S.docusign_add_recipient_title)) },
     ) {
         when (draft.entryType) {
             SosEntryType.Crew -> {
@@ -228,7 +230,7 @@ private fun SosDialog(form: AdminForm.Sos, state: AdminUiState, onEvent: (AdminE
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ZillitText(
-                    text = "Their number comes from their profile, so it stays right when they change it.",
+                    text = str(S.desktop_number_from_profile),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -238,14 +240,14 @@ private fun SosDialog(form: AdminForm.Sos, state: AdminUiState, onEvent: (AdminE
                 ZillitTextField(
                     value = draft.name,
                     onValueChange = { onEvent(AdminEvent.SosDraftChanged(draft.copy(name = it))) },
-                    label = "Name",
+                    label = str(S.name),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ZillitTextField(
                     value = draft.relationship,
                     onValueChange = { onEvent(AdminEvent.SosDraftChanged(draft.copy(relationship = it))) },
-                    label = "Relationship to the project",
-                    placeholder = "Unit nurse, local fixer, hospital",
+                    label = str(S.desktop_relationship_to_project),
+                    placeholder = str(S.desktop_relationship_placeholder),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -254,15 +256,15 @@ private fun SosDialog(form: AdminForm.Sos, state: AdminUiState, onEvent: (AdminE
                         onValueChange = {
                             onEvent(AdminEvent.SosDraftChanged(draft.copy(countryCode = it)))
                         },
-                        label = "Code",
+                        label = str(S.code),
                         placeholder = "+44",
                         modifier = Modifier.width(CODE_WIDTH),
                     )
                     ZillitTextField(
                         value = draft.phone,
                         onValueChange = { onEvent(AdminEvent.SosDraftChanged(draft.copy(phone = it))) },
-                        label = "Phone",
-                        helperText = "Five to twenty digits.",
+                        label = str(S.phone),
+                        helperText = str(S.desktop_five_to_twenty_digits),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -290,23 +292,23 @@ private fun CompanyDialog(
     val draft = form.draft
 
     ZillitDialogShell(
-        title = "Company details",
-        subtitle = "Printed at the head of the crew list.",
+        title = str(S.company_details),
+        subtitle = str(S.desktop_company_details_subtitle),
         visible = true,
         onDismiss = { onEvent(AdminEvent.CloseForm) },
         width = WIDE_DIALOG,
-        actions = { FormActions(state, submittable = true, onEvent, submitLabel = "Save details") },
+        actions = { FormActions(state, submittable = true, onEvent, submitLabel = str(S.dm_nda_fill_save)) },
     ) {
         ZillitTextField(
             value = draft.name,
             onValueChange = { onEvent(AdminEvent.CompanyDraftChanged(draft.copy(name = it))) },
-            label = "Company name",
+            label = str(S.company_name),
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
             value = draft.address,
             onValueChange = { onEvent(AdminEvent.CompanyDraftChanged(draft.copy(address = it))) },
-            label = "Address",
+            label = str(S.address),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -315,7 +317,7 @@ private fun CompanyDialog(
             onValueChange = {
                 onEvent(AdminEvent.CompanyDraftChanged(draft.copy(registeredAddress = it)))
             },
-            label = "Registered address",
+            label = str(S.company_registered_address),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -325,21 +327,21 @@ private fun CompanyDialog(
                 onValueChange = {
                     onEvent(AdminEvent.CompanyDraftChanged(draft.copy(countryCode = it)))
                 },
-                label = "Code",
+                label = str(S.code),
                 placeholder = "+44",
                 modifier = Modifier.width(CODE_WIDTH),
             )
             ZillitTextField(
                 value = draft.phone,
                 onValueChange = { onEvent(AdminEvent.CompanyDraftChanged(draft.copy(phone = it))) },
-                label = "Phone",
+                label = str(S.phone),
                 modifier = Modifier.weight(1f),
             )
         }
         ZillitTextField(
             value = draft.email,
             onValueChange = { onEvent(AdminEvent.CompanyDraftChanged(draft.copy(email = it))) },
-            label = "Email",
+            label = str(S.email),
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
@@ -347,7 +349,7 @@ private fun CompanyDialog(
             onValueChange = {
                 onEvent(AdminEvent.CompanyDraftChanged(draft.copy(companyNumber = it)))
             },
-            label = "Company number",
+            label = str(S.company_number),
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -368,7 +370,7 @@ private fun CompanyDialog(
 private fun CustomFields(fields: List<CompanyField>, onEvent: (AdminEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         ZillitText(
-            text = "Extra lines",
+            text = str(S.desktop_extra_lines),
             style = ZillitTheme.typography.label,
             color = ZillitTheme.colors.textMuted,
         )
@@ -387,7 +389,7 @@ private fun CustomFields(fields: List<CompanyField>, onEvent: (AdminEvent) -> Un
                             ),
                         )
                     },
-                    placeholder = "Label",
+                    placeholder = str(S.ah_lbl_title),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitTextField(
@@ -399,12 +401,12 @@ private fun CustomFields(fields: List<CompanyField>, onEvent: (AdminEvent) -> Un
                             ),
                         )
                     },
-                    placeholder = "Value",
+                    placeholder = str(S.ah_addl_value_hint),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Remove this line",
+                    contentDescription = str(S.desktop_remove_this_line),
                     onClick = {
                         onEvent(
                             AdminEvent.CustomFieldsChanged(
@@ -417,7 +419,7 @@ private fun CustomFields(fields: List<CompanyField>, onEvent: (AdminEvent) -> Un
         }
 
         ZillitButton(
-            text = "Add a line",
+            text = str(S.desktop_add_a_line),
             onClick = { onEvent(AdminEvent.CustomFieldsChanged(fields + CompanyField("", ""))) },
             variant = ButtonVariant.Tertiary,
             size = com.zillit.desktop.core.designsystem.component.ButtonSize.Small,
@@ -443,7 +445,7 @@ private fun ConfirmationDialog(state: AdminUiState, onEvent: (AdminEvent) -> Uni
         icon = ZillitIcons.Warning,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AdminEvent.DismissConfirmation) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -473,10 +475,10 @@ private fun FormActions(
     state: AdminUiState,
     submittable: Boolean,
     onEvent: (AdminEvent) -> Unit,
-    submitLabel: String = "Add",
+    submitLabel: String = str(S.add),
 ) {
     ZillitButton(
-        text = "Cancel",
+        text = str(S.cancel),
         onClick = { onEvent(AdminEvent.CloseForm) },
         variant = ButtonVariant.Tertiary,
         enabled = !state.isSaving,
@@ -499,9 +501,9 @@ private fun ErrorLine(message: String) {
 }
 
 /** The "nothing chosen" options, so a picker never opens on a real value. */
-private val NO_DEPARTMENT = Department(id = "", name = "Choose a department")
-private val NO_JOB_TITLE = JobTitle(id = "", name = "Choose a job title")
-private val NO_CREW = CrewMember(userId = "", fullName = "Choose someone")
+private val NO_DEPARTMENT: Department get() = Department(id = "", name = str(S.desktop_choose_a_department))
+private val NO_JOB_TITLE: JobTitle get() = JobTitle(id = "", name = str(S.desktop_choose_a_job_title))
+private val NO_CREW: CrewMember get() = CrewMember(userId = "", fullName = str(S.desktop_choose_someone))
 
 private val CODE_WIDTH = 96.dp
 private val WIDE_DIALOG = 560.dp

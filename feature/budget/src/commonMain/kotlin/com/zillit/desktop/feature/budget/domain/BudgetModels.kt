@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.budget.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Which budget a document belongs to.
  *
@@ -28,9 +31,12 @@ enum class BudgetType(val wire: String) {
  * versions, or a department directory first), the tool the rooms are listed
  * under, and which rights row gates posting.
  */
-enum class BudgetMode(val type: BudgetType, val tool: String, val title: String) {
-    Main(BudgetType.Main, BudgetViewer.MAIN_TOOL, "Budget (Full)"),
-    Department(BudgetType.Department, BudgetViewer.DEPARTMENT_TOOL, "Budget (Department)"),
+enum class BudgetMode(val type: BudgetType, val tool: String, private val titleKey: String) {
+    Main(BudgetType.Main, BudgetViewer.MAIN_TOOL, S.budget_full),
+    Department(BudgetType.Department, BudgetViewer.DEPARTMENT_TOOL, S.department_budget),
+    ;
+
+    val title: String get() = str(titleKey)
 }
 
 /** The file a budget document carries — the same attachment shape chat and the boards use. */
@@ -92,9 +98,12 @@ data class BudgetMembers(
 )
 
 /** What the counts endpoint counts. */
-enum class BudgetActivity(val wire: String, val title: String) {
-    View("view", "View count"),
-    Download("download", "Download count"),
+enum class BudgetActivity(val wire: String, private val titleKey: String) {
+    View("view", S.view_count),
+    Download("download", S.download_count),
+    ;
+
+    val title: String get() = str(titleKey)
 }
 
 /** One row of "who has viewed / downloaded" — `{user_id, view_count, download_count}`. */

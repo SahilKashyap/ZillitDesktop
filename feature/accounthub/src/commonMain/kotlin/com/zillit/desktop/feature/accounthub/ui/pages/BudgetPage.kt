@@ -52,6 +52,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BudgetFigures
 import com.zillit.desktop.feature.accounthub.domain.BudgetItem
 import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
@@ -91,13 +93,15 @@ fun BudgetPage(
 
     HubPage {
         ZillitPageHeader(
-            eyebrow = "Setup",
-            title = "Budget",
-            description = "Versioned project budgets that hang off the Chart of Accounts and drive Cost Report. " +
-                "Import a budget file (PDF / Excel) to extract every code + amount as a draft version.",
+            eyebrow = str(S.desktop_setup),
+            title = str(S.budget_text),
+            description = str(S.desktop_hub_versioned_project_budgets_that_hang_off_the_chart_of_accounts),
         )
         when {
-            budget.loading && budget.versions.isEmpty() -> LoadingPanel("Loading budgets…", Modifier.weight(1f))
+            budget.loading && budget.versions.isEmpty() -> LoadingPanel(
+                str(S.desktop_loading_budgets),
+                Modifier.weight(1f),
+            )
             budget.versions.isEmpty() -> EmptyBudgets(canEdit, onEvent)
             else -> {
                 VersionsTitle(state, canEdit, onEvent)
@@ -140,7 +144,7 @@ private fun VersionsTitle(state: AccountHubUiState, canEdit: Boolean, onEvent: (
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitText(
-            text = "Budget Versions",
+            text = str(S.desktop_budget_versions),
             style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
         )
         ZillitText(
@@ -151,14 +155,14 @@ private fun VersionsTitle(state: AccountHubUiState, canEdit: Boolean, onEvent: (
         )
         ZillitIconButton(
             icon = ZillitIcons.Reload,
-            contentDescription = "Refresh",
+            contentDescription = str(S.refresh_text),
             onClick = { onEvent(AccountHubEvent.Refresh) },
         )
         if (state.budget.loading) ZillitSpinner(size = SMALL_SPINNER)
         Spacer(Modifier.weight(1f))
         if (canEdit) {
             ZillitButton(
-                text = "Import Budget",
+                text = str(S.desktop_import_budget),
                 onClick = { onEvent(AccountHubEvent.OpenBudgetImport) },
                 leadingIcon = ZillitIcons.Upload,
             )
@@ -210,7 +214,7 @@ private fun VersionCard(version: BudgetVersion, selected: Boolean, symbol: Strin
                 if (version.status.isLocked) {
                     ZillitIcon(
                         icon = ZillitIcons.Lock,
-                        contentDescription = "Read-only",
+                        contentDescription = str(S.desktop_read_only),
                         tint = colors.textMuted,
                         size = LOCK,
                     )
@@ -219,7 +223,7 @@ private fun VersionCard(version: BudgetVersion, selected: Boolean, symbol: Strin
                 StatusPill(version.status)
             }
             ZillitText(
-                text = version.name.ifBlank { "Untitled budget" },
+                text = version.name.ifBlank { str(S.desktop_untitled_budget) },
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -323,9 +327,12 @@ private fun VersionDetail(
             ColumnHeads(columns)
             Divider()
             when {
-                budget.linesLoading && tree.isEmpty -> LoadingPanel("Loading budget lines…", Modifier.weight(1f))
+                budget.linesLoading && tree.isEmpty -> LoadingPanel(
+                    str(S.desktop_loading_budget_lines),
+                    Modifier.weight(1f),
+                )
                 tree.isEmpty -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    FieldHint("This budget has no line items yet.")
+                    FieldHint(str(S.desktop_hub_this_budget_has_no_line_items_yet))
                 }
                 else -> ZillitLazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     items(items, key = { it.key }) { item ->
@@ -384,7 +391,7 @@ private fun DetailHeader(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitText(
-                    text = version.name.ifBlank { "Untitled budget" },
+                    text = version.name.ifBlank { str(S.desktop_untitled_budget) },
                     style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -401,7 +408,7 @@ private fun DetailHeader(
         }
         if (canOpenDocuments && version.attachment != null) {
             ZillitButton(
-                text = "View file",
+                text = str(S.desktop_view_file),
                 onClick = { onEvent(AccountHubEvent.OpenBudgetFile) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -440,7 +447,7 @@ private fun HeaderTotal(total: String) {
             modifier = Modifier.padding(start = ZillitTheme.spacing.md),
             horizontalAlignment = Alignment.End,
         ) {
-            MonoLabel("Total")
+            MonoLabel(str(S.asset_total))
             ZillitText(
                 text = total,
                 style = ZillitTheme.typography.titleMedium.copy(
@@ -460,10 +467,10 @@ private fun ColumnHeads(columns: BudgetColumns) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MonoLabel("Account", Modifier.width(columns.code))
-        MonoLabel("Name", Modifier.weight(1f))
-        Box(Modifier.width(columns.amount), contentAlignment = Alignment.CenterEnd) { MonoLabel("Amount") }
-        columns.allocation?.let { MonoLabel("Allocation", Modifier.width(it)) }
+        MonoLabel(str(S.ah_account_label), Modifier.width(columns.code))
+        MonoLabel(str(S.name), Modifier.weight(1f))
+        Box(Modifier.width(columns.amount), contentAlignment = Alignment.CenterEnd) { MonoLabel(str(S.amount)) }
+        columns.allocation?.let { MonoLabel(str(S.desktop_allocation), Modifier.width(it)) }
     }
 }
 
@@ -506,7 +513,7 @@ private fun LineRow(
                         Modifier.clickable(
                             interactionSource = interaction,
                             indication = null,
-                            onClickLabel = if (item.open) "Collapse" else "Expand",
+                            onClickLabel = if (item.open) str(S.desktop_collapse) else str(S.desktop_expand),
                         ) { onToggle(node.id) }
                     } else {
                         Modifier
@@ -670,7 +677,7 @@ private fun OrphanHeading(count: Int) {
                 style = TRACKED_LABEL,
                 color = colors.warning,
             )
-            FieldHint("Lines whose parent is not in this version.")
+            FieldHint(str(S.desktop_hub_lines_whose_parent_is_not_in_this_version))
         }
         Divider()
     }
@@ -734,12 +741,11 @@ private fun EmptyBudgets(canEdit: Boolean, onEvent: (AccountHubEvent) -> Unit) {
             ZillitIcon(icon = ZillitIcons.BarChart, tint = colors.accent, size = EMPTY_ICON)
         }
         ZillitText(
-            text = "No budget versions yet",
+            text = str(S.desktop_hub_no_budget_versions_yet),
             style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
         )
         ZillitText(
-            text = "Upload a budget file (PDF / Excel) and we'll extract every Chart of Accounts code + amount, " +
-                "creating a draft version you can review.",
+            text = str(S.desktop_hub_upload_a_budget_file_pdf_excel_and_well_extract_every),
             style = ZillitTheme.typography.bodyMedium,
             color = colors.textSecondary,
             textAlign = TextAlign.Center,
@@ -747,7 +753,7 @@ private fun EmptyBudgets(canEdit: Boolean, onEvent: (AccountHubEvent) -> Unit) {
         )
         if (canEdit) {
             ZillitButton(
-                text = "Import Budget",
+                text = str(S.desktop_import_budget),
                 onClick = { onEvent(AccountHubEvent.OpenBudgetImport) },
                 leadingIcon = ZillitIcons.Upload,
             )
@@ -765,7 +771,7 @@ private fun SelectPrompt(modifier: Modifier) {
             .padding(vertical = EMPTY_PADDING),
         contentAlignment = Alignment.Center,
     ) {
-        FieldHint("Select a version to inspect.")
+        FieldHint(str(S.desktop_hub_select_a_version_to_inspect))
     }
 }
 

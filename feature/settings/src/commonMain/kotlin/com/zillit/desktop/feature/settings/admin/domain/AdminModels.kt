@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.settings.admin.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Everything the administration pages read and write.
  *
@@ -385,9 +388,12 @@ data class DeletionSchedule(
  * tools, and the write route carries the section in its path — so a row cannot
  * be saved without knowing which one it came from.
  */
-enum class RightsSection(val wire: String, val label: String) {
-    Home("home", "Dashboard"),
-    Tools("tools", "Film tools"),
+enum class RightsSection(val wire: String, private val labelKey: String) {
+    Home("home", S.dashboard),
+    Tools("tools", S.recce_breadcrumb),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -450,10 +456,13 @@ data class ToolRights(
 }
 
 /** The three rights a grid cell can grant. `access_type` on the wire. */
-enum class AccessType(val wire: String, val label: String) {
-    View("view", "View"),
-    Post("post", "Post"),
-    Download("download", "Download"),
+enum class AccessType(val wire: String, private val labelKey: String) {
+    View("view", S.view),
+    Post("post", S.txt_post),
+    Download("download", S.download),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**

@@ -34,6 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.authoring.RateResolve
 import com.zillit.desktop.feature.dealmemo.domain.authoring.RateTables
@@ -58,14 +60,32 @@ import kotlinx.serialization.json.JsonObject
 @Composable
 internal fun OvertimeCard(builder: BuilderState, view: RatesView, onEvent: (DealMemoEvent) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    CollapsibleBlock("Overtime Structure", open, { open = !open }, tag = view.otLabel, tone = BuilderTone.Gold) {
+    CollapsibleBlock(
+        str(S.dm_rates_card_overtime_structure),
+        open,
+        { open = !open },
+        tag = view.otLabel,
+        tone = BuilderTone.Gold,
+    ) {
         RefFrame {
             PayRulesRow(builder, view, onEvent)
             view.sections.overtime?.note?.let { NoteBar(it) }
             ContractedRates(builder, view)
             OvertimesTable(view)
-            RuleTable("Premiums", view.sections.premiums, "Trigger", view.sym, rateColor = null)
-            RuleTable("Turnarounds", view.sections.turnaround, "Condition", view.sym, rateColor = bp.teal)
+            RuleTable(
+                str(S.dm_rates_premiums),
+                view.sections.premiums,
+                str(S.desktop_dm_trigger),
+                view.sym,
+                rateColor = null,
+            )
+            RuleTable(
+                str(S.dm_rates_turnarounds),
+                view.sections.turnaround,
+                str(S.av_condition),
+                view.sym,
+                rateColor = bp.teal,
+            )
         }
     }
 }
@@ -75,19 +95,28 @@ internal fun OvertimeCard(builder: BuilderState, view: RatesView, onEvent: (Deal
 private fun PayRulesRow(builder: BuilderState, view: RatesView, onEvent: (DealMemoEvent) -> Unit) {
     val p = bp
     val form = builder.form
-    val source = if (view.nonUnion) "project pay breakdown" else "agreement"
+    val source = if (view.nonUnion) str(S.desktop_dm_project_pay_breakdown) else str(S.desktop_dm_agreement_lower)
     Row(
         modifier = Modifier.fillMaxWidth().bottomRule(p.tableRule).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            ZillitText(text = "Pay rules for this deal", style = DmType.sans(12.sp, FontWeight.SemiBold), color = p.ink)
+            ZillitText(
+                text = str(S.desktop_dm_pay_rules_for_this_deal),
+                style = DmType.sans(12.sp, FontWeight.SemiBold),
+                color = p.ink,
+            )
             ZillitText(
                 text = if (form.flag("rulesCustomized")) {
-                    "Customised for this deal — timecard pay uses these rates. The $source itself is unchanged."
+                    str(S.desktop_dm_rules_customised_note, source)
                 } else {
-                    "Inheriting the ${if (view.nonUnion) "project pay breakdown" else "published agreement"} verbatim."
+                    str(
+                        S.desktop_dm_rules_inheriting_note,
+                        if (view.nonUnion) str(S.desktop_dm_project_pay_breakdown) else str(
+                            S.desktop_dm_published_agreement,
+                        ),
+                    )
                 },
                 style = DmType.sans(10.5.sp).copy(lineHeight = 14.sp),
                 color = p.muted,
@@ -95,9 +124,11 @@ private fun PayRulesRow(builder: BuilderState, view: RatesView, onEvent: (DealMe
             )
         }
         if (RuleAuthoring.changedSinceSave(form, builder.savedRules)) {
-            SmallRuleButton("Reset", accent = false) { onEvent(BuilderEvent.ConfirmResetRules(open = true)) }
+            SmallRuleButton(str(S.dm_filter_reset), accent = false) {
+                onEvent(BuilderEvent.ConfirmResetRules(open = true))
+            }
         }
-        SmallRuleButton("Edit rules", accent = true) { onEvent(BuilderEvent.OpenRules) }
+        SmallRuleButton(str(S.dm_rules_edit), accent = true) { onEvent(BuilderEvent.OpenRules) }
     }
 }
 
@@ -138,11 +169,18 @@ private fun ContractedRates(builder: BuilderState, view: RatesView) {
     val hourly = view.effective.hourly?.base?.let(Js::toNumber)
         ?: Js.toNumber(hours)?.takeIf { view.dayRate != 0.0 }?.let { view.dayRate / it }
     val hourlyText = hourly?.let { "$sym${RateFormat.groupAmount(it)}/hr" } ?: "—"
-    SectionHeader("Basic Contracted Rates", note = null, topRule = view.sections.overtime?.note != null)
-    HeaderRow(listOf("Description", "Contracted Hrs", "Multiplier", "Rate ($sym/hr)"))
+    SectionHeader(str(S.dm_rates_basic_contracted), note = null, topRule = view.sections.overtime?.note != null)
+    HeaderRow(
+        listOf(
+            str(S.dm_docs_description_hint),
+            str(S.desktop_dm_contracted_hrs),
+            str(S.desktop_dm_multiplier),
+            str(S.desktop_dm_rate_per_hour_header, sym),
+        ),
+    )
     val special = specialDepartment(form, view.agreement)
     TableRow(last = special == null) {
-        Cell { CellText("Contracted Hours", p.ink) }
+        Cell { CellText(str(S.desktop_dm_contracted_hours), p.ink) }
         Cell { CellText("${Js.text(hours)}h", p.ink2, mono = true) }
         Cell { CellText("×1.0", p.gold, mono = true) }
         Cell { CellText(hourlyText, p.teal, mono = true) }
@@ -150,8 +188,8 @@ private fun ContractedRates(builder: BuilderState, view: RatesView) {
     special?.let { (extraHours, multiplier) ->
         TableRow(last = true) {
             Cell {
-                CellText("Additional Contracted Hour", p.ink)
-                SubText("Special Department (${Js.text(hours)}+$extraHours)")
+                CellText(str(S.desktop_dm_additional_contracted_hour), p.ink)
+                SubText(str(S.desktop_dm_special_department_hours, Js.text(hours), extraHours))
             }
             Cell { CellText("${extraHours}h", p.ink2, mono = true) }
             Cell { CellText("×$multiplier", p.gold, mono = true) }
@@ -182,7 +220,7 @@ private fun OvertimesTable(view: RatesView) {
     val p = bp
     val sym = view.sym
     SectionHeader(
-        "Overtimes",
+        str(S.dm_rates_overtimes),
         note = null,
         topRule = view.sections.overtime?.note != null || Js.truthy(view.effective.daily?.hours),
     )
@@ -190,9 +228,9 @@ private fun OvertimesTable(view: RatesView) {
     if (lines.isEmpty()) {
         ZillitText(
             text = if (view.agreementLoading) {
-                "Loading overtime structure…"
+                str(S.desktop_dm_loading_overtime_structure)
             } else {
-                "No overtime rows published for this agreement."
+                str(S.desktop_dm_no_overtime_rows_published_for_this_agreement)
             },
             style = DmType.sans(12.sp).copy(fontStyle = FontStyle.Italic),
             color = p.muted,
@@ -200,7 +238,14 @@ private fun OvertimesTable(view: RatesView) {
         )
         return
     }
-    HeaderRow(listOf("Band", "Multiplier", "Min ($sym/hr)", "Max ($sym/hr)"))
+    HeaderRow(
+        listOf(
+            str(S.desktop_dm_band),
+            str(S.desktop_dm_multiplier),
+            str(S.desktop_dm_min_per_hour_header, sym),
+            str(S.desktop_dm_max_per_hour_header, sym),
+        ),
+    )
     lines.forEachIndexed { index, line ->
         TableRow(last = index == lines.lastIndex) {
             Cell {
@@ -221,7 +266,7 @@ private fun RuleTable(title: String, section: RuleSection?, trigger: String, sym
     if (rows.isEmpty()) return
     val p = bp
     SectionHeader(title, note = section?.note, topRule = true)
-    HeaderRow(listOf("Description", trigger, "Rate"))
+    HeaderRow(listOf(str(S.dm_docs_description_hint), trigger, str(S.dm_allow_rate)))
     rows.forEachIndexed { index, row ->
         val applies = AgreementFormat.trigger(AgreementFormat.primaryTrigger(row))
         TableRow(last = index == rows.lastIndex) {
@@ -247,9 +292,15 @@ internal fun FringesCard(view: RatesView, pkg: JsonObject) {
     var open by remember { mutableStateOf(false) }
     val p = bp
     val tag = pkg["label"]?.takeUnless(Js::isNullish)?.let(Js::text) ?: view.otLabel
-    CollapsibleBlock("Fringes & Employer Costs", open, { open = !open }, tag = tag, tone = BuilderTone.Red) {
+    CollapsibleBlock(
+        str(S.dm_rates_card_agreement_fringes),
+        open,
+        { open = !open },
+        tag = tag,
+        tone = BuilderTone.Red,
+    ) {
         RefFrame {
-            HeaderRow(listOf("Cost", "%", "Flat", "Basis", "Type"))
+            HeaderRow(listOf(str(S.desktop_dm_cost), "%", str(S.desktop_dm_flat), str(S.dm_rule_basis), str(S.type)))
             val lines = RateTables.fringeLines(pkg, view.hpMode)
             lines.forEachIndexed { index, line ->
                 TableRow(last = index == lines.lastIndex) {
@@ -284,7 +335,7 @@ private fun FringeTotals(view: RatesView, pkg: JsonObject) {
         Js.parseFloat(form["weeklyRate"])?.takeIf { it != 0.0 } ?: (RateResolve.number(form["dayRate"]) * DAYS_PER_WEEK)
     val totals = RateTables.fringeTotals(weekly, RateTables.items(pkg), view.hpMode)
     val hasRate = weekly > 0
-    fun money(value: Double) = "${view.sym}${RateFormat.groupAmount(value)} / wk"
+    fun money(value: Double) = str(S.desktop_dm_amount_per_wk, "${view.sym}${RateFormat.groupAmount(value)}")
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -295,7 +346,7 @@ private fun FringeTotals(view: RatesView, pkg: JsonObject) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "Estimated total fringe cost (weekly)",
+                text = str(S.desktop_dm_estimated_total_fringe_cost_weekly),
                 style = DmType.sans(12.sp),
                 color = p.ink2,
                 modifier = Modifier.weight(1f),
@@ -304,7 +355,7 @@ private fun FringeTotals(view: RatesView, pkg: JsonObject) {
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = "Total weekly cost to production",
+                text = str(S.desktop_dm_total_weekly_cost_to_production),
                 style = DmType.sans(12.sp, FontWeight.SemiBold),
                 color = p.ink,
                 modifier = Modifier.weight(1f),
@@ -323,10 +374,16 @@ private fun FringeTotals(view: RatesView, pkg: JsonObject) {
 internal fun AllowancesCard(view: RatesView, section: RuleSection) {
     var open by remember { mutableStateOf(false) }
     val p = bp
-    CollapsibleBlock("Allowances", open, { open = !open }, tag = view.otLabel, tone = BuilderTone.Teal) {
+    CollapsibleBlock(
+        str(S.dm_section_allowances),
+        open,
+        { open = !open },
+        tag = view.otLabel,
+        tone = BuilderTone.Teal,
+    ) {
         RefFrame {
             section.note?.let { NoteBar(it) }
-            HeaderRow(listOf("Fee", "Rate"))
+            HeaderRow(listOf(str(S.desktop_dm_fee), str(S.dm_allow_rate)))
             section.rows.forEachIndexed { index, row ->
                 TableRow(last = index == section.rows.lastIndex) {
                     Cell {
@@ -344,15 +401,15 @@ internal fun AllowancesCard(view: RatesView, section: RuleSection) {
 @Composable
 internal fun RateConditionsCard(form: DealForm, ops: FormOps) {
     var open by remember { mutableStateOf(true) }
-    CollapsibleBlock("Conditions", open, { open = !open }) {
+    CollapsibleBlock(str(S.dm_ds_card_conditions), open, { open = !open }) {
         ToggleRow(
-            "Travel day paid at full rate",
+            str(S.dm_rates_travel_day_full),
             null,
             form.flag("travelDayFull"),
             { ops.set("travelDayFull", !form.flag("travelDayFull")) },
         )
         ToggleRow(
-            "Rest day worked — double time",
+            str(S.dm_rates_rest_day_double),
             null,
             form.flag("restDayDouble"),
             { ops.set("restDayDouble", !form.flag("restDayDouble")) },

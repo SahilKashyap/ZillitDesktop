@@ -30,6 +30,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * How wide a column is: a fixed width, or a share of what is left over.
@@ -109,7 +111,7 @@ fun <T> ZillitDataTable(
     key: ((T) -> Any)? = null,
     onRowClick: ((T) -> Unit)? = null,
     isSelected: ((T) -> Boolean)? = null,
-    emptyTitle: String = "Nothing here yet",
+    emptyTitle: String = str(S.desktop_nothing_here_yet),
     emptyMessage: String? = null,
     loading: Boolean = false,
     /**

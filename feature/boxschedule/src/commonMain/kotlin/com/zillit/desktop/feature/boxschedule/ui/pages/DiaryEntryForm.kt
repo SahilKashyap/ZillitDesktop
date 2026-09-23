@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryFormat
 import com.zillit.desktop.feature.boxschedule.domain.NoteType
@@ -79,7 +81,7 @@ internal fun EntryFormSheet(state: BoxScheduleUiState, form: EntryForm, onEvent:
             }
         },
         footer = {
-            ZillitButton("Cancel", onClick = { onEvent(EntryEvent.Close) }, variant = ButtonVariant.Secondary)
+            ZillitButton(str(S.cancel), onClick = { onEvent(EntryEvent.Close) }, variant = ButtonVariant.Secondary)
             ZillitButton(form.saveLabel, onClick = { onEvent(EntryEvent.Save) }, loading = form.saving)
         },
     ) {
@@ -108,19 +110,19 @@ private fun LinkPicker(state: BoxScheduleUiState, form: EntryForm, onEvent: (Box
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        FieldLabel("Link to a schedule day", note = "(optional)")
+        FieldLabel(str(S.desktop_bs_link_schedule_day), note = str(S.desktop_optional_tail))
         DiaryDropdown(
             selected = options.firstOrNull { it.key == form.linkKey },
             options = options,
             onSelect = { link: DayLink -> onEvent(EntryEvent.SetLink(link.key)) },
             label = { it.label },
-            placeholder = "Select a schedule day...",
+            placeholder = str(S.ce_select_schedule_day),
             searchable = true,
             onClear = { onEvent(EntryEvent.SetLink(null)) },
             emptyText = if (state.blocks.isEmpty()) {
-                "No schedule days yet. Create a schedule first."
+                str(S.desktop_bs_no_schedule_days_yet)
             } else {
-                "No matching days"
+                str(S.desktop_bs_no_matching_days)
             },
             modifier = Modifier.fillMaxWidth(),
             menuWidth = 420.dp,
@@ -133,11 +135,11 @@ private fun LinkPicker(state: BoxScheduleUiState, form: EntryForm, onEvent: (Box
 @Composable
 private fun EventFields(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
     EventTitle(form, onEvent)
-    Labelled("Event Description") {
+    Labelled(str(S.ce_description_hint)) {
         ZillitTextField(
             value = form.description,
             onValueChange = { onEvent(EntryEvent.SetDescription(it)) },
-            placeholder = "Event Description",
+            placeholder = str(S.ce_description_hint),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -150,13 +152,13 @@ private fun EventFields(state: BoxScheduleUiState, form: EntryForm, onEvent: (Bo
     LocationBlock(form, onEvent)
     AudienceField(state, form, onEvent)
     ZillitText(
-        "Select the department which you want to send the notification",
+        str(S.ce_distribute_hint),
         style = ZillitTheme.typography.labelSmall.copy(fontStyle = FontStyle.Italic),
         color = ZillitTheme.colors.textMuted,
     )
     GuestsField(form, onEvent)
     OrganizerBox(form, onEvent)
-    Labelled("Color") {
+    Labelled(str(S.color)) {
         SwatchRow(
             current = form.color,
             options = DiaryDraft.EVENT_COLORS,
@@ -169,17 +171,17 @@ private fun EventFields(state: BoxScheduleUiState, form: EntryForm, onEvent: (Bo
 private fun EventTitle(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { FieldLabel("Title", required = true) }
+            Box(Modifier.weight(1f)) { FieldLabel(str(S.title), required = true) }
             ZillitCheckbox(
                 checked = form.fullDay,
                 onCheckedChange = { onEvent(EntryEvent.SetFullDay(it)) },
-                label = "Full Day",
+                label = str(S.full_day),
             )
         }
         ZillitTextField(
             value = form.title,
             onValueChange = { onEvent(EntryEvent.SetTitle(it)) },
-            placeholder = "Add Title *",
+            placeholder = str(S.ce_title_hint),
             errorText = form.errors[EntryField.Title],
             modifier = Modifier.fillMaxWidth(),
         )
@@ -188,7 +190,7 @@ private fun EventTitle(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
 
 @Composable
 private fun TimezoneField(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
-    Labelled("Select Timezone") {
+    Labelled(str(S.ce_timezone)) {
         val zones = remember(form.timezone) {
             (DiaryFormat.TIMEZONES + form.timezone).filter { it.isNotBlank() }.distinct()
         }
@@ -207,22 +209,22 @@ private fun TimezoneField(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) 
 private fun ReminderAndCallRow(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
     val callError = form.errors[EntryField.CallType]
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Labelled("Add Reminder/Alert", Modifier.weight(1f)) {
+        Labelled(str(S.ce_reminder), Modifier.weight(1f)) {
             DiaryDropdown(
                 selected = DiaryFormat.REMINDERS.firstOrNull { it.first == form.reminder },
                 options = DiaryFormat.REMINDERS,
                 onSelect = { onEvent(EntryEvent.SetReminder(it.first)) },
-                label = { it.second },
+                label = { str(it.second) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Labelled("Call Type", Modifier.weight(1f), required = true, error = callError) {
+        Labelled(str(S.call_type), Modifier.weight(1f), required = true, error = callError) {
             DiaryDropdown(
                 selected = DiaryFormat.CALL_TYPES.firstOrNull { it.first == form.callType },
                 options = DiaryFormat.CALL_TYPES,
                 onSelect = { onEvent(EntryEvent.SetCallType(it.first)) },
-                label = { it.second },
-                placeholder = "Select Call Type",
+                label = { str(it.second) },
+                placeholder = str(S.select_call_type),
                 error = callError != null,
                 modifier = Modifier.fillMaxWidth(),
                 menuWidth = 240.dp,
@@ -234,7 +236,7 @@ private fun ReminderAndCallRow(form: EntryForm, onEvent: (BoxScheduleEvent) -> U
 /** The title's own colour — black until chosen; Reset hands it back to the theme. */
 @Composable
 private fun TextColorField(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
-    Labelled("Select Text Color") {
+    Labelled(str(S.ce_text_color)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ColorPickerButton(
                 color = form.textColor.ifBlank { "#000000" },
@@ -244,7 +246,7 @@ private fun TextColorField(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit)
             )
             if (form.textColor.isNotBlank()) {
                 ZillitButton(
-                    "Reset",
+                    str(S.reset),
                     onClick = { onEvent(EntryEvent.SetTextColor("")) },
                     variant = ButtonVariant.Tertiary,
                 )
@@ -258,10 +260,10 @@ private fun WhenRow(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxSch
     val errors = form.errors
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Labelled(
-            label = "Start Date",
+            label = str(S.start_date),
             modifier = Modifier.weight(1f),
             required = true,
-            note = "(locked to this occurrence)".takeIf { form.isThisAndFollowing },
+            note = str(S.desktop_bs_locked_to_this_occurrence).takeIf { form.isThisAndFollowing },
             error = errors[EntryField.StartDate],
         ) {
             DiaryDateField(
@@ -275,7 +277,12 @@ private fun WhenRow(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxSch
             )
         }
         if (!form.fullDay) {
-            Labelled("Start Time", Modifier.width(TIME_WIDTH), required = true, error = errors[EntryField.StartTime]) {
+            Labelled(
+                str(S.start_time),
+                Modifier.width(TIME_WIDTH),
+                required = true,
+                error = errors[EntryField.StartTime],
+            ) {
                 DiaryTimeField(
                     value = form.startTime,
                     onPick = { onEvent(EntryEvent.SetStartTime(it)) },
@@ -283,7 +290,7 @@ private fun WhenRow(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxSch
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Labelled("End Time", Modifier.width(TIME_WIDTH), required = true, error = errors[EntryField.EndTime]) {
+            Labelled(str(S.end_time), Modifier.width(TIME_WIDTH), required = true, error = errors[EntryField.EndTime]) {
                 DiaryTimeField(
                     value = form.endTime,
                     onPick = { onEvent(EntryEvent.SetEndTime(it)) },
@@ -292,7 +299,7 @@ private fun WhenRow(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxSch
                 )
             }
         }
-        Labelled("End Date", Modifier.weight(1f), error = errors[EntryField.EndDate]) {
+        Labelled(str(S.end_date), Modifier.weight(1f), error = errors[EntryField.EndDate]) {
             // View-only: the end mirrors the start; a multi-day event is a repeat.
             DiaryDateField(
                 value = form.endDate,
@@ -309,17 +316,17 @@ private fun WhenRow(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxSch
 private fun RepeatRow(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
     val repeats = form.repeat != "none"
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Labelled("Repeat", Modifier.weight(1f)) {
+        Labelled(str(S.repeat), Modifier.weight(1f)) {
             DiaryDropdown(
                 selected = DiaryFormat.REPEATS.firstOrNull { it.first == form.repeat },
                 options = DiaryFormat.REPEATS,
                 onSelect = { onEvent(EntryEvent.SetRepeat(it.first)) },
-                label = { it.second },
+                label = { str(it.second) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         Labelled(
-            "Repeat End Date",
+            str(S.desktop_bs_repeat_end_date),
             Modifier.weight(1f),
             required = repeats,
             error = form.errors[EntryField.RepeatEnd],
@@ -329,7 +336,7 @@ private fun RepeatRow(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxS
                 value = form.repeatEnd,
                 onPick = { onEvent(EntryEvent.SetRepeatEnd(it)) },
                 today = state.today,
-                placeholder = "Repeat End Date",
+                placeholder = str(S.desktop_bs_repeat_end_date),
                 enabled = repeats,
                 clearable = true,
                 error = form.errors[EntryField.RepeatEnd] != null,
@@ -351,18 +358,18 @@ private fun LocationBlock(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) 
     val scope = rememberCoroutineScope()
     var picking by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        FieldLabel("Add Location", required = required)
+        FieldLabel(str(S.ce_location), required = required)
         ZillitTextField(
             value = form.location,
             onValueChange = { onEvent(EntryEvent.SetLocation(it)) },
-            placeholder = "Search a place or type an address",
+            placeholder = str(S.desktop_bs_search_place_or_address),
             errorText = form.errors[EntryField.Location],
             leadingIcon = ZillitIcons.Pin,
             modifier = Modifier.fillMaxWidth(),
             trailingContent = picker?.let {
                 {
                     ZillitButton(
-                        text = "Pick on map",
+                        text = str(S.ce_pick_on_map),
                         onClick = {
                             picking = true
                             scope.launch {
@@ -370,7 +377,7 @@ private fun LocationBlock(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) 
                                     val initial = form.locationLat?.let { lat ->
                                         form.locationLng?.let { lng -> PickedLocation("", form.location, lat, lng) }
                                     }
-                                    picker.pick(initial = initial, title = "Add Location")?.let { place ->
+                                    picker.pick(initial = initial, title = str(S.ce_location))?.let { place ->
                                         onEvent(EntryEvent.SetLocation(place.oneLine(), place.lat, place.lng))
                                     }
                                 } finally {
@@ -394,7 +401,7 @@ private fun LocationBlock(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) 
 private fun GuestsField(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        FieldLabel("External Guests")
+        FieldLabel(str(S.external_guests))
         if (form.guests.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -417,7 +424,11 @@ private fun GuestsField(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
             }
         }
         ZillitButton(
-            text = if (form.guests.isEmpty()) "Add External Guests" else "Manage External Guests (${form.guests.size})",
+            text = if (form.guests.isEmpty()) {
+                str(S.ce_add_external_guests)
+            } else {
+                str(S.desktop_bs_manage_external_guests_count, form.guests.size)
+            },
             onClick = { onEvent(EntryEvent.OpenGuests) },
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Mail,
@@ -440,7 +451,7 @@ private fun OrganizerBox(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
         ZillitCheckbox(
             checked = form.organizerExcluded,
             onCheckedChange = { onEvent(EntryEvent.SetOrganizerExcluded(it)) },
-            label = "The organizer will not be a part of this event.",
+            label = str(S.ce_organizer_excluded),
         )
     }
 }
@@ -450,13 +461,13 @@ private fun OrganizerBox(form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
 @Composable
 private fun NoteFields(state: BoxScheduleUiState, form: EntryForm, onEvent: (BoxScheduleEvent) -> Unit) {
     val errors = form.errors
-    Labelled("Type", required = true) {
+    Labelled(str(S.type), required = true) {
         NoteTypeSegments(state.noteTypes.ifEmpty { NoteType.DEFAULTS }, form.noteType, onEvent)
     }
     Labelled(
-        "Date",
+        str(S.date),
         required = true,
-        note = "(locked to schedule day)".takeIf { form.noteDateLocked },
+        note = str(S.desktop_bs_locked_to_schedule_day).takeIf { form.noteDateLocked },
         error = errors[EntryField.NoteDate],
     ) {
         DiaryDateField(
@@ -469,25 +480,25 @@ private fun NoteFields(state: BoxScheduleUiState, form: EntryForm, onEvent: (Box
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    Labelled("Title", required = true) {
+    Labelled(str(S.title), required = true) {
         ZillitTextField(
             value = form.noteTitle,
             onValueChange = { onEvent(EntryEvent.SetNoteTitle(it)) },
-            placeholder = "e.g., Rain backup plan needed",
+            placeholder = str(S.ce_note_title_hint),
             errorText = errors[EntryField.NoteTitle],
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    Labelled("Notes") {
+    Labelled(str(S.notes)) {
         ZillitTextField(
             value = form.noteText,
             onValueChange = { onEvent(EntryEvent.SetNoteText(it)) },
-            placeholder = "Details...",
+            placeholder = str(S.ce_note_text_hint),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    Labelled("Color") {
+    Labelled(str(S.color)) {
         SwatchRow(
             current = form.noteColor,
             options = DiaryDraft.EVENT_COLORS,
@@ -545,7 +556,7 @@ private fun AudienceField(state: BoxScheduleUiState, form: EntryForm, onEvent: (
     }
     val summary = form.audience.summary(presetName)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        FieldLabel("Distribute To", required = true)
+        FieldLabel(str(S.distribute_to), required = true)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -559,7 +570,7 @@ private fun AudienceField(state: BoxScheduleUiState, form: EntryForm, onEvent: (
         ) {
             ZillitIcon(icon = ZillitIcons.Users, tint = colors.textMuted, size = 14.dp)
             ZillitText(
-                text = summary.ifBlank { "Select" },
+                text = summary.ifBlank { str(S.select) },
                 style = ZillitTheme.typography.bodyMedium,
                 color = if (summary.isBlank()) colors.textMuted else colors.textPrimary,
                 maxLines = 1,

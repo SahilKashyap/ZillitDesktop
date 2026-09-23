@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Sign-in and project selection.
@@ -43,6 +45,9 @@ fun AuthScreen(
     modifier: Modifier = Modifier,
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> kotlin.Unit = {},
+    /** The language preference (blank = follow the system) and where a choice goes; see the shell. */
+    language: String = "",
+    onLanguageChange: (String) -> kotlin.Unit = {},
     createViewModel: CreateProductionViewModel? = null,
     joinViewModel: JoinProductionViewModel? = null,
     /**
@@ -65,7 +70,7 @@ fun AuthScreen(
     if (state.step == AuthStep.ProjectSelection) {
         ProjectListScreen(
             state, viewModel::onEvent, themeMode, onThemeModeChange, modifier, createViewModel,
-            joinViewModel,
+            joinViewModel, language, onLanguageChange,
         )
         return
     }
@@ -103,12 +108,12 @@ fun AuthScreen(
 private fun Branding() {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         ZillitText(
-            text = "Zillit",
+            text = str(S.app_name),
             style = ZillitTheme.typography.displayLarge,
             color = ZillitTheme.colors.accent,
         )
         ZillitText(
-            text = "Project management",
+            text = str(S.desktop_project_management),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -117,11 +122,11 @@ private fun Branding() {
 
 @Composable
 private fun EmailStep(state: AuthUiState, onEvent: (AuthEvent) -> kotlin.Unit) {
-    ZillitText("Sign in", style = ZillitTheme.typography.titleMedium)
+    ZillitText(str(S.desktop_sign_in), style = ZillitTheme.typography.titleMedium)
     ZillitText(
         // Zillit has no password — say so, or the user waits for a field that
         // never appears.
-        text = "We'll email you a one-time code. There's no password to remember.",
+        text = str(S.desktop_sign_in_no_password),
         style = ZillitTheme.typography.bodyMedium,
         color = ZillitTheme.colors.textSecondary,
     )
@@ -129,7 +134,7 @@ private fun EmailStep(state: AuthUiState, onEvent: (AuthEvent) -> kotlin.Unit) {
     ZillitTextField(
         value = state.email,
         onValueChange = { onEvent(AuthEvent.EmailChanged(it)) },
-        label = "Work email",
+        label = str(S.desktop_work_email),
         placeholder = "you@production.com",
         leadingIcon = ZillitIcons.Mail,
         keyboardType = KeyboardType.Email,
@@ -139,7 +144,7 @@ private fun EmailStep(state: AuthUiState, onEvent: (AuthEvent) -> kotlin.Unit) {
     )
 
     ZillitButton(
-        text = "Send code",
+        text = str(S.desktop_send_code),
         onClick = { onEvent(AuthEvent.SubmitEmail) },
         modifier = Modifier.fillMaxWidth(),
         enabled = state.canSubmitEmail,
@@ -147,7 +152,7 @@ private fun EmailStep(state: AuthUiState, onEvent: (AuthEvent) -> kotlin.Unit) {
     )
 
     ZillitButton(
-        text = "Recover a device",
+        text = str(S.desktop_recover_a_device),
         onClick = { onEvent(AuthEvent.StartRecovery) },
         modifier = Modifier.fillMaxWidth(),
         variant = ButtonVariant.Tertiary,
@@ -157,9 +162,9 @@ private fun EmailStep(state: AuthUiState, onEvent: (AuthEvent) -> kotlin.Unit) {
 
 @Composable
 private fun OtpStep(state: AuthUiState, email: String, onEvent: (AuthEvent) -> kotlin.Unit) {
-    ZillitText("Check your email", style = ZillitTheme.typography.titleMedium)
+    ZillitText(str(S.txt_email_code), style = ZillitTheme.typography.titleMedium)
     ZillitText(
-        text = "We sent a code to $email.",
+        text = str(S.desktop_we_sent_a_code_to, email),
         style = ZillitTheme.typography.bodyMedium,
         color = ZillitTheme.colors.textSecondary,
     )
@@ -167,7 +172,7 @@ private fun OtpStep(state: AuthUiState, email: String, onEvent: (AuthEvent) -> k
     ZillitTextField(
         value = state.otp,
         onValueChange = { onEvent(AuthEvent.OtpChanged(it)) },
-        label = "Verification code",
+        label = str(S.desktop_verification_code),
         placeholder = "000000",
         keyboardType = KeyboardType.Number,
         imeAction = ImeAction.Go,
@@ -177,7 +182,7 @@ private fun OtpStep(state: AuthUiState, email: String, onEvent: (AuthEvent) -> k
     )
 
     ZillitButton(
-        text = "Verify",
+        text = str(S.txt_verify),
         onClick = { onEvent(AuthEvent.SubmitOtp) },
         modifier = Modifier.fillMaxWidth(),
         enabled = state.canSubmitOtp,
@@ -186,14 +191,14 @@ private fun OtpStep(state: AuthUiState, email: String, onEvent: (AuthEvent) -> k
 
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         ZillitButton(
-            text = "Back",
+            text = str(S.back),
             onClick = { onEvent(AuthEvent.Back) },
             modifier = Modifier.weight(1f),
             variant = ButtonVariant.Tertiary,
             enabled = !state.isBusy,
         )
         ZillitButton(
-            text = "Resend",
+            text = str(S.desktop_resend),
             onClick = { onEvent(AuthEvent.ResendOtp) },
             modifier = Modifier.weight(1f),
             variant = ButtonVariant.Tertiary,
@@ -204,9 +209,9 @@ private fun OtpStep(state: AuthUiState, email: String, onEvent: (AuthEvent) -> k
 
 @Composable
 private fun RecoveryStep(state: AuthUiState, onEvent: (AuthEvent) -> kotlin.Unit) {
-    ZillitText("Recover a device", style = ZillitTheme.typography.titleMedium)
+    ZillitText(str(S.desktop_recover_a_device), style = ZillitTheme.typography.titleMedium)
     ZillitText(
-        text = "Enter the recovery code from your other signed-in device.",
+        text = str(S.desktop_recovery_code_hint),
         style = ZillitTheme.typography.bodyMedium,
         color = ZillitTheme.colors.textSecondary,
     )
@@ -214,21 +219,21 @@ private fun RecoveryStep(state: AuthUiState, onEvent: (AuthEvent) -> kotlin.Unit
     ZillitTextField(
         value = state.recoveryCode,
         onValueChange = { onEvent(AuthEvent.RecoveryCodeChanged(it)) },
-        label = "Recovery code",
+        label = str(S.recovery_code),
         imeAction = ImeAction.Go,
         enabled = !state.isBusy,
         onImeAction = { onEvent(AuthEvent.SubmitRecovery) },
     )
 
     ZillitButton(
-        text = "Recover",
+        text = str(S.desktop_recover),
         onClick = { onEvent(AuthEvent.SubmitRecovery) },
         modifier = Modifier.fillMaxWidth(),
         enabled = state.recoveryCode.isNotBlank() && !state.isBusy,
         loading = state.isBusy,
     )
     ZillitButton(
-        text = "Back",
+        text = str(S.back),
         onClick = { onEvent(AuthEvent.Back) },
         modifier = Modifier.fillMaxWidth(),
         variant = ButtonVariant.Tertiary,

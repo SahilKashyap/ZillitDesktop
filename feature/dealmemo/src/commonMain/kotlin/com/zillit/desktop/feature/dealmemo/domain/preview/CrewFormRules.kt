@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.preview
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import kotlinx.serialization.json.JsonNull
@@ -7,28 +9,35 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /** A step of "Complete your details" — each titled exactly as its memo section. */
-enum class CrewStep(val label: String, val sub: String) {
-    Crew("Crew Details", "Your personal and contact details"),
-    Emergency("Emergency Details", "Who we contact in an emergency"),
-    Representative("Representative Details", "Agent or representative, if you have one"),
-    Bank("Bank Details", "Where your wages are paid"),
-    LoanOut("Loan Out Company", "The company you're engaged through"),
+enum class CrewStep(private val labelKey: String, private val subKey: String) {
+    Crew(S.dm_crew_step_crew, S.dm_crew_step_crew_sub),
+    Emergency(S.dm_crew_step_emergency, S.dm_crew_step_emergency_sub),
+    Representative(S.dm_crew_step_representative, S.dm_crew_step_representative_sub),
+    Bank(S.dm_crew_step_bank, S.dm_crew_step_bank_sub),
+    LoanOut(S.dm_loanout_section_title, S.desktop_dm_loan_out_company_sub),
+    ;
+
+    val label: String get() = str(labelKey)
+    val sub: String get() = str(subKey)
 }
 
 /** A field whose text fails its format — named in the footer, shown under the field. */
 data class FormatError(val field: CrewField, val message: String)
 
 /** The crew form's validated fields, in the footer's order. */
-enum class CrewField(val label: String) {
-    Email("Email"),
-    Mobile("Mobile"),
-    EmergencyEmail("Emergency contact email"),
-    EmergencyPhone("Emergency contact number"),
-    RepresentativeEmail("Agency email"),
-    RepresentativePhone("Agency phone"),
-    LoanOutEmail("Loan Out Company email"),
-    LoanOutPhone("Loan Out Company phone"),
-    PayeRef("P45 previous employer PAYE ref"),
+enum class CrewField(private val labelKey: String) {
+    Email(S.email),
+    Mobile(S.dm_step2_mobile),
+    EmergencyEmail(S.desktop_dm_emergency_contact_email),
+    EmergencyPhone(S.desktop_dm_emergency_contact_number),
+    RepresentativeEmail(S.desktop_dm_agency_email),
+    RepresentativePhone(S.desktop_dm_agency_phone),
+    LoanOutEmail(S.desktop_dm_loan_out_company_email),
+    LoanOutPhone(S.desktop_dm_loan_out_company_phone),
+    PayeRef(S.desktop_dm_p45_previous_employer_paye_ref),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -38,10 +47,10 @@ enum class CrewField(val label: String) {
  */
 object CrewFormRules {
 
-    const val EMAIL_ERROR = "Enter a valid email address"
-    const val PHONE_ERROR = "Enter a valid phone number (5–15 digits)"
-    const val PAYE_ERROR = "Use the format 123/AB456."
-    const val ACCOUNTS_OFFICE_ERROR = "Use the format 123PA00012345."
+    val EMAIL_ERROR: String get() = str(S.desktop_enter_valid_email)
+    val PHONE_ERROR: String get() = str(S.desktop_enter_valid_phone)
+    val PAYE_ERROR: String get() = str(S.desktop_dm_paye_format)
+    val ACCOUNTS_OFFICE_ERROR: String get() = str(S.desktop_dm_accounts_office_format)
 
     private val EMAIL = Regex("^[^\\s@]+@[^\\s@]+\\.[A-Za-z]{2,}$")
     private val PAYE = Regex("^\\d{3}/[A-Za-z0-9]{1,10}$")

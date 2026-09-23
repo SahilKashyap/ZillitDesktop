@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.chat.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * What the composer refuses, and why — the other clients' rules in one place.
  *
@@ -39,17 +42,17 @@ object ChatComposerRules {
     private val REFUSED_EXTENSIONS = setOf("exe")
 
     /** The web's `exceeding_text_limit` (`utils/language/en.js:5649`). */
-    const val BODY_TOO_LONG = "The text limit exceeds 2000 characters."
+    val BODY_TOO_LONG: String get() = str(S.desktop_chat_text_limit_exceeded)
 
     /**
      * The web's `media_above_70mb` (`utils/language/en.js:6532`), shortened:
      * its tail explains that the file was dropped from a multi-file
      * selection, and this picker takes one file at a time.
      */
-    const val ATTACHMENT_TOO_LARGE = "The media above 70MB is not permitted to send."
+    val ATTACHMENT_TOO_LARGE: String get() = str(S.desktop_chat_media_above_70mb)
 
     /** The web's `invalid_file_type` (`utils/language/en.js:5651`). */
-    const val ATTACHMENT_REFUSED_TYPE = "Please select a valid file type"
+    val ATTACHMENT_REFUSED_TYPE: String get() = str(S.desktop_select_a_valid_file_type)
 
     /** Longer than every client will carry. Counted in characters, as they count. */
     fun bodyTooLong(body: String): Boolean = body.length > MAX_BODY_CHARS
@@ -63,7 +66,7 @@ object ChatComposerRules {
     const val REWRITE_WINDOW_MILLIS = 2L * 60 * 60 * 1000
 
     /** The web's `message_modal_to_stop_edit_after_two_hour` (`utils/language/en.js:8071`). */
-    const val REWRITE_WINDOW_CLOSED = "You are allowed to edit or delete within 2 hours of posting the message."
+    val REWRITE_WINDOW_CLOSED: String get() = str(S.desktop_chat_rewrite_window_closed)
 
     /**
      * Whether a message posted at [createdMillis] may still be edited or

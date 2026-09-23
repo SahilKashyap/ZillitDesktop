@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -46,7 +48,7 @@ fun mailListTimeLabel(
 
     return when {
         received.date == today -> received.clock12h()
-        received.date.toEpochDays() == today.toEpochDays() - 1 -> "Yesterday"
+        received.date.toEpochDays() == today.toEpochDays() - 1 -> str(S.yesterday)
         else -> mailDate(receivedAtMillis, zone)
     }
 }
@@ -68,7 +70,7 @@ fun mailFullTimeLabel(
 ): String {
     if (atMillis <= 0) return ""
     val at = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone)
-    return "${mailDate(atMillis, zone)} at ${at.clock12h()}"
+    return str(S.desktop_email_date_at_time, mailDate(atMillis, zone), at.clock12h())
 }
 
 private fun kotlinx.datetime.LocalDateTime.clock12h(): String {
@@ -79,10 +81,12 @@ private fun kotlinx.datetime.LocalDateTime.clock12h(): String {
 
 private fun Int.pad(): String = toString().padStart(2, '0')
 
-private val MONTHS = listOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-)
+private val MONTHS: List<String>
+    get() = listOf(
+        S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+        S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+        S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+    ).map { str(it) }
 
 /** Noon splits the 12-hour clock; hours past it read PM. */
 private const val HALF_DAY = 12

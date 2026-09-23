@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** A PDF the user chose but has not uploaded yet. */
 data class PickedAgreementFile(
@@ -22,24 +24,24 @@ data class PickedAgreementFile(
 enum class SetupUpload(
     val extensions: Set<String>,
     val maxBytes: Long,
-    val refusal: String,
+    private val refusalKey: String,
     /** The size refusal — the web's wording where the web has one. */
-    val tooLarge: String,
+    private val tooLargeKey: String,
 ) {
     /** One of the production's standard agreements. */
     Agreement(
         extensions = setOf("pdf"),
         maxBytes = TWENTY_MB,
-        refusal = "Only PDF files can be attached — they have to go through the signing flow.",
-        tooLarge = OVER_TWENTY,
+        refusalKey = S.desktop_hub_only_pdf_files_can_be_attached_they_have_to_go,
+        tooLargeKey = OVER_TWENTY,
     ),
 
     /** The terms and conditions issued with every purchase order — the web's `validateTermsFile`. */
     PurchaseOrderTerms(
         extensions = setOf("pdf", "doc", "docx"),
         maxBytes = TEN_MB,
-        refusal = "Only PDF, DOC or DOCX files are accepted",
-        tooLarge = "File must be 10MB or smaller",
+        refusalKey = S.desktop_hub_only_pdf_doc_or_docx_files_are_accepted,
+        tooLargeKey = S.desktop_hub_file_must_be_10mb_or_smaller,
     ),
 
     /**
@@ -54,18 +56,21 @@ enum class SetupUpload(
     PurchaseOrderAttachment(
         extensions = setOf("pdf", "doc", "docx", "xls", "xlsx", "csv", "txt", "png", "jpg", "jpeg", "heic", "webp"),
         maxBytes = TWENTY_MB,
-        refusal = "Attach a PDF, an office document, a text file or an image.",
-        tooLarge = OVER_TWENTY,
+        refusalKey = S.desktop_hub_attach_a_pdf_an_office_document_a_text_file_or,
+        tooLargeKey = OVER_TWENTY,
     ),
 
     /** A budget file to parse. Read once and never stored as a document. */
     BudgetImport(
         extensions = setOf("pdf", "xlsx", "xls", "csv"),
         maxBytes = TWENTY_MB,
-        refusal = "A budget has to be a PDF, an Excel file or a CSV.",
-        tooLarge = OVER_TWENTY,
+        refusalKey = S.desktop_hub_a_budget_has_to_be_a_pdf_an_excel_file,
+        tooLargeKey = OVER_TWENTY,
     ),
     ;
+
+    val refusal: String get() = str(refusalKey)
+    val tooLarge: String get() = str(tooLargeKey)
 
     /** Why [name] at [bytes] cannot be used for this, or null when it can. */
     fun refuse(name: String, bytes: Long): String? = when {
@@ -77,7 +82,7 @@ enum class SetupUpload(
 
 private const val TWENTY_MB: Long = 20L * 1024 * 1024
 private const val TEN_MB: Long = 10L * 1024 * 1024
-private const val OVER_TWENTY = "That file is over the 20 MB limit."
+private const val OVER_TWENTY = S.desktop_hub_that_file_is_over_the_20_mb_limit
 
 /**
  * Choosing and storing the setup screen's PDFs.

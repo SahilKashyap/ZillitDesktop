@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.home.data.ToolsRepositoryImpl
@@ -105,7 +107,7 @@ internal class ToolWidgetHost(
 
         val provider = scopedProvider(project, options, permissions)
         if (provider == null) {
-            _session.update { it?.copy(loading = false, error = "This project could not be opened here.") }
+            _session.update { it?.copy(loading = false, error = str(S.desktop_project_not_opened_here)) }
             return
         }
         publish(project, provider, isOpen = false)

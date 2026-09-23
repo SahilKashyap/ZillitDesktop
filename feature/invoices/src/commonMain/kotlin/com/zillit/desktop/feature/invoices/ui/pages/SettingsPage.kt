@@ -62,6 +62,8 @@ import com.zillit.desktop.feature.invoices.ui.InvoiceSetupState
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.TeamMemberDraft
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Invoices Setup — who may post and up to what value, which alerts go out,
@@ -88,7 +90,7 @@ internal fun ColumnScope.SettingsPage(state: InvoicesUiState, onEvent: (Invoices
         loadError != null -> ZillitErrorState(
             message = loadError.localised(),
             onRetry = { onEvent(InvoicesEvent.Refresh) },
-            title = "Failed to load invoice settings",
+            title = str(S.desktop_inv_settings_load_failed),
         )
 
         else -> ZillitScrollColumn(
@@ -109,14 +111,14 @@ internal fun ColumnScope.SettingsPage(state: InvoicesUiState, onEvent: (Invoices
 private fun TeamCard(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     val setup = state.setup
     ZillitSectionCard(
-        title = "Team & Posting Rights",
+        title = str(S.ah_settings_team_posting),
         icon = ZillitIcons.Users,
         action = {
             if (InvoiceSetupSection.Team in setup.saving) {
-                ZillitStatusPill(label = "Saving…", tone = StatusTone.Pending)
+                ZillitStatusPill(label = str(S.ah_saving), tone = StatusTone.Pending)
             }
             ZillitButton(
-                text = "Add Member",
+                text = str(S.cs_add_member),
                 onClick = { onEvent(InvoicesEvent.AddTeamMember) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -124,20 +126,20 @@ private fun TeamCard(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
             )
         },
     ) {
-        CardIntro("Configure who can enter and post invoices to the ledger.")
+        CardIntro(str(S.desktop_inv_team_intro))
         if (setup.edited.teamMembers.isEmpty()) {
-            Hint("No team members configured. Add members to set posting limits and permissions.")
+            Hint(str(S.desktop_inv_no_team_members))
             return@ZillitSectionCard
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.xs),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            FieldCaption("User", Modifier.weight(TEAM_NAME_WEIGHT))
-            FieldCaption("Posting Limit", Modifier.weight(1f))
-            FieldCaption("Authorise Runs", Modifier.weight(1f))
-            FieldCaption("Can Override", Modifier.weight(1f))
-            FieldCaption("Senior", Modifier.weight(TEAM_FLAG_WEIGHT))
+            FieldCaption(str(S.user_label), Modifier.weight(TEAM_NAME_WEIGHT))
+            FieldCaption(str(S.desktop_posting_limit_title), Modifier.weight(1f))
+            FieldCaption(str(S.desktop_authorise_runs), Modifier.weight(1f))
+            FieldCaption(str(S.desktop_can_override), Modifier.weight(1f))
+            FieldCaption(str(S.desktop_senior), Modifier.weight(TEAM_FLAG_WEIGHT))
             Spacer(Modifier.width(TEAM_ACTIONS_WIDTH))
         }
         setup.edited.teamMembers.forEach { row ->
@@ -165,16 +167,16 @@ private fun TeamRow(state: InvoicesUiState, row: InvoiceTeamRow, onEvent: (Invoi
                 maxLines = 1,
             )
             if (!row.isUnlimited) {
-                Hint(if (row.isSubmitOnly) "No direct posting" else "Up to this value")
+                Hint(if (row.isSubmitOnly) str(S.desktop_no_direct_posting) else str(S.desktop_up_to_this_value))
             }
         }
         YesNo(row.isSenior || row.runAccess, Modifier.weight(1f))
         YesNo(row.isSenior || row.overrideAccess, Modifier.weight(1f))
         Box(modifier = Modifier.weight(TEAM_FLAG_WEIGHT)) {
             if (row.isSenior) {
-                ZillitStatusPill(label = "Senior", tone = StatusTone.Done)
+                ZillitStatusPill(label = str(S.desktop_senior), tone = StatusTone.Done)
             } else {
-                ZillitText(text = "No", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                ZillitText(text = str(S.no), style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
             }
         }
         Row(
@@ -183,12 +185,12 @@ private fun TeamRow(state: InvoicesUiState, row: InvoiceTeamRow, onEvent: (Invoi
         ) {
             ZillitIconButton(
                 icon = ZillitIcons.Edit,
-                contentDescription = "Edit $name",
+                contentDescription = str(S.desktop_edit_named, name),
                 onClick = { onEvent(InvoicesEvent.EditTeamMember(row)) },
             )
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove $name",
+                contentDescription = str(S.bs_chip_remove, name),
                 onClick = { onEvent(InvoicesEvent.RequestRemoveTeamMember(row.userId)) },
                 tint = colors.danger,
             )
@@ -211,7 +213,7 @@ private fun PersonCell(name: String, userId: String, role: String, modifier: Mod
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
             )
-            Hint(role.ifBlank { "Team member" })
+            Hint(role.ifBlank { str(S.desktop_team_member) })
         }
     }
 }
@@ -219,7 +221,7 @@ private fun PersonCell(name: String, userId: String, role: String, modifier: Mod
 @Composable
 private fun YesNo(value: Boolean, modifier: Modifier) {
     ZillitText(
-        text = if (value) "Yes" else "No",
+        text = if (value) str(S.yes) else str(S.no),
         style = ZillitTheme.typography.bodySmall.copy(
             fontWeight = if (value) FontWeight.Bold else FontWeight.Normal,
         ),
@@ -233,7 +235,7 @@ private fun YesNo(value: Boolean, modifier: Modifier) {
 @Composable
 private fun AlertsCard(setup: InvoiceSetupState, onEvent: (InvoicesEvent) -> Unit) {
     ZillitSectionCard(
-        title = "Alert Preferences",
+        title = str(S.desktop_alert_preferences),
         icon = ZillitIcons.Bell,
         action = { SectionSaveButton(setup, InvoiceSetupSection.Alerts, onEvent) },
     ) {
@@ -264,16 +266,13 @@ private fun RunAuthorisationCard(state: InvoicesUiState, onEvent: (InvoicesEvent
     val setup = state.setup
     val levels = setup.edited.runAuthorisation
     ZillitSectionCard(
-        title = "Run Authorization",
+        title = str(S.desktop_run_authorization),
         icon = ZillitIcons.Shield,
         action = { SectionSaveButton(setup, InvoiceSetupSection.RunAuthorisation, onEvent) },
     ) {
-        CardIntro(
-            "Multi-level sign-off chain for payment runs. Each level must have at least one approver " +
-                "before the run can proceed.",
-        )
+        CardIntro(str(S.desktop_inv_run_authorization_intro))
         if (levels.isEmpty()) {
-            Hint("No authorization levels configured yet. Use the + below to add the first.")
+            Hint(str(S.desktop_inv_no_authorization_levels))
         }
         InsertLevelRow(index = 0, onEvent = onEvent)
         levels.forEachIndexed { index, level ->
@@ -294,7 +293,7 @@ private fun InsertLevelRow(index: Int, onEvent: (InvoicesEvent) -> Unit) {
         Box(Modifier.weight(1f).height(1.dp).background(ZillitTheme.colors.border))
         ZillitIconButton(
             icon = ZillitIcons.Add,
-            contentDescription = "Insert a level here",
+            contentDescription = str(S.desktop_insert_a_level_here),
             onClick = { onEvent(InvoicesEvent.AddRunAuthLevel(index)) },
             tint = ZillitTheme.colors.accentText,
         )
@@ -330,11 +329,11 @@ private fun LevelCard(state: InvoicesUiState, level: RunAuthLevel, onEvent: (Inv
                     color = colors.accentText,
                 )
             }
-            RowTitle("Level ${level.tier}")
+            RowTitle(str(S.desktop_level_n, level.tier))
             Spacer(Modifier.weight(1f))
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove level ${level.tier}",
+                contentDescription = str(S.desktop_remove_level_n, level.tier),
                 onClick = { onEvent(InvoicesEvent.RemoveRunAuthLevel(level.tier)) },
                 tint = colors.danger,
             )
@@ -345,7 +344,7 @@ private fun LevelCard(state: InvoicesUiState, level: RunAuthLevel, onEvent: (Inv
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
             ZillitButton(
-                text = "Add Users",
+                text = str(S.add_members),
                 onClick = { onEvent(InvoicesEvent.OpenRunAuthPicker(level.tier)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -354,7 +353,7 @@ private fun LevelCard(state: InvoicesUiState, level: RunAuthLevel, onEvent: (Inv
             level.userIds.forEach { userId ->
                 ApproverChip(state, level.tier, userId, onEvent)
             }
-            if (level.userIds.isEmpty()) Hint("No users assigned")
+            if (level.userIds.isEmpty()) Hint(str(S.desktop_no_users_assigned))
         }
     }
 }
@@ -383,7 +382,7 @@ private fun ApproverChip(
         person?.role?.takeIf { it.isNotBlank() }?.let { Hint(it) }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Remove $name from level $tier",
+            contentDescription = str(S.desktop_remove_named_from_level_n, name, tier),
             onClick = { onEvent(InvoicesEvent.RemoveRunAuthUser(tier, userId)) },
             size = CHIP_AVATAR,
         )
@@ -396,12 +395,12 @@ private fun ApproverChip(
 private fun RulesCard(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     val setup = state.setup
     ZillitSectionCard(
-        title = "Auto-Assignment Rules",
+        title = str(S.desktop_auto_assignment_rules),
         icon = ZillitIcons.Ledger,
         action = {
             SectionSaveButton(setup, InvoiceSetupSection.Rules, onEvent)
             ZillitButton(
-                text = "Add Rule",
+                text = str(S.desktop_add_rule),
                 onClick = { onEvent(InvoicesEvent.AddAssignmentRule) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -410,12 +409,10 @@ private fun RulesCard(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) 
             )
         },
     ) {
-        CardIntro(
-            "Auto-assign invoices to team members based on department, vendor, nominal code, or amount.",
-        )
+        CardIntro(str(S.desktop_inv_rules_intro))
         when {
-            setup.rulesLoading -> Hint("Loading rules…")
-            setup.rules.isEmpty() -> Hint("No rules configured. Click \"Add Rule\" to auto-assign invoices.")
+            setup.rulesLoading -> Hint(str(S.desktop_loading_rules))
+            setup.rules.isEmpty() -> Hint(str(S.desktop_inv_no_rules_configured))
             else -> setup.rules.forEach { rule -> RuleCard(state, rule, onEvent) }
         }
     }
@@ -461,44 +458,44 @@ private fun RuleCard(state: InvoicesUiState, rule: InvoiceAssignmentRule, onEven
                     checked = rule.isActive,
                     onCheckedChange = { update(rule.copy(isActive = it)) },
                 )
-                FieldCaption("Assign to")
+                FieldCaption(str(S.desktop_assign_to))
                 ZillitSelect<InvoiceAssignee?>(
                     value = state.assignees.firstOrNull { it.id == rule.assignTo },
                     options = state.assignees,
                     onSelect = { person -> person?.let { update(rule.copy(assignTo = it.id)) } },
-                    label = { it?.label ?: "Pick assignee…" },
+                    label = { it?.label ?: str(S.desktop_pick_assignee) },
                     modifier = Modifier.width(ASSIGNEE_WIDTH),
                 )
                 Spacer(Modifier.weight(1f))
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Remove rule",
+                    contentDescription = str(S.desktop_remove_rule),
                     onClick = { onEvent(InvoicesEvent.RequestRemoveRule(rule.id)) },
                     tint = colors.danger,
                 )
             }
-            FieldCaption("If any condition matches (or)")
+            FieldCaption(str(S.desktop_if_any_condition_matches))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 verticalAlignment = Alignment.Top,
             ) {
-                ConditionColumn("Departments", Modifier.weight(1f)) {
+                ConditionColumn(str(S.departments), Modifier.weight(1f)) {
                     ZillitMultiSelect(
                         selected = rule.departments,
                         options = (state.departmentNames.keys.toList() + rule.departments).distinct(),
                         label = { id -> state.departmentName(id) },
                         onChange = { update(rule.copy(departments = it)) },
-                        placeholder = "Any department",
+                        placeholder = str(S.desktop_any_department),
                     )
                 }
-                ConditionColumn("Vendors", Modifier.weight(1f)) {
+                ConditionColumn(str(S.ah_vendors), Modifier.weight(1f)) {
                     ZillitMultiSelect(
                         selected = rule.vendors,
                         options = (state.vendors.keys.toList() + rule.vendors).distinct(),
                         label = { id -> state.vendors[id]?.name ?: id },
                         onChange = { update(rule.copy(vendors = it)) },
-                        placeholder = "Any vendor",
+                        placeholder = str(S.desktop_any_vendor),
                     )
                 }
             }
@@ -507,16 +504,16 @@ private fun RuleCard(state: InvoicesUiState, rule: InvoiceAssignmentRule, onEven
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 verticalAlignment = Alignment.Top,
             ) {
-                ConditionColumn("Nominal codes", Modifier.weight(1f)) {
+                ConditionColumn(str(S.dm_section_nominal), Modifier.weight(1f)) {
                     ZillitMultiSelect(
                         selected = rule.nominalCodes,
                         options = (setup.nominals.map { it.code } + rule.nominalCodes).distinct(),
                         label = { code -> setup.nominals.firstOrNull { it.code == code }?.label ?: code },
                         onChange = { update(rule.copy(nominalCodes = it)) },
-                        placeholder = "Any nominal",
+                        placeholder = str(S.desktop_any_nominal),
                     )
                 }
-                ConditionColumn("Amount min", Modifier.weight(1f)) {
+                ConditionColumn(str(S.desktop_amount_min), Modifier.weight(1f)) {
                     ZillitTextField(
                         value = rule.amountMin,
                         onValueChange = { update(rule.copy(amountMin = it)) },
@@ -548,9 +545,9 @@ private fun SectionSaveButton(
     if (!dirty && !saved) return
     ZillitButton(
         text = when {
-            saving -> "Saving…"
-            saved -> "Saved"
-            else -> "Save"
+            saving -> str(S.ah_saving)
+            saved -> str(S.saved)
+            else -> str(S.save)
         },
         onClick = { onEvent(InvoicesEvent.SaveSetupSection(section)) },
         variant = if (saved) ButtonVariant.Secondary else ButtonVariant.Primary,
@@ -617,20 +614,20 @@ internal fun TeamMemberSheet(state: InvoicesUiState, onEvent: (InvoicesEvent) ->
     fun update(next: TeamMemberDraft) =
         onEvent(InvoicesEvent.ChangeTeamMemberDraft(next))
     SetupSheet(
-        title = if (draft.isNew) "Add Team Member" else "Edit Team Member",
+        title = if (draft.isNew) str(S.desktop_add_team_member) else str(S.desktop_edit_team_member),
         onDismiss = { onEvent(InvoicesEvent.CancelTeamMember) },
-        confirmText = if (draft.isNew) "Add Member" else "Save Changes",
+        confirmText = if (draft.isNew) str(S.cs_add_member) else str(S.ah_save_changes),
         confirmEnabled = draft.isReady,
         busy = draft.busy,
         onConfirm = { onEvent(InvoicesEvent.CommitTeamMember) },
     ) {
-        FieldCaption("Team member")
+        FieldCaption(str(S.desktop_team_member))
         if (draft.isNew) {
             ZillitSelect<InvoiceAssignee?>(
                 value = offered.firstOrNull { it.id == row.userId },
                 options = offered,
                 onSelect = { person -> person?.let { update(draft.copy(row = row.copy(userId = it.id))) } },
-                label = { it?.label ?: "Select a user…" },
+                label = { it?.label ?: str(S.desktop_select_a_user) },
                 modifier = Modifier.fillMaxWidth(),
             )
         } else {
@@ -651,23 +648,23 @@ private fun PostingLimitField(draft: TeamMemberDraft, update: (TeamMemberDraft) 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        FieldCaption("Posting limit", Modifier.weight(1f))
+        FieldCaption(str(S.desktop_posting_limit), Modifier.weight(1f))
         ZillitCheckbox(
             checked = off,
             onCheckedChange = { update(draft.copy(unlimited = it)) },
             enabled = !row.isSenior,
-            label = "Unlimited",
+            label = str(S.drive_link_views_unlimited),
         )
     }
     ZillitTextField(
         value = if (off) "" else draft.limitText,
         onValueChange = { update(draft.copy(limitText = it)) },
-        placeholder = if (off) "Unlimited" else "0",
+        placeholder = if (off) str(S.drive_link_views_unlimited) else "0",
         keyboardType = KeyboardType.Number,
         enabled = !off,
         modifier = Modifier.fillMaxWidth(),
     )
-    Hint("Applies across every currency.")
+    Hint(str(S.desktop_applies_across_every_currency))
 }
 
 /** The three rights, two of which a senior holds whether they are ticked or not. */
@@ -675,22 +672,22 @@ private fun PostingLimitField(draft: TeamMemberDraft, update: (TeamMemberDraft) 
 private fun MemberRights(draft: TeamMemberDraft, update: (TeamMemberDraft) -> Unit) {
     val row = draft.row
     SheetToggle(
-        title = "Can authorise payment runs",
-        hint = "Allow this user to sign off payment runs.",
+        title = str(S.desktop_can_authorise_payment_runs),
+        hint = str(S.desktop_inv_run_access_hint),
         checked = row.isSenior || row.runAccess,
         enabled = !row.isSenior,
         onChange = { update(draft.copy(row = row.copy(runAccess = it))) },
     )
     SheetToggle(
-        title = "Can override approvals",
-        hint = "Allow this user to bypass the approval chain.",
+        title = str(S.desktop_can_override_approvals),
+        hint = str(S.desktop_inv_override_access_hint),
         checked = row.isSenior || row.overrideAccess,
         enabled = !row.isSenior,
         onChange = { update(draft.copy(row = row.copy(overrideAccess = it))) },
     )
     SheetToggle(
-        title = "Is senior",
-        hint = "Grants unlimited posting, run authorisation and override, and locks those three.",
+        title = str(S.desktop_is_senior),
+        hint = str(S.desktop_inv_senior_hint),
         checked = row.isSenior,
         enabled = true,
         onChange = { senior ->
@@ -730,9 +727,9 @@ internal fun RunAuthPickerSheet(state: InvoicesUiState, onEvent: (InvoicesEvent)
         needle.isEmpty() || it.name.lowercase().contains(needle) || it.role.lowercase().contains(needle)
     }
     SetupSheet(
-        title = "Add Users — Level $tier",
+        title = str(S.desktop_add_users_level_n, tier),
         onDismiss = { onEvent(InvoicesEvent.CloseRunAuthPicker) },
-        confirmText = "Done",
+        confirmText = str(S.ah_done),
         confirmEnabled = true,
         busy = false,
         scrollable = true,
@@ -741,10 +738,10 @@ internal fun RunAuthPickerSheet(state: InvoicesUiState, onEvent: (InvoicesEvent)
         ZillitTextField(
             value = state.setup.pickerSearch,
             onValueChange = { onEvent(InvoicesEvent.SearchRunAuthPicker(it)) },
-            placeholder = "Search users…",
+            placeholder = str(S.invitees_search_users),
             modifier = Modifier.fillMaxWidth(),
         )
-        if (people.isEmpty()) Hint("No users found")
+        if (people.isEmpty()) Hint(str(S.no_user_found))
         people.forEach { person ->
             val onChain = person.id in already
             Row(
@@ -758,10 +755,10 @@ internal fun RunAuthPickerSheet(state: InvoicesUiState, onEvent: (InvoicesEvent)
                     Hint(person.role)
                 }
                 if (onChain) {
-                    ZillitStatusPill(label = "Added", tone = StatusTone.Done)
+                    ZillitStatusPill(label = str(S.history_added), tone = StatusTone.Done)
                 } else {
                     ZillitButton(
-                        text = "Add",
+                        text = str(S.add),
                         onClick = { onEvent(InvoicesEvent.PickRunAuthUser(person.id)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -778,34 +775,33 @@ internal fun SetupConfirmSheets(state: InvoicesUiState, onEvent: (InvoicesEvent)
     state.setup.removingMember?.let { userId ->
         val name = state.assignees.firstOrNull { it.id == userId }?.name ?: userId
         SetupSheet(
-            title = "Remove Team Member",
+            title = str(S.desktop_remove_team_member),
             onDismiss = { onEvent(InvoicesEvent.CancelRemoveTeamMember) },
-            confirmText = "Remove",
+            confirmText = str(S.remove),
             confirmEnabled = true,
             busy = InvoiceSetupSection.Team in state.setup.saving,
             danger = true,
             onConfirm = { onEvent(InvoicesEvent.ConfirmRemoveTeamMember) },
         ) {
             ZillitText(
-                text = "Remove $name from the team? You can add them back later.",
+                text = str(S.desktop_inv_remove_from_team_confirm, name),
                 style = ZillitTheme.typography.bodyMedium,
             )
         }
     }
     state.setup.removingRule?.let { rule ->
-        val assignee = state.assignees.firstOrNull { it.id == rule.assignTo }?.label ?: "Unknown"
+        val assignee = state.assignees.firstOrNull { it.id == rule.assignTo }?.label ?: str(S.desktop_unknown)
         SetupSheet(
-            title = "Delete Assignment Rule",
+            title = str(S.desktop_delete_assignment_rule),
             onDismiss = { onEvent(InvoicesEvent.CancelRemoveRule) },
-            confirmText = "Delete",
+            confirmText = str(S.delete),
             confirmEnabled = true,
             busy = false,
             danger = true,
             onConfirm = { onEvent(InvoicesEvent.ConfirmRemoveRule) },
         ) {
             ZillitText(
-                text = "Remove rule \"${rule.summary(state.projectCurrency)}\" assigned to $assignee? " +
-                    "This action cannot be undone.",
+                text = str(S.desktop_inv_remove_rule_confirm, rule.summary(state.projectCurrency), assignee),
                 style = ZillitTheme.typography.bodyMedium,
             )
         }
@@ -843,7 +839,7 @@ private fun SetupSheet(
         onDismiss = { if (!busy) onDismiss() },
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = onDismiss,
                 variant = ButtonVariant.Tertiary,
                 enabled = !busy,

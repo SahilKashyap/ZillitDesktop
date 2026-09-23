@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDates
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealPreviewRules
 import com.zillit.desktop.feature.dealmemo.domain.preview.EditAction
@@ -79,8 +81,8 @@ fun DealPreviewPage(state: DealMemoUiState, onEvent: (DealMemoEvent) -> Unit) {
                 ) {
                     DealPreviewBody(state, preview, rules, onEvent)
                 }
-                preview.notFound -> PreviewNote("Deal memo not found.")
-                preview.failed -> PreviewNote("Couldn't load this deal memo.")
+                preview.notFound -> PreviewNote(str(S.desktop_dm_deal_memo_not_found))
+                preview.failed -> PreviewNote(str(S.desktop_dm_couldnt_load_this_deal_memo))
                 else -> PreviewSkeleton()
             }
         }
@@ -133,7 +135,7 @@ private fun PreviewHeader(preview: DealPreviewState, rules: DealPreviewRules?, o
             )
             ZillitText(text = "/", style = DmType.sans(12.5.sp), color = Color(0xFFB8B7B1), maxLines = 1)
             ZillitText(
-                text = preview.deal?.reference ?: "Deal Memo",
+                text = preview.deal?.reference ?: str(S.dm_title),
                 style = DmType.sans(12.5.sp, FontWeight.SemiBold),
                 color = pv.muted,
                 maxLines = 1,
@@ -152,7 +154,9 @@ private fun HeaderCluster(preview: DealPreviewState, rules: DealPreviewRules, on
             EditControlView(rules, preview.editMenuOpen, onEvent)
             if (rules.showActivate) {
                 SolidButton(
-                    text = if (preview.action == PreviewAction.Activate) "Activating…" else "Activate Deal",
+                    text = if (preview.action == PreviewAction.Activate) str(S.desktop_dm_activating) else str(
+                        S.desktop_dm_activate_deal,
+                    ),
                     onClick = { onEvent(PreviewEvent.Activate) },
                     icon = ZillitIcons.Check,
                     color = PreviewInk.Brand,
@@ -168,7 +172,7 @@ private fun HeaderCluster(preview: DealPreviewState, rules: DealPreviewRules, on
         preview.deal?.let { deal ->
             DmStatusBadge(deal.status)
             if (rules.showDeactivatingChip) {
-                DmBadge("Deactivating · ${DealDates.shortUtc(deal.lastPayDate)}", DmTone.Amber)
+                DmBadge(str(S.desktop_dm_deactivating_on, DealDates.shortUtc(deal.lastPayDate)), DmTone.Amber)
             }
         }
     }
@@ -331,7 +335,7 @@ private fun EditMenuItem(action: EditAction, onClick: () -> Unit) {
 private fun CompleteDetailsStrip(onEvent: (DealMemoEvent) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 18.dp), horizontalArrangement = Arrangement.End) {
         OutlineButton(
-            text = "Complete your details",
+            text = str(S.dm_crew_complete_details),
             onClick = { onEvent(PreviewEvent.CompleteDetails) },
             icon = ZillitIcons.Edit,
             ink = pv.muted,

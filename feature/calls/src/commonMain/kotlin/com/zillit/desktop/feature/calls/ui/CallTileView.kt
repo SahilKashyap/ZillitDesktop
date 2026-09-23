@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallStatus
 
 /**
@@ -77,7 +79,7 @@ fun CallTileView(
 
         if (showChip) {
             NameChip(
-                text = if (ringing) "Ringing…" else tile.name,
+                text = if (ringing) str(S.txt_ringing) else tile.name,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(ZillitTheme.spacing.sm),
@@ -170,7 +172,7 @@ private fun MuteBadge(modifier: Modifier = Modifier) {
     ) {
         ZillitIcon(
             icon = ZillitIcons.MicOff,
-            contentDescription = "Muted",
+            contentDescription = str(S.desktop_muted),
             tint = Color.White,
             size = BADGE_ICON,
         )
@@ -205,7 +207,7 @@ private fun HandChip(modifier: Modifier = Modifier) {
     ) {
         ZillitIcon(
             icon = ZillitIcons.Hand,
-            contentDescription = "Hand raised",
+            contentDescription = str(S.desktop_call_hand_raised),
             tint = Color.White,
             size = BADGE_ICON + 2.dp,
         )
@@ -221,7 +223,7 @@ private fun SharingChip(modifier: Modifier = Modifier) {
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
     ) {
         ZillitText(
-            text = "Sharing",
+            text = str(S.sharing),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.accentText,
             maxLines = 1,

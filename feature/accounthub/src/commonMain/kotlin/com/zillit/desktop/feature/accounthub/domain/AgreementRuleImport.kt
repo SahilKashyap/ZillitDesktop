@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Importing a union agreement's rule tables into the non-union pay
  * breakdown — the web's `agreementRuleImport.js`.
@@ -102,7 +105,7 @@ object AgreementRuleImport {
 
     private fun toRule(source: AgreementRuleRow, kind: PayRuleKind, id: String): PayRule = PayRule(
         id = id,
-        label = source.label.trim().ifBlank { "Untitled rule" },
+        label = source.label.trim().ifBlank { str(S.dm_amend_rules_untitled) },
         rateType = source.rateType,
         rateAmount = source.rateAmount?.let(::amountText) ?: "0",
         // Premiums are usually per day, OT and penalties per hour — only when

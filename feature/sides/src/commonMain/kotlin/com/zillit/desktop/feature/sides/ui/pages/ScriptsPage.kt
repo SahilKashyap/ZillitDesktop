@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.ScenePage
 import com.zillit.desktop.feature.sides.domain.Script
 import com.zillit.desktop.feature.sides.domain.ScriptVersion
@@ -67,9 +69,9 @@ internal fun ScriptsPage(scripts: ScriptsState, onEvent: (SidesEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            ZillitText("Upload & manage scripts", style = ZillitTheme.typography.titleMedium)
+            ZillitText(str(S.desktop_sides_scripts_title), style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "Manage script versions and their pages — these are used to generate sides.",
+                text = str(S.desktop_sides_scripts_subtitle),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -80,14 +82,14 @@ internal fun ScriptsPage(scripts: ScriptsState, onEvent: (SidesEvent) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             when {
-                scripts.loading && scripts.scripts.isEmpty() -> SidesLoader("Loading scripts…")
+                scripts.loading && scripts.scripts.isEmpty() -> SidesLoader(str(S.desktop_loading_scripts))
                 scripts.scripts.isEmpty() -> ZillitEmptyState(
-                    title = "No scripts yet",
-                    message = "Add a script (PDF or .fdx) to get started, then manage its pages.",
+                    title = str(S.sides_no_scripts_title),
+                    message = str(S.desktop_sides_no_scripts_subtitle),
                     icon = ZillitIcons.File,
                     action = {
                         ZillitButton(
-                            "Add Script",
+                            str(S.sides_add_script),
                             onClick = { onEvent(SidesEvent.AskAddScript) },
                             leadingIcon = ZillitIcons.Add,
                         )
@@ -141,7 +143,7 @@ private fun ScriptCard(script: Script, state: ScriptsState, onEvent: (SidesEvent
                         )
                     } else {
                         ZillitText(
-                            text = "No script file yet — add pages or upload a file",
+                            text = str(S.sides_no_script_file),
                             style = ZillitTheme.typography.bodySmall,
                             color = colors.warning,
                         )
@@ -153,14 +155,14 @@ private fun ScriptCard(script: Script, state: ScriptsState, onEvent: (SidesEvent
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (version != null) {
                     ZillitButton(
-                        text = "View",
+                        text = str(S.view),
                         onClick = { onEvent(SidesEvent.ViewVersion(script, version)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Eye,
                     )
                     ZillitButton(
-                        text = "Download",
+                        text = str(S.download),
                         onClick = { onEvent(SidesEvent.DownloadVersion(script, version)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -168,7 +170,11 @@ private fun ScriptCard(script: Script, state: ScriptsState, onEvent: (SidesEvent
                     )
                 }
                 ZillitButton(
-                    text = if (replacing) "Uploading…" else if (version != null) "Replace" else "Upload Script",
+                    text = when {
+                        replacing -> str(S.ah_uploading)
+                        version != null -> str(S.replace)
+                        else -> str(S.upload_script)
+                    },
                     onClick = { onEvent(SidesEvent.ReplaceScript(script)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -176,7 +182,7 @@ private fun ScriptCard(script: Script, state: ScriptsState, onEvent: (SidesEvent
                     loading = replacing,
                 )
                 ZillitButton(
-                    text = "Delete",
+                    text = str(S.delete),
                     onClick = { onEvent(SidesEvent.AskDeleteScript(script)) },
                     variant = ButtonVariant.Danger,
                     size = ButtonSize.Small,
@@ -252,20 +258,24 @@ private fun VersionPill(
                                 version.label,
                                 style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold),
                             )
-                            if (isCurrent) SidesBadge("Current")
+                            if (isCurrent) SidesBadge(str(S.dv_current))
                             ZillitText(
-                                text = "${version.pageCount} pp · ${SidesRules.formatDate(version.createdAt)}",
+                                text = str(
+                                    S.desktop_page_count_pp,
+                                    version.pageCount,
+                                    SidesRules.formatDate(version.createdAt),
+                                ),
                                 style = ZillitTheme.typography.labelSmall,
                                 color = colors.textMuted,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            ZillitIconButton(ZillitIcons.Eye, "View", onClick = {
+                            ZillitIconButton(ZillitIcons.Eye, str(S.view), onClick = {
                                 onEvent(SidesEvent.VersionMenu(null))
                                 onEvent(SidesEvent.ViewVersion(script, version))
                             })
-                            ZillitIconButton(ZillitIcons.Download, "Download", onClick = {
+                            ZillitIconButton(ZillitIcons.Download, str(S.download), onClick = {
                                 onEvent(SidesEvent.VersionMenu(null))
                                 onEvent(SidesEvent.DownloadVersion(script, version))
                             })
@@ -307,12 +317,12 @@ private fun PagesSection(scriptId: String, state: ScriptsState, onEvent: (SidesE
                         size = 14.dp,
                         modifier = Modifier.rotate(caret),
                     )
-                    ZillitText("Pages", style = ZillitTheme.typography.titleSmall)
+                    ZillitText(str(S.pages), style = ZillitTheme.typography.titleSmall)
                     if (pages.isNotEmpty()) CountChip(pages.size)
                 }
                 if (!collapsed) {
                     ZillitText(
-                        text = "Manage and organize all pages in this script.",
+                        text = str(S.desktop_sides_pages_subtitle),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )
@@ -322,12 +332,12 @@ private fun PagesSection(scriptId: String, state: ScriptsState, onEvent: (SidesE
                 ZillitSearchField(
                     value = query,
                     onValueChange = { onEvent(SidesEvent.PageSearch(scriptId, it)) },
-                    placeholder = "Search pages…",
+                    placeholder = str(S.desktop_search_pages),
                     modifier = Modifier.width(220.dp),
                 )
             }
             ZillitButton(
-                text = "Add Page",
+                text = str(S.desktop_sides_add_page),
                 onClick = { onEvent(SidesEvent.AskAddPage(scriptId)) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
@@ -335,9 +345,9 @@ private fun PagesSection(scriptId: String, state: ScriptsState, onEvent: (SidesE
         }
         if (collapsed) return@Column
         when {
-            scriptId in state.pagesLoading && pages.isEmpty() -> SidesLoader("Loading pages…")
+            scriptId in state.pagesLoading && pages.isEmpty() -> SidesLoader(str(S.desktop_loading_pages))
             pages.isEmpty() -> ZillitText(
-                text = "No pages yet. Add scene folders (color, scene no., description, PDF) to pull into sides.",
+                text = str(S.desktop_sides_no_pages_hint),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -362,13 +372,21 @@ private fun PagesTable(scriptId: String, rows: List<ScenePage>, query: String, o
             ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ZillitText("PAGE", style = ZillitTheme.typography.columnHeader, modifier = Modifier.weight(1f))
-            ZillitText("PAGE COUNT", style = ZillitTheme.typography.columnHeader, modifier = Modifier.width(90.dp))
-            ZillitText("ACTIONS", style = ZillitTheme.typography.columnHeader, modifier = Modifier.width(210.dp))
+            ZillitText(str(S.page), style = ZillitTheme.typography.columnHeader, modifier = Modifier.weight(1f))
+            ZillitText(
+                str(S.desktop_page_count),
+                style = ZillitTheme.typography.columnHeader,
+                modifier = Modifier.width(90.dp),
+            )
+            ZillitText(
+                str(S.dd_actions),
+                style = ZillitTheme.typography.columnHeader,
+                modifier = Modifier.width(210.dp),
+            )
         }
         if (rows.isEmpty()) {
             ZillitText(
-                text = "No pages match “$query”",
+                text = str(S.desktop_sides_no_pages_match, query),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 modifier = Modifier.padding(12.dp),
@@ -414,7 +432,7 @@ private fun PageRow(scriptId: String, page: ScenePage, onEvent: (SidesEvent) -> 
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 ZillitText(
-                    text = page.fileName.ifBlank { "Page ${page.sceneNumber}" },
+                    text = page.fileName.ifBlank { str(S.desktop_page_named, page.sceneNumber) },
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -422,29 +440,33 @@ private fun PageRow(scriptId: String, page: ScenePage, onEvent: (SidesEvent) -> 
                 PageNote(page.description)
             }
         }
-        ZillitText("${page.pageCount} pg", style = ZillitTheme.typography.bodySmall, modifier = Modifier.width(90.dp))
+        ZillitText(
+            str(S.desktop_page_count_pg, page.pageCount),
+            style = ZillitTheme.typography.bodySmall,
+            modifier = Modifier.width(90.dp),
+        )
         Row(
             Modifier.width(210.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                "View",
+                str(S.view),
                 onClick = { onEvent(SidesEvent.ViewPage(page)) },
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Eye,
             )
             ZillitButton(
-                text = "Edit",
+                text = str(S.edit),
                 onClick = { onEvent(SidesEvent.AskEditPage(scriptId, page)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Edit,
             )
-            ZillitTooltip("Delete page") {
+            ZillitTooltip(str(S.desktop_delete_page)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete page",
+                    contentDescription = str(S.desktop_delete_page),
                     onClick = { onEvent(SidesEvent.AskDeletePage(page)) },
                     tint = colors.danger,
                 )
@@ -479,7 +501,7 @@ private fun PageNote(text: String) {
             modifier = Modifier.weight(1f, fill = false),
         )
         ZillitTooltip(text) {
-            ZillitText("more", style = ZillitTheme.typography.labelSmall, color = colors.info)
+            ZillitText(str(S.more), style = ZillitTheme.typography.labelSmall, color = colors.info)
         }
     }
 }

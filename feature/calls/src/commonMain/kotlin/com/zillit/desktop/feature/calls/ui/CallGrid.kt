@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The participant grid.
@@ -160,7 +162,7 @@ private fun List<CallTile>.chunkedWithOverflow(
 fun WaitingForOthers(modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         ZillitText(
-            text = "Waiting for others to join",
+            text = str(S.desktop_call_waiting_for_others),
             style = ZillitTheme.typography.bodySmall,
             color = CallPalette.muted,
         )

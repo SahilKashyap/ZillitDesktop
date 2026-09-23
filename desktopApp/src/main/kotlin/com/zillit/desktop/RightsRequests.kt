@@ -34,9 +34,12 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.permissions.RightsApprover
+import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequest
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRequestMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.launch
 
 /**
@@ -85,7 +88,7 @@ internal fun RightsRequestSurface(ready: AppGraph.Ready, bus: RightsRequestBus) 
                 // reads as a failure to load, and the reader is left unsure
                 // whether the request went anywhere.
                 if (approvers.isEmpty()) {
-                    notice = "This project has no other administrator to ask."
+                    notice = str(S.desktop_no_other_admin_to_ask)
                 } else {
                     choosing = request
                 }
@@ -150,11 +153,11 @@ private suspend fun AppGraph.Ready.sendRightsRequest(
     )
     return when (sent) {
         is ZillitResult.Success ->
-            "Asked ${approver.name} for ${request.kind.verb} rights on ${request.moduleLabel}."
+            str(S.desktop_asked_for_rights, approver.name, request.kind.verbLabel(), request.moduleLabel)
 
         is ZillitResult.Failure -> {
             ZillitLog.w(TAG) { "rights request not sent: ${sent.error.technical ?: sent.error.userMessage}" }
-            "Could not send that request. ${sent.error.userMessage}"
+            str(S.desktop_request_not_sent, sent.error.userMessage)
         }
     }
 }
@@ -163,20 +166,19 @@ private suspend fun AppGraph.Ready.sendRightsRequest(
 @Composable
 private fun ConfirmDialog(request: RightsRequest, onDismiss: () -> Unit, onProceed: () -> Unit) {
     ZillitDialogShell(
-        title = "Ask for ${request.kind.verb} rights?",
+        title = str(S.desktop_ask_rights_title, request.kind.verbLabel()),
         subtitle = request.moduleLabel,
         icon = ZillitIcons.Shield,
         visible = true,
         onDismiss = onDismiss,
         width = DIALOG_WIDTH,
         actions = {
-            ZillitButton(text = "No", onClick = onDismiss, variant = ButtonVariant.Tertiary)
-            ZillitButton(text = "Proceed", onClick = onProceed)
+            ZillitButton(text = str(S.no), onClick = onDismiss, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.proceed), onClick = onProceed)
         },
     ) {
         ZillitText(
-            text = "You do not have ${request.kind.verb} rights on ${request.moduleLabel}. " +
-                "Would you like to ask one of this project's administrators for them?",
+            text = str(S.desktop_ask_rights_body, request.kind.verbLabel(), request.moduleLabel),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -192,14 +194,14 @@ private fun ApproverDialog(
     onPick: (RightsApprover) -> Unit,
 ) {
     ZillitDialogShell(
-        title = "Which administrator?",
-        subtitle = "They receive this as a message from you",
+        title = str(S.desktop_which_administrator),
+        subtitle = str(S.desktop_admin_receives_message),
         icon = ZillitIcons.Shield,
         visible = true,
         onDismiss = onDismiss,
         width = DIALOG_WIDTH,
         actions = {
-            ZillitButton(text = "Cancel", onClick = onDismiss, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.cancel), onClick = onDismiss, variant = ButtonVariant.Tertiary)
         },
     ) {
         ZillitLazyColumn(
@@ -252,3 +254,7 @@ private const val TAG = "Rights"
 private val DIALOG_WIDTH = 440.dp
 private val LIST_MAX_HEIGHT = 260.dp
 private val ROW_AVATAR = 32.dp
+
+/** The verb as shown to the reader; `verb` itself is the wire form the message carries. */
+private fun RightsKind.verbLabel(): String =
+    if (this == RightsKind.Post) str(S.txt_posting).lowercase() else str(S.download).lowercase()

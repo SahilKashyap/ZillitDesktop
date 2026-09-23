@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.assetreport.ui
 
 import com.zillit.desktop.core.common.looksLikeRawId
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.assetreport.domain.AssetAttachment
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
 import com.zillit.desktop.feature.assetreport.domain.AssetCurrencies
@@ -16,10 +18,13 @@ import com.zillit.desktop.feature.assetreport.domain.AssetViewer
 import com.zillit.desktop.feature.assetreport.domain.extensionOf
 
 /** The category segment's three positions. */
-enum class CategoryFilter(val label: String) {
-    All("All"),
-    Keep("Keep"),
-    Sell("Sell"),
+enum class CategoryFilter(private val labelKey: String) {
+    All(S.all),
+    Keep(S.asset_cat_keep),
+    Sell(S.asset_cat_sell),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 data class AssetUiState(

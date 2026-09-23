@@ -13,6 +13,8 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureUiState
 
 /**
@@ -31,8 +33,7 @@ internal fun ChatPage(
     Column(Modifier.fillMaxSize()) {
         if (unit != null && unit.answers(state.currentUserId) && chat.receiver == null) {
             ZillitNotice(
-                text = "If you want to send a new message to a User, first make a selection from ‘Select User’. " +
-                    "And if you want to reply to any message click on arrow and select ‘Reply’",
+                text = str(S.desktop_fs_chat_select_user_hint),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
                 modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
@@ -41,12 +42,12 @@ internal fun ChatPage(
         Box(Modifier.fillMaxSize()) {
             when {
                 unit == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    ZillitEmptyState(title = "No unit given for discussion", icon = ZillitIcons.Chat)
+                    ZillitEmptyState(title = str(S.desktop_fs_no_unit_for_discussion), icon = ZillitIcons.Chat)
                 }
                 board == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     ZillitEmptyState(
-                        title = "The discussion room is not available here",
-                        message = "Open it on the web or the phone for now.",
+                        title = str(S.desktop_fs_room_unavailable),
+                        message = str(S.desktop_fs_room_unavailable_hint),
                         icon = ZillitIcons.Chat,
                     )
                 }

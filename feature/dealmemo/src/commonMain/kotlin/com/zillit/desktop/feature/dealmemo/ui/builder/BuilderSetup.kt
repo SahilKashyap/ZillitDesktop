@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui.builder
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.ProjectSection
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderDocuments
 import com.zillit.desktop.feature.dealmemo.domain.authoring.CompanyDraft
@@ -16,6 +18,7 @@ import com.zillit.desktop.feature.dealmemo.ui.DealMemoViewModel
 import com.zillit.desktop.feature.dealmemo.ui.DealToastTone
 import com.zillit.desktop.feature.dealmemo.ui.SetupPageEvent
 import com.zillit.desktop.feature.dealmemo.ui.preview.RulesEditorState
+import kotlin.random.Random
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -25,7 +28,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlin.random.Random
 
 /**
  * A setup page's writes to Production Setup (`DMTemplateBuilderPage.jsx`,
@@ -321,9 +323,9 @@ internal class BuilderSetup(private val vm: DealMemoViewModel, private val sessi
             val rows = picked.mapIndexedNotNull { index, file ->
                 val pdf = file.name.lowercase().endsWith(".pdf") && (file.mime.isEmpty() || file.mime == PDF_MIME)
                 when {
-                    !pdf -> null.also { vm.toast("${file.name}: PDF only", DealToastTone.Error) }
+                    !pdf -> null.also { vm.toast(str(S.desktop_dm_file_pdf_only, file.name), DealToastTone.Error) }
                     file.bytes.size > BuilderDocuments.MAX_CUSTOM_BYTES -> null.also {
-                        vm.toast("${file.name}: over 20 MB", DealToastTone.Error)
+                        vm.toast(str(S.desktop_dm_file_over_20_mb, file.name), DealToastTone.Error)
                     }
                     else -> PendingDocument(
                         id = "pending-${vm.clock()}-$index",
@@ -336,6 +338,13 @@ internal class BuilderSetup(private val vm: DealMemoViewModel, private val sessi
             }
             if (rows.isNotEmpty()) page { copy(pendingDocuments = pendingDocuments + rows) }
         }
+    }
+
+    /** What the toast says once the queue drains: how many landed, and how many did not. */
+    private fun uploadSummary(count: Int, failed: Int): String = when {
+        failed > 0 -> str(S.desktop_dm_uploaded_count_failed, count, failed)
+        count > 1 -> str(S.desktop_dm_uploaded_n_documents, count)
+        else -> str(S.desktop_dm_uploaded_one_document)
     }
 
     /** Each file uploaded in turn, then one add for all that made it; a failed add keeps the queue. */
@@ -364,7 +373,7 @@ internal class BuilderSetup(private val vm: DealMemoViewModel, private val sessi
                     }
                     is ZillitResult.Failure -> {
                         failed += 1
-                        vm.toast("Failed: ${row.file.name} — upload error", DealToastTone.Error)
+                        vm.toast(str(S.desktop_dm_failed_upload_error, row.file.name), DealToastTone.Error)
                     }
                 }
             }
@@ -375,11 +384,7 @@ internal class BuilderSetup(private val vm: DealMemoViewModel, private val sessi
                         vm.reloadProjectSettings()
                         val count = attachments.size
                         vm.toast(
-                            if (failed > 0) {
-                                "Uploaded $count, $failed failed"
-                            } else {
-                                "Uploaded $count document${if (count > 1) "s" else ""}"
-                            },
+                            uploadSummary(count, failed),
                             DealToastTone.Success,
                         )
                         true
@@ -424,7 +429,7 @@ internal class BuilderSetup(private val vm: DealMemoViewModel, private val sessi
                     flat[key]?.let { put(key, it) }
                 }
                 put("caption", edit.description.trim())
-                put("title", edit.title.trim().ifEmpty { name ?: "Document" })
+                put("title", edit.title.trim().ifEmpty { name ?: str(S.document) })
                 put("description", edit.description.trim())
             }
             val added =

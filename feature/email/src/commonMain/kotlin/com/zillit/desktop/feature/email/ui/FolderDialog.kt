@@ -12,6 +12,8 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.isDeletable
 import com.zillit.desktop.feature.email.domain.message
 
@@ -34,7 +36,7 @@ internal fun FolderDialog(
         ZillitTextField(
             value = edit.name,
             onValueChange = { onEvent(EmailEvent.FolderNameChanged(it)) },
-            placeholder = "Folder name",
+            placeholder = str(S.folder_name),
             errorText = edit.error?.message,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -49,7 +51,7 @@ internal fun FolderDialog(
             // fiddly, and this dialog is already "edit this folder".
             if (edit.renaming?.isDeletable == true) {
                 ZillitButton(
-                    text = "Delete",
+                    text = str(S.delete),
                     variant = ButtonVariant.Tertiary,
                     onClick = { onEvent(EmailEvent.DeleteFolder()) },
                 )

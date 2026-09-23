@@ -10,6 +10,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewDraft
@@ -26,13 +28,13 @@ import com.zillit.desktop.feature.dealmemo.domain.preview.passportList
 import com.zillit.desktop.feature.dealmemo.ui.CrewFormEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
 import com.zillit.desktop.feature.dealmemo.ui.PreviewEvent
+import kotlin.time.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlin.time.Clock
 
 /** Everything a step needs: the draft and the deal it edits, what is required, and which errors show. */
 internal class CrewFormModel(
@@ -89,34 +91,47 @@ private fun CrewDetailsStep(m: CrewFormModel) {
     val names = remember(m.gate, m.context) { CrewNames.of(m.gate, m.context) }
     val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
     val passports = passportList(m.details["passport_attachment"])
-    SectionCard(title = "Crew Details", tag = "Your Details") {
+    SectionCard(title = str(S.dm_crew_step_crew), tag = str(S.dm_nda_fill_title)) {
         FormGrid {
-            half { ReadOnlyRow("Crew Name", DocRead.text(cd, "crew_name")) }
+            half { ReadOnlyRow(str(S.dm_step2_crew_name), DocRead.text(cd, "crew_name")) }
             half {
                 LabelledInput(
-                    label = "Full Legal Name",
+                    label = str(S.dm_req_full_legal_name),
                     value = m.text("full_legal_name"),
                     onValueChange = { m.crew("full_legal_name", it) },
-                    placeholder = DocRead.text(cd, "crew_name") ?: "Name as it appears on ID",
+                    placeholder = DocRead.text(cd, "crew_name") ?: str(S.desktop_dm_name_as_it_appears_on_id),
                     required = m.req("full_legal_name"),
                 )
             }
-            half { CrewText(m, "Screen Credit", "preferred_name", "Name shown on credits") }
-            half { CrewText(m, "Screen Credit Designation", "screen_credit_designation", "As shown in credits") }
-            half { ReadOnlyRow("Department", names.department) }
-            half { ReadOnlyRow("Designation", names.role) }
-            DocRead.text(cd, "custom_designation")?.let { custom -> half { ReadOnlyRow("Custom Designation", custom) } }
-            half { ReadOnlyRow("Crew Type", MemoCard.crewType(DocRead.text(cd, "crew_type"))) }
-            half { ReadOnlyRow("Reports To", DocRead.text(cd, "reports_to")) }
-            half { ReadOnlyRow("Call Sheet Tier", DocRead.text(cd, "call_sheet_tier")) }
-            half { ReadOnlyRow("Employment Status", MemoCard.empStatus(DocRead.text(cd, "emp_status"), m.context)) }
-            if (DocRead.text(cd, "agency_name") != null || DocRead.text(cd, "agency_id") != null) {
-                half { ReadOnlyRow("Agency", names.agency) }
+            half {
+                CrewText(m, str(S.dm_step2_preferred_name), "preferred_name", str(S.desktop_dm_name_shown_on_credits))
             }
-            half { ReadOnlyRow("Unit", MemoCard.unitName(cd, m.context)) }
+            half {
+                CrewText(
+                    m,
+                    str(S.dm_step2_screen_credit_designation),
+                    "screen_credit_designation",
+                    str(S.desktop_dm_as_shown_in_credits),
+                )
+            }
+            half { ReadOnlyRow(str(S.dm_nom_dept), names.department) }
+            half { ReadOnlyRow(str(S.dm_label_designation), names.role) }
+            DocRead.text(cd, "custom_designation")?.let { custom ->
+                half { ReadOnlyRow(str(S.desktop_dm_custom_designation), custom) }
+            }
+            half { ReadOnlyRow(str(S.dm_step2_crew_type), MemoCard.crewType(DocRead.text(cd, "crew_type"))) }
+            half { ReadOnlyRow(str(S.dm_step2_reports_to_type), DocRead.text(cd, "reports_to")) }
+            half { ReadOnlyRow(str(S.dm_step2_call_sheet_tier), DocRead.text(cd, "call_sheet_tier")) }
+            half {
+                ReadOnlyRow(str(S.dm_crew_emp_status), MemoCard.empStatus(DocRead.text(cd, "emp_status"), m.context))
+            }
+            if (DocRead.text(cd, "agency_name") != null || DocRead.text(cd, "agency_id") != null) {
+                half { ReadOnlyRow(str(S.desktop_dm_agency), names.agency) }
+            }
+            half { ReadOnlyRow(str(S.dm_step2_unit), MemoCard.unitName(cd, m.context)) }
             half {
                 LabelledSelect(
-                    "Gender",
+                    str(S.dm_step2_gender),
                     m.text("gender"),
                     CrewFormValues.GENDERS,
                     { m.crew("gender", it) },
@@ -125,7 +140,7 @@ private fun CrewDetailsStep(m: CrewFormModel) {
             }
             half {
                 Column {
-                    RowLabel("Date of Birth", m.req("dob"))
+                    RowLabel(str(S.dm_req_dob), m.req("dob"))
                     DateInput(
                         // A date of birth before 1970 is a negative epoch — still a date.
                         millis = DocRead.number(m.details, "dob")?.toLong(),
@@ -137,7 +152,7 @@ private fun CrewDetailsStep(m: CrewFormModel) {
             }
             half {
                 LabelledInput(
-                    label = "Email",
+                    label = str(S.dm_req_email),
                     value = m.text("email"),
                     onValueChange = { m.crew("email", it) },
                     placeholder = "name@example.com",
@@ -148,7 +163,7 @@ private fun CrewDetailsStep(m: CrewFormModel) {
             }
             half {
                 LabelledInput(
-                    label = "Mobile",
+                    label = str(S.dm_req_mobile),
                     value = CrewFormRules.sanitizePhone(m.text("mobile"), allowPlus = true),
                     onValueChange = { m.crew("mobile", CrewFormRules.sanitizePhone(it, allowPlus = true)) },
                     placeholder = "+44 7700 900000",
@@ -157,11 +172,11 @@ private fun CrewDetailsStep(m: CrewFormModel) {
                     onBlur = { m.touch(CrewField.Mobile) },
                 )
             }
-            half { CrewText(m, "Insurance / NI No.", "insurance_no", "AB 12 34 56 C") }
-            half { CrewText(m, "Tax Code", "tax_code", "e.g. 1257L") }
+            half { CrewText(m, str(S.dm_edit_personal_insurance), "insurance_no", str(S.dm_step2_ni_number_hint)) }
+            half { CrewText(m, str(S.dm_crew_tax_code), "tax_code", str(S.dm_step2_tax_code_hint)) }
             half {
                 LabelledSelect(
-                    label = "Right to Work",
+                    label = str(S.dm_req_rtw),
                     value = m.text("right_to_work"),
                     options = CrewFormValues.RIGHT_TO_WORK.map { it to it },
                     onPick = { m.crew("right_to_work", it) },
@@ -170,7 +185,7 @@ private fun CrewDetailsStep(m: CrewFormModel) {
             }
             wide {
                 Column {
-                    RowLabel("Passport / ID", m.req("passport_attachment"))
+                    RowLabel(str(S.dm_step2_passport), m.req("passport_attachment"))
                     PassportUploader(
                         files = passports,
                         uploading = m.uploading,
@@ -182,7 +197,7 @@ private fun CrewDetailsStep(m: CrewFormModel) {
             }
             wide {
                 AddressBlock(
-                    label = "Address",
+                    label = str(S.dm_address_label),
                     address = CrewFormValues.address(m.details["home_address"]),
                     countries = m.countries,
                     onChange = { m.crew("home_address", CrewFormValues.addressJson(it)) },
@@ -218,20 +233,25 @@ private fun CrewText(m: CrewFormModel, label: String, key: String, placeholder: 
 @Composable
 private fun EmergencyStep(m: CrewFormModel) {
     val emergency = m.section("emergency_details")
-    SectionCard(title = "Emergency Details", tag = "Next of Kin", tone = TagTone.Red, accent = CardAccent.Red) {
+    SectionCard(
+        title = str(S.dm_crew_step_emergency),
+        tag = str(S.desktop_dm_next_of_kin),
+        tone = TagTone.Red,
+        accent = CardAccent.Red,
+    ) {
         FormGrid {
             half {
                 LabelledInput(
-                    label = "Contact Name",
+                    label = str(S.contact_name),
                     value = m.text("emergency_contact_name"),
                     onValueChange = { m.onEvent(CrewFormEvent.EmergencyName(it)) },
-                    placeholder = "Full name",
+                    placeholder = str(S.dm_step2_agency_name_hint),
                     required = m.req("emergency_contact_name"),
                 )
             }
             wide {
                 PhoneRow(
-                    label = "Contact Number",
+                    label = str(S.contact_number),
                     countries = m.countries,
                     storedCode = DocRead.text(emergency, "country_code").orEmpty(),
                     number = CrewFormRules.sanitizePhone(m.text("emergency_contact_number"), allowPlus = false),
@@ -247,7 +267,7 @@ private fun EmergencyStep(m: CrewFormModel) {
             }
             half {
                 LabelledInput(
-                    label = "Email",
+                    label = str(S.dm_req_email),
                     value = DocRead.text(emergency, "email").orEmpty(),
                     onValueChange = { m.section("emergency_details", "email", it) },
                     placeholder = "name@example.com",
@@ -258,7 +278,7 @@ private fun EmergencyStep(m: CrewFormModel) {
             }
             wide {
                 AddressBlock(
-                    label = "Address",
+                    label = str(S.dm_address_label),
                     address = CrewFormValues.address(emergency?.get("address")),
                     countries = m.countries,
                     onChange = { m.section("emergency_details", "address", CrewFormValues.addressJson(it)) },
@@ -276,24 +296,24 @@ private fun RepresentativeStep(m: CrewFormModel) {
     val rep = m.section("representative_details")
     val section = "representative_details"
     SectionCard(
-        title = "Representative Details",
-        tag = "If Applicable",
+        title = str(S.dm_crew_step_representative),
+        tag = str(S.desktop_dm_if_applicable),
         tone = TagTone.Blue,
         accent = CardAccent.Blue,
     ) {
         FormGrid {
             half {
                 LabelledInput(
-                    label = "Representative Name",
+                    label = str(S.desktop_representative_name),
                     value = DocRead.text(rep, "name").orEmpty(),
                     onValueChange = { m.section(section, "name", it) },
-                    placeholder = "Full name",
+                    placeholder = str(S.dm_step2_agency_name_hint),
                     required = m.req("$section.name"),
                 )
             }
             wide {
                 PhoneRow(
-                    label = "Phone",
+                    label = str(S.dm_step2_representative_phone),
                     countries = m.countries,
                     storedCode = DocRead.text(rep, "country_code").orEmpty(),
                     number = CrewFormRules.sanitizePhone(
@@ -312,7 +332,7 @@ private fun RepresentativeStep(m: CrewFormModel) {
             }
             half {
                 LabelledInput(
-                    label = "Email",
+                    label = str(S.dm_req_email),
                     value = DocRead.text(rep, "email").orEmpty(),
                     onValueChange = { m.section(section, "email", it) },
                     placeholder = "name@example.com",
@@ -323,7 +343,7 @@ private fun RepresentativeStep(m: CrewFormModel) {
             }
             wide {
                 AddressBlock(
-                    label = "Address",
+                    label = str(S.dm_address_label),
                     address = CrewFormValues.address(rep?.get("address")),
                     countries = m.countries,
                     onChange = { m.section(section, "address", CrewFormValues.addressJson(it)) },
@@ -339,13 +359,25 @@ private fun RepresentativeStep(m: CrewFormModel) {
 private fun BankStep(m: CrewFormModel) {
     val bank = m.draft.bank
     fun bankText(key: String) = DocRead.text(bank, key).orEmpty()
-    SectionCard(title = "Bank Details", tag = "Payment Account", tone = TagTone.Teal, accent = CardAccent.Teal) {
+    SectionCard(
+        title = str(S.dm_crew_step_bank),
+        tag = str(S.desktop_dm_payment_account),
+        tone = TagTone.Teal,
+        accent = CardAccent.Teal,
+    ) {
         FormGrid {
-            half { BankText(m, "Account Holder Name", "account_holder_name", "As it appears on the account") }
-            half { BankText(m, "Bank Name", "name", "e.g. Barclays") }
+            half {
+                BankText(
+                    m,
+                    str(S.dm_req_account_holder),
+                    "account_holder_name",
+                    str(S.desktop_dm_as_it_appears_on_the_account),
+                )
+            }
+            half { BankText(m, str(S.dm_step2_bank_name), "name", str(S.dm_step2_bank_name_hint)) }
             half {
                 LabelledInput(
-                    label = "Account Number",
+                    label = str(S.dm_step2_bank_account_number),
                     value = bankText("account_number"),
                     onValueChange = { m.bank("account_number", CrewFormValues.accountNumber(it)) },
                     placeholder = "12345678",
@@ -358,7 +390,7 @@ private fun BankStep(m: CrewFormModel) {
                 // Stored as up to six digits and drawn as XX-XX-XX; a longer legacy value shows as it was stored.
                 val legacy = digits.length > SORT_CODE_DIGITS
                 Column {
-                    RowLabel("Sort Code", m.req("bank.sort_code"))
+                    RowLabel(str(S.dm_step2_bank_sort_code), m.req("bank.sort_code"))
                     FormInput(
                         value = if (legacy) stored else digits,
                         onValueChange = { m.bank("sort_code", CrewFormRules.stripSortCode(it)) },
@@ -368,7 +400,7 @@ private fun BankStep(m: CrewFormModel) {
                 }
             }
             half { BankText(m, "IBAN", "iban_number", "GB29 NWBK 6016 1331 9268 19") }
-            half { BankText(m, "SWIFT / BIC", "swift_code", "BARCGB22") }
+            half { BankText(m, str(S.dm_step2_bank_swift), "swift_code", "BARCGB22") }
         }
         AdditionalDetails(
             rows = DocRead.objects(bank["additional_details"]),
@@ -396,11 +428,16 @@ private fun BankText(m: CrewFormModel, label: String, key: String, placeholder: 
 private fun LoanOutStep(m: CrewFormModel) {
     val company = m.section("loan_out_company")
     val section = "loan_out_company"
-    SectionCard(title = "Loan Out Company", tag = "Company Details", tone = TagTone.Blue, accent = CardAccent.Blue) {
+    SectionCard(
+        title = str(S.dm_loanout_section_title),
+        tag = str(S.company_details),
+        tone = TagTone.Blue,
+        accent = CardAccent.Blue,
+    ) {
         FormGrid {
             half {
                 LabelledInput(
-                    label = "Company Name",
+                    label = str(S.dm_loanout_name),
                     value = DocRead.text(company, "name").orEmpty(),
                     onValueChange = { m.section(section, "name", it) },
                     placeholder = "Jane Doe Productions Ltd",
@@ -408,7 +445,7 @@ private fun LoanOutStep(m: CrewFormModel) {
             }
             wide {
                 PhoneRow(
-                    label = "Phone Number",
+                    label = str(S.dm_loanout_phone),
                     countries = m.countries,
                     storedCode = DocRead.text(company, "country_code").orEmpty(),
                     number = CrewFormRules.sanitizePhone(
@@ -426,7 +463,7 @@ private fun LoanOutStep(m: CrewFormModel) {
             }
             half {
                 LabelledInput(
-                    label = "Email",
+                    label = str(S.dm_req_email),
                     value = DocRead.text(company, "email").orEmpty(),
                     onValueChange = { m.section(section, "email", it) },
                     placeholder = "accounts@example.com",
@@ -436,7 +473,7 @@ private fun LoanOutStep(m: CrewFormModel) {
             }
             wide {
                 AddressBlock(
-                    label = "Address",
+                    label = str(S.dm_address_label),
                     address = CrewFormValues.address(company?.get("address")),
                     countries = m.countries,
                     onChange = { m.section(section, "address", CrewFormValues.addressJson(it)) },

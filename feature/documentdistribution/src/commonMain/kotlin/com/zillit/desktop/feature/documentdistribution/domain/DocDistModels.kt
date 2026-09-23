@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * What a library document *is*, for icon and preview purposes.
  *
@@ -216,14 +219,16 @@ enum class OpenState {
  * [Opened] is a subset of delivered: an opened copy was accepted first, which
  * is why the History legend counts it under "Delivered" too.
  */
-enum class RecipientStatus(val wire: String, val label: String) {
-    Pending("pending", "Sending"),
-    Accepted("accepted", "Delivered"),
-    Opened("opened", "Opened"),
-    Rejected("rejected", "Rejected"),
-    Bounced("bounced", "Bounced"),
-    Failed("failed", "Failed"),
+enum class RecipientStatus(val wire: String, private val labelKey: String) {
+    Pending("pending", S.dd_status_sending),
+    Accepted("accepted", S.dd_status_delivered),
+    Opened("opened", S.dd_status_opened),
+    Rejected("rejected", S.dd_status_rejected),
+    Bounced("bounced", S.dd_status_bounced),
+    Failed("failed", S.dd_status_failed),
     ;
+
+    val label: String get() = str(labelKey)
 
     val isFailure: Boolean get() = this == Rejected || this == Bounced || this == Failed
 
@@ -234,7 +239,14 @@ enum class RecipientStatus(val wire: String, val label: String) {
 }
 
 /** Which address line a recipient was on. */
-enum class RecipientKind(val label: String) { To("To"), Cc("Cc"), Bcc("Bcc") }
+enum class RecipientKind(private val labelKey: String) {
+    To(S.dd_sent_emails_to_label),
+    Cc(S.dd_sent_emails_cc_label),
+    Bcc(S.dd_sent_emails_bcc_label),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** One row of a sent distribution's per-recipient status. */
 data class DeliveryStatus(
@@ -249,12 +261,14 @@ data class DeliveryStatus(
 )
 
 /** Whether the mail service accepted the send as a whole. */
-enum class SendStatus(val wire: String, val label: String) {
-    Sent("sent", "Sent"),
-    Queued("queued", "Queued"),
-    Failed("failed", "Failed"),
-    Unknown("", ""),
+enum class SendStatus(val wire: String, private val labelKey: String?) {
+    Sent("sent", S.dd_dist_status_sent),
+    Queued("queued", S.dd_dist_status_queued),
+    Failed("failed", S.dd_dist_status_failed),
+    Unknown("", null),
     ;
+
+    val label: String get() = labelKey?.let(::str).orEmpty()
 
     companion object {
         fun from(wire: String?): SendStatus =

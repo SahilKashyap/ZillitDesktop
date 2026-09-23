@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.SignDocument
 import com.zillit.desktop.feature.formsignature.domain.SignDocumentTab
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
@@ -64,13 +66,13 @@ internal fun DocumentsForSignaturePage(state: FormSignatureUiState, onEvent: (Fo
             ZillitSearchField(
                 value = docs.search,
                 onValueChange = { onEvent(FormSignatureEvent.SearchDocuments(it)) },
-                placeholder = "Search",
+                placeholder = str(S.search),
                 modifier = Modifier.width(SEARCH_WIDTH.dp),
             )
             Spacer(Modifier.weight(1f))
             if (docs.tab == SignDocumentTab.Uploaded) {
                 ZillitButton(
-                    text = "Upload Document",
+                    text = str(S.txt_document_add),
                     onClick = { onEvent(FormSignatureEvent.StartSend) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Upload,
@@ -100,11 +102,10 @@ internal fun DocumentsForSignaturePage(state: FormSignatureUiState, onEvent: (Fo
                         InfoBand {
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 NoteLine(
-                                    "Note 1:",
-                                    "Upload documents with a signature block that require signatures " +
-                                        "from multiple parties.",
+                                    str(S.desktop_note_1),
+                                    str(S.desktop_fs_note_1_body),
                                 )
-                                NoteLine("Note 2:", "Please upload only PDF/Doc documents for signatures.")
+                                NoteLine(str(S.desktop_note_2), str(S.desktop_fs_note_2_body))
                             }
                         }
                     }
@@ -116,17 +117,17 @@ internal fun DocumentsForSignaturePage(state: FormSignatureUiState, onEvent: (Fo
                     columns = columns(docs.tab, onEvent),
                     onRowClick = { onEvent(FormSignatureEvent.OpenDocument(it)) },
                     emptyTitle = when {
-                        docs.search.isNotBlank() -> "No documents match"
-                        docs.tab == SignDocumentTab.Uploaded -> "Nothing sent for signature yet"
-                        docs.tab == SignDocumentTab.Received -> "Nothing waiting for your signature"
-                        else -> "No fully signed documents yet"
+                        docs.search.isNotBlank() -> str(S.desktop_fs_no_documents_match)
+                        docs.tab == SignDocumentTab.Uploaded -> str(S.desktop_fs_nothing_sent_yet)
+                        docs.tab == SignDocumentTab.Received -> str(S.desktop_fs_nothing_waiting)
+                        else -> str(S.desktop_fs_no_fully_signed_yet)
                     },
                     emptyMessage = when {
                         docs.search.isNotBlank() -> null
                         docs.tab == SignDocumentTab.Uploaded ->
-                            "Upload a PDF, place each signer’s boxes, and send it out."
-                        docs.tab == SignDocumentTab.Received -> "Documents sent to you for signature appear here."
-                        else -> "Once every signer has signed, the finished copy lands here."
+                            str(S.desktop_fs_upload_pdf_hint)
+                        docs.tab == SignDocumentTab.Received -> str(S.desktop_fs_received_hint)
+                        else -> str(S.desktop_fs_finalized_hint)
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -147,28 +148,30 @@ private fun columns(
     tab: SignDocumentTab,
     onEvent: (FormSignatureEvent) -> Unit,
 ): List<TableColumn<SignDocument>> = listOf(
-    TableColumn(header = "Name", width = ColumnWidth.Weight(2f)) { document ->
+    TableColumn(header = str(S.name), width = ColumnWidth.Weight(2f)) { document ->
         ZillitText(
             text = document.name.ifBlank { "—" },
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
         )
     },
-    TableColumn(header = "Uploaded By", width = ColumnWidth.Weight(1.2f)) { document ->
+    TableColumn(header = str(S.txt_uploaded_by), width = ColumnWidth.Weight(1.2f)) { document ->
         PersonChip(name = document.uploaderName(), userId = document.uploadedBy)
     },
-    textColumn(header = "Uploaded On", width = ColumnWidth.Fixed(DATE_WIDTH.dp), muted = true) {
+    textColumn(header = str(S.desktop_uploaded_on), width = ColumnWidth.Fixed(DATE_WIDTH.dp), muted = true) {
         formDateTime(it.createdOn)
     },
-    TableColumn(header = "Signed", width = ColumnWidth.Fixed(STATUS_WIDTH.dp)) { document -> SignersCell(document) },
-    TableColumn(header = "Action", width = ColumnWidth.Fixed(ACTIONS_WIDTH.dp)) { document ->
+    TableColumn(header = str(S.signed), width = ColumnWidth.Fixed(STATUS_WIDTH.dp)) { document ->
+        SignersCell(document)
+    },
+    TableColumn(header = str(S.txt_action), width = ColumnWidth.Fixed(ACTIONS_WIDTH.dp)) { document ->
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
             ZillitButton(
-                text = "View",
+                text = str(S.view),
                 onClick = { onEvent(FormSignatureEvent.OpenDocument(document)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -176,7 +179,7 @@ private fun columns(
             if (tab == SignDocumentTab.Uploaded) {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete",
+                    contentDescription = str(S.delete),
                     tint = ZillitTheme.colors.danger,
                     onClick = { onEvent(FormSignatureEvent.AskDeleteDocument(document.id)) },
                 )
@@ -192,9 +195,9 @@ private fun SignersCell(document: SignDocument) {
     val total = document.signers.size
     ZillitStatusPill(
         label = when {
-            document.finalized -> "Fully signed"
+            document.finalized -> str(S.desktop_fs_fully_signed)
             total == 0 -> "—"
-            else -> "$signed of $total"
+            else -> str(S.docusign_field_of, signed, total)
         },
         tone = if (document.finalized) StatusTone.Done else StatusTone.Pending,
         dot = true,

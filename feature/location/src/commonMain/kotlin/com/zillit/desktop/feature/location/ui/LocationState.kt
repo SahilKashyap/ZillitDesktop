@@ -12,6 +12,8 @@ import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.PickedLocationFile
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** A folder opened over the grid: the tiles inside it, one gallery each. */
 data class OpenFolder(
@@ -22,8 +24,8 @@ data class OpenFolder(
     val title: String
         get() = when (by) {
             GroupBy.LocationName -> folder.title
-            GroupBy.SceneNo -> "Scene ${folder.title}"
-            GroupBy.EpisodeNo -> "Episode ${folder.title}"
+            GroupBy.SceneNo -> str(S.desktop_scene_numbered, folder.title)
+            GroupBy.EpisodeNo -> str(S.desktop_episode_numbered, folder.title)
         }
 }
 

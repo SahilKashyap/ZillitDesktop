@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.localization.localisedMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.AccessPerson
 
 /**
@@ -96,7 +98,7 @@ internal class PermissionController(private val ctx: SheetContext) {
                 }
                 is ZillitResult.Failure -> {
                     update { copy(processing = processing - person.userId) }
-                    ctx.toast(result.error.localised().ifBlank { "Something went wrong" }, isError = true)
+                    ctx.toast(result.error.localised().ifBlank { str(S.something_went_wrong) }, isError = true)
                 }
             }
         }
@@ -113,10 +115,11 @@ internal class PermissionController(private val ctx: SheetContext) {
     private companion object {
         const val POSTING_UPDATED = "posting_rights_updated_successfully"
         const val VIEWING_UPDATED = "viewing_rights_updated_successfully"
-        val KNOWN_MESSAGES = mapOf(
-            POSTING_UPDATED to "Posting rights updated successfully",
-            VIEWING_UPDATED to "Viewing rights updated successfully",
-        )
+        val KNOWN_MESSAGES: Map<String, String>
+            get() = mapOf(
+                POSTING_UPDATED to str(S.desktop_posting_rights_updated),
+                VIEWING_UPDATED to str(S.desktop_viewing_rights_updated),
+            )
     }
 }
 

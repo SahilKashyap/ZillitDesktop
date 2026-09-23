@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
 import com.zillit.desktop.feature.callsheet.ui.ListEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
@@ -100,9 +102,9 @@ internal fun SheetToolbar(state: SheetUiState) {
 
 /** The labels API name when the dictionary has one, the web's English otherwise. */
 internal fun toolTitle(isPoster: Boolean): String = if (isPoster) {
-    Labels.current.exact("call_sheet_label") ?: "Call Sheet Creation"
+    Labels.current.exact("call_sheet_label") ?: str(S.cs_title_creation)
 } else {
-    Labels.current.exact("drafts_call_sheet_label") ?: "Drafts Call Sheet"
+    Labels.current.exact("drafts_call_sheet_label") ?: str(S.cs_title_drafts)
 }
 
 /**
@@ -177,7 +179,7 @@ internal fun ActivityPill(active: Boolean, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Spinner(Modifier.size(14.dp))
-            Text("Loading…", style = sheetText(12.sp, FontWeight.Medium), color = colors.textSecondary)
+            Text(str(S.cs_loading), style = sheetText(12.sp, FontWeight.Medium), color = colors.textSecondary)
         }
     }
 }

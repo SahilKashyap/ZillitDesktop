@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.invoices.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A credit note or a dispute raised against a vendor — the web's
  * `CreditsPage`, on `/invoices/credit-notes`.
@@ -24,10 +27,12 @@ data class CreditNote(
     val notes: String = "",
 )
 
-enum class CreditNoteType(val wire: String, val label: String) {
-    CreditNote("credit_note", "Credit Note"),
-    Dispute("dispute", "Dispute"),
+enum class CreditNoteType(val wire: String, private val labelKey: String) {
+    CreditNote("credit_note", S.desktop_credit_note),
+    Dispute("dispute", S.desktop_dispute),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): CreditNoteType = entries.firstOrNull { it.wire == wire } ?: CreditNote
@@ -38,12 +43,15 @@ enum class CreditNoteType(val wire: String, val label: String) {
  * Where a credit note stands, and what can be done to it next — the web's
  * `STATUS_MAP`, whose `action` is the button each row offers.
  */
-enum class CreditNoteStatus(val wire: String, val label: String, val action: String) {
-    Pending("pending", "Pending", "Apply"),
-    Applied("applied", "Applied", "View"),
-    Disputed("disputed", "Disputed", "Resolve"),
-    Resolved("resolved", "Resolved", "View"),
+enum class CreditNoteStatus(val wire: String, private val labelKey: String, private val actionKey: String) {
+    Pending("pending", S.pending, S.dm_filter_apply),
+    Applied("applied", S.desktop_applied, S.view),
+    Disputed("disputed", S.desktop_disputed, S.desktop_resolve),
+    Resolved("resolved", S.ah_alert_filter_resolved, S.view),
     ;
+
+    val label: String get() = str(labelKey)
+    val action: String get() = str(actionKey)
 
     /** Whether the row's button writes something, rather than just opening it. */
     val isActionable: Boolean get() = this == Pending || this == Disputed
@@ -54,12 +62,14 @@ enum class CreditNoteStatus(val wire: String, val label: String, val action: Str
 }
 
 /** The filter chips over the credit note list — the web's four. */
-enum class CreditNoteFilter(val label: String, val status: CreditNoteStatus?) {
-    All("All", null),
-    Pending("Pending", CreditNoteStatus.Pending),
-    Applied("Applied", CreditNoteStatus.Applied),
-    Disputed("Disputed", CreditNoteStatus.Disputed),
+enum class CreditNoteFilter(private val labelKey: String, val status: CreditNoteStatus?) {
+    All(S.all, null),
+    Pending(S.pending, CreditNoteStatus.Pending),
+    Applied(S.desktop_applied, CreditNoteStatus.Applied),
+    Disputed(S.desktop_disputed, CreditNoteStatus.Disputed),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun keeps(note: CreditNote): Boolean = status == null || note.status == status
 }

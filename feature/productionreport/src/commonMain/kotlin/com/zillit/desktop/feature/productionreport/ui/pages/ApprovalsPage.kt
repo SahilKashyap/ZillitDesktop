@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
@@ -111,10 +113,12 @@ private fun paneRows(
 }
 
 private fun emptyText(section: ApprovalSection, loaded: Boolean): String = when (section) {
-    ApprovalSection.Sent -> if (loaded) "No sent approvals." else "Loading sent approvals…"
-    ApprovalSection.Received -> if (loaded) "No received approvals." else "Loading received approvals…"
+    ApprovalSection.Sent ->
+        if (loaded) str(S.desktop_no_sent_approvals) else str(S.desktop_loading_sent_approvals)
+    ApprovalSection.Received ->
+        if (loaded) str(S.desktop_no_received_approvals) else str(S.desktop_loading_received_approvals)
     ApprovalSection.Finalized ->
-        if (loaded) "No finalized production reports." else "Loading finalized production reports…"
+        if (loaded) str(S.desktop_pr_no_finalized) else str(S.desktop_pr_loading_finalized)
 }
 
 @Composable
@@ -125,18 +129,19 @@ private fun SectionTable(
     onEvent: (ReportEvent) -> Unit,
 ) {
     val showApproval = section == ApprovalSection.Received && !rows.all { isInternalOnly(it, state.me) }
-    val columns = buildList {
-        add(TableColumn("#", width = 56.dp))
-        add(TableColumn("Day", width = 100.dp))
-        add(TableColumn("Created By", weight = 1.2f))
-        add(TableColumn("Created At", width = 190.dp))
-        add(TableColumn("Updated At", width = 190.dp))
-        add(TableColumn("Status", width = 170.dp))
-        if (showApproval) add(TableColumn("Approval", width = 130.dp))
-        add(TableColumn("Actions", width = 90.dp, alignment = Alignment.End))
+    val keyed = buildList {
+        add("#" to TableColumn("#", width = 56.dp))
+        add("Day" to TableColumn(str(S.bs_day), width = 100.dp))
+        add("Created By" to TableColumn(str(S.pr_created_by), weight = 1.2f))
+        add("Created At" to TableColumn(str(S.ah_lbl_created_at), width = 190.dp))
+        add("Updated At" to TableColumn(str(S.ah_lbl_updated_at), width = 190.dp))
+        add("Status" to TableColumn(str(S.status), width = 170.dp))
+        if (showApproval) add("Approval" to TableColumn(str(S.ah_step_approval), width = 130.dp))
+        add("Actions" to TableColumn(str(S.dd_actions), width = 90.dp, alignment = Alignment.End))
     }
+    val columns = keyed.map { it.second }
     ReportTable(columns = columns, rows = rows, minWidth = 1000.dp) { row, column, index ->
-        val key = columns[column].title
+        val key = keyed[column].first
         when (key) {
             // The tables name no report, so the unread REPORT count sits by the serial.
             "#" -> Row(
@@ -181,7 +186,7 @@ private fun menuFor(
 private fun SentStatusPill(state: ReportUiState, row: ReportSummary) {
     val (_, total) = approvalCount(row.status, row.approvals)
     if (total > 0) {
-        HoverCard("Approval Status", trigger = { StatusBadge(row.status, row.statusLabel) }) {
+        HoverCard(str(S.onboarding_status), trigger = { StatusBadge(row.status, row.statusLabel) }) {
             ApprovalStatusList(state, row)
         }
         return
@@ -190,7 +195,9 @@ private fun SentStatusPill(state: ReportUiState, row: ReportSummary) {
     if (names.isEmpty()) {
         StatusBadge(row.status, row.statusLabel)
     } else {
-        ZillitTooltip("${if (names.size == 1) "Approver" else "Approvers"}: ${names.joinToString(", ")}") {
+        val joined = names.joinToString(", ")
+        val tip = if (names.size == 1) str(S.desktop_approver_line, joined) else str(S.desktop_approvers_line, joined)
+        ZillitTooltip(tip) {
             StatusBadge(row.status, row.statusLabel)
         }
     }
@@ -200,10 +207,10 @@ private fun SentStatusPill(state: ReportUiState, row: ReportSummary) {
 private fun ApprovalLink(row: ReportSummary) {
     val (approved, total) = approvalCount(row.status, row.approvals)
     HoverCard(
-        "Approval Status",
+        str(S.onboarding_status),
         trigger = {
             Text(
-                "$approved/$total approved",
+                str(S.av_approval_progress, approved, total),
                 style = reportText(12.sp).copy(textDecoration = TextDecoration.Underline),
                 color = ReportTheme.colors.blue,
             )
@@ -217,7 +224,7 @@ internal fun ApprovalStatusList(state: ReportUiState?, row: ReportSummary) {
     val colors = ReportTheme.colors
     val entries = approvalStatusEntries(row.approvals, stageForStatus(row.status))
     if (entries.isEmpty()) {
-        Text("No approvers.", style = reportText(12.sp), color = colors.textMuted)
+        Text(str(S.desktop_no_approvers_dot), style = reportText(12.sp), color = colors.textMuted)
         return
     }
     Column(
@@ -254,7 +261,7 @@ internal fun ApprovalStatusList(state: ReportUiState?, row: ReportSummary) {
                     }
                     if (entry.reason.isNotBlank()) {
                         Text(
-                            "Reason: ${entry.reason}",
+                            str(S.docusign_recipient_timeline_declined_reason, entry.reason),
                             style = reportText(11.sp).copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
                             color = colors.red,
                         )
@@ -301,7 +308,7 @@ private fun SectionCard(
         creatorDesignation = member?.designation.orEmpty(),
         nowMillis = nowMillis,
         approvals = approvals,
-        links = cardLinks(entries, primary).filterNot { it.label == "Send Reminder" },
+        links = cardLinks(entries, primary).filterNot { it.label == str(S.pr_send_reminder) },
         pills = cardPills(entries, primary),
         modifier = modifier,
         nameBadge = reportUnreadFor(state, row),

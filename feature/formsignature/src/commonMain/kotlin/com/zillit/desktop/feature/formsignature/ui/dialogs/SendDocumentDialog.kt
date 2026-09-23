@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.SignSpotKind
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureUiState
@@ -61,7 +63,7 @@ internal fun SendDocumentDialog(state: FormSignatureUiState, onEvent: (FormSigna
     val send = state.send
     val placing = send?.step == SendStep.Place
     ZillitDialogShell(
-        title = "Upload Document",
+        title = str(S.txt_document_add),
         subtitle = send?.fileName?.takeIf { it.isNotBlank() },
         visible = send != null,
         onDismiss = { onEvent(FormSignatureEvent.CancelSend) },
@@ -73,14 +75,14 @@ internal fun SendDocumentDialog(state: FormSignatureUiState, onEvent: (FormSigna
             if (send == null) return@ZillitDialogShell
             if (placing) {
                 ZillitButton(
-                    text = "Back",
+                    text = str(S.back),
                     onClick = { onEvent(FormSignatureEvent.SendBack) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
                     enabled = !send.sending,
                 )
                 ZillitButton(
-                    text = "Send Document",
+                    text = str(S.send_document),
                     onClick = { onEvent(FormSignatureEvent.SubmitSend) },
                     size = ButtonSize.Small,
                     loading = send.sending,
@@ -88,7 +90,7 @@ internal fun SendDocumentDialog(state: FormSignatureUiState, onEvent: (FormSigna
                 )
             } else {
                 ZillitButton(
-                    text = "Next",
+                    text = str(S.next),
                     onClick = { onEvent(FormSignatureEvent.SendNext) },
                     size = ButtonSize.Small,
                     loading = send.busy,
@@ -113,23 +115,27 @@ private fun DetailsStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) 
         ZillitTextField(
             value = send.title,
             onValueChange = { onEvent(FormSignatureEvent.EditSend(send.copy(title = it))) },
-            label = "Name",
-            placeholder = "Document Name",
+            label = str(S.name),
+            placeholder = str(S.dm_nda_document_name_label),
         )
         AttachDropZone(
-            label = "Attach Document",
-            hint = "PDF format only",
+            label = str(S.ah_attach_document),
+            hint = str(S.desktop_fs_pdf_format_only),
             onClick = { onEvent(FormSignatureEvent.SendPickFile) },
         )
         if (send.fileName.isNotBlank()) FileChip(name = send.fileName, extension = "PDF")
 
         ZillitDivider()
-        ZillitText("Select the users whose signatures are required.", style = ZillitTheme.typography.bodyMedium)
-        ZillitText("Select Zillit Members", style = ZillitTheme.typography.titleSmall)
+        ZillitText(str(S.select_users_sign_req_txt), style = ZillitTheme.typography.bodyMedium)
+        ZillitText(str(S.desktop_fs_select_zillit_members), style = ZillitTheme.typography.titleSmall)
         if (send.loadingPeople) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ZillitSpinner(size = 16.dp)
-                ZillitText("Loading the crew…", style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
+                ZillitText(
+                    str(S.desktop_fs_loading_crew),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
             }
         } else {
             ZillitMultiSelect(
@@ -142,8 +148,8 @@ private fun DetailsStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) 
                     } ?: id
                 },
                 onChange = { onEvent(FormSignatureEvent.EditSend(send.copy(chosen = it))) },
-                placeholder = "Select Zillit Members",
-                emptyText = "Nobody on this production has access to the tool",
+                placeholder = str(S.desktop_fs_select_zillit_members),
+                emptyText = str(S.desktop_fs_nobody_has_tool_access),
             )
         }
         ZillitCheckbox(
@@ -155,7 +161,7 @@ private fun DetailsStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) 
                     ),
                 )
             },
-            label = "Tick here if there are External Users (either on Zillit or outside)",
+            label = str(S.tick_here_external_users_txt),
         )
         if (send.hasExternal) {
             Box(Modifier.padding(start = 24.dp)) {
@@ -172,26 +178,26 @@ private fun DetailsStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) 
                         } ?: id
                     },
                     onChange = { onEvent(FormSignatureEvent.EditSend(send.copy(chosenExternal = it))) },
-                    placeholder = "Select External Users",
-                    emptyText = "No external users on this production yet",
+                    placeholder = str(S.select_external_users_txt),
+                    emptyText = str(S.desktop_fs_no_external_users_yet),
                 )
             }
         }
         ZillitCheckbox(
             checked = send.senderSigns,
             onCheckedChange = { onEvent(FormSignatureEvent.EditSend(send.copy(senderSigns = it))) },
-            label = "Tick here if your signature is required as well.",
+            label = str(S.tick_here_self_sign_req_txt),
         )
 
         ZillitDivider()
-        ZillitText("Tick one of the below", style = ZillitTheme.typography.titleSmall)
+        ZillitText(str(S.tick_one_of_bel_txt), style = ZillitTheme.typography.titleSmall)
         ChoiceRow(
-            label = "Does the document require initials and signature",
+            label = str(S.doc_required_init_or_sig_txt),
             selected = !send.onlySignature,
             onClick = { onEvent(FormSignatureEvent.EditSend(send.copy(onlySignature = false))) },
         )
         ChoiceRow(
-            label = "Does the document require signature only",
+            label = str(S.doc_required_sig_txt),
             selected = send.onlySignature,
             onClick = { onEvent(FormSignatureEvent.EditSend(send.copy(onlySignature = true))) },
         )
@@ -205,7 +211,7 @@ private fun PlaceStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         if (send.people.size > 1) {
             ZillitText(
-                "Select user to place their placeholders:",
+                str(S.desktop_fs_select_user_for_placeholders),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
             )
@@ -246,14 +252,14 @@ private fun PlaceStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                text = "Add Signature Placeholder",
+                text = str(S.desktop_fs_add_signature_placeholder),
                 onClick = { onEvent(FormSignatureEvent.SendAddPlaceholder(SignSpotKind.Signature)) },
                 size = ButtonSize.Small,
                 enabled = send.draft == null && send.senderMark == null,
             )
             if (!send.onlySignature) {
                 ZillitButton(
-                    text = "Add Initials Placeholder",
+                    text = str(S.desktop_fs_add_initials_placeholder),
                     onClick = { onEvent(FormSignatureEvent.SendAddPlaceholder(SignSpotKind.Initials)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -267,25 +273,29 @@ private fun PlaceStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ZillitText(
-                    "Your signature:",
+                    str(S.desktop_fs_your_signature_colon),
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                 )
                 if (send.senderMark != null) {
                     ZillitButton(
-                        text = "Confirm Placement",
+                        text = str(S.desktop_fs_confirm_placement_button),
                         onClick = { onEvent(FormSignatureEvent.SendConfirmOwnMark) },
                         size = ButtonSize.Small,
                         enabled = !send.busy,
                     )
                     ZillitButton(
-                        text = "Cancel",
+                        text = str(S.cancel),
                         onClick = { onEvent(FormSignatureEvent.SendCancelOwnMark) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
                     )
                 } else {
                     ZillitButton(
-                        text = if (send.senderSignaturePlaced) "Add your signature again" else "Add your signature",
+                        text = if (send.senderSignaturePlaced) {
+                            str(S.desktop_fs_add_your_signature_again)
+                        } else {
+                            str(S.desktop_fs_add_your_signature)
+                        },
                         onClick = { onEvent(FormSignatureEvent.SendAddOwnMark(SignSpotKind.Signature)) },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
@@ -293,7 +303,11 @@ private fun PlaceStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) {
                     )
                     if (!send.onlySignature) {
                         ZillitButton(
-                            text = if (send.senderInitialsPlaced) "Add your initials again" else "Add your initials",
+                            text = if (send.senderInitialsPlaced) {
+                                str(S.desktop_fs_add_your_initials_again)
+                            } else {
+                                str(S.desktop_fs_add_your_initials)
+                            },
                             onClick = { onEvent(FormSignatureEvent.SendAddOwnMark(SignSpotKind.Initials)) },
                             variant = ButtonVariant.Secondary,
                             size = ButtonSize.Small,
@@ -322,19 +336,19 @@ private fun PlaceStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ZillitText(
-                    "Page ${send.page + 1} / ${send.pages.size}",
+                    str(S.desktop_page_x_of_y, send.page + 1, send.pages.size),
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                 )
                 Spacer(Modifier.weight(1f))
                 ZillitButton(
-                    text = "← Previous",
+                    text = str(S.desktop_previous_arrow),
                     onClick = { onEvent(FormSignatureEvent.SendTurnPage(-1)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                     enabled = paging && send.page > 0,
                 )
                 ZillitButton(
-                    text = "Next →",
+                    text = str(S.desktop_next_arrow),
                     onClick = { onEvent(FormSignatureEvent.SendTurnPage(1)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -418,10 +432,10 @@ private fun PlaceStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit) {
                         append(person.name).append(": ")
                         append(
                             when {
-                                !hasSig -> "No signature placeholder"
-                                hasInit && !send.onlySignature -> "Signature + Initials"
-                                send.onlySignature -> "Signature"
-                                else -> "Signature (initials missing)"
+                                !hasSig -> str(S.desktop_fs_no_signature_placeholder)
+                                hasInit && !send.onlySignature -> str(S.desktop_fs_signature_plus_initials)
+                                send.onlySignature -> str(S.signature_txt)
+                                else -> str(S.desktop_fs_signature_initials_missing)
                             },
                         )
                     },

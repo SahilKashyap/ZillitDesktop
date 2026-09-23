@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.TaxFilingRoute
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
 import com.zillit.desktop.feature.taxfiling.ui.components.MtdToast
@@ -207,23 +209,23 @@ private fun TopBar(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> Unit) {
         ) {
             BackChip(
                 description = when {
-                    state.inReturn -> "Back to companies"
-                    route is TaxFilingRoute.Filing -> "Back to Tax Filing"
-                    else -> "Back to Account Hub"
+                    state.inReturn -> str(S.desktop_tax_back_to_companies)
+                    route is TaxFilingRoute.Filing -> str(S.desktop_tax_back_to_tax_filing)
+                    else -> str(S.desktop_hub_back_to_account_hub)
                 },
                 onClick = { onEvent(TaxFilingEvent.Back) },
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 when (route) {
                     TaxFilingRoute.Catalog -> {
-                        RootCrumb("Management") { onEvent(TaxFilingEvent.LeaveToAccountHub) }
+                        RootCrumb(str(S.desktop_management)) { onEvent(TaxFilingEvent.LeaveToAccountHub) }
                         CrumbSlash()
-                        LeafCrumb("Tax Filing")
+                        LeafCrumb(str(S.desktop_tax_filing))
                     }
                     is TaxFilingRoute.Filing -> {
-                        RootCrumb("Tax Filing") { onEvent(TaxFilingEvent.ShowCatalog) }
+                        RootCrumb(str(S.desktop_tax_filing)) { onEvent(TaxFilingEvent.ShowCatalog) }
                         CrumbSlash()
-                        val title = filing?.title ?: "Not available"
+                        val title = filing?.title ?: str(S.not_available)
                         if (state.inReturn) {
                             MiddleCrumb(title) { onEvent(TaxFilingEvent.BackToRegistrations) }
                             CrumbSlash()

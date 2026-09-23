@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitQrCode
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The sign-in landing page — a port of the web client's `/device/login`.
@@ -102,7 +104,7 @@ internal fun QrLoginPage(
             // who cannot get past this page and is asked.
             appVersion?.takeIf { it.isNotBlank() }?.let { version ->
                 ZillitText(
-                    text = "Zillit Desktop $version",
+                    text = str(S.desktop_zillit_desktop_version, version),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.signInTextMuted,
                     modifier = Modifier.fillMaxWidth().testTag(VERSION_TAG),
@@ -136,7 +138,7 @@ private fun SignInHeader() {
             )
         }
         ZillitText(
-            text = "Zillit Desktop",
+            text = str(S.desktop_zillit_desktop),
             style = ZillitTheme.typography.titleSmall,
             color = ZillitTheme.colors.signInText,
         )
@@ -153,14 +155,14 @@ private fun Instructions(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl),
     ) {
         ZillitText(
-            text = "USE ZILLIT APP ON YOUR COMPUTER",
+            text = str(S.desktop_use_zillit_app_on_your_computer),
             style = ZillitTheme.typography.titleLarge,
             color = ZillitTheme.colors.signInText,
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-            SIGN_IN_STEPS.forEachIndexed { index, text ->
-                NumberedStep(number = index + 1, text = text)
+            SIGN_IN_STEPS.forEachIndexed { index, step ->
+                NumberedStep(number = index + 1, text = step())
             }
         }
 
@@ -173,7 +175,7 @@ private fun Instructions(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Visit Corporate Web Site",
+                text = str(S.desktop_visit_corporate_web_site),
                 style = ZillitTheme.typography.button,
                 color = ZillitTheme.colors.signInLink,
             )
@@ -255,7 +257,7 @@ private fun QrPlaceholder() {
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            text = "Preparing your sign-in code…",
+            text = str(S.desktop_preparing_sign_in_code),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.signInText,
             modifier = Modifier.padding(ZillitTheme.spacing.lg),
@@ -290,7 +292,7 @@ private fun ReloadOverlay(onClick: () -> Unit) {
             )
             Spacer(Modifier.height(ZillitTheme.spacing.md))
             ZillitText(
-                text = "CLICK TO RELOAD QR CODE",
+                text = str(S.desktop_click_to_reload_qr_code),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.signInText,
                 modifier = Modifier.fillMaxWidth(),
@@ -301,21 +303,18 @@ private fun ReloadOverlay(onClick: () -> Unit) {
 }
 
 /**
- * Transcribed from `Login.jsx`'s English fallbacks, verbatim.
+ * The phone's own `step_*` strings, read at composition so a language switch
+ * re-reads them.
  *
  * These are the strings a user reads on their phone while following along, so
- * they must not drift from the web wording. They stay hardcoded until the
- * localisation pipeline lands (plan §12) — the web fetches them from
- * `localLoginPageTranslation`, which desktop has no equivalent of yet.
+ * they must not drift from the phone's wording — hence the phone's keys.
  */
-private val SIGN_IN_STEPS = listOf(
-    "Open Zillit on your phone.",
-    "If you are a member of a project then follow steps 4 & 5.",
-    "If you are not a member of a project you need to ‘Start A Project’ or " +
-        "‘Join A Project’ (with a code), then follow steps 4 & 5.",
-    "Select ‘Settings’ when you are on ‘Home’ page and then tap on " +
-        "‘Connect to Zillit from your laptop’.",
-    "Point your phone to the screen and scan QR code by pressing ‘Link Device’.",
+private val SIGN_IN_STEPS: List<() -> String> = listOf(
+    { str(S.open_zillit_on_your_phone) + "." },
+    { str(S.step_second) },
+    { str(S.step_third) },
+    { str(S.step_four) },
+    { str(S.step_five) },
 )
 
 private val CARD_MAX_WIDTH = 1100.dp

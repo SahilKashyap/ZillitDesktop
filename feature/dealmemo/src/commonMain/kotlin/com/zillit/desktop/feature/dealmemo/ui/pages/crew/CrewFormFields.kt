@@ -54,6 +54,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.preview.MemoFormat
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
@@ -480,7 +482,7 @@ private fun gridRows(cells: List<GridCell>): List<List<GridCell>> {
     return rows
 }
 
-internal const val SELECT_PLACEHOLDER = "— Select —"
+internal val SELECT_PLACEHOLDER: String get() = str(S.desktop_dm_select_placeholder)
 private const val DISABLED = 0.6f
 private const val TAG_WASH = 0.15f
 private const val RING_ALPHA = 0.10f

@@ -49,6 +49,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.MailboxKind
@@ -59,16 +61,19 @@ import com.zillit.desktop.feature.email.domain.isDeletable
  * `settings`). Each opens a page of the Email Settings window, a dialog
  * over the mailbox, or the tour; the host decides what an entry opens.
  */
-enum class MailSettingsEntry(val label: String) {
-    Signatures("Signatures"),
-    ConversationView("Conversation View"),
-    ImportContacts("Import Contacts"),
-    BccPresets("Add/Edit BCC Presets"),
-    EmailGroup("Create Email Group"),
-    Credentials("Email Setup Externally"),
-    Forwarding("Email Forwarding"),
-    Rules("Email rules"),
-    MailboxTour("Mailbox Tour"),
+enum class MailSettingsEntry(private val labelKey: String) {
+    Signatures(S.signatures),
+    ConversationView(S.email_trailing),
+    ImportContacts(S.desktop_email_import_contacts),
+    BccPresets(S.bbc_presets),
+    EmailGroup(S.create_email_group),
+    Credentials(S.email_credentials),
+    Forwarding(S.desktop_email_forwarding),
+    Rules(S.email_rules_title),
+    MailboxTour(S.desktop_email_mailbox_tour),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -105,7 +110,7 @@ internal fun MailSidebar(
         }
 
         ZillitButton(
-            text = "New Email",
+            text = str(S.desktop_email_new_email),
             leadingIcon = ZillitIcons.Edit,
             onClick = { onEvent(EmailEvent.Compose(ComposeMode.New)) },
             modifier = Modifier
@@ -139,7 +144,7 @@ private fun ColumnScope.FolderLists(
 
     if (state.isLoadingFolders && state.folders.isEmpty()) {
         ZillitText(
-            text = "Loading…",
+            text = str(S.ah_loading),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.padding(ZillitTheme.spacing.md),
@@ -196,7 +201,7 @@ private fun FoldersHeading(hasFolders: Boolean, expanded: Boolean, onToggle: () 
                     size = HEADING_CHEVRON,
                 )
                 ZillitText(
-                    text = "FOLDERS",
+                    text = str(S.folders).uppercase(),
                     style = ZillitTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = HEADING_TRACKING,
@@ -211,12 +216,12 @@ private fun FoldersHeading(hasFolders: Boolean, expanded: Boolean, onToggle: () 
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
                 ZillitIcon(ZillitIcons.Folder, contentDescription = null, tint = colors.textMuted, size = FOLDER_ICON)
-                ZillitText(text = "Folders", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                ZillitText(text = str(S.folders), style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
             }
         }
         ZillitIconButton(
             icon = ZillitIcons.Add,
-            contentDescription = "Create folder",
+            contentDescription = str(S.create_folder),
             onClick = onCreate,
             tint = colors.textMuted,
             size = HEADING_BUTTON,
@@ -313,7 +318,7 @@ private fun FolderOptions(folder: EmailFolder, revealed: Boolean, onEvent: (Emai
     Box {
         ZillitIconButton(
             icon = ZillitIcons.MoreVertical,
-            contentDescription = "Folder options",
+            contentDescription = str(S.desktop_email_folder_options),
             onClick = { menuOpen = true },
             tint = if (revealed || menuOpen) {
                 colors.textSecondary
@@ -326,8 +331,8 @@ private fun FolderOptions(folder: EmailFolder, revealed: Boolean, onEvent: (Emai
             expanded = menuOpen,
             onDismissRequest = { menuOpen = false },
             entries = listOf(
-                ZillitMenuEntry.Action("Edit", ZillitIcons.Edit) { onEvent(EmailEvent.EditFolder(folder)) },
-                ZillitMenuEntry.Action("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) {
+                ZillitMenuEntry.Action(str(S.edit), ZillitIcons.Edit) { onEvent(EmailEvent.EditFolder(folder)) },
+                ZillitMenuEntry.Action(str(S.delete), ZillitIcons.Trash, ZillitMenuTone.Danger) {
                     onEvent(EmailEvent.DeleteFolder(folder))
                 },
             ),
@@ -366,7 +371,7 @@ private fun SettingsRow(entries: List<MailSettingsEntry>, onSetting: (MailSettin
                     size = FOLDER_ICON,
                 )
                 ZillitText(
-                    text = "Settings",
+                    text = str(S.settings),
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = if (hovered || open) colors.accentText else colors.textPrimary,
                 )

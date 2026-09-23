@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.recce.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.feature.recce.domain.LatLng
 import com.zillit.desktop.feature.recce.domain.Recce
@@ -17,10 +19,13 @@ import com.zillit.desktop.feature.recce.domain.Weather
 import com.zillit.desktop.feature.recce.domain.mapsLink
 
 /** The list's status filter — the web's segmented All / Published / Drafts. */
-enum class RecceFilter(val label: String, val status: RecceStatus?) {
-    All("All", null),
-    Published("Published", RecceStatus.Published),
-    Drafts("Drafts", RecceStatus.Draft),
+enum class RecceFilter(private val labelKey: String, val status: RecceStatus?) {
+    All(S.recce_tab_all, null),
+    Published(S.recce_tab_published, RecceStatus.Published),
+    Drafts(S.recce_tab_drafts, RecceStatus.Draft),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** Which page the window shows; the web derives this from the URL. */
@@ -162,10 +167,12 @@ data class RecceEditor(
 
     /** The web's publish validation: title, date, RDV time, RDV place. */
     fun publishProblems(): Map<RecceField, String> = buildMap {
-        if (title.isBlank()) put(RecceField.Title, "Give the recce a title")
-        if (RecceClock.dayMillis(dateYmd) == 0L) put(RecceField.Date, "Pick the recce date")
-        if (RecceClock.clockMillis(dateYmd, rdv.time) == 0L) put(RecceField.RdvTime, "Set the RDV time")
-        if (rdv.place.isBlank()) put(RecceField.RdvPlace, "Set the rendezvous point")
+        if (title.isBlank()) put(RecceField.Title, str(S.desktop_recce_title_required))
+        if (RecceClock.dayMillis(dateYmd) == 0L) put(RecceField.Date, str(S.desktop_recce_date_required))
+        if (RecceClock.clockMillis(dateYmd, rdv.time) == 0L) {
+            put(RecceField.RdvTime, str(S.desktop_recce_rdv_time_required))
+        }
+        if (rdv.place.isBlank()) put(RecceField.RdvPlace, str(S.desktop_recce_rdv_place_required))
     }
 
     fun toDraft(status: RecceStatus, timezone: String) = RecceDraft(
@@ -275,10 +282,10 @@ data class RecceUiState(
     /** "1–50 of 120" — the web's `showTotal`. */
     val rangeLabel: String
         get() {
-            if (total == 0) return "0 of 0"
+            if (total == 0) return str(S.desktop_zero_of_zero)
             val from = (page - 1) * pageSize + 1
             val to = minOf(page * pageSize, total)
-            return "$from–$to of $total"
+            return str(S.desktop_range_of_total, from, to, total)
         }
 
     /** A unit id (or a legacy unit name) shown as its name. */

@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceAssignmentRule
 import com.zillit.desktop.feature.invoices.domain.InvoiceSetup
 import com.zillit.desktop.feature.invoices.domain.InvoiceTeamRow
 import kotlinx.coroutines.delay
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Settings page's behaviour — the web's `SettingsPage.jsx`.
@@ -195,7 +197,7 @@ internal class InvoiceSetupActions(private val vm: InvoicesViewModel) {
     private fun saveRules() {
         val rules = setup.rules
         if (rules.any { it.assignTo.isBlank() }) {
-            vm.fail("Pick who each rule assigns to.")
+            vm.fail(str(S.desktop_inv_pick_who_each_rule_assigns_to))
             return
         }
         edit { copy(saving = saving + InvoiceSetupSection.Rules) }

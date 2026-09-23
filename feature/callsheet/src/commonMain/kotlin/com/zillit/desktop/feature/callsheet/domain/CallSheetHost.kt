@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.callsheet.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.JsonObject
@@ -64,7 +66,7 @@ fun replaceTargets(messages: List<UnitMessage>): List<ReplaceTarget> =
     messages
         .filter { it.isDocument && it.hasMedia && !it.deleted && !it.archived && it.id.isNotBlank() }
         .sortedByDescending { it.createdMs }
-        .map { ReplaceTarget(it.id, it.name.ifBlank { "Untitled document" }) }
+        .map { ReplaceTarget(it.id, it.name.ifBlank { str(S.docusign_send_confirm_untitled) }) }
 
 /**
  * Where a call sheet goes beyond its own service: the Home call-sheet unit,

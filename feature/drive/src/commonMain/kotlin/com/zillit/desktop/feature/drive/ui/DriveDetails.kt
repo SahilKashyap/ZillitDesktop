@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.drive.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveRef
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The docked details panel: what it loads when it opens, and the things that
@@ -103,7 +105,7 @@ internal class DriveDetails(private val vm: DriveViewModel) {
         vm.run {
             when (val result = vm.repo.deleteComment(commentId)) {
                 is ZillitResult.Success -> {
-                    vm.notice("Comment deleted")
+                    vm.notice(str(S.desktop_drive_comment_deleted))
                     reloadComments(item)
                 }
 

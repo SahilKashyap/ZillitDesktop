@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.rules
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.rates.Js
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -42,7 +44,7 @@ data class TriggerForm(val hours: String = "", val time: String = "", val dayKin
  */
 @Suppress("MagicNumber") // Each template's default amount, as the web seeds it.
 enum class RuleTemplate(
-    val label: String,
+    private val labelKey: String,
     val list: RuleList,
     val rateType: String,
     val rateAmount: Double,
@@ -50,9 +52,12 @@ enum class RuleTemplate(
     val field: TriggerField,
     val defaultForm: TriggerForm,
 ) {
-    OtSixth("OT 6th Day", RuleList.Overtimes, "multiplier", 1.5, "hour", TriggerField.Hours, TriggerForm(hours = "0")),
+    OtSixth(
+        S.desktop_dm_tpl_ot_6th_day, RuleList.Overtimes, "multiplier", 1.5, "hour", TriggerField.Hours,
+        TriggerForm(hours = "0"),
+    ),
     OtSeventh(
-        "OT 7th Day",
+        S.desktop_dm_tpl_ot_7th_day,
         RuleList.Overtimes,
         "multiplier",
         2.0,
@@ -61,7 +66,7 @@ enum class RuleTemplate(
         TriggerForm(hours = "0"),
     ),
     Ot(
-        "OT after # of hours",
+        S.desktop_dm_tpl_ot_after_hours,
         RuleList.Overtimes,
         "multiplier",
         1.5,
@@ -70,17 +75,17 @@ enum class RuleTemplate(
         TriggerForm(hours = "8"),
     ),
     CameraOt(
-        "Camera OT after # of hours", RuleList.Overtimes, "multiplier", 2.0, "hour", TriggerField.Hours,
+        S.desktop_dm_tpl_camera_ot_after_hours, RuleList.Overtimes, "multiplier", 2.0, "hour", TriggerField.Hours,
         TriggerForm(hours = "11"),
     ),
-    SixthDay("6th Day", RuleList.Premiums, "multiplier", 1.5, "day", TriggerField.None, TriggerForm()),
-    SeventhDay("7th Day", RuleList.Premiums, "multiplier", 2.0, "day", TriggerField.None, TriggerForm()),
+    SixthDay(S.desktop_dm_tpl_6th_day, RuleList.Premiums, "multiplier", 1.5, "day", TriggerField.None, TriggerForm()),
+    SeventhDay(S.desktop_dm_tpl_7th_day, RuleList.Premiums, "multiplier", 2.0, "day", TriggerField.None, TriggerForm()),
     BankHoliday(
-        "Bank Holiday", RuleList.Premiums, "multiplier", 1.5, "day", TriggerField.DayKinds,
+        S.desktop_dm_tpl_bank_holiday, RuleList.Premiums, "multiplier", 1.5, "day", TriggerField.DayKinds,
         TriggerForm(dayKinds = listOf("bank_holiday")),
     ),
     PreDawn(
-        "Pre-Dawn / Early Call",
+        S.desktop_dm_tpl_pre_dawn,
         RuleList.Premiums,
         "multiplier",
         2.0,
@@ -89,11 +94,11 @@ enum class RuleTemplate(
         TriggerForm(time = "06:00"),
     ),
     NightWorkEarly(
-        "Night Work — Early Unit Call", RuleList.Premiums, "flat", 25.0, "event", TriggerField.Time,
+        S.desktop_dm_tpl_night_work_early, RuleList.Premiums, "flat", 25.0, "event", TriggerField.Time,
         TriggerForm(time = "05:00"),
     ),
     NightWork(
-        "Night Work",
+        S.desktop_dm_tpl_night_work,
         RuleList.Premiums,
         "multiplier",
         1.5,
@@ -102,11 +107,15 @@ enum class RuleTemplate(
         TriggerForm(time = "22:00"),
     ),
     BrokenTurnaround(
-        "Broken Turnaround", RuleList.Penalties, "flat", 900.0, "event", TriggerField.Hours, TriggerForm(hours = "10"),
+        S.desktop_dm_tpl_broken_turnaround, RuleList.Penalties, "flat", 900.0, "event", TriggerField.Hours,
+        TriggerForm(hours = "10"),
     ),
-    MealPenalty("Meal Penalty", RuleList.Penalties, "flat", 9.5, "event", TriggerField.Hours, TriggerForm(hours = "6")),
+    MealPenalty(
+        S.desktop_dm_tpl_meal_penalty, RuleList.Penalties, "flat", 9.5, "event", TriggerField.Hours,
+        TriggerForm(hours = "6"),
+    ),
     MealCurtailed(
-        "Meal Break Curtailed",
+        S.desktop_dm_tpl_meal_curtailed,
         RuleList.Penalties,
         "multiplier",
         2.0,
@@ -118,12 +127,14 @@ enum class RuleTemplate(
 
     val id: String get() = IDS.getValue(this)
 
+    val label: String get() = str(labelKey)
+
     /** The rule-type menu's groups: Overtime, Premium, Penalty. */
     val group: String
         get() = when (list) {
-            RuleList.Overtimes -> "Overtime"
-            RuleList.Premiums -> "Premium"
-            else -> "Penalty"
+            RuleList.Overtimes -> str(S.overtime)
+            RuleList.Premiums -> str(S.desktop_premium)
+            else -> str(S.desktop_penalty)
         }
 
     /** `fromTrigger`: the editable form a stored trigger reads as. */
@@ -375,18 +386,31 @@ object RuleNamePresets {
 
 /** The grid's option lists. */
 object RuleOptions {
-    val RATE_TYPES = listOf("multiplier" to "Multiplier (×)", "flat" to "Flat amount", "percentage" to "Percentage (%)")
-    val BASES = listOf("hour" to "Hourly rate", "day" to "Daily rate", "week" to "Weekly rate", "event" to "Per event")
-    val DAY_TYPES = listOf("" to "Any day", "SWD" to "SWD", "CWD" to "CWD", "SCWD" to "SCWD")
+    val RATE_TYPES: List<Pair<String, String>>
+        get() = listOf(
+            "multiplier" to str(S.desktop_multiplier_paren),
+            "flat" to str(S.desktop_flat_amount),
+            "percentage" to str(S.desktop_percentage_paren),
+        )
+    val BASES: List<Pair<String, String>>
+        get() = listOf(
+            "hour" to str(S.desktop_dm_hourly_rate),
+            "day" to str(S.dm_rates_buyout_daily_rate),
+            "week" to str(S.dm_rates_weekly_rate),
+            "event" to str(S.desktop_per_event),
+        )
+    val DAY_TYPES: List<Pair<String, String>>
+        get() = listOf("" to str(S.dm_rule_any_day), "SWD" to "SWD", "CWD" to "CWD", "SCWD" to "SCWD")
     val INCREMENTS = listOf(5, 10, 15, 30, 45)
-    val DAY_KINDS = listOf(
-        "bank_holiday" to "Bank holiday",
-        "statutory_holiday" to "Statutory holiday",
-        "public_holiday" to "Public holiday",
-        "saturday" to "Saturday",
-        "sunday" to "Sunday",
-        "idle" to "Idle day",
-        "studio_day" to "Studio day",
-        "distant_day" to "Distant day",
-    )
+    val DAY_KINDS: List<Pair<String, String>>
+        get() = listOf(
+            "bank_holiday" to str(S.desktop_bank_holiday),
+            "statutory_holiday" to str(S.desktop_statutory_holiday),
+            "public_holiday" to str(S.desktop_public_holiday),
+            "saturday" to str(S.day_saturday),
+            "sunday" to str(S.day_sunday),
+            "idle" to str(S.desktop_idle_day),
+            "studio_day" to str(S.desktop_studio_day),
+            "distant_day" to str(S.desktop_distant_day),
+        )
 }

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.preview
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealCrewLabels
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
@@ -115,7 +117,7 @@ object MemoCard {
             projectName = context.projectName,
             external = deal.externalFlag,
             crewHeading = person?.fullName?.takeIf { it.isNotEmpty() } ?: deal.crewName ?: deal.fullLegalName
-                ?: "Crew member",
+                ?: str(S.crew_member),
             crewSubtitle = listOf(names.role, names.department).filter { it.isNotEmpty() }.joinToString(" · "),
             identity = identity(deal, context),
             blocks = listOfNotNull(
@@ -132,15 +134,15 @@ object MemoCard {
         val person = context.labels.person(deal.userId)
         val entityId = DocRead.text(DocRead.obj(deal.json, "territory_union"), "prod_entity")
         return listOf(
-            MemoField("Reference", deal.reference ?: DASH, mono = true),
-            MemoField("Status", deal.status.label),
+            MemoField(str(S.desktop_reference), deal.reference ?: DASH, mono = true),
+            MemoField(str(S.status), deal.status.label),
             MemoField(
-                "Deal Memo For",
+                str(S.desktop_dm_deal_memo_for),
                 person?.fullName?.takeIf { it.isNotEmpty() } ?: deal.crewName
-                    ?: if (DocRead.flag(deal.json, "is_external")) "External crew member" else DASH,
+                    ?: if (DocRead.flag(deal.json, "is_external")) str(S.dm_step2_external_label) else DASH,
             ),
-            MemoField("Created", MemoFormat.dateTime(deal.createdAt, context.zone)),
-            MemoField("Production Entity", entityLabel(entityId, context)),
+            MemoField(str(S.drive_created), MemoFormat.dateTime(deal.createdAt, context.zone)),
+            MemoField(str(S.desktop_dm_production_entity), entityLabel(entityId, context)),
         )
     }
 
@@ -154,41 +156,45 @@ object MemoCard {
         val cd = deal.crew
         fun text(key: String) = DocRead.text(cd, key) ?: DASH
         val fields = mutableListOf(
-            MemoField("Crew Name", text("crew_name")),
-            MemoField("Full Legal Name", DocRead.text(cd, "full_legal_name") ?: deal.crewName ?: DASH),
-            MemoField("Screen Credit", text("preferred_name")),
-            MemoField("Screen Credit Designation", text("screen_credit_designation")),
-            MemoField("Department", names.department),
-            MemoField("Designation", names.role),
+            MemoField(str(S.dm_step2_crew_name), text("crew_name")),
+            MemoField(str(S.dm_req_full_legal_name), DocRead.text(cd, "full_legal_name") ?: deal.crewName ?: DASH),
+            MemoField(str(S.dm_step2_preferred_name), text("preferred_name")),
+            MemoField(str(S.dm_step2_screen_credit_designation), text("screen_credit_designation")),
+            MemoField(str(S.department), names.department),
+            MemoField(str(S.designation), names.role),
         )
-        deal.customDesignation?.let { fields += MemoField("Custom Designation", it) }
-        fields += MemoField("Crew Type", crewType(DocRead.text(cd, "crew_type")))
-        fields += MemoField("Reports To", text("reports_to"))
-        fields += MemoField("Call Sheet Tier", text("call_sheet_tier"))
-        fields += MemoField("Employment Status", empStatus(DocRead.text(cd, "emp_status"), context))
+        deal.customDesignation?.let { fields += MemoField(str(S.desktop_custom_designation), it) }
+        fields += MemoField(str(S.dm_step2_crew_type), crewType(DocRead.text(cd, "crew_type")))
+        fields += MemoField(str(S.dm_step2_reports_to_type), text("reports_to"))
+        fields += MemoField(str(S.dm_step2_call_sheet_tier), text("call_sheet_tier"))
+        fields += MemoField(str(S.dm_crew_emp_status), empStatus(DocRead.text(cd, "emp_status"), context))
         if (DocRead.text(cd, "agency_name") != null || DocRead.text(cd, "agency_id") != null) {
-            fields += MemoField("Agency", names.agency)
+            fields += MemoField(str(S.desktop_agency), names.agency)
         }
-        fields += MemoField("Unit", unitName(cd, context).ifEmpty { DASH })
+        fields += MemoField(str(S.dm_step2_unit), unitName(cd, context).ifEmpty { DASH })
         fields += MemoField(
-            "Gender",
+            str(S.gender),
             DealLabels.formatLabel(DocRead.text(cd, "gender"), context.translate).ifEmpty { DASH },
         )
-        fields += MemoField("Date of Birth", MemoFormat.date(DocRead.number(cd, "dob")?.toLong(), context.zone))
-        fields += MemoField("Email", text("email"))
-        fields += MemoField("Mobile", text("mobile"))
-        fields += MemoField("Insurance / NI No.", text("insurance_no"))
-        fields += MemoField("Tax Code", text("tax_code"))
+        fields += MemoField(str(S.dm_step2_dob), MemoFormat.date(DocRead.number(cd, "dob")?.toLong(), context.zone))
+        fields += MemoField(str(S.email), text("email"))
+        fields += MemoField(str(S.dm_step2_mobile), text("mobile"))
+        fields += MemoField(str(S.dm_edit_personal_insurance), text("insurance_no"))
+        fields += MemoField(str(S.dm_step2_tax_code), text("tax_code"))
         fields += MemoField(
-            "Right to Work",
+            str(S.dm_step2_right_to_work),
             DealLabels.formatLabel(DocRead.text(cd, "right_to_work"), context.translate).ifEmpty { DASH },
         )
         fields += MemoField(
-            "Passport / ID",
+            str(S.dm_step2_passport),
             MemoValue.Passport(passportList(cd?.get("passport_attachment"))),
             wide = true,
         )
-        fields += MemoField("Address", DealAddress.of(cd?.get("home_address")).format().ifEmpty { DASH }, wide = true)
+        fields += MemoField(
+            str(S.address),
+            DealAddress.of(cd?.get("home_address")).format().ifEmpty { DASH },
+            wide = true,
+        )
         if (UkPayroll.appliesTo(deal)) {
             UkPayroll.memoRows(
                 DocRead.obj(cd, UkPayroll.KEY),
@@ -196,7 +202,7 @@ object MemoCard {
                 date = { MemoFormat.date(it, context.zone) },
             ).forEach { row -> fields += MemoField(row.label, row.value?.ifEmpty { null } ?: DASH, mono = row.mono) }
         }
-        return MemoBlock.Fields("Crew Details", fields)
+        return MemoBlock.Fields(str(S.dm_section_crew_details), fields)
     }
 
     private fun bankDetails(deal: DealDoc): MemoBlock {
@@ -204,19 +210,22 @@ object MemoCard {
         fun text(key: String) = DocRead.text(bank, key) ?: DASH
         val sortRaw = DocRead.text(bank, "sort_code")?.trim().orEmpty()
         val fields = mutableListOf(
-            MemoField("Account Holder Name", text("account_holder_name")),
+            MemoField(str(S.dm_step2_bank_account_holder), text("account_holder_name")),
             MemoField(
-                "Bank Name",
+                str(S.dm_step2_bank_name),
                 MemoValue.Bank(
                     name = (DocRead.text(bank, "name") ?: DocRead.text(bank, "bank_name"))?.trim().orEmpty(),
                     sortCode = MemoFormat.sortCode(sortRaw).ifEmpty { sortRaw },
                     account = DocRead.text(bank, "account_number")?.trim().orEmpty(),
                 ),
             ),
-            MemoField("Account Number", text("account_number")),
-            MemoField("Sort Code", MemoFormat.sortCode(DocRead.text(bank, "sort_code")).ifEmpty { DASH }),
-            MemoField("IBAN", text("iban_number")),
-            MemoField("SWIFT / BIC", text("swift_code")),
+            MemoField(str(S.dm_step2_bank_account_number), text("account_number")),
+            MemoField(
+                str(S.dm_step2_bank_sort_code),
+                MemoFormat.sortCode(DocRead.text(bank, "sort_code")).ifEmpty { DASH },
+            ),
+            MemoField(str(S.dm_step2_bank_iban), text("iban_number")),
+            MemoField(str(S.dm_step2_bank_swift), text("swift_code")),
         )
         DocRead.objects(bank?.get("additional_details"))
             .filter { DocRead.text(it, "field") != null || DocRead.text(it, "value") != null }
@@ -228,9 +237,9 @@ object MemoCard {
                     type == "email" || type == "phone" || type == "url" -> MemoValue.Link(type, value)
                     else -> MemoValue.Text(value)
                 }
-                fields += MemoField(DocRead.text(row, "field") ?: "Detail", shown)
+                fields += MemoField(DocRead.text(row, "field") ?: str(S.desktop_detail), shown)
             }
-        return MemoBlock.Fields("Bank Details", fields)
+        return MemoBlock.Fields(str(S.dm_step2_card_bank), fields)
     }
 
     private fun emergency(deal: DealDoc, context: MemoContext): MemoBlock {
@@ -238,16 +247,20 @@ object MemoCard {
         val details = DocRead.obj(cd, "emergency_details")
         val number = DocRead.text(cd, "emergency_contact_number") ?: DocRead.text(details, "phone_number")
         return MemoBlock.Fields(
-            "Emergency Details",
+            str(S.dm_crew_step_emergency),
             listOf(
                 MemoField(
-                    "Contact Name",
+                    str(S.contact_name),
                     DocRead.text(cd, "emergency_contact_name") ?: DocRead.text(details, "name")
                         ?: DocRead.text(cd, "emergency_contact") ?: DASH,
                 ),
-                MemoField("Contact Number", phone(dial(DocRead.text(details, "country_code"), context), number)),
-                MemoField("Email", DocRead.text(details, "email") ?: DASH),
-                MemoField("Address", DealAddress.of(details?.get("address")).format().ifEmpty { DASH }, wide = true),
+                MemoField(str(S.contact_number), phone(dial(DocRead.text(details, "country_code"), context), number)),
+                MemoField(str(S.email), DocRead.text(details, "email") ?: DASH),
+                MemoField(
+                    str(S.address),
+                    DealAddress.of(details?.get("address")).format().ifEmpty { DASH },
+                    wide = true,
+                ),
             ),
         )
     }
@@ -255,15 +268,15 @@ object MemoCard {
     private fun representative(deal: DealDoc, context: MemoContext): MemoBlock {
         val rep = DocRead.obj(deal.crew, "representative_details")
         return MemoBlock.Fields(
-            "Representative Details",
+            str(S.dm_crew_step_representative),
             listOf(
-                MemoField("Representative Name", DocRead.text(rep, "name") ?: DASH),
+                MemoField(str(S.desktop_representative_name), DocRead.text(rep, "name") ?: DASH),
                 MemoField(
-                    "Phone",
+                    str(S.phone),
                     phone(dial(DocRead.text(rep, "country_code"), context), DocRead.text(rep, "phone_number")),
                 ),
-                MemoField("Email", DocRead.text(rep, "email") ?: DASH),
-                MemoField("Address", DealAddress.of(rep?.get("address")).format().ifEmpty { DASH }, wide = true),
+                MemoField(str(S.email), DocRead.text(rep, "email") ?: DASH),
+                MemoField(str(S.address), DealAddress.of(rep?.get("address")).format().ifEmpty { DASH }, wide = true),
             ),
         )
     }
@@ -276,13 +289,20 @@ object MemoCard {
             !isValueBlank(company?.get("address") ?: JsonNull)
         if (!CrewStatus.isLoanOut(DocRead.text(deal.crew, "emp_status")) && !hasData) return null
         return MemoBlock.Fields(
-            "Loan Out Company",
+            str(S.dm_loanout_section_title),
             listOf(
-                MemoField("Company Name", DocRead.text(company, "name") ?: DASH),
+                MemoField(str(S.dm_loanout_name), DocRead.text(company, "name") ?: DASH),
                 // The raw dial code, no country lookup — unlike the two contacts above.
-                MemoField("Phone", phone(DocRead.text(company, "country_code"), DocRead.text(company, "phone_number"))),
-                MemoField("Email", DocRead.text(company, "email") ?: DASH),
-                MemoField("Address", DealAddress.of(company?.get("address")).format().ifEmpty { DASH }, wide = true),
+                MemoField(
+                    str(S.phone),
+                    phone(DocRead.text(company, "country_code"), DocRead.text(company, "phone_number")),
+                ),
+                MemoField(str(S.email), DocRead.text(company, "email") ?: DASH),
+                MemoField(
+                    str(S.address),
+                    DealAddress.of(company?.get("address")).format().ifEmpty { DASH },
+                    wide = true,
+                ),
             ),
         )
     }
@@ -295,8 +315,8 @@ object MemoCard {
         iso?.let { code -> context.countries.firstOrNull { it.code == code }?.dialCode ?: code }
 
     fun crewType(value: String?): String = when (value) {
-        "shoot_crew" -> "Shooting Crew"
-        "non_shoot_crew" -> "Non-Shooting Crew"
+        "shoot_crew" -> str(S.dm_step2_crew_type_shoot)
+        "non_shoot_crew" -> str(S.dm_step2_crew_type_non_shoot)
         else -> DASH
     }
 

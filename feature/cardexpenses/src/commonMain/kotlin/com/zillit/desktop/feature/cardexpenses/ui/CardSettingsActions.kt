@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
 
@@ -49,12 +51,12 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
                 busy = false,
                 settings = stored,
                 settingsDraft = stored,
-                notice = if (kept) "${section.label} saved" else null,
+                notice = if (kept) str(S.desktop_card_section_saved, section.label) else null,
             )
         }
         if (!kept) {
             vm.fail(
-                "The server accepted the change but did not store it. ${section.label} is unchanged.",
+                str(S.desktop_card_section_not_stored, section.label),
             )
         }
     }
@@ -62,15 +64,15 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
     /** What each section refuses to be saved without. */
     private fun SettingsSection.validate(draft: CardSettings): String? = when (this) {
         SettingsSection.Team ->
-            "Every accounts-team row needs a person."
+            str(S.desktop_card_team_row_needs_person)
                 .takeIf { draft.teamMembers.any { member -> member.userId.isBlank() } }
 
         SettingsSection.Coordinators ->
-            "Every coordinator row needs a department and at least one person."
+            str(S.desktop_card_coordinator_row_incomplete)
                 .takeIf { draft.coordinators.any { row -> !row.complete } }
 
         SettingsSection.Providers ->
-            "Every provider needs a name."
+            str(S.desktop_card_provider_needs_name)
                 .takeIf { draft.providers.any { provider -> provider.name.isBlank() } }
 
         SettingsSection.Overrides, SettingsSection.RequestCap -> null

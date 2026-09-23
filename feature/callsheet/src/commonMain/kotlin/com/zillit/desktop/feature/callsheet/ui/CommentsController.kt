@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.callsheet.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.BadgeKind
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.SheetComment
@@ -103,7 +105,10 @@ internal class CommentsController(private val ctx: SheetContext) {
                 }
                 is ZillitResult.Failure -> {
                     update(thread.copy(loading = false))
-                    if (!quiet) ctx.toast("Couldn't load comments: ${result.error.localised()}", isError = true)
+                    if (!quiet) {
+                        val reason = result.error.localised()
+                        ctx.toast(str(S.desktop_could_not_load_comments_reason, reason), isError = true)
+                    }
                 }
             }
         }
@@ -135,7 +140,7 @@ internal class CommentsController(private val ctx: SheetContext) {
                 }
                 is ZillitResult.Failure -> {
                     update(current.copy(sending = false))
-                    ctx.toast("Couldn't send the comment: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_send_comment_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -169,7 +174,7 @@ internal class CommentsController(private val ctx: SheetContext) {
                 )
                 is ZillitResult.Failure -> {
                     update(current.copy(savingEdit = false))
-                    ctx.toast("Couldn't save the comment: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_save_comment_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -189,7 +194,7 @@ internal class CommentsController(private val ctx: SheetContext) {
                 )
                 is ZillitResult.Failure -> {
                     update(current.copy(deletingId = null))
-                    ctx.toast("Couldn't delete the comment: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_could_not_delete_comment_reason, result.error.localised()), isError = true)
                 }
             }
         }

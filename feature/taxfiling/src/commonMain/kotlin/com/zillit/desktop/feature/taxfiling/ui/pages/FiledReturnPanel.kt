@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.FiledReturn
 import com.zillit.desktop.feature.taxfiling.domain.FilingObligation
 import com.zillit.desktop.feature.taxfiling.domain.TaxFormat
@@ -48,9 +50,9 @@ internal fun FiledReturnPanel(period: FilingObligation, filed: FiledReturn?) {
     val palette = mtdPalette()
     MtdCard(modifier = Modifier.fillMaxWidth(), padding = 24.dp) {
         MtdSectionHead(
-            title = "Filed return",
-            subtitle = "This period is fulfilled — ${period.periodKey} (${period.range}).",
-            right = { MtdPill(text = "Fulfilled", tone = PillTone.Fulfilled) },
+            title = str(S.desktop_tax_filed_return),
+            subtitle = str(S.desktop_tax_this_period_fulfilled, period.periodKey, period.range),
+            right = { MtdPill(text = str(S.desktop_tax_fulfilled), tone = PillTone.Fulfilled) },
         )
         MtdRule(Modifier.padding(vertical = 20.dp))
         if (filed != null && filed.hasFigures) {
@@ -59,9 +61,11 @@ internal fun FiledReturnPanel(period: FilingObligation, filed: FiledReturn?) {
         } else {
             ZillitText(
                 text = buildAnnotatedString {
-                    append("This period is already ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = palette.ink)) { append("fulfilled") }
-                    append(" with HMRC. It wasn’t filed from here, so the box figures aren’t stored locally.")
+                    append(str(S.desktop_tax_this_period_already) + " ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = palette.ink)) {
+                        append(str(S.desktop_tax_fulfilled_lower))
+                    }
+                    append(str(S.desktop_tax_not_filed_here))
                 },
                 style = mtdText(13.5.sp),
                 color = palette.ink3,
@@ -91,7 +95,7 @@ private fun FiledFigures(filed: FiledReturn) {
                             verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
                             ZillitText(
-                                text = "Box ${box.number} · ${box.label}",
+                                text = str(S.desktop_tax_box_label_line, box.number, box.label),
                                 style = mtdText(11.sp),
                                 color = palette.muted,
                                 maxLines = 1,
@@ -124,13 +128,15 @@ private fun Receipt(filed: FiledReturn) {
         ZillitText(
             text = buildAnnotatedString {
                 if (filed.reference.isBlank()) {
-                    append("Submitted to HMRC.")
+                    append(str(S.desktop_tax_submitted_to_hmrc))
                 } else {
-                    append("Submitted · receipt ")
+                    append(str(S.desktop_tax_submitted_receipt) + " ")
                     withStyle(SpanStyle(color = palette.ink2, fontFamily = mono)) {
                         append(filed.reference)
                     }
-                    if (filed.processedAt.isNotBlank()) append(" · ${filed.processedAt}")
+                    if (filed.processedAt.isNotBlank()) {
+                        append(str(S.desktop_tax_receipt_processed, filed.processedAt))
+                    }
                 }
             },
             style = mtdText(12.5.sp),

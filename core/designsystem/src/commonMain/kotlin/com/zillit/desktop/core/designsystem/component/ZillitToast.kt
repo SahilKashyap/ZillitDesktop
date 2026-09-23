@@ -16,6 +16,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.delay
 
 /**
@@ -80,7 +82,7 @@ fun ZillitToast(
             )
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Dismiss",
+                contentDescription = str(S.sync_action_dismiss),
                 onClick = onDismiss,
                 tint = ZillitTheme.colors.textOnAccent,
                 size = TOAST_CLOSE,

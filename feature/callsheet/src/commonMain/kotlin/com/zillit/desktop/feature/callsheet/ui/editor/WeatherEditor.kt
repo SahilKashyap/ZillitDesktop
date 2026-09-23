@@ -51,6 +51,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.SheetTime
 import com.zillit.desktop.feature.callsheet.domain.SheetWeather
 import com.zillit.desktop.feature.callsheet.domain.WeatherValue
@@ -100,7 +102,7 @@ internal fun WeatherEditor(
             EmptyWeather(live, fetch)
             Column {
                 Text(
-                    "OR TYPE MANUALLY",
+                    str(S.desktop_or_type_manually_upper),
                     style = sheetText(10.sp, FontWeight.Medium).copy(letterSpacing = 0.5.sp),
                     color = SheetTheme.colors.textMuted,
                     modifier = Modifier.padding(bottom = 4.dp),
@@ -109,7 +111,7 @@ internal fun WeatherEditor(
                     raw,
                     { onEvent(DocumentEvent.SetWeatherText(address.row, address.cell, it)) },
                     Modifier.fillMaxWidth(),
-                    placeholder = "e.g. Sunny, 25°C / 77°F, Humidity: 75%",
+                    placeholder = str(S.desktop_weather_manual_hint),
                 )
             }
         }
@@ -135,7 +137,7 @@ private fun WeatherError(message: String) {
 /** Opens the map picker and fetches the forecast for the place chosen. */
 private fun pickPlace(scope: CoroutineScope, picker: LocationPicker, onPicked: (Double, Double, String) -> Unit) {
     scope.launch {
-        picker.pick(null, "Weather location")?.let { place ->
+        picker.pick(null, str(S.desktop_weather_location))?.let { place ->
             onPicked(place.lat, place.lng, place.address.ifBlank { place.name })
         }
     }
@@ -173,13 +175,13 @@ private fun EmptyWeather(live: WeatherPanel?, fetch: (Double, Double, String) ->
             Icon(SheetIcons.Cloud, contentDescription = null, tint = colors.accent, modifier = Modifier.size(24.dp))
         }
         Text(
-            "Add Weather Data",
+            str(S.desktop_add_weather_data),
             style = sheetText(14.sp, FontWeight.SemiBold),
             color = colors.textPrimary,
             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
         )
         Text(
-            "Fetch real-time weather or 8-day forecast for your shoot location",
+            str(S.desktop_weather_fetch_hint),
             style = sheetText(12.sp, lineHeight = 17.sp),
             color = colors.textMuted,
             textAlign = TextAlign.Center,
@@ -188,7 +190,7 @@ private fun EmptyWeather(live: WeatherPanel?, fetch: (Double, Double, String) ->
         Column(Modifier.widthIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (picker != null) {
                 SheetButton(
-                    if (fetching) "Fetching..." else "Search Location",
+                    if (fetching) str(S.desktop_fetching_dots) else str(S.search_location),
                     { pickPlace(scope, picker, fetch) },
                     Modifier.fillMaxWidth(),
                     kind = ButtonKind.Accent,
@@ -201,13 +203,13 @@ private fun EmptyWeather(live: WeatherPanel?, fetch: (Double, Double, String) ->
             when (mode) {
                 WeatherMode.Manual -> CoordinatesPanel(
                     fetching = fetching,
-                    fetchLabel = "Fetch Weather",
+                    fetchLabel = str(S.desktop_fetch_weather),
                     onClose = if (picker != null) ({ mode = WeatherMode.Idle }) else null,
                     onFetch = fetch,
                     boxed = true,
                 )
                 WeatherMode.Idle -> SheetButton(
-                    "Enter coordinates manually",
+                    str(S.desktop_enter_coordinates_manually),
                     { mode = WeatherMode.Manual },
                     Modifier.fillMaxWidth(),
                     kind = ButtonKind.Outline,
@@ -248,16 +250,16 @@ private fun CoordinatesPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "MANUAL COORDINATES",
+                str(S.desktop_manual_coordinates_upper),
                 style = sheetText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
                 color = colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
             if (onClose != null) {
-                ZillitTooltip("Close") {
+                ZillitTooltip(str(S.close)) {
                     Icon(
                         ZillitIcons.Close,
-                        contentDescription = "Close",
+                        contentDescription = str(S.close),
                         tint = colors.textMuted,
                         modifier = Modifier.size(10.dp).plainClick(onClick = onClose),
                     )
@@ -272,7 +274,7 @@ private fun CoordinatesPanel(
                     invalid = false
                 },
                 Modifier.weight(1f),
-                placeholder = "Latitude",
+                placeholder = str(S.desktop_latitude),
                 textStyle = sheetText(14.sp),
             )
             SheetInput(
@@ -282,13 +284,13 @@ private fun CoordinatesPanel(
                     invalid = false
                 },
                 Modifier.weight(1f),
-                placeholder = "Longitude",
+                placeholder = str(S.desktop_longitude),
                 textStyle = sheetText(14.sp),
             )
         }
-        if (invalid) Text("Enter valid lat/long.", style = sheetText(12.sp), color = colors.red)
+        if (invalid) Text(str(S.desktop_enter_valid_lat_long), style = sheetText(12.sp), color = colors.red)
         SheetButton(
-            if (fetching) "Fetching..." else fetchLabel,
+            if (fetching) str(S.desktop_fetching_dots) else fetchLabel,
             {
                 val latitude = lat.trim().toDoubleOrNull()
                 val longitude = lng.trim().toDoubleOrNull()
@@ -336,7 +338,7 @@ private fun WeatherCard(
         ) {
             Icon(ZillitIcons.Pin, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
             Text(
-                weather.location.ifBlank { "Unknown" },
+                weather.location.ifBlank { str(S.desktop_unknown) },
                 style = sheetText(12.sp, FontWeight.Medium),
                 color = Color.White,
                 maxLines = 1,
@@ -424,16 +426,16 @@ private fun WeatherCard(
                 }
             }
             val stats = listOf(
-                Triple("Feels Like", "${weather.feelsLikeC ?: "--"}", "°C"),
-                Triple("Humidity", "${weather.humidity ?: "--"}", "%"),
-                Triple("Wind", "${weather.windKmh ?: "--"}", " km/h"),
+                Triple(str(S.feel_like), "${weather.feelsLikeC ?: "--"}", "°C"),
+                Triple(str(S.humidity), "${weather.humidity ?: "--"}", "%"),
+                Triple(str(S.wp_wind), "${weather.windKmh ?: "--"}", " km/h"),
                 Triple("UV Index", weather.uvi?.let(::trimNumber) ?: "--", ""),
-                Triple("Pressure", "${weather.pressure ?: "--"}", " hPa"),
+                Triple(str(S.wp_pressure), "${weather.pressure ?: "--"}", " hPa"),
                 if (weather.visibilityMiles != null) {
-                    Triple("Visibility", "${weather.visibilityMiles}", " mi")
+                    Triple(str(S.visibility), "${weather.visibilityMiles}", " mi")
                 } else {
                     // A zero reads as zero here; the web's `||` printed "--" for a 0° high or low.
-                    Triple("High/Low", "${weather.tempHighC ?: "--"}/${weather.tempLowC ?: "--"}", "°C")
+                    Triple(str(S.desktop_high_low), "${weather.tempHighC ?: "--"}/${weather.tempLowC ?: "--"}", "°C")
                 },
             )
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -444,8 +446,8 @@ private fun WeatherCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                SunTile("🌅", "Sunrise", weather.clock(weather.sunrise), Modifier.weight(1f))
-                SunTile("🌇", "Sunset", weather.clock(weather.sunset), Modifier.weight(1f))
+                SunTile("🌅", str(S.sunrise), weather.clock(weather.sunrise), Modifier.weight(1f))
+                SunTile("🌇", str(S.sunset), weather.clock(weather.sunset), Modifier.weight(1f))
             }
         }
         live?.response?.let { response -> ForecastStrip(
@@ -459,7 +461,7 @@ private fun WeatherCard(
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SheetButton(
-            "Change Location",
+            str(S.desktop_change_location),
             { if (picker != null) pickPlace(scope, picker, fetch) else manual = !manual },
             Modifier.weight(1f),
             kind = ButtonKind.Navy,
@@ -469,7 +471,7 @@ private fun WeatherCard(
             fontSize = 12.sp,
         )
         SheetButton(
-            "Clear",
+            str(S.ah_clear),
             { onEvent(DocumentEvent.ClearWeather(address.row, address.cell)) },
             kind = ButtonKind.DangerOutline,
             icon = ZillitIcons.Trash,
@@ -479,7 +481,7 @@ private fun WeatherCard(
     }
     if (picker != null) {
         Text(
-            "Enter coordinates instead",
+            str(S.desktop_enter_coordinates_instead),
             style = sheetText(11.sp),
             color = colors.textSecondary,
             modifier = Modifier.plainClick { manual = !manual },
@@ -488,7 +490,7 @@ private fun WeatherCard(
     if (manual) {
         CoordinatesPanel(
             fetching = fetching,
-            fetchLabel = "Fetch",
+            fetchLabel = str(S.desktop_fetch),
             onClose = { manual = false },
             onFetch = { lat, lng, name ->
                 manual = false
@@ -571,10 +573,10 @@ private fun RefreshMark(spinning: Boolean, onClick: () -> Unit) {
         FULL_TURN,
         infiniteRepeatable(tween(SPIN_MS, easing = LinearEasing), RepeatMode.Restart),
     )
-    ZillitTooltip("Refresh") {
+    ZillitTooltip(str(S.refresh_text)) {
         Icon(
             ZillitIcons.Reload,
-            contentDescription = "Refresh",
+            contentDescription = str(S.refresh_text),
             tint = Color.White.copy(alpha = if (hovered && !spinning) 1f else 0.6f),
             modifier = Modifier
                 .size(14.dp)
@@ -626,7 +628,7 @@ private fun ForecastStrip(
                 modifier = Modifier.size(10.dp),
             )
             Text(
-                "SHOOT DAY FORECAST",
+                str(S.desktop_shoot_day_forecast_upper),
                 style = sheetText(9.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
                 color = colors.textTertiary,
             )
@@ -638,11 +640,11 @@ private fun ForecastStrip(
             days.forEachIndexed { index, day ->
                 val entry = daily.getOrNull(index)
                 DayButton(
-                    label = if (day == today) "Today" else day.dayOfWeek.name.take(3),
+                    label = if (day == today) str(S.today) else day.dayOfWeek.name.take(3),
                     glyph = weatherGlyph(entry?.let { firstIcon(it) }.orEmpty()),
                     high = entry?.let { tempOf(it, "max") },
                     low = entry?.let { tempOf(it, "min") },
-                    date = "${day.day} ${WeatherValue.SHORT_MONTHS[day.month.ordinal]}",
+                    date = "${day.day} ${str(WeatherValue.SHORT_MONTHS[day.month.ordinal])}",
                     active = selectedDay == index,
                     enabled = shootIndex == null || shootIndex == index,
                 ) { onEvent(DocumentEvent.PickWeatherDay(address.row, address.cell, index)) }
@@ -716,5 +718,5 @@ private fun DayButton(
 /** `Now` within the first minute, then whole minutes — computed when drawn, as on the web. */
 private fun age(fetchedAt: Long?, nowMillis: Long): String {
     val minutes = fetchedAt?.let { ((nowMillis - it) / MINUTE_MILLIS).coerceAtLeast(0) } ?: return ""
-    return if (minutes < 1) "Now" else "${minutes}m"
+    return if (minutes < 1) str(S.wp_now) else "${minutes}m"
 }

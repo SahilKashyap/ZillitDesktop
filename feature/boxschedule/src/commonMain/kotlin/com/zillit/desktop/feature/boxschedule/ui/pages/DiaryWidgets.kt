@@ -59,6 +59,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 // Colour -------------------------------------------------------------------
 
@@ -468,7 +470,7 @@ private fun SheetCard(
                 subtitle?.invoke()
             }
             headerTrailing?.invoke(this)
-            ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Close", onClick = onDismiss)
+            ZillitIconButton(icon = ZillitIcons.Close, contentDescription = str(S.close), onClick = onDismiss)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         val scroll = rememberScrollState()

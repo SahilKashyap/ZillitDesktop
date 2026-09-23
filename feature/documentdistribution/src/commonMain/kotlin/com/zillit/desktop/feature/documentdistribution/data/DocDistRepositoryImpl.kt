@@ -11,6 +11,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
@@ -418,14 +420,14 @@ class DocDistRepositoryImpl(
             ?: return ZillitResult.Failure(
                 ZillitError.Storage(
                     technical = "document ${document.id} has no S3 attachment",
-                    userMessage = "This file is stored on the server and cannot be opened from the desktop yet.",
+                    userMessage = str(S.desktop_docdist_file_on_server_only),
                 ),
             )
         return presign(storage)?.let { ZillitResult.Success(it) }
             ?: ZillitResult.Failure(
                 ZillitError.Storage(
                     technical = "no AWS credentials, or an incomplete attachment",
-                    userMessage = "This file cannot be opened — the workspace has no file storage configured.",
+                    userMessage = str(S.desktop_docdist_no_file_storage_open),
                 ),
             )
     }
@@ -737,7 +739,7 @@ class DocDistRepositoryImpl(
         if (status == REJECTED) {
             ZillitResult.Failure(
                 ZillitError.Validation(
-                    userMessage = message?.humanised() ?: "That could not be done.",
+                    userMessage = message?.humanised() ?: str(S.desktop_docdist_that_could_not_be_done),
                     technical = message,
                 ),
             )

@@ -57,6 +57,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrDates
 import com.zillit.desktop.feature.costreport.domain.CrFormat
 import com.zillit.desktop.feature.costreport.domain.ExportFormat
@@ -145,12 +147,21 @@ internal fun CrHistoryCard(
         ) {
             Column(Modifier.weight(1f)) {
                 ZillitText(
-                    "Posted Cost Reports",
+                    str(S.desktop_cr_posted_cost_reports),
                     style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 )
-                val last = rows.firstOrNull()?.postedAtMs?.let { " · last ${CrDates.dateTime(it)}" }.orEmpty()
+                val last = rows.firstOrNull()?.postedAtMs
+                    ?.let { str(S.desktop_cr_last_posted, CrDates.dateTime(it)) }.orEmpty()
                 ZillitText(
-                    text = if (loading) "Loading…" else "${rows.size} post${if (rows.size == 1) "" else "s"}$last",
+                    text = if (loading) {
+                        str(S.ah_loading)
+                    } else {
+                        str(
+                            if (rows.size == 1) S.desktop_cr_post_one else S.desktop_cr_post_many,
+                            rows.size,
+                            last,
+                        )
+                    },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -160,7 +171,7 @@ internal fun CrHistoryCard(
                     Pill(option.label, active = filter == option) { onFilter(option) }
                 }
                 Pill(
-                    if (loading) "Refreshing…" else "↻ Refresh",
+                    if (loading) str(S.refreshing) else str(S.desktop_cr_refresh),
                     active = false,
                     enabled = !loading,
                     onClick = onRefresh,
@@ -177,7 +188,7 @@ internal fun CrHistoryCard(
             }
             shown.isEmpty() -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                 ZillitText(
-                    "No posts in this filter.",
+                    str(S.desktop_cr_no_posts_in_filter),
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textMuted,
                 )
@@ -317,7 +328,7 @@ private fun HistoryItem(
             )
             row.delta?.takeIf { it != 0.0 }?.let { delta ->
                 ZillitText(
-                    text = CrFormat.delta(delta, symbol).replace("vs last", "VS LAST"),
+                    text = CrFormat.delta(delta, symbol, caps = true),
                     style = ZillitTheme.typography.numeric.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
                     color = if (delta > 0) CrPalette.under else CrPalette.over,
                     maxLines = 1,
@@ -325,7 +336,12 @@ private fun HistoryItem(
             }
         }
         Box(Modifier.width(100.dp), contentAlignment = Alignment.TopEnd) {
-            ZillitButton(text = "View", onClick = onOpen, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            ZillitButton(
+                text = str(S.view),
+                onClick = onOpen,
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
         }
     }
 }
@@ -363,11 +379,11 @@ internal fun SnapshotPage(
         ) {
             ZillitIconButton(
                 icon = ZillitIcons.ArrowLeft,
-                contentDescription = "Back to $backLabel",
+                contentDescription = str(S.desktop_cr_back_to, backLabel),
                 onClick = callbacks.onBack,
             )
             ZillitText(
-                "REPORTS",
+                str(S.desktop_cr_reports_caps),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
                 color = CrPalette.cta,
             )
@@ -396,7 +412,7 @@ internal fun SnapshotPage(
                 text = message,
                 tone = StatusTone.Rejected,
                 action = {
-                    ZillitButton(text = "Dismiss", onClick = callbacks.onDismissError,
+                    ZillitButton(text = str(S.sync_action_dismiss), onClick = callbacks.onDismissError,
                         variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
                 },
             )
@@ -411,20 +427,42 @@ internal fun SnapshotPage(
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitSpinner()
-                    ZillitText("Loading snapshot…", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                    ZillitText(
+                str(S.desktop_cr_loading_snapshot),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
                 }
             }
             return@Column
         }
         val kpis = remember(detail) { detail.kpis() }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            KpiTile("Total Budget", kpis.budget, view.symbol, null, Modifier.weight(1f))
-            KpiTile("Actuals to Date", kpis.actualsToDate, view.symbol, Color(0xFF0C6A3F), Modifier.weight(1f))
-            KpiTile("Total Commitments", kpis.commitments, view.symbol, Color(0xFF1D4ED8), Modifier.weight(1f))
-            KpiTile("Est. Final Cost", kpis.estimatedFinalCost, view.symbol, Color(0xFF8A5B00), Modifier.weight(1f))
+            KpiTile(str(S.cr_kpi_total_budget), kpis.budget, view.symbol, null, Modifier.weight(1f))
+            KpiTile(
+                str(S.cr_kpi_actuals_to_date),
+                kpis.actualsToDate,
+                view.symbol,
+                Color(0xFF0C6A3F),
+                Modifier.weight(1f),
+            )
+            KpiTile(
+                str(S.cr_kpi_total_commitments),
+                kpis.commitments,
+                view.symbol,
+                Color(0xFF1D4ED8),
+                Modifier.weight(1f),
+            )
+            KpiTile(
+                str(S.cr_kpi_est_final_cost),
+                kpis.estimatedFinalCost,
+                view.symbol,
+                Color(0xFF8A5B00),
+                Modifier.weight(1f),
+            )
             val negative = kpis.postedVariance < 0
             KpiTile(
-                label = "Posted Variance",
+                label = str(S.cr_kpi_posted_variance),
                 value = kpis.postedVariance,
                 symbol = view.symbol,
                 ink = if (negative) Color(0xFFB22A2A) else Color(0xFF0C6A3F),
@@ -434,9 +472,9 @@ internal fun SnapshotPage(
         }
         SnapshotDetailTable(view, callbacks, Modifier.weight(1f))
         ZillitText(
-            text = "Snapshot id: ${header.id}" +
-                header.status.takeIf { it.isNotBlank() }?.let { " · status $it" }.orEmpty() +
-                header.reference.takeIf { it.isNotBlank() }?.let { " · ref $it" }.orEmpty(),
+            text = str(S.cr_footer_snapshot_id, header.id) +
+                header.status.takeIf { it.isNotBlank() }?.let { str(S.desktop_cr_status_suffix, it) }.orEmpty() +
+                header.reference.takeIf { it.isNotBlank() }?.let { str(S.desktop_cr_ref_suffix, it) }.orEmpty(),
             style = ZillitTheme.typography.labelSmall.copy(fontStyle = FontStyle.Italic),
             color = colors.textMuted,
             maxLines = 1,
@@ -488,7 +526,7 @@ private fun ExportMenu(exporting: ExportFormat?, enabled: Boolean, onExport: (Ex
     var open by remember { mutableStateOf(false) }
     Box {
         ZillitButton(
-            text = "Export",
+            text = str(S.asset_export),
             onClick = { open = true },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -500,7 +538,12 @@ private fun ExportMenu(exporting: ExportFormat?, enabled: Boolean, onExport: (Ex
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             ExportFormat.entries.forEach { format ->
                 DropdownMenuItem(
-                    text = { ZillitText("Export as ${format.label}", style = ZillitTheme.typography.bodyMedium) },
+                    text = {
+                        ZillitText(
+                            str(S.desktop_cr_export_as, format.label),
+                            style = ZillitTheme.typography.bodyMedium,
+                        )
+                    },
                     onClick = {
                         open = false
                         onExport(format)
@@ -519,7 +562,11 @@ private fun SnapshotTitle(header: SnapshotHeader, modifier: Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (lock) ZillitIcon(ZillitIcons.Shield, tint = CrPalette.LOCK_RED, size = 20.dp)
             ZillitText(
-                text = if (lock) "Period Lock —" else "${header.cadence?.label ?: SnapshotCadence.Adhoc.label} CR —",
+                text = if (lock) {
+                    str(S.desktop_cr_period_lock_dash)
+                } else {
+                    str(S.desktop_cr_cadence_cr_dash, header.cadence?.label ?: SnapshotCadence.Adhoc.label)
+                },
                 style = ZillitTheme.typography.titleLarge.copy(
                     fontSize = 26.sp,
                     lineHeight = 30.sp,
@@ -529,7 +576,9 @@ private fun SnapshotTitle(header: SnapshotHeader, modifier: Modifier) {
                 maxLines = 1,
             )
             ZillitText(
-                text = header.name.ifBlank { header.reference.ifBlank { "Cost Report Snapshot" } },
+                text = header.name.ifBlank {
+                    header.reference.ifBlank { str(S.desktop_cr_cost_report_snapshot) }
+                },
                 style = ZillitTheme.typography.titleLarge.copy(fontSize = 26.sp, lineHeight = 30.sp),
                 maxLines = 2,
             )
@@ -560,28 +609,28 @@ private fun SnapshotMeta(header: SnapshotHeader, resolveUser: (String) -> String
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MetaItem("Cadence") {
+        MetaItem(str(S.cr_meta_cadence)) {
             val (label, tone) = when {
-                kind == PostKind.Lock -> "Period Lock" to StatusTone.Rejected
-                header.cadence == SnapshotCadence.Daily -> "Daily" to StatusTone.Pending
-                header.cadence == SnapshotCadence.Weekly -> "Weekly" to StatusTone.Progress
-                else -> "Ad-hoc" to StatusTone.Neutral
+                kind == PostKind.Lock -> str(S.desktop_cr_period_lock) to StatusTone.Rejected
+                header.cadence == SnapshotCadence.Daily -> str(S.daily) to StatusTone.Pending
+                header.cadence == SnapshotCadence.Weekly -> str(S.ce_weekly) to StatusTone.Progress
+                else -> str(S.desktop_cr_ad_hoc) to StatusTone.Neutral
             }
             ZillitStatusPill(label = label, tone = tone, dot = true)
         }
-        MetaItem("Period") {
+        MetaItem(str(S.cr_meta_period)) {
             ZillitText(text = CrDates.range(header.periodStartMs, header.periodEndMs),
                 style = ZillitTheme.typography.numeric, maxLines = 1)
         }
-        MetaItem("Posted") {
+        MetaItem(str(S.cr_meta_posted)) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitText(text = CrDates.dateTime(header.postedAtMs).ifBlank { "—" },
                     style = ZillitTheme.typography.numeric, maxLines = 1)
-                ZillitStatusPill(label = "Posted to ledger", tone = StatusTone.Done, dot = true)
+                ZillitStatusPill(label = str(S.cr_posted_to_ledger), tone = StatusTone.Done, dot = true)
             }
         }
-        MetaItem("By") {
+        MetaItem(str(S.cr_meta_by)) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitAvatar(name = who, userId = header.postedBy, size = 24.dp)

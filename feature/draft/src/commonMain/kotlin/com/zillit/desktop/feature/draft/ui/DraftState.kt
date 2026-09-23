@@ -7,6 +7,8 @@ import com.zillit.desktop.feature.draft.domain.ScriptElement
 import com.zillit.desktop.feature.draft.domain.ScriptSummary
 import com.zillit.desktop.feature.draft.domain.SmartType
 import com.zillit.desktop.feature.draft.domain.TitlePage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** Where the caret should be put next: an element and an offset into it. */
 data class CaretRequest(val elementId: String, val offset: Int, val nonce: Long)
@@ -117,10 +119,13 @@ sealed interface DraftEvent {
     data object SendToDrive : DraftEvent
 }
 
-enum class ExportFormat(val label: String, val extension: String) {
-    Pdf("PDF", "pdf"),
-    FinalDraft("Final Draft (.fdx)", "fdx"),
-    Fountain("Fountain (.fountain)", "fountain"),
+enum class ExportFormat(private val labelKey: String, val extension: String) {
+    Pdf(S.av_pdf, "pdf"),
+    FinalDraft(S.desktop_draft_export_final_draft, "fdx"),
+    Fountain(S.desktop_draft_export_fountain, "fountain"),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 sealed interface DraftEffect {

@@ -5,6 +5,8 @@ import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.distribution.domain.DISTRIBUTION_DEFAULT_PAGE_SIZE
 import com.zillit.desktop.feature.distribution.domain.DistributionColumn
 import com.zillit.desktop.feature.distribution.domain.DistributionDirectory
@@ -169,9 +171,9 @@ class DistributionViewModel(
             sendEffect(
                 DistributionEffect.Notice(
                     if (rights == null) {
-                        "You don't have posting rights on Distribution."
+                        str(S.desktop_dist_no_posting_rights)
                     } else {
-                        "You don't have posting rights on Distribution — asking an administrator."
+                        str(S.desktop_dist_no_posting_rights_asking_admin)
                     },
                 ),
             )
@@ -203,7 +205,7 @@ class DistributionViewModel(
                 setState { copy(busy = busy - event.userId) }
                 sendEffect(
                     DistributionEffect.Notice(
-                        text = message?.localisedMessage() ?: "Distribution updated.",
+                        text = message?.localisedMessage() ?: str(S.desktop_dist_updated),
                         success = true,
                     ),
                 )

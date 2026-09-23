@@ -135,9 +135,9 @@ class FormSignatureScreenRenderTest {
         compose(state(FormSignScreen.DocumentsForSignature)) {
             onNodeWithText("Deal Memo.pdf").assertExists()
             onNodeWithText("Them").assertExists()
-            onNodeWithText("Send for Signature").assertExists()
-            onNodeWithText("Received for Signature").assertExists()
-            onNodeWithText("Fully Signed Document").assertExists()
+            onNodeWithText("Send for signature").assertExists()
+            onNodeWithText("Received for signature").assertExists()
+            onNodeWithText("Fully signed Document").assertExists()
             onNodeWithText("Note 1:").assertExists()
         }
 

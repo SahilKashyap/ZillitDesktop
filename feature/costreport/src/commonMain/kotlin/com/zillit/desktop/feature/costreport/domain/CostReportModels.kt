@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.costreport.domain
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.JsonObject
@@ -20,9 +22,12 @@ import kotlinx.serialization.json.JsonObject
 enum class CostReportSync { Report, Source }
 
 /** The two faces of the crew-facing tool: the live worksheet and the posted timeline. */
-enum class CostReportTab(val id: String, val label: String) {
-    Current("current", "Current CR"),
-    Posted("posted", "Posted CRs"),
+enum class CostReportTab(val id: String, private val labelKey: String) {
+    Current("current", S.cr_tab_current),
+    Posted("posted", S.cr_tab_posted),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -145,11 +150,13 @@ data class LiveReport(
     val displayCurrency: String? get() = currency ?: defaultCurrency
 }
 
-enum class SnapshotCadence(val wire: String, val label: String) {
-    Daily("daily", "Daily"),
-    Weekly("weekly", "Weekly"),
-    Adhoc("adhoc", "Ad-hoc"),
+enum class SnapshotCadence(val wire: String, private val labelKey: String) {
+    Daily("daily", S.daily),
+    Weekly("weekly", S.ce_weekly),
+    Adhoc("adhoc", S.desktop_cr_ad_hoc),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): SnapshotCadence? = entries.firstOrNull { it.wire == wire?.trim()?.lowercase() }
@@ -157,19 +164,24 @@ enum class SnapshotCadence(val wire: String, val label: String) {
 }
 
 /** How a post is drawn on the timeline (spec §2.3). */
-enum class PostKind(val chip: String) {
-    Weekly("WK"),
-    Daily("Daily"),
-    Lock("Lock"),
-    Initial("Initial"),
+enum class PostKind(private val chipKey: String) {
+    Weekly(S.desktop_cr_wk),
+    Daily(S.daily),
+    Lock(S.desktop_lock),
+    Initial(S.init_txt),
+    ;
+
+    val chip: String get() = str(chipKey)
 }
 
 /** The Posted CRs filter pills. */
-enum class PostedFilter(val label: String) {
-    All("All"),
-    Daily("Daily"),
-    WeekEnd("Wk-end"),
+enum class PostedFilter(private val labelKey: String) {
+    All(S.all),
+    Daily(S.daily),
+    WeekEnd(S.desktop_cr_wk_end),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun admits(kind: PostKind): Boolean = when (this) {
         All -> true
@@ -261,9 +273,12 @@ fun SnapshotDetail.kpis(): SnapshotKpis {
 }
 
 /** Which side of the ledger a drill-down asks for. */
-enum class LedgerType(val wire: String, val label: String) {
-    Actuals("actuals", "Actuals"),
-    Commits("commits", "Commits"),
+enum class LedgerType(val wire: String, private val labelKey: String) {
+    Actuals("actuals", S.desktop_actuals),
+    Commits("commits", S.desktop_cr_commits),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** One row of `GET /account-line-items`. */
@@ -296,11 +311,11 @@ data class LedgerItem(
     val typeLabel: String
         get() = when (src.uppercase()) {
             "PO" -> "PO"
-            "INV" -> "Invoice"
-            "CRED" -> "Credit"
-            "CARD" -> "Card"
-            "CASH" -> "Cash"
-            "PR" -> "Payroll"
+            "INV" -> str(S.ah_run_detail_col_invoice)
+            "CRED" -> str(S.desktop_credit)
+            "CARD" -> str(S.ah_my_cards)
+            "CASH" -> str(S.desktop_cr_cash)
+            "PR" -> str(S.dm_section_payroll)
             else -> src
         }
 }
@@ -328,10 +343,13 @@ data class LedgerResult(
 }
 
 /** `POST /snapshots/{id}/export/{format}`. */
-enum class ExportFormat(val wire: String, val label: String) {
-    Pdf("pdf", "PDF"),
-    Xlsx("xlsx", "Excel"),
-    Csv("csv", "CSV"),
+enum class ExportFormat(val wire: String, private val labelKey: String) {
+    Pdf("pdf", S.av_pdf),
+    Xlsx("xlsx", S.excel),
+    Csv("csv", S.desktop_csv),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** Who is looking, from the production's rights on `cost_report_tool`. */
@@ -449,7 +467,7 @@ interface CostReportRepository {
 }
 
 private fun <T> unsupported(): ZillitResult<T> =
-    ZillitResult.Failure(ZillitError.Unknown("Not available from this host."))
+    ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_cr_not_available_from_host)))
 
 /**
  * The host's binary POST: `snapshots/{id}/export/{format}` answers a raw
@@ -465,7 +483,7 @@ interface CostReportExporter {
      * export snapshots.
      */
     suspend fun exportReport(format: ExportFormat, body: JsonObject): ZillitResult<ByteArray> =
-        ZillitResult.Failure(ZillitError.Unknown("Not available from this host."))
+        ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_cr_not_available_from_host)))
 }
 
 /** The host's Downloads seam. */

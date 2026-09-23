@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.pagedistribution.domain
 
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Three film tools, one engine.
@@ -16,7 +18,8 @@ import com.zillit.desktop.core.config.ZillitService
 data class DistributionTool(
     /** The permission-grid identifier — `schedule_distribution_tool`… */
     val toolIdentifier: String,
-    val title: String,
+    /** The catalogue key for the tool's on-screen name. */
+    val titleKey: String,
     val service: ZillitService,
     /** The path segment under `/api/v2/` — `schedule-distribution` or `script-distribution`. */
     val segment: String,
@@ -26,6 +29,9 @@ data class DistributionTool(
     /** The S3 key prefix, the web's `window.location.pathname` — kept so keys match. */
     val storagePath: String,
 ) {
+    /** The tool's name as the crew reads it. */
+    val title: String get() = str(titleKey)
+
     /** The page-number body key differs by service: `schedule_page_number` vs `script_page_number`. */
     val pageNumberKey: String
         get() = if (service == ZillitService.ScriptDistribution) "script_page_number" else "schedule_page_number"
@@ -36,13 +42,13 @@ data class DistributionTool(
     companion object {
         val ScheduleDistribution = DistributionTool(
             toolIdentifier = "schedule_distribution_tool",
-            title = "Schedule Full & One Line",
+            titleKey = S.dd_pub_dest_schedule_card,
             service = ZillitService.ScheduleDistribution,
             segment = "schedule-distribution",
             tabs = listOf(
                 DistributionTab(
                     key = "full_script",
-                    label = "Schedule Full",
+                    labelKey = S.full_schedule,
                     kind = TabKind.Single(
                         route = "schedule",
                         idQuery = "scheduleId",
@@ -57,7 +63,7 @@ data class DistributionTool(
                 ),
                 DistributionTab(
                     key = "page",
-                    label = "Pages",
+                    labelKey = S.pages,
                     kind = TabKind.Folders(
                         folderRoute = "page-folders",
                         itemRoute = "page",
@@ -71,7 +77,7 @@ data class DistributionTool(
                 ),
                 DistributionTab(
                     key = "oneline",
-                    label = "Schedule One Line",
+                    labelKey = S.one_line_title,
                     kind = TabKind.Single(
                         route = "oneline",
                         idQuery = "scheduleId",
@@ -91,13 +97,13 @@ data class DistributionTool(
 
         val ScriptDistribution = DistributionTool(
             toolIdentifier = "script_distribution_tool",
-            title = "Script & Pages Distribution",
+            titleKey = S.dd_pub_dest_script_card,
             service = ZillitService.ScriptDistribution,
             segment = "script-distribution",
             tabs = listOf(
                 DistributionTab(
                     key = "full_script",
-                    label = "Full Script",
+                    labelKey = S.full_script,
                     kind = TabKind.Single(
                         route = "script",
                         idQuery = "scriptId",
@@ -113,7 +119,7 @@ data class DistributionTool(
                 ),
                 DistributionTab(
                     key = "page",
-                    label = "Pages",
+                    labelKey = S.pages,
                     kind = TabKind.Folders(
                         folderRoute = "page-folders",
                         itemRoute = "page",
@@ -136,13 +142,13 @@ data class DistributionTool(
          */
         val ScheduleDod = DistributionTool(
             toolIdentifier = "dod_tool",
-            title = "Schedule D.O.D",
+            titleKey = S.dd_pub_dest_dod_card,
             service = ZillitService.ScheduleDistribution,
             segment = "schedule-distribution",
             tabs = listOf(
                 DistributionTab(
                     key = "dod",
-                    label = "D.O.D",
+                    labelKey = S.desktop_dod_tab_label,
                     kind = TabKind.Folders(
                         folderRoute = "dod-folders",
                         itemRoute = "dod",
@@ -164,7 +170,8 @@ data class DistributionTool(
 
 data class DistributionTab(
     val key: String,
-    val label: String,
+    /** The catalogue key for the tab's on-screen name. */
+    val labelKey: String,
     val kind: TabKind,
     /** The `notification:read` module for this list. */
     val badgeModule: String,
@@ -172,7 +179,10 @@ data class DistributionTab(
     val badgeSegment: String?,
     /** The Document Distribution sub-folder under the tool root; none for D.O.D. */
     val publishSubFolder: String?,
-)
+) {
+    /** The tab's name as the crew reads it. */
+    val label: String get() = str(labelKey)
+}
 
 /** How one list talks to the service. */
 sealed interface TabKind {
@@ -228,10 +238,12 @@ enum class FolderKey(val query: String, val bodyKey: String) {
 }
 
 /** The two schedule-page kinds; the web keeps them in separate folders by shifting the revision date. */
-enum class ScheduleType(val wire: String, val label: String) {
-    FullSchedulePages("full_schedule_pages", "Schedule pages"),
-    OneLinePages("one_line_schedule_pages", "One line pages"),
+enum class ScheduleType(val wire: String, private val labelKey: String) {
+    FullSchedulePages("full_schedule_pages", S.schedule_pages_2),
+    OneLinePages("one_line_schedule_pages", S.desktop_one_line_pages_label),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromWire(value: String?): ScheduleType? = entries.firstOrNull { it.wire == value }
@@ -239,19 +251,21 @@ enum class ScheduleType(val wire: String, val label: String) {
 }
 
 /** The eleven revision colours, value = hex WITH `#`, in the web's order. */
-enum class PageColour(val hex: String, val label: String) {
-    White("#FFFFFF", "White"),
-    Blue("#ADD8E6", "Blue"),
-    Pink("#FFB6C1", "Pink"),
-    Yellow("#FFFFE0", "Yellow"),
-    Green("#98FB98", "Green"),
-    Goldenrod("#DAA520", "Goldenrod"),
-    Buff("#F0DC82", "Buff"),
-    Salmon("#FA8072", "Salmon"),
-    Cherry("#FADADD", "Cherry"),
-    Tan("#D2B48C", "Tan"),
-    Ivory("#FFFFF0", "Ivory"),
+enum class PageColour(val hex: String, private val labelKey: String) {
+    White("#FFFFFF", S.color_white),
+    Blue("#ADD8E6", S.color_blue),
+    Pink("#FFB6C1", S.color_pink),
+    Yellow("#FFFFE0", S.color_yellow),
+    Green("#98FB98", S.color_green),
+    Goldenrod("#DAA520", S.color_goldenrod),
+    Buff("#F0DC82", S.color_buff),
+    Salmon("#FA8072", S.color_salmon),
+    Cherry("#FADADD", S.color_cherry),
+    Tan("#D2B48C", S.color_tan),
+    Ivory("#FFFFF0", S.color_ivory),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromHex(value: String?): PageColour? =

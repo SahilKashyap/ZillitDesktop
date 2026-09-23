@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealTemplate
 
 /** Deal Memo Setup's hub: which group is open, the search, a delete in flight, and the inline create. */
@@ -90,7 +92,7 @@ internal class SetupHubActions(private val vm: DealMemoViewModel) {
 
     private fun use(template: DealTemplate) {
         if (template.form.isNullOrEmpty()) {
-            vm.toast("This setup has nothing saved to use.", DealToastTone.Error)
+            vm.toast(str(S.desktop_dm_this_setup_has_nothing_saved_to_use), DealToastTone.Error)
             return
         }
         vm.navigate(

@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
 import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.MarkFamily
 import com.zillit.desktop.feature.email.domain.TextMark
 
@@ -173,7 +175,7 @@ private fun SizePicker(
             onDismissRequest = { expanded = false },
             entries = FONT_SIZES.map { px ->
                 ZillitMenuEntry.Action(
-                    label = if (px == DEFAULT_SIZE) "$px (default)" else "$px",
+                    label = if (px == DEFAULT_SIZE) str(S.desktop_email_font_size_default, px) else "$px",
                     // The chosen size wears the check tile; the rest sit bare.
                     // No mark means the default size, so that row is the
                     // chosen one until a size is picked.
@@ -214,7 +216,9 @@ private fun ColorPicker(
             onDismissRequest = { expanded = false },
         ) {
             ZillitMenuEntries(
-                entries = listOf(ZillitMenuEntry.Action("Default", ZillitIcons.Minus) { onClear(clears) }),
+                entries = listOf(
+                    ZillitMenuEntry.Action(str(S.desktop_email_format_default), ZillitIcons.Minus) { onClear(clears) },
+                ),
                 onDismiss = { expanded = false },
             )
             PALETTE.chunked(SWATCHES_PER_ROW).forEach { row ->

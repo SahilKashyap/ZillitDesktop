@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
 import com.zillit.desktop.feature.callsheet.ui.components.ProvideSheetFaces
 import com.zillit.desktop.feature.callsheet.ui.components.sheetText
@@ -87,7 +89,7 @@ private fun ListView(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowMill
                             SheetTab.Permission -> PermissionPage(state, onEvent)
                         }
                     } else {
-                        LoadingBlock("Loading call sheets…")
+                        LoadingBlock(str(S.desktop_cs_loading_call_sheets))
                     }
                 }
             }
@@ -100,7 +102,7 @@ private fun ListView(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowMill
 private fun NoAccess() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            "You do not have access to call sheets on this production.",
+            str(S.desktop_cs_no_access),
             style = sheetText(14.sp),
             color = SheetTheme.colors.textTertiary,
             textAlign = TextAlign.Center,

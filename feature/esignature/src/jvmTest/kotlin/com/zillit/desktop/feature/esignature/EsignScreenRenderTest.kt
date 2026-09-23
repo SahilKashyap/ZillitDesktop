@@ -130,14 +130,16 @@ class EsignScreenRenderTest {
             recipients = sent.recipients,
             options = emptyList(),
         )
-        render(base().copy(page = EsignPageKind.Editor, editor = prepare), expect = "Next: Place fields")
+        // "Next: Place Fields": the Android key's capitalisation, kept for its 21 translations.
+        render(base().copy(page = EsignPageKind.Editor, editor = prepare), expect = "Next: Place Fields")
         val place = prepare.copy(
             step = EditorStep.Place,
             modeAsked = true,
             fields = listOf(field("f", FieldType.Dropdown, "").copy(recipientIndex = 0, label = "Role")),
             selectedField = 0,
         )
-        render(base().copy(page = EsignPageKind.Editor, editor = place), expect = "Delete field")
+        // "Delete Field": the Android key's capitalisation, kept for its 21 translations.
+        render(base().copy(page = EsignPageKind.Editor, editor = place), expect = "Delete Field")
         val asking = place.copy(modeAsked = false, selectedField = null)
         render(base().copy(page = EsignPageKind.Editor, editor = asking), expect = "How is your document set up?")
         val sheet = SaveTemplateDraft(name = "x")
@@ -153,7 +155,8 @@ class EsignScreenRenderTest {
             sentByMe = true,
             audit = listOf(AuditEntry("envelope_sent", "Ada", happenedOn = 1_700_000_000_000L)),
         )
-        render(base().copy(page = EsignPageKind.Detail, detail = detail), expect = "Recipient activity")
+        // "Recipient Activity": the Android key's capitalisation, kept for its 21 translations.
+        render(base().copy(page = EsignPageKind.Detail, detail = detail), expect = "Recipient Activity")
         render(
             base().copy(page = EsignPageKind.Detail, detail = detail.copy(showOrder = true, voiding = true)),
             dark = true,

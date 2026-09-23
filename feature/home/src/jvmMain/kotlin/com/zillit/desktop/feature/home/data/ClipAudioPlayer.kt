@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.home.data
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.AudioPlayer
 import com.zillit.desktop.feature.home.domain.PlaybackState
 import java.io.ByteArrayInputStream
@@ -164,7 +166,7 @@ class ClipAudioPlayer(private val scope: CoroutineScope) : AudioPlayer {
 
         fun undecodable() = ZillitError.Storage(
             technical = "the JVM cannot decode this audio format",
-            userMessage = "This voice message opens in the system player.",
+            userMessage = str(S.desktop_voice_opens_in_system_player),
         )
     }
 }

@@ -56,7 +56,8 @@ class DiaryLocationPickRenderTest {
         }
         waitForIdle()
 
-        onNodeWithText("Pick on map").performScrollTo().performClick()
+        // "Pick on Map" is Android's wording for ce_pick_on_map; only the capital M is new.
+        onNodeWithText("Pick on Map").performScrollTo().performClick()
         waitForIdle()
 
         assertEquals(
@@ -77,7 +78,8 @@ class DiaryLocationPickRenderTest {
         }
         waitForIdle()
 
-        onNodeWithText("Pick on map").performScrollTo().performClick()
+        // "Pick on Map" is Android's wording for ce_pick_on_map; only the capital M is new.
+        onNodeWithText("Pick on Map").performScrollTo().performClick()
         waitForIdle()
 
         assertEquals(emptyList<EntryEvent.SetLocation>(), events.filterIsInstance<EntryEvent.SetLocation>())
@@ -89,6 +91,6 @@ class DiaryLocationPickRenderTest {
         waitForIdle()
 
         onNodeWithText("Add Location", ignoreCase = true).assertExists()
-        onAllNodesWithText("Pick on map").assertCountEquals(0)
+        onAllNodesWithText("Pick on Map").assertCountEquals(0)
     }
 }

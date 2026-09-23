@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain.preview
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealDoc
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
@@ -51,16 +53,20 @@ object StartForm {
 
     private const val DASH = MemoFormat.DASH
 
-    private val BASIS_SUFFIX = mapOf(
-        "day" to "day", "days" to "day", "week" to "week", "weeks" to "week",
-        "hour" to "hour", "night" to "night", "event" to "event", "mile" to "mile", "meal" to "meal",
-    )
+    private val BASIS_SUFFIX: Map<String, String>
+        get() = mapOf(
+            "day" to str(S.day_label), "days" to str(S.day_label),
+            "week" to str(S.week_label), "weeks" to str(S.week_label),
+            "hour" to str(S.desktop_unit_hour), "night" to str(S.desktop_unit_night),
+            "event" to str(S.desktop_unit_event), "mile" to str(S.desktop_unit_mile),
+            "meal" to str(S.desktop_unit_meal),
+        )
 
     fun build(deal: DealDoc, context: MemoContext, companyName: String): StartFormView {
         val names = CrewNames.of(deal, context)
         val person = context.labels.person(deal.userId)
         val crewName = person?.fullName?.takeIf { it.isNotEmpty() } ?: deal.fullLegalName ?: deal.crewName
-            ?: "Crew member"
+            ?: str(S.crew_member)
         val status = deal.rawStatus.orEmpty().replace('_', ' ')
             .split(' ').joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
             .ifEmpty { DASH }
@@ -77,9 +83,9 @@ object StartForm {
                 StartSection(
                     null,
                     listOf(
-                        StartField("Status", status),
-                        StartField("Start Form For", crewName),
-                        StartField("Created", MemoFormat.dateTime(deal.createdAt, context.zone)),
+                        StartField(str(S.status), status),
+                        StartField(str(S.desktop_dm_start_form_for), crewName),
+                        StartField(str(S.drive_created), MemoFormat.dateTime(deal.createdAt, context.zone)),
                     ),
                 ),
                 employment(deal, names, context),
@@ -94,17 +100,17 @@ object StartForm {
     }
 
     private fun employment(deal: DealDoc, names: CrewNames, context: MemoContext) = StartSection(
-        "Employment Details",
+        str(S.desktop_dm_employment_details),
         listOf(
-            StartField("Job Title", names.role),
-            StartField("Department", names.department),
-            StartField("Start Date", MemoFormat.date(deal.startDate, context.zone)),
-            StartField("Schedule D No.", DASH),
-            StartField("Vehicle Model", DASH),
-            StartField("Vehicle Reg No.", DASH, mono = true),
-            StartField("Ltd. Company", DASH),
-            StartField("Company No.", DASH),
-            StartField("VAT Reg. No.", DASH),
+            StartField(str(S.job_title), names.role),
+            StartField(str(S.department), names.department),
+            StartField(str(S.start_date), MemoFormat.date(deal.startDate, context.zone)),
+            StartField(str(S.desktop_dm_schedule_d_no), DASH),
+            StartField(str(S.vehicle_model), DASH),
+            StartField(str(S.desktop_dm_vehicle_reg_no), DASH, mono = true),
+            StartField(str(S.desktop_dm_ltd_company), DASH),
+            StartField(str(S.desktop_company_no), DASH),
+            StartField(str(S.desktop_dm_vat_reg_no), DASH),
         ),
     )
 
@@ -118,27 +124,33 @@ object StartForm {
         val home = DealAddress.of(cd?.get("home_address"))
         val emergency = DocRead.obj(cd, "emergency_details")
         return StartSection(
-            "Personal Information",
+            str(S.desktop_dm_personal_information),
             listOf(
-                StartField("Surname", surname),
-                StartField("First Name", first),
-                StartField("Address", home.format(), wide = true),
-                StartField("Post Code", home.postalCode, mono = true),
-                StartField("Country of Residence", home.country),
-                StartField("Gender", DocRead.text(cd, "gender")?.let { DealLabels.formatLabel(it, context.translate) }),
-                StartField("D.O.B", MemoFormat.date(DocRead.number(cd, "dob")?.toLong(), context.zone)),
-                StartField("Insurance / NI No.", DocRead.text(cd, "insurance_no"), mono = true),
-                StartField("Citizenship", DASH),
-                StartField("Passport No.", DASH, mono = true),
-                StartField("Tel. / Mobile No.", DocRead.text(cd, "mobile"), mono = true),
-                StartField("E-Mail Address", DocRead.text(cd, "email"), wide = true),
+                StartField(str(S.desktop_surname), surname),
+                StartField(str(S.first_name_label), first),
+                StartField(str(S.address), home.format(), wide = true),
+                StartField(str(S.desktop_post_code), home.postalCode, mono = true),
+                StartField(str(S.country_of_residence), home.country),
                 StartField(
-                    "Next of Kin",
+                    str(S.gender),
+                    DocRead.text(cd, "gender")?.let { DealLabels.formatLabel(it, context.translate) },
+                ),
+                StartField(
+                    str(S.desktop_dm_dob_abbrev),
+                    MemoFormat.date(DocRead.number(cd, "dob")?.toLong(), context.zone),
+                ),
+                StartField(str(S.dm_edit_personal_insurance), DocRead.text(cd, "insurance_no"), mono = true),
+                StartField(str(S.desktop_citizenship), DASH),
+                StartField(str(S.desktop_passport_no), DASH, mono = true),
+                StartField(str(S.desktop_dm_tel_mobile_no), DocRead.text(cd, "mobile"), mono = true),
+                StartField(str(S.desktop_dm_email_address), DocRead.text(cd, "email"), wide = true),
+                StartField(
+                    str(S.desktop_next_of_kin),
                     DocRead.text(cd, "emergency_contact_name") ?: DocRead.text(emergency, "name")
                         ?: DocRead.text(cd, "emergency_contact"),
                 ),
                 StartField(
-                    "Next of Kin Tel.",
+                    str(S.desktop_next_of_kin_tel),
                     DocRead.text(cd, "emergency_contact_number") ?: DocRead.text(emergency, "phone_number"),
                     mono = true,
                 ),
@@ -162,17 +174,21 @@ object StartForm {
     private fun bank(deal: DealDoc): StartSection {
         val bank = DocRead.obj(deal.json, "bank")
         return StartSection(
-            "Bank Details",
+            str(S.dm_step2_card_bank),
             listOf(
-                StartField("Bank Name", DocRead.text(bank, "name")),
-                StartField("Branch", DASH),
-                StartField("Sort Code", MemoFormat.sortCode(DocRead.text(bank, "sort_code")), mono = true),
-                StartField("Account No.", DocRead.text(bank, "account_number"), mono = true),
-                StartField("Payee Name", DocRead.text(bank, "account_holder_name")),
-                StartField("Additional Ref.", DASH),
-                StartField("Swift", DocRead.text(bank, "swift_code"), mono = true),
-                StartField("IBAN", DocRead.text(bank, "iban_number"), mono = true),
-                StartField("ABA / Routing", DASH, mono = true),
+                StartField(str(S.dm_step2_bank_name), DocRead.text(bank, "name")),
+                StartField(str(S.desktop_branch), DASH),
+                StartField(
+                    str(S.dm_step2_bank_sort_code),
+                    MemoFormat.sortCode(DocRead.text(bank, "sort_code")),
+                    mono = true,
+                ),
+                StartField(str(S.desktop_dm_account_no), DocRead.text(bank, "account_number"), mono = true),
+                StartField(str(S.desktop_payee_name), DocRead.text(bank, "account_holder_name")),
+                StartField(str(S.desktop_dm_additional_ref), DASH),
+                StartField(str(S.desktop_swift), DocRead.text(bank, "swift_code"), mono = true),
+                StartField(str(S.dm_step2_bank_iban), DocRead.text(bank, "iban_number"), mono = true),
+                StartField(str(S.desktop_dm_aba_routing), DASH, mono = true),
             ),
         )
     }
@@ -186,22 +202,23 @@ object StartForm {
         val weekly = DocRead.obj(rates, "weekly")
         val fields = when {
             !flatFee -> listOf(
-                StartField("Day Rate", money(daily?.get("rate")), mono = true),
-                StartField("Day Hours", hours(daily), mono = true),
-                StartField("Weekly Rate", money(weekly?.get("rate")), mono = true),
-                StartField("Weekly Hours", hours(weekly), mono = true),
+                StartField(str(S.dm_rates_day_rate), money(daily?.get("rate")), mono = true),
+                StartField(str(S.desktop_dm_day_hours), hours(daily), mono = true),
+                StartField(str(S.dm_rates_weekly_rate), money(weekly?.get("rate")), mono = true),
+                StartField(str(S.desktop_dm_weekly_hours), hours(weekly), mono = true),
             )
             deal.dealType == "picture" ->
-                listOf(StartField("Picture Fee", money(rates?.get("picture_fee")), mono = true))
+                listOf(StartField(str(S.dm_rates_card_picture), money(rates?.get("picture_fee")), mono = true))
             else -> {
                 val covers = rates?.get("buyout_covers")
                 listOf(
-                    StartField("Buy-Out Rate (weekly)", money(rates?.get("buyout_rate")), mono = true),
+                    StartField(str(S.dm_rates_buyout_rate_weekly), money(rates?.get("buyout_rate")), mono = true),
                     StartField(
-                        "Covers",
+                        str(S.desktop_covers),
                         when {
-                            (covers as? JsonPrimitive)?.content == "unlimited" -> "Unlimited"
-                            Js.truthy(covers) -> "${Js.text(covers)} hrs/day"
+                            (covers as? JsonPrimitive)?.content == "unlimited" ->
+                                str(S.dm_rates_buyout_covers_unlimited)
+                            Js.truthy(covers) -> str(S.desktop_dm_hrs_per_day, Js.text(covers))
                             else -> DASH
                         },
                     ),
@@ -209,10 +226,10 @@ object StartForm {
             }
         }
         return StartSection(
-            "Rates",
+            str(S.dm_section_rates),
             fields + listOf(
-                StartField("Contract Currency", deal.contractCurrency ?: "GBP", mono = true),
-                StartField("Deal Type", deal.dealType?.let { DealLabels.formatLabel(it) } ?: DASH),
+                StartField(str(S.dm_rates_currency), deal.contractCurrency ?: "GBP", mono = true),
+                StartField(str(S.dm_ds_deal_type), deal.dealType?.let { DealLabels.formatLabel(it) } ?: DASH),
             ),
         )
     }
@@ -222,14 +239,19 @@ object StartForm {
         val inclusive = treatment == HolidayPay.INCLUSIVE
         val percent = HolidayPay.of(deal)?.percent?.takeIf { it != 0.0 && !it.isNaN() }
         return StartSection(
-            "Holiday Pay",
+            str(S.dm_rates_card_hp),
             listOf(
                 StartField(
-                    "Treatment",
-                    treatment?.let { if (inclusive) "Inclusive of rate" else "Exclusive of rate" } ?: DASH,
+                    str(S.desktop_treatment),
+                    treatment?.let {
+                        if (inclusive) str(S.desktop_dm_inclusive_of_rate) else str(S.desktop_dm_exclusive_of_rate)
+                    } ?: DASH,
                 ),
-                StartField("Holiday Ent.", percent?.let { "${Js.number(it)}%" } ?: DASH, mono = true),
-                StartField("Included in Rate", treatment?.let { if (inclusive) "Yes" else "No" } ?: DASH),
+                StartField(str(S.desktop_dm_holiday_ent), percent?.let { "${Js.number(it)}%" } ?: DASH, mono = true),
+                StartField(
+                    str(S.desktop_dm_included_in_rate),
+                    treatment?.let { if (inclusive) str(S.yes) else str(S.no) } ?: DASH,
+                ),
             ),
             columns = 3,
         )
@@ -238,19 +260,19 @@ object StartForm {
     private fun tables(deal: DealDoc, symbol: String, flatFee: Boolean): List<StartTable> = buildList {
         if (!flatFee) {
             listOf(
-                Triple("overtimes", "Overtimes", "No overtime rows."),
-                Triple("premiums", "Premiums", "No premiums."),
-                Triple("penalties", "Penalties", "No penalties."),
-                Triple("turnarounds", "Turnarounds", "No turnaround rules."),
+                Triple("overtimes", S.dm_rates_overtimes, S.desktop_dm_no_overtime_rows),
+                Triple("premiums", S.dm_rates_premiums, S.desktop_dm_no_premiums),
+                Triple("penalties", S.dm_rates_penalties, S.desktop_dm_no_penalties),
+                Triple("turnarounds", S.dm_rates_turnarounds, S.desktop_dm_no_turnaround_rules),
             ).forEach { (key, title, empty) ->
                 add(
                     StartTable(
-                        title = title,
+                        title = str(title),
                         columns = listOf(
-                            MemoColumn(if (title == "Overtimes") "Band" else "Rule"),
-                            MemoColumn("Rate", mono = true),
-                            MemoColumn("Nominal", mono = true),
-                            MemoColumn("Pay Frequency", alignEnd = true),
+                            MemoColumn(str(if (key == "overtimes") S.desktop_dm_band else S.dm_rule_section_rule)),
+                            MemoColumn(str(S.av_rate), mono = true),
+                            MemoColumn(str(S.dm_rule_nominal), mono = true),
+                            MemoColumn(str(S.dm_pay_pay_frequency), alignEnd = true),
                         ),
                         widths = listOf(null, null, NOMINAL_WIDTH, FREQUENCY_WIDTH),
                         rows = DocRead.objects(deal.json[key]).map { row ->
@@ -261,25 +283,24 @@ object StartForm {
                                 MemoFormat.payFrequency(row),
                             )
                         },
-                        emptyText = empty,
+                        emptyText = str(empty),
                     ),
                 )
             }
         }
-        listOf("allowances" to "Allowances", "rentals" to "Rentals").forEach { (key, title) ->
-            add(entitlementTable(deal, key, title, symbol))
-        }
+        add(entitlementTable(deal, "allowances", S.allowances_label, S.desktop_dm_no_allowances, symbol))
+        add(entitlementTable(deal, "rentals", S.dm_allow_card_rentals, S.desktop_dm_no_rentals, symbol))
         add(fringeTable(deal, symbol))
     }
 
-    private fun entitlementTable(deal: DealDoc, key: String, title: String, symbol: String) = StartTable(
-        title = title,
+    private fun entitlementTable(deal: DealDoc, key: String, title: String, empty: String, symbol: String) = StartTable(
+        title = str(title),
         columns = listOf(
-            MemoColumn("Name"),
-            MemoColumn("Type"),
-            MemoColumn("Amount", mono = true),
-            MemoColumn("Pay Frequency"),
-            MemoColumn("Currency", alignEnd = true),
+            MemoColumn(str(S.name)),
+            MemoColumn(str(S.type)),
+            MemoColumn(str(S.amount), mono = true),
+            MemoColumn(str(S.dm_pay_pay_frequency)),
+            MemoColumn(str(S.asset_currency), alignEnd = true),
         ),
         widths = listOf(null, null, null, null, CURRENCY_WIDTH),
         rows = DocRead.objects(deal.json[key]).map { row ->
@@ -291,20 +312,20 @@ object StartForm {
                 DocRead.text(row, "currency") ?: deal.contractCurrency ?: "GBP",
             )
         },
-        emptyText = "No ${title.lowercase()}.",
+        emptyText = str(empty),
     )
 
     /** Row-level `percentage` / `flat` / `basis` — the memo reads `source.*`, so the two can differ. */
     private fun fringeTable(deal: DealDoc, symbol: String): StartTable {
         val inclusive = HolidayPay.treatmentOf(deal) == HolidayPay.INCLUSIVE
         return StartTable(
-            title = "Fringes / Employer Costs",
+            title = str(S.desktop_dm_fringes_employer_costs),
             columns = listOf(
-                MemoColumn("Line"),
+                MemoColumn(str(S.desktop_line)),
                 MemoColumn("%", mono = true),
-                MemoColumn("Flat", mono = true),
-                MemoColumn("Basis"),
-                MemoColumn("Pay Freq.", alignEnd = true),
+                MemoColumn(str(S.desktop_flat), mono = true),
+                MemoColumn(str(S.dm_rule_basis)),
+                MemoColumn(str(S.desktop_dm_pay_freq_abbrev), alignEnd = true),
             ),
             widths = listOf(null, PERCENT_WIDTH, FLAT_WIDTH, null, FRINGE_FREQUENCY_WIDTH),
             rows = DocRead.objects(deal.json["fringes"])
@@ -319,7 +340,7 @@ object StartForm {
                         MemoFormat.payFrequency(row),
                     )
                 },
-            emptyText = "No fringes.",
+            emptyText = str(S.desktop_dm_no_fringes),
         )
     }
 

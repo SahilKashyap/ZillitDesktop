@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.cashexpenses.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Names for the user ids the cash service sends.
  *
@@ -40,7 +43,7 @@ class CashPeople(crew: List<AssigneeOption> = emptyList()) {
         userId?.let(byId::get)?.fullName?.takeIf { it.isNotBlank() }
 
     companion object {
-        const val UNKNOWN = "Unknown"
+        val UNKNOWN: String get() = str(S.desktop_unknown)
     }
 }
 

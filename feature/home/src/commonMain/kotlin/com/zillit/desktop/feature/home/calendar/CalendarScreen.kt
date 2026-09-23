@@ -46,6 +46,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -146,14 +148,14 @@ private fun DeleteEventDialog(detail: EventDetailState?, onEvent: (CalendarEvent
     val current = shown.value
 
     ZillitDialogShell(
-        title = "Delete \"${current?.event?.title ?: "this event"}\"?",
-        subtitle = "It comes off everyone's calendar, not just yours.",
+        title = str(S.drive_delete_item_title_format, current?.event?.title ?: str(S.this_event)),
+        subtitle = str(S.desktop_cal_delete_event_subtitle),
         visible = detail?.isConfirmingDelete == true,
         onDismiss = { onEvent(CalendarEvent2Event.DismissDeleteEvent) },
         width = DIALOG_WIDTH,
     ) {
         ZillitText(
-            text = "This cannot be undone.",
+            text = str(S.desktop_cannot_be_undone),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -162,12 +164,12 @@ private fun DeleteEventDialog(detail: EventDetailState?, onEvent: (CalendarEvent
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(CalendarEvent2Event.DismissDeleteEvent) },
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(CalendarEvent2Event.ConfirmDeleteEvent) },
             )
@@ -188,14 +190,14 @@ private fun RescheduleDialog(state: CalendarUiState, onEvent: (CalendarEvent2Eve
     val current = shown.value
 
     ZillitDialogShell(
-        title = "Move \"${current?.event?.title ?: "this event"}\"?",
+        title = str(S.desktop_cal_move_event_title, current?.event?.title ?: str(S.this_event)),
         subtitle = current?.let { rescheduleLine(it, state.zone) },
         visible = state.pendingReschedule != null,
         onDismiss = { onEvent(CalendarEvent2Event.CancelReschedule) },
         width = DIALOG_WIDTH,
     ) {
         ZillitText(
-            text = "Everyone invited sees the new time.",
+            text = str(S.desktop_cal_everyone_sees_new_time),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -204,12 +206,12 @@ private fun RescheduleDialog(state: CalendarUiState, onEvent: (CalendarEvent2Eve
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(CalendarEvent2Event.CancelReschedule) },
             )
             ZillitButton(
-                text = "Move event",
+                text = str(S.desktop_cal_move_event),
                 onClick = { onEvent(CalendarEvent2Event.ConfirmReschedule) },
             )
         }
@@ -237,7 +239,7 @@ private fun ErrorState(message: String, onEvent: (CalendarEvent2Event) -> Unit) 
             color = ZillitTheme.colors.textMuted,
             textAlign = TextAlign.Center,
         )
-        ZillitButton(text = "Try again", onClick = { onEvent(CalendarEvent2Event.Reload) })
+        ZillitButton(text = str(S.try_again), onClick = { onEvent(CalendarEvent2Event.Reload) })
     }
 }
 
@@ -254,19 +256,19 @@ private fun CalendarToolbar(state: CalendarUiState, onEvent: (CalendarEvent2Even
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitButton(
-            text = "Today",
+            text = str(S.today),
             onClick = { onEvent(CalendarEvent2Event.Today) },
             variant = ButtonVariant.Secondary,
             size = com.zillit.desktop.core.designsystem.component.ButtonSize.Small,
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Previous",
+            contentDescription = str(S.docusign_tour_prev),
             onClick = { onEvent(CalendarEvent2Event.Previous) },
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronRight,
-            contentDescription = "Next",
+            contentDescription = str(S.next),
             onClick = { onEvent(CalendarEvent2Event.Next) },
         )
         ZillitText(
@@ -288,7 +290,7 @@ private fun ToolbarActions(state: CalendarUiState, onEvent: (CalendarEvent2Event
     ) {
         Box {
             ZillitButton(
-                text = "Invitations",
+                text = str(S.desktop_cal_invitations),
                 variant = ButtonVariant.Secondary,
                 size = com.zillit.desktop.core.designsystem.component.ButtonSize.Small,
                 onClick = { onEvent(CalendarEvent2Event.ShowInvitations) },
@@ -302,13 +304,13 @@ private fun ToolbarActions(state: CalendarUiState, onEvent: (CalendarEvent2Event
             value = state.mode,
             options = CalendarViewMode.entries,
             onSelect = { onEvent(CalendarEvent2Event.SetMode(it)) },
-            label = CalendarViewMode::label,
+            label = { str(it.label) },
             // Fixed, not fluid: an unconstrained select fills the whole
             // toolbar and shoves New event off the window edge.
             modifier = Modifier.width(MODE_SELECT_WIDTH),
         )
         ZillitButton(
-            text = "New event",
+            text = str(S.new_event),
             leadingIcon = ZillitIcons.Add,
             onClick = { onEvent(CalendarEvent2Event.OpenForm(null)) },
             size = com.zillit.desktop.core.designsystem.component.ButtonSize.Small,
@@ -514,7 +516,7 @@ private fun DayCell(
             }
             if (events.size > MAX_CHIPS) {
                 ZillitText(
-                    text = "+${events.size - MAX_CHIPS} more",
+                    text = str(S.bs_cal_more_items, events.size - MAX_CHIPS),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                     modifier = Modifier.padding(start = ZillitTheme.spacing.xxs)
@@ -618,8 +620,9 @@ private fun DayColumn(state: CalendarUiState, date: LocalDate) {
                     style = ZillitTheme.typography.titleSmall,
                 )
                 ZillitText(
-                    text = "${state.eventsOn(date).size} " +
-                        if (state.eventsOn(date).size == 1) "event" else "events",
+                    text = state.eventsOn(date).size.let { count ->
+                        if (count == 1) str(S.desktop_cal_one_event) else str(S.desktop_cal_event_count, count)
+                    },
                     style = ZillitTheme.typography.labelSmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -628,7 +631,7 @@ private fun DayColumn(state: CalendarUiState, date: LocalDate) {
         Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
 
         if (events.isEmpty()) {
-            Centred("Nothing scheduled.")
+            Centred(str(S.desktop_cal_nothing_scheduled))
             return@Column
         }
 

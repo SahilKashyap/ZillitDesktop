@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.CompanyDraft
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.isNonUnionId
@@ -95,13 +97,13 @@ private fun ContractingEntity(state: DealMemoUiState, form: DealForm, ops: FormO
     val settings = state.projectSettings
     val companies = settings.view.companies
     val productionType = state.production.project.productionType
-    CardBlock(title = "Contracting Entity") {
+    CardBlock(title = str(S.dm_step1_card_entity)) {
         BuilderGrid(columns = 2) {
             cell {
                 Field(
-                    label = "Production Entity",
+                    label = str(S.desktop_dm_production_entity),
                     required = true,
-                    trailing = { LabelAction("Add company") { onEvent(BuilderEvent.AddCompany) } },
+                    trailing = { LabelAction(str(S.desktop_add_company)) { onEvent(BuilderEvent.AddCompany) } },
                 ) {
                     RichSelect(
                         options = companies.map { company ->
@@ -116,9 +118,9 @@ private fun ContractingEntity(state: DealMemoUiState, form: DealForm, ops: FormO
                         selectedKey = form.text("productionEntity").ifEmpty { null },
                         onPick = { ops.set("productionEntity", it.orEmpty()) },
                         placeholder = when {
-                            settings.loading -> "Loading entities…"
-                            companies.isEmpty() -> "— No companies in Production Setup —"
-                            else -> "Select entity…"
+                            settings.loading -> str(S.desktop_dm_loading_entities)
+                            companies.isEmpty() -> str(S.desktop_dm_no_companies_in_production_setup)
+                            else -> str(S.desktop_dm_select_entity)
                         },
                         enabled = !settings.loading,
                         rowLeading = { option -> Monogram(option.label) },
@@ -126,11 +128,11 @@ private fun ContractingEntity(state: DealMemoUiState, form: DealForm, ops: FormO
                 }
             }
             cell {
-                Field("Production Type") {
+                Field(str(S.dm_step1_production_type)) {
                     ReadOnlyBox(
                         text = productionType.takeIf { it.isNotEmpty() }?.let(::localised),
-                        emptyText = "No project type on this project",
-                        tooltip = "Set on the current project; can't be changed here.",
+                        emptyText = str(S.desktop_dm_no_project_type_on_this_project),
+                        tooltip = str(S.desktop_dm_set_on_the_current_project_cant_be),
                     )
                 }
             }
@@ -142,8 +144,11 @@ private fun ContractingEntity(state: DealMemoUiState, form: DealForm, ops: FormO
 @Composable
 private fun UnionStatus(form: DealForm, locked: Boolean, ops: FormOps) {
     val nonUnion = isNonUnionId(form.text("union"))
-    CardBlock(title = "Union Status") {
-        val options = listOf(false to "Union", true to "Non-Union").filter { (isNonUnion, _) ->
+    CardBlock(title = str(S.desktop_dm_union_status)) {
+        val options = listOf(
+            false to str(S.dm_label_union),
+            true to str(S.dm_create_non_union),
+        ).filter { (isNonUnion, _) ->
             !locked || isNonUnion == nonUnion
         }
         BuilderGrid(columns = if (locked) 1 else 2, gap = 10.dp) {
@@ -221,16 +226,20 @@ private fun TerritoryAndAgreement(builder: BuilderState, ops: FormOps) {
     val territory = TerritoryCatalogue.territory(territoryId)
     val covered = builder.reference.coveredTerritories?.takeIf { it.isNotEmpty() }
     CardBlock(
-        title = "Territory & Agreement",
+        title = str(S.dm_step1_card_territory),
         headerTrailing = territory?.let {
             {
-                BuilderTag("${it.label} Agreements", BuilderTone.Gold, leading = { TerritoryFlag(it.id, 12.dp) })
+                BuilderTag(
+                    str(S.dm_step1_territory_subheading, it.label),
+                    BuilderTone.Gold,
+                    leading = { TerritoryFlag(it.id, 12.dp) },
+                )
             }
         },
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
-                Field("Territory", required = true) {
+                Field(str(S.dm_section_territory), required = true) {
                     TerritoryPicker(
                         selected = territoryId,
                         covered = covered,
@@ -275,7 +284,7 @@ private fun TerritoryPicker(selected: String, covered: Set<String>?, onPick: (St
         },
         selectedKey = selected.ifEmpty { null },
         onPick = onPick,
-        placeholder = "— Select Territory —",
+        placeholder = str(S.desktop_dm_select_territory_placeholder),
         clearable = false,
         dropdownWidth = 320.dp,
         triggerText = current?.let { territory ->
@@ -298,14 +307,13 @@ private fun CoverageNote(names: List<String>) {
     FlowRow(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         if (collapsed) {
             ZillitText(
-                text = "Currently offered in these territories only: " +
-                    "${names.take(COVERAGE_PREVIEW).joinToString(", ")}",
+                text = str(S.desktop_dm_offered_territories_prefix, names.take(COVERAGE_PREVIEW).joinToString(", ")),
                 style = style,
                 color = p.ink2,
             )
             val (source, hovered) = rememberHover()
             ZillitText(
-                text = "+${names.size - COVERAGE_PREVIEW} more",
+                text = str(S.desktop_dm_n_more, names.size - COVERAGE_PREVIEW),
                 style = style.copy(
                     fontWeight = FontWeight.SemiBold,
                     textDecoration = if (hovered) TextDecoration.Underline else null,
@@ -320,9 +328,9 @@ private fun CoverageNote(names: List<String>) {
             val joined = if (names.size == 1) {
                 names.single()
             } else {
-                "${names.dropLast(1).joinToString(", ")} and ${names.last()}"
+                str(S.desktop_docdist_x_and_y, names.dropLast(1).joinToString(", "), names.last())
             }
-            ZillitText(text = "Currently offered in these territories only: $joined.", style = style, color = p.ink2)
+            ZillitText(text = str(S.desktop_dm_offered_territories_only, joined), style = style, color = p.ink2)
         }
     }
 }
@@ -332,7 +340,7 @@ private fun CoverageNote(names: List<String>) {
 private fun Agreements(builder: BuilderState, territoryLabel: String, ops: FormOps) {
     val p = bp
     val reference = builder.reference
-    FieldLabel("Agreements in $territoryLabel")
+    FieldLabel(str(S.dm_step1_agreements_header, territoryLabel))
     val shape = RoundedCornerShape(10.dp)
     when {
         reference.agreementsLoading -> Row(
@@ -347,7 +355,7 @@ private fun Agreements(builder: BuilderState, territoryLabel: String, ops: FormO
         ) {
             ZillitSpinner(size = 14.dp, color = p.cta)
             ZillitText(
-                text = "Loading agreements…",
+                text = str(S.desktop_loading_agreements),
                 style = DmType.sans(12.sp),
                 color = p.muted,
                 modifier = Modifier.padding(start = 8.dp),
@@ -362,7 +370,11 @@ private fun Agreements(builder: BuilderState, territoryLabel: String, ops: FormO
                 .padding(vertical = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
-            ZillitText(text = "No union agreements in $territoryLabel.", style = DmType.sans(11.5.sp), color = p.muted)
+            ZillitText(
+                text = str(S.desktop_dm_no_union_agreements_in, territoryLabel),
+                style = DmType.sans(11.5.sp),
+                color = p.muted,
+            )
         }
         else -> RichSelect(
             options = reference.agreements.map { agreement ->
@@ -385,7 +397,7 @@ private fun Agreements(builder: BuilderState, territoryLabel: String, ops: FormO
                     "customJobTitle" to JsonPrimitive(""),
                 )
             },
-            placeholder = "Select agreement…",
+            placeholder = str(S.dm_step1_agreement_placeholder),
         )
     }
 }
@@ -400,13 +412,16 @@ private fun BudgetBand(builder: BuilderState, ops: FormOps) {
     val form = builder.form
     val departments = objects(pact?.get("special_depts"))
     CardBlock(
-        title = "${text(agreement, "short_label").ifEmpty { "Agreement" }} — Budget Band",
-        tag = "Mandatory — Clause 3.3",
+        title = str(
+            S.dm_step1_budget_band_title_dynamic,
+            text(agreement, "short_label").ifEmpty { str(S.dm_rule_import_agreement) },
+        ),
+        tag = str(S.desktop_dm_mandatory_clause_3_3),
         tone = BuilderTone.Purple,
     ) {
         BuilderGrid(columns = 2, verticalAlignment = Alignment.Top) {
             cell {
-                Field("Budget Band", required = true) {
+                Field(str(S.dm_step1_budget_band_title), required = true) {
                     NativeSelect(
                         value = form.text("pactBand"),
                         options = bands.map { band ->
@@ -415,7 +430,7 @@ private fun BudgetBand(builder: BuilderState, ops: FormOps) {
                             PickOption(text(band, "band"), if (threshold.isNotEmpty()) "$label — $threshold" else label)
                         },
                         onPick = { ops.set("pactBand", it) },
-                        placeholder = "— Select Band —",
+                        placeholder = str(S.desktop_dm_select_band_placeholder),
                     )
                 }
             }
@@ -440,9 +455,9 @@ private fun BudgetBand(builder: BuilderState, ops: FormOps) {
 /** `Special Department (10+1 contracted hours)?`, the base hours read off the first band's notes. */
 private fun specialDepartmentLabel(pact: JsonObject?, bands: List<JsonObject>): String {
     val extra = (pact?.get("extra_contracted_hours") as? JsonObject)?.get("hrs")?.takeIf(Js::truthy)
-        ?: return "Special Department (10+1 contracted hours)?"
+        ?: return str(S.desktop_dm_special_department_10_1_contracted_hours)
     val base = HOURS_IN_NOTES.find(text(bands.first(), "notes"))?.value ?: "10"
-    return "Special Department ($base+${Js.text(extra)} contracted hours)?"
+    return str(S.desktop_dm_special_department_question, base, Js.text(extra))
 }
 
 // -- companies ---------------------------------------------------------------------------------------
@@ -453,16 +468,19 @@ internal fun CompanyDialogs(state: DealMemoUiState, builder: BuilderState, onEve
     val page = builder.setupPage
     DmModal(
         visible = page.companyNotice,
-        title = "Add your first company",
+        title = str(S.desktop_dm_add_your_first_company),
         onDismiss = { onEvent(BuilderEvent.CloseCompanyNotice(proceed = false)) },
         maxWidth = 420.dp,
         footer = {
-            DmButton("Got it", { onEvent(BuilderEvent.CloseCompanyNotice(proceed = true)) }, DmButtonStyle.ModalPrimary)
+            DmButton(
+                str(S.dd_action_got_it),
+                { onEvent(BuilderEvent.CloseCompanyNotice(proceed = true)) },
+                DmButtonStyle.ModalPrimary,
+            )
         },
     ) {
         ZillitText(
-            text = "Fill in the company details for the first time. You can edit them later in Settings > Admin " +
-                "Settings > Production Setup.",
+            text = str(S.desktop_dm_fill_in_the_company_details_for_the),
             style = DmType.sans(14.sp).copy(lineHeight = 21.sp),
             color = bp.ink2,
             modifier = Modifier.padding(24.dp),
@@ -471,19 +489,19 @@ internal fun CompanyDialogs(state: DealMemoUiState, builder: BuilderState, onEve
     val draft = page.companyDraft
     DmModal(
         visible = draft != null,
-        title = "New company",
+        title = str(S.desktop_new_company),
         onDismiss = { onEvent(BuilderEvent.CloseCompany) },
         maxWidth = 560.dp,
         dismissible = !page.companySaving,
         footer = {
             DmButton(
-                "Cancel",
+                str(S.dm_cancel),
                 { onEvent(BuilderEvent.CloseCompany) },
                 DmButtonStyle.ModalNeutral,
                 enabled = !page.companySaving,
             )
             DmButton(
-                text = if (page.companySaving) "Saving…" else "Add company",
+                text = if (page.companySaving) str(S.dm_nda_saving) else str(S.desktop_add_company),
                 onClick = { onEvent(BuilderEvent.SaveCompany) },
                 style = DmButtonStyle.ModalPrimary,
                 enabled = draft != null && CompanyDraft.ready(draft) && !page.companySaving,
@@ -505,27 +523,27 @@ private fun CompanyForm(state: DealMemoUiState, draft: JsonObject, onChange: (Ma
         onChange(mapOf("uk" to JsonObject(blank + uk.orEmpty() + (key to JsonPrimitive(value)))))
     }
     Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Field("Company / Entity name", required = true) {
+        Field(str(S.desktop_dm_company_entity_name), required = true) {
             BuilderInput(
                 value = text(draft, "name"),
                 onValueChange = { onChange(mapOf("name" to JsonPrimitive(it))) },
-                placeholder = "e.g. Acme Productions Ltd",
+                placeholder = str(S.ps_company_name_hint),
             )
         }
-        Field("Legal name") {
+        Field(str(S.ps_company_legal_name)) {
             BuilderInput(
                 value = text(draft, "legal_name"),
                 onValueChange = { onChange(mapOf("legal_name" to JsonPrimitive(it))) },
-                placeholder = "As registered at Companies House",
+                placeholder = str(S.desktop_hub_as_registered_at_companies_house),
             )
         }
-        Field("Country", required = true) {
+        Field(str(S.dm_step2_address_country), required = true) {
             val countries = state.production.countries.sortedBy { it.name }
             CountryPicker(
                 countries = countries,
                 selectedCode = text(draft, "country_code").ifEmpty { null },
                 triggerText = text(draft, "country").ifEmpty { null },
-                placeholder = "Type country name or ISO code…",
+                placeholder = str(S.desktop_hub_type_country_name_or_iso_code),
                 onPick = { country ->
                     onChange(
                         mapOf(
@@ -542,7 +560,10 @@ private fun CompanyForm(state: DealMemoUiState, draft: JsonObject, onChange: (Ma
         }
         if (gb) {
             val paye = uk?.get("paye_ref")?.let(Js::text).orEmpty()
-            Field("PAYE reference", error = CrewFormRules.PAYE_ERROR.takeUnless { CrewFormRules.validPayeRef(paye) }) {
+            Field(
+                str(S.ps_company_paye_ref),
+                error = CrewFormRules.PAYE_ERROR.takeUnless { CrewFormRules.validPayeRef(paye) },
+            ) {
                 BuilderInput(
                     value = paye,
                     onValueChange = { patchUk("paye_ref", it.trim().take(CompanyDraft.UK_REF_MAX)) },
@@ -552,7 +573,7 @@ private fun CompanyForm(state: DealMemoUiState, draft: JsonObject, onChange: (Ma
             }
             val office = uk?.get("accounts_office_ref")?.let(Js::text).orEmpty()
             val officeValid = CrewFormRules.validAccountsOfficeRef(office)
-            Field("Accounts Office reference", error = CrewFormRules.ACCOUNTS_OFFICE_ERROR.takeUnless { officeValid }) {
+            Field(str(S.ps_company_ao_ref), error = CrewFormRules.ACCOUNTS_OFFICE_ERROR.takeUnless { officeValid }) {
                 BuilderInput(
                     value = office,
                     onValueChange = { patchUk("accounts_office_ref", it.trim().take(CompanyDraft.UK_REF_MAX)) },
@@ -583,7 +604,7 @@ private fun TaxCreditsField(tags: List<String>, onChange: (List<String>) -> Unit
         onChange(next)
         draft = ""
     }
-    Field("Tax credit tagging") {
+    Field(str(S.dm_nom_card_tax_credit)) {
         val shape = RoundedCornerShape(8.dp)
         FlowRow(
             modifier = Modifier
@@ -618,7 +639,8 @@ private fun TaxCreditsField(tags: List<String>, onChange: (List<String>) -> Unit
                 val style = DmType.sans(13.sp, FontWeight.Medium)
                 if (draft.isEmpty()) {
                     ZillitText(
-                        text = if (tags.isEmpty()) "Type a regime, press Enter (e.g. UK HETV)" else "Add another…",
+                        text = if (tags.isEmpty()) str(S.desktop_hub_type_a_regime_press_enter_e_g_uk_hetv_paren)
+                            else str(S.desktop_dm_add_another_ellipsis),
                         style = style,
                         color = p.placeholder,
                     )

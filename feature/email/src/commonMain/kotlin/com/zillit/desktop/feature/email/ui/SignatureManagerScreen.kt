@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailSignature
 import com.zillit.desktop.feature.email.domain.htmlToPlainText
 
@@ -52,16 +54,16 @@ internal fun SignatureManagerScreen(
         state.pendingDelete?.let { signature ->
             ModalCard(onDismiss = { onEvent(SignatureEvent.DismissDelete) }) {
                 ZillitText(
-                    text = "Delete \"${signature.title}\"?",
+                    text = str(S.drive_delete_item_title_format, signature.title),
                     style = ZillitTheme.typography.titleMedium,
                 )
                 ZillitText(
-                    text = "This cannot be undone.",
+                    text = str(S.desktop_cannot_be_undone),
                     style = ZillitTheme.typography.bodyMedium,
                     color = ZillitTheme.colors.textSecondary,
                 )
                 DialogButtons(
-                    action = "Delete",
+                    action = str(S.delete),
                     variant = ButtonVariant.Danger,
                     onConfirm = { onEvent(SignatureEvent.ConfirmDelete) },
                     onDismiss = { onEvent(SignatureEvent.DismissDelete) },
@@ -82,10 +84,10 @@ private fun SignatureList(state: SignatureManagerUiState, onEvent: (SignatureEve
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ZillitText(text = "Signatures", style = ZillitTheme.typography.titleMedium)
+            ZillitText(text = str(S.signatures), style = ZillitTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "New signature",
+                text = str(S.desktop_email_new_signature),
                 leadingIcon = ZillitIcons.Add,
                 size = ButtonSize.Small,
                 onClick = { onEvent(SignatureEvent.Edit(null)) },
@@ -101,10 +103,10 @@ private fun SignatureList(state: SignatureManagerUiState, onEvent: (SignatureEve
         }
 
         when {
-            state.isLoading -> Hint("Loading…")
+            state.isLoading -> Hint(str(S.ah_loading))
 
             state.signatures.isEmpty() -> Hint(
-                "No signatures yet. Add one and it can be appended to messages automatically.",
+                str(S.desktop_email_no_signatures_yet),
             )
 
             else -> state.signatures.forEach { signature ->
@@ -140,13 +142,13 @@ private fun SignatureRow(signature: EmailSignature, onEvent: (SignatureEvent) ->
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Edit",
+                text = str(S.edit),
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 onClick = { onEvent(SignatureEvent.Edit(signature)) },
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 onClick = { onEvent(SignatureEvent.AskDelete(signature)) },
@@ -165,14 +167,14 @@ private fun SignatureRow(signature: EmailSignature, onEvent: (SignatureEvent) ->
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitCheckbox(
                 checked = signature.useForNew,
-                label = "Use for new messages",
+                label = str(S.desktop_email_use_for_new_messages),
                 onCheckedChange = { on ->
                     onEvent(SignatureEvent.UsageChanged(signature, on, signature.useForReply))
                 },
             )
             ZillitCheckbox(
                 checked = signature.useForReply,
-                label = "Use for replies",
+                label = str(S.desktop_email_use_for_replies),
                 onCheckedChange = { on ->
                     onEvent(SignatureEvent.UsageChanged(signature, signature.useForNew, on))
                 },
@@ -190,14 +192,14 @@ private fun SignatureEditor(state: SignatureManagerUiState, onEvent: (SignatureE
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = if (draft.isNew) "New signature" else "Edit signature",
+            text = str(if (draft.isNew) S.desktop_email_new_signature else S.edit_signature),
             style = ZillitTheme.typography.titleMedium,
         )
 
         ZillitTextField(
             value = draft.title,
             onValueChange = { onEvent(SignatureEvent.TitleChanged(it)) },
-            placeholder = "Name — only you see this",
+            placeholder = str(S.desktop_email_signature_name_placeholder),
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -206,7 +208,7 @@ private fun SignatureEditor(state: SignatureManagerUiState, onEvent: (SignatureE
         RichTextEditor(
             value = draft.body,
             onValueChange = { onEvent(SignatureEvent.BodyChanged(it)) },
-            placeholder = "Your sign-off…",
+            placeholder = str(S.desktop_email_signature_body_placeholder),
             modifier = Modifier.fillMaxWidth().weight(1f),
         )
 
@@ -219,7 +221,7 @@ private fun SignatureEditor(state: SignatureManagerUiState, onEvent: (SignatureE
         }
 
         DialogButtons(
-            action = if (draft.isNew) "Create" else "Save",
+            action = str(if (draft.isNew) S.create else S.save),
             enabled = draft.canSave,
             loading = state.isSaving,
             onConfirm = { onEvent(SignatureEvent.Save) },

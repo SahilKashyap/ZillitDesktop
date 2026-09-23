@@ -10,6 +10,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The attach sheet: one button, a menu of kinds.
@@ -29,7 +31,7 @@ fun AttachMenu(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     icon: ImageVector = ZillitIcons.Add,
-    contentDescription: String = "Attach",
+    contentDescription: String = str(S.dm_docs_attach),
 ) {
     val open = remember { mutableStateOf(false) }
     val single = kinds.singleOrNull()
@@ -37,7 +39,11 @@ fun AttachMenu(
     Box(modifier) {
         ZillitIconButton(
             icon = icon,
-            contentDescription = if (single != null) "Attach a ${single.label.lowercase()}" else contentDescription,
+            contentDescription = if (single != null) {
+                str(S.desktop_media_attach_a, single.label.lowercase())
+            } else {
+                contentDescription
+            },
             enabled = enabled && kinds.isNotEmpty(),
             onClick = { if (single != null) onPick(single) else open.value = true },
         )

@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -29,7 +31,7 @@ class CardExpensesToolProvider(
 ) : ToolProvider {
 
     override val path: String = CARD_EXPENSES_PATH
-    override val title: String = "Card Expenses"
+    override val title: String get() = str(S.desktop_card_expenses)
     override val icon = ZillitToolIcons.CardExpense
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -65,7 +67,7 @@ class CardExpensesToolProvider(
         }
 
         LaunchedEffect(state.destination) {
-            navigator.setTitle("Cards · ${state.destination.label}")
+            navigator.setTitle(str(S.desktop_card_window_title, state.destination.label))
         }
 
         CardExpensesScreen(state = state, onEvent = viewModel::onEvent)

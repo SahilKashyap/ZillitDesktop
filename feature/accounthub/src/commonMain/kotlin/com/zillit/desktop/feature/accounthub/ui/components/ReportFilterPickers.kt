@@ -59,6 +59,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The report filter bar's pickers — the web's `RichSelect` as its filter bars
@@ -112,7 +114,7 @@ fun <T> FilterSelect(
     label: (T) -> String,
     onSelect: (T?) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select…",
+    placeholder: String = str(S.select),
     clearable: Boolean = true,
     searchable: Boolean = true,
     searchText: (T) -> String = label,
@@ -167,7 +169,7 @@ fun <T> FilterMultiSelect(
     label: (T) -> String,
     onChange: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select…",
+    placeholder: String = str(S.select),
     searchable: Boolean = true,
     popupWidth: Dp = POPUP_WIDTH,
 ) {
@@ -206,7 +208,7 @@ fun <T> FilterMultiSelect(
                 footer = {
                     FooterBar(
                         text = if (selected.isEmpty()) "${options.size} options" else "${selected.size} selected",
-                        action = if (selected.isEmpty()) null else "Clear" to { onChange(emptyList()) },
+                        action = if (selected.isEmpty()) null else str(S.ah_clear) to { onChange(emptyList()) },
                     )
                 },
             )
@@ -345,7 +347,11 @@ private fun <T> OptionsPopup(
             }
             if (shown.isEmpty()) {
                 FieldHint(
-                    text = if (options.isEmpty()) "Nothing to choose from" else "No results for “${query.trim()}”",
+                    text = if (options.isEmpty()) {
+                        str(S.desktop_nothing_to_choose_from)
+                    } else {
+                        "No results for “${query.trim()}”"
+                    },
                     modifier = Modifier.padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.md),
                 )
             } else {
@@ -448,7 +454,7 @@ private fun SearchInput(value: String, onValueChange: (String) -> Unit, focus: F
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
                 ZillitText(
-                    text = "Search…",
+                    text = str(S.search),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                     maxLines = 1,

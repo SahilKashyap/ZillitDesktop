@@ -28,6 +28,8 @@ import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.ProcessRequest
 import com.zillit.desktop.feature.invoices.ui.RunRejection
 import com.zillit.desktop.feature.invoices.ui.SalesInvoiceDraft
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Processing a mixed selection.
@@ -39,14 +41,14 @@ import com.zillit.desktop.feature.invoices.ui.SalesInvoiceDraft
 @Composable
 internal fun ProcessSheet(state: InvoicesUiState, request: ProcessRequest, onEvent: (InvoicesEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Process ${request.invoices.size} invoices",
-        subtitle = "They are paid different ways, so each method is actioned on its own.",
+        title = str(S.desktop_inv_process_n_invoices, request.invoices.size),
+        subtitle = str(S.desktop_inv_process_subtitle),
         visible = true,
         onDismiss = { if (request.busy == null) onEvent(InvoicesEvent.CancelPaymentRun) },
         icon = ZillitIcons.Wallet,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(InvoicesEvent.CancelPaymentRun) },
                 variant = ButtonVariant.Tertiary,
                 enabled = request.busy == null,
@@ -79,7 +81,7 @@ internal fun ProcessSheet(state: InvoicesUiState, request: ProcessRequest, onEve
             }
         }
         if (state.bacsGroups.size > 1) {
-            MutedLine("BACs makes one run per vendor and currency: ${state.bacsGroups.size} runs.")
+            MutedLine(str(S.desktop_inv_bacs_runs_note, state.bacsGroups.size))
         }
     }
 }
@@ -88,37 +90,37 @@ private val PayMethod.isProcessable: Boolean
     get() = this == PayMethod.Bacs || this == PayMethod.Cheque || this in PaymentRuns.WIRE_METHODS
 
 private fun PayMethod.processLabel(): String = when {
-    this == PayMethod.Bacs -> "Create run"
-    this == PayMethod.Cheque -> "Open"
-    this in PaymentRuns.WIRE_METHODS -> "Mark paid"
-    else -> "Not here"
+    this == PayMethod.Bacs -> str(S.desktop_create_run)
+    this == PayMethod.Cheque -> str(S.recce_open)
+    this in PaymentRuns.WIRE_METHODS -> str(S.desktop_mark_paid)
+    else -> str(S.desktop_not_here)
 }
 
 private fun PayMethod.processHint(): String = when {
-    this == PayMethod.Bacs -> "one run per vendor"
-    this == PayMethod.Cheque -> "printed from the invoice"
-    this in PaymentRuns.WIRE_METHODS -> "settled outside, marked here"
-    else -> "handled elsewhere"
+    this == PayMethod.Bacs -> str(S.desktop_inv_one_run_per_vendor)
+    this == PayMethod.Cheque -> str(S.desktop_inv_printed_from_the_invoice)
+    this in PaymentRuns.WIRE_METHODS -> str(S.desktop_inv_settled_outside)
+    else -> str(S.desktop_handled_elsewhere)
 }
 
 /** Turning a run down. The reason is mandatory, and it goes on the run's record. */
 @Composable
 internal fun RejectRunSheet(request: RunRejection, onEvent: (InvoicesEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Reject ${request.run.number.ifBlank { "payment run" }}",
-        subtitle = "Say why. The reason is kept against the run and shown to whoever built it.",
+        title = str(S.desktop_reject_named, request.run.number.ifBlank { str(S.desktop_payment_run_lower) }),
+        subtitle = str(S.desktop_inv_reject_run_subtitle),
         visible = true,
         onDismiss = { if (!request.busy) onEvent(InvoicesEvent.CancelRejectRun) },
         icon = ZillitIcons.Warning,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CancelRejectRun) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !request.busy,
             )
             ZillitButton(
-                text = "Reject run",
+                text = str(S.ah_run_detail_btn_reject_confirm),
                 onClick = { onEvent(InvoicesEvent.ConfirmRejectRun) },
                 enabled = request.isReady && !request.busy,
                 loading = request.busy,
@@ -128,7 +130,7 @@ internal fun RejectRunSheet(request: RunRejection, onEvent: (InvoicesEvent) -> U
         ZillitTextField(
             value = request.reason,
             onValueChange = { onEvent(InvoicesEvent.RejectRunReasonChanged(it)) },
-            label = "Reason (required)",
+            label = str(S.docusign_decline_reason_label),
             singleLine = false,
             enabled = !request.busy,
             modifier = Modifier.fillMaxWidth(),
@@ -139,62 +141,75 @@ internal fun RejectRunSheet(request: RunRejection, onEvent: (InvoicesEvent) -> U
 /** Handing entry work to someone else, with the reason on the record. */
 @Composable
 internal fun AssignSheet(state: InvoicesUiState, request: AssignRequest, onEvent: (InvoicesEvent) -> Unit) {
-    val plural = if (request.invoiceIds.size == 1) "invoice" else "invoices"
     ZillitDialogShell(
-        title = "Assign ${request.invoiceIds.size} $plural",
-        subtitle = "The person you pick can open and post them; everyone else still cannot.",
+        title = if (request.invoiceIds.size == 1) {
+            str(S.desktop_inv_assign_one_invoice)
+        } else {
+            str(S.desktop_inv_assign_n_invoices, request.invoiceIds.size)
+        },
+        subtitle = str(S.desktop_inv_assign_subtitle),
         visible = true,
         onDismiss = { if (!request.busy) onEvent(InvoicesEvent.CancelAssign) },
         icon = ZillitIcons.Users,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CancelAssign) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !request.busy,
             )
             ZillitButton(
-                text = "Assign",
+                text = str(S.assign),
                 onClick = { onEvent(InvoicesEvent.ConfirmAssign) },
                 enabled = request.isReady && !request.busy,
                 loading = request.busy,
             )
         },
     ) {
-        val current = state.invoices
-            .filter { it.id in request.invoiceIds }
-            .mapNotNull { state.assigneeName(it) }
-            .distinct()
-        if (current.isNotEmpty()) MutedLine("Currently assigned to: ${current.joinToString(", ")}")
-        if (state.assignees.isEmpty()) {
-            MutedLine("Nobody from the accounts department is on this production yet.")
-        }
-        ZillitSelect(
-            value = state.assignees.firstOrNull { it.id == request.userId },
-            options = listOf<InvoiceAssignee?>(null) + state.assignees.filter { it.id !in alreadyOn(state, request) },
-            onSelect = { picked -> onEvent(InvoicesEvent.EditAssign(request.copy(userId = picked?.id.orEmpty()))) },
-            label = { it?.label ?: "Select team member…" },
+        AssignSheetFields(state, request, onEvent)
+    }
+}
+
+/** Who it goes to, why, and the free-text reason the picked reason may want. */
+@Composable
+private fun AssignSheetFields(
+    state: InvoicesUiState,
+    request: AssignRequest,
+    onEvent: (InvoicesEvent) -> Unit,
+) {
+    val current = state.invoices
+        .filter { it.id in request.invoiceIds }
+        .mapNotNull { state.assigneeName(it) }
+        .distinct()
+    if (current.isNotEmpty()) MutedLine(str(S.desktop_currently_assigned_to, current.joinToString(", ")))
+    if (state.assignees.isEmpty()) {
+        MutedLine(str(S.desktop_inv_nobody_from_accounts))
+    }
+    ZillitSelect(
+        value = state.assignees.firstOrNull { it.id == request.userId },
+        options = listOf<InvoiceAssignee?>(null) + state.assignees.filter { it.id !in alreadyOn(state, request) },
+        onSelect = { picked -> onEvent(InvoicesEvent.EditAssign(request.copy(userId = picked?.id.orEmpty()))) },
+        label = { it?.label ?: str(S.desktop_select_team_member) },
+        enabled = !request.busy,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    ZillitSelect(
+        value = request.reason,
+        options = listOf<AssignmentReason?>(null) + AssignmentReason.entries,
+        onSelect = { reason -> onEvent(InvoicesEvent.EditAssign(request.copy(reason = reason))) },
+        label = { it?.label ?: str(S.desktop_select_a_reason) },
+        enabled = !request.busy,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (request.reason?.needsNotes() == true) {
+        ZillitTextField(
+            value = request.notes,
+            onValueChange = { onEvent(InvoicesEvent.EditAssign(request.copy(notes = it))) },
+            label = str(S.desktop_custom_reason_required),
+            singleLine = false,
             enabled = !request.busy,
             modifier = Modifier.fillMaxWidth(),
         )
-        ZillitSelect(
-            value = request.reason,
-            options = listOf<AssignmentReason?>(null) + AssignmentReason.entries,
-            onSelect = { reason -> onEvent(InvoicesEvent.EditAssign(request.copy(reason = reason))) },
-            label = { it?.label ?: "Select a reason…" },
-            enabled = !request.busy,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (request.reason?.needsNotes() == true) {
-            ZillitTextField(
-                value = request.notes,
-                onValueChange = { onEvent(InvoicesEvent.EditAssign(request.copy(notes = it))) },
-                label = "Custom reason (required)",
-                singleLine = false,
-                enabled = !request.busy,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
     }
 }
 
@@ -210,20 +225,20 @@ internal fun SalesInvoiceSheet(
     onEvent: (InvoicesEvent) -> Unit,
 ) {
     ZillitDialogShell(
-        title = "Raise an invoice",
-        subtitle = "It is drafted here and only leaves the production when you send it.",
+        title = str(S.desktop_raise_an_invoice),
+        subtitle = str(S.desktop_inv_raise_subtitle),
         visible = true,
         onDismiss = { if (!draft.busy) onEvent(InvoicesEvent.CancelSalesInvoice) },
         icon = ZillitIcons.CreditCard,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CancelSalesInvoice) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !draft.busy,
             )
             ZillitButton(
-                text = "Create",
+                text = str(S.create),
                 onClick = { onEvent(InvoicesEvent.ConfirmSalesInvoice) },
                 enabled = draft.isReady && !draft.busy,
                 loading = draft.busy,
@@ -243,21 +258,21 @@ private fun ColumnScope.SalesFields(
         ZillitTextField(
             value = draft.clientName,
             onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(clientName = it))) },
-            label = "Client (required)",
+            label = str(S.desktop_client_required),
             enabled = !draft.busy,
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
             value = draft.reference,
             onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(reference = it))) },
-            label = "Reference",
+            label = str(S.desktop_reference),
             enabled = !draft.busy,
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
             value = draft.description,
             onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(description = it))) },
-            label = "Description",
+            label = str(S.description),
             singleLine = false,
             enabled = !draft.busy,
             modifier = Modifier.fillMaxWidth(),
@@ -269,14 +284,14 @@ private fun ColumnScope.SalesFields(
             ZillitTextField(
                 value = draft.amount,
                 onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(amount = it))) },
-                label = "Amount (required)",
+                label = str(S.desktop_amount_required),
                 enabled = !draft.busy,
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = draft.currency.ifBlank { state.projectCurrency },
                 onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(currency = it))) },
-                label = "Currency",
+                label = str(S.asset_currency),
                 enabled = !draft.busy,
                 modifier = Modifier.weight(1f),
             )
@@ -284,10 +299,10 @@ private fun ColumnScope.SalesFields(
         ZillitDateField(
             value = draft.dueDate,
             onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(dueDate = it))) },
-            label = "Due date",
+            label = str(S.ah_run_detail_col_due),
             enabled = !draft.busy,
-            errorText = "That is not a date.".takeIf { draft.dateIsWrong },
-            helperText = draft.dueDateMs?.let { "Due ${InvoiceFormat.date(it)}" },
+            errorText = str(S.desktop_that_is_not_a_date).takeIf { draft.dateIsWrong },
+            helperText = draft.dueDateMs?.let { str(S.desktop_due_on, InvoiceFormat.date(it)) },
             modifier = Modifier.fillMaxWidth(),
         )
 }

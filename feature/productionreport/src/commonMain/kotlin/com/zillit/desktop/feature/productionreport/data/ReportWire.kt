@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.productionreport.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ApprovalRequest
 import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
@@ -211,12 +213,12 @@ internal object ReportWire {
         return entries.map { entry ->
             val identifier = entry.text("id", "identifier", "key")
             if (identifier == CREATE_YOUR_OWN_ID) {
-                StockTemplate(identifier, "Create your own template", PayloadWire.parse(entry), isCreateYourOwn = true)
+                StockTemplate(identifier, str(S.tpl_create_your_own), PayloadWire.parse(entry), isCreateYourOwn = true)
             } else {
                 pickable += 1
                 StockTemplate(
                     identifier,
-                    entry.text("name", "displayName").ifBlank { "Template $pickable" },
+                    entry.text("name", "displayName").ifBlank { str(S.desktop_template_n, pickable) },
                     PayloadWire.parse(entry),
                 )
             }

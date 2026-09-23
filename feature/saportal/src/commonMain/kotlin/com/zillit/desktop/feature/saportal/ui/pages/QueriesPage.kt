@@ -28,6 +28,8 @@ import com.zillit.desktop.feature.saportal.domain.ArtisteQuery
 import com.zillit.desktop.feature.saportal.domain.QueryMessage
 import com.zillit.desktop.feature.saportal.ui.SaEvent
 import com.zillit.desktop.feature.saportal.ui.SaUiState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Questions the artiste has raised about a day, and the production's answers.
@@ -45,8 +47,8 @@ internal fun ColumnScope.QueriesPage(state: SaUiState, onEvent: (SaEvent) -> Uni
     if (state.queries.isEmpty()) {
         if (!state.loading) {
             ZillitEmptyState(
-                title = "No queries",
-                message = "If a day's hours or pay look wrong, raise it from that day.",
+                title = str(S.desktop_sa_no_queries),
+                message = str(S.desktop_sa_no_queries_message),
                 icon = ZillitIcons.Info,
             )
         }
@@ -66,29 +68,29 @@ private fun QueryRow(query: ArtisteQuery, onEvent: (SaEvent) -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = query.title.ifBlank { query.topic.ifBlank { "Query" } },
+                    text = query.title.ifBlank { query.topic.ifBlank { str(S.ah_query_label) } },
                     style = ZillitTheme.typography.titleSmall,
                 )
                 ZillitText(
-                    text = query.lastMessage.ifBlank { "No messages yet" },
+                    text = query.lastMessage.ifBlank { str(S.desktop_no_messages_yet) },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                     maxLines = 1,
                 )
                 query.voucherCode.takeIf { it.isNotBlank() }?.let {
                     ZillitText(
-                        text = "About $it",
+                        text = str(S.desktop_sa_about_code, it),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textMuted,
                     )
                 }
             }
             ZillitStatusPill(
-                label = if (query.resolved) "Resolved" else "Open",
+                label = if (query.resolved) str(S.ah_alert_filter_resolved) else str(S.recce_open),
                 tone = if (query.resolved) StatusTone.Done else StatusTone.Pending,
             )
             ZillitButton(
-                text = "Open",
+                text = str(S.recce_open),
                 onClick = { onEvent(SaEvent.OpenQuery(query.id)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -109,19 +111,19 @@ private fun ColumnScope.QueryThread(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitButton(
-            text = "Back",
+            text = str(S.back),
             onClick = { onEvent(SaEvent.CloseQuery) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
         )
         ZillitText(
-            text = query.title.ifBlank { "Query" },
+            text = query.title.ifBlank { str(S.ah_query_label) },
             style = ZillitTheme.typography.titleMedium,
             modifier = Modifier.weight(1f),
         )
         if (!query.resolved) {
             ZillitButton(
-                text = "Mark resolved",
+                text = str(S.desktop_sa_mark_resolved),
                 onClick = { onEvent(SaEvent.ResolveQuery(query.id)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -134,13 +136,13 @@ private fun ColumnScope.QueryThread(
     ZillitTextField(
         value = draft,
         onValueChange = { onEvent(SaEvent.ReplyDraft(it)) },
-        placeholder = if (query.resolved) "Replying reopens this query" else "Add to this query",
+        placeholder = if (query.resolved) str(S.desktop_sa_reply_reopens) else str(S.desktop_sa_add_to_query),
         onImeAction = { onEvent(SaEvent.SendReply) },
         imeAction = ImeAction.Send,
         modifier = Modifier.fillMaxWidth(),
     )
     ZillitButton(
-        text = "Send",
+        text = str(S.send),
         onClick = { onEvent(SaEvent.SendReply) },
         size = ButtonSize.Small,
         enabled = draft.isNotBlank(),
@@ -169,7 +171,11 @@ private fun MessageBubble(message: QueryMessage) {
             ZillitText(
                 // "You" rather than the artiste's own name: they know who they
                 // are, and the project's name is the one worth reading.
-                text = if (message.fromArtiste) "You" else message.authorName.ifBlank { "Project" },
+                text = if (message.fromArtiste) {
+                    str(S.you)
+                } else {
+                    message.authorName.ifBlank { str(S.dm_step2_external_off) }
+                },
                 style = ZillitTheme.typography.label,
                 modifier = Modifier.weight(1f),
             )

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A contact in the user's own address book, in full.
@@ -75,9 +77,9 @@ enum class ContactFormError {
 
     val message: String
         get() = when (this) {
-            InvalidAddress -> "Please enter a valid email"
-            PhoneWithoutCountryCode -> "Please choose a country code"
-            CountryCodeWithoutPhone -> "Please enter a valid phone number"
+            InvalidAddress -> str(S.desktop_please_enter_a_valid_email)
+            PhoneWithoutCountryCode -> str(S.desktop_please_choose_country_code)
+            CountryCodeWithoutPhone -> str(S.desktop_please_enter_valid_phone)
         }
 }
 

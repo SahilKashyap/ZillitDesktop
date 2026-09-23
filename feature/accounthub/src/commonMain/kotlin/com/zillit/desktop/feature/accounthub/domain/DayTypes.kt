@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The project's day-type catalogue, for non-union deals.
  *
@@ -21,9 +24,9 @@ object DayTypes {
      * standard working day nothing recognises.
      */
     val defaults: List<DayType> = listOf(
-        DayType("SWD", "Standard Working Day", workMinutes = 600, mealBreakMinutes = 60),
-        DayType("CWD", "Continuous Working Day", workMinutes = 540, mealBreakMinutes = 0),
-        DayType("SCWD", "Semi-Continuous Working Day", workMinutes = 570, mealBreakMinutes = 30),
+        DayType("SWD", str(S.desktop_standard_working_day), workMinutes = 600, mealBreakMinutes = 60),
+        DayType("CWD", str(S.desktop_continuous_working_day), workMinutes = 540, mealBreakMinutes = 0),
+        DayType("SCWD", str(S.desktop_hub_semi_continuous_working_day), workMinutes = 570, mealBreakMinutes = 30),
     )
 
     val defaultCodes: Set<String> = defaults.map { it.dayType }.toSet()
@@ -57,7 +60,7 @@ object DayTypes {
      * type up by code, and a duplicate means one of them is never found.
      */
     fun problem(rows: List<DayType>): String? {
-        if (rows.size > MAX_ROWS) return "A project can have at most $MAX_ROWS day types."
+        if (rows.size > MAX_ROWS) return str(S.desktop_hub_a_project_can_have_at_most_n_day_types, MAX_ROWS)
         val seen = mutableSetOf<String>()
         return rows.firstNotNullOfOrNull { row -> rowProblem(row, seen) }
     }
@@ -66,14 +69,14 @@ object DayTypes {
     private fun rowProblem(row: DayType, seen: MutableSet<String>): String? {
         val code = row.dayType.trim()
         return when {
-            code.isEmpty() -> "Every day type needs a code."
-            !seen.add(code) -> "\"$code\" is used twice. Each code must be its own."
-            row.workMinutes == null -> "\"$code\": say how long the working day is."
+            code.isEmpty() -> str(S.desktop_hub_every_day_type_needs_a_code)
+            !seen.add(code) -> str(S.desktop_hub_day_type_code_used_twice, code)
+            row.workMinutes == null -> str(S.desktop_hub_day_type_say_how_long_the_working_day_is, code)
             row.workMinutes !in 0..MAX_MINUTES ->
-                "\"$code\": working minutes must be between 0 and $MAX_MINUTES."
+                str(S.desktop_hub_day_type_working_minutes_between_0_and_n, code, MAX_MINUTES)
 
             row.mealBreakMinutes != null && row.mealBreakMinutes !in 0..MAX_MINUTES ->
-                "\"$code\": the meal break must be between 0 and $MAX_MINUTES minutes."
+                str(S.desktop_hub_day_type_meal_break_between_0_and_n, code, MAX_MINUTES)
 
             else -> null
         }

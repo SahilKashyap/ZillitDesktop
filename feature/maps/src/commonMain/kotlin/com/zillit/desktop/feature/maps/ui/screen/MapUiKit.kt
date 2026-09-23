@@ -57,6 +57,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.MapPalette
 import com.zillit.desktop.feature.maps.domain.PlacePrediction
 import com.zillit.desktop.feature.maps.domain.TypeStyle
@@ -122,7 +124,7 @@ internal fun HeroHeader(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     closeIcon: ImageVector = ZillitIcons.Close,
-    closeLabel: String = "Close",
+    closeLabel: String = str(S.close),
     trailing: @Composable RowScope.() -> Unit = {},
     eyebrow: (@Composable RowScope.() -> Unit)? = null,
     below: (@Composable ColumnScope.() -> Unit)? = null,
@@ -288,7 +290,9 @@ internal fun SectionCard(
 @Composable
 internal fun FieldLabel(text: String, icon: ImageVector?, accent: Color, required: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (icon != null) IconChip(icon = icon, tint = accent, background = softOf(accent), size = 20.dp, iconSize = 11.dp)
+        if (icon != null) {
+            IconChip(icon = icon, tint = accent, background = softOf(accent), size = 20.dp, iconSize = 11.dp)
+        }
         ZillitText(
             text = text.uppercase(),
             style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.4.sp),
@@ -372,6 +376,7 @@ enum class ActionTone { Neutral, Accent, Zone, Danger, ZoneActive }
 
 /** The bordered small buttons on cards: View, Edit, Details, Map, Hide, the trash can. */
 @Composable
+@Suppress("CyclomaticComplexMethod") // One control; its states are read in place.
 internal fun CardAction(
     onClick: () -> Unit,
     icon: ImageVector,
@@ -452,7 +457,14 @@ internal fun EmptyBlock(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        IconChip(icon = icon, tint = accent, background = softOf(accent), size = 56.dp, iconSize = 24.dp, corner = 16.dp)
+        IconChip(
+            icon = icon,
+            tint = accent,
+            background = softOf(accent),
+            size = 56.dp,
+            iconSize = 24.dp,
+            corner = 16.dp,
+        )
         Spacer(Modifier.height(8.dp))
         ZillitText(
             text = title,
@@ -629,7 +641,11 @@ internal fun SoftBanner(
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             ZillitText(text = title, style = labelBold(13.sp), color = accent)
             if (!body.isNullOrBlank()) {
-                ZillitText(text = body, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textSecondary)
+                ZillitText(
+                    text = body,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
+                )
             }
         }
     }

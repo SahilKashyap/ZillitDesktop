@@ -76,7 +76,7 @@ class ComposePaneRenderTest {
             setContent {
                 ZillitTheme(darkTheme = false) { Pane(state.copy(isSavingDraft = true)) }
             }
-            onNodeWithText("Saving Draft…").assertIsDisplayed()
+            onNodeWithText("Saving draft…").assertIsDisplayed()
         }
     }
 

@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Where a document can be published, and what each destination demands.
  *
@@ -14,11 +17,11 @@ package com.zillit.desktop.feature.documentdistribution.domain
 data class PublishTarget(
     /** The category id the backend's `PUBLICATION_CATEGORIES` lists. */
     val category: String,
-    val label: String,
+    private val labelKey: String,
     /** The film-tools rights row that gates it, or null when the home unit does. */
     val toolIdentifier: String? = null,
     /** The parent tool's name, when this destination sits under one. */
-    val group: String? = null,
+    private val groupKey: String? = null,
     /** PDF-only: the receiving endpoint validates `content_subtype`. */
     val pdfOnly: Boolean = false,
     /** One document per publish — a second would replace the first, not join it. */
@@ -32,6 +35,11 @@ data class PublishTarget(
     /** Mandatory on television projects only. */
     val needsEpisodeOnTelevision: Boolean = false,
 ) {
+    val label: String get() = str(labelKey)
+
+    /** The parent tool's name, when this destination sits under one. */
+    val group: String? get() = groupKey?.let(::str)
+
     /** A note rides along except on the tool destinations, which have no field for it. */
     val takesNote: Boolean get() = !needsEpisodeOnTelevision
 
@@ -43,23 +51,23 @@ data class PublishTarget(
      */
     @Suppress("ReturnCount")
     fun problem(draft: PublishDraft, isTelevision: Boolean): String? {
-        if (draft.documentIds.isEmpty()) return "Choose at least one document"
+        if (draft.documentIds.isEmpty()) return str(S.desktop_docdist_choose_at_least_one_document)
         if (singleFile && draft.documentIds.size > 1) {
-            return "$label takes one document at a time"
+            return str(S.desktop_docdist_takes_one_document_at_a_time, label)
         }
         return missingField(draft, isTelevision)
     }
 
     @Suppress("ReturnCount")
     private fun missingField(draft: PublishDraft, isTelevision: Boolean): String? {
-        if (needsScene && draft.sceneNumber.isBlank()) return "A scene number is required"
-        if (needsScheduleType && draft.scheduleType.isBlank()) return "Choose which schedule this is"
-        if (needsName && draft.name.isBlank()) return "A name is required"
+        if (needsScene && draft.sceneNumber.isBlank()) return str(S.desktop_docdist_scene_number_required)
+        if (needsScheduleType && draft.scheduleType.isBlank()) return str(S.desktop_docdist_choose_which_schedule)
+        if (needsName && draft.name.isBlank()) return str(S.desktop_docdist_name_required)
         if (needsEpisodeOnTelevision && isTelevision && draft.episode.isBlank()) {
-            return "An episode is required on a television project"
+            return str(S.desktop_docdist_episode_required_television)
         }
         if (draft.mode == PublishMode.Replace && draft.replaceChatIds.isEmpty()) {
-            return "Pick the published file to replace"
+            return str(S.dd_publish_replace_target_placeholder)
         }
         return null
     }
@@ -67,7 +75,7 @@ data class PublishTarget(
     companion object {
         val CallSheet = PublishTarget(
             category = "call_sheet_unit",
-            label = "Call Sheet",
+            labelKey = S.cs_app_name,
             // Access comes from the home unit list, not film-tool rights.
             toolIdentifier = null,
             pdfOnly = true,
@@ -75,19 +83,19 @@ data class PublishTarget(
         )
         val ProductionReport = PublishTarget(
             category = "production_report",
-            label = "Production Report",
+            labelKey = S.dd_cat_report_label,
             toolIdentifier = "production_report_tool",
             pdfOnly = true,
             republishable = true,
         )
         val Info = PublishTarget(
             category = "info",
-            label = "Info",
+            labelKey = S.dd_cat_info_label,
             toolIdentifier = "info_tool",
         )
         val ConfidentialInfo = PublishTarget(
             category = "confidential_info",
-            label = "Confidential Info",
+            labelKey = S.dd_cat_confidential_label,
             toolIdentifier = "confidential_info_tool",
         )
 
@@ -98,18 +106,18 @@ data class PublishTarget(
          */
         val Dod = PublishTarget(
             category = "schedule_dod",
-            label = "Day Out of Days",
+            labelKey = S.desktop_day_out_of_days,
             toolIdentifier = "dod_tool",
-            group = "Schedule D.O.D",
+            groupKey = S.dd_pub_dest_dod_card,
             pdfOnly = true,
             needsName = true,
             needsEpisodeOnTelevision = true,
         )
         val ScheduleFull = PublishTarget(
             category = "schedule_full",
-            label = "Schedule Full",
+            labelKey = S.dd_pub_dest_schedule_full,
             toolIdentifier = "schedule_distribution_tool",
-            group = "Schedule Full & One Line",
+            groupKey = S.dd_pub_dest_schedule_card,
             pdfOnly = true,
             singleFile = true,
             needsScheduleDate = true,
@@ -117,9 +125,9 @@ data class PublishTarget(
         )
         val SchedulePages = PublishTarget(
             category = "schedule_page",
-            label = "Pages",
+            labelKey = S.dd_pub_dest_schedule_pages,
             toolIdentifier = "schedule_distribution_tool",
-            group = "Schedule Full & One Line",
+            groupKey = S.dd_pub_dest_schedule_card,
             pdfOnly = true,
             singleFile = true,
             needsScene = true,
@@ -128,9 +136,9 @@ data class PublishTarget(
         )
         val ScheduleOneLine = PublishTarget(
             category = "schedule_oneline",
-            label = "Schedule One Line",
+            labelKey = S.dd_pub_dest_schedule_oneline,
             toolIdentifier = "schedule_distribution_tool",
-            group = "Schedule Full & One Line",
+            groupKey = S.dd_pub_dest_schedule_card,
             pdfOnly = true,
             singleFile = true,
             needsScheduleDate = true,
@@ -138,18 +146,18 @@ data class PublishTarget(
         )
         val Script = PublishTarget(
             category = "script_distribution",
-            label = "Script",
+            labelKey = S.dd_pub_dest_script_option,
             toolIdentifier = "script_distribution_tool",
-            group = "Script & Page Distribution",
+            groupKey = S.desktop_docdist_script_page_distribution,
             pdfOnly = true,
             singleFile = true,
             needsEpisodeOnTelevision = true,
         )
         val ScriptPages = PublishTarget(
             category = "page_distribution",
-            label = "Page",
+            labelKey = S.dd_pub_dest_page_option,
             toolIdentifier = "script_distribution_tool",
-            group = "Script & Page Distribution",
+            groupKey = S.desktop_docdist_script_page_distribution,
             pdfOnly = true,
             singleFile = true,
             needsScene = true,
@@ -167,9 +175,12 @@ data class PublishTarget(
 }
 
 /** How a republish lands: alongside what is there, or over it. */
-enum class PublishMode(val wire: String, val label: String) {
-    Add("addition", "Add alongside"),
-    Replace("replace", "Replace"),
+enum class PublishMode(val wire: String, private val labelKey: String) {
+    Add("addition", S.desktop_docdist_publish_mode_add),
+    Replace("replace", S.replace),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** Everything a publish carries beyond the category itself. */
@@ -186,7 +197,10 @@ data class PublishDraft(
 )
 
 /** The two answers the Pages destination accepts for `schedule_type`. */
-enum class ScheduleTypeChoice(val wire: String, val label: String) {
-    Full("full_schedule_pages", "Full Schedule Pages"),
-    OneLine("one_line_schedule_pages", "One Line Schedule Pages"),
+enum class ScheduleTypeChoice(val wire: String, private val labelKey: String) {
+    Full("full_schedule_pages", S.dd_publish_schedule_type_full),
+    OneLine("one_line_schedule_pages", S.dd_publish_schedule_type_one_line),
+    ;
+
+    val label: String get() = str(labelKey)
 }

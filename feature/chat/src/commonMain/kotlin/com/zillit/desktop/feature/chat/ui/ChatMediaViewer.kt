@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 
 /**
@@ -71,7 +73,7 @@ internal fun ChatMediaViewer(
                 val loaded = image
                 if (loaded == null) {
                     ZillitText(
-                        text = "Loading…",
+                        text = str(S.ah_loading),
                         style = ZillitTheme.typography.bodyMedium,
                         color = Color.White,
                     )
@@ -117,14 +119,14 @@ private fun ViewerHeader(
             )
         }
         ZillitButton(
-            text = "Download",
+            text = str(S.download),
             onClick = onDownload,
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Download,
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close viewer",
+            contentDescription = str(S.desktop_close_viewer),
             onClick = onClose,
             tint = Color.White,
         )
@@ -132,7 +134,7 @@ private fun ViewerHeader(
 }
 
 /** Android `msg_download_right` — `res/values/strings.xml:7884`, verbatim. */
-internal const val DOWNLOAD_REFUSED = "You do not have Downloading Rights"
+internal val DOWNLOAD_REFUSED: String get() = str(S.msg_download_right)
 
 private const val VIEWER_SCRIM = 0.86f
 private val VIEWER_PADDING = 32.dp

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -130,10 +132,11 @@ data class NoteType(
 ) {
     companion object {
         /** What the form offers when the server's list has not answered — the web's seed. */
-        val DEFAULTS = listOf(
-            NoteType("general", "General", hideDistribution = false),
-            NoteType(PERSONAL_NOTE_TYPE, PERSONAL_NOTE_LABEL, hideDistribution = true),
-        )
+        val DEFAULTS: List<NoteType>
+            get() = listOf(
+                NoteType("general", str(S.ce_note_type_general), hideDistribution = false),
+                NoteType(PERSONAL_NOTE_TYPE, PERSONAL_NOTE_LABEL, hideDistribution = true),
+            )
     }
 }
 

@@ -21,6 +21,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
@@ -58,14 +60,13 @@ internal fun AgreementsSection(
     val editable = state.viewer.canEdit && canAttach
 
     SectionShell(
-        title = "Agreements Documents",
-        description = "Master contract templates and signed agreements. Pick one or more files, then give each a " +
-            "name + optional description before saving.",
+        title = str(S.desktop_agreements_documents),
+        description = str(S.desktop_hub_master_contract_templates_and_signed_agreements_pick_one_or_more),
         editable = editable,
         extraActions = {
             if (editable) {
                 ZillitButton(
-                    text = "Add PDFs",
+                    text = str(S.desktop_add_pdfs),
                     onClick = { onEvent(AccountHubEvent.PickAgreementFiles) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -79,7 +80,7 @@ internal fun AgreementsSection(
 
         if (!canAttach) {
             ZillitNotice(
-                text = "Uploading is unavailable — this window has no file storage wired.",
+                text = str(S.desktop_hub_uploading_is_unavailable_this_window_has_no_file_storage_wired),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Info,
             )
@@ -87,9 +88,9 @@ internal fun AgreementsSection(
 
         UploadQueue(setup.agreementQueue, setup.agreementsUploading, onEvent)
 
-        ZillitSectionLabel("Stored documents")
+        ZillitSectionLabel(str(S.desktop_stored_documents))
         if (setup.agreements.isEmpty() && !setup.agreementsLoading) {
-            EmptyLine("No agreement documents yet.")
+            EmptyLine(str(S.desktop_hub_no_agreement_documents_yet))
         }
         setup.agreements.forEach { document ->
             StoredRow(
@@ -137,7 +138,7 @@ private fun QueueHeader(count: Int, uploading: Boolean, onEvent: (AccountHubEven
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitSectionLabel("Ready to upload")
+        ZillitSectionLabel(str(S.ah_ready_to_upload))
         ZillitStatusPill(label = "$count waiting", tone = StatusTone.Pending)
         ZillitButton(
             text = "Save all $count",
@@ -165,14 +166,14 @@ private fun QueuedRow(
         ZillitTextField(
             value = row.title,
             onValueChange = { onChange(row.copy(title = it)) },
-            placeholder = "Title *",
+            placeholder = str(S.ce_note_title_label),
             enabled = enabled,
             modifier = Modifier.width(TITLE_WIDTH.dp),
         )
         ZillitTextField(
             value = row.description,
             onValueChange = { onChange(row.copy(description = it)) },
-            placeholder = "+ Add description",
+            placeholder = str(S.desktop_add_description_plus),
             enabled = enabled,
             modifier = Modifier.weight(1f),
         )
@@ -183,7 +184,7 @@ private fun QueuedRow(
         )
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Remove from pending",
+            contentDescription = str(S.desktop_remove_from_pending),
             onClick = onRemove,
             enabled = enabled,
         )
@@ -221,7 +222,7 @@ private fun StoredRow(
         ZillitFileBadge(fileName = document.name.ifBlank { document.title })
         if (canOpen && document.media.isNotBlank()) {
             ZillitButton(
-                text = "Open",
+                text = str(S.recce_open),
                 onClick = onOpen,
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

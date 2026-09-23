@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.AudienceMode
 import com.zillit.desktop.feature.boxschedule.domain.DiaryAudience
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDepartment
@@ -86,21 +88,21 @@ data class EntryForm(
 
     val heading: String
         get() = when {
-            scope == RecurrenceScope.Single -> "Edit this event"
-            scope == RecurrenceScope.ThisAndFollowing -> "Edit this and following"
-            scope == RecurrenceScope.All -> "Edit all events"
-            isEdit -> if (isNote) "Edit Note" else "Edit Event"
-            else -> if (isNote) "Add Note" else "Add Event"
+            scope == RecurrenceScope.Single -> str(S.bs_update_header_single)
+            scope == RecurrenceScope.ThisAndFollowing -> str(S.bs_update_header_following)
+            scope == RecurrenceScope.All -> str(S.bs_update_header_all)
+            isEdit -> if (isNote) str(S.ce_edit_note) else str(S.edit_event)
+            else -> if (isNote) str(S.add_note) else str(S.add_event)
         }
 
     val saveLabel: String
         get() = when {
-            isNote -> if (isEdit) "Update Note" else "Save Note"
-            scope == RecurrenceScope.Single -> "Save this event"
-            scope == RecurrenceScope.ThisAndFollowing -> "Save this and following"
-            scope == RecurrenceScope.All -> "Save all events"
-            isEdit -> "Update Event"
-            else -> "Save Event"
+            isNote -> if (isEdit) str(S.ce_update_note) else str(S.ce_save_note)
+            scope == RecurrenceScope.Single -> str(S.bs_update_save_single)
+            scope == RecurrenceScope.ThisAndFollowing -> str(S.bs_update_save_following)
+            scope == RecurrenceScope.All -> str(S.bs_update_save_all)
+            isEdit -> str(S.ce_update_event)
+            else -> str(S.ce_save_event)
         }
 }
 

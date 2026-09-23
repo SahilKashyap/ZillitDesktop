@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
 import com.zillit.desktop.feature.cardexpenses.domain.TopUpMode
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
@@ -66,14 +68,18 @@ fun BulkProcessPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitButton(
-                text = if (allTicked) "Clear selection" else "Select all ${selectable.size}",
+                text = if (allTicked) {
+                    str(S.ah_clear_selection)
+                } else {
+                    str(S.desktop_select_all_count, selectable.size)
+                },
                 onClick = { onEvent(CardEvent.SelectAllBulk) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 enabled = selectable.isNotEmpty(),
             )
             ZillitText(
-                text = "${state.bulkItems.size} ready · ${state.selection.size} selected",
+                text = str(S.desktop_card_ready_selected, state.bulkItems.size, state.selection.size),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
@@ -89,14 +95,14 @@ fun BulkProcessPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         val locked = state.bulkItems.size - selectable.size
         if (locked > 0) {
             ZillitNotice(
-                text = "$locked row(s) are assigned to someone else and cannot be posted from here.",
+                text = str(S.desktop_card_rows_assigned_elsewhere, locked),
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Users,
             )
         }
 
         ZillitSectionCard(
-            title = "Ready to process",
+            title = str(S.ah_ready_to_process),
             icon = ZillitIcons.Grid,
             padded = false,
             modifier = Modifier.weight(1f),
@@ -106,8 +112,8 @@ fun BulkProcessPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 columns = bulkColumns(state, onEvent),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "Nothing waiting to process",
-                emptyMessage = "Coded receipts that are ready to post appear here.",
+                emptyTitle = str(S.desktop_card_nothing_waiting_to_process),
+                emptyMessage = str(S.desktop_card_ready_to_post_empty),
             )
         }
 
@@ -123,9 +129,9 @@ private fun OverrideBar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val coding = state.bulkCoding
 
     ZillitSectionCard(
-        title = "Apply to all ${state.selection.size} selected",
+        title = str(S.desktop_card_apply_to_all_selected, state.selection.size),
         icon = ZillitIcons.Edit,
-        meta = "Leave a field blank to keep each row's own coding",
+        meta = str(S.desktop_card_blank_keeps_own_coding),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -137,8 +143,8 @@ private fun OverrideBar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 onValueChange = {
                     onEvent(CardEvent.EditBulkCoding(coding.copy(nominalCode = it.takeIf(String::isNotBlank))))
                 },
-                label = "Nominal code",
-                placeholder = "Keep each row's",
+                label = str(S.ah_lbl_nominal_code),
+                placeholder = str(S.desktop_card_keep_each_rows),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
@@ -146,8 +152,8 @@ private fun OverrideBar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 onValueChange = {
                     onEvent(CardEvent.EditBulkCoding(coding.copy(episode = it.takeIf(String::isNotBlank))))
                 },
-                label = "Episode",
-                placeholder = "Keep each row's",
+                label = str(S.episode),
+                placeholder = str(S.desktop_card_keep_each_rows),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
@@ -155,8 +161,8 @@ private fun OverrideBar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 onValueChange = {
                     onEvent(CardEvent.EditBulkCoding(coding.copy(taxType = it.takeIf(String::isNotBlank))))
                 },
-                label = "Tax treatment",
-                placeholder = "Per line",
+                label = str(S.desktop_card_tax_treatment),
+                placeholder = str(S.desktop_card_per_line),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -167,7 +173,7 @@ private fun OverrideBar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "Top-up",
+                text = str(S.desktop_card_top_up),
                 style = ZillitTheme.typography.bodyMedium,
             )
             // Four choices, not a tick box: restoring a float and topping up by
@@ -186,7 +192,7 @@ private fun OverrideBar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 style = ZillitTheme.typography.titleMedium,
             )
             ZillitButton(
-                text = "Post ${state.selection.size} item(s)",
+                text = str(S.desktop_card_post_items_count, state.selection.size),
                 onClick = { onEvent(CardEvent.BulkPost) },
                 variant = ButtonVariant.Danger,
                 loading = state.busy,
@@ -222,25 +228,27 @@ private fun bulkColumns(
             }
         },
     ),
-    textColumn("Description", ColumnWidth.Weight(1.8f)) { it.description.ifBlank { it.merchant ?: "Receipt" } },
-    textColumn("Holder", ColumnWidth.Weight(1.1f), muted = true) { it.holderName.ifBlank { "—" } },
-    textColumn("Card", ColumnWidth.Weight(0.8f), muted = true) {
+    textColumn(str(S.description), ColumnWidth.Weight(1.8f)) {
+        it.description.ifBlank { it.merchant ?: str(S.desktop_receipt) }
+    },
+    textColumn(str(S.ah_holder), ColumnWidth.Weight(1.1f), muted = true) { it.holderName.ifBlank { "—" } },
+    textColumn(str(S.ah_my_cards), ColumnWidth.Weight(0.8f), muted = true) {
         it.cardLastFour?.let { last -> "•••• $last" } ?: "—"
     },
-    textColumn("Code", ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: "Uncoded" },
-    textColumn("Date", ColumnWidth.Weight(1f), muted = true) { date(it.date) },
-    textColumn("Amount", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) },
+    textColumn(str(S.code), ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: str(S.desktop_uncoded) },
+    textColumn(str(S.date), ColumnWidth.Weight(1f), muted = true) { date(it.date) },
+    textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) },
     TableColumn(
-        header = "Status",
+        header = str(S.status),
         width = ColumnWidth.Fixed(STATUS_COLUMN),
         cell = { row ->
             Column {
                 WorkflowStatusPill(row.status)
                 if (!row.selectableBy(state.viewer.userId)) {
-                    ZillitStatusPill(label = "Assigned elsewhere", tone = StatusTone.Neutral)
+                    ZillitStatusPill(label = str(S.desktop_card_assigned_elsewhere), tone = StatusTone.Neutral)
                 }
                 if (row.urgent) {
-                    ZillitStatusPill(label = "Urgent", tone = StatusTone.Rejected)
+                    ZillitStatusPill(label = str(S.ah_topup_filter_urgent), tone = StatusTone.Rejected)
                 }
             }
         },

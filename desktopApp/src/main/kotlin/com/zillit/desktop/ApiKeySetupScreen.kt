@@ -25,6 +25,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.security.ApiKeySetup
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.launch
 
 /**
@@ -45,6 +47,7 @@ import kotlinx.coroutines.launch
  * Values are masked as they are typed: they are credentials, and someone is
  * usually looking over your shoulder in a production office.
  */
+@Suppress("LongMethod") // One page, laid out in one place.
 @Composable
 fun ApiKeySetupScreen(
     setup: ApiKeySetup,
@@ -70,15 +73,21 @@ fun ApiKeySetupScreen(
         ) {
             Intro()
 
-            SecretField("API encryption key", "32 characters", key, !busy) { key = it; error = null }
-            SecretField("API IV", "16 characters", iv, !busy) { iv = it; error = null }
+            SecretField(str(S.desktop_api_encryption_key_label), str(S.desktop_api_encryption_key_hint), key, !busy) {
+                key = it
+                error = null
+            }
+            SecretField(str(S.desktop_api_iv_label), str(S.desktop_api_iv_hint), iv, !busy) {
+                iv = it
+                error = null
+            }
 
             error?.let {
                 ZillitText(it, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger)
             }
 
             ZillitButton(
-                text = "Save to keychain",
+                text = str(S.desktop_save_to_keychain),
                 onClick = {
                     busy = true
                     scope.launch {
@@ -103,8 +112,7 @@ fun ApiKeySetupScreen(
             )
 
             ZillitText(
-                text = "Your administrator has these. They're the same values the Android app " +
-                    "uses for this environment.",
+                text = str(S.desktop_api_setup_admin_note),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -114,10 +122,9 @@ fun ApiKeySetupScreen(
 
 @Composable
 private fun Intro() {
-    ZillitText("One-time setup", style = ZillitTheme.typography.titleLarge)
+    ZillitText(str(S.desktop_one_time_setup), style = ZillitTheme.typography.titleLarge)
     ZillitText(
-        text = "Zillit needs its API key and IV to talk to the server. They're stored in " +
-            "your system keychain and never written to disk.",
+        text = str(S.desktop_api_setup_intro),
         style = ZillitTheme.typography.bodyMedium,
         color = ZillitTheme.colors.textSecondary,
     )

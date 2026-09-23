@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.chat.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -84,7 +86,7 @@ class ChatToolProvider(
 ) : ToolProvider {
 
     override val path: String = "/cnc"
-    override val title: String = "Chat & Calls"
+    override val title: String get() = str(S.desktop_chat_calls)
     override val icon = ZillitIcons.Chat
     override val openMode: OpenMode = OpenMode.Maximized
 

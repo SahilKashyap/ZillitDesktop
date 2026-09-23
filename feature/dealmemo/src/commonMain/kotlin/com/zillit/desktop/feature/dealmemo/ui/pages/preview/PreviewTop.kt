@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.ChainNode
@@ -77,7 +79,7 @@ internal fun ApprovalBar(
             val chain = rules.chain
             Column {
                 ZillitText(
-                    text = "APPROVAL CHAIN",
+                    text = str(S.dm_section_approvals),
                     style = DmType.mono(10.sp, FontWeight.Bold, 0.16.em),
                     color = Color(0xFF8A8D95),
                     maxLines = 1,
@@ -94,7 +96,7 @@ internal fun ApprovalBar(
                         withStyle(
                             SpanStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF8A8D95)),
                         ) {
-                            append(" approved")
+                            append(" " + str(S.desktop_dm_approved_suffix))
                         }
                     },
                     style = DmType.sans(13.sp),
@@ -128,7 +130,7 @@ internal fun ApprovalBar(
         if (rules.showApproverActions) {
             val approving = preview.action == PreviewAction.Approve
             SolidButton(
-                text = if (approving) "Approving…" else "Approve & Sign",
+                text = if (approving) str(S.ah_run_detail_btn_approving) else str(S.dm_action_approve_sign),
                 onClick = { onEvent(PreviewEvent.ApproveAndSign) },
                 color = PreviewInk.Green,
                 hover = PreviewInk.GreenLine,
@@ -173,7 +175,7 @@ private fun ChainNodeView(node: ChainNode, state: DealMemoUiState) {
         }
         Spacer(Modifier.height(6.dp))
         ZillitText(
-            text = "LEVEL ${node.tier}",
+            text = str(S.desktop_dm_level_n, node.tier),
             style = DmType.sans(9.5.sp, FontWeight.Bold, 0.1.em),
             color = Color(0xFF9CA3AF),
             maxLines = 1,
@@ -207,13 +209,18 @@ private fun ChainNodeView(node: ChainNode, state: DealMemoUiState) {
                 }
             }
             node.state == ChainNodeState.Current -> ZillitText(
-                text = "Awaiting approval",
+                text = str(S.av_subtab_awaiting_approval),
                 style = DmType.sans(11.sp, FontWeight.SemiBold),
                 color = PreviewInk.Todo,
                 maxLines = 1,
             )
             // A done level whose approver is not in the directory reads "Pending" under its tick, as the web does.
-            else -> ZillitText(text = "Pending", style = DmType.sans(11.sp), color = Color(0xFF9CA3AF), maxLines = 1)
+            else -> ZillitText(
+                text = str(S.dm_checklist_pending),
+                style = DmType.sans(11.sp),
+                color = Color(0xFF9CA3AF),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -233,12 +240,10 @@ internal fun ShareStrip(url: String, copied: Boolean, onEvent: (DealMemoEvent) -
     ) {
         ZillitIcon(ZillitIcons.Link, size = 14.dp, tint = PreviewInk.Action, modifier = Modifier.padding(top = 2.dp))
         Column(modifier = Modifier.weight(1f)) {
-            ZillitText(text = "Shareable crew link", style = DmType.sans(12.sp, FontWeight.Bold), color = pv.ink)
+            ZillitText(text = str(S.dm_share_link_title), style = DmType.sans(12.sp, FontWeight.Bold), color = pv.ink)
             Spacer(Modifier.height(2.dp))
             ZillitText(
-                text = "No crew member is linked to this deal. Send this link to the crew member — they can open it " +
-                    "without an account to view their deal and complete their personal details. Anyone who opens " +
-                    "this link has their IP address and browser recorded.",
+                text = str(S.desktop_dm_no_crew_member_is_linked_to_this),
                 style = DmType.sans(11.sp).copy(lineHeight = 16.5.sp),
                 color = pv.shareInk,
             )
@@ -265,7 +270,7 @@ internal fun ShareStrip(url: String, copied: Boolean, onEvent: (DealMemoEvent) -
                     )
                 }
                 SolidButton(
-                    text = if (copied) "✓ Copied" else "Copy link",
+                    text = if (copied) str(S.desktop_dm_copied_tick) else str(S.dm_share_link_copy),
                     onClick = { onEvent(PreviewEvent.CopyShareLink) },
                     color = PreviewInk.Brand,
                     hover = PreviewInk.BrandHover,
@@ -286,22 +291,24 @@ internal fun ShareStrip(url: String, copied: Boolean, onEvent: (DealMemoEvent) -
 internal fun PreviewBanners(preview: DealPreviewState, rules: DealPreviewRules, onEvent: (DealMemoEvent) -> Unit) {
     if (rules.editedAfterSigning) {
         AmberBanner(
-            title = "You have edited your signed deal memo",
-            body = "You'll have to sign it again and send it for approval again.",
+            title = str(S.dm_resign_warning_title),
+            body = str(S.desktop_dm_youll_have_to_sign_it_again_and),
         )
         Spacer(Modifier.height(12.dp))
     }
     if (rules.showNominalsPending) {
         val count = rules.missingNominals.size
         AmberBanner(
-            title = "Nominal coding pending",
-            body = "$count line${if (count == 1) "" else "s"} on this deal ${if (count == 1) "has" else "have"} no " +
-                "nominal code, so this crew member's payroll will not appear in the Cost Report's Payroll committed " +
-                "column until the codes are added.",
+            title = str(S.desktop_dm_nominal_coding_pending),
+            body = if (count == 1) {
+                str(S.desktop_dm_nominal_pending_body_one)
+            } else {
+                str(S.desktop_dm_nominal_pending_body_many, count)
+            },
             large = true,
             trailing = {
                 SolidButton(
-                    text = "Update Nominals",
+                    text = str(S.dm_amend_nominals_title),
                     onClick = { onEvent(PreviewEvent.Edit(EditAction.Nominals)) },
                     hover = Color(0xFFD97A16),
                     horizontal = 16.dp,
@@ -313,13 +320,12 @@ internal fun PreviewBanners(preview: DealPreviewState, rules: DealPreviewRules, 
     if (rules.canAcknowledgeAmendment) {
         val message = DocRead.text(DocRead.obj(rules.deal.json, "amendment_ack"), "message")
         AmberBanner(
-            title = "Your deal memo has been amended",
-            body = message ?: "Please look at the amended working hours and conditions applied to your deal memo. If " +
-                "you have any objections, please contact the administrator.",
+            title = str(S.dm_amend_banner_title),
+            body = message ?: str(S.dm_amend_banner_default_msg),
             below = {
                 Spacer(Modifier.height(10.dp))
                 SolidButton(
-                    text = if (preview.acknowledging) "Saving…" else "Acknowledge",
+                    text = if (preview.acknowledging) str(S.dm_nda_saving) else str(S.dm_amend_acknowledge),
                     onClick = { onEvent(PreviewEvent.Acknowledge) },
                     icon = ZillitIcons.Check,
                     height = 32.dp,
@@ -346,8 +352,10 @@ internal fun PreviewBanners(preview: DealPreviewState, rules: DealPreviewRules, 
             ZillitIcon(ZillitIcons.Info, size = 14.dp, tint = pv.amberIcon)
             ZillitText(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Details changed after signing. ") }
-                    append("The signed copy no longer matches this memo, so it's been withdrawn — please sign again.")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(str(S.desktop_dm_details_changed_after_signing) + " ")
+                    }
+                    append(str(S.desktop_dm_the_signed_copy_no_longer_matches_this))
                 },
                 style = DmType.sans(12.5.sp),
                 color = pv.amberInk,

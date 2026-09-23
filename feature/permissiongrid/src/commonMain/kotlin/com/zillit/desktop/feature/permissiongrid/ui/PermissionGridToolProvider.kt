@@ -5,6 +5,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -25,7 +27,7 @@ class PermissionGridToolProvider(
 ) : ToolProvider {
 
     override val path: String = PERMISSION_GRID_PATH
-    override val title: String = "Viewing & Posting Rights Grid"
+    override val title: String get() = str(S.desktop_pg_title)
     override val icon = ZillitToolIcons.PostingRights
 
     @Composable

@@ -49,6 +49,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The web's fields are 42px tall, and so is the app's date field these sit
@@ -148,7 +150,12 @@ private fun DropdownTrigger(
             modifier = Modifier.weight(1f),
         )
         if (onClear != null) {
-            ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Clear", onClick = onClear, size = 22.dp)
+            ZillitIconButton(
+                icon = ZillitIcons.Close,
+                contentDescription = str(S.txt_clear),
+                onClick = onClear,
+                size = 22.dp,
+            )
         } else {
             ZillitIcon(icon = ZillitIcons.ChevronDown, tint = palette.muted, size = 15.dp)
         }
@@ -162,7 +169,7 @@ private fun <T> DropdownOptions(options: List<MtdOption<T>>, value: T?, mono: Bo
     }
     if (options.isEmpty()) {
         ZillitText(
-            text = "Nothing to choose from",
+            text = str(S.desktop_nothing_to_choose_from),
             style = mtdText(13.sp),
             color = mtdPalette().muted,
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),

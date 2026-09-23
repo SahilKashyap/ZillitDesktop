@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.callsheet.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 
 /** One line of the History timeline. */
@@ -27,6 +29,12 @@ data class HistoryEntry(
  * person is on it.
  */
 object SheetHistory {
+
+    /** The stage and action markers on an entry — English on purpose: the history dialog maps them to words. */
+    val STAGE_INTERNAL: String get() = str(S.desktop_stage_internal)
+    val STAGE_FINAL: String get() = str(S.finalize)
+    val SENT_FOR_COMMENTS: String get() = str(S.desktop_sent_for_comments_action)
+    val SENT_FOR_SIGNATURE: String get() = str(S.text_send_for_signature)
 
     private const val REMINDER_BATCH_WINDOW_MS = 5_000L
     private const val DEFAULT_MAX = 50
@@ -56,10 +64,10 @@ object SheetHistory {
             HistoryEntry(
                 id = request.id,
                 userId = request.assigneeId,
-                stage = if (request.isInternal) "Internal" else "Final",
-                action = if (request.isApproved) "Approved" else "Rejected",
+                stage = if (request.isInternal) STAGE_INTERNAL else STAGE_FINAL,
+                action = if (request.isApproved) str(S.approved) else str(S.rejected),
                 by = name(members, request.assigneeId, request.assigneeName.ifBlank { request.assigneeId }),
-                role = role(members, request.assigneeId, request.role.ifBlank { "Unknown" }),
+                role = role(members, request.assigneeId, request.role.ifBlank { str(S.desktop_unknown) }),
                 atMillis = request.actedOn ?: request.createdOn,
                 reason = request.reason,
                 revisionText = version?.takeIf { it > 0 }?.let { "v$it" }.orEmpty(),
@@ -75,8 +83,8 @@ object SheetHistory {
                 HistoryEntry(
                     id = "sent_${key.first}_${key.second}",
                     userId = detail.summary.createdById,
-                    stage = if (first.isInternal) "Internal" else "Final",
-                    action = if (first.isInternal) "Sent for Comments" else "Sent for Signature",
+                    stage = if (first.isInternal) STAGE_INTERNAL else STAGE_FINAL,
+                    action = if (first.isInternal) SENT_FOR_COMMENTS else SENT_FOR_SIGNATURE,
                     by = name(members, detail.summary.createdById, detail.summary.createdBy),
                     role = role(members, detail.summary.createdById, ""),
                     atMillis = first.createdOn,
@@ -102,9 +110,9 @@ object SheetHistory {
                 id = head.id,
                 userId = head.sentById.ifBlank { head.sentBy },
                 stage = "",
-                action = "Reminder Sent",
+                action = str(S.docusign_resend_success),
                 by = sender.name.ifBlank { "-" },
-                role = sender.role.ifBlank { "Unknown" },
+                role = sender.role.ifBlank { str(S.desktop_unknown) },
                 atMillis = head.createdOn,
                 message = head.message,
             )
@@ -119,7 +127,7 @@ object SheetHistory {
             id = "created_${detail.summary.id}",
             userId = creatorId,
             stage = "",
-            action = "Created",
+            action = str(S.drive_created),
             by = name(members, creatorId, first.createdBy.ifBlank { detail.summary.createdBy }),
             role = role(members, creatorId, ""),
             atMillis = first.createdOn ?: detail.summary.createdOn,
@@ -130,7 +138,7 @@ object SheetHistory {
                 id = "updated_${revision.id}",
                 userId = revision.createdById,
                 stage = "",
-                action = "Updated",
+                action = str(S.desktop_updated),
                 by = name(members, revision.createdById, revision.createdBy.ifBlank { detail.summary.createdBy }),
                 role = role(members, revision.createdById, ""),
                 atMillis = revision.createdOn,

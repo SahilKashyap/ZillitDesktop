@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A clock field — typed `HH:mm`, or picked from a dropdown of five-minute
@@ -66,7 +68,7 @@ internal fun RecceTimeField(
             trailingContent = {
                 ZillitIconButton(
                     icon = ZillitIcons.Clock,
-                    contentDescription = "Choose a time",
+                    contentDescription = str(S.desktop_choose_a_time),
                     onClick = { if (enabled) open = true },
                 )
             },

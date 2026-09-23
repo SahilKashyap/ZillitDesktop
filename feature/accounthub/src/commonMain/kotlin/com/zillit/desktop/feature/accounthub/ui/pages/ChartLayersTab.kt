@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.TrackingNode
 import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.domain.TrackingSets
@@ -74,7 +76,7 @@ internal fun ColumnScope.ChartLayersTab(state: AccountHubUiState, onEvent: (Acco
 
     LayersIntro(canEdit, onEvent)
     when {
-        chart.layersLoading && chart.trackingSets.isEmpty() -> CoaLoadingCard("Loading layers…")
+        chart.layersLoading && chart.trackingSets.isEmpty() -> CoaLoadingCard(str(S.desktop_loading_layers))
         chart.trackingSets.isEmpty() -> LayersEmpty(canEdit, onEvent)
         else -> ZillitScrollColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -107,22 +109,19 @@ private fun LayersIntro(canEdit: Boolean, onEvent: (AccountHubEvent) -> Unit) {
             CoaIconWash(CoaIcons.Sliders, box = 36.dp, glyph = 16.dp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ZillitText(
-                    "Layers — analytical dimensions",
+                    str(S.desktop_layers_analytical_dimensions),
                     style = ZillitTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold),
                     color = colors.textPrimary,
                 )
                 ZillitText(
-                    "Group of codes that hang off every transaction line item separately from the COA. Example: a " +
-                        "Locations layer lets you tag each line as London, Spain or LA so the cost report can split " +
-                        "spend by location without polluting the nominal taxonomy. Up to 10 layers per project; each " +
-                        "can be a tree of any depth.",
+                    str(S.desktop_hub_group_of_codes_that_hang_off_every_transaction_line_item),
                     style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.5.sp, lineHeight = 19.sp),
                     color = colors.textSecondary,
                 )
             }
             if (canEdit) {
                 ZillitButton(
-                    text = "New set",
+                    text = str(S.desktop_new_set),
                     onClick = { onEvent(AccountHubEvent.ComposeLayerSet(null)) },
                     leadingIcon = CoaIcons.Plus,
                 )
@@ -155,14 +154,13 @@ private fun LayersEmpty(canEdit: Boolean, onEvent: (AccountHubEvent) -> Unit) {
     ) {
         CoaIconWash(CoaIcons.Sliders, box = 56.dp, glyph = 22.dp)
         ZillitText(
-            "No layers yet",
+            str(S.desktop_no_layers_yet),
             style = ZillitTheme.typography.titleSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
             color = colors.textPrimary,
             modifier = Modifier.padding(top = 8.dp),
         )
         ZillitText(
-            "Add your first set to start tagging line items by location, episode, funding source, or any other " +
-                "dimension your cost report needs.",
+            str(S.desktop_hub_add_your_first_set_to_start_tagging_line_items_by),
             style = ZillitTheme.typography.bodyMedium,
             color = colors.textSecondary,
             textAlign = TextAlign.Center,
@@ -170,7 +168,7 @@ private fun LayersEmpty(canEdit: Boolean, onEvent: (AccountHubEvent) -> Unit) {
         )
         if (canEdit) {
             ZillitButton(
-                text = "New set",
+                text = str(S.desktop_new_set),
                 onClick = { onEvent(AccountHubEvent.ComposeLayerSet(null)) },
                 leadingIcon = CoaIcons.Plus,
                 modifier = Modifier.padding(top = 12.dp),
@@ -220,7 +218,7 @@ private fun LayerCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ZillitText(
-                        set.name.ifBlank { "Unnamed layer" },
+                        set.name.ifBlank { str(S.desktop_unnamed_layer) },
                         style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                         color = colors.textPrimary,
                         maxLines = 1,
@@ -240,10 +238,10 @@ private fun LayerCard(
             }
             if (canEdit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    LayerIconButton(CoaIcons.Edit, "Edit set", size = 30) {
+                    LayerIconButton(CoaIcons.Edit, str(S.desktop_edit_set), size = 30) {
                         onEvent(AccountHubEvent.ComposeLayerSet(set))
                     }
-                    LayerIconButton(CoaIcons.Trash, "Delete set", size = 30, danger = true) {
+                    LayerIconButton(CoaIcons.Trash, str(S.desktop_delete_set), size = 30, danger = true) {
                         onEvent(AccountHubEvent.AskDeleteLayer(LayerDelete.WholeSet(set)))
                     }
                 }
@@ -254,7 +252,7 @@ private fun LayerCard(
             Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp)) {
                 if (nodes.isEmpty()) {
                     ZillitText(
-                        "No codes yet — add the first one below.",
+                        str(S.desktop_hub_no_codes_yet_add_the_first_one_below),
                         style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
                         color = colors.textMuted,
                         modifier = Modifier.padding(vertical = 10.dp),
@@ -262,7 +260,7 @@ private fun LayerCard(
                 }
                 nodes.forEach { node -> LayerNodeRow(set, node, color, canEdit, onEvent) }
                 if (canEdit) {
-                    DashedAddButton("Add code", Modifier.padding(top = 8.dp)) {
+                    DashedAddButton(str(S.desktop_add_code), Modifier.padding(top = 8.dp)) {
                         onEvent(AccountHubEvent.ComposeLayerNode(set.id, null))
                     }
                 }
@@ -311,10 +309,10 @@ private fun LayerNodeRow(
         if (!node.isActive) DisabledChip()
         if (canEdit) {
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                LayerIconButton(CoaIcons.Edit, "Edit", size = 24) {
+                LayerIconButton(CoaIcons.Edit, str(S.edit), size = 24) {
                     onEvent(AccountHubEvent.ComposeLayerNode(set.id, node))
                 }
-                LayerIconButton(CoaIcons.Trash, "Delete", size = 24, danger = true) {
+                LayerIconButton(CoaIcons.Trash, str(S.delete), size = 24, danger = true) {
                     onEvent(AccountHubEvent.AskDeleteLayer(LayerDelete.OneNode(set.id, node)))
                 }
             }
@@ -429,9 +427,9 @@ internal fun ChartLayerDialogs(state: AccountHubUiState, onEvent: (AccountHubEve
     val delete = chart.layerDelete
     HubConfirmDialog(
         visible = delete != null,
-        title = "Confirm delete",
+        title = str(S.desktop_confirm_delete),
         message = delete?.message.orEmpty(),
-        confirmLabel = if (chart.layerDeleting) "Deleting…" else "Delete",
+        confirmLabel = if (chart.layerDeleting) str(S.ah_deleting) else str(S.delete),
         loading = chart.layerDeleting,
         onConfirm = { onEvent(AccountHubEvent.ConfirmDeleteLayer) },
         onDismiss = { onEvent(AccountHubEvent.DismissDeleteLayer) },
@@ -468,7 +466,7 @@ private fun LayerSetDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
     val saving = draft?.saving == true
     val isNew = draft?.isNew == true
     ZillitDialogShell(
-        title = if (isNew) "New layer" else "Edit \"${draft?.set?.name?.ifBlank { "layer" }}\"",
+        title = if (isNew) str(S.desktop_new_layer) else "Edit \"${draft?.set?.name?.ifBlank { "layer" }}\"",
         icon = CoaIcons.Sliders,
         visible = draft != null,
         width = DIALOG_WIDTH,
@@ -476,8 +474,8 @@ private fun LayerSetDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
         actions = {
             LayerDialogActions(
                 saving = saving,
-                saveLabel = if (isNew) "Create set" else "Save",
-                savingLabel = if (isNew) "Creating…" else "Saving…",
+                saveLabel = if (isNew) str(S.desktop_create_set) else str(S.save),
+                savingLabel = if (isNew) str(S.desktop_creating) else str(S.ah_saving),
                 canSave = draft?.set?.name?.isNotBlank() == true,
                 onSave = { onEvent(AccountHubEvent.SaveLayerSet) },
             )
@@ -485,26 +483,26 @@ private fun LayerSetDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
     ) {
         val set = draft?.set ?: return@ZillitDialogShell
         fun update(next: TrackingSet) = onEvent(AccountHubEvent.EditLayerSet(next))
-        LayerField("Name", required = true) {
+        LayerField(str(S.name), required = true) {
             ZillitTextField(
                 value = set.name,
                 onValueChange = { update(set.copy(name = it)) },
-                placeholder = "e.g. Locations, Episodes, Funding Source",
+                placeholder = str(S.desktop_hub_e_g_locations_episodes_funding_source),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         LayerField(
-            "Prefix",
-            hint = "2–10 letters/digits. Used on every code (LOC-EUR-LON). Leave blank to auto-derive from name.",
+            str(S.desktop_prefix),
+            hint = str(S.desktop_hub_2_10_letters_digits_used_on_every_code_loc_eur),
         ) {
             ZillitTextField(
                 value = set.prefix,
                 onValueChange = { update(set.copy(prefix = TrackingSets.normalisePrefix(it))) },
-                placeholder = "Auto",
+                placeholder = str(S.desktop_auto),
                 modifier = Modifier.width(160.dp),
             )
         }
-        LayerField("Colour", hint = "Drives the chip on every line-item picker.") {
+        LayerField(str(S.av_color), hint = str(S.desktop_hub_drives_the_chip_on_every_line_item_picker)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TrackingSets.DEFAULT_COLORS.forEach { hex ->
                     val chosen = set.color.equals(hex, ignoreCase = true)
@@ -524,7 +522,7 @@ private fun LayerSetDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
                 }
             }
         }
-        LayerField("Status") {
+        LayerField(str(S.status)) {
             ZillitCheckbox(
                 checked = set.isActive,
                 onCheckedChange = { update(set.copy(isActive = it)) },
@@ -556,8 +554,8 @@ private fun LayerNodeDialog(state: AccountHubUiState, onEvent: (AccountHubEvent)
         actions = {
             LayerDialogActions(
                 saving = saving,
-                saveLabel = if (isNew) "Add code" else "Save",
-                savingLabel = if (isNew) "Adding…" else "Saving…",
+                saveLabel = if (isNew) str(S.desktop_add_code) else str(S.save),
+                savingLabel = if (isNew) str(S.desktop_adding) else str(S.ah_saving),
                 canSave = draft != null && draft.node.code.isNotBlank() && draft.node.name.isNotBlank(),
                 onSave = { onEvent(AccountHubEvent.SaveLayerNode) },
             )
@@ -565,7 +563,7 @@ private fun LayerNodeDialog(state: AccountHubUiState, onEvent: (AccountHubEvent)
     ) {
         val node = draft?.node ?: return@ZillitDialogShell
         fun update(next: TrackingNode) = onEvent(AccountHubEvent.EditLayerNode(next))
-        LayerField("Code", required = true, hint = "Convention: $prefix-…") {
+        LayerField(str(S.code), required = true, hint = "Convention: $prefix-…") {
             ZillitTextField(
                 value = node.code,
                 onValueChange = { update(node.copy(code = it)) },
@@ -573,24 +571,24 @@ private fun LayerNodeDialog(state: AccountHubUiState, onEvent: (AccountHubEvent)
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        LayerField("Label", required = true) {
+        LayerField(str(S.ah_lbl_title), required = true) {
             ZillitTextField(
                 value = node.name,
                 onValueChange = { update(node.copy(name = it)) },
-                placeholder = "London",
+                placeholder = str(S.desktop_london),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        LayerField("Description", hint = "Optional notes shown on hover in the picker.") {
+        LayerField(str(S.description), hint = str(S.desktop_hub_optional_notes_shown_on_hover_in_the_picker)) {
             ZillitTextField(
                 value = node.description,
                 onValueChange = { update(node.copy(description = it)) },
-                placeholder = "Soundstage hire + studio support",
+                placeholder = str(S.desktop_hub_soundstage_hire_studio_support),
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
             )
         }
-        LayerField("Status") {
+        LayerField(str(S.status)) {
             ZillitCheckbox(
                 checked = node.isActive,
                 onCheckedChange = { update(node.copy(isActive = it)) },

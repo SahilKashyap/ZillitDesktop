@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.callsheet.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.AccessPerson
 import com.zillit.desktop.feature.callsheet.domain.ApprovalRequest
 import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
@@ -248,11 +250,13 @@ enum class PublishStep { Destination, Type }
  * never from the presence of a target id — a Replace whose target went
  * missing appends rather than wiping the unit.
  */
-enum class PublishChoice(val label: String) {
-    Continuation("Continuation"),
-    New("New"),
-    Replace("Replace"),
+enum class PublishChoice(private val labelKey: String) {
+    Continuation(S.continuation),
+    New(S.continue_new),
+    Replace(S.replace),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** `continuation_type` on the publish call knows only CONTINUATION or NEW. */
     val continuation: Boolean get() = this == Continuation
@@ -350,7 +354,7 @@ sealed interface SheetDialog {
     data class History(
         val title: String,
         val entries: List<HistoryEntry>,
-        val emptyText: String = "No history found.",
+        val emptyText: String = str(S.desktop_no_history_found),
     ) : SheetDialog
 
     data class ApprovalStatus(val title: String, val entries: List<ApprovalStatusEntry>) : SheetDialog
@@ -388,10 +392,14 @@ sealed interface SheetDialog {
 }
 
 /** Where a publish goes. */
-enum class PublishDestination(val label: String, val hint: String, val needsDocDist: Boolean) {
-    InApp("Publish in App", "Appears in the Published tab.", false),
-    DocDist("Publish via Document Distribution", "Sends the PDF to the library only.", true),
-    Both("Publish on Both", "Published in the app and copied to the library.", true),
+enum class PublishDestination(private val labelKey: String, private val hintKey: String, val needsDocDist: Boolean) {
+    InApp(S.pub_dest_in_app, S.desktop_pub_dest_in_app_hint, false),
+    DocDist(S.pub_dest_dd, S.desktop_pub_dest_dd_hint, true),
+    Both(S.pub_dest_both, S.desktop_pub_dest_both_hint, true),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 }
 
 /** What a confirm does when accepted. */

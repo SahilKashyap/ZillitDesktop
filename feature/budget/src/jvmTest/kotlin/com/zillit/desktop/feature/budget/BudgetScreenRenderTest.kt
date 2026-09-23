@@ -147,7 +147,8 @@ class BudgetScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("Group name").assertExists()
+            // "Group Name": the Android key's capitalisation, kept for its 21 translations.
+            onNodeWithText("Group Name").assertExists()
             onNodeWithText("Anita Rao").assertExists()
         }
     }
@@ -170,7 +171,8 @@ class BudgetScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("View count : 4").assertExists()
+            // "View Count": the Android key's capitalisation, kept for its 21 translations.
+            onNodeWithText("View Count : 4").assertExists()
         }
         runComposeUiTest {
             setContent {

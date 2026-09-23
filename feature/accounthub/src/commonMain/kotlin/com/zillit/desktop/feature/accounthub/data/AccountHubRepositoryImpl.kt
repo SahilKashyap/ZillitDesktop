@@ -10,6 +10,8 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.EntitlementRow
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AccountPatch
@@ -185,7 +187,7 @@ class AccountHubRepositoryImpl(
         module = RequestModule.ProjectUser,
     ).flatMap { dto ->
         dto.toDomain()?.let { ZillitResult.Success(it) }
-            ?: ZillitResult.Failure(ZillitError.Unknown("That bank record could not be read."))
+            ?: ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_hub_that_bank_record_could_not_be_read)))
     }
 
     /**
@@ -255,7 +257,7 @@ class AccountHubRepositoryImpl(
             if (outgoing.currencies.isNotEmpty() && stored.currencies.isEmpty()) {
                 ZillitResult.Failure(
                     ZillitError.Validation(
-                        "The server accepted the currencies but stored none of them.",
+                        str(S.desktop_hub_the_server_accepted_the_currencies_but_stored_none_of_them),
                     ),
                 )
             } else {

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachment
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
@@ -105,10 +107,10 @@ internal class CardReceiptActions(
         val state = vm.current
         val invalid = state.draft.firstNotNullOfOrNull { receipt ->
             when {
-                receipt.description.isBlank() -> "Each receipt needs a description."
-                receipt.amountValue <= 0 -> "Each receipt needs an amount."
-                receipt.date == null -> "Each receipt needs the date it was spent."
-                receipt.attachmentKey.isNullOrBlank() -> "Each receipt needs its image or PDF attached."
+                receipt.description.isBlank() -> str(S.desktop_card_receipt_needs_description)
+                receipt.amountValue <= 0 -> str(S.desktop_card_receipt_needs_amount)
+                receipt.date == null -> str(S.desktop_card_receipt_needs_date)
+                receipt.attachmentKey.isNullOrBlank() -> str(S.desktop_card_receipt_needs_attachment)
                 else -> null
             }
         }
@@ -117,7 +119,7 @@ internal class CardReceiptActions(
             return
         }
         if (state.headroom.batchExceeds(state.draftTotal)) {
-            vm.fail("This batch is over the card's remaining limit. Ask for a top-up before uploading it.")
+            vm.fail(str(S.desktop_card_batch_over_limit))
             return
         }
         vm.submitDraftReceipts(state)
@@ -136,29 +138,31 @@ internal class CardReceiptActions(
         val draft = state.coding ?: return
         val receipt = state.receipts.firstOrNull { it.id == draft.receiptId } ?: return
         if (commit != CodingCommit.Draft && !draft.coded) {
-            vm.fail("A nominal code is needed before this can go on.")
+            vm.fail(str(S.desktop_card_nominal_code_needed))
             return
         }
         if (commit == CodingCommit.ApproveAndSubmit && !state.viewer.isApprover) {
-            vm.fail("You are not an approver on this project.")
+            vm.fail(str(S.desktop_card_not_an_approver))
             return
         }
         val coding = draft.wire(receipt)
         when (commit) {
             CodingCommit.Draft ->
-                vm.act("Coding saved") { vm.repo.updateReceiptCoding(draft.receiptId, coding) }
+                vm.act(str(S.desktop_card_coding_saved)) { vm.repo.updateReceiptCoding(draft.receiptId, coding) }
 
             CodingCommit.Submit ->
-                vm.act("Sent for approval") { vm.repo.submitReceiptForApproval(draft.receiptId, coding) }
+                vm.act(str(S.ah_sent_for_approval_toast)) { vm.repo.submitReceiptForApproval(draft.receiptId, coding) }
 
             CodingCommit.ApproveAndSubmit ->
-                vm.act("Coded and approved") { vm.repo.approveAndSubmitReceipt(draft.receiptId, coding) }
+                vm.act(str(S.desktop_card_coded_and_approved)) {
+                    vm.repo.approveAndSubmitReceipt(draft.receiptId, coding)
+                }
 
             // The holder coding their own receipt. A different route from the
             // coordinator's draft save: this one advances the receipt out of
             // coding, because a holder has nothing further to add to it.
             CodingCommit.Own ->
-                vm.act("Coding saved") { vm.repo.codeReceipt(draft.receiptId, coding) }
+                vm.act(str(S.desktop_card_coding_saved)) { vm.repo.codeReceipt(draft.receiptId, coding) }
         }
     }
 

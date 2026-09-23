@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.callsheet.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -99,8 +101,15 @@ object SheetTime {
     // The crew "In" column -------------------------------------------------------------------------
 
     /** Which choice an In value holds. */
-    enum class InMode(val label: String) {
-        None("Select..."), Time("Time"), PerHod("Per HOD"), OnCall("O/C"), Other("Others"),
+    enum class InMode(private val labelKey: String) {
+        None(S.desktop_select_ellipsis),
+        Time(S.time),
+        PerHod(S.desktop_per_hod),
+        OnCall(S.desktop_on_call_short),
+        Other(S.desktop_others_title),
+        ;
+
+        val label: String get() = str(labelKey)
     }
 
     fun inModeOf(value: String): InMode = when {
@@ -126,7 +135,7 @@ object SheetTime {
             val rest = value.removePrefix(TIME_PREFIX)
             val epoch = rest.trim().toLongOrNull()
             when {
-                rest.isBlank() -> "Time"
+                rest.isBlank() -> str(S.time)
                 // Any post-1970-day epoch reads as a clock, not only the post-2000 ones clockOf formats.
                 epoch != null && epoch > DAY_MILLIS -> rawClock(epoch, zone)
                 else -> rest

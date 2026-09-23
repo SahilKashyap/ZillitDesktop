@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.PickerTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import java.util.Locale
 
 /**
@@ -94,11 +96,11 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
     LaunchedEffect(colors) { host.useTheme(colors.asPickerTheme()) }
 
     ZillitDialogShell(
-        title = request?.title ?: "Pick a location",
+        title = request?.title ?: str(S.desktop_pick_location),
         onDismiss = host::cancel,
         visible = request != null,
         icon = ZillitIcons.Pin,
-        subtitle = "Search, click the map, or drag the pin",
+        subtitle = str(S.desktop_pick_location_hint),
         width = DIALOG_WIDTH,
         maxHeight = DIALOG_HEIGHT,
         // The map takes a fixed height of its own; nothing here scrolls, and a
@@ -106,9 +108,9 @@ private fun LocationPickerDialog(host: KcefLocationPickerHost) {
         // coordinate system to disagree with.
         scrollable = false,
         actions = {
-            ZillitButton(text = "Cancel", onClick = host::cancel, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.cancel), onClick = host::cancel, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = "Use this location",
+                text = str(S.recce_picker_use),
                 onClick = host::confirm,
                 enabled = picked != null,
             )
@@ -167,7 +169,7 @@ private fun PickedSummary(picked: PickedLocation?) {
     val colors = ZillitTheme.colors
     if (picked == null) {
         ZillitText(
-            text = "No place chosen yet.",
+            text = str(S.desktop_no_place_chosen),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
@@ -185,7 +187,7 @@ private fun PickedSummary(picked: PickedLocation?) {
         ZillitIcon(ZillitIcons.Pin, tint = colors.success)
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             ZillitText(
-                text = picked.name.ifBlank { picked.address }.ifBlank { "Dropped pin" },
+                text = picked.name.ifBlank { picked.address }.ifBlank { str(S.desktop_dropped_pin) },
                 style = ZillitTheme.typography.bodyMedium,
                 maxLines = 2,
             )

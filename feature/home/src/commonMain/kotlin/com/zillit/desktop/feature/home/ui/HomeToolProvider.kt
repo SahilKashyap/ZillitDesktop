@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.home.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.LaunchedEffect
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.calendar.CalendarScreen
 import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
@@ -72,12 +74,12 @@ class HomeToolProvider(
 ) : ToolProvider {
 
     override val path: String = "/home"
-    override val title: String = "Home"
+    override val title: String get() = str(S.home)
     override val icon = ZillitIcons.Home
 
     // One provider, two faces: `/home` is the board, `/home/tools` the grid.
     override fun titleFor(route: WorkspaceRoute): String =
-        if (route.path.endsWith(TOOLS_SEGMENT)) "Film Tools" else title
+        if (route.path.endsWith(TOOLS_SEGMENT)) str(S.desktop_film_tools) else title
 
     override fun iconFor(route: WorkspaceRoute): ImageVector =
         if (route.path.endsWith(TOOLS_SEGMENT)) ZillitIcons.Tools else icon

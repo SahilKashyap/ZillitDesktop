@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** What a picker is asked for: a photograph, or a photograph-or-PDF document. */
 enum class TransportMediaKind { Image, ImageOrPdf }
@@ -48,7 +50,7 @@ interface TransportHost {
             ZillitResult.Failure(
                 ZillitError.Storage(
                     technical = "no transport media host",
-                    userMessage = "Uploads are unavailable — this workspace has no file storage configured.",
+                    userMessage = str(S.desktop_docdist_uploads_unavailable_no_storage),
                 ),
             )
 

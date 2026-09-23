@@ -3,6 +3,8 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.datastore.WidgetKeys
 import com.zillit.desktop.core.datastore.ZillitPreferences
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -22,14 +24,18 @@ internal enum class ZillitWidget(
     val uriHost: String,
     /** The file a second copy leaves for the running one. */
     val marker: String,
-    /** What the tray and Settings call it. */
-    val label: String,
+    /** The catalogue key for what the tray and Settings call it. */
+    private val labelKey: String,
     /** Where its window's size, place and open state are kept. */
     val keys: WidgetKeys,
 ) {
-    Drive("--drive-widget", "drive-widget", "open-drive-widget", "Drive", ZillitPreferences.DriveWidget),
-    Chat("--chat-widget", "chat-widget", "open-chat-widget", "Chat", ZillitPreferences.ChatWidget),
-    Crew("--crew-widget", "crew-widget", "open-crew-widget", "Crew", ZillitPreferences.CrewWidget),
+    Drive("--drive-widget", "drive-widget", "open-drive-widget", S.txt_drive, ZillitPreferences.DriveWidget),
+    Chat("--chat-widget", "chat-widget", "open-chat-widget", S.chat, ZillitPreferences.ChatWidget),
+    Crew("--crew-widget", "crew-widget", "open-crew-widget", S.crew, ZillitPreferences.CrewWidget),
+    ;
+
+    /** What the tray and Settings call it. */
+    val label: String get() = str(labelKey)
 }
 
 /**

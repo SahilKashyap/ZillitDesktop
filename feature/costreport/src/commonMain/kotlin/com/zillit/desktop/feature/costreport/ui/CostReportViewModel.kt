@@ -5,6 +5,8 @@ package com.zillit.desktop.feature.costreport.ui
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CoaRow
 import com.zillit.desktop.feature.costreport.domain.CostReportExporter
@@ -378,9 +380,9 @@ class CostReportViewModel(
     )
 
     companion object {
-        private const val PHASE_INIT = "Loading…"
-        private const val PHASE_LIVE = "Computing live report"
-        private const val PHASE_REFRESH = "Refreshing live report…"
+        private val PHASE_INIT: String get() = str(S.ah_loading)
+        private val PHASE_LIVE: String get() = str(S.desktop_cr_computing_live)
+        private val PHASE_REFRESH: String get() = str(S.desktop_cr_refreshing_live)
 
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L

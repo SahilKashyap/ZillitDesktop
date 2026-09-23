@@ -11,6 +11,8 @@ import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.data.CallSheetRepositoryImpl
 import com.zillit.desktop.feature.callsheet.domain.ApprovalDecision
 import com.zillit.desktop.feature.callsheet.domain.BadgeKind
@@ -304,12 +306,13 @@ internal fun AppGraph.Ready.callSheetPublishing(permissions: () -> ProjectPermis
             }
         }
 
-        private suspend fun callSheetUnit(): ZillitResult<HomeUnit> = when (val units = homeFeedRepository.loadUnits()) {
-            is ZillitResult.Failure -> units
-            is ZillitResult.Success -> units.data.firstOrNull { it.kind == HomeUnitKind.CallSheet }
-                ?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Validation("Call sheet unit not found."))
-        }
+        private suspend fun callSheetUnit(): ZillitResult<HomeUnit> =
+            when (val units = homeFeedRepository.loadUnits()) {
+                is ZillitResult.Failure -> units
+                is ZillitResult.Success -> units.data.firstOrNull { it.kind == HomeUnitKind.CallSheet }
+                    ?.let { ZillitResult.Success(it) }
+                    ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_call_sheet_unit_not_found)))
+            }
 
         override suspend fun pickPdf(): PickedDocument? =
             com.zillit.desktop.pickPdf()?.let { (name, bytes) -> PickedDocument(name, PDF_TYPE, bytes) }
@@ -357,6 +360,7 @@ internal fun AppGraph.Ready.callSheetPublishing(permissions: () -> ProjectPermis
 private fun JsonObject.toUnitMessage(): UnitMessage? {
     val id = text("_id") ?: return null
     val attachment = this["attachment"] as? JsonObject
+    val created = (this["created"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }
     return UnitMessage(
         id = id,
         isDocument = text("message_type").equals("document", ignoreCase = true),
@@ -364,7 +368,7 @@ private fun JsonObject.toUnitMessage(): UnitMessage? {
         name = attachment?.text("name")?.ifBlank { null } ?: attachment?.text("original_file_name").orEmpty(),
         deleted = flag("deleted"),
         archived = flag("archived"),
-        createdMs = (this["created"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() } ?: 0L,
+        createdMs = created ?: 0L,
     )
 }
 

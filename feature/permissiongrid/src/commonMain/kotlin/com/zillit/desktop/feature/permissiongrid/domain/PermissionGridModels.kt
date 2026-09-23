@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.permissiongrid.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Which half of the production a right belongs to.
  *
@@ -7,9 +10,12 @@ package com.zillit.desktop.feature.permissiongrid.domain
  * in each are separate rows written to separate URLs — the same split the
  * admin rights page keeps (`permissions/users/<section>/access`).
  */
-enum class GridSection(val wire: String, val label: String) {
-    Home("home", "Home"),
-    Tools("tools", "Film Tools"),
+enum class GridSection(val wire: String, private val labelKey: String) {
+    Home("home", S.home),
+    Tools("tools", S.desktop_film_tools),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -21,17 +27,23 @@ enum class GridSection(val wire: String, val label: String) {
  * this is an enum rather than a string — writing `user_id` for a department
  * row is accepted by nothing and silently grants no one.
  */
-enum class GridAxis(val wire: String, val entityKey: String, val label: String) {
-    Crew("users", "user_id", "People"),
-    Departments("departments", "department_id", "Departments"),
-    Designations("designations", "designation_id", "Designations"),
+enum class GridAxis(val wire: String, val entityKey: String, private val labelKey: String) {
+    Crew("users", "user_id", S.section_people),
+    Departments("departments", "department_id", S.departments),
+    Designations("designations", "designation_id", S.designations),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The three independent rights, as the write endpoint names them. */
-enum class AccessKind(val wire: String, val label: String) {
-    View("view", "View"),
-    Post("post", "Post"),
-    Download("download", "Download"),
+enum class AccessKind(val wire: String, private val labelKey: String) {
+    View("view", S.view),
+    Post("post", S.txt_post),
+    Download("download", S.download),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**

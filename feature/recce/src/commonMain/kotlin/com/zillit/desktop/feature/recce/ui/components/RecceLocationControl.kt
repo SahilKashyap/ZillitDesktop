@@ -41,6 +41,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.media.decodeImageBitmap
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.recce.domain.LatLng
 import com.zillit.desktop.feature.recce.ui.StopEditor
 import kotlinx.coroutines.delay
@@ -70,7 +72,7 @@ internal fun RecceLocationControl(
     onNeedPreview: (LatLng) -> Unit,
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier,
-    label: String = "Location",
+    label: String = str(S.location),
     required: Boolean = false,
     namePlaceholder: String = "e.g. Millennium Bridge",
     errorText: String? = null,
@@ -89,7 +91,7 @@ internal fun RecceLocationControl(
         scope.launch {
             try {
                 val initial = pin?.let { PickedLocation(stop.place, stop.address, it.lat, it.lng) }
-                service.pick(initial = initial, title = "Pick a location")?.let { picked ->
+                service.pick(initial = initial, title = str(S.desktop_pick_location))?.let { picked ->
                     // The picked venue names a place that had none; one already
                     // named keeps its name — the web's `place: name || place`.
                     onChange(
@@ -126,7 +128,7 @@ internal fun RecceLocationControl(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (picker != null) {
                 ZillitButton(
-                    text = if (pin != null) "Move / search on map" else PICK_ON_MAP,
+                    text = if (pin != null) str(S.desktop_recce_move_search_on_map) else PICK_ON_MAP,
                     onClick = ::openPicker,
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -136,7 +138,7 @@ internal fun RecceLocationControl(
             }
             if (pin != null) {
                 RecceLink(
-                    text = "Open in Google Maps",
+                    text = str(S.recce_open_in_maps),
                     onClick = { onOpenUrl(stop.mapsUrl) },
                     iconSize = 14.dp,
                     fontSize = 13.sp,
@@ -166,7 +168,7 @@ private fun PinPreview(pin: LatLng, address: String, preview: ByteArray?, known:
             when {
                 image != null -> Image(
                     bitmap = image,
-                    contentDescription = "Map of the pinned location",
+                    contentDescription = str(S.desktop_recce_map_of_pinned_location),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
@@ -177,7 +179,7 @@ private fun PinPreview(pin: LatLng, address: String, preview: ByteArray?, known:
                 ) {
                     ZillitIcon(icon = RecceIcons.MapPin, tint = RecceColors.Brand, size = 18.dp)
                     ZillitText(
-                        text = "Pinned at ${pin.lat.round()}, ${pin.lng.round()}",
+                        text = str(S.desktop_recce_pinned_at, pin.lat.round(), pin.lng.round()),
                         style = ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                         color = colors.textSecondary,
                     )
@@ -206,9 +208,9 @@ private fun EmptyMapBox(enabled: Boolean, onClick: () -> Unit) {
         ZillitIcon(icon = RecceIcons.MapPin, tint = colors.textMuted, size = 16.dp)
         MutedText(
             if (enabled) {
-                "Search a place or drop a pin to show it on the map"
+                str(S.desktop_recce_search_or_drop_pin)
             } else {
-                "Paste a Google Maps link below to place this stop"
+                str(S.desktop_recce_paste_maps_link)
             },
         )
     }
@@ -238,7 +240,7 @@ private fun MapsLinkField(stop: StopEditor, onChange: (StopEditor) -> Unit) {
     val shown = typed ?: link
     val unparsed = typed != null && typed!!.isNotBlank() && MapsLink.parseLatLng(typed!!) == null
 
-    Labelled(label = "Google Maps link", hint = "(optional — auto-filled from the pin, or paste one)") {
+    Labelled(label = str(S.desktop_recce_google_maps_link), hint = str(S.desktop_recce_maps_link_hint)) {
         ZillitTextField(
             value = shown,
             onValueChange = { next ->
@@ -248,7 +250,7 @@ private fun MapsLinkField(stop: StopEditor, onChange: (StopEditor) -> Unit) {
                 }
             },
             placeholder = "https://maps.google.com/…",
-            helperText = if (unparsed) "No coordinates in that link" else null,
+            helperText = if (unparsed) str(S.desktop_recce_no_coordinates_in_link) else null,
             modifier = Modifier.fillMaxWidth(),
             trailingContent = { CopyAffordance(link) },
         )
@@ -279,7 +281,11 @@ private fun CopyAffordance(link: String) {
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         ZillitIcon(icon = if (copied) ZillitIcons.Check else ZillitIcons.Copy, tint = tint, size = 14.dp)
-        ZillitText(text = if (copied) "Copied" else "Copy", style = ZillitTheme.typography.label, color = tint)
+        ZillitText(
+            text = if (copied) str(S.dd_copied) else str(S.copy),
+            style = ZillitTheme.typography.label,
+            color = tint,
+        )
     }
 }
 
@@ -287,6 +293,6 @@ private fun CopyAffordance(link: String) {
 private fun Double.round(): String = ((this * 100_000).toLong() / 100_000.0).toString()
 
 /** The picker button's label — what the render test looks for. */
-internal const val PICK_ON_MAP = "Search / pick on map"
+internal val PICK_ON_MAP: String get() = str(S.desktop_recce_search_pick_on_map)
 private val PREVIEW_HEIGHT = 168.dp
 private const val COPIED_MS = 1_500L

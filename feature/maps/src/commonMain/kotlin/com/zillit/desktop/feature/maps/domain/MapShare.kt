@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.maps.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.pow
@@ -191,7 +193,7 @@ data class GeocodedPlace(val address: String, val components: List<GeoComponent>
             ?: first("postal_town")
             ?: first("administrative_area_level_2")
             ?: first("administrative_area_level_1")
-            ?: address.ifBlank { "Current Location" }
+            ?: address.ifBlank { str(S.desktop_weather_current_location) }
 
     private val firstLine: String get() = address.substringBefore(',')
 

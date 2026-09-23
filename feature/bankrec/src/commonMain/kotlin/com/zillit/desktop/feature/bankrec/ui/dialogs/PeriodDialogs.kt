@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankPeriod
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.ui.BankRecEvent
@@ -49,23 +51,27 @@ internal fun DeletePeriodsDialog(state: BankRecUiState, onEvent: (BankRecEvent) 
     val request = rememberLast(state.deleting) ?: return
     val count = request.ids.size
     ZillitDialogShell(
-        title = if (count > 1) "Delete $count periods?" else "Delete this period?",
+        title = if (count > 1) {
+            str(S.desktop_br_delete_n_periods_q, count)
+        } else {
+            str(S.desktop_br_delete_this_period_q)
+        },
         onDismiss = { if (!request.deleting) onEvent(BankRecEvent.DismissDeletePeriods) },
         visible = state.deleting != null,
         icon = ZillitIcons.Trash,
         width = 460.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(BankRecEvent.DismissDeletePeriods) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !request.deleting,
             )
             ZillitButton(
                 text = when {
-                    request.deleting -> "Deleting…"
-                    count > 1 -> "Delete $count periods"
-                    else -> "Delete period"
+                    request.deleting -> str(S.ah_deleting)
+                    count > 1 -> str(S.desktop_br_delete_n_periods, count)
+                    else -> str(S.desktop_br_delete_period)
                 },
                 onClick = { onEvent(BankRecEvent.ConfirmDeletePeriods) },
                 variant = ButtonVariant.Danger,
@@ -74,9 +80,7 @@ internal fun DeletePeriodsDialog(state: BankRecUiState, onEvent: (BankRecEvent) 
         },
     ) {
         ZillitText(
-            "${request.label} will be removed, along with every imported transaction, match, exception, fraud " +
-                "alert and FX variance in it. Invoices matched to those transactions are returned to unmatched. " +
-                "This cannot be undone.",
+            str(S.desktop_br_delete_periods_warning, request.label),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -90,24 +94,24 @@ internal fun ExportPdfDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> U
     val periods = state.completedPeriods
     val selected = export.selected.intersect(periods.map { it.id }.toSet())
     ZillitDialogShell(
-        title = "Export Reconciliation PDF",
-        subtitle = "Select completed reconciliation periods to include in the PDF export.",
+        title = str(S.desktop_br_export_reconciliation_pdf),
+        subtitle = str(S.desktop_br_export_pdf_subtitle),
         onDismiss = { if (!export.exporting) onEvent(BankRecEvent.CloseExportPdf) },
         visible = state.exportPdf != null,
         icon = ZillitIcons.Download,
         width = 480.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(BankRecEvent.CloseExportPdf) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !export.exporting,
             )
             ZillitButton(
                 text = when {
-                    export.exporting -> "Generating…"
-                    selected.isEmpty() -> "Export"
-                    else -> "Export (${selected.size})"
+                    export.exporting -> str(S.drive_generating)
+                    selected.isEmpty() -> str(S.asset_export)
+                    else -> str(S.desktop_export_count, selected.size)
                 },
                 onClick = { onEvent(BankRecEvent.ConfirmExportPdf) },
                 leadingIcon = ZillitIcons.File,
@@ -118,7 +122,7 @@ internal fun ExportPdfDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> U
     ) {
         if (periods.isEmpty()) {
             ZillitText(
-                "No completed periods available for export.",
+                str(S.desktop_br_no_completed_periods),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -129,7 +133,7 @@ internal fun ExportPdfDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> U
         ZillitCheckbox(
             checked = selected.size == periods.size,
             onCheckedChange = { onEvent(BankRecEvent.ToggleAllExportPeriods) },
-            label = "Select All (${periods.size})",
+            label = str(S.desktop_br_select_all_count, periods.size),
         )
         ZillitDivider()
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -157,12 +161,12 @@ private fun ExportRow(period: BankPeriod, checked: Boolean, onToggle: () -> Unit
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             )
             ZillitText(
-                "${period.totalTxns} txns · Signed ${BankRecFormat.localDay(period.signedAtMillis)}",
+                str(S.desktop_br_txns_signed, period.totalTxns, BankRecFormat.localDay(period.signedAtMillis)),
                 style = mono(10.5.sp),
                 color = colors.textMuted,
             )
         }
-        BrBadge("Complete", BrTone.Green)
+        BrBadge(str(S.dm_action_complete), BrTone.Green)
         ZillitIcon(ZillitIcons.Check, tint = if (checked) colors.accent else Color.Transparent, size = 14.dp)
     }
 }
@@ -180,7 +184,7 @@ internal fun PeriodDetailDialog(state: BankRecUiState, onEvent: (BankRecEvent) -
     // Only what was settled: the entries a signed-off month marked paid.
     val paid = detail.ledger.filter { it.isPaid }
     ZillitDialogShell(
-        title = "Period Details",
+        title = str(S.desktop_period_details),
         subtitle = period?.let { row ->
             listOfNotNull(
                 BankRecFormat.fullPeriodLabel(row),
@@ -202,13 +206,13 @@ internal fun PeriodDetailDialog(state: BankRecUiState, onEvent: (BankRecEvent) -
                     padded = false,
                     left = {
                         Column {
-                            PanelHeading("Bank Transactions", detail.transactions.size, ZillitIcons.Bank)
+                            PanelHeading(str(S.desktop_bank_transactions), detail.transactions.size, ZillitIcons.Bank)
                             BankLinesTable(detail.transactions, accountCurrency, detail = true)
                         }
                     },
                     right = {
                         Column {
-                            PanelHeading("Ledger Entries", paid.size, ZillitIcons.Ledger)
+                            PanelHeading(str(S.desktop_ledger_entries), paid.size, ZillitIcons.Ledger)
                             LedgerLinesTable(paid, state.projectCurrency, detail = true)
                         }
                     },

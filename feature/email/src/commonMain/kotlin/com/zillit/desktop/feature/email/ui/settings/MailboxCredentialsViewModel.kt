@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.email.ui.settings
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.MailboxCredentials
 import com.zillit.desktop.feature.email.domain.MailboxCredentialsRepository
 import kotlin.time.Clock
@@ -157,7 +159,7 @@ class MailboxCredentialsViewModel(
                         isChangingPassword = false,
                         newPassword = "",
                         revealedPassword = null,
-                        info = "Password updated",
+                        info = str(S.desktop_email_password_updated),
                     )
                 }
             },
@@ -170,9 +172,9 @@ class MailboxCredentialsViewModel(
         const val MIN_REVEAL_INTERVAL_MS = 1_200L
 
         // Android's strings for the three outcomes (res/values/strings.xml).
-        const val TOO_FAST = "Please wait a moment before trying again."
-        const val NOT_AVAILABLE = "No mailbox is set up for your account yet."
-        const val FAILED = "Couldn't fetch the password. Please try again."
+        val TOO_FAST: String get() = str(S.password_reveal_too_fast_txt)
+        val NOT_AVAILABLE: String get() = str(S.password_reveal_unavailable_txt)
+        val FAILED: String get() = str(S.password_reveal_failed_txt)
 
         /** Server code for "no mailbox provisioned" — `MailCredentialsRevealer.ERROR_NOT_AVAILABLE`. */
         const val NOT_AVAILABLE_CODE = "email_credentials_not_available"

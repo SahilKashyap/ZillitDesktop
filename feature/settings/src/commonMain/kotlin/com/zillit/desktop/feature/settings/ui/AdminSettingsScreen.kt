@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Administration — everything this production's coordinators control.
@@ -80,7 +82,7 @@ fun AdminSettingsScreen(
                 ZillitSearchField(
                     value = admin.query,
                     onValueChange = { onEvent(SettingsEvent.AdminSearchChanged(it)) },
-                    placeholder = "Search administration settings",
+                    placeholder = str(S.desktop_search_admin_settings),
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -122,7 +124,7 @@ private fun Header(production: ProductionFacts, onBack: (() -> Unit)?) {
         if (onBack != null) {
             ZillitIconButton(
                 icon = ZillitIcons.ChevronLeft,
-                contentDescription = "Back",
+                contentDescription = str(S.back),
                 onClick = onBack,
             )
         }
@@ -134,13 +136,13 @@ private fun Header(production: ProductionFacts, onBack: (() -> Unit)?) {
                 .background(ZillitTheme.colors.accent),
         )
         Column {
-            ZillitText(text = "Admin settings", style = ZillitTheme.typography.displayLarge)
+            ZillitText(text = str(S.admin_settings), style = ZillitTheme.typography.displayLarge)
             ZillitText(
                 // Names the production, because an admin on three of them needs
                 // to know which one they are about to change.
                 text = production.name.takeIf { it.isNotBlank() }
-                    ?.let { "What $it's coordinators control." }
-                    ?: "What this project's coordinators control.",
+                    ?.let { str(S.desktop_admin_what_coordinators_control_named, it) }
+                    ?: str(S.desktop_admin_what_coordinators_control),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -170,11 +172,11 @@ private fun NotAnAdmin() {
             size = EMPTY_GLYPH,
         )
         ZillitText(
-            text = "This page is for the project's administrators.",
+            text = str(S.desktop_admin_page_for_administrators),
             style = ZillitTheme.typography.titleSmall,
         )
         ZillitText(
-            text = "Ask a coordinator if you need something changed here.",
+            text = str(S.desktop_admin_ask_a_coordinator),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
             textAlign = TextAlign.Center,

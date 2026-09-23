@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.ui.components.BankRecIcons
 import com.zillit.desktop.feature.bankrec.ui.components.BrSegmentBar
 import com.zillit.desktop.feature.bankrec.ui.components.BrTone
@@ -55,7 +57,7 @@ internal fun LockedSection(placeholder: @Composable () -> Unit) {
                 ZillitIcon(BankRecIcons.Lock, tint = colors.textMuted, size = 22.dp)
             }
             ZillitText(
-                "Not included",
+                str(S.desktop_br_not_included),
                 style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = colors.textMuted,
             )
@@ -67,7 +69,11 @@ internal fun LockedSection(placeholder: @Composable () -> Unit) {
 internal fun LockedBalances(defaultCode: String) {
     val masked = "${Money.symbol(defaultCode)}XX,XXX.XX"
     Row(Modifier.fillMaxWidth()) {
-        listOf("Opening Bank Balance", "Closing Bank Balance", "Unreconciled Difference").forEach {
+        listOf(
+            str(S.desktop_br_opening_bank_balance),
+            str(S.desktop_br_closing_bank_balance),
+            str(S.desktop_br_unreconciled_difference),
+        ).forEach {
             BalanceCell(it, masked, " ")
         }
     }
@@ -80,13 +86,23 @@ internal fun LockedRecStatus() {
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        SectionTitle("Reconciliation Status", ZillitIcons.BarChart, colors.textSecondary, uppercase = true)
+        SectionTitle(
+            str(S.desktop_br_reconciliation_status),
+            ZillitIcons.BarChart,
+            colors.textSecondary,
+            uppercase = true,
+        )
         BrSegmentBar(
             segments = listOf(0.6f to colors.success, 0.17f to colors.warning, 0.17f to colors.danger),
             gap = 4.dp,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            listOf("Matched", "Suggested", "No entry", "Fraud").forEach { StatusTile(null, it, BrTone.Gray) }
+            listOf(
+                str(S.desktop_matched),
+                str(S.desktop_suggested),
+                str(S.desktop_br_no_entry),
+                str(S.desktop_fraud),
+            ).forEach { StatusTile(null, it, BrTone.Gray) }
         }
     }
 }
@@ -95,8 +111,17 @@ internal fun LockedRecStatus() {
 internal fun LockedExceptions(defaultCode: String) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SectionTitle("Exceptions Noted", BankRecIcons.Exclaim, colors.textPrimary, iconTint = colors.warning)
-        listOf("Bank charges", "Tax payment", "Card settlement").forEach {
+        SectionTitle(
+            str(S.desktop_br_exceptions_noted),
+            BankRecIcons.Exclaim,
+            colors.textPrimary,
+            iconTint = colors.warning,
+        )
+        listOf(
+            str(S.desktop_br_exc_bank_charges),
+            str(S.desktop_br_tax_payment),
+            str(S.desktop_br_exc_card_settlement),
+        ).forEach {
             MaskedLine(it, "-${Money.symbol(defaultCode)}X,XXX.XX")
         }
     }
@@ -106,8 +131,8 @@ internal fun LockedExceptions(defaultCode: String) {
 internal fun LockedFraud() {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SectionTitle("Fraud Alerts", ZillitIcons.Shield, colors.danger)
-        repeat(2) { MaskedLine("Vendor Name — Payment details redacted.", "") }
+        SectionTitle(str(S.desktop_fraud_alerts), ZillitIcons.Shield, colors.danger)
+        repeat(2) { MaskedLine(str(S.desktop_br_vendor_redacted), "") }
     }
 }
 
@@ -115,9 +140,19 @@ internal fun LockedFraud() {
 internal fun LockedFx(defaultCode: String) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle("Foreign Currency Payments", BankRecIcons.Swap, colors.textPrimary, iconTint = colors.teal)
+        SectionTitle(
+            str(S.desktop_br_foreign_currency_payments),
+            BankRecIcons.Swap,
+            colors.textPrimary,
+            iconTint = colors.teal,
+        )
         Row(Modifier.fillMaxWidth()) {
-            listOf("EUR Paid", "Budget Rate", "$defaultCode Paid", "FX Variance").forEach { label ->
+            listOf(
+                str(S.desktop_br_eur_paid),
+                str(S.desktop_budget_rate),
+                str(S.desktop_br_currency_paid, defaultCode),
+                str(S.desktop_fx_variance),
+            ).forEach { label ->
                 Column(Modifier.weight(1f)) {
                     ZillitText(label.uppercase(), style = eyebrow(9.sp), color = colors.textMuted)
                     ZillitText("XX,XXX", style = mono(13.sp, FontWeight.SemiBold), color = colors.textMuted)
@@ -134,10 +169,10 @@ internal fun LockedTransactions(defaultCode: String) {
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        listOf("Bank Transactions", "Ledger Entries").forEach { title ->
+        listOf(str(S.desktop_bank_transactions), str(S.desktop_ledger_entries)).forEach { title ->
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitText(title.uppercase(), style = eyebrow(11.sp), color = ZillitTheme.colors.textMuted)
-                repeat(PLACEHOLDER_ROWS) { MaskedLine("Transaction ${it + 1}", masked) }
+                repeat(PLACEHOLDER_ROWS) { MaskedLine(str(S.desktop_br_transaction_n, it + 1), masked) }
             }
         }
     }

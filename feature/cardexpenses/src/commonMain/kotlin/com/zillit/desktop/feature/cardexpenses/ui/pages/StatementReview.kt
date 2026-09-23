@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.ui.CardConfirmAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardPrompt
 import androidx.compose.runtime.Composable
@@ -73,8 +75,7 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
 
         if (orphans > 0) {
             ZillitNotice(
-                text = "$orphans row(s) could not be matched to a cardholder. " +
-                    "They can be accepted into the ledger, but nobody can be asked for a receipt.",
+                text = str(S.desktop_card_orphan_rows_note, orphans),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Warning,
             )
@@ -86,7 +87,7 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text = "${rows.size} row(s) · ${state.selection.size} ticked",
+                text = str(S.desktop_card_rows_ticked, rows.size, state.selection.size),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
@@ -97,13 +98,13 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                     style = ZillitTheme.typography.titleSmall,
                 )
                 ZillitButton(
-                    text = "Accept ${ticked.size} into the ledger",
+                    text = str(S.desktop_card_accept_into_ledger, ticked.size),
                     onClick = { onEvent(CardEvent.ProcessImportRows) },
                     size = ButtonSize.Small,
                     enabled = !state.busy,
                 )
                 ZillitButton(
-                    text = "Ask $sendable holder(s) for receipts",
+                    text = str(S.desktop_card_ask_holders_for_receipts, sendable),
                     onClick = { onEvent(CardEvent.SubmitRowsToHolders) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -115,7 +116,7 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         }
 
         ZillitSectionCard(
-            title = "Statement rows",
+            title = str(S.desktop_card_statement_rows),
             icon = ZillitIcons.Ledger,
             padded = false,
             modifier = Modifier.weight(1f),
@@ -125,11 +126,15 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 columns = rowColumns(state, onEvent),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = if (state.openImportId == null) "No statement selected" else "No rows",
-                emptyMessage = if (state.openImportId == null) {
-                    "Import a statement, or pick one above to review its rows."
+                emptyTitle = if (state.openImportId == null) {
+                    str(S.desktop_card_no_statement_selected)
                 } else {
-                    "Every row on this statement has been processed."
+                    str(S.desktop_card_no_rows)
+                },
+                emptyMessage = if (state.openImportId == null) {
+                    str(S.desktop_card_import_or_pick)
+                } else {
+                    str(S.desktop_card_statement_processed)
                 },
             )
         }
@@ -148,10 +153,9 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
  */
 @Composable
 private fun StatementUploadPanel(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    ZillitSectionCard(title = "Import a statement", icon = ZillitIcons.Upload) {
+    ZillitSectionCard(title = str(S.desktop_card_import_a_statement), icon = ZillitIcons.Upload) {
         ZillitText(
-            text = "Choose the file the bank sent. Its rows are read and matched against the receipts " +
-                "already uploaded, then reviewed here before anything reaches the ledger.",
+            text = str(S.desktop_card_import_help),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -163,13 +167,13 @@ private fun StatementUploadPanel(state: CardUiState, onEvent: (CardEvent) -> Uni
             ZillitTextField(
                 value = state.statementCurrency,
                 onValueChange = { onEvent(CardEvent.EditStatementCurrency(it.uppercase())) },
-                label = "Statement currency",
-                placeholder = "Leave blank for the project default",
-                helperText = "What the statement is denominated in, if it is not the project's own.",
+                label = str(S.desktop_card_statement_currency),
+                placeholder = str(S.desktop_card_blank_for_project_default),
+                helperText = str(S.desktop_card_statement_currency_helper),
                 modifier = Modifier.width(CURRENCY_WIDTH),
             )
             ZillitButton(
-                text = "Choose a statement file",
+                text = str(S.desktop_card_choose_statement_file),
                 onClick = { onEvent(CardEvent.ImportStatement) },
                 leadingIcon = ZillitIcons.Upload,
                 enabled = state.canAttachFiles && !state.busy,
@@ -177,7 +181,7 @@ private fun StatementUploadPanel(state: CardUiState, onEvent: (CardEvent) -> Uni
             )
             if (!state.canAttachFiles) {
                 ZillitText(
-                    text = "No file picker is available in this build.",
+                    text = str(S.desktop_card_no_file_picker_build),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -190,9 +194,9 @@ private fun StatementUploadPanel(state: CardUiState, onEvent: (CardEvent) -> Uni
 @Composable
 private fun ImportPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     ZillitSectionCard(
-        title = "Imported statements",
+        title = str(S.desktop_card_imported_statements),
         icon = ZillitIcons.Upload,
-        meta = "${state.imports.size} on file",
+        meta = str(S.desktop_card_on_file_count, state.imports.size),
         padded = false,
     ) {
         ZillitDataTable(
@@ -201,8 +205,8 @@ private fun ImportPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             key = { it.id },
             onRowClick = { onEvent(CardEvent.OpenImport(it.id)) },
             isSelected = { it.id == state.openImportId },
-            emptyTitle = "Nothing imported yet",
-            emptyMessage = "Upload a statement to start reviewing its rows.",
+            emptyTitle = str(S.desktop_card_nothing_imported_yet),
+            emptyMessage = str(S.desktop_card_upload_statement_hint),
             virtualised = false,
         )
     }
@@ -213,16 +217,16 @@ private fun importColumns(
     state: CardUiState,
     onEvent: (CardEvent) -> Unit,
 ): List<TableColumn<StatementImport>> = listOf(
-    textColumn("File", ColumnWidth.Weight(2f)) { it.filename ?: it.id },
-    textColumn("Rows", ColumnWidth.Weight(0.6f), numeric = true) { it.rowCount.toString() },
-    textColumn("Matched", ColumnWidth.Weight(0.7f), numeric = true) { it.matchedCount.toString() },
-    textColumn("Imported", ColumnWidth.Weight(1f), muted = true) { date(it.importedAt) },
+    textColumn(str(S.file), ColumnWidth.Weight(2f)) { it.filename ?: it.id },
+    textColumn(str(S.desktop_card_rows_header), ColumnWidth.Weight(0.6f), numeric = true) { it.rowCount.toString() },
+    textColumn(str(S.desktop_matched), ColumnWidth.Weight(0.7f), numeric = true) { it.matchedCount.toString() },
+    textColumn(str(S.desktop_imported), ColumnWidth.Weight(1f), muted = true) { date(it.importedAt) },
     TableColumn(
         header = "",
         width = ColumnWidth.Fixed(OPEN_COLUMN),
         cell = { row ->
             ZillitStatusPill(
-                label = if (row.id == state.openImportId) "Reviewing" else "Open",
+                label = if (row.id == state.openImportId) str(S.desktop_card_reviewing) else str(S.dd_action_open),
                 tone = if (row.id == state.openImportId) StatusTone.Progress else StatusTone.Neutral,
             )
         },
@@ -235,16 +239,15 @@ private fun importColumns(
             // server takes — and because re-matching a year of imports is not
             // something anybody should reach by accident.
             ZillitButton(
-                text = "Re-match",
+                text = str(S.desktop_card_re_match),
                 onClick = {
                     onEvent(
                         CardEvent.Ask(
                             CardPrompt.Confirm(
                                 CardConfirmAction.RerunMatching,
                                 row.id,
-                                "Re-run matching",
-                                "Every unmatched receipt is compared against this statement again. " +
-                                    "Matches already confirmed are left alone.",
+                                str(S.desktop_card_rerun_matching),
+                                str(S.desktop_card_rerun_matching_note),
                             ),
                         ),
                     )
@@ -282,16 +285,16 @@ private fun rowColumns(
             }
         },
     ),
-    textColumn("Merchant", ColumnWidth.Weight(1.8f)) { it.merchant.ifBlank { it.description ?: "—" } },
-    textColumn("Card", ColumnWidth.Weight(0.8f), muted = true) {
+    textColumn(str(S.ah_merchant), ColumnWidth.Weight(1.8f)) { it.merchant.ifBlank { it.description ?: "—" } },
+    textColumn(str(S.ah_my_cards), ColumnWidth.Weight(0.8f), muted = true) {
         it.cardLastFour?.let { last -> "•••• $last" } ?: "—"
     },
     TableColumn(
-        header = "Holder",
+        header = str(S.ah_holder),
         width = ColumnWidth.Weight(1.2f),
         cell = { row ->
             if (row.holderId.isNullOrBlank()) {
-                ZillitStatusPill(label = "Unmatched", tone = StatusTone.Pending)
+                ZillitStatusPill(label = str(S.desktop_dm_unmatched), tone = StatusTone.Pending)
             } else {
                 ZillitText(
                     // Never the raw id: an ObjectId on screen looks like corruption.
@@ -302,10 +305,10 @@ private fun rowColumns(
             }
         },
     ),
-    textColumn("Date", ColumnWidth.Weight(1f), muted = true) { date(it.date) },
-    textColumn("Amount", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) },
+    textColumn(str(S.date), ColumnWidth.Weight(1f), muted = true) { date(it.date) },
+    textColumn(str(S.amount), ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) },
     TableColumn(
-        header = "Status",
+        header = str(S.status),
         width = ColumnWidth.Fixed(STATUS_COLUMN),
         cell = { row ->
             ZillitStatusPill(
@@ -331,8 +334,8 @@ fun SplitEditorDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val draft = state.splits
 
     ZillitDialogShell(
-        title = "Split this receipt",
-        subtitle = draft?.let { "Receipt total ${Money.format(it.receiptGross, it.currency)}" },
+        title = str(S.desktop_card_split_this_receipt),
+        subtitle = draft?.let { str(S.desktop_card_receipt_total, Money.format(it.receiptGross, it.currency)) },
         icon = ZillitIcons.Ledger,
         visible = draft != null,
         width = EDITOR_WIDTH,
@@ -347,7 +350,7 @@ fun SplitEditorDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = "SPLIT",
+                    text = str(S.desktop_card_split_caps),
                     style = ZillitTheme.typography.labelSmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -358,7 +361,11 @@ fun SplitEditorDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             }
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = if (draft.remaining < 0) "OVER BY" else "LEFT TO SPLIT",
+                    text = if (draft.remaining < 0) {
+                        str(S.desktop_card_over_by_caps)
+                    } else {
+                        str(S.desktop_card_left_to_split_caps)
+                    },
                     style = ZillitTheme.typography.labelSmall,
                     color = ZillitTheme.colors.textMuted,
                 )
@@ -369,7 +376,11 @@ fun SplitEditorDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 )
             }
             ZillitStatusPill(
-                label = if (draft.balances) "Balanced" else "Does not add up",
+                label = if (draft.balances) {
+                    str(S.desktop_card_balanced)
+                } else {
+                    str(S.desktop_payroll_does_not_add_up)
+                },
                 tone = if (draft.balances) StatusTone.Done else StatusTone.Rejected,
                 dot = true,
             )
@@ -392,7 +403,7 @@ fun SplitEditorDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitButton(
-                text = "Add a split",
+                text = str(S.desktop_card_add_a_split),
                 onClick = { onEvent(CardEvent.AddSplit) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -400,12 +411,12 @@ fun SplitEditorDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             )
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(CardEvent.CloseSplits) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Save splits",
+                text = str(S.desktop_card_save_splits),
                 onClick = { onEvent(CardEvent.SaveSplits) },
                 enabled = draft.balances && !state.busy,
                 loading = state.busy,
@@ -430,19 +441,19 @@ private fun SplitRow(
         ZillitTextField(
             value = line.description,
             onValueChange = { onChange(line.copy(description = it)) },
-            label = if (index == 0) "What this covers" else null,
+            label = if (index == 0) str(S.desktop_card_what_this_covers) else null,
             modifier = Modifier.weight(2f),
         )
         ZillitTextField(
             value = line.nominalCode,
             onValueChange = { onChange(line.copy(nominalCode = it)) },
-            label = if (index == 0) "Nominal code" else null,
+            label = if (index == 0) str(S.ah_lbl_nominal_code) else null,
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = if (line.net == 0.0) "" else line.net.toString(),
             onValueChange = { onChange(line.copy(net = it.trim().toDoubleOrNull() ?: 0.0)) },
-            label = if (index == 0) "Net" else null,
+            label = if (index == 0) str(S.desktop_net) else null,
             placeholder = "0.00",
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.weight(1f),
@@ -450,7 +461,7 @@ private fun SplitRow(
         ZillitTextField(
             value = if (line.taxAmount == 0.0) "" else line.taxAmount.toString(),
             onValueChange = { onChange(line.copy(taxAmount = it.trim().toDoubleOrNull() ?: 0.0)) },
-            label = if (index == 0) "VAT" else null,
+            label = if (index == 0) str(S.desktop_vat) else null,
             placeholder = "0.00",
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.weight(1f),

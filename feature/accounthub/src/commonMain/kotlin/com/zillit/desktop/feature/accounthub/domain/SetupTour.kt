@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * "What still needs configuring" — the setup tours.
  *
@@ -17,124 +20,117 @@ package com.zillit.desktop.feature.accounthub.domain
  * the only state a check could fire on is a deliberate choice.
  */
 enum class SetupGap(
-    val title: String,
-    val body: String,
-    val notes: List<Pair<String, String>>,
+    private val titleKey: String,
+    private val bodyKey: String,
+    private val noteKeys: List<Pair<String, String>>,
     /** Where the step points: the Production Setup nav row, the Deal Memo tab, or the chart. */
     val target: SetupTourTarget,
 ) {
     Company(
-        "Companies & Entities",
-        "Add the companies for the project.",
+        S.desktop_hub_companies_entities,
+        S.desktop_hub_tour_company_body,
         listOf(
-            "Used on" to "Each purchase order, invoice, card and cash expense receipt, and deal memo.",
-            "Note" to "Each company can have multiple bank accounts connected to it, so add companies before bank " +
-                "accounts.",
+            S.desktop_hub_tour_used_on to S.desktop_hub_tour_company_used_on,
+            S.note to S.desktop_hub_tour_company_note,
         ),
         SetupTourTarget.Nav,
     ),
     Bank(
-        "Bank Accounts",
-        "Add the bank accounts for the project, along with the nominal and AP clearance code.",
+        S.desktop_bank_accounts,
+        S.desktop_hub_tour_bank_body,
         listOf(
-            "Used for" to "The ledger entries of purchase orders, invoices, cards, floats, card and cash expense " +
-                "receipts, and payrolls.",
+            S.desktop_hub_tour_used_for to S.desktop_hub_tour_bank_used_for,
         ),
         SetupTourTarget.Nav,
     ),
     Currency(
-        "Project Currencies",
-        "Add the currencies the project is going to deal with. Set one currency as the project's default and add " +
-            "exchange rates for all the other selected currencies.",
+        S.desktop_project_currencies,
+        S.desktop_hub_tour_currency_body,
         emptyList(),
         SetupTourTarget.Nav,
     ),
     Tags(
-        "Account Tags",
-        "Add free-form text tags.",
+        S.desktop_account_tags,
+        S.desktop_hub_tour_tags_body,
         listOf(
-            "Used on" to "The line items of purchase orders, invoices, and card and cash expense receipts.",
-            "Also" to "As a filter while generating reports such as the Trial Balance and Bible Reports.",
+            S.desktop_hub_tour_used_on to S.desktop_hub_tour_tags_used_on,
+            S.desktop_hub_tour_also to S.desktop_hub_tour_tags_also,
         ),
         SetupTourTarget.Nav,
     ),
     Tax(
-        "Tax Types",
-        "Add the countries and their tax types for the project.",
+        S.desktop_tax_types,
+        S.desktop_hub_tour_tax_body,
         listOf(
-            "Used on" to "Directly in the line items of purchase orders, invoices, and card and cash expense receipts.",
+            S.desktop_hub_tour_used_on to S.desktop_hub_tour_tax_used_on,
         ),
         SetupTourTarget.Nav,
     ),
     Coa(
-        "Chart of Accounts",
-        "Three sub-tabs: Chart of Accounts, Balance Sheet Codes and Layers. Budget account codes appear here — " +
-            "uploading the budget creates a Chart of Accounts from its lines.",
+        S.desktop_chart_of_accounts,
+        S.desktop_hub_tour_coa_body,
         listOf(
-            "Balance sheet codes" to "Accountants can add balance sheet codes here and edit the existing ones. " +
-                "Used in Production Cards, Petty Cash Floats and Production Bank Accounts.",
-            "Layers" to "A tagging feature that creates analytical dimensions for the line items of different " +
-                "Account Hub modules. A layer can hold multiple codes, and multiple layer codes can be added to " +
-                    "each line item.",
+            S.desktop_balance_sheet_codes to S.desktop_hub_tour_coa_balance_sheet_codes,
+            S.desktop_layers to S.desktop_hub_tour_coa_layers,
         ),
         SetupTourTarget.Chart,
     ),
     Schedule(
-        "Production Schedule",
-        "Add the schedule dates for the deals.",
+        S.desktop_production_schedule,
+        S.desktop_hub_tour_schedule_body,
         listOf(
-            "Deal dates" to "Deal start and end dates.",
-            "Prep / shoot / wrap" to "Prep, shoot and wrap start and end dates.",
-            "Custom" to "Any custom day type and its start and end dates.",
+            S.desktop_deal_dates to S.desktop_hub_tour_schedule_deal_dates,
+            S.desktop_hub_prep_shoot_wrap to S.desktop_hub_tour_schedule_prep_shoot_wrap,
+            S.custom to S.desktop_hub_tour_schedule_custom,
         ),
         SetupTourTarget.DealTab,
     ),
     NonUnionPay(
-        "Non-Union Pay Breakdown",
-        "Here we define the day types, pay rules, and the departments those rules apply to.",
+        S.desktop_hub_non_union_pay_breakdown,
+        S.desktop_hub_tour_non_union_body,
         listOf(
-            "Day types" to "The defaults are SWD, CWD and SCWD. You can add any custom day type and customise the " +
-                "minimum working hours and minimum meal break duration.",
-            "Pay rules" to "Use any type of rule from the list and customise the pay, durations, triggers, " +
-                "increments and other parameters for them.",
+            S.desktop_day_types to S.desktop_hub_tour_non_union_day_types,
+            S.desktop_dm_pay_rules to S.desktop_hub_tour_non_union_pay_rules,
         ),
         SetupTourTarget.DealTab,
     ),
     Allowances(
-        "Allowances & Rentals",
-        "Add the default allowances and rentals for all the deals, which will be added to the deals automatically " +
-            "and can be edited or removed from there.",
+        S.dm_allow_title,
+        S.desktop_hub_tour_allowances_body,
         emptyList(),
         SetupTourTarget.DealTab,
     ),
     Agreements(
-        "Agreement Documents",
-        "Add agreements, NDAs or any other production document here, which will be attached to the deals " +
-            "automatically. These can be removed while creating the deals.",
+        S.desktop_dm_agreement_documents,
+        S.desktop_hub_tour_agreements_body,
         emptyList(),
         SetupTourTarget.DealTab,
     ),
     Conditions(
-        "Standard Deal Conditions",
-        "Add the default clauses inserted into the 'Terms & Conditions' step of every new deal memo.",
+        S.desktop_standard_deal_conditions,
+        S.desktop_hub_tour_conditions_body,
         emptyList(),
         SetupTourTarget.DealTab,
     ),
     Bureau(
-        "Payroll Bureau",
-        "Add the payroll bureaus to the system. These will appear while creating a deal, and one can be selected " +
-            "to attach to the deal.",
+        S.desktop_payroll_bureau,
+        S.desktop_hub_tour_bureau_body,
         emptyList(),
         SetupTourTarget.DealTab,
     ),
+    ;
+
+    val title: String get() = str(titleKey)
+    val body: String get() = str(bodyKey)
+    val notes: List<Pair<String, String>> get() = noteKeys.map { (label, text) -> str(label) to str(text) }
 }
 
 enum class SetupTourTarget { Nav, DealTab, Chart }
 
 /** The modal shown before the production tour — guide page 1, near verbatim. */
 object SetupTourIntro {
-    const val TITLE = "Account Hub — Production Setup"
-    const val BODY = "First we need to set up a few things in the Account Hub before starting work in any other module."
+    val TITLE: String get() = str(S.desktop_hub_account_hub_production_setup)
+    val BODY: String get() = str(S.desktop_hub_tour_intro_body)
 }
 
 /** What the tour has to know about the setup, read off the loaded state. */

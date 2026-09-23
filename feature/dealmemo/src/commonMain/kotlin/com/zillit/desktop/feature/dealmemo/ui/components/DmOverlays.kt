@@ -61,6 +61,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The web's `OverlayModal`: a dimmed, blurred-looking backdrop, a white panel
@@ -164,7 +166,12 @@ fun DmModal(
                             content = headerActions,
                         )
                     }
-                    if (showClose) DmRoundIcon(ZillitIcons.Close, tooltip = "Close", onClick = close, iconSize = 12.dp)
+                    if (showClose) DmRoundIcon(
+                        ZillitIcons.Close,
+                        tooltip = str(S.dm_close),
+                        onClick = close,
+                        iconSize = 12.dp,
+                    )
                 }
                 Box(Modifier.fillMaxWidth().height(1.dp).background(dm.hairline))
                 Column(modifier = Modifier.weight(1f, fill = fullHeight), content = content)
@@ -203,7 +210,7 @@ fun DmConfirm(
     kind: DmConfirmKind = DmConfirmKind.Danger,
     loading: Boolean = false,
     loadingLabel: String = confirmLabel,
-    cancelLabel: String = "Cancel",
+    cancelLabel: String = str(S.dm_cancel),
 ) {
     DmModal(
         visible = visible,
@@ -422,7 +429,7 @@ fun DmPanelHeader(title: String, subtitle: String, onClose: () -> Unit, icon: Im
             Spacer(Modifier.height(2.dp))
             ZillitText(text = subtitle, style = DmType.sans(14.sp, FontWeight.Bold), color = dm.ink, maxLines = 1)
         }
-        DmRoundIcon(icon, tooltip = "Close history", onClick = onClose, iconSize = 12.dp)
+        DmRoundIcon(icon, tooltip = str(S.desktop_close_history), onClick = onClose, iconSize = 12.dp)
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(dm.hairline))
 }

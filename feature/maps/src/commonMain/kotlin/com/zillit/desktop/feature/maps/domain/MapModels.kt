@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.maps.domain
 
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The map tool's data — cities, typed pinned locations, studio zones and the
@@ -33,7 +35,7 @@ data class MapCity(
     val locationCount: Int = 0,
     val hasLocations: Boolean = false,
 ) {
-    val displayName: String get() = name.ifBlank { "City" }
+    val displayName: String get() = name.ifBlank { str(S.city) }
 
     /**
      * Where the camera goes for this city — the web's `getCityCoords`, which
@@ -112,7 +114,10 @@ data class MapLocation(
     val intersection: IntersectionStreets? = null,
     val attachments: List<MapAttachment> = emptyList(),
 ) {
-    val displayName: String get() = name.ifBlank { if (isStudioZone) "Unnamed Zone" else "Unnamed Location" }
+    val displayName: String
+        get() = name.ifBlank {
+            if (isStudioZone) str(S.desktop_map_unnamed_zone) else str(S.desktop_map_unnamed_location)
+        }
 
     /** A zone's radius as every web surface reads it: `miles || radius || 30`. */
     val zoneRadiusMiles: Double get() = miles.takeIf { it > 0 } ?: DEFAULT_ZONE_MILES

@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A file, as its extension on a coloured page.
@@ -44,7 +46,7 @@ fun ZillitFileBadge(
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            text = extension.takeIf { it.isNotBlank() }?.uppercase()?.take(MAX_LETTERS) ?: "FILE",
+            text = extension.takeIf { it.isNotBlank() }?.uppercase()?.take(MAX_LETTERS) ?: str(S.file).uppercase(),
             style = ZillitTheme.typography.labelSmall.copy(
                 fontSize = size.value.times(TEXT_RATIO).sp,
                 fontWeight = FontWeight.Bold,

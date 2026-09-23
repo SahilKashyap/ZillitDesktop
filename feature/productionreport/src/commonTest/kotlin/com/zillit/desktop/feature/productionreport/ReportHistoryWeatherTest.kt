@@ -83,8 +83,9 @@ class ReportHistoryWeatherTest {
             ),
         )
         val entries = ReportHistory.entries(detail)
+        // "Reminder sent" is Android's wording for the shared key, kept over the desktop's old capital S.
         assertEquals(
-            listOf("Reminder Sent", "Reminder Sent", "Approved", "Sent for Signature", "Updated", "Created"),
+            listOf("Reminder sent", "Reminder sent", "Approved", "Sent for Signature", "Updated", "Created"),
             entries.map { it.action },
         )
         assertEquals("Author", entries[0].by, "a name in sent_by matches no member and shows verbatim")

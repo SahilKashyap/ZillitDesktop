@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.cashexpenses.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** Someone a batch can be handed to, as the host resolves them from the crew. */
 data class AssigneeOption(val userId: String, val fullName: String, val designation: String = "")
 
@@ -23,7 +26,8 @@ object BatchAssignment {
 
     fun isUnassigned(batch: ClaimBatch?): Boolean = batch?.assignedTo.isNullOrBlank()
 
-    fun actionLabel(batch: ClaimBatch?): String = if (isUnassigned(batch)) "Assign" else "Reassign"
+    fun actionLabel(batch: ClaimBatch?): String =
+        if (isUnassigned(batch)) str(S.assign) else str(S.desktop_po_reassign)
 
     fun eligible(people: List<AssigneeOption>, batch: ClaimBatch?): List<AssigneeOption> =
         people.filterNot { it.userId == batch?.assignedTo }

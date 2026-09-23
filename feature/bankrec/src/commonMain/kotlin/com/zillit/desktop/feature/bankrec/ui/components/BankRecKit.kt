@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** Monospaced figures — every amount, rate and reference, as on the web. */
 @Composable
@@ -483,9 +485,21 @@ internal fun BrBankIdentity(
             )
         }
         val sort = com.zillit.desktop.feature.bankrec.domain.BankRecFormat.sortCode(sortCode)
-        if (sort.isNotBlank()) ZillitText("Sort: $sort", style = mono(11.5.sp), color = colors.textMuted, maxLines = 1)
+        if (sort.isNotBlank()) {
+            ZillitText(
+                str(S.desktop_dm_sort_code_value, sort),
+                style = mono(11.5.sp),
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+        }
         if (accountNumber.isNotBlank()) {
-            ZillitText("Acc: $accountNumber", style = mono(11.5.sp), color = colors.textMuted, maxLines = 1)
+            ZillitText(
+                str(S.desktop_dm_account_value, accountNumber),
+                style = mono(11.5.sp),
+                color = colors.textMuted,
+                maxLines = 1,
+            )
         }
     }
 }

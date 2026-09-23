@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.timecard.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
@@ -115,21 +117,23 @@ data class TimecardDay(
  * (`WeeklyTimecardModule.jsx:4796`), which is what [NotWorked] serialises to.
  */
 @Serializable
-enum class DayType(val wire: String?, val label: String) {
+enum class DayType(val wire: String?, private val labelKey: String?) {
     /** A standard working (shoot) day — the web's `SWD`. */
-    Worked("SWD", "Worked"),
-    Travel("Travel", "Travel"),
-    Holiday("Holiday", "Holiday"),
+    Worked("SWD", S.desktop_day_type_worked),
+    Travel("Travel", S.desktop_day_type_travel),
+    Holiday("Holiday", S.desktop_holiday),
     // Both phones renamed the display string; the wire code is untouched
     // (web `data/dayTypes.js:43`, Android timecard).
-    Rest("REST", "Day Off"),
-    Sick("Sick", "Sick"),
+    Rest("REST", S.desktop_day_type_day_off),
+    Sick("Sick", S.desktop_day_type_sick),
     /** The timecard-only `IDLE_DAY` code (`dayTypeWire.js:18`). */
-    Idle("IDLE_DAY", "Idle"),
+    Idle("IDLE_DAY", S.desktop_day_type_idle),
     /** No type picked: the day exists in the grid but says nothing yet. */
-    NotWorked(null, "Not worked"),
-    Unknown(null, "—"),
+    NotWorked(null, S.desktop_day_type_not_worked),
+    Unknown(null, null),
     ;
+
+    val label: String get() = labelKey?.let { str(it) } ?: "—"
 
     /** Whether hours entered on this day count towards pay. */
     val isPaidWork: Boolean get() = this == Worked || this == Travel
@@ -284,25 +288,27 @@ data class Deduction(
  * (`timecards.js:194-212`).
  */
 @Serializable
-enum class TimecardStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Submitted("submitted", "Submitted"),
-    AwaitingApproval("awaiting_approval", "Awaiting approval"),
+enum class TimecardStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.draft),
+    Submitted("submitted", S.txt_submitted),
+    AwaitingApproval("awaiting_approval", S.av_subtab_awaiting_approval),
     /** The submitted/awaiting bucket some surfaces roll up to (`timecardStatus.js:20-22`). */
-    Pending("pending", "Pending"),
-    Approved("approved", "Approved"),
+    Pending("pending", S.pending),
+    Approved("approved", S.approved),
     /** The web renders this "ACCT Approved"; the wire enum stays `final_approved`. */
-    FinalApproved("final_approved", "Final approved"),
-    Queried("queried", "Queried"),
-    Rejected("rejected", "Rejected"),
-    Locked("locked", "Locked"),
-    Paid("paid", "Paid"),
+    FinalApproved("final_approved", S.cs_status_final_approved),
+    Queried("queried", S.ah_queried),
+    Rejected("rejected", S.rejected),
+    Locked("locked", S.docusign_prop_locked),
+    Paid("paid", S.desktop_paid),
     /** A previously paid week whose payment was reversed (`timecardStatus.js:34`). */
-    Unpaid("unpaid", "Unpaid"),
+    Unpaid("unpaid", S.desktop_unpaid),
     /** Journal entries written to the General Ledger — terminal (`timecardStatus.js:35-39`). */
-    Posted("posted", "Posted"),
-    Unknown("", "Unknown"),
+    Posted("posted", S.ah_step_posted),
+    Unknown("", S.desktop_unknown),
     ;
+
+    val label: String get() = str(labelKey)
 
     val isEditable: Boolean get() = this == Draft || this == Queried || this == Rejected
 
@@ -400,18 +406,18 @@ data class TimecardDraft(
 
     /** The first reason this week cannot be submitted, or null. */
     fun validationError(): String? = when {
-        weekStarting == null -> "Pick the week this timecard covers."
-        days.isEmpty() -> "A timecard needs at least one day."
+        weekStarting == null -> str(S.desktop_timecard_pick_week_error)
+        days.isEmpty() -> str(S.desktop_timecard_needs_one_day)
         // A week of nothing but rest days is a real submission — a runner on
         // standby still files one — so hours are not required outright. Times
         // are, on any day claimed as worked.
         days.any { it.dayType.isPaidWork && it.workedHours <= 0 } ->
-            "Every worked day needs its hours."
+            str(S.desktop_timecard_worked_day_needs_hours)
 
         // An allowance claimed at nothing is a claim payroll cannot pay and
         // cannot query — it looks deliberate. Caught here rather than there.
         days.any { day -> day.allowances.any { it.amount <= 0 } } ->
-            "Every allowance needs an amount."
+            str(S.desktop_timecard_allowance_needs_amount)
 
         // An allowance on a day nobody worked is almost always a mis-click on
         // the row above, and it is paid before anyone notices. Only days this
@@ -420,7 +426,7 @@ data class TimecardDraft(
         days.any { day ->
             (day.dayType.isKnownUnpaid || day.dayType == DayType.NotWorked) && day.allowances.isNotEmpty()
         } ->
-            "Allowances can only be claimed on a day that was worked."
+            str(S.desktop_timecard_allowance_on_worked_day)
 
         else -> null
     }

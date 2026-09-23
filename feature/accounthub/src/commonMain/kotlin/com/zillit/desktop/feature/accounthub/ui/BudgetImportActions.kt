@@ -8,6 +8,8 @@ import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
 import com.zillit.desktop.feature.accounthub.domain.BudgetImports
 import com.zillit.desktop.feature.accounthub.domain.PickedAgreementFile
 import com.zillit.desktop.feature.accounthub.domain.SetupUpload
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Importing a budget file — the web's `ImportBudgetWizard`.
@@ -132,7 +134,7 @@ internal class BudgetImportActions(
                     meta = BudgetImportMeta(
                         version = BudgetImports.suggestNextVersion(known),
                         label = BudgetImports.labelFrom(fileName),
-                        description = "Imported from $fileName",
+                        description = str(S.desktop_hub_imported_from_x, fileName),
                     ),
                 )
             }

@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
@@ -84,9 +86,9 @@ fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         // hides its own status column.
         if (state.destination == CashDestination.ApprovalQueue && state.floatApprovals.isNotEmpty()) {
             ZillitSectionCard(
-                title = "Float requests",
+                title = str(S.desktop_ce_float_requests),
                 icon = ZillitIcons.Wallet,
-                meta = "${state.floatApprovals.size} waiting",
+                meta = str(S.desktop_ce_waiting_count, state.floatApprovals.size),
                 padded = false,
                 modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
             ) {
@@ -94,7 +96,7 @@ fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                     rows = state.floatApprovals,
                     columns = floatColumns() + floatApprovalActions(state, onEvent),
                     key = { it.id },
-                    emptyTitle = "No float requests waiting",
+                    emptyTitle = str(S.desktop_ce_no_float_requests),
                 )
             }
         }
@@ -107,7 +109,11 @@ fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 ZillitSectionCard(
                     title = state.destination.label,
                     icon = ZillitIcons.Receipt,
-                    meta = "${batches.size} batch${if (batches.size == 1) "" else "es"}",
+                    meta = if (batches.size == 1) {
+                        str(S.desktop_ce_batch_count_one, batches.size)
+                    } else {
+                        str(S.desktop_ce_batch_count_other, batches.size)
+                    },
                     padded = false,
                     modifier = Modifier.fillMaxHeight(),
                 ) {
@@ -125,15 +131,15 @@ fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             }
 
             ZillitSectionCard(
-                title = "Batch detail",
+                title = str(S.desktop_ce_batch_detail),
                 icon = ZillitIcons.Ledger,
                 modifier = Modifier.weight(DETAIL_WEIGHT).fillMaxHeight(),
                 padded = false,
             ) {
                 if (selected == null) {
                     ZillitEmptyState(
-                        title = "Pick a batch",
-                        message = "Its receipts, coding and history show here.",
+                        title = str(S.desktop_ce_pick_a_batch),
+                        message = str(S.desktop_ce_pick_batch_hint),
                         icon = ZillitIcons.Eye,
                     )
                 } else {
@@ -154,11 +160,11 @@ private fun QueueHeader(state: CashUiState, count: Int, onEvent: (CashEvent) -> 
         ZillitSearchField(
             value = state.search,
             onValueChange = { onEvent(CashEvent.Search(it)) },
-            placeholder = "Search by reference or submitter",
+            placeholder = str(S.desktop_ce_search_batches),
             modifier = Modifier.width(SEARCH_WIDTH),
         )
         ZillitText(
-            text = "$count showing",
+            text = str(S.desktop_card_showing_count, count),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
             modifier = Modifier.weight(1f),
@@ -169,7 +175,7 @@ private fun QueueHeader(state: CashUiState, count: Int, onEvent: (CashEvent) -> 
             val limit = state.viewer.metadata.postingLimit
             if (limit != null) {
                 ZillitStatusPill(
-                    label = "Your posting limit: ${money(limit, null)}",
+                    label = str(S.desktop_ce_your_posting_limit, money(limit, null)),
                     tone = StatusTone.Neutral,
                 )
             }
@@ -196,13 +202,13 @@ private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = batch.reference.ifBlank { "Batch ${batch.id.take(REF_FALLBACK)}" },
+                    text = batch.reference.ifBlank { str(S.desktop_ce_batch_ref, batch.id.take(REF_FALLBACK)) },
                     style = ZillitTheme.typography.titleMedium,
                 )
                 CashPerson(
                     userId = batch.userId,
                     recordedName = batch.holderName,
-                    secondary = "Submitted ${date(batch.createdAt)}",
+                    secondary = str(S.desktop_ce_submitted_on, date(batch.createdAt)),
                     modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
                 )
             }
@@ -213,19 +219,17 @@ private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
         ZillitDivider()
 
         Row(modifier = Modifier.fillMaxWidth()) {
-            DetailFigure("Total", money(batch.totalGross, batch.currency), Modifier.weight(1f))
-            DetailFigure("Receipts", batch.claimCount.toString(), Modifier.weight(1f))
+            DetailFigure(str(S.ah_total_label), money(batch.totalGross, batch.currency), Modifier.weight(1f))
+            DetailFigure(str(S.ah_receipts_label), batch.claimCount.toString(), Modifier.weight(1f))
             DetailFigure(
-                label = "Settlement",
+                label = str(S.desktop_ce_settlement),
                 value = Settlement.label(batch.settlementType),
                 modifier = Modifier.weight(1f),
             )
         }
         if (batch.reimbursementAmount > 0) {
             ZillitNotice(
-                text = "${money(batch.reimbursementAmount, batch.currency)} is owed back to " +
-                    (submitter ?: "the submitter") +
-                    (batch.paymentMethod?.let { " via $it" } ?: ""),
+                text = owedBackText(batch, submitter),
                 tone = StatusTone.Progress,
                 icon = ZillitIcons.Bank,
             )
@@ -240,7 +244,7 @@ private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
 
         if (batch.claims.isNotEmpty()) {
             ZillitDivider()
-            ZillitText(text = "Receipts", style = ZillitTheme.typography.titleSmall)
+            ZillitText(text = str(S.ah_receipts_label), style = ZillitTheme.typography.titleSmall)
             batch.claims.forEach { claim ->
                 ClaimRow(
                     onEvent = onEvent,
@@ -314,7 +318,7 @@ private fun ClaimRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZillitText(
-                text = claim.description.ifBlank { "Receipt" },
+                text = claim.description.ifBlank { str(S.desktop_receipt) },
                 style = ZillitTheme.typography.bodyMedium,
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
@@ -346,11 +350,11 @@ private fun ClaimRow(
             // An uncoded receipt is named as such rather than left blank —
             // a missing pill reads as "nothing to see", which is the opposite.
             if (claim.costCode.isNullOrBlank() && claim.lineItems.isEmpty()) {
-                ZillitStatusPill(label = "Uncoded", tone = StatusTone.Pending)
+                ZillitStatusPill(label = str(S.desktop_uncoded), tone = StatusTone.Pending)
             }
             if (claim.vatAmount > 0) {
                 ZillitStatusPill(
-                    label = "VAT ${money(claim.vatAmount, currency)}",
+                    label = str(S.desktop_ce_vat_amount, money(claim.vatAmount, currency)),
                     tone = StatusTone.Progress,
                 )
             }
@@ -360,7 +364,7 @@ private fun ClaimRow(
         // hunting a discrepancy needs to know the engine put it there.
         claim.lineItems.filter { it.autoDeduction }.forEach { line ->
             ZillitStatusPill(
-                label = "Auto deduction · ${line.description} ${money(line.total, currency)}",
+                label = str(S.desktop_ce_auto_deduction, line.description, money(line.total, currency)),
                 tone = StatusTone.Escalated,
             )
         }
@@ -371,7 +375,11 @@ private fun ClaimRow(
                     // Named for what opens: on most productions this is a
                     // photograph, and "view receipt" is what the person
                     // checking the figures is actually after.
-                    text = if (claim.receiptIsPdf) "Open receipt (PDF)" else "View receipt",
+                    text = if (claim.receiptIsPdf) {
+                        str(S.desktop_card_open_receipt_pdf)
+                    } else {
+                        str(S.desktop_card_view_receipt)
+                    },
                     onClick = { onEvent(CashEvent.ViewReceipt(receipt)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -379,7 +387,11 @@ private fun ClaimRow(
             }
             onCode?.let { code ->
                 ZillitButton(
-                    text = if (claim.lineItems.isEmpty()) "Code this receipt" else "Edit coding",
+                    text = if (claim.lineItems.isEmpty()) {
+                        str(S.desktop_ce_code_this_receipt)
+                    } else {
+                        str(S.desktop_ce_edit_coding)
+                    },
                     onClick = code,
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -387,6 +399,18 @@ private fun ClaimRow(
                 )
             }
         }
+    }
+}
+
+/** "£120.00 is owed back to Ada Lovelace via BACS", with the parts that are there. */
+private fun owedBackText(batch: ClaimBatch, submitter: String?): String {
+    val amount = money(batch.reimbursementAmount, batch.currency)
+    val who = submitter ?: str(S.desktop_ce_the_submitter)
+    val method = batch.paymentMethod
+    return if (method.isNullOrBlank()) {
+        str(S.desktop_ce_owed_back_to, amount, who)
+    } else {
+        str(S.desktop_ce_owed_back_to_via, amount, who, method)
     }
 }
 
@@ -409,20 +433,20 @@ private data class BatchAction(
 @Suppress("LongMethod", "CyclomaticComplexMethod") // A rights table; flattening it is what makes it readable.
 private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction> {
     val viewer = state.viewer
-    val query = BatchAction("Query", ButtonVariant.Tertiary) {
+    val query = BatchAction(str(S.ah_cd_query), ButtonVariant.Tertiary) {
         CashPrompt.WithReason(
             action = ReasonedAction.QueryBatch,
             targetId = it.id,
-            title = "Query this batch",
-            label = "What needs correcting",
+            title = str(S.desktop_ce_query_this_batch),
+            label = str(S.desktop_timecard_query_label),
         )
     }
-    val reject = BatchAction("Reject", ButtonVariant.Danger) {
+    val reject = BatchAction(str(S.reject), ButtonVariant.Danger) {
         CashPrompt.WithReason(
             action = ReasonedAction.RejectBatch,
             targetId = it.id,
-            title = "Reject this batch",
-            label = "Why it is being rejected",
+            title = str(S.desktop_ce_reject_this_batch),
+            label = str(S.desktop_ce_why_it_is_being_rejected),
         )
     }
 
@@ -433,7 +457,11 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
     val assign = BatchAction(BatchAssignment.actionLabel(batch), ButtonVariant.Secondary) {
         CashPrompt.Assign(
             batchId = it.id,
-            title = "${BatchAssignment.actionLabel(it)} batch ${it.reference}".trim(),
+            title = if (BatchAssignment.isUnassigned(it)) {
+                str(S.desktop_ce_assign_batch, it.reference).trim()
+            } else {
+                str(S.desktop_ce_reassign_batch, it.reference).trim()
+            },
             label = BatchAssignment.actionLabel(it),
         )
     }
@@ -441,12 +469,12 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
     return when (state.destination) {
         CashDestination.CodingQueue -> if (viewer.isCoordinator) {
             listOf(
-                BatchAction("Submit coding", ButtonVariant.Primary) {
+                BatchAction(str(S.desktop_ce_submit_coding), ButtonVariant.Primary) {
                     CashPrompt.Confirm(
                         ConfirmAction.SaveAndSubmitCoded,
                         it.id,
-                        "Submit coding",
-                        "The batch moves on to the accounts team.",
+                        str(S.desktop_ce_submit_coding),
+                        str(S.desktop_ce_submit_coding_note),
                     )
                 },
                 query,
@@ -457,12 +485,12 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
 
         CashDestination.AuditQueue -> if (viewer.isAccountant) {
             listOf(
-                BatchAction("Verify", ButtonVariant.Primary) {
+                BatchAction(str(S.txt_verify), ButtonVariant.Primary) {
                     CashPrompt.Confirm(
                         ConfirmAction.SaveAndVerify,
                         it.id,
-                        "Verify this batch",
-                        "Tax is treated as extracted and the batch moves to approval.",
+                        str(S.desktop_ce_verify_this_batch),
+                        str(S.desktop_ce_verify_note),
                     )
                 },
                 query,
@@ -475,12 +503,12 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
         CashDestination.ApprovalQueue, CashDestination.ClaimReview -> buildList {
             if (viewer.isApprover) {
                 add(
-                    BatchAction("Approve", ButtonVariant.Primary) {
+                    BatchAction(str(S.approve), ButtonVariant.Primary) {
                         CashPrompt.Confirm(
                             ConfirmAction.ApproveBatch,
                             it.id,
-                            "Approve this batch",
-                            "It becomes available for the accounts team to post.",
+                            str(S.desktop_ce_approve_this_batch),
+                            str(S.desktop_ce_approve_batch_note),
                         )
                     },
                 )
@@ -491,12 +519,12 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
             // that right existing.
             if (viewer.canOverrideBatch()) {
                 add(
-                    BatchAction("Override", ButtonVariant.Secondary) {
+                    BatchAction(str(S.dm_nom_table_override), ButtonVariant.Secondary) {
                         CashPrompt.Confirm(
                             ConfirmAction.OverrideBatch,
                             it.id,
-                            "Override the approval chain",
-                            "The batch skips its remaining approvers. This is recorded against your name.",
+                            str(S.desktop_card_override_chain),
+                            str(S.desktop_ce_override_batch_note),
                         )
                     },
                 )
@@ -506,12 +534,12 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
         CashDestination.PettyCashSignOff, CashDestination.OutOfPocketSignOff -> if (viewer.canSeeSignOff) {
             listOf(
                 assign,
-                BatchAction("Sign off & post", ButtonVariant.Primary) {
+                BatchAction(str(S.desktop_ce_sign_off_and_post), ButtonVariant.Primary) {
                     CashPrompt.Confirm(
                         ConfirmAction.PostBatch,
                         it.id,
-                        "Post this batch",
-                        "${money(it.totalGross, it.currency)} goes to the ledger. This cannot be undone here.",
+                        str(S.desktop_ce_post_this_batch),
+                        str(S.desktop_card_goes_to_ledger_undone, money(it.totalGross, it.currency)),
                     )
                 },
                 reject,
@@ -523,12 +551,12 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
         CashDestination.PostLedger, CashDestination.OutOfPocketPost -> if (viewer.isAccountant) {
             buildList {
                 add(
-                    BatchAction("Post to ledger", ButtonVariant.Primary) {
+                    BatchAction(str(S.ah_post_to_ledger), ButtonVariant.Primary) {
                         CashPrompt.Confirm(
                             ConfirmAction.PostBatch,
                             it.id,
-                            "Post this batch",
-                            "${money(it.totalGross, it.currency)} goes to the ledger. This cannot be undone here.",
+                            str(S.desktop_ce_post_this_batch),
+                            str(S.desktop_card_goes_to_ledger_undone, money(it.totalGross, it.currency)),
                         )
                     },
                 )
@@ -536,12 +564,12 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
                 // that is the one offered.
                 if (!viewer.canPost(batch.totalGross)) {
                     add(
-                        BatchAction("Escalate", ButtonVariant.Secondary) {
+                        BatchAction(str(S.desktop_ce_escalate), ButtonVariant.Secondary) {
                             CashPrompt.WithReason(
                                 action = ReasonedAction.EscalateBatch,
                                 targetId = it.id,
-                                title = "Escalate for senior sign-off",
-                                label = "Why it needs a senior",
+                                title = str(S.desktop_ce_escalate_for_senior),
+                                label = str(S.desktop_ce_why_it_needs_a_senior),
                             )
                         },
                     )
@@ -565,19 +593,24 @@ private fun floatApprovalActions(
         header = "",
         width = ColumnWidth.Fixed(FLOAT_ACTION_COLUMN),
         cell = { row ->
-            val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: "this crew member"
+            val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName)
+                ?: str(S.desktop_this_crew_member)
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 if (state.viewer.isApprover) {
                     ZillitButton(
-                        text = "Approve",
+                        text = str(S.approve),
                         onClick = {
                             onEvent(
                                 CashEvent.Ask(
                                     CashPrompt.Confirm(
                                         ConfirmAction.ApproveFloat,
                                         row.id,
-                                        "Approve this float",
-                                        "${money(row.requestedAmount, row.currency)} for $holder.",
+                                        str(S.desktop_ce_approve_this_float),
+                                        str(
+                                            S.desktop_timecard_approve_message,
+                                            money(row.requestedAmount, row.currency),
+                                            holder,
+                                        ),
                                     ),
                                 ),
                             )
@@ -586,15 +619,15 @@ private fun floatApprovalActions(
                         enabled = !state.busy,
                     )
                     ZillitButton(
-                        text = "Reject",
+                        text = str(S.reject),
                         onClick = {
                             onEvent(
                                 CashEvent.Ask(
                                     CashPrompt.WithReason(
                                         action = ReasonedAction.RejectFloat,
                                         targetId = row.id,
-                                        title = "Reject this float request",
-                                        label = "Why it is being refused",
+                                        title = str(S.desktop_ce_reject_this_float),
+                                        label = str(S.desktop_timecard_reject_label),
                                     ),
                                 ),
                             )
@@ -605,15 +638,15 @@ private fun floatApprovalActions(
                     )
                 } else if (state.viewer.canOverrideFloat()) {
                     ZillitButton(
-                        text = "Override",
+                        text = str(S.dm_nom_table_override),
                         onClick = {
                             onEvent(
                                 CashEvent.Ask(
                                     CashPrompt.Confirm(
                                         ConfirmAction.OverrideFloat,
                                         row.id,
-                                        "Override the approval chain",
-                                        "The float skips its approvers. This is recorded against your name.",
+                                        str(S.desktop_card_override_chain),
+                                        str(S.desktop_ce_override_float_note),
                                     ),
                                 ),
                             )
@@ -638,29 +671,29 @@ fun PaymentRoutingPage(state: CashUiState) {
         StatRow(
             listOf(
                 StatTileSpec(
-                    label = "BACS",
+                    label = "BACS", // The UK payment scheme, not translated.
                     value = money(routing?.bacs, null),
-                    sub = "Bank transfer",
+                    sub = str(S.desktop_ce_bank_transfer),
                     tone = StatusTone.Progress,
                     icon = ZillitIcons.Bank,
                 ),
                 StatTileSpec(
-                    label = "Payroll",
+                    label = str(S.dm_step9_title),
                     value = money(routing?.payroll, null),
-                    sub = "Added to the next run",
+                    sub = str(S.desktop_ce_added_to_next_run),
                     tone = StatusTone.Done,
                     icon = ZillitIcons.Users,
                 ),
                 StatTileSpec(
-                    label = "Total",
+                    label = str(S.ah_total_label),
                     value = money(routing?.total, null),
-                    sub = "Approved and unpaid",
+                    sub = str(S.desktop_ce_approved_and_unpaid),
                     icon = ZillitIcons.Ledger,
                 ),
             ),
         )
         ZillitSectionCard(
-            title = "Routed claims",
+            title = str(S.desktop_ce_routed_claims),
             icon = ZillitIcons.Bank,
             padded = false,
             modifier = Modifier.weight(1f),
@@ -670,8 +703,8 @@ fun PaymentRoutingPage(state: CashUiState) {
                 columns = batchColumns(accountant = true),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "Nothing waiting to pay",
-                emptyMessage = "Approved out-of-pocket claims appear here with the rail they are paid on.",
+                emptyTitle = str(S.desktop_ce_nothing_waiting_to_pay),
+                emptyMessage = str(S.desktop_ce_routed_claims_empty),
             )
         }
     }
@@ -688,17 +721,17 @@ private fun ClaimBatch.matches(query: String, people: CashPeople): Boolean {
 
 /** Empty states that name the queue, so "nothing here" is never ambiguous. */
 private fun CashUiState.emptyTitle(): String = when {
-    search.isNotBlank() -> "Nothing matches that search"
-    destination == CashDestination.History -> "No posted batches yet"
-    else -> "Nothing waiting"
+    search.isNotBlank() -> str(S.dm_nda_empty_search)
+    destination == CashDestination.History -> str(S.desktop_ce_no_posted_batches)
+    else -> str(S.desktop_nothing_waiting)
 }
 
 private fun CashUiState.emptyMessage(): String? = when {
-    search.isNotBlank() -> "Clear the search to see the whole queue."
-    destination == CashDestination.CodingQueue -> "Batches appear here when a coordinator needs to code them."
-    destination == CashDestination.AuditQueue -> "Coded batches arrive here for tax extraction and verification."
-    destination == CashDestination.ApprovalQueue -> "Verified batches and float requests await your decision here."
-    destination == CashDestination.History -> "Batches show here once they have been posted to the ledger."
+    search.isNotBlank() -> str(S.desktop_card_clear_search_hint)
+    destination == CashDestination.CodingQueue -> str(S.desktop_ce_coding_queue_empty)
+    destination == CashDestination.AuditQueue -> str(S.desktop_ce_audit_queue_empty)
+    destination == CashDestination.ApprovalQueue -> str(S.desktop_ce_approval_queue_empty)
+    destination == CashDestination.History -> str(S.desktop_ce_history_empty)
     else -> null
 }
 

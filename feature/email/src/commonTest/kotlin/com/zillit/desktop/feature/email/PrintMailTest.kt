@@ -80,6 +80,6 @@ class PrintMailTest {
 
     @Test
     fun `a blank subject prints as no subject`() {
-        assertTrue(printableHtml("", listOf(original)).contains("<title>(no subject)</title>"))
+        assertTrue(printableHtml("", listOf(original)).contains("<title>(No Subject)</title>"))
     }
 }

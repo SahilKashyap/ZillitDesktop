@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.crewlist.domain.CrewListHost
 import com.zillit.desktop.feature.crewlist.domain.CrewListPdf
 import com.zillit.desktop.feature.crewlist.domain.CrewListRepository
 import com.zillit.desktop.feature.crewlist.domain.CrewListViewer
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The PDF and its two destinations — the web's Generate PDF chooser,
@@ -68,12 +70,12 @@ internal class CrewDocumentController(
             store.state.problems.isNotEmpty() -> store.toast(
                 store.copy(
                     "crew_list_fix_errors_before_generating",
-                    "Please fix the highlighted phone / country code errors before generating.",
+                    str(S.desktop_cl_fix_errors_before_generating),
                 ),
                 CrewListEffect.Tone.Error,
             )
             !viewer.mayGenerate ->
-                store.toast("You don't have rights to generate the ${viewer.toolName}.", CrewListEffect.Tone.Error)
+                store.toast(str(S.desktop_cl_no_rights_to_generate, viewer.toolName), CrewListEffect.Tone.Error)
             else -> store.update { copy(chooserOpen = true) }
         }
     }
@@ -96,7 +98,7 @@ internal class CrewDocumentController(
             when (val generated = repository.generate(request)) {
                 is ZillitResult.Failure -> {
                     store.update { copy(working = null) }
-                    failed(generated.error, "Failed to generate PDF")
+                    failed(generated.error, str(S.desktop_cl_failed_to_generate_pdf))
                 }
                 is ZillitResult.Success -> {
                     store.update { copy(working = null) }
@@ -140,7 +142,8 @@ internal class CrewDocumentController(
         val bytes = viewedBytes ?: return download(viewed.pdf)
         store.launch {
             when (val saved = host.savePdf(viewed.pdf.fileName, bytes)) {
-                is ZillitResult.Success -> store.toast("Saved to Downloads.", CrewListEffect.Tone.Success)
+                is ZillitResult.Success ->
+                    store.toast(str(S.docusign_signing_attachment_saved), CrewListEffect.Tone.Success)
                 is ZillitResult.Failure -> failed(saved.error, NOT_SAVED)
             }
         }
@@ -154,7 +157,10 @@ internal class CrewDocumentController(
             }
             when (saved) {
                 is ZillitResult.Success ->
-                    store.toast("${resolveViewer().toolName} saved to Downloads.", CrewListEffect.Tone.Success)
+                    store.toast(
+                        str(S.desktop_cl_saved_to_downloads, resolveViewer().toolName),
+                        CrewListEffect.Tone.Success,
+                    )
                 is ZillitResult.Failure -> failed(saved.error, NOT_SAVED)
             }
         }
@@ -167,7 +173,7 @@ internal class CrewDocumentController(
             !viewer.canPost -> {
                 val refusal = store.copy(
                     "crew_list_posting_right_lable",
-                    "You don’t have posting rights to publish ‘{tool_name}’",
+                    str(S.desktop_cl_no_posting_rights_to_publish),
                 )
                 store.refuse(refusal, viewer.toolName)
                 false
@@ -176,8 +182,7 @@ internal class CrewDocumentController(
                 store.refuse(
                     store.copy(
                         "you_do_not_have_posting_rights_on_info",
-                        "You don't have posting rights on info. " +
-                            "Please request one of the admins to give you posting rights",
+                        str(S.desktop_cl_no_posting_rights_on_info),
                     ),
                     INFO,
                 )
@@ -190,7 +195,7 @@ internal class CrewDocumentController(
     private fun mayDistribute(): Boolean {
         val viewer = viewer()
         if (!viewer.canDistribute) {
-            store.refuse("You don't have permission to distribute to Document Distribution.", DOC_DISTRIBUTION)
+            store.refuse(str(S.dd_no_distribute_permission), DOC_DISTRIBUTION)
         }
         return viewer.canDistribute
     }
@@ -205,14 +210,14 @@ internal class CrewDocumentController(
                     viewedBytes = null
                     store.update { copy(working = null, pdf = null, chooserOpen = false) }
                     store.toast(
-                        store.copy("CrewListPublished", "{tool_name} Published Successfully"),
+                        store.copy("CrewListPublished", str(S.desktop_cl_published_successfully)),
                         CrewListEffect.Tone.Success,
                     )
                 }
                 is ZillitResult.Failure -> {
                     store.update { copy(working = null) }
                     store.toast(
-                        published.error.readable().ifBlank { "The $toolName could not be published." },
+                        published.error.readable().ifBlank { str(S.desktop_cl_could_not_be_published, toolName) },
                         CrewListEffect.Tone.Error,
                     )
                 }
@@ -248,10 +253,10 @@ internal class CrewDocumentController(
         store.toast(error.readable().ifBlank { fallback }, CrewListEffect.Tone.Error)
 
     private companion object {
-        const val NOT_SAVED = "The PDF could not be saved."
+        val NOT_SAVED: String get() = str(S.desktop_pdf_could_not_be_saved)
         const val INFO = "Info"
         const val DOC_DISTRIBUTION = "Document Distribution"
-        const val DISTRIBUTION_FAILED = "Couldn't send to Document Distribution — please try again"
+        val DISTRIBUTION_FAILED: String get() = str(S.dd_distribute_error)
 
         /** Wide enough to read a crew table at the viewer's full width, sharp on a 2× screen. */
         const val VIEWER_PAGE_WIDTH_PX = 1600

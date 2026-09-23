@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.SheetTime
 import com.zillit.desktop.feature.callsheet.domain.PageCell
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
@@ -101,7 +103,7 @@ private fun KeyValueBody(
     val doc = docColors()
     if (cell.rows.isEmpty()) {
         Text(
-            "No fields",
+            str(S.desktop_no_fields),
             style = sheetText(10.sp),
             color = doc.meta,
             textAlign = TextAlign.Center,
@@ -220,7 +222,7 @@ internal fun GenericTable(
         Column(Modifier.fillMaxWidth()) {
             if (!cell.effectiveHideTitle) {
                 SectionBar(
-                    cell.title.ifBlank { "Table" },
+                    cell.title.ifBlank { str(S.desktop_table) },
                     ctx.selected,
                     ctx.onSelect,
                     Modifier.border(1.dp, doc.rule),
@@ -278,7 +280,7 @@ private fun GridTable(cell: PageCell, ctx: SectionContext, headerSize: Int, vert
         }
         if (cell.rows.isEmpty()) {
             Text(
-                "Empty",
+                str(S.desktop_empty),
                 style = sheetText(10.sp),
                 color = doc.faint,
                 modifier = Modifier
@@ -364,7 +366,7 @@ internal fun CrewTable(cell: PageCell, ctx: SectionContext, modifier: Modifier =
         Column(Modifier.fillMaxWidth()) {
             if (!cell.hideTitle) {
                 SectionBar(
-                    cell.title.ifBlank { "Department" },
+                    cell.title.ifBlank { str(S.department) },
                     ctx.selected,
                     ctx.onSelect,
                     Modifier.border(1.dp, doc.rule),
@@ -389,7 +391,7 @@ internal fun CrewTable(cell: PageCell, ctx: SectionContext, modifier: Modifier =
                 Column(Modifier.fillMaxWidth().rules(doc.rule, top = cell.hideTitle, start = true)) {
                     if (cell.rows.isEmpty()) {
                         Text(
-                            "No members",
+                            str(S.desktop_no_members),
                             style = sheetText(10.sp),
                             color = doc.faint,
                             textAlign = TextAlign.Center,
@@ -448,7 +450,7 @@ internal fun RadioChannels(cell: PageCell, ctx: SectionContext, modifier: Modifi
         Column(Modifier.fillMaxWidth().border(1.dp, doc.rule)) {
             if (!cell.effectiveHideTitle) {
                 SectionBar(
-                    cell.title.ifBlank { "RADIO CHANNELS" },
+                    cell.title.ifBlank { str(S.desktop_radio_channels_upper) },
                     ctx.selected,
                     ctx.onSelect,
                     Modifier.rules(doc.rule, bottom = true),
@@ -498,7 +500,7 @@ internal fun NotesBox(cell: PageCell, ctx: SectionContext, modifier: Modifier = 
         Column(Modifier.fillMaxWidth()) {
             if (!cell.effectiveHideTitle) {
                 SectionBar(
-                    cell.title.ifBlank { "Notes" },
+                    cell.title.ifBlank { str(S.notes) },
                     ctx.selected,
                     ctx.onSelect,
                     Modifier.rules(doc.rule, bottom = true),
@@ -514,7 +516,7 @@ internal fun NotesBox(cell: PageCell, ctx: SectionContext, modifier: Modifier = 
             ) {
                 when {
                     items.isEmpty() -> Text(
-                        "Click to add notes",
+                        str(S.desktop_click_to_add_notes),
                         style = sheetText(10.sp).copy(fontStyle = FontStyle.Italic),
                         color = doc.faint,
                     )
@@ -627,7 +629,7 @@ private fun WeatherText(cell: PageCell, raw: String) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp)) {
         if (raw.isBlank()) {
             Text(
-                "Click to add weather information",
+                str(S.desktop_click_to_add_weather),
                 style = sheetText(10.sp).copy(fontStyle = FontStyle.Italic),
                 color = doc.dash,
                 textAlign = TextAlign.Center,
@@ -638,7 +640,7 @@ private fun WeatherText(cell: PageCell, raw: String) {
                 buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
                         append(
-                            "${cell.columns.firstOrNull()?.label?.ifBlank { null } ?: "Weather"}: ",
+                            "${cell.columns.firstOrNull()?.label?.ifBlank { null } ?: str(S.recce_label_weather)}: ",
                         )
                     }
                     append(raw.trim())
@@ -677,7 +679,7 @@ internal fun ApproversBlock(
     SelectFrame(selected, onSelect, Modifier.fillMaxWidth().padding(bottom = 6.dp).border(1.dp, doc.rule)) {
         Column(Modifier.fillMaxWidth()) {
             SectionBar(
-                "Approvers",
+                str(S.desktop_approvers),
                 selected,
                 onSelect,
                 Modifier.rules(doc.rule, bottom = true),
@@ -692,7 +694,7 @@ internal fun ApproversBlock(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (approvers.isEmpty()) {
-                    Text("No approvers selected", style = sheetText(10.5.sp), color = doc.meta)
+                    Text(str(S.desktop_no_approvers_selected), style = sheetText(10.5.sp), color = doc.meta)
                 }
                 approvers.chunked(APPROVER_COLUMNS).forEach { line ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -734,7 +736,7 @@ internal fun BarToggle(expanded: Boolean, onToggle: () -> Unit) {
     Box(Modifier.size(16.dp).plainClick(onClick = onToggle), contentAlignment = Alignment.Center) {
         Icon(
             if (expanded) ZillitIcons.ChevronDown else ZillitIcons.ChevronRight,
-            contentDescription = if (expanded) "Collapse" else "Expand",
+            contentDescription = if (expanded) str(S.desktop_collapse) else str(S.desktop_expand),
             tint = Color.White,
             modifier = Modifier.size(10.dp),
         )

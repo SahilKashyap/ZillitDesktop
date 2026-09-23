@@ -39,6 +39,8 @@ import com.zillit.desktop.feature.drive.domain.UploadState
 import com.zillit.desktop.feature.drive.domain.formatBytes
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The floating bottom-right panel for uploads in flight — the web's
@@ -76,16 +78,16 @@ internal fun OperationsPanel(state: DriveUiState, onEvent: (DriveEvent) -> Unit,
                 ZillitIcon(icon = ZillitIcons.Upload, tint = colors.accent, size = ZillitTheme.spacing.lg)
                 ZillitText(
                     text = if (state.activeUploads.isEmpty()) {
-                        "Uploads complete"
+                        str(S.desktop_drive_uploads_complete)
                     } else {
-                        "Uploading ${state.activeUploads.size} of ${uploads.size}"
+                        str(S.desktop_drive_uploading_of, state.activeUploads.size, uploads.size)
                     },
                     style = ZillitTheme.typography.label,
                     modifier = Modifier.weight(1f),
                 )
                 if (uploads.any { it.isSettled }) {
                     ZillitButton(
-                        text = "Clear completed",
+                        text = str(S.desktop_drive_clear_completed),
                         onClick = { onEvent(DriveEvent.ClearFinishedUploads) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -93,7 +95,11 @@ internal fun OperationsPanel(state: DriveUiState, onEvent: (DriveEvent) -> Unit,
                 }
                 ZillitIconButton(
                     icon = if (state.operationsExpanded) ZillitIcons.ChevronDown else ZillitIcons.ChevronUp,
-                    contentDescription = if (state.operationsExpanded) "Collapse" else "Expand",
+                    contentDescription = if (state.operationsExpanded) {
+                        str(S.desktop_collapse)
+                    } else {
+                        str(S.desktop_expand)
+                    },
                     onClick = { onEvent(DriveEvent.ToggleOperations) },
                 )
             }
@@ -117,11 +123,12 @@ internal fun OperationsPanel(state: DriveUiState, onEvent: (DriveEvent) -> Unit,
 private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val (label, tone) = when (val s = upload.state) {
-        UploadState.Queued -> "Queued" to StatusTone.Neutral
-        is UploadState.InProgress -> "Uploading" to StatusTone.Progress
-        UploadState.Completing -> "Finishing" to StatusTone.Progress
-        is UploadState.Done -> "Completed" to StatusTone.Done
-        is UploadState.Failed -> (if (s.reason == "Cancelled") "Cancelled" else "Failed") to StatusTone.Rejected
+        UploadState.Queued -> str(S.drive_pending_chip) to StatusTone.Neutral
+        is UploadState.InProgress -> str(S.txt_uploading) to StatusTone.Progress
+        UploadState.Completing -> str(S.drive_uploads_status_posting) to StatusTone.Progress
+        is UploadState.Done -> str(S.completed) to StatusTone.Done
+        is UploadState.Failed ->
+            (if (s.reason == "Cancelled") str(S.cancelled) else str(S.dd_legend_failed)) to StatusTone.Rejected
     }
     Column(
         modifier = Modifier.fillMaxWidth().padding(
@@ -145,13 +152,13 @@ private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
             if (upload.isSettled) {
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Remove ${upload.fileName}",
+                    contentDescription = str(S.bs_chip_remove, upload.fileName),
                     onClick = { onEvent(DriveEvent.RemoveUpload(upload.id)) },
                 )
             } else {
                 ZillitIconButton(
                     icon = ZillitIcons.Close,
-                    contentDescription = "Cancel upload of ${upload.fileName}",
+                    contentDescription = str(S.desktop_drive_cancel_upload_of, upload.fileName),
                     onClick = { onEvent(DriveEvent.CancelUpload(upload.id)) },
                     tint = colors.danger,
                 )
@@ -170,8 +177,9 @@ private fun UploadRow(upload: QueuedUpload, onEvent: (DriveEvent) -> Unit) {
             ZillitText(
                 text = when (val s = upload.state) {
                     is UploadState.InProgress ->
-                        "Part ${s.uploadedParts} of ${s.totalParts} · ${formatBytes(upload.sizeBytes)}"
-                    is UploadState.Failed -> s.reason
+                        str(S.desktop_drive_part_of, s.uploadedParts, s.totalParts) +
+                            " · " + formatBytes(upload.sizeBytes)
+                    is UploadState.Failed -> if (s.reason == "Cancelled") str(S.cancelled) else s.reason
                     else -> formatBytes(upload.sizeBytes)
                 },
                 style = ZillitTheme.typography.labelSmall,

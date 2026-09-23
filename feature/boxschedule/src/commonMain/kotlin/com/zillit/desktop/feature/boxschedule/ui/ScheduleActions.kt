@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.boxschedule.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.localization.localisedMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.BlockDraft
 import com.zillit.desktop.feature.boxschedule.domain.BlockWrite
 import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
@@ -165,7 +167,10 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
         val date = form.singleDate ?: return
         vm.work {
             if (!form.typeChanged) {
-                finishSingleDay(vm.repo.renameBlock(blockId, form.title.trim()), "Schedule updated successfully")
+                finishSingleDay(
+                    vm.repo.renameBlock(blockId, form.title.trim()),
+                    str(S.desktop_bs_schedule_updated_successfully),
+                )
                 return@work
             }
             val newType = vm.currentState.types.firstOrNull { it.id == form.typeId }?.title ?: "new type"
@@ -202,7 +207,10 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
                 is ZillitResult.Success -> when (val write = result.data) {
                     BlockWrite.Saved -> {
                         vm.updateOverlays { copy(scheduleForm = null) }
-                        vm.notice(if (form.isEdit) "Schedule updated" else "Schedule created", success = true)
+                        vm.notice(
+                            str(if (form.isEdit) S.desktop_bs_schedule_updated else S.desktop_bs_schedule_created),
+                            success = true,
+                        )
                         vm.refresh()
                     }
                     is BlockWrite.Conflicts -> vm.updateOverlays {
@@ -238,10 +246,9 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
                 is ZillitResult.Success -> when (val write = result.data) {
                     BlockWrite.Saved -> {
                         vm.updateOverlays { copy(conflict = null) }
-                        vm.notice(
-                            if (prompt.blockId != null) "Schedule updated" else "Schedule created",
-                            success = true,
-                        )
+                        val saved =
+                            if (prompt.blockId != null) S.desktop_bs_schedule_updated else S.desktop_bs_schedule_created
+                        vm.notice(str(saved), success = true)
                         vm.refresh()
                     }
                     is BlockWrite.Conflicts -> vm.updateOverlays {
@@ -300,7 +307,7 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
                 }
                 is ZillitResult.Failure -> {
                     form { copy(newType = newType?.copy(saving = false)) }
-                    vm.notice(result.error.localised().ifBlank { "Failed to create type" })
+                    vm.notice(result.error.localised().ifBlank { str(S.desktop_bs_failed_to_create_type) })
                 }
             }
         }
@@ -312,10 +319,10 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
         if (types.any { it.title.trim().equals(
             name,
             ignoreCase = true,
-        ) }) return "A type with this name already exists."
+        ) }) return str(S.tm_name_exists)
         val owner = types.firstOrNull { it.color.equals(color, ignoreCase = true) } ?: return null
-        val taken = owner.title.ifBlank { "another type" }
-        return "That color is already used by $taken. Please pick a different color."
+        val taken = owner.title.ifBlank { str(S.desktop_bs_another_type) }
+        return str(S.desktop_bs_color_already_used, taken)
     }
 
     // Deleting -----------------------------------------------------------------
@@ -352,11 +359,11 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
     private fun afterDelete(result: ZillitResult<String?>) {
         when (result) {
             is ZillitResult.Success -> {
-                vm.notice(sentence(result.data, "Schedule day dates removed successfully"), success = true)
+                vm.notice(sentence(result.data, str(S.desktop_bs_schedule_dates_removed)), success = true)
                 vm.updatePage { copy(expandedRow = null) }
                 vm.refresh()
             }
-            is ZillitResult.Failure -> vm.notice(result.error.localised().ifBlank { "Failed to delete" })
+            is ZillitResult.Failure -> vm.notice(result.error.localised().ifBlank { str(S.desktop_failed_to_delete) })
         }
     }
 
@@ -372,10 +379,11 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
         vm.work {
             when (val result = vm.repo.removeDates(onDay.associate { it.id to listOf(stored(it, dayKey)) })) {
                 is ZillitResult.Success -> {
-                    vm.notice("${onDay.size} schedule${if (onDay.size > 1) "s" else ""} removed", success = true)
+                    vm.notice(str(S.desktop_bs_n_schedules_removed, onDay.size), success = true)
                     vm.refresh()
                 }
-                is ZillitResult.Failure -> vm.notice(result.error.localised().ifBlank { "Failed to delete" })
+                is ZillitResult.Failure ->
+                    vm.notice(result.error.localised().ifBlank { str(S.desktop_failed_to_delete) })
             }
         }
     }
@@ -391,11 +399,12 @@ internal class ScheduleActions(private val vm: BoxScheduleViewModel) {
         vm.work {
             when (val result = vm.repo.removeDates(entries)) {
                 is ZillitResult.Success -> {
-                    vm.notice("${rows.size} day(s) deleted", success = true)
+                    vm.notice(str(S.desktop_bs_n_days_deleted, rows.size), success = true)
                     vm.updatePage { copy(selecting = false, selected = emptySet()) }
                     vm.refresh()
                 }
-                is ZillitResult.Failure -> vm.notice(result.error.localised().ifBlank { "Failed to delete" })
+                is ZillitResult.Failure ->
+                    vm.notice(result.error.localised().ifBlank { str(S.desktop_failed_to_delete) })
             }
         }
     }

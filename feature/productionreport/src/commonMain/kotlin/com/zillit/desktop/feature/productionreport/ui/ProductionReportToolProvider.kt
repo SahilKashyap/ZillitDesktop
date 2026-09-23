@@ -37,7 +37,7 @@ class ProductionReportToolProvider(
 ) : ToolProvider {
 
     override val path: String = viewModel.kind.path
-    override val title: String = viewModel.kind.title
+    override val title: String get() = viewModel.kind.title
     override val icon = when (viewModel.kind) {
         ReportKind.Ad -> ZillitToolIcons.AdDashboard
         else -> ZillitToolIcons.ProductionReport

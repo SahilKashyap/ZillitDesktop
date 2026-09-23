@@ -56,6 +56,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.rememberHorizontalResizeCursor
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.ui.EditorEvent
 import com.zillit.desktop.feature.callsheet.ui.EditorState
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
@@ -104,7 +106,7 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Call Sheet Editor",
+                    str(S.desktop_cs_editor_title),
                     style = sheetText(14.sp, FontWeight.SemiBold),
                     color = colors.textPrimary,
                     maxLines = 1,
@@ -126,7 +128,7 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
                 if (editor.dirty) UnsavedPill()
             }
             Text(
-                "Select a section from preview to edit",
+                str(S.desktop_select_a_section_to_edit),
                 style = sheetText(12.sp),
                 color = colors.textTertiary,
                 modifier = Modifier.padding(top = 2.dp),
@@ -137,7 +139,7 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
             // ZL-21539: create-only — on an existing sheet the save would close the editor over unsaved edits.
             if (editor.offersSaveAsTemplate) {
                 SheetButton(
-                    if (editor.savingTemplate) "Saving…" else "Save as Template",
+                    if (editor.savingTemplate) str(S.ah_saving) else str(S.save_as_template),
                     { onEvent(EditorEvent.SaveAsTemplate) },
                     kind = ButtonKind.Csc,
                     enabled = !editor.savingTemplate && !busy,
@@ -147,9 +149,9 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
                 )
             }
             editor.template?.let { template ->
-                ZillitTooltip("Overwrites \"${template.name}\"") {
+                ZillitTooltip(str(S.desktop_overwrites_named, template.name)) {
                     SheetButton(
-                        "Update Template",
+                        str(S.update_template),
                         { onEvent(EditorEvent.UpdateTemplate) },
                         kind = ButtonKind.Csc,
                         enabled = !editor.savingTemplate && !busy,
@@ -160,7 +162,7 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
             }
             if (editor.offersSignature) {
                 SheetButton(
-                    "Send for Signature",
+                    str(S.cs_send_for_signature),
                     { onEvent(EditorEvent.SendForSignature) },
                     kind = ButtonKind.Csc,
                     icon = ZillitIcons.Send,
@@ -171,7 +173,7 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
             }
             if (editor.offersComments) {
                 SheetButton(
-                    "Send for Comments",
+                    str(S.cs_send_for_comments),
                     { onEvent(EditorEvent.SendForComments) },
                     kind = ButtonKind.Csc,
                     icon = SheetIcons.UsersAdd,
@@ -182,7 +184,7 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
             }
             if (editor.isNew) {
                 SheetButton(
-                    if (editor.saving) "Saving…" else "Save As",
+                    if (editor.saving) str(S.ah_saving) else str(S.cs_save_as),
                     { onEvent(EditorEvent.SaveAs) },
                     kind = ButtonKind.Navy,
                     enabled = !busy,
@@ -202,7 +204,7 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
 private fun BackButton(onClick: () -> Unit) {
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
-    ZillitTooltip("Back") {
+    ZillitTooltip(str(S.back)) {
         Box(
             Modifier
                 .size(32.dp)
@@ -214,7 +216,7 @@ private fun BackButton(onClick: () -> Unit) {
         ) {
             Icon(
                 ZillitIcons.ChevronLeft,
-                contentDescription = "Back",
+                contentDescription = str(S.back),
                 tint = Color.White,
                 modifier = Modifier.size(16.dp),
             )
@@ -231,7 +233,7 @@ private fun UnsavedPill() {
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(colors.accent))
-        Text("Unsaved changes", style = sheetText(10.sp, FontWeight.Medium, 14.sp), color = colors.chipOnText)
+        Text(str(S.cs_exit_title), style = sheetText(10.sp, FontWeight.Medium, 14.sp), color = colors.chipOnText)
     }
 }
 
@@ -241,7 +243,7 @@ private fun SaveSplit(editor: EditorState, busy: Boolean, onEvent: (SheetEvent) 
     val colors = SheetTheme.colors
     Box {
         SheetButton(
-            if (editor.saving) "Saving…" else "Save",
+            if (editor.saving) str(S.ah_saving) else str(S.save),
             { onEvent(EditorEvent.ToggleSaveMenu) },
             kind = ButtonKind.Navy,
             enabled = !busy,
@@ -266,8 +268,8 @@ private fun SaveSplit(editor: EditorState, busy: Boolean, onEvent: (SheetEvent) 
             modifier = Modifier.border(1.dp, colors.border, RoundedCornerShape(12.dp)),
         ) {
             Column(Modifier.widthIn(min = 180.dp).padding(horizontal = 6.dp)) {
-                SaveMenuItem("Save", "Save a revision of this sheet", ZillitIcons.Save) { onEvent(EditorEvent.Save) }
-                SaveMenuItem("Save As", "Keep this one and save a new draft", SheetIcons.FileDone) {
+                SaveMenuItem(str(S.save), str(S.desktop_cs_save_hint), ZillitIcons.Save) { onEvent(EditorEvent.Save) }
+                SaveMenuItem(str(S.cs_save_as), str(S.desktop_cs_save_as_hint), SheetIcons.FileDone) {
                     onEvent(EditorEvent.SaveAs)
                 }
             }
@@ -332,13 +334,13 @@ private fun TemplateTips(listOpen: Boolean, onShowSections: () -> Unit) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "TEMPLATE TIPS",
+                    str(S.desktop_template_tips_upper),
                     style = sheetText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.8.sp),
                     color = colors.tipsText,
                 )
                 TipLine(
                     buildAnnotatedString {
-                        append("Place the cursor in empty space between boxes or at the end of a box, then click ")
+                        append(str(S.desktop_tip_place_cursor))
                         pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color(0xFFF99300)))
                         append("+")
                         pop()
@@ -347,7 +349,7 @@ private fun TemplateTips(listOpen: Boolean, onShowSections: () -> Unit) {
                 )
                 TipLine(
                     AnnotatedString(
-                        "Save as Template shares this layout with the whole project; Save As keeps it as your draft.",
+                        str(S.desktop_tip_save_as_template),
                     ),
                 )
             }
@@ -361,18 +363,18 @@ private fun TemplateTips(listOpen: Boolean, onShowSections: () -> Unit) {
                 Box(Modifier.width(1.dp).height(44.dp).background(colors.border))
                 Column(Modifier.widthIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        "LAYOUT",
+                        str(S.desktop_layout_upper),
                         style = sheetText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.8.sp),
                         color = colors.tipsText,
                     )
                     Text(
-                        "Drag sections to reorder and customize their position on the page.",
+                        str(S.desktop_tip_drag_sections),
                         style = sheetText(12.sp, lineHeight = 18.sp),
                         color = colors.tipsText,
                     )
                 }
                 SheetButton(
-                    "Sections",
+                    str(S.desktop_sections),
                     onShowSections,
                     kind = ButtonKind.Accent,
                     icon = SheetIcons.Table,
@@ -458,7 +460,7 @@ private fun Resizer(percent: Float, totalPx: Float, onSplit: (Float) -> Unit) {
             Box(Modifier.padding(bottom = 3.dp).size(3.dp).clip(CircleShape).background(ink))
         }
         Text(
-            "DRAG",
+            str(S.desktop_drag_upper),
             style = sheetText(8.sp, FontWeight.Bold, 10.sp).copy(letterSpacing = 1.sp),
             color = ink,
             modifier = Modifier.padding(top = 4.dp).readsUpward(),
@@ -475,7 +477,7 @@ private fun PreviewArea(state: SheetUiState, editor: EditorState, onEvent: (Shee
     val colors = SheetTheme.colors
     Column(Modifier.fillMaxSize().background(colors.previewBg)) {
         Text(
-            "PREVIEW",
+            str(S.dd_preview),
             style = sheetText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 1.5.sp),
             color = colors.textMuted,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 10.dp),

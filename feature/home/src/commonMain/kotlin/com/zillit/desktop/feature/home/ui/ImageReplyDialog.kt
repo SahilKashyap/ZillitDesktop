@@ -23,6 +23,8 @@ import com.zillit.desktop.core.media.EditableImageCanvas
 import com.zillit.desktop.core.media.ImageEditState
 import com.zillit.desktop.core.media.PenToolbar
 import com.zillit.desktop.core.media.encodeImageJpeg
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.NoticeDraft
 import com.zillit.desktop.feature.home.domain.NoticeMediaSource
@@ -75,8 +77,8 @@ internal fun ImageReplyDialog(
     val captionOverLimit = caption.length > NoticeDraft.MAX_LENGTH
 
     ZillitDialogShell(
-        title = "Image Reply",
-        subtitle = "Draw on the picture and post it back to the board.",
+        title = str(S.image_reply),
+        subtitle = str(S.desktop_image_reply_subtitle),
         icon = ZillitIcons.Photo,
         visible = target != null,
         onDismiss = onDismiss,
@@ -88,9 +90,9 @@ internal fun ImageReplyDialog(
         scrollable = false,
         actions = {
             Spacer(Modifier.weight(1f))
-            ZillitButton(text = "Cancel", onClick = onDismiss, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.cancel), onClick = onDismiss, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = if (posting) "Posting…" else "Post",
+                text = if (posting) str(S.ah_posting_btn) else str(S.txt_post),
                 enabled = editor.working != null && !posting && !captionOverLimit,
                 onClick = {
                     // Composited on the UI thread — the picture is already
@@ -114,7 +116,7 @@ internal fun ImageReplyDialog(
         ZillitTextField(
             value = caption,
             onValueChange = { caption = it },
-            placeholder = "Add a caption…",
+            placeholder = str(S.desktop_media_add_caption),
             singleLine = false,
             maxLength = NoticeDraft.MAX_LENGTH,
             modifier = Modifier.fillMaxWidth(),

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -95,16 +97,21 @@ object FxRates {
     fun journal(rows: List<FxVariance>, defaultCode: String): List<JournalLine> = rows.flatMap { row ->
         val amount = abs(row.variance)
         val supplier = row.vendorName.trim().split(Regex("\\s+")).firstOrNull()?.takeIf { it.isNotBlank() }
-            ?: row.invoiceCurrency.ifBlank { "FX" }
+            ?: row.invoiceCurrency.ifBlank { str(S.desktop_fx) }
         if (row.variance < 0) {
             listOf(
-                JournalLine(FX_NOMINAL, "FX Loss $supplier", debit = amount, credit = null),
-                JournalLine(BANK_NOMINAL, "Bank $defaultCode variance", debit = null, credit = amount),
+                JournalLine(FX_NOMINAL, str(S.desktop_br_journal_fx_loss, supplier), debit = amount, credit = null),
+                JournalLine(
+                    BANK_NOMINAL,
+                    str(S.desktop_br_journal_bank_variance, defaultCode),
+                    debit = null,
+                    credit = amount,
+                ),
             )
         } else {
             listOf(
-                JournalLine(BANK_NOMINAL, "FX Gain $supplier", debit = amount, credit = null),
-                JournalLine(FX_NOMINAL, "FX Gain offset", debit = null, credit = amount),
+                JournalLine(BANK_NOMINAL, str(S.desktop_br_journal_fx_gain, supplier), debit = amount, credit = null),
+                JournalLine(FX_NOMINAL, str(S.desktop_br_journal_fx_gain_offset), debit = null, credit = amount),
             )
         }
     }

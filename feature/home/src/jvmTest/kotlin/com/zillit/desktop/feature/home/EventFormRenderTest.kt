@@ -69,12 +69,12 @@ class EventFormRenderTest {
         onNodeWithText("Personal").assertExists()
         // How they are meeting — required, so it has to be reachable.
         onNodeWithText("Call type").assertExists()
-        onNodeWithText("Video call").assertExists()
-        onNodeWithText("Meet in person & call").assertExists()
+        onNodeWithText("Video Call").assertExists()
+        onNodeWithText("Meet in Person & Call").assertExists()
         // Who is coming, by crew record or by address.
         onNodeWithText("Invite crew").assertExists()
         onNodeWithText("Add crew").assertExists()
-        onNodeWithText("External guests").assertExists()
+        onNodeWithText("External Guests").assertExists()
         onNodeWithText("I will not be part of this event").assertExists()
         // And the rest of the form.
         onNodeWithText("Repeat").assertExists()
@@ -88,7 +88,7 @@ class EventFormRenderTest {
         setContent { ZillitTheme { EventFormDialog(form(personal), onEvent = {}) } }
 
         onNodeWithText("Call type").assertDoesNotExist()
-        onNodeWithText("External guests").assertDoesNotExist()
+        onNodeWithText("External Guests").assertDoesNotExist()
         onNodeWithText("Add crew").assertDoesNotExist()
         // The date and times are still everybody's business.
         onNodeWithText("Start time").assertExists()

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ChartMode
 import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
 import com.zillit.desktop.feature.accounthub.domain.ChartSort
@@ -22,16 +24,18 @@ import com.zillit.desktop.feature.accounthub.domain.TrackingSets
  */
 
 /** Which classes the chart is filtered to — the module's three tabs. */
-enum class ChartView(val slug: String, val label: String) {
+enum class ChartView(val slug: String, private val labelKey: String) {
     /** The cost side — what a production spends against. */
-    Expense("accounts", "Cost Accounts"),
+    Expense("accounts", S.desktop_cost_accounts),
 
     /** Everything else: asset, liability, capital, income. */
-    BalanceSheet("balance", "Balance Sheet Codes"),
+    BalanceSheet("balance", S.desktop_balance_sheet_codes),
 
     /** Analytical dimensions parallel to the nominal chart. */
-    Layers("tracking", "Layers"),
+    Layers("tracking", S.desktop_layers),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Whether [account] belongs on this tab. Layers holds no accounts. */
     fun shows(account: CoaAccount): Boolean = when (this) {
@@ -65,20 +69,20 @@ sealed interface LayerDelete {
         override val message: String
             get() {
                 val count = set.nodes.size
-                return if (count > 0) {
-                    "Delete \"${set.name}\" and its $count code${if (count == 1) "" else "s"}? This cannot be undone."
-                } else {
-                    "Delete \"${set.name}\"?"
+                return when {
+                    count == 1 -> str(S.desktop_hub_delete_x_and_its_one_code, set.name)
+                    count > 1 -> str(S.desktop_hub_delete_x_and_its_n_codes, set.name, count)
+                    else -> str(S.desktop_hub_delete_x_question, set.name)
                 }
             }
-        override val refusalTitle: String get() = "Can't delete this layer"
-        override val fallbackRefusal: String get() = "Failed to delete \"${set.name}\"."
+        override val refusalTitle: String get() = str(S.desktop_hub_cant_delete_this_layer)
+        override val fallbackRefusal: String get() = str(S.desktop_hub_failed_to_delete_x, set.name)
     }
 
     data class OneNode(val setId: String, val node: TrackingNode) : LayerDelete {
-        override val message: String get() = "Delete \"${node.code}\"?"
-        override val refusalTitle: String get() = "Can't delete this code"
-        override val fallbackRefusal: String get() = "Failed to delete \"${node.code}\"."
+        override val message: String get() = str(S.desktop_hub_delete_x_question, node.code)
+        override val refusalTitle: String get() = str(S.desktop_hub_cant_delete_this_code)
+        override val fallbackRefusal: String get() = str(S.desktop_hub_failed_to_delete_x, node.code)
     }
 }
 
@@ -129,9 +133,9 @@ data class BulkAddState(
     /** The web's save label: "Saving…", "Couldn't save some rows", "All changes saved". */
     val saveLabel: String
         get() = when {
-            anySaving -> "Saving…"
-            anyError -> "Couldn't save some rows"
-            anySaved -> "All changes saved"
+            anySaving -> str(S.ah_saving)
+            anyError -> str(S.desktop_hub_couldnt_save_some_rows)
+            anySaved -> str(S.dm_notice_template_status_saved)
             else -> ""
         }
 
@@ -190,7 +194,7 @@ data class ChartState(
     val isViewEmpty: Boolean get() = loaded && visibleAccounts.isEmpty()
 
     /** The toolbar's fold button. The web's starts at "Collapse all". */
-    val foldLabel: String get() = if (fold == TreeFold.AllClosed) "Expand all" else "Collapse all"
+    val foldLabel: String get() = if (fold == TreeFold.AllClosed) str(S.ah_expand_all) else str(S.ah_collapse_all)
 
     fun isOpen(id: String, depth: Int): Boolean = when {
         id in expanded -> true
@@ -277,7 +281,9 @@ data class AccountForm(
 ) {
     val isEdit: Boolean get() = editing != null
 
-    val title: String get() = editing?.let { "Edit code · ${it.code}" } ?: "New chart-of-accounts entry"
+    val title: String
+        get() = editing?.let { str(S.desktop_hub_edit_code_x, it.code) }
+            ?: str(S.desktop_hub_new_chart_of_accounts_entry)
 
     /** A budget row's level and parent come from the budget. */
     val structureLocked: Boolean get() = editing?.isFromBudget == true
@@ -288,8 +294,9 @@ data class AccountForm(
             (lineType != editing.lineType || parentId != editing.parentId)
 
     fun codeError(rows: List<CoaAccount>): String? = when {
-        code.isBlank() -> "Code is required"
-        editing == null && ChartOfAccounts.codeTaken(rows, code) -> "Code \"${code.trim().uppercase()}\" already exists"
+        code.isBlank() -> str(S.desktop_code_is_required)
+        editing == null && ChartOfAccounts.codeTaken(rows, code) ->
+            str(S.desktop_hub_code_already_exists, code.trim().uppercase())
         else -> null
     }
 
@@ -305,10 +312,9 @@ data class AccountForm(
                 "This row was created by a budget import — it's permanently classified as Expense. To track an " +
                     "asset / liability / capital / income account, add a new row manually."
             editing != null && lineType != CoaLineType.SubCategory ->
-                "Changing this cascades to every descendant. Re-classify a specific child afterwards if needed."
+                str(S.desktop_hub_changing_this_cascades_to_every_descendant_re_classify_a_specific)
             else ->
-                "Pick the accounting class for this row. Asset (Cash, Bank), Liability (Loans), Capital (Equity), " +
-                    "Income (Revenue, Tax Credits), Expense (Costs)."
+                str(S.desktop_hub_pick_the_accounting_class_for_this_row_asset_cash_bank)
         }
 
     companion object {

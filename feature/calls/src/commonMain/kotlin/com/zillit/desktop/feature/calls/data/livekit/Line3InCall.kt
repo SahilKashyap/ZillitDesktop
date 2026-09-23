@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.calls.data.livekit
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallProvider
@@ -97,8 +99,8 @@ class Line3InCall(
     val chatRestricted: Boolean get() = restricted { chatOff }
     val reactionsRestricted: Boolean get() = current() != null && _state.value.policy.reactionsOff
 
-    /** The web's `lockedNote`: what the user is told when they press a locked control. */
-    fun lockedNote(feature: String) = notice("The host has disabled $feature")
+    /** The web's `lockedNote`: what the user is told when they press a locked control, by the sentence's key. */
+    fun lockedNote(sentenceKey: String) = notice(str(sentenceKey))
 
     /** Our own chat is blocked — by the host, by name. */
     fun selfChatBlocked(): Boolean {
@@ -155,9 +157,9 @@ class Line3InCall(
         scope.launch {
             val done = line.muteParticipant(live.callUuid, userId, camera, me.copy(userId = live.selfUserId))
             if (done) {
-                engine.announceHostMute(userId, camera, selfName().orEmpty().ifBlank { "The host" })
+                engine.announceHostMute(userId, camera, selfName().orEmpty().ifBlank { str(S.desktop_call_the_host) })
             } else {
-                notice(if (camera) "Couldn't stop camera for that user" else "Couldn't mute that user")
+                notice(if (camera) str(S.desktop_call_couldnt_stop_camera) else str(S.desktop_call_couldnt_mute_user))
             }
         }
     }
@@ -217,7 +219,13 @@ class Line3InCall(
         }
         val live = current() ?: return
         if (userId == live.selfUserId) {
-            notice(if (blocked) "The host blocked you from chat" else "The host unblocked your chat")
+            notice(
+                if (blocked) {
+                    str(S.desktop_call_host_blocked_you_from_chat)
+                } else {
+                    str(S.desktop_call_host_unblocked_your_chat)
+                },
+            )
         }
     }
 
@@ -228,7 +236,7 @@ class Line3InCall(
 
     fun onGuestKnocking(callId: String, name: String) {
         if (!callId.isThisCall()) return
-        notice("${name.ifBlank { "A guest" }} wants to join")
+        notice(str(S.desktop_call_name_wants_to_join, name.ifBlank { str(S.desktop_call_a_guest) }))
     }
 
     /**

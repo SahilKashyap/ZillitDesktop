@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
@@ -96,29 +98,38 @@ internal fun ApproveDialog(
 @Composable
 private fun ChoiceStep(state: SheetUiState, onEvent: (SheetEvent) -> Unit) {
     val colors = SheetTheme.colors
-    SheetModal("Approve Call Sheet", { onEvent(DialogEvent.Dismiss) }, width = 520.dp, closeOnScrim = !state.busy) {
+    SheetModal(
+        str(S.desktop_cs_approve_call_sheet),
+        { onEvent(DialogEvent.Dismiss) },
+        width = 520.dp,
+        closeOnScrim = !state.busy,
+    ) {
         Text(
-            "Choose how to approve this call sheet:",
+            str(S.desktop_cs_choose_how_to_approve),
             style = sheetText(14.sp),
             color = colors.textSecondary,
             modifier = Modifier.padding(bottom = 12.dp),
         )
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ChoiceCard(
-                title = "Approve with Signature",
-                hint = "Draw your signature on the next screen; it is stamped on the call sheet.",
+                title = str(S.desktop_approve_with_signature),
+                hint = str(S.desktop_cs_approve_with_signature_hint),
                 enabled = !state.busy,
             ) { onEvent(WorkflowEvent.ChooseSignature) }
             ChoiceCard(
-                title = if (state.busy) "Approving…" else "Approve Without Signature",
-                hint = "Approve straight away, without a signature.",
+                title = if (state.busy) {
+                    str(S.ah_run_detail_btn_approving)
+                } else {
+                    str(S.desktop_approve_without_signature)
+                },
+                hint = str(S.desktop_cs_approve_without_signature_hint),
                 enabled = !state.busy,
             ) { onEvent(WorkflowEvent.ApproveWithoutSignature) }
         }
         Box(Modifier.fillMaxWidth().padding(top = 16.dp).height(1.dp).background(colors.border))
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
             SheetButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.Dismiss) },
                 kind = ButtonKind.Outline,
                 enabled = !state.busy,
@@ -168,7 +179,7 @@ private fun SignatureStep(
     var padSize by remember { mutableStateOf(IntSize.Zero) }
     val openedAt = remember(dialog.request.id) { nowMillis() }
     SheetModal(
-        "Approve Call Sheet",
+        str(S.desktop_cs_approve_call_sheet),
         { onEvent(DialogEvent.Dismiss) },
         width = 640.dp,
         closeOnScrim = !dialog.uploading,
@@ -179,7 +190,7 @@ private fun SignatureStep(
                 .border(1.dp, colors.border, RoundedCornerShape(12.dp)).padding(12.dp),
         ) {
             Text(
-                "APPROVING AS",
+                str(S.desktop_approving_as_upper),
                 style = sheetText(10.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
                 color = colors.textMuted,
             )
@@ -197,7 +208,7 @@ private fun SignatureStep(
             Text(formatDateTime(openedAt), style = sheetText(12.sp), color = colors.textMuted)
         }
         Text(
-            "SIGNATURE",
+            str(S.desktop_signature_upper),
             style = sheetText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
             color = colors.textPrimary,
             modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
@@ -216,7 +227,7 @@ private fun SignatureStep(
                 if (strokes.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SheetButton(
-                            "Redraw",
+                            str(S.desktop_redraw),
                             { strokes.clear() },
                             kind = ButtonKind.Outline,
                             icon = SheetIcons.Undo,
@@ -226,7 +237,7 @@ private fun SignatureStep(
                             horizontalPadding = 10.dp,
                         )
                         SheetButton(
-                            "Use This Signature",
+                            str(S.desktop_use_this_signature),
                             {
                                 renderSignaturePng(strokes.toList(), padSize.width, padSize.height, SIGNATURE_STROKE)
                                     ?.let { onEvent(WorkflowEvent.UseSignature(it)) }
@@ -245,7 +256,7 @@ private fun SignatureStep(
         Box(Modifier.fillMaxWidth().padding(top = 16.dp).height(1.dp).background(colors.border))
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SheetButton(
-                "Cancel",
+                str(S.cancel),
                 { onEvent(DialogEvent.Dismiss) },
                 Modifier.weight(1f),
                 kind = ButtonKind.Outline,
@@ -255,7 +266,7 @@ private fun SignatureStep(
             )
             // One button, locked to the choice already made; disabled until a signature exists.
             SheetButton(
-                if (dialog.uploading || state.busy) "Uploading..." else "Approve with Signature",
+                if (dialog.uploading || state.busy) str(S.ah_uploading) else str(S.desktop_approve_with_signature),
                 { onEvent(WorkflowEvent.ApproveWithSignature) },
                 Modifier.weight(1f),
                 kind = ButtonKind.Approve,
@@ -275,7 +286,7 @@ private fun PadHeader(drawn: Boolean, onClear: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(ZillitIcons.Edit, contentDescription = null, tint = colors.accent, modifier = Modifier.size(12.dp))
         Text(
-            "Signature",
+            str(S.txt_signature),
             style = sheetText(11.sp),
             color = colors.textTertiary,
             modifier = Modifier.padding(start = 6.dp),
@@ -290,7 +301,7 @@ private fun PadHeader(drawn: Boolean, onClear: () -> Unit) {
             ) {
                 val tint = if (hovered) colors.red else colors.textMuted
                 Icon(SheetIcons.Eraser, contentDescription = null, tint = tint, modifier = Modifier.size(11.dp))
-                Text("Clear", style = sheetText(11.sp), color = tint)
+                Text(str(S.ah_clear), style = sheetText(11.sp), color = tint)
             }
         }
     }
@@ -345,7 +356,7 @@ private fun SignaturePad(strokes: MutableList<List<Offset>>, onSize: (IntSize) -
                     modifier = Modifier.size(28.dp),
                 )
                 Text(
-                    "Draw your signature here",
+                    str(S.desktop_draw_your_signature_here),
                     style = sheetText(14.sp),
                     color = Color(0xFF98A2B3),
                     modifier = Modifier.padding(top = 6.dp),
@@ -392,14 +403,14 @@ private fun ConfirmedSignature(png: ByteArray, enabled: Boolean, onChange: () ->
         bitmap?.let {
             Image(
                 it,
-                contentDescription = "Signature",
+                contentDescription = str(S.txt_signature),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth(0.8f).heightIn(max = 230.dp),
             )
         }
         Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
             SheetButton(
-                "Change",
+                str(S.change),
                 onChange,
                 kind = ButtonKind.Outline,
                 icon = SheetIcons.Eraser,

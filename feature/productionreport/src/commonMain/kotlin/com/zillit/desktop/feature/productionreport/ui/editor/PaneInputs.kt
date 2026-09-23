@@ -72,6 +72,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ColumnSpec
 import com.zillit.desktop.feature.productionreport.domain.ReportTime
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
@@ -125,7 +127,7 @@ internal fun PaneSelect(
     options: List<Pair<String, String>>,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select",
+    placeholder: String = str(S.select),
     enabled: Boolean = true,
     borderless: Boolean = false,
     fontSize: Int = 14,
@@ -323,7 +325,7 @@ internal fun DateInput(
     ymd: String,
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select date",
+    placeholder: String = str(S.hint_date),
     boxed: Boolean = false,
     clearable: Boolean = true,
     onFocus: () -> Unit = {},
@@ -366,7 +368,7 @@ internal fun DateInput(
             if (clearable && label != null && hovered) {
                 Icon(
                     ZillitIcons.Close,
-                    contentDescription = "Clear",
+                    contentDescription = str(S.txt_clear),
                     tint = colors.textMuted,
                     modifier = Modifier.size(12.dp).plainClick { onPick("") },
                 )
@@ -402,7 +404,9 @@ private fun MonthGrid(selected: LocalDate?, onPick: (LocalDate) -> Unit) {
     var month by remember { mutableStateOf(LocalDate((selected ?: today).year, (selected ?: today).monthNumber, 1)) }
     Column(Modifier.width(252.dp).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CalendarNav(ZillitIcons.ChevronLeft, "Previous month") { month = month.plus(-1, DateTimeUnit.MONTH) }
+            CalendarNav(ZillitIcons.ChevronLeft, str(S.desktop_previous_month)) {
+                month = month.plus(-1, DateTimeUnit.MONTH)
+            }
             Text(
                 "${MONTH_NAMES[month.monthNumber - 1]} ${month.year}",
                 style = reportText(13.sp, FontWeight.SemiBold),
@@ -410,7 +414,9 @@ private fun MonthGrid(selected: LocalDate?, onPick: (LocalDate) -> Unit) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
-            CalendarNav(ZillitIcons.ChevronRight, "Next month") { month = month.plus(1, DateTimeUnit.MONTH) }
+            CalendarNav(ZillitIcons.ChevronRight, str(S.desktop_next_month)) {
+                month = month.plus(1, DateTimeUnit.MONTH)
+            }
         }
         Row(Modifier.padding(top = 6.dp)) {
             listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su").forEach {
@@ -438,7 +444,7 @@ private fun MonthGrid(selected: LocalDate?, onPick: (LocalDate) -> Unit) {
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.End) {
             Text(
-                "Today",
+                str(S.today),
                 style = reportText(12.sp, FontWeight.SemiBold),
                 color = colors.accent,
                 modifier = Modifier
@@ -549,10 +555,10 @@ internal fun TimeInput(
                 onFocus = onFocus,
                 modifier = Modifier.weight(1f),
             )
-            ZillitTooltip("Pick a time") {
+            ZillitTooltip(str(S.desktop_pick_a_time)) {
                 Icon(
                     ZillitIcons.Clock,
-                    contentDescription = "Pick a time",
+                    contentDescription = str(S.desktop_pick_a_time),
                     tint = if (open) colors.accent else colors.textMuted,
                     modifier = Modifier.padding(end = 6.dp).size(13.dp).plainClick {
                         onFocus()
@@ -599,7 +605,7 @@ private fun TimePanel(clock: String, onChange: (String) -> Unit, onDone: () -> U
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Clear",
+                str(S.txt_clear),
                 style = reportText(12.sp),
                 color = colors.textMuted,
                 modifier = Modifier
@@ -608,7 +614,7 @@ private fun TimePanel(clock: String, onChange: (String) -> Unit, onDone: () -> U
             )
             Box(Modifier.weight(1f))
             ReportButton(
-                "Done",
+                str(S.done_text),
                 onDone,
                 kind = ButtonKind.Accent,
                 height = 28.dp,
@@ -672,7 +678,7 @@ internal fun UsersInput(
     members: List<SheetMember>,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select user(s)",
+    placeholder: String = str(S.desktop_select_users_placeholder),
     onFocus: () -> Unit = {},
 ) {
     val colors = ReportTheme.colors
@@ -709,7 +715,7 @@ internal fun UsersInput(
                 )
                 Icon(
                     ZillitIcons.Close,
-                    contentDescription = "Remove ${member.fullName}",
+                    contentDescription = str(S.bs_chip_remove, member.fullName),
                     tint = colors.red,
                     modifier = Modifier.size(9.dp).plainClick { onChange(toggledId(ids, member.userId)) },
                 )
@@ -777,9 +783,13 @@ private fun UsersDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Select Users", style = reportText(16.sp, FontWeight.SemiBold), color = colors.textPrimary)
                     Text(
-                        if (ids.isEmpty()) "Choose team members" else "${ids.size} selected",
+                        str(S.select_users),
+                        style = reportText(16.sp, FontWeight.SemiBold),
+                        color = colors.textPrimary,
+                    )
+                    Text(
+                        if (ids.isEmpty()) str(S.desktop_choose_team_members) else str(S.desktop_n_selected, ids.size),
                         style = reportText(12.sp),
                         color = colors.textMuted,
                     )
@@ -792,7 +802,7 @@ private fun UsersDialog(
                     search,
                     { search = it },
                     Modifier.fillMaxWidth(),
-                    placeholder = "Search by name, role, department...",
+                    placeholder = str(S.desktop_search_by_name_role_department),
                     autoFocus = true,
                     leadingIcon = ZillitIcons.Search,
                 )
@@ -815,7 +825,7 @@ private fun UsersDialog(
             Column(Modifier.weight(1f, fill = false).heightIn(min = 300.dp).verticalScroll(rememberScrollState())) {
                 if (pool.isEmpty()) {
                     Text(
-                        "No members found",
+                        str(S.desktop_no_members_found),
                         style = reportText(14.sp),
                         color = colors.textMuted,
                         textAlign = TextAlign.Center,
@@ -876,7 +886,7 @@ private fun UsersDialog(
                     modifier = Modifier.weight(1f),
                 )
                 ReportButton(
-                    "Done",
+                    str(S.done_text),
                     onClose,
                     kind = ButtonKind.Accent,
                     height = 36.dp,
@@ -894,7 +904,7 @@ internal fun Divider() {
 }
 
 @Composable
-internal fun CloseSquare(onClose: () -> Unit, description: String = "Close") {
+internal fun CloseSquare(onClose: () -> Unit, description: String = str(S.close)) {
     val colors = ReportTheme.colors
     val (source, hovered) = rememberHover()
     ZillitTooltip(description) {
@@ -938,10 +948,10 @@ internal fun PersonChip(member: SheetMember, onRemove: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 120.dp),
         )
-        ZillitTooltip("Remove") {
+        ZillitTooltip(str(S.remove)) {
             Icon(
                 ZillitIcons.Close,
-                contentDescription = "Remove ${member.fullName}",
+                contentDescription = str(S.bs_chip_remove, member.fullName),
                 tint = colors.red,
                 modifier = Modifier.size(11.dp).plainClick(onClick = onRemove),
             )
@@ -975,7 +985,7 @@ internal fun LocationInput(
     attachment: String,
     onChange: (address: String, lat: Double?, lng: Double?) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Address",
+    placeholder: String = str(S.address),
     onFocus: () -> Unit = {},
 ) {
     val colors = ReportTheme.colors
@@ -993,7 +1003,13 @@ internal fun LocationInput(
         )
         if (picker != null) {
             val (source, hovered) = rememberHover()
-            ZillitTooltip(if (pin != null) "Edit pinned location on map" else "Pick location on map") {
+            ZillitTooltip(
+                if (pin != null) {
+                    str(S.desktop_edit_pinned_location_on_map)
+                } else {
+                    str(S.desktop_pick_location_on_map)
+                },
+            ) {
                 Box(
                     Modifier
                         .padding(end = 4.dp)
@@ -1011,7 +1027,7 @@ internal fun LocationInput(
                             onFocus()
                             scope.launch {
                                 val initial = pin?.let { PickedLocation(value, value, it.first, it.second) }
-                                picker.pick(initial, "Select location")?.let { picked ->
+                                picker.pick(initial, str(S.desktop_select_location))?.let { picked ->
                                     onChange(picked.address.ifBlank { picked.name }, picked.lat, picked.lng)
                                 }
                             }
@@ -1050,11 +1066,11 @@ internal fun InOutSelector(
         PaneSelect(
             value = mode,
             options = listOf(
-                "" to "Select...",
-                "Time" to "Time",
-                "Per HOD" to "Per HOD",
+                "" to str(S.desktop_select_ellipsis),
+                "Time" to str(S.time),
+                "Per HOD" to str(S.desktop_per_hod),
                 "O/C" to "O/C",
-                "Others" to "Others",
+                "Others" to str(S.desktop_others_title),
             ),
             onSelect = { picked ->
                 onFocus()
@@ -1090,7 +1106,7 @@ internal fun InOutSelector(
                 value.removePrefix("Other:"),
                 { onChange("Other:$it") },
                 Modifier.fillMaxWidth(),
-                placeholder = "Enter value...",
+                placeholder = str(S.docusign_text_value_hint),
                 radius = 6.dp,
                 textStyle = reportText(13.sp),
                 onFocusChange = { if (it) onFocus() },
@@ -1109,10 +1125,10 @@ internal fun placeholderFor(column: ColumnSpec?): String {
         "number" -> "0"
         "phone" -> "+1 555 123 4567"
         "email" -> "email@example.com"
-        "date" -> "Select date"
+        "date" -> str(S.hint_date)
         "time" -> "HH:MM"
-        "users" -> "Select user(s)"
-        "location" -> "Address"
+        "users" -> str(S.desktop_select_users_placeholder)
+        "location" -> str(S.address)
         else -> ""
     }
 }

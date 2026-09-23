@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A mailbox folder.
  *
@@ -28,8 +31,8 @@ data class EmailFolder(
      */
     val displayName: String
         get() = when {
-            name.equals(INBOX, ignoreCase = true) -> "Inbox"
-            isSystem -> name.replaceFirstChar(Char::uppercaseChar)
+            name.equals(INBOX, ignoreCase = true) -> str(S.inbox_text)
+            isSystem -> SYSTEM_LABELS[name.lowercase()]?.let { str(it) } ?: name.replaceFirstChar(Char::uppercaseChar)
             else -> name
         }
 
@@ -53,6 +56,17 @@ data class EmailFolder(
         )
 
         const val LAST = Int.MAX_VALUE
+
+        /** The catalogue key for each system folder's label, by lower-cased IMAP name. */
+        private val SYSTEM_LABELS = mapOf(
+            "starred" to S.desktop_email_folder_starred,
+            "sent" to S.txt_sent,
+            "drafts" to S.draft_text,
+            "archive" to S.archive_text,
+            "spam" to S.span_text,
+            "junk" to S.desktop_email_folder_junk,
+            "trash" to S.trash_text,
+        )
 
         const val INBOX = "INBOX"
         const val SENT = "Sent"

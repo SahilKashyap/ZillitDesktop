@@ -14,6 +14,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -39,7 +41,7 @@ class BoxScheduleToolProvider(
     private val loadAvatar: (suspend (String) -> ImageBitmap?)? = null,
 ) : ToolProvider {
 
-    override val title: String = "Box Schedule"
+    override val title: String get() = str(S.desktop_bs_tool_title)
     override val icon = ZillitToolIcons.PreProduction
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

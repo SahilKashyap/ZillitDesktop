@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.costreport.ui.worksheet
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.CrDates
 import com.zillit.desktop.feature.costreport.domain.PostCadence
 import com.zillit.desktop.feature.costreport.domain.SnapshotPost
@@ -100,7 +102,7 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
         val start = form.startDate.asDate()
         val end = form.endDate.asDate()
         if (form.cadence == PostCadence.Custom && isFuture(start, end)) {
-            vm.notice("End can't be later than today", error = true)
+            vm.notice(str(S.desktop_cr_end_not_later), error = true)
             return
         }
         val custom = form.cadence == PostCadence.Custom
@@ -124,17 +126,22 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
                 posting = form.cadence,
                 progress = CrProgress(
                     ProgressStatus.Loading,
-                    "Posting ${form.cadence.progressLabel}…",
-                    "Aggregating cost report lines from every source",
+                    str(S.desktop_cr_posting_progress, form.cadence.progressLabel),
+                    str(S.desktop_cr_aggregating),
                 ),
             )
         }
         vm.launchWork {
             val progress = when (val result = vm.repository.postSnapshot(post)) {
-                is ZillitResult.Failure -> CrProgress(ProgressStatus.Error, "Post failed", result.error.localised())
+                is ZillitResult.Failure ->
+                    CrProgress(ProgressStatus.Error, str(S.ah_post_failed_toast), result.error.localised())
                 is ZillitResult.Success -> {
                     val reference = result.data.value?.reference?.ifBlank { null } ?: form.cadence.progressLabel
-                    CrProgress(ProgressStatus.Success, "Posted: $reference", "Snapshot is now in the History timeline")
+                    CrProgress(
+                        ProgressStatus.Success,
+                        str(S.desktop_cr_posted_reference, reference),
+                        str(S.desktop_cr_snapshot_in_history),
+                    )
                 }
             }
             vm.update { copy(posting = null, progress = progress) }
@@ -151,6 +158,7 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
      * like at the moment it closed. A lock that lands without its snapshot is
      * still a lock, and says so.
      */
+    @Suppress("LongMethod") // One block, in one place; the sweep's wrapped calls added the lines.
     private fun lock() {
         val state = vm.ui
         val modal = state.modal as? WorksheetModal.Lock ?: return
@@ -165,8 +173,8 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
                 locking = true,
                 progress = CrProgress(
                     ProgressStatus.Loading,
-                    "Locking ${week.label}…",
-                    "Posting a snapshot for the locked period",
+                    str(S.desktop_cr_locking_progress, week.label),
+                    str(S.desktop_cr_posting_locked_period),
                 ),
             )
         }
@@ -176,7 +184,11 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
                 vm.update {
                     copy(
                         locking = false,
-                        progress = CrProgress(ProgressStatus.Error, "Lock failed", locked.error.localised()),
+                        progress = CrProgress(
+                            ProgressStatus.Error,
+                            str(S.desktop_cr_lock_failed),
+                            locked.error.localised(),
+                        ),
                     )
                 }
                 return@launchWork
@@ -186,20 +198,24 @@ internal class WorksheetPublishActions(private val vm: WorksheetViewModel) {
                     cadence = PostCadence.Custom,
                     periodStartMs = week.startMs,
                     periodEndMs = week.endMs,
-                    name = "Period Lock — ${week.label}",
+                    name = str(S.desktop_cr_period_lock_named, week.label),
                     budgetVersionId = budgetId,
                     currency = currency,
-                    note = note.ifBlank { "Auto-generated on period lock (${week.label})" },
+                    note = note.ifBlank { str(S.desktop_cr_auto_note_on_lock, week.label) },
                 ),
             )
             val progress = when (posted) {
                 is ZillitResult.Success ->
-                    CrProgress(ProgressStatus.Success, "Locked ${week.label}", "Snapshot posted to history")
+                    CrProgress(
+                        ProgressStatus.Success,
+                        str(S.desktop_cr_locked_named, week.label),
+                        str(S.desktop_cr_snapshot_posted),
+                    )
                 is ZillitResult.Failure ->
                     CrProgress(
                         ProgressStatus.Error,
-                        "Locked ${week.label}",
-                        "Snapshot post failed: ${posted.error.localised()}",
+                        str(S.desktop_cr_locked_named, week.label),
+                        str(S.desktop_cr_snapshot_post_failed, posted.error.localised()),
                     )
             }
             vm.update { copy(locking = false, progress = progress) }

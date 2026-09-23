@@ -39,6 +39,8 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceRules
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 internal fun BadgeTone.statusTone(): StatusTone = when (this) {
     BadgeTone.Neutral -> StatusTone.Neutral
@@ -67,7 +69,7 @@ internal fun BadgePill(badge: InvoiceBadge) {
 internal fun PoCell(invoice: Invoice) {
     val label = invoice.poLabel
     if (label == null) {
-        ZillitStatusPill(label = "No PO", tone = StatusTone.Rejected)
+        ZillitStatusPill(label = str(S.desktop_no_po), tone = StatusTone.Rejected)
     } else {
         ZillitStatusPill(label = label, tone = StatusTone.InTransit)
     }
@@ -97,22 +99,23 @@ internal fun CellText(text: String, muted: Boolean = false, maxLines: Int = 1) {
 
 /** Invoice · Vendor · Gross — the three columns every table starts with. */
 internal fun leadingColumns(state: InvoicesUiState): List<TableColumn<Invoice>> = listOf(
-    TableColumn("Invoice", ColumnWidth.Weight(WEIGHT_NARROW)) { CellText(it.displayNumber) },
-    TableColumn("Vendor", ColumnWidth.Weight(WEIGHT_WIDE)) { CellText(state.vendorName(it)) },
-    TableColumn("Gross", ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
+    TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(WEIGHT_NARROW)) { CellText(it.displayNumber) },
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_WIDE)) { CellText(state.vendorName(it)) },
+    TableColumn(str(S.desktop_gross), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
         MoneyText(it.grossAmount, it.currency, state.projectCurrency)
     },
 )
 
-internal fun poColumn(): TableColumn<Invoice> = TableColumn("PO", ColumnWidth.Fixed(PO_WIDTH)) { PoCell(it) }
+internal fun poColumn(): TableColumn<Invoice> =
+    TableColumn(str(S.desktop_po), ColumnWidth.Fixed(PO_WIDTH)) { PoCell(it) }
 
 internal fun slaColumn(state: InvoicesUiState): TableColumn<Invoice> =
-    TableColumn("SLA", ColumnWidth.Fixed(SLA_WIDTH)) {
+    TableColumn(str(S.desktop_sla), ColumnWidth.Fixed(SLA_WIDTH)) {
         CellText(state.vendors[it.vendorId]?.slaLabel ?: "—", muted = true)
     }
 
 internal fun approvalColumn(state: InvoicesUiState, queue: Boolean): TableColumn<Invoice> =
-    TableColumn("Approval", ColumnWidth.Weight(WEIGHT_MEDIUM)) { invoice ->
+    TableColumn(str(S.ah_step_approval), ColumnWidth.Weight(WEIGHT_MEDIUM)) { invoice ->
         val tiers = state.tiersOf(invoice)
         BadgePill(if (queue) InvoiceRules.queueBadge(invoice, tiers) else InvoiceRules.approvalBadge(invoice, tiers))
     }
@@ -128,14 +131,19 @@ internal fun LoadingRow() {
 
 /** "12 invoices", or whatever the page is counting — a creditor row is not an invoice. */
 @Composable
-internal fun CountLine(count: Int, noun: String = "invoice", extra: (@Composable () -> Unit)? = null) {
+internal fun CountLine(
+    count: Int,
+    one: String = S.desktop_invoice_count_one,
+    other: String = S.ah_run_invoices_count,
+    extra: (@Composable () -> Unit)? = null,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "$count $noun${if (count == 1) "" else "s"}",
+            text = countMeta(count, one, other),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -203,8 +211,11 @@ internal fun ExportActions(export: InvoiceExport, busy: Boolean, onEvent: (Invoi
 }
 
 /** "12 invoices", "1 vendor" — the count the web prints beside a panel title. */
-internal fun countMeta(count: Int, noun: String = "invoice"): String =
-    "$count $noun" + if (count == 1) "" else "s"
+internal fun countMeta(
+    count: Int,
+    one: String = S.desktop_invoice_count_one,
+    other: String = S.ah_run_invoices_count,
+): String = str(if (count == 1) one else other, count)
 
 internal const val WEIGHT_NARROW = 1.1f
 internal const val WEIGHT_MEDIUM = 1.3f

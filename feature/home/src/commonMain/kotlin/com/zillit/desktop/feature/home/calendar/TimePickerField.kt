@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalTime
 
 /**
@@ -63,7 +65,7 @@ internal fun TimePickerField(
             trailingContent = {
                 ZillitIconButton(
                     icon = ZillitIcons.Clock,
-                    contentDescription = "Choose a time",
+                    contentDescription = str(S.desktop_choose_a_time),
                     onClick = { open = true },
                 )
             },

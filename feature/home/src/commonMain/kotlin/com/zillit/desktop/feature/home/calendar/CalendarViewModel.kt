@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.home.calendar
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -590,11 +592,11 @@ class CalendarViewModel(
     /** The shared rules: only the organiser, and never a recurring series. */
     private fun mayReschedule(event: CalendarEvent): Boolean {
         if (!isCreator(event)) {
-            setState { copy(error = "Only the organiser can reschedule an event.") }
+            setState { copy(error = str(S.desktop_cal_only_organiser_reschedules)) }
             return false
         }
         if (event.isRecurring) {
-            setState { copy(error = "Recurring events cannot be rescheduled by dragging.") }
+            setState { copy(error = str(S.desktop_cal_recurring_no_drag)) }
             return false
         }
         return true

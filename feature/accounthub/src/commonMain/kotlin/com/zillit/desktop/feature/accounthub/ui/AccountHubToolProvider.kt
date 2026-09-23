@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -54,7 +56,7 @@ class AccountHubToolProvider(
 
 
     override val path: String = ACCOUNT_HUB_PATH
-    override val title: String = "Account Hub"
+    override val title: String = str(S.ah_account_hub)
     override val icon = ZillitIcons.Ledger
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -102,7 +104,7 @@ class AccountHubToolProvider(
         // the same console are told apart on the taskbar.
         LaunchedEffect(state.area, state.embedded?.title) {
             val shown = state.embedded?.title?.takeIf { it.isNotBlank() } ?: state.area?.label
-            navigator.setTitle(shown?.let { "Account Hub · $it" } ?: "Account Hub")
+            navigator.setTitle(shown?.let { str(S.desktop_hub_account_hub_window_title, it) } ?: str(S.ah_account_hub))
         }
 
         val embed: (@Composable (EmbeddedTool) -> Unit)? =
@@ -235,8 +237,8 @@ private class EmbeddedNavigator(
 @Composable
 private fun EmbedUnavailable(tool: EmbeddedTool) {
     ZillitEmptyState(
-        title = "${tool.title.ifBlank { "This tool" }} is not available here",
-        message = "The desktop app has no screen registered for ${tool.path}.",
+        title = str(S.desktop_hub_x_is_not_available_here, tool.title.ifBlank { str(S.desktop_this_tool) }),
+        message = str(S.desktop_hub_no_screen_registered_for_path, tool.path),
         icon = ZillitIcons.Ledger,
     )
 }

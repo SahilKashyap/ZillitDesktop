@@ -22,6 +22,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.DayType
 import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
@@ -52,20 +54,19 @@ internal fun ColumnScope.DayTypesEditor(
     val editable = state.viewer.canEdit
 
     SubCard(
-        title = "Day types",
-        hint = "The defaults are SWD, CWD and SCWD. Add any custom day type and set its minimum working hours and " +
-            "minimum meal break. Saved on its own — editing a day type does not re-save the rules.",
+        title = str(S.desktop_day_types),
+        hint = str(S.desktop_hub_the_defaults_are_swd_cwd_and_scwd_add_any_custom),
         action = {
             if (editable && section.dirty) {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(AccountHubEvent.RevertSection(SetupSection.DayTypes)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                     enabled = !section.saving,
                 )
                 ZillitButton(
-                    text = "Save day types",
+                    text = str(S.desktop_save_day_types),
                     onClick = { onEvent(AccountHubEvent.SaveSection(SetupSection.DayTypes)) },
                     size = ButtonSize.Small,
                     loading = section.saving,
@@ -77,10 +78,10 @@ internal fun ColumnScope.DayTypesEditor(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            HeadCell("Code", Modifier.width(CODE_WIDTH))
-            HeadCell("Label", Modifier.weight(1f))
-            HeadCell("Working min", Modifier.width(MINUTES_WIDTH))
-            HeadCell("Meal break min", Modifier.width(MINUTES_WIDTH))
+            HeadCell(str(S.code), Modifier.width(CODE_WIDTH))
+            HeadCell(str(S.ah_lbl_title), Modifier.weight(1f))
+            HeadCell(str(S.desktop_working_min), Modifier.width(MINUTES_WIDTH))
+            HeadCell(str(S.desktop_meal_break_min), Modifier.width(MINUTES_WIDTH))
         }
         rows.forEachIndexed { index, row ->
             DayTypeRow(row, index, rows, editable, onEvent)
@@ -97,7 +98,7 @@ internal fun ColumnScope.DayTypesEditor(
 
         if (editable) {
             ZillitButton(
-                text = "Add a day type",
+                text = str(S.desktop_hub_add_a_day_type),
                 onClick = { onEvent(AccountHubEvent.EditDayTypes(rows + DayType(dayType = ""))) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -144,7 +145,7 @@ private fun ColumnScope.DayTypeRow(
             ZillitTextField(
                 value = row.label,
                 onValueChange = { update(row.copy(label = it)) },
-                placeholder = "10-hour day",
+                placeholder = str(S.desktop_10_hour_day),
                 enabled = editable,
                 modifier = Modifier.weight(1f),
             )

@@ -42,6 +42,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankAccounts
 import com.zillit.desktop.feature.accounthub.domain.Companies
@@ -96,11 +98,11 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
     val problem = draft?.let(Companies::problem)
 
     ZillitDialogShell(
-        title = if (isNew) "New company" else "Edit ${draft?.name?.ifBlank { "company" }}",
+        title = if (isNew) str(S.desktop_new_company) else "Edit ${draft?.name?.ifBlank { "company" }}",
         subtitle = if (fromBank) {
-            "The bank you are adding will be held by this company."
+            str(S.desktop_hub_the_bank_you_are_adding_will_be_held_by_this)
         } else {
-            "Bank accounts hang off a company, so link them here."
+            str(S.desktop_hub_bank_accounts_hang_off_a_company_so_link_them_here)
         },
         visible = draft != null,
         onDismiss = { onEvent(AccountHubEvent.DismissCompanyDraft) },
@@ -109,7 +111,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
         actions = {
             if (!isNew && draft != null && !fromBank) {
                 ZillitButton(
-                    text = "Remove company",
+                    text = str(S.desktop_remove_company),
                     onClick = { onEvent(AccountHubEvent.AskRemove(SetupRemoval.CompanyRow(draft))) },
                     variant = ButtonVariant.Danger,
                     enabled = !saving,
@@ -120,14 +122,14 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
             // and Done is the one commit action; create keeps it.
             if (isNew) {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(AccountHubEvent.DismissCompanyDraft) },
                     variant = ButtonVariant.Tertiary,
                     enabled = !saving,
                 )
             }
             ZillitButton(
-                text = if (isNew) "Add company" else "Done",
+                text = if (isNew) str(S.desktop_add_company) else str(S.ah_done),
                 onClick = { onEvent(AccountHubEvent.CommitCompanyDraft) },
                 enabled = problem == null && !saving,
                 loading = saving,
@@ -155,7 +157,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
                 update(draft.copy(name = name, legalName = resolvedLegalName(name, legalNameDiffers, legalNameInput)))
             },
             label = "Company / Entity name *",
-            placeholder = "e.g. Acme Productions Ltd",
+            placeholder = str(S.ps_company_name_hint),
         )
         ZillitCheckbox(
             checked = legalNameDiffers,
@@ -173,7 +175,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
                     update(draft.copy(legalName = resolvedLegalName(draft.name, true, input)))
                 },
                 label = "Legal name",
-                placeholder = "As registered at Companies House",
+                placeholder = str(S.desktop_hub_as_registered_at_companies_house),
             )
         }
 
@@ -187,7 +189,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
 
         // -- UK employer references, below the picker that gates them ---------
         if (draft.isUk) {
-            ZillitSectionLabel("UK payroll")
+            ZillitSectionLabel(str(S.ps_company_uk_section))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -224,7 +226,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
                     value = draft.ukPensionProvider,
                     onValueChange = { update(draft.copy(ukPensionProvider = it)) },
                     label = "Pension provider",
-                    placeholder = "e.g. NEST",
+                    placeholder = str(S.desktop_e_g_nest),
                     maxLength = UkPayrollRefs.PENSION_PROVIDER_MAX,
                     modifier = Modifier.weight(1f),
                 )
@@ -232,7 +234,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
                     value = draft.ukPensionSchemeRef,
                     onValueChange = { update(draft.copy(ukPensionSchemeRef = it)) },
                     label = "Pension scheme reference",
-                    placeholder = "e.g. SCH-000123",
+                    placeholder = str(S.desktop_hub_e_g_sch_000123),
                     maxLength = UkPayrollRefs.PENSION_SCHEME_MAX,
                     modifier = Modifier.weight(1f),
                 )
@@ -272,9 +274,9 @@ private fun CompanyBanksField(state: AccountHubUiState, draft: Company, onEvent:
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            FieldLabel("Bank accounts", modifier = Modifier.weight(1f))
+            FieldLabel(str(S.desktop_bank_accounts), modifier = Modifier.weight(1f))
             ZillitButton(
-                text = "Add bank account",
+                text = str(S.desktop_add_bank_account),
                 onClick = { onEvent(AccountHubEvent.EditBank(null, fromCompany = true)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -282,11 +284,10 @@ private fun CompanyBanksField(state: AccountHubUiState, draft: Company, onEvent:
             )
         }
         when {
-            setup.banksLoading && banks.isEmpty() -> FieldHint("Loading banks…")
-            banks.isEmpty() -> FieldHint("No production banks yet — use Add bank account to create one.")
+            setup.banksLoading && banks.isEmpty() -> FieldHint(str(S.desktop_loading_banks))
+            banks.isEmpty() -> FieldHint(str(S.desktop_hub_no_production_banks_yet_use_add_bank_account_to_create))
             selectable.isEmpty() -> FieldHint(
-                "All production banks are already assigned to other companies — use Add bank account to create " +
-                    "another.",
+                str(S.desktop_hub_all_production_banks_are_already_assigned_to_other_companies_use),
             )
             else -> Column(
                 modifier = Modifier.heightIn(max = BANK_LIST_MAX).verticalScroll(rememberScrollState()),
@@ -312,13 +313,13 @@ private fun CompanyBanksField(state: AccountHubUiState, draft: Company, onEvent:
         // Derived, never picked: the backend owns the canonical company currency.
         if (selectable.isNotEmpty()) {
             if (currencies.isEmpty()) {
-                FieldHint("Currency is set by the selected bank accounts.")
+                FieldHint(str(S.desktop_hub_currency_is_set_by_the_selected_bank_accounts))
             } else {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 ) {
-                    FieldLabel("Currency", modifier = Modifier.align(Alignment.CenterVertically))
+                    FieldLabel(str(S.asset_currency), modifier = Modifier.align(Alignment.CenterVertically))
                     currencies.forEach { MonoChip(it, active = true) }
                 }
             }
@@ -360,7 +361,7 @@ private fun SelectableBankRow(bank: BankAccount, checked: Boolean, onToggle: () 
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitText(
-                    text = bank.name.ifBlank { "Unnamed account" },
+                    text = bank.name.ifBlank { str(S.desktop_unnamed_account) },
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                 )
@@ -410,8 +411,12 @@ private fun CountryPicker(
         label = { it.name },
         secondary = { it.code },
         onSelect = { picked -> onPick(picked?.name.orEmpty(), picked?.code.orEmpty()) },
-        placeholder = if (sorted.isEmpty()) "Loading countries…" else "Type country name or ISO code…",
-        fieldLabel = "Country *",
+        placeholder = if (sorted.isEmpty()) {
+            str(S.desktop_loading_countries)
+        } else {
+            str(S.desktop_hub_type_country_name_or_iso_code)
+        },
+        fieldLabel = str(S.desktop_country_star),
         clearable = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -430,7 +435,7 @@ private fun TaxCreditsField(credits: List<String>, onChange: (List<String>) -> U
         draft = ""
     }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        FieldLabel("Tax credit tagging")
+        FieldLabel(str(S.dm_nom_card_tax_credit))
         if (credits.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -450,7 +455,11 @@ private fun TaxCreditsField(credits: List<String>, onChange: (List<String>) -> U
                     draft = text
                 }
             },
-            placeholder = if (credits.isEmpty()) "Type a regime, press Enter (e.g. UK HETV)" else "Add another…",
+            placeholder = if (credits.isEmpty()) {
+                str(S.desktop_hub_type_a_regime_press_enter_e_g_uk_hetv_paren)
+            } else {
+                str(S.desktop_dm_add_another_ellipsis)
+            },
             imeAction = ImeAction.Done,
             onImeAction = ::commit,
             modifier = Modifier.fillMaxWidth(),
@@ -492,8 +501,8 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
     val holderMatched = draft?.entityId?.let { id -> companies.any { it.id == id } } == true
 
     ZillitDialogShell(
-        title = if (isNew) "Add Bank Account" else "Edit Bank Account",
-        subtitle = "Shared with Bank Reconciliation, Vendors and Payroll.",
+        title = if (isNew) str(S.desktop_add_bank_account) else str(S.desktop_edit_bank_account),
+        subtitle = str(S.desktop_hub_shared_with_bank_reconciliation_vendors_and_payroll),
         visible = draft != null,
         onDismiss = { onEvent(AccountHubEvent.DismissBankDraft) },
         icon = ZillitIcons.Bank,
@@ -503,14 +512,14 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
             // (web 03f047d47); × / Esc still discard.
             if (isNew) {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(AccountHubEvent.DismissBankDraft) },
                     variant = ButtonVariant.Tertiary,
                     enabled = !setup.bankSaving,
                 )
             }
             ZillitButton(
-                text = if (isNew) "Add account" else "Save changes",
+                text = if (isNew) str(S.desktop_add_account) else str(S.dm_setup_save),
                 onClick = { onEvent(AccountHubEvent.CommitBankDraft) },
                 enabled = problem == null && !setup.bankSaving,
                 loading = setup.bankSaving,
@@ -524,16 +533,16 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
             value = draft.name,
             onValueChange = { update(draft.copy(name = it)) },
             label = "Bank name *",
-            placeholder = "e.g. Barclays",
+            placeholder = str(S.ah_bank_name_hint),
         )
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                FieldLabel("Account holder *", modifier = Modifier.weight(1f))
+                FieldLabel(str(S.desktop_account_holder_star), modifier = Modifier.weight(1f))
                 // From inside a company's editor this only leads back to where
                 // the person already is, so the link is not offered there.
                 if (!setup.bankDraftFromCompany) {
                     ZillitButton(
-                        text = "Add company",
+                        text = str(S.desktop_add_company),
                         onClick = { onEvent(AccountHubEvent.EditCompany(null, fromBank = true)) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -547,16 +556,16 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
                 HubSelect(
                     value = companies.firstOrNull { it.id == draft.entityId },
                     options = companies,
-                    label = { it.name.ifBlank { "Unnamed company" } },
+                    label = { it.name.ifBlank { str(S.desktop_unnamed_company) } },
                     secondary = { it.country },
                     onSelect = { picked -> update(draft.copy(
                         entityId = picked?.id,
                         accountHolderName = picked?.name.orEmpty(),
                     )) },
                     placeholder = if (companies.isEmpty()) {
-                        "No companies yet — add one in the Companies section above"
+                        str(S.desktop_hub_no_companies_yet_add_one_in_the_companies_section_above)
                     } else {
-                        "Select holder company…"
+                        str(S.desktop_select_holder_company)
                     },
                     enabled = companies.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
@@ -592,7 +601,7 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
                 // truncating to 8 was tried and reverted (ZL-20361).
                 maxLength = ACCOUNT_NUMBER_MAX,
                 errorText = if (BankAccounts.duplicateNumber(draft, setup.banks)) {
-                    "An account with this number already exists."
+                    str(S.desktop_hub_an_account_with_this_number_already_exists)
                 } else {
                     null
                 },
@@ -604,14 +613,14 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
                 value = draft.ibanNumber,
                 onValueChange = { update(draft.copy(ibanNumber = it)) },
                 label = "IBAN",
-                placeholder = "e.g. GB29NWBK60161331926819",
+                placeholder = str(S.desktop_e_g_gb29nwbk60161331926819),
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
                 value = draft.swiftCode,
                 onValueChange = { update(draft.copy(swiftCode = it)) },
                 label = "SWIFT / BIC",
-                placeholder = "e.g. NWBKGB2L",
+                placeholder = str(S.ah_swift_hint),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -668,7 +677,7 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
                 ))
             },
         )
-        ZillitSectionLabel("Additional details")
+        ZillitSectionLabel(str(S.ah_section_additional_details))
         TypedDetailsEditor(rows = draft.additionalDetails, onChange = { update(draft.copy(additionalDetails = it)) })
 
         if (draft.sortCode.isNotBlank() && SortCode.digits(draft.sortCode).length < SORT_CODE_DIGITS) {
@@ -676,7 +685,7 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
             // carry their routing in the IBAN, so a short value is worth
             // flagging but never worth refusing.
             ZillitNotice(
-                text = "A UK sort code is six digits. Leave it blank for a non-UK account.",
+                text = str(S.desktop_hub_a_uk_sort_code_is_six_digits_leave_it_blank),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )
@@ -723,10 +732,10 @@ private fun CurrencyPicker(
         value = options.firstOrNull { it.code == code } ?: code.takeIf { it.isNotBlank() }?.let { ProjectCurrency(it) },
         options = options,
         label = { "${it.code} — ${it.name}".trimEnd(' ', '—') },
-        secondary = { if (it.code.uppercase() in project) "Project" else it.country },
+        secondary = { if (it.code.uppercase() in project) str(S.dm_step2_external_off) else it.country },
         onSelect = onPick,
-        placeholder = "Select currency…",
-        fieldLabel = "Currency *",
+        placeholder = str(S.ah_select_currency),
+        fieldLabel = str(S.desktop_currency_star),
         clearable = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -738,30 +747,34 @@ internal fun SetupRemovalDialog(state: AccountHubUiState, onEvent: (AccountHubEv
     val removal = state.setup.removal
     val (title, message, confirm) = when (removal) {
         is SetupRemoval.CompanyRow -> Triple(
-            "Remove company",
+            str(S.desktop_remove_company),
             "Remove \"${removal.company.name.ifBlank { "this company" }}\"? Its banks are unlinked, not deleted. " +
                 "This can't be undone.",
-            "Delete",
+            str(S.delete),
         )
         is SetupRemoval.BankRow -> Triple(
-            "Remove bank account",
+            str(S.desktop_remove_bank_account),
             "Remove " +
                 "\"${removal.bank.name.ifBlank { "this account" }}\"? This deletes the record Bank Reconciliation, " +
                 "Vendors and Payroll read. It cannot be undone.",
-            "Remove",
+            str(S.remove),
         )
         is SetupRemoval.AgreementRow -> Triple(
-            "Remove document",
+            str(S.desktop_remove_document),
             "Remove \"${removal.document.title.ifBlank { removal.document.name }}\"? Deal memos will stop offering it.",
-            "Remove",
+            str(S.remove),
         )
-        is SetupRemoval.PayrollGroupRow -> Triple("Delete payroll group", "Delete this payroll group?", "Delete")
+        is SetupRemoval.PayrollGroupRow -> Triple(
+            str(S.desktop_delete_payroll_group),
+            str(S.desktop_hub_delete_this_payroll_group),
+            str(S.delete),
+        )
         is SetupRemoval.PayrollAccountCode -> Triple(
-            "Remove payroll account",
+            str(S.desktop_remove_payroll_account),
             "Remove ${removal.code} from payroll accounts? This deactivates the code in the Chart of Accounts. It " +
                 "will " +
                 "fail if the code is in use or has active child accounts.",
-            "Remove",
+            str(S.remove),
         )
         null -> Triple("", "", "")
     }

@@ -38,6 +38,8 @@ import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.flattenMentions
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.delay
 
 /**
@@ -85,7 +87,7 @@ internal fun ApplicationScope.MessageWidget(
     Window(
         onCloseRequest = { toasts.clear() },
         state = windowState,
-        title = "Messages",
+        title = str(S.desktop_messages),
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         alwaysOnTop = true,
         undecorated = true,
@@ -148,7 +150,7 @@ internal fun ToastCard(toast: MessageToast, onOpen: () -> Unit, onDismiss: () ->
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Dismiss",
+            contentDescription = str(S.sync_action_dismiss),
             onClick = onDismiss,
             tint = colors.textMuted,
             size = DISMISS_SIZE,
@@ -175,9 +177,9 @@ internal data class MessageToast(
 internal fun ChatMessage.toToast(crewName: (String) -> String?, groupName: (String) -> String?): MessageToast {
     val person = crewName(senderId)
     val header = if (isGroup) {
-        listOfNotNull(groupName(receiverId), person).joinToString(" · ").ifBlank { "New group message" }
+        listOfNotNull(groupName(receiverId), person).joinToString(" · ").ifBlank { str(S.desktop_new_group_message) }
     } else {
-        person ?: "New message"
+        person ?: str(S.notification_redacted_new_message)
     }
     return MessageToast(
         id = uniqueId.ifBlank { id },
@@ -196,8 +198,9 @@ internal fun ChatMessage.toToast(crewName: (String) -> String?, groupName: (Stri
  * Shared with the notification banner, which showed the same raw tokens.
  */
 internal fun ChatMessage.cardPreview(nameOf: (String) -> String?): String =
-    attachment?.let { "Sent ${it.name}" }
-        ?: flattenMentions(body, nameOf).replace(UNRESOLVED_MENTION, "@someone").ifBlank { "Sent a message" }
+    attachment?.let { str(S.docusign_sent_on, it.name) }
+        ?: flattenMentions(body, nameOf).replace(UNRESOLVED_MENTION, str(S.desktop_someone_mention))
+            .ifBlank { str(S.desktop_sent_a_message) }
 
 /** Newest first, one per conversation, at most [MAX_TOASTS]. */
 internal fun MutableList<MessageToast>.admit(toast: MessageToast) {
@@ -214,7 +217,9 @@ private fun openConversation(chat: ChatViewModel, ready: AppGraph.Ready, toast: 
             ?.let { chat.onEvent(ChatEvent.OpenGroup(it)) }
         return
     }
-    val name = ready.projectContext?.context?.value?.user(toast.senderId)?.fullName ?: toast.senderName ?: "Crew member"
+    val name = ready.projectContext?.context?.value?.user(toast.senderId)?.fullName
+        ?: toast.senderName
+        ?: str(S.crew_member)
     chat.onEvent(ChatEvent.OpenThread(CrewContact(userId = toast.senderId, fullName = name)))
 }
 

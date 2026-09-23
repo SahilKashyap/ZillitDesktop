@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.esignature.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.EnvelopeField
 import com.zillit.desktop.feature.esignature.domain.EnvelopeRecipient
 import com.zillit.desktop.feature.esignature.domain.EsignPage
@@ -61,10 +63,10 @@ internal object EditorRules {
 
     /** The placeholder slots a template starts with — the web's "Signer 1". */
     fun placeholder(index: Int): EnvelopeRecipient = EnvelopeRecipient(
-        name = "Signer ${index + 1}",
+        name = str(S.desktop_ds_signer_n, index + 1),
         role = EnvelopeRecipient.ROLE_SIGNER,
         routingOrder = index + 1,
-        placeholderLabel = "Signer ${index + 1}",
+        placeholderLabel = str(S.desktop_ds_signer_n, index + 1),
     )
 
     /**
@@ -181,7 +183,7 @@ internal object EditorRules {
                     width = INITIAL_W,
                     height = INITIAL_H,
                     recipientIndex = owner,
-                    label = "Initial",
+                    label = str(S.docusign_place_field_initial),
                     autoInitial = true,
                 )
             }
@@ -210,54 +212,46 @@ internal object EditorRules {
     /** The web's `validateForSend`, one problem at a time in its order. */
     @Suppress("ReturnCount") // One early return per gate, in the web's order.
     fun problemBeforeSend(editor: EditorState): Problem? {
-        if (!editor.hasDocument) return Problem("Please add a document to the envelope")
+        if (!editor.hasDocument) return Problem(str(S.desktop_ds_please_add_a_document_to_the_envelope))
         val optionBad = optionFieldsMissingLabels(editor.fields)
         val labelBad = fieldsMissingLabel(editor.fields)
         val signers = editor.signers
-        if (signers.isEmpty()) return Problem("Please add at least one signer")
+        if (signers.isEmpty()) return Problem(str(S.desktop_ds_please_add_at_least_one_signer))
         val placeholders = signers.filter { it.isPlaceholder || it.email.isBlank() }
         if (placeholders.isNotEmpty()) {
-            val names = placeholders.joinToString(", ") { it.name.ifBlank { "a signer" } }
-            return Problem("Pick a real user for $names before sending — placeholders can't receive the envelope.")
+            val names = placeholders.joinToString(", ") { it.name.ifBlank { str(S.desktop_ds_a_signer) } }
+            return Problem(str(S.desktop_ds_pick_real_user_for, names))
         }
         if (editor.fields.none { it.type.isMark }) {
-            return Problem("Please place at least one signature or initial field on the document before sending")
+            return Problem(str(S.desktop_ds_please_place_at_least_one_signature_or_initial))
         }
         val uncovered = editor.signerIndexes.filter { index -> editor.fields.none { it.recipientIndex == index } }
         if (uncovered.isNotEmpty()) {
             val names = uncovered.joinToString(", ") { index ->
                 editor.recipients[index].name.ifBlank { editor.recipients[index].email }
             }
-            return Problem(
-                "Please place at least one field for $names before sending. Every signer needs something to sign.",
-            )
+            return Problem(str(S.desktop_ds_place_field_for, names))
         }
         if (optionBad.isNotEmpty()) return Problem(optionLabelsMessage(optionBad.size), optionBad)
         if (labelBad.isNotEmpty()) {
             val type = editor.fields[labelBad.first()].type.label
-            return Problem(
-                "One of your $type fields has no label — see the red highlight on the document. " +
-                    "Label every field so the signer knows what to fill in.",
-                labelBad,
-            )
+            return Problem(str(S.desktop_ds_label_every_field, type), labelBad)
         }
         return null
     }
 
     /** Drafts only need a subject and complete option fields. */
     fun problemBeforeDraft(editor: EditorState): Problem? {
-        if (editor.title.isBlank()) return Problem("Please add an email subject")
+        if (editor.title.isBlank()) return Problem(str(S.desktop_ds_please_add_an_email_subject))
         val optionBad = optionFieldsMissingLabels(editor.fields)
         if (optionBad.isNotEmpty()) return Problem(optionLabelsMessage(optionBad.size), optionBad)
         return null
     }
 
     private fun optionLabelsMessage(n: Int): String = if (n == 1) {
-        "1 dropdown / radio field is missing option labels — see the red highlight on the document. " +
-            "Click the field to fill in every option."
+        str(S.desktop_ds_one_option_label_missing)
     } else {
-        "$n dropdown / radio fields are missing option labels — see the red highlights on the document. " +
-            "Click each to fill in every option."
+        str(S.desktop_ds_n_option_labels_missing, n)
     }
 
     private const val FIELD_MARGIN = 20.0

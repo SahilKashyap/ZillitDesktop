@@ -17,6 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DealLabels
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.authoring.CrewRoles
@@ -55,23 +57,23 @@ internal fun CrewEditor(state: DealMemoUiState, builder: BuilderState, ops: Form
         CrewRoles.crewOptions(crew, builder.takenUserIds, form.text("userId"), form.text("fullLegalName"))
     }
     val agreementTag = when {
-        isNonUnionId(form.text("union")) -> "Non-Union"
+        isNonUnionId(form.text("union")) -> str(S.dm_create_non_union)
         else -> builder.reference.selectedUnion?.let { DocRead.text(it, "short_label") } ?: form.text("union")
     }
-    CardBlock(title = "Role Information", tag = agreementTag.ifEmpty { null }, tone = BuilderTone.Gold) {
+    CardBlock(title = str(S.dm_step2_card_role), tag = agreementTag.ifEmpty { null }, tone = BuilderTone.Gold) {
         ExternalRow(form, locked = statusLocked, ops)
         BuilderGrid(columns = 3) {
             cell {
                 if (form.flag("isExternal")) {
-                    Field("Crew Name", required = true) {
+                    Field(str(S.dm_step2_crew_name), required = true) {
                         BuilderInput(
                             value = form.text("crewName"),
                             onValueChange = { name -> ops.edit { it.withCrewName(name) } },
-                            placeholder = "Crew member's name",
+                            placeholder = str(S.dm_step2_crew_name_hint),
                         )
                     }
                 } else {
-                    Field("Crew Member", required = true) {
+                    Field(str(S.crew_member), required = true) {
                         val selected = crewOptions.firstOrNull { it.userId == form.text("userId") }
                         RichSelect(
                             options = crewOptions.map { option ->
@@ -80,7 +82,7 @@ internal fun CrewEditor(state: DealMemoUiState, builder: BuilderState, ops: Form
                                     label = option.name,
                                     sub = option.subline,
                                     search = option.search,
-                                    badge = "Pending".takeIf { option.pending },
+                                    badge = str(S.dm_checklist_pending).takeIf { option.pending },
                                 )
                             },
                             selectedKey = form.text("userId").ifEmpty { null },
@@ -89,7 +91,7 @@ internal fun CrewEditor(state: DealMemoUiState, builder: BuilderState, ops: Form
                                     CrewRoles.withCrewMember(it, id, crew, state.production.units, covered, catalogue)
                                 }
                             },
-                            placeholder = "— Select Crew Member —",
+                            placeholder = str(S.desktop_dm_select_crew_member_placeholder),
                             enabled = !crewLocked,
                             dropdownWidth = 340.dp,
                             triggerText = selected?.triggerLabel,
@@ -100,10 +102,14 @@ internal fun CrewEditor(state: DealMemoUiState, builder: BuilderState, ops: Form
                 }
             }
             cell {
-                Field("Department", required = true) {
+                Field(str(S.dm_nom_dept), required = true) {
                     RichSelect(
                         options = departments.map {
-                            PickOption(it.value, it.label, badge = if (it.system) "System" else null)
+                            PickOption(
+                                it.value,
+                                it.label,
+                                badge = if (it.system) str(S.desktop_language_system_short) else null,
+                            )
                         },
                         selectedKey = form.text("department").ifEmpty { null },
                         onPick = { id ->
@@ -114,15 +120,19 @@ internal fun CrewEditor(state: DealMemoUiState, builder: BuilderState, ops: Form
                                 "customJobTitle" to JsonPrimitive(""),
                             )
                         },
-                        placeholder = "Select department…",
+                        placeholder = str(S.desktop_dm_select_department),
                     )
                 }
             }
             cell {
-                Field("Designation", required = true) {
+                Field(str(S.dm_label_designation), required = true) {
                     RichSelect(
                         options = designations.map {
-                            PickOption(it.value, it.label, badge = if (it.system) "System" else null)
+                            PickOption(
+                                it.value,
+                                it.label,
+                                badge = if (it.system) str(S.desktop_language_system_short) else null,
+                            )
                         },
                         selectedKey = (form.text("designation").ifEmpty { form.text("jobTitle") }).ifEmpty { null },
                         onPick = { id ->
@@ -142,38 +152,43 @@ internal fun CrewEditor(state: DealMemoUiState, builder: BuilderState, ops: Form
                             }
                         },
                         placeholder = if (form.text("department").isEmpty()) {
-                            "Select department first…"
+                            str(S.desktop_dm_select_department_first)
                         } else {
-                            "Select designation…"
+                            str(S.desktop_dm_select_designation)
                         },
                         enabled = form.text("department").isNotEmpty(),
                     )
                 }
             }
             cell {
-                Field("Crew Type", required = true) {
+                Field(str(S.dm_step2_crew_type), required = true) {
                     NativeSelect(
                         value = form.text("crewType"),
                         options = listOf(
-                            PickOption("shoot_crew", "Shooting Crew"),
-                            PickOption("non_shoot_crew", "Non-Shooting Crew"),
+                            PickOption("shoot_crew", str(S.dm_step2_crew_type_shoot)),
+                            PickOption("non_shoot_crew", str(S.dm_step2_crew_type_non_shoot)),
                         ),
                         onPick = { ops.set("crewType", it) },
-                        placeholder = "— Select Crew Type —",
+                        placeholder = str(S.desktop_dm_select_crew_type_placeholder),
                     )
                 }
             }
             cell {
-                Field("Call Sheet Tier") {
+                Field(str(S.dm_step2_call_sheet_tier)) {
                     NativeSelect(
                         value = form.text("callSheetTier"),
-                        options = listOf("HOD", "Crew", "Daily").map { PickOption(it, it) },
+                        options = listOf(
+                            "HOD" to "HOD",
+                            "Crew" to str(S.dm_label_crew),
+                            "Daily" to str(S.dm_rates_buyout_mode_daily),
+                        )
+                            .map { (value, label) -> PickOption(value, label) },
                         onPick = { ops.set("callSheetTier", it) },
                     )
                 }
             }
             cell {
-                Field("Unit", required = true) {
+                Field(str(S.dm_step2_unit), required = true) {
                     NativeSelect(
                         value = form.text("unit"),
                         options = state.production.units.distinctBy { it.name }.map { unit ->
@@ -185,17 +200,17 @@ internal fun CrewEditor(state: DealMemoUiState, builder: BuilderState, ops: Form
                             )
                         },
                         onPick = { ops.set("unit", it) },
-                        placeholder = "— Select Unit —",
+                        placeholder = str(S.desktop_dm_select_unit_placeholder),
                     )
                 }
             }
             if (form.text("jobTitle") == DealForm.CUSTOM_JOB_TITLE) {
                 cell(span = 3) {
-                    Field("Custom Job Title") {
+                    Field(str(S.dm_step2_custom_job_title)) {
                         BuilderInput(
                             value = form.text("customJobTitle"),
                             onValueChange = { ops.set("customJobTitle", it) },
-                            placeholder = "Enter job title / credit…",
+                            placeholder = str(S.dm_step2_custom_job_title_hint),
                         )
                     }
                 }
@@ -221,16 +236,19 @@ private fun ExternalRow(form: DealForm, locked: Boolean, ops: FormOps) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            ZillitText(text = "External crew member", style = DmType.sans(13.sp, FontWeight.Bold), color = p.ink)
             ZillitText(
-                text = "Not in the system/project. A shareable crew-portal link is created so they can view their " +
-                    "deal and complete their own details.",
+                text = str(S.dm_step2_external_label),
+                style = DmType.sans(13.sp, FontWeight.Bold),
+                color = p.ink,
+            )
+            ZillitText(
+                text = str(S.dm_step2_external_sub),
                 style = DmType.sans(11.sp),
                 color = p.muted,
             )
             if (locked) {
                 ZillitText(
-                    text = "Locked — the Project/External type can only be changed while the deal is a draft.",
+                    text = str(S.desktop_dm_locked_the_project_external_type_can_only),
                     style = DmType.sans(11.sp, FontWeight.SemiBold),
                     color = p.muted,
                     modifier = Modifier.padding(top = 2.dp),
@@ -238,7 +256,7 @@ private fun ExternalRow(form: DealForm, locked: Boolean, ops: FormOps) {
             }
         }
         ZillitText(
-            text = if (form.flag("isExternal")) "External" else "Project",
+            text = if (form.flag("isExternal")) str(S.dm_nda_chip_external) else str(S.dm_step2_external_off),
             style = DmType.sans(11.sp),
             color = p.ink2,
         )

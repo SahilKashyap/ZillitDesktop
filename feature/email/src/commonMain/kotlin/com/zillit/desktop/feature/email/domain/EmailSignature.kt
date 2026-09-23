@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A sign-off appended to outgoing mail.
@@ -28,11 +30,12 @@ data class EmailSignature(
  * this out as a product decision not its to make; the product asked for the
  * phones' behaviour (QA 2026-08-20, #15).
  */
-val SYSTEM_SIGNATURE = EmailSignature(
-    id = "system-default",
-    title = "Default",
-    body = "Sent from Desktop",
-)
+val SYSTEM_SIGNATURE: EmailSignature
+    get() = EmailSignature(
+        id = "system-default",
+        title = str(S.desktop_email_format_default),
+        body = "Sent from Desktop",
+    )
 
 /**
  * Which signature a composer opens with.

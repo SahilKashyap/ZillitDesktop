@@ -40,6 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.AudioPlayer
 import com.zillit.desktop.feature.home.domain.GeoPoint
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
@@ -202,7 +204,7 @@ private fun MediaThumbnail(
             null -> if (overlay == null) {
                 ZillitIcon(
                     icon = kind.icon,
-                    contentDescription = "Loading ${kind.label.lowercase()}",
+                    contentDescription = str(S.desktop_media_loading_kind, kind.label.lowercase()),
                     tint = hue.copy(alpha = PLACEHOLDER_ALPHA),
                     size = PLACEHOLDER_GLYPH,
                 )
@@ -235,7 +237,7 @@ private fun PlayBadge() {
         // The chevron reads as "play" at this size without a dedicated glyph.
         ZillitIcon(
             icon = ZillitIcons.ChevronRight,
-            contentDescription = "Play",
+            contentDescription = str(S.desktop_play),
             tint = Color.White,
             size = PLAY_ICON,
         )
@@ -368,24 +370,25 @@ internal fun fileKindOf(fileName: String, subtype: String? = null): FileKind {
 
     return when (extension) {
         "pdf" -> FileKind(ZillitIcons.File, "PDF", FileHue.Red)
-        "doc", "docx", "rtf", "odt", "pages" -> FileKind(ZillitIcons.File, "Document", FileHue.Blue)
-        "txt", "md", "log" -> FileKind(ZillitIcons.File, "Text", FileHue.Neutral)
+        "doc", "docx", "rtf", "odt", "pages" -> FileKind(ZillitIcons.File, str(S.document), FileHue.Blue)
+        "txt", "md", "log" -> FileKind(ZillitIcons.File, str(S.docusign_field_text), FileHue.Neutral)
         "xls", "xlsx", "csv", "tsv", "ods", "numbers" ->
-            FileKind(ZillitIcons.Grid, "Spreadsheet", FileHue.Green)
-        "ppt", "pptx", "odp", "key" -> FileKind(ZillitIcons.Monitor, "Presentation", FileHue.Amber)
-        "zip", "rar", "7z", "tar", "gz", "bz2" -> FileKind(ZillitIcons.Drive, "Archive", FileHue.Purple)
+            FileKind(ZillitIcons.Grid, str(S.desktop_file_kind_spreadsheet), FileHue.Green)
+        "ppt", "pptx", "odp", "key" ->
+            FileKind(ZillitIcons.Monitor, str(S.desktop_file_kind_presentation), FileHue.Amber)
+        "zip", "rar", "7z", "tar", "gz", "bz2" -> FileKind(ZillitIcons.Drive, str(S.archive_text), FileHue.Purple)
         "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "svg" ->
-            FileKind(ZillitIcons.Photo, "Image", FileHue.Pink)
+            FileKind(ZillitIcons.Photo, str(S.image), FileHue.Pink)
         "mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv" ->
-            FileKind(ZillitIcons.Play, "Video", FileHue.Indigo)
+            FileKind(ZillitIcons.Play, str(S.video), FileHue.Indigo)
         "mp3", "wav", "m4a", "aac", "ogg", "flac", "opus" ->
-            FileKind(ZillitIcons.Mic, "Audio", FileHue.Teal)
+            FileKind(ZillitIcons.Mic, str(S.audio), FileHue.Teal)
         // Named by its extension when it is one this list has never seen — "XCF"
         // beats "File", and the uploader knows what theirs is. Left grey: an
         // unknown file has no family to be coloured by.
         else -> FileKind(
             icon = ZillitIcons.Paperclip,
-            label = extension.uppercase().ifBlank { "Attachment" },
+            label = extension.uppercase().ifBlank { str(S.attachment) },
             hue = FileHue.Neutral,
         )
     }
@@ -467,7 +470,7 @@ private fun LocationDetails(point: GeoPoint, onOpenLocation: (GeoPoint) -> Unit)
         ) {
             ZillitIcon(
                 icon = ZillitIcons.Pin,
-                contentDescription = "Location",
+                contentDescription = str(S.location),
                 tint = ZillitTheme.colors.accent,
                 size = CHIP_ICON,
             )
@@ -479,7 +482,7 @@ private fun LocationDetails(point: GeoPoint, onOpenLocation: (GeoPoint) -> Unit)
             // Nameless is ordinary: the web and iOS send the point alone, and
             // a post from either arrives with nothing to title it.
             ZillitText(
-                text = point.name.ifBlank { "Shared location" },
+                text = point.name.ifBlank { str(S.desktop_shared_location) },
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textPrimary,
                 maxLines = 2,
@@ -501,7 +504,7 @@ private fun LocationDetails(point: GeoPoint, onOpenLocation: (GeoPoint) -> Unit)
                 maxLines = 1,
             )
             ZillitText(
-                text = "Open in Maps",
+                text = str(S.desktop_open_in_maps),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
                 maxLines = 1,
@@ -551,7 +554,7 @@ internal fun AudioMessageContent(
     ) {
         ZillitIconButton(
             icon = if (mine?.isPlaying == true) ZillitIcons.Pause else ZillitIcons.Play,
-            contentDescription = if (mine?.isPlaying == true) "Pause" else "Play",
+            contentDescription = if (mine?.isPlaying == true) str(S.desktop_pause) else str(S.desktop_play),
             onClick = {
                 scope.launch {
                     val bytes = media.fetch(attachment, preview = false)
@@ -615,13 +618,13 @@ internal fun MediaLightbox(
     ) {
         when (val loaded = bitmap) {
             null -> ZillitText(
-                text = "Loading…",
+                text = str(S.ah_loading),
                 style = ZillitTheme.typography.bodyMedium,
                 color = Color.White,
             )
 
             is AttachmentImage.Failed -> ZillitText(
-                text = "Could not load this image.",
+                text = str(S.desktop_could_not_load_image),
                 style = ZillitTheme.typography.bodyMedium,
                 color = Color.White,
             )

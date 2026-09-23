@@ -9,6 +9,8 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.data.dayMillis
 import com.zillit.desktop.feature.pagedistribution.data.ymd
 import com.zillit.desktop.feature.pagedistribution.domain.DistFolder
@@ -205,7 +207,7 @@ class DistributionViewModel(
                 if (state.value.viewer.mayPublish) {
                     setState { copy(confirmPublish = event.document) }
                 } else {
-                    setState { copy(error = "You do not have posting rights for Document Distribution") }
+                    setState { copy(error = str(S.desktop_dist_no_posting_rights_docdist)) }
                 }
             }
             DistributionEvent.ConfirmPublish -> publish()
@@ -378,7 +380,11 @@ class DistributionViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, upload = null) }
-                    val done = if (editor.replaces != null) "Document replaced" else "Document uploaded"
+                    val done = if (editor.replaces != null) {
+                        str(S.desktop_dist_document_replaced)
+                    } else {
+                        str(S.desktop_fs_document_uploaded)
+                    }
                     sendEffect(DistributionEffect.Notice(done))
                     val open = state.value.openFolder
                     if (open != null) openFolder(open.folder.key) else loadTab()
@@ -393,28 +399,28 @@ class DistributionViewModel(
 
     @Suppress("CyclomaticComplexMethod", "ReturnCount") // A validation ladder: one line per rule, first failure wins.
     private fun uploadProblem(tab: DistributionTab, editor: UploadEditor, viewer: DistributionViewer): String? {
-        if (!viewer.mayPost) return "You do not have posting rights for ${tool.title}"
-        if (!editor.fileName.endsWith(".pdf", ignoreCase = true)) return "Only PDF files are allowed"
+        if (!viewer.mayPost) return str(S.desktop_dist_no_posting_rights_for, tool.title)
+        if (!editor.fileName.endsWith(".pdf", ignoreCase = true)) return str(S.desktop_only_pdf_allowed)
         val kind = tab.kind
         val byName = kind is TabKind.Folders && kind.folderKey == FolderKey.Name
         val byScene = kind is TabKind.Folders && kind.folderKey == FolderKey.SceneNumber
-        if (byName && editor.name.isBlank()) return "A folder name is required"
+        if (byName && editor.name.isBlank()) return str(S.desktop_dist_folder_name_required)
         if (byScene && editor.replaces == null) {
             kind as TabKind.Folders
             val scene = editor.sceneNumber.trim()
-            if (scene.isEmpty()) return "A scene number is required"
-            if (!scene.first().isDigit()) return "The scene number must start with a digit"
-            if (scene.length > MAX_SCENE) return "The scene number is at most $MAX_SCENE characters"
-            if (kind.scheduleTypeChoice && editor.scheduleType == null) return "Choose schedule pages or one line pages"
+            if (scene.isEmpty()) return str(S.desktop_docdist_scene_number_required)
+            if (!scene.first().isDigit()) return str(S.desktop_dist_scene_must_start_digit)
+            if (scene.length > MAX_SCENE) return str(S.desktop_dist_scene_max_length, MAX_SCENE)
+            if (kind.scheduleTypeChoice && editor.scheduleType == null) return str(S.desktop_dist_choose_page_kind)
         }
         // The web's `EpisodeInput status={true}`: required on television
         // productions on a single list, on D.O.D, and on a NEW page — a page
         // replace has no episode field at all.
         val episodeRequired = viewer.isTelevision &&
             (kind is TabKind.Single || byName || (byScene && editor.replaces == null))
-        if (episodeRequired && editor.episode.isBlank()) return "An episode number is required"
+        if (episodeRequired && editor.episode.isBlank()) return str(S.desktop_dist_episode_required)
         val badDate = editor.dateYmd.isNotBlank() && dayMillis(editor.dateYmd, TimeZone.currentSystemDefault()) == 0L
-        return if (badDate) "The date must be YYYY-MM-DD" else null
+        return if (badDate) str(S.desktop_dist_date_must_be_ymd) else null
     }
 
     // Documents ------------------------------------------------------------
@@ -426,7 +432,7 @@ class DistributionViewModel(
             val fresh = repository.document(tab, document.id, ReadAction.View, state.value.mode).orError()
             val stored = fresh?.attachment ?: document.attachment
             if (stored == null) {
-                setState { copy(pdf = null, error = "This document has no file") }
+                setState { copy(pdf = null, error = str(S.desktop_dist_document_has_no_file)) }
                 return@launch
             }
             val pages = when (val bytes = transfer.fetch(stored)) {
@@ -464,7 +470,7 @@ class DistributionViewModel(
                 is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
-                    sendEffect(DistributionEffect.Notice("Saved to Downloads"))
+                    sendEffect(DistributionEffect.Notice(str(S.docusign_signing_attachment_saved)))
                 }
             }
         }
@@ -478,7 +484,7 @@ class DistributionViewModel(
         if (!state.value.viewer.mayPost) return guardPost {}
         val document = state.value.confirmDelete ?: return
         if (!state.value.viewer.mayDelete(document.createdBy)) {
-            setState { copy(confirmDelete = null, error = "Only an admin or the uploader can delete this") }
+            setState { copy(confirmDelete = null, error = str(S.desktop_dist_delete_admin_or_uploader)) }
             return
         }
         val tab = state.value.activeTab
@@ -500,7 +506,7 @@ class DistributionViewModel(
                             searchResults = searchResults?.filterNot { it.id == document.id },
                         )
                     }
-                    sendEffect(DistributionEffect.Notice("Deleted"))
+                    sendEffect(DistributionEffect.Notice(str(S.drive_deleted_default)))
                 }
             }
         }
@@ -532,7 +538,7 @@ class DistributionViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, move = null, openFolder = null) }
-                    sendEffect(DistributionEffect.Notice("Moved to ${target.key}"))
+                    sendEffect(DistributionEffect.Notice(str(S.desktop_email_moved_to, target.key)))
                     loadTab()
                 }
             }
@@ -553,7 +559,7 @@ class DistributionViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, confirmPublish = null) }
-                    sendEffect(DistributionEffect.Notice("Published to Document Distribution"))
+                    sendEffect(DistributionEffect.Notice(str(S.desktop_board_published_to_docdist)))
                 }
             }
         }
@@ -579,7 +585,7 @@ class DistributionViewModel(
         val (name, bytes) = files.firstOrNull() ?: return
         guardPost {
             if (!name.endsWith(".pdf", ignoreCase = true)) {
-                setState { copy(error = "Only PDF files are allowed") }
+                setState { copy(error = str(S.desktop_only_pdf_allowed)) }
             } else {
                 openUpload(DistributionEvent.PdfPicked(name, bytes, replaces = null))
             }

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.settings.account
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The pages behind the "Your account" rows on Settings.
@@ -10,12 +12,14 @@ import com.zillit.desktop.core.common.ZillitResult
  * repository against `user/…` and `device/…`. The Settings provider reads this
  * to decide which page a route means — see `SettingsToolProvider`.
  */
-enum class AccountPage(val slug: String, val tabTitle: String) {
-    EditProfile("profile", "Your profile"),
-    RecoveryEmail("recovery-email", "Recovery email"),
-    LinkedDevices("devices", "Linked devices"),
-    InviteCrew("invite", "Invite crew"),
+enum class AccountPage(val slug: String, private val tabTitleKey: String) {
+    EditProfile("profile", S.desktop_your_profile),
+    RecoveryEmail("recovery-email", S.recovery_email),
+    LinkedDevices("devices", S.desktop_linked_devices),
+    InviteCrew("invite", S.desktop_cal_invite_crew),
     ;
+
+    val tabTitle: String get() = str(tabTitleKey)
 
     companion object {
         fun fromPath(path: String): AccountPage? =
@@ -103,13 +107,13 @@ data class LinkedDevice(
 ) {
     /** Never blank: a device with no name is still one you may need to sign out. */
     val displayName: String
-        get() = name.ifBlank { kind?.takeIf { it.isNotBlank() }?.let(::kindLabel) ?: "Unnamed device" }
+        get() = name.ifBlank { kind?.takeIf { it.isNotBlank() }?.let(::kindLabel) ?: str(S.desktop_unnamed_device) }
 
     val detail: String
         get() = listOfNotNull(
             kind?.takeIf { it.isNotBlank() }?.let(::kindLabel),
             osVersion?.takeIf { it.isNotBlank() },
-            appVersion?.takeIf { it.isNotBlank() }?.let { "Zillit $it" },
+            appVersion?.takeIf { it.isNotBlank() }?.let { str(S.desktop_zillit_version, it) },
         ).joinToString(" · ")
 
     /** Refused by the server, so never offered. */
@@ -121,8 +125,8 @@ private fun kindLabel(kind: String): String = when (kind.trim().lowercase()) {
     "ios", "iphone" -> "iPhone"
     "ipad" -> "iPad"
     "android" -> "Android"
-    "desktop", "mac", "macos", "windows" -> "Computer"
-    "web", "browser" -> "Browser"
+    "desktop", "mac", "macos", "windows" -> str(S.desktop_device_kind_computer)
+    "web", "browser" -> str(S.desktop_device_kind_browser)
     else -> kind.replaceFirstChar { it.uppercase() }
 }
 

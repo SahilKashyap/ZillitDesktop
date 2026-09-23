@@ -11,6 +11,8 @@ import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.PreviewKind
 import com.zillit.desktop.feature.drive.domain.UploadPlan
 import com.zillit.desktop.feature.drive.domain.eligible
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Drive's drawers and dialogs: upload, create folder, edit info, share,
@@ -66,9 +68,9 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         val draft = state.upload ?: return
         if (!draft.canSubmit) {
             if (draft.pickExisting && draft.destinationFolderId == null) {
-                vm.reportFailure("Please select a destination folder.")
+                vm.reportFailure(str(S.drive_pick_please_select_destination))
             } else {
-                vm.reportFailure("Please select files to upload.")
+                vm.reportFailure(str(S.please_select_files))
             }
             return
         }
@@ -92,26 +94,32 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
     fun dropFiles(files: List<PickedFile>) {
         if (!vm.requirePosting()) return
         if (state.section != com.zillit.desktop.feature.drive.domain.DriveSection.MyDrive) {
-            vm.reportFailure("Files can only be uploaded to My Drive.")
+            vm.reportFailure(str(S.desktop_drive_upload_my_drive_only))
             return
         }
         if (files.size > MAX_DROP_COUNT) {
-            vm.reportFailure("Maximum $MAX_DROP_COUNT files per upload. ${files.size} files were dropped.")
+            vm.reportFailure(str(S.desktop_drive_drop_max, MAX_DROP_COUNT, files.size))
             return
         }
         val rejected = mutableListOf<String>()
         val valid = files.filter { file ->
             when {
-                !isAccepted(file) -> { rejected += "${file.name} (unsupported type)"; false }
-                file.sizeBytes > UploadPlan.MAX_FILE_BYTES -> { rejected += "${file.name} (exceeds 10 GB)"; false }
-                file.sizeBytes == 0L -> { rejected += "${file.name} (empty file)"; false }
+                !isAccepted(file) -> { rejected += str(S.desktop_drive_rejected_unsupported, file.name); false }
+                file.sizeBytes > UploadPlan.MAX_FILE_BYTES -> {
+                    rejected += str(S.desktop_drive_rejected_too_large, file.name)
+                    false
+                }
+                file.sizeBytes == 0L -> { rejected += str(S.desktop_drive_rejected_empty, file.name); false }
                 else -> true
             }
         }
         if (rejected.isNotEmpty()) {
             vm.reportFailure(
-                "${rejected.size} file(s) skipped: " + rejected.take(REJECTED_SHOWN).joinToString(", ") +
-                    if (rejected.size > REJECTED_SHOWN) "…" else "",
+                str(
+                    S.desktop_drive_files_skipped,
+                    rejected.size,
+                    rejected.take(REJECTED_SHOWN).joinToString(", ") + if (rejected.size > REJECTED_SHOWN) "…" else "",
+                ),
             )
         }
         if (valid.isEmpty()) return
@@ -142,7 +150,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         val draft = state.newFolder ?: return
         if (!draft.canSubmit) {
             if (draft.pickExisting && draft.destinationFolderId == null) {
-                vm.reportFailure("Please select a destination folder.")
+                vm.reportFailure(str(S.drive_pick_please_select_destination))
             }
             return
         }
@@ -158,7 +166,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         vm.run {
             when (val made = vm.repo.createFolder(folder)) {
                 is ZillitResult.Success -> {
-                    vm.update { copy(newFolder = null, notice = "Folder created") }
+                    vm.update { copy(newFolder = null, notice = str(S.desktop_drive_activity_folder_created)) }
                     vm.loadListing()
                 }
 
@@ -177,7 +185,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         vm.update { copy(menu = null) }
         if (!vm.requirePosting()) return
         if (!state.viewer.may(DriveAction.Edit, item)) {
-            vm.reportFailure("You do not have permission to edit this item.")
+            vm.reportFailure(str(S.desktop_drive_no_edit_permission))
             return
         }
         val name = if (item.isFolder) item.name else item.name.substringBeforeLast('.', item.name)
@@ -202,7 +210,11 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
                     vm.update {
                         copy(
                             edit = null,
-                            notice = "${if (item.isFolder) "Folder" else "File"} updated",
+                            notice = if (item.isFolder) {
+                                str(S.dd_folder_updated)
+                            } else {
+                                str(S.desktop_drive_activity_file_updated)
+                            },
                             details = if (details.item?.id == item.id) {
                                 details.copy(item = item.copy(name = name, description = draft.description.trim()))
                             } else {
@@ -229,9 +241,9 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         if (!state.viewer.may(DriveAction.Share, item)) {
             vm.reportFailure(
                 if (item.isFolder) {
-                    "Only the owner of a folder can manage its access."
+                    str(S.desktop_drive_only_owner_manages_access)
                 } else {
-                    "You cannot share this file."
+                    str(S.desktop_drive_cannot_share_file)
                 },
             )
             return
@@ -268,7 +280,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         val people = state.sharePeople.exceptMe()
         val entries = if (item.isFolder) share.access.folderEntries(people) else share.access.fileEntries(people)
         if (entries.isEmpty()) {
-            vm.reportFailure("Please select at least one user to share with.")
+            vm.reportFailure(str(S.desktop_drive_select_user_to_share))
             return
         }
         updateShare { copy(submitting = true) }
@@ -278,8 +290,11 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
                     vm.update {
                         copy(
                             share = null,
-                            notice = "${item.name} shared with ${entries.size} user" +
-                                if (entries.size == 1) "" else "s",
+                            notice = if (entries.size == 1) {
+                                str(S.desktop_drive_shared_with_one, item.name)
+                            } else {
+                                str(S.desktop_drive_shared_with_many, item.name, entries.size)
+                            },
                         )
                     }
                     vm.loadListing()
@@ -312,7 +327,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         val form = share.link
         val recipients = form.recipients.split(Regex("[\\s,;]+")).map { it.trim() }.filter { it.isNotEmpty() }
         recipients.firstOrNull { !EMAIL.matches(it) }?.let {
-            vm.reportFailure("Invalid email: $it")
+            vm.reportFailure(str(S.desktop_drive_invalid_email, it))
             return
         }
         updateLink { copy(submitting = true) }
@@ -327,11 +342,17 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
             when (val made = vm.repo.createShareLink(share.item.id, draft)) {
                 is ZillitResult.Success -> {
                     if (recipients.isNotEmpty()) {
-                        vm.notice("Link sent to ${recipients.size} recipient" + if (recipients.size == 1) "" else "s")
+                        vm.notice(
+                            if (recipients.size == 1) {
+                                str(S.desktop_drive_link_sent_one)
+                            } else {
+                                str(S.desktop_drive_link_sent_many, recipients.size)
+                            },
+                        )
                     } else if (made.data.url.isNotBlank()) {
-                        vm.effect(DriveEffect.CopyToClipboard(made.data.url, "Share link copied to clipboard"))
+                        vm.effect(DriveEffect.CopyToClipboard(made.data.url, str(S.desktop_drive_share_link_copied)))
                     } else {
-                        vm.notice("Share link created")
+                        vm.notice(str(S.desktop_drive_share_link_created))
                     }
                     updateLink { copy(submitting = false, recipients = "", message = "") }
                     reloadLinks(share.item.id)
@@ -350,7 +371,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         vm.run {
             when (val done = vm.repo.revokeShareLink(link.id)) {
                 is ZillitResult.Success -> {
-                    vm.notice("Link revoked")
+                    vm.notice(str(S.drive_link_revoked))
                     reloadLinks(share.item.id)
                 }
 
@@ -366,7 +387,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         if (items.isEmpty() || !vm.requirePosting()) return
         val allowed = state.viewer.eligible(DriveAction.Edit, items)
         if (allowed.isEmpty()) {
-            vm.reportFailure("You do not have permission to move the selected items.")
+            vm.reportFailure(str(S.desktop_drive_no_move_permission))
             return
         }
         vm.update { copy(moveTo = MoveToState(items = allowed)) }
@@ -391,7 +412,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
             return
         }
         if (!state.viewer.may(DriveAction.View, item)) {
-            vm.reportFailure("You do not have permission to open that file.")
+            vm.reportFailure(str(S.desktop_drive_no_open_permission))
             return
         }
         val kind = item.previewKind
@@ -437,7 +458,7 @@ internal class DriveDrawers(private val vm: DriveViewModel, private val queue: U
         apply: suspend PreviewState.(ByteArray) -> PreviewState,
     ) {
         if (item.sizeBytes > maxBytes) {
-            settlePreview(item) { copy(loading = false, error = "This file is too large to preview here.") }
+            settlePreview(item) { copy(loading = false, error = str(S.desktop_drive_preview_too_large)) }
             return
         }
         when (val bytes = vm.previews.fetchBytes(url, maxBytes)) {

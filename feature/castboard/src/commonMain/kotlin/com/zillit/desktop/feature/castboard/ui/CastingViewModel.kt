@@ -7,6 +7,8 @@ import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.castboard.data.castingDiscussionEvents
 import com.zillit.desktop.feature.castboard.data.castingSyncEvents
 import com.zillit.desktop.feature.castboard.domain.BoardTool
@@ -120,8 +122,11 @@ class CastingViewModel(
     private fun askForRights(kind: RightsKind) {
         setState {
             copy(
-                error = "You do not have ${kind.verb} rights on $MODULE_LABEL" +
-                    if (rights == null) "." else " — asking an administrator.",
+                error = if (rights == null) {
+                    str(S.desktop_no_rights_on_module, kind.verb, str(S.casting))
+                } else {
+                    str(S.desktop_no_rights_on_module_asking_admin, kind.verb, str(S.casting))
+                },
             )
         }
         rights?.ask(MODULE_LABEL, kind)
@@ -140,7 +145,7 @@ class CastingViewModel(
                 is ZillitResult.Success -> setState {
                     copy(
                         busy = false,
-                        notice = "Moved to ${status.label}",
+                        notice = str(S.desktop_email_moved_to, status.label),
                         entries = entries.filterNot { it.id == entryId },
                     )
                 }

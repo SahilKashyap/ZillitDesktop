@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.esignature.domain
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Who is in the E-Signature tool.
@@ -47,18 +49,20 @@ data class EsignViewer(
  * Envelope status, as the wire spells it. The label column is the web's
  * `STATUS_TAG`; anything unrecognised keeps its wire string as its label.
  */
-enum class EnvelopeStatus(val wire: String, val label: String) {
-    Draft("draft", "Draft"),
-    Sent("sent", "Sent"),
-    Delivered("delivered", "Delivered"),
-    Signed("signed", "Signed"),
-    Completed("completed", "Completed"),
-    Declined("declined", "Declined"),
-    Voided("voided", "Voided"),
-    Expired("expired", "Expired"),
-    Rejected("rejected", "Rejected"),
+enum class EnvelopeStatus(val wire: String, private val labelKey: String) {
+    Draft("draft", S.txt_draft),
+    Sent("sent", S.txt_sent),
+    Delivered("delivered", S.docusign_status_delivered),
+    Signed("signed", S.docusign_status_signed),
+    Completed("completed", S.completed),
+    Declined("declined", S.docusign_status_declined),
+    Voided("voided", S.desktop_ds_voided),
+    Expired("expired", S.docusign_status_expired),
+    Rejected("rejected", S.rejected),
     Unknown("", ""),
     ;
+
+    val label: String get() = if (labelKey.isEmpty()) "" else str(labelKey)
 
     /**
      * Whether the envelope has gone out and nothing has finished it.
@@ -121,11 +125,11 @@ data class EnvelopeRecipient(
     /** The web's recipient-status label map (`RST`). */
     val statusLabel: String
         get() = when (status) {
-            "created" -> "Created"
-            "sent" -> "Sent"
-            "delivered" -> "Viewed"
-            "signed", "completed" -> "Completed"
-            "declined" -> "Declined"
+            "created" -> str(S.drive_created)
+            "sent" -> str(S.txt_sent)
+            "delivered" -> str(S.docusign_bulk_stage_viewed)
+            "signed", "completed" -> str(S.completed)
+            "declined" -> str(S.docusign_status_declined)
             else -> status
         }
 
@@ -146,7 +150,7 @@ data class EnvelopeRecipient(
 @Suppress("MagicNumber") // The web's `FIELD_TYPES` box sizes, in PDF points.
 enum class FieldType(
     val wire: String,
-    val label: String,
+    private val labelKey: String,
     val defaultWidth: Double,
     val defaultHeight: Double,
     /** Offered on the placement toolbar. `dateSigned` is stamped by the service. */
@@ -156,23 +160,25 @@ enum class FieldType(
     /** Can be pre-filled by the sender. */
     val supportsDefault: Boolean = false,
 ) {
-    SignHere("signHere", "Signature", 180.0, 36.0),
-    InitialHere("initialHere", "Initial", 120.0, 36.0),
-    Checkbox("checkbox", "Checkbox", 180.0, 28.0, supportsDefault = true),
-    Radio("radioGroup", "Radio", 180.0, 56.0, hasOptions = true, supportsDefault = true),
-    Dropdown("dropdown", "Select", 160.0, 32.0, hasOptions = true, supportsDefault = true),
-    Text("text", "Text", 200.0, 32.0),
-    Date("date", "Date", 130.0, 32.0),
-    DateSigned("dateSigned", "Date Signed", 120.0, 30.0, onToolbar = false),
-    FullName("fullName", "Name", 180.0, 32.0),
-    Email("email", "Email", 180.0, 32.0),
-    Phone("phone", "Phone", 150.0, 32.0),
-    Number("number", "Numeric Only", 100.0, 32.0),
-    Url("url", "URL", 180.0, 32.0),
-    Image("image", "Image", 100.0, 100.0),
-    Attachment("attachment", "Attachment", 150.0, 56.0),
-    Other("", "Field", 160.0, 32.0, onToolbar = false),
+    SignHere("signHere", S.txt_signature, 180.0, 36.0),
+    InitialHere("initialHere", S.docusign_place_field_initial, 120.0, 36.0),
+    Checkbox("checkbox", S.desktop_ds_checkbox, 180.0, 28.0, supportsDefault = true),
+    Radio("radioGroup", S.docusign_field_radio, 180.0, 56.0, hasOptions = true, supportsDefault = true),
+    Dropdown("dropdown", S.select, 160.0, 32.0, hasOptions = true, supportsDefault = true),
+    Text("text", S.docusign_field_text, 200.0, 32.0),
+    Date("date", S.date, 130.0, 32.0),
+    DateSigned("dateSigned", S.docusign_signing_date_signed, 120.0, 30.0, onToolbar = false),
+    FullName("fullName", S.name, 180.0, 32.0),
+    Email("email", S.email, 180.0, 32.0),
+    Phone("phone", S.docusign_field_phone, 150.0, 32.0),
+    Number("number", S.desktop_ds_numeric_only, 100.0, 32.0),
+    Url("url", S.docusign_field_url, 180.0, 32.0),
+    Image("image", S.docusign_field_image, 100.0, 100.0),
+    Attachment("attachment", S.docusign_field_attachment, 150.0, 56.0),
+    Other("", S.desktop_ds_field, 160.0, 32.0, onToolbar = false),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Signature and initials — answered with a stored mark. */
     val isMark: Boolean get() = this == SignHere || this == InitialHere
@@ -318,7 +324,11 @@ data class Envelope(
     val seenCount: Int get() = signers.count { it.seen }
 
     val signerSummary: String
-        get() = if (signers.isEmpty()) "No signers" else "$signedCount of ${signers.size} signed"
+        get() = if (signers.isEmpty()) {
+            str(S.desktop_ds_no_signers)
+        } else {
+            str(S.desktop_ds_n_of_m_signed, signedCount, signers.size)
+        }
 
     /** The moment the list sorts and labels by — the web's `lastActivityTs`. */
     val lastActivity: Long? get() = updated ?: completedOn ?: sentOn ?: created
@@ -418,7 +428,7 @@ data class BulkJob(
     val isRunning: Boolean get() = status == "running" || status == "pending"
     val isTerminal: Boolean get() = !isRunning && status.isNotBlank()
     val progressFraction: Float get() = if (totalRows == 0) 0f else processed.toFloat() / totalRows
-    val displayName: String get() = name.ifBlank { templateName.ifBlank { "Bulk send" } }
+    val displayName: String get() = name.ifBlank { templateName.ifBlank { str(S.docusign_bulk_send_title) } }
 }
 
 /** One CSV row's outcome inside a bulk job. */
@@ -468,13 +478,16 @@ interface EsignPdf {
 }
 
 /** The typed-signature styles the web offers; the host maps each key to a face it has. */
-enum class SignatureFont(val key: String, val label: String) {
-    Formal("formal", "Formal"),
-    Flowing("flowing", "Flowing"),
-    Casual("casual", "Casual"),
-    Slim("slim", "Slim"),
-    Bold("bold", "Bold"),
-    Natural("natural", "Natural"),
+enum class SignatureFont(val key: String, private val labelKey: String) {
+    Formal("formal", S.docusign_sig_style_formal),
+    Flowing("flowing", S.docusign_sig_style_flowing),
+    Casual("casual", S.docusign_sig_style_casual),
+    Slim("slim", S.docusign_sig_style_slim),
+    Bold("bold", S.bold),
+    Natural("natural", S.docusign_sig_style_natural),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** A rendered page; the tap conversion here is top-left to top-left — no flip. */

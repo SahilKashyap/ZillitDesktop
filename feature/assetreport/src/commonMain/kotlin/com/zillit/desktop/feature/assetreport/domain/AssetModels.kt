@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.assetreport.domain
 
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Asset Register: every POSTED/CLOSED purchase-order line as an asset
@@ -68,7 +70,7 @@ data class AssetAttachment(
         get() = media.isNotBlank() && bucket.isNotBlank() && region.isNotBlank()
 
     val displayName: String
-        get() = name.ifBlank { media.substringAfterLast('/') }.ifBlank { "Attachment" }
+        get() = name.ifBlank { media.substringAfterLast('/') }.ifBlank { str(S.attachment) }
 
     companion object {
         const val IMAGE_FAMILY = "image"
@@ -90,11 +92,13 @@ data class AssetRecord(
 )
 
 /** `Keep` / `Sell`, capitalised on the wire; empty clears. */
-enum class AssetCategory(val wire: String, val subtitle: String) {
+enum class AssetCategory(val wire: String, private val subtitleKey: String) {
     None("", ""),
-    Keep("Keep", "Retain in inventory"),
-    Sell("Sell", "List on wrap sale"),
+    Keep("Keep", S.asset_keep_sub),
+    Sell("Sell", S.asset_sell_sub),
     ;
+
+    val subtitle: String get() = if (subtitleKey.isEmpty()) "" else str(subtitleKey)
 
     companion object {
         /** The two a person can pick, in the web's order. */
@@ -111,12 +115,14 @@ enum class AssetCategory(val wire: String, val subtitle: String) {
  * (`rental`, `consume`, any case) is kept — strictness against a live wire only
  * manufactures Unknowns.
  */
-enum class ExpenditureType(val wire: String, val label: String) {
-    Purchase("Purchase", "Purchase"),
-    Rent("Rent", "Rental"),
-    Consumption("Consumption", "Consumables"),
+enum class ExpenditureType(val wire: String, private val labelKey: String) {
+    Purchase("Purchase", S.ah_exp_purchase),
+    Rent("Rent", S.desktop_rental),
+    Consumption("Consumption", S.ah_exp_consumption),
     Unknown("", ""),
     ;
+
+    val label: String get() = if (labelKey.isEmpty()) "" else str(labelKey)
 
     companion object {
         fun fromWire(value: String?): ExpenditureType = when (value?.trim()?.lowercase()) {

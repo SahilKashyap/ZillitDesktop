@@ -29,6 +29,8 @@ data class AccountSummary(
 
 data class SettingsUiState(
     val themeMode: ThemeMode = ThemeMode.System,
+    /** The stored language preference: a code, or blank for "follow the system". */
+    val language: String = "",
     val uiScalePercent: Int = DEFAULT_SCALE,
     val account: AccountSummary = AccountSummary(),
     /** Silences calendar reminders without unsetting them on the events. */
@@ -184,6 +186,9 @@ data class UnitContext(
 
 sealed interface SettingsEvent {
     data class ThemeChanged(val mode: ThemeMode) : SettingsEvent
+
+    /** A language code, or blank to follow the system. */
+    data class LanguageChanged(val code: String) : SettingsEvent
 
     /** Steps the interface size. [by] is a percentage delta. */
     data class ScaleChanged(val by: Int) : SettingsEvent

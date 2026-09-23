@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.settings.ui
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 
 /**
@@ -163,31 +165,31 @@ fun settingsEntries(): List<SettingsGroup> = listOf(
 
 private fun accountGroup(): SettingsGroup =
     SettingsGroup(
-        title = "Your account",
+        title = str(S.desktop_your_account),
         icon = ZillitIcons.User,
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.EditProfile,
-                title = "Your profile",
-                detail = "Your name, department and role, as the rest of the crew see them.",
+                title = str(S.desktop_your_profile),
+                detail = str(S.desktop_your_profile_detail),
                 icon = ZillitIcons.User,
             ),
             SettingsEntry(
                 destination = SettingsDestination.RecoveryEmail,
-                title = "Recovery email",
-                detail = "Where a recovery code is sent if you lose access to this account.",
+                title = str(S.recovery_email),
+                detail = str(S.desktop_recovery_email_detail),
                 icon = ZillitIcons.Mail,
             ),
             SettingsEntry(
                 destination = SettingsDestination.LinkedDevices,
-                title = "Linked devices",
-                detail = "Computers and phones signed in to Zillit as you, and a way to sign them out.",
+                title = str(S.desktop_linked_devices),
+                detail = str(S.desktop_linked_devices_detail),
                 icon = ZillitIcons.Monitor,
             ),
             SettingsEntry(
                 destination = SettingsDestination.InviteCrew,
-                title = "Invite crew",
-                detail = "Share this project's code so someone can ask to join it.",
+                title = str(S.desktop_cal_invite_crew),
+                detail = str(S.desktop_invite_crew_detail),
                 icon = ZillitToolIcons.IcInviteUser,
             ),
         ),
@@ -195,19 +197,19 @@ private fun accountGroup(): SettingsGroup =
 
 private fun productionGroup(): SettingsGroup =
     SettingsGroup(
-        title = "This project",
+        title = str(S.desktop_this_project),
         icon = ZillitIcons.Home,
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.Help,
-                title = "Zillit help",
-                detail = "FAQs, privacy, terms — and a way to reach support.",
+                title = str(S.zillit_help),
+                detail = str(S.desktop_zillit_help_detail),
                 icon = ZillitIcons.Info,
             ),
             SettingsEntry(
                 destination = SettingsDestination.LeaveProduction,
-                title = "Leave this project",
-                detail = "Takes you off the crew. An admin has to approve you again to come back.",
+                title = str(S.leave_this_project),
+                detail = str(S.desktop_leave_this_project_detail),
                 icon = ZillitIcons.Detach,
                 tone = EntryTone.Danger,
             ),
@@ -285,57 +287,57 @@ fun adminSettingsEntries(
     pendingProfileChanges: Int = 0,
 ): List<SettingsGroup> = listOf(
     SettingsGroup(
-        title = "Waiting on you",
+        title = str(S.desktop_waiting_on_you),
         icon = ZillitIcons.Clock,
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.ApproveNewCrew,
-                title = "Approve New User Requests",
-                detail = "People who used this project's code and are waiting to be let in.",
+                title = str(S.approve_new_user_request),
+                detail = str(S.desktop_approve_new_crew_detail),
                 icon = ZillitToolIcons.IcInviteUser,
                 badge = pendingNewCrew,
             ),
             SettingsEntry(
                 destination = SettingsDestination.ApproveProfileChanges,
-                title = "Approve User Profile",
-                detail = "Crew who changed their name, department or contact details since joining.",
+                title = str(S.approve_user_profile),
+                detail = str(S.desktop_approve_profile_detail),
                 icon = ZillitIcons.User,
                 badge = pendingProfileChanges,
             ),
             SettingsEntry(
                 destination = SettingsDestination.PreApprovedCrew,
-                title = "Pre-Approved Users",
-                detail = "People let straight in when they use the project code, without waiting here.",
+                title = str(S.pre_approved_users),
+                detail = str(S.desktop_pre_approved_detail),
                 icon = ZillitIcons.Check,
             ),
         ),
     ),
     SettingsGroup(
-        title = "People",
+        title = str(S.section_people),
         icon = ZillitIcons.User,
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.CrewAndAdmins,
-                title = "User Management",
-                detail = "Who is on this project, who else may administer it, and who can be removed.",
+                title = str(S.txt_user_managment),
+                detail = str(S.desktop_user_management_detail),
                 icon = ZillitToolIcons.CrewList,
             ),
             SettingsEntry(
                 destination = SettingsDestination.PermissionGrid,
-                title = "User Viewing & Posting Rights Grid",
-                detail = "Per tool, per person: what they may see, post and download.",
+                title = str(S.permission_grid_2),
+                detail = str(S.desktop_rights_grid_detail),
                 icon = ZillitToolIcons.PostingRights,
             ),
             SettingsEntry(
                 destination = SettingsDestination.Departments,
-                title = "Create New Department",
-                detail = "The departments this project runs. Crew choose one when they join.",
+                title = str(S.create_new_department),
+                detail = str(S.desktop_departments_detail),
                 icon = ZillitIcons.LayoutCascade,
             ),
             SettingsEntry(
                 destination = SettingsDestination.JobTitles,
-                title = "Create New Designation",
-                detail = "The roles crew can hold inside a department.",
+                title = str(S.create_new_designation),
+                detail = str(S.desktop_designations_detail),
                 icon = ZillitToolIcons.Casting,
             ),
             SettingsEntry(
@@ -344,71 +346,71 @@ fun adminSettingsEntries(
                 // event productions call the same page a staff list, and both
                 // phone clients switch the label rather than the page.
                 title = if (production.isOtherType) {
-                    "Change Department Listing Order for Staff List"
+                    str(S.set_department_priority_staff_list)
                 } else {
-                    "Change Department Listing Order for Crew List"
+                    str(S.desktop_crew_list_order_crew)
                 },
-                detail = "The order departments appear in when the list is generated.",
+                detail = str(S.desktop_crew_list_order_detail),
                 icon = ZillitToolIcons.AdDash,
             ),
         ),
     ),
     SettingsGroup(
-        title = "Units",
+        title = str(S.desktop_section_units),
         icon = ZillitIcons.Home,
         entries = listOf(
                 SettingsEntry(
                     destination = SettingsDestination.ShootingUnits,
-                    title = "Create/Update Home Units",
-                    detail = "The sections of this project's dashboard — bulletin, calendar, call sheet.",
+                    title = str(S.desktop_home_units_title),
+                    detail = str(S.desktop_home_units_detail),
                     icon = ZillitToolIcons.IcContinuity,
                 ),
                 SettingsEntry(
                     destination = SettingsDestination.RemoteUnit,
-                    title = "Create Remote Shooting Units",
-                    detail = "A unit shooting away from the main project, with its own board and call sheets.",
+                    title = str(S.create_remote_unit),
+                    detail = str(S.desktop_remote_units_detail),
                     icon = ZillitToolIcons.Location,
                 ),
                 SettingsEntry(
                     destination = SettingsDestination.JoinedUnits,
-                    title = "Create Additional Shooting Unit",
-                    detail = "Main, second and splinter units. Crew attach themselves to one when they join.",
+                    title = str(S.create_join_unit),
+                    detail = str(S.desktop_shooting_units_detail),
                     icon = ZillitToolIcons.PreProduction,
                 ),
         ),
     ),
     SettingsGroup(
-        title = "Tools",
+        title = str(S.tools),
         icon = ZillitIcons.Tools,
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.ToolAvailability,
-                title = "Customization of tools",
-                detail = "Which tools this project runs. Switching one off hides it for everyone.",
+                title = str(S.project_tools_enable_disable),
+                detail = str(S.desktop_tool_customisation_detail),
                 icon = ZillitIcons.Tools,
             ),
             SettingsEntry(
                 destination = SettingsDestination.ToolGroups,
-                title = "Manage Tool Groups",
-                detail = "Which group each tool sits under on the Film Tools grid.",
+                title = str(S.manage_tool_groups),
+                detail = str(S.desktop_tool_groups_detail),
                 icon = ZillitIcons.LayoutTabs,
             ),
         ),
     ),
     SettingsGroup(
-        title = "The project",
+        title = str(S.desktop_section_the_project),
         icon = ZillitIcons.File,
         entries = listOfNotNull(
             SettingsEntry(
                 destination = SettingsDestination.ProductionName,
-                title = "Edit Project Name",
-                detail = "What this project is called everywhere in Zillit.",
+                title = str(S.edit_project_name),
+                detail = str(S.desktop_edit_project_name_detail),
                 icon = ZillitToolIcons.Script,
             ),
             SettingsEntry(
                 destination = SettingsDestination.ProductionSetup,
-                title = "Production Setup",
-                detail = "The companies behind this project, and the bank accounts they own.",
+                title = str(S.ps_production_setup),
+                detail = str(S.desktop_production_setup_detail),
                 // Not ZillitToolIcons.Account — Company Details, the row below
                 // it, already wears that one, and two near-identical building
                 // marks on adjacent rows read as a duplicate.
@@ -416,32 +418,32 @@ fun adminSettingsEntries(
             ),
             SettingsEntry(
                 destination = SettingsDestination.CompanyDetails,
-                title = "Company Details",
-                detail = "The name, address and contact details printed at the head of the crew list.",
+                title = str(S.company_details),
+                detail = str(S.desktop_company_details_detail),
                 icon = ZillitToolIcons.Account,
             ),
             SettingsEntry(
                 destination = SettingsDestination.Watermark,
-                title = "Watermark Logo of Company",
-                detail = "The logo stamped across documents this project sends out.",
+                title = str(S.water_mark_logo),
+                detail = str(S.desktop_watermark_detail),
                 icon = ZillitToolIcons.IcSignedDocument,
             ),
             SettingsEntry(
                 destination = SettingsDestination.SosRecipients,
-                title = "Set/View SOS Receivers",
-                detail = "Who is alerted when someone on this project raises an SOS.",
+                title = str(S.set_sos_receivers),
+                detail = str(S.desktop_sos_receivers_detail),
                 icon = ZillitIcons.Phone,
             ),
             SettingsEntry(
                 destination = SettingsDestination.SetupNotes,
-                title = "Project Set up Notes",
-                detail = "Zillit's own guide to setting a project up, opened in your browser.",
+                title = str(S.project_set_up_notes),
+                detail = str(S.desktop_setup_notes_detail),
                 icon = ZillitIcons.Info,
             ),
         ),
     ),
     SettingsGroup(
-        title = "Danger zone",
+        title = str(S.desktop_danger_zone),
         icon = ZillitIcons.Close,
         entries = listOf(
             SettingsEntry(
@@ -450,11 +452,11 @@ fun adminSettingsEntries(
                 // already counting down is stopped here, not deleted twice.
                 // The explanation flips with the title — describing a deletion
                 // under a button that cancels one is worse than no explanation.
-                title = if (production.markedForDeletion) "Stop Project Deletion" else "Delete Project",
+                title = if (production.markedForDeletion) str(S.stop_project_deletion) else str(S.delete_project),
                 detail = if (production.markedForDeletion) {
-                    "This project is counting down to deletion. Calls it off; nothing is lost."
+                    str(S.desktop_stop_deletion_detail)
                 } else {
-                    "Removes the project and everything in it, for everyone. Scheduled, not immediate."
+                    str(S.desktop_delete_project_detail)
                 },
                 icon = ZillitIcons.Close,
                 tone = EntryTone.Danger,

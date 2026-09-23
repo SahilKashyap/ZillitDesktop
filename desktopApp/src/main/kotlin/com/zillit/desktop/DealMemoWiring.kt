@@ -9,6 +9,8 @@ import com.zillit.desktop.core.config.ZillitRealtimeEndpoint
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.data.DealFileFetcher
 import com.zillit.desktop.feature.dealmemo.data.DealMemoRepositoryImpl
 import com.zillit.desktop.feature.dealmemo.data.DealReferenceSource
@@ -149,7 +151,7 @@ private fun AppGraph.Ready.dealMemoDocuments(): DealDocumentStore {
     return object : DealDocumentStore {
         override suspend fun fetch(attachment: DealAttachment): ZillitResult<ByteArray> {
             val media = attachment.media
-                ?: return ZillitResult.Failure(ZillitError.Validation("This file has no stored copy."))
+                ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_file_no_stored_copy)))
             return noticeMedia.fetch(
                 NoticeAttachment(
                     media = media,
@@ -228,7 +230,7 @@ private fun dealMemoKeyName(fileName: String): String {
 /** The OS chooser, limited to [extensions]; nothing when cancelled or unreadable. */
 private suspend fun pickDealFiles(extensions: List<String>, multiple: Boolean): List<PickedDealFile> =
     withContext(Dispatchers.IO) {
-        val dialog = FileDialog(null as Frame?, "Choose a file", FileDialog.LOAD)
+        val dialog = FileDialog(null as Frame?, str(S.desktop_choose_a_file), FileDialog.LOAD)
         dialog.isMultipleMode = multiple
         dialog.setFilenameFilter { _, name -> extensions.any { name.endsWith(".$it", ignoreCase = true) } }
         dialog.isVisible = true

@@ -129,9 +129,9 @@ class DodScreenRenderTest {
             onNodeWithText("More").performClick()
             listOf(
                 "View", "Publish to Doc Distribution", "Delete", "Download",
-                "Download count", "View count", "Move to folder…",
+                "Download Count", "View Count", "Move to folder",
             ).forEach { onAllNodesWithText(it).onFirst().assertIsDisplayed() }
-            onNodeWithText("Move to folder…").performClick()
+            onNodeWithText("Move to folder").performClick()
             assertTrue(events.any { it == DistributionEvent.Move(document) }, "$events")
         }
     }
@@ -156,7 +156,7 @@ class DodScreenRenderTest {
             onAllNodesWithText("View").onFirst().assertIsDisplayed()
             onAllNodesWithText("Download").onFirst().assertIsDisplayed()
             onAllNodesWithText("Delete").assertCountEquals(0)
-            onAllNodesWithText("Move to folder…").assertCountEquals(0)
+            onAllNodesWithText("Move to folder").assertCountEquals(0)
         }
     }
 
@@ -176,7 +176,7 @@ class DodScreenRenderTest {
                 }
             }
             onNodeWithText("File size: 1.5 KB").assertExists()
-            onNodeWithText("Episode number").assertExists()
+            onNodeWithText("Episode Number").assertExists()
             // The grid behind the dialog names the folder too; the suggestion is the later node.
             onAllNodesWithText("Week One")[1].performClick()
             assertTrue(

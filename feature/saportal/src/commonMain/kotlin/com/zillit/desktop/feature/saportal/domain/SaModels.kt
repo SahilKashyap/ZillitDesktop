@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.saportal.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The supporting artiste's own view of their work — vouchers, pay, queries.
  *
@@ -11,12 +14,14 @@ package com.zillit.desktop.feature.saportal.domain
  */
 
 /** How far along a day's voucher is. */
-enum class VoucherStatus(val wire: String, val label: String) {
-    Pending("pending", "Awaiting signature"),
-    Signed("signed", "Signed"),
-    Paid("paid", "Paid"),
-    Unknown("", "Unknown"),
+enum class VoucherStatus(val wire: String, private val labelKey: String) {
+    Pending("pending", S.desktop_sa_awaiting_signature),
+    Signed("signed", S.signed),
+    Paid("paid", S.desktop_paid),
+    Unknown("", S.desktop_unknown),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): VoucherStatus {

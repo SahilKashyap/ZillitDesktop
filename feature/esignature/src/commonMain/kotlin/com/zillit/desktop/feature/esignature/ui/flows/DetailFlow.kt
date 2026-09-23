@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.esignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.Envelope
 import com.zillit.desktop.feature.esignature.ui.DetailState
 import com.zillit.desktop.feature.esignature.ui.EsignPageKind
@@ -86,7 +88,7 @@ internal class DetailFlow(private val store: EsignStore) {
         val now = store.now()
         val since = if (recipientId == null) detail.remindAllAt else detail.remindedAt[recipientId] ?: 0L
         if (now - since < REMIND_COOLDOWN_MS) {
-            store.notice("Reminder already sent — try again in a moment.")
+            store.notice(str(S.desktop_ds_reminder_already_sent_try_again_in_a_moment))
             return
         }
         store.update { copy(detail = this.detail?.copy(reminding = this.detail.reminding + key)) }
@@ -108,7 +110,9 @@ internal class DetailFlow(private val store: EsignStore) {
                 )
             }
             if (ok != null) {
-                store.notice(if (recipientId == null) "Reminders sent." else "Reminder sent.")
+                store.notice(
+                    if (recipientId == null) str(S.desktop_ds_reminders_sent) else str(S.docusign_resend_success),
+                )
                 loadAudit(detail.envelope.id)
             }
         }
@@ -122,7 +126,7 @@ internal class DetailFlow(private val store: EsignStore) {
             if (bytes != null) {
                 val safe = detail.envelope.title.ifBlank { "envelope" }.replace(Regex("[^A-Za-z0-9._-]+"), "_")
                 store.orFail { store.transfer.land("audit-trail-$safe.pdf", bytes) }
-                    ?.let { store.notice("Audit trail saved to Downloads.") }
+                    ?.let { store.notice(str(S.desktop_ds_audit_trail_saved_to_downloads)) }
             }
             store.update { copy(detail = this.detail?.copy(downloadingAudit = false)) }
         }
@@ -132,7 +136,7 @@ internal class DetailFlow(private val store: EsignStore) {
         val detail = store.current.detail ?: return
         val signed = detail.envelope.signedDocument
         if (signed == null) {
-            store.notice("Signed document is not ready yet")
+            store.notice(str(S.desktop_ds_signed_document_is_not_ready_yet))
             return
         }
         store.update { copy(detail = this.detail?.copy(downloadingSigned = true)) }
@@ -140,7 +144,8 @@ internal class DetailFlow(private val store: EsignStore) {
             val bytes = store.orFail { store.transfer.fetch(signed) }
             if (bytes != null) {
                 val name = signed.name.ifBlank { "${detail.envelope.title.ifBlank { "signed" }}.pdf" }
-                store.orFail { store.transfer.land(name, bytes) }?.let { store.notice("Saved to Downloads.") }
+                store.orFail { store.transfer.land(name, bytes) }
+                    ?.let { store.notice(str(S.docusign_signing_attachment_saved)) }
             }
             store.update { copy(detail = this.detail?.copy(downloadingSigned = false)) }
         }
@@ -155,7 +160,7 @@ internal class DetailFlow(private val store: EsignStore) {
         val detail = store.current.detail ?: return
         val reason = detail.voidReason.trim()
         if (reason.isBlank()) {
-            store.failed("Say why this envelope is being cancelled.")
+            store.failed(str(S.desktop_ds_say_why_this_envelope_is_being_cancelled))
             return
         }
         store.runTask {
@@ -164,7 +169,7 @@ internal class DetailFlow(private val store: EsignStore) {
                 return@runTask
             }
             store.update { copy(detail = null, page = EsignPageKind.Lists) }
-            store.notice("Envelope cancelled.")
+            store.notice(str(S.desktop_ds_envelope_cancelled))
             lists.loadManage()
         }
     }

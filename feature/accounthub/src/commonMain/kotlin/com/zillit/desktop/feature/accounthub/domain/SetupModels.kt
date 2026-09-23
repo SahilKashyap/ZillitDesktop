@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The production's legal entities.
  *
@@ -140,8 +143,8 @@ object Companies {
      * an ungated check would refuse over a field the person can no longer see.
      */
     fun problem(draft: Company): String? = when {
-        draft.name.isBlank() -> "Give the company a name."
-        draft.country.isBlank() -> "Pick the company's country."
+        draft.name.isBlank() -> str(S.desktop_hub_give_the_company_a_name)
+        draft.country.isBlank() -> str(S.desktop_hub_pick_the_companys_country)
         draft.isUk && UkPayrollRefs.isPayeInvalid(draft.ukPayeRef) -> UkPayrollRefs.PAYE_ERROR
         draft.isUk && UkPayrollRefs.isAccountsOfficeInvalid(draft.ukAccountsOfficeRef) ->
             UkPayrollRefs.ACCOUNTS_OFFICE_ERROR
@@ -245,13 +248,15 @@ data class BankAccount(
  * malformed titled row refuses the save (`firstInvalidDetail`). Text and phone
  * always pass; an empty value always passes.
  */
-enum class BankDetailType(val wire: String, val label: String) {
-    Text("text", "Text"),
-    Number("number", "Number"),
-    Phone("phone", "Phone"),
-    Email("email", "Email"),
-    Url("url", "URL"),
+enum class BankDetailType(val wire: String, private val labelKey: String) {
+    Text("text", S.docusign_field_text),
+    Number("number", S.docusign_number_value_hint),
+    Phone("phone", S.phone),
+    Email("email", S.email),
+    Url("url", S.docusign_field_url),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Whether [value] is well-formed for this type. Blank always is. */
     fun accepts(value: String): Boolean {
@@ -347,19 +352,22 @@ object BankAccounts {
         companies: List<Company>,
         accountant: Boolean,
     ): String? = when {
-        draft.name.isBlank() -> "Bank name is required."
+        draft.name.isBlank() -> str(S.ah_err_bank_name_required)
         draft.entityId.isNullOrBlank() && draft.accountHolderName.isBlank() ->
-            "Account holder company is required."
+            str(S.desktop_hub_account_holder_company_is_required)
         !draft.entityId.isNullOrBlank() && companies.none { it.id == draft.entityId } ->
-            "Account holder company is required."
-        draft.accountNumber.isBlank() -> "Account number is required."
-        duplicateNumber(draft, banks) -> "An account with this number already exists."
-        accountant && draft.nominalCode.isBlank() -> "Bank account nominal code is required."
-        accountant && draft.apClearanceNominalCode.isBlank() -> "AP clearance nominal code is required."
-        draft.currencyCode.isBlank() -> "Currency is required."
+            str(S.desktop_hub_account_holder_company_is_required)
+        draft.accountNumber.isBlank() -> str(S.ah_err_account_number_required)
+        duplicateNumber(draft, banks) -> str(S.desktop_hub_an_account_with_this_number_already_exists)
+        accountant && draft.nominalCode.isBlank() -> str(S.desktop_hub_bank_account_nominal_code_is_required)
+        accountant && draft.apClearanceNominalCode.isBlank() -> str(S.desktop_hub_ap_clearance_nominal_code_is_required)
+        draft.currencyCode.isBlank() -> str(S.ah_err_currency_required)
         firstInvalidDetail(draft.additionalDetails) != null ->
-            "\"${firstInvalidDetail(draft.additionalDetails)?.title}\" is not a valid " +
-                "${firstInvalidDetail(draft.additionalDetails)?.fieldType?.label?.lowercase()}."
+            str(
+                S.desktop_hub_x_is_not_a_valid_y,
+                firstInvalidDetail(draft.additionalDetails)?.title,
+                firstInvalidDetail(draft.additionalDetails)?.fieldType?.label?.lowercase(),
+            )
         else -> null
     }
 
@@ -441,7 +449,7 @@ data class CurrencySettings(
     /** Why the section cannot be saved, or null when it can. */
     fun validationError(): String? =
         missingRates.takeIf { it.isNotEmpty() }
-            ?.let { "Add an exchange rate for ${it.joinToString(", ")} before saving." }
+            ?.let { str(S.desktop_hub_add_an_exchange_rate_for_x_before_saving, it.joinToString(", ")) }
 
     /**
      * Drops a currency. Dropping the default hands it to the first currency
@@ -561,7 +569,7 @@ data class TaxType(
         /** The web's refusal, or null when every rate is in range. */
         fun problem(rows: List<TaxType>): String? =
             if (rows.any { isRateOutOfRange(it.value) }) {
-                "Tax rate must be between ${RATE_MIN.toInt()}% and ${RATE_MAX.toInt()}%."
+                str(S.desktop_hub_tax_rate_must_be_between_x_and_y_percent, RATE_MIN.toInt(), RATE_MAX.toInt())
             } else {
                 null
             }
@@ -665,8 +673,8 @@ object ScheduleRules {
         if (ss != null && se != null && se < ss) add(SHOOT, END_BEFORE_START)
         if (ws != null && we != null && we < ws) add(WRAP, END_BEFORE_START)
 
-        if (pe != null && ss != null && ss <= pe) add(SHOOT, "Overlaps with Prep — must start after prep ends")
-        if (se != null && ws != null && ws <= se) add(WRAP, "Overlaps with Shoot — must start after shoot ends")
+        if (pe != null && ss != null && ss <= pe) add(SHOOT, str(S.dm_ds_phase_err_overlap_prep))
+        if (se != null && ws != null && ws <= se) add(WRAP, str(S.dm_ds_phase_err_overlap_shoot))
 
         if (ds != null) {
             if (ps != null && ps < ds) add(PREP, STARTS_BEFORE)
@@ -680,7 +688,7 @@ object ScheduleRules {
         }
         schedule.customDays.forEach { day ->
             val (cs, ce) = day.startDate to day.endDate
-            if (day.name.isBlank()) add(day.id, "Name is required")
+            if (day.name.isBlank()) add(day.id, str(S.name_is_required))
             if (cs != null && ce != null && ce < cs) add(day.id, END_BEFORE_START)
             if (ds != null && cs != null && cs < ds) add(day.id, STARTS_BEFORE)
             if (de != null && ce != null && ce > de) add(day.id, ENDS_AFTER)
@@ -690,9 +698,9 @@ object ScheduleRules {
 
     fun hasErrors(schedule: ProductionSchedule): Boolean = errors(schedule).isNotEmpty()
 
-    private const val END_BEFORE_START = "End date is before start date"
-    private const val STARTS_BEFORE = "Starts before production start date"
-    private const val ENDS_AFTER = "Ends after production end date"
+    private val END_BEFORE_START: String get() = str(S.dm_ds_phase_err_end_before_start)
+    private val STARTS_BEFORE: String get() = str(S.desktop_hub_starts_before_production_start_date)
+    private val ENDS_AFTER: String get() = str(S.desktop_hub_ends_after_production_end_date)
 }
 
 /**
@@ -739,12 +747,14 @@ data class DayType(
  * rows, so an option offered here and not there would save a row the wizard
  * renders as a blank required field (`utils/entitlements.js`).
  */
-enum class PayBasis(val wire: String, val label: String) {
-    Day("day", "Daily"),
-    Week("week", "5 Days Week"),
-    ThreeInFive("3in5", "3 in 5"),
-    Mile("mile", "Per Mile"),
+enum class PayBasis(val wire: String, private val labelKey: String) {
+    Day("day", S.daily),
+    Week("week", S.desktop_5_days_week),
+    ThreeInFive("3in5", S.desktop_3_in_5),
+    Mile("mile", S.desktop_per_mile),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /**
@@ -756,9 +766,9 @@ enum class PayBasis(val wire: String, val label: String) {
          * re-picking, rather than dropped.
          */
         val RETIRED: Map<String, String> = mapOf(
-            "hour" to "Per Hour (retired — re-select)",
-            "night" to "Per Night (retired — re-select)",
-            "event" to "Per Event (retired — re-select)",
+            "hour" to str(S.desktop_hub_per_hour_retired_re_select_dashes),
+            "night" to str(S.desktop_hub_per_night_retired_re_select_dashes),
+            "event" to str(S.desktop_hub_per_event_retired_re_select_dashes),
         )
 
         fun from(wire: String?): PayBasis? =
@@ -771,18 +781,24 @@ enum class PayBasis(val wire: String, val label: String) {
 }
 
 /** When an allowance applies. Diverges from a rental's, so the lists differ. */
-enum class AllowanceApplies(val wire: String, val label: String) {
-    Shoot("shoot", "Shoot Day only"),
-    NonShoot("non_shoot", "Non-shoot day"),
-    Both("shoot_non_shoot", "Shoot & Non-shoot Days"),
+enum class AllowanceApplies(val wire: String, private val labelKey: String) {
+    Shoot("shoot", S.desktop_shoot_day_only),
+    NonShoot("non_shoot", S.desktop_non_shoot_day),
+    Both("shoot_non_shoot", S.desktop_hub_shoot_non_shoot_days),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** When a rental applies. */
-enum class RentalApplies(val wire: String, val label: String) {
-    Shoot("shoot", "Shoot Day only"),
+enum class RentalApplies(val wire: String, private val labelKey: String) {
+    Shoot("shoot", S.desktop_shoot_day_only),
 
     /** Stored as `full_production` for back-compat with the wizard's mapper. */
-    FullContract("full_production", "Full Contract"),
+    FullContract("full_production", S.desktop_full_contract),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /**
@@ -917,8 +933,11 @@ data class PayrollSettings(
         private const val WEEK = 7
 
         /** Day names by wire number, Monday first as the server counts them. */
-        val DAY_NAMES: List<String> =
-            listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+        val DAY_NAMES: List<String>
+            get() = listOf(
+                S.day_monday, S.day_tuesday, S.day_wednesday, S.day_thursday,
+                S.day_friday, S.day_saturday, S.day_sunday,
+            ).map { str(it) }
 
         fun dayName(day: Int): String = DAY_NAMES.getOrElse(day - 1) { "—" }
 
@@ -994,13 +1013,16 @@ data class PayrollAccountRow(
 // -- purchase order setup ----------------------------------------------------
 
 /** How a purchase order line's description is assembled. */
-enum class PoDescriptionFormat(val wire: String, val label: String, val sample: String) {
-    DayMonthItem("DDMON_ITEM", "DDMON → ITEM", "03MAR ALEXA MINI LF HIRE"),
-    DayMonthNumericItem("DDMM_ITEM", "DDMM → ITEM", "03/03 ALEXA MINI LF HIRE"),
-    ItemDayMonth("ITEM_DDMON", "ITEM → DDMON", "ALEXA MINI LF HIRE 03MAR"),
+enum class PoDescriptionFormat(val wire: String, private val labelKey: String, private val sampleKey: String) {
+    DayMonthItem("DDMON_ITEM", S.desktop_hub_po_format_ddmon_item, S.desktop_hub_po_sample_ddmon_item),
+    DayMonthNumericItem("DDMM_ITEM", S.desktop_hub_po_format_ddmm_item, S.desktop_hub_po_sample_ddmm_item),
+    ItemDayMonth("ITEM_DDMON", S.desktop_hub_po_format_item_ddmon, S.desktop_hub_po_sample_item_ddmon),
     /** Decoded when stored, never offered — the web's setup modal lists the three above only. */
-    Custom("CUSTOM", "Custom", "Define your own pattern"),
+    Custom("CUSTOM", S.custom, S.desktop_hub_define_your_own_pattern),
     ;
+
+    val label: String get() = str(labelKey)
+    val sample: String get() = str(sampleKey)
 
     companion object {
         val Default = DayMonthItem
@@ -1014,12 +1036,14 @@ enum class PoDescriptionFormat(val wire: String, val label: String, val sample: 
 }
 
 /** How a rental order is split into periods when it posts. */
-enum class PoSplitType(val wire: String, val label: String) {
-    Weekly("weekly", "Weekly"),
-    Daily("daily", "Daily"),
-    Monthly("monthly", "Monthly"),
-    FourWeek("four_week", "Four Week"),
+enum class PoSplitType(val wire: String, private val labelKey: String) {
+    Weekly("weekly", S.ce_weekly),
+    Daily("daily", S.daily),
+    Monthly("monthly", S.ce_monthly),
+    FourWeek("four_week", S.desktop_four_week),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         val Default = Weekly
@@ -1085,8 +1109,8 @@ data class PurchaseOrderSetup(
         const val PREFIX_MAX = 8
 
         /** Under the prefix field — the web's `PO_PREFIX_HINT`, shared by both of its settings screens. */
-        const val PREFIX_HINT =
-            "Goes at the start of every new PO number. POs you've already created keep their existing numbers."
+        val PREFIX_HINT: String
+            get() = str(S.desktop_hub_goes_at_the_start_of_every_new_po_number_pos)
 
         /** Require effective date and enforce period close, forced on by the service. */
         private const val ALWAYS_ON_RULES = 2
@@ -1106,12 +1130,14 @@ data class PurchaseOrderSetup(
 // -- asset register rule -----------------------------------------------------
 
 /** The expenditure types a PO line can carry — the web's `ASSET_EXP_TYPES`. */
-enum class AssetExpenditureType(val wire: String, val label: String) {
-    Purchase("Purchase", "Purchase"),
+enum class AssetExpenditureType(val wire: String, private val labelKey: String) {
+    Purchase("Purchase", S.ah_exp_purchase),
 
     /** The stored value stays the server's enum; only the wording changed. */
-    Consumption("Consumption", "Consumables"),
+    Consumption("Consumption", S.ah_exp_consumption),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun labelFor(wire: String): String = entries.firstOrNull { it.wire == wire }?.label ?: wire
@@ -1149,9 +1175,9 @@ data class AssetFilters(
             val highBound = high
             return when {
                 lowBound != null && highBound != null && lowBound > highBound ->
-                    "Price low must not exceed price high."
-                lowBound != null && lowBound < 0 -> "Price low must be zero or more."
-                highBound != null && highBound < 0 -> "Price high must be zero or more."
+                    str(S.desktop_hub_price_low_must_not_exceed_price_high)
+                lowBound != null && lowBound < 0 -> str(S.desktop_hub_price_low_must_be_zero_or_more)
+                highBound != null && highBound < 0 -> str(S.desktop_hub_price_high_must_be_zero_or_more)
                 else -> null
             }
         }
@@ -1163,14 +1189,15 @@ data class AssetFilters(
         val parts = mutableListOf<String>()
         when {
             lowBound != null && highBound != null ->
-                parts += "total ${money(symbol, lowBound)}–${money(symbol, highBound)}"
-            lowBound != null -> parts += "total ≥ ${money(symbol, lowBound)}"
-            highBound != null -> parts += "total ≤ ${money(symbol, highBound)}"
+                parts += str(S.desktop_hub_asset_rule_total_between, money(symbol, lowBound), money(symbol, highBound))
+            lowBound != null -> parts += str(S.desktop_hub_asset_rule_total_at_least, money(symbol, lowBound))
+            highBound != null -> parts += str(S.desktop_hub_asset_rule_total_at_most, money(symbol, highBound))
         }
-        if (expTypes.isNotEmpty()) parts += expTypes.joinToString(" or ") { AssetExpenditureType.labelFor(it) }
-        if (tags.isNotEmpty()) parts += "tagged ${tags.joinToString(" or ")}"
-        if (parts.isEmpty()) return "Every line item on a posted or closed PO — no constraint set."
-        return "Lines on a posted or closed PO matching ${parts.joinToString(", and ")}."
+        val or = " ${str(S.or)} "
+        if (expTypes.isNotEmpty()) parts += expTypes.joinToString(or) { AssetExpenditureType.labelFor(it) }
+        if (tags.isNotEmpty()) parts += str(S.desktop_hub_asset_rule_tagged, tags.joinToString(or))
+        if (parts.isEmpty()) return str(S.desktop_hub_every_line_item_on_a_posted_or_closed_po_no)
+        return str(S.desktop_hub_lines_on_a_posted_or_closed_po_matching, parts.joinToString(", ${str(S.and)} "))
     }
 
     private fun money(symbol: String, value: Double): String {
@@ -1192,38 +1219,41 @@ private fun String.toAmountOrNull(): Double? = trim().replace(",", "").takeIf { 
 // -- invoices setup ----------------------------------------------------------
 
 /** One thing accounts payable can be told about. */
-enum class InvoiceAlert(val wire: String, val label: String, val hint: String) {
+enum class InvoiceAlert(val wire: String, private val labelKey: String, private val hintKey: String) {
     Overdue(
         "invoice_overdue",
-        "Invoice overdue notifications",
-        "Get notified when an invoice passes its due date without being paid.",
+        S.desktop_invoice_overdue_notifications,
+        S.desktop_hub_get_notified_when_an_invoice_passes_its_due_date_without,
     ),
     SlaBreach(
         "approval_sla_breach",
-        "Approval SLA breach warnings",
-        "Alert when an invoice sits in the approval queue beyond the SLA window.",
+        S.desktop_hub_approval_sla_breach_warnings,
+        S.desktop_hub_alert_when_an_invoice_sits_in_the_approval_queue_beyond,
     ),
     Duplicate(
         "duplicate_detection",
-        "Duplicate invoice detection",
-        "Flag invoices that appear to be duplicates based on vendor and amount.",
+        S.desktop_duplicate_invoice_detection,
+        S.desktop_hub_flag_invoices_that_appear_to_be_duplicates_based_on_vendor,
     ),
     OverPo(
         "over_po_flagging",
-        "Over-PO flagging alerts",
-        "Warn when an invoice amount exceeds the linked purchase order value.",
+        S.desktop_hub_over_po_flagging_alerts,
+        S.desktop_hub_warn_when_an_invoice_amount_exceeds_the_linked_purchase_order,
     ),
     NoPoOverride(
         "no_po_override",
-        "No-PO override notifications",
-        "Notify when an invoice is approved without a linked purchase order.",
+        S.desktop_hub_no_po_override_notifications,
+        S.desktop_hub_notify_when_an_invoice_is_approved_without_a_linked_purchase,
     ),
     DailySummary(
         "daily_ap_summary",
-        "Daily AP summary email",
-        "Receive a morning summary of pending invoices and payment run status.",
+        S.desktop_hub_daily_ap_summary_email,
+        S.desktop_hub_receive_a_morning_summary_of_pending_invoices_and_payment_run,
     ),
     ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 
     companion object {
         fun from(wire: String?): InvoiceAlert? = entries.firstOrNull { it.wire == wire }

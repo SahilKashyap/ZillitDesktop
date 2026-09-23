@@ -36,6 +36,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.FolderKey
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.PageColour
@@ -60,9 +62,9 @@ internal fun DistributionDialogs(
     state.move?.let { MoveDialog(state, onEvent) }
     state.confirmDelete?.let { document ->
         ConfirmDialog(
-            title = "Delete document",
-            body = "Delete \"${document.displayName()}\"? It moves to the history.",
-            confirm = "Delete",
+            title = str(S.desktop_dist_delete_document),
+            body = str(S.desktop_dist_delete_confirm_body, document.displayName()),
+            confirm = str(S.delete),
             danger = true,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmDelete) },
@@ -77,9 +79,9 @@ internal fun DistributionDialogs(
             document.episode.ifBlank { document.sceneNumber }.ifBlank { null },
         )
         ConfirmDialog(
-            title = "Publish to Document Distribution",
-            body = "File \"${document.displayName()}\" under ${path.joinToString(" / ")}?",
-            confirm = "Publish",
+            title = str(S.dd_publish_confirm_title),
+            body = str(S.desktop_dist_publish_confirm_body, document.displayName(), path.joinToString(" / ")),
+            confirm = str(S.publish),
             danger = false,
             busy = state.busy,
             onConfirm = { onEvent(DistributionEvent.ConfirmPublish) },
@@ -103,7 +105,7 @@ internal fun ConfirmDialog(
         onDismiss = onDismiss,
         visible = true,
         actions = {
-            ZillitButton(text = "Cancel", onClick = onDismiss, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.cancel), onClick = onDismiss, variant = ButtonVariant.Tertiary)
             ZillitButton(
                 text = confirm,
                 onClick = onConfirm,
@@ -125,7 +127,7 @@ private fun FolderDialog(
     val open = state.openFolder ?: return
     val tab = state.activeTab
     ZillitDialogShell(
-        title = if (state.isDod) open.folder.key else "Scene ${open.folder.key}",
+        title = if (state.isDod) open.folder.key else str(S.desktop_scene_numbered, open.folder.key),
         subtitle = open.folder.scheduleType?.label,
         onDismiss = { onEvent(DistributionEvent.CloseFolder) },
         visible = true,
@@ -134,13 +136,13 @@ private fun FolderDialog(
         actions = {
             if (state.mode == ListMode.Live) {
                 ZillitButton(
-                    text = "Upload here",
+                    text = str(S.desktop_location_upload_here),
                     onClick = { onEvent(DistributionEvent.PickPdf()) },
                     variant = ButtonVariant.Secondary,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CloseFolder) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -160,7 +162,7 @@ private fun FolderDialog(
             if (open.documents.isEmpty()) {
                 item {
                     ZillitText(
-                        text = "No documents in this folder.",
+                        text = str(S.desktop_docdist_no_documents_in_folder),
                         style = ZillitTheme.typography.bodyMedium,
                         color = ZillitTheme.colors.textMuted,
                     )
@@ -173,7 +175,7 @@ private fun FolderDialog(
                 item {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         ZillitButton(
-                            text = "Load older",
+                            text = str(S.desktop_load_older),
                             onClick = { onEvent(DistributionEvent.LoadMore) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -194,18 +196,18 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
     val folders = kind as? TabKind.Folders
     val replacing = editor.replaces != null
     ZillitDialogShell(
-        title = if (replacing) "Replace document" else "Upload PDF",
+        title = if (replacing) str(S.ah_replace_document) else str(S.desktop_dist_upload_pdf),
         subtitle = editor.fileName,
         onDismiss = { onEvent(DistributionEvent.CancelUpload) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DistributionEvent.CancelUpload) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (replacing) "Replace" else "Upload",
+                text = if (replacing) str(S.replace) else str(S.upload),
                 onClick = { onEvent(DistributionEvent.SubmitUpload) },
                 loading = editor.saving,
             )
@@ -213,15 +215,15 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             if (replacing) {
-                ZillitStatusPill(label = "Replaces the current document", tone = StatusTone.Pending)
+                ZillitStatusPill(label = str(S.desktop_dist_replaces_current_document), tone = StatusTone.Pending)
             }
             if (folders?.folderKey == FolderKey.Name) {
                 ZillitTextField(
                     value = editor.name,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(name = it, nameFromPick = false)) },
-                    label = "Folder name",
-                    placeholder = "Week One",
-                    helperText = "Pick an existing folder below, or type a new one.",
+                    label = str(S.folder_name),
+                    placeholder = str(S.desktop_dist_folder_name_placeholder),
+                    helperText = str(S.desktop_dist_pick_existing_folder),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (state.folderNames.isNotEmpty()) {
@@ -242,7 +244,7 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
                 ZillitTextField(
                     value = editor.name,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(name = it)) },
-                    label = "Name (optional)",
+                    label = str(S.desktop_dist_name_optional),
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !replacing,
                 )
@@ -251,8 +253,12 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
                 ZillitTextField(
                     value = editor.episode,
                     onValueChange = { onEvent(DistributionEvent.UploadChanged(episode = it)) },
-                    label = if (kind is TabKind.Single) "Episode number" else "Episode number (optional)",
-                    placeholder = "1 or 1,2",
+                    label = if (kind is TabKind.Single) {
+                        str(S.txt_episode_number)
+                    } else {
+                        str(S.desktop_dist_episode_number_optional)
+                    },
+                    placeholder = str(S.desktop_dist_episode_placeholder),
                     modifier = Modifier.width(FIELD_WIDTH),
                 )
             }
@@ -261,14 +267,14 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
                     ZillitTextField(
                         value = editor.sceneNumber,
                         onValueChange = { onEvent(DistributionEvent.UploadChanged(sceneNumber = it)) },
-                        label = "Scene number",
+                        label = str(S.txt_scene_number),
                         modifier = Modifier.width(FIELD_WIDTH),
                         enabled = !replacing,
                     )
                     ZillitTextField(
                         value = editor.pageNumber,
                         onValueChange = { onEvent(DistributionEvent.UploadChanged(pageNumber = it)) },
-                        label = "Page number (optional)",
+                        label = str(S.desktop_dist_page_number_optional),
                         modifier = Modifier.width(FIELD_WIDTH),
                     )
                 }
@@ -276,7 +282,7 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
             if (folders != null) {
                 Column {
                     ZillitText(
-                        text = "Revision colour",
+                        text = str(S.desktop_dist_revision_colour),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textMuted,
                     )
@@ -292,7 +298,7 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
             if (folders?.scheduleTypeChoice == true && !replacing) {
                 Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                     ZillitText(
-                        text = "Which pages are these?",
+                        text = str(S.desktop_dist_which_pages),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textMuted,
                     )
@@ -308,7 +314,11 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
             ZillitTextField(
                 value = editor.dateYmd,
                 onValueChange = { onEvent(DistributionEvent.UploadChanged(dateYmd = it)) },
-                label = if (folders != null) "Page date (optional)" else "Date (optional)",
+                label = if (folders != null) {
+                    str(S.desktop_dist_page_date_optional)
+                } else {
+                    str(S.desktop_dist_date_optional)
+                },
                 placeholder = "YYYY-MM-DD",
                 modifier = Modifier.width(FIELD_WIDTH),
             )
@@ -323,7 +333,7 @@ internal fun PdfDialog(state: DistributionUiState, onEvent: (DistributionEvent) 
         title = view.document.attachment?.name?.ifBlank { null }
             ?: view.document.originalName.ifBlank { null }
             ?: view.document.name.ifBlank { null }
-            ?: "Document",
+            ?: str(S.document),
         onDismiss = { onEvent(DistributionEvent.CloseViewer) },
         visible = true,
         scrollable = false,
@@ -331,14 +341,14 @@ internal fun PdfDialog(state: DistributionUiState, onEvent: (DistributionEvent) 
         actions = {
             if (state.viewer.mayDownload) {
                 ZillitButton(
-                    text = "Download",
+                    text = str(S.download),
                     onClick = { onEvent(DistributionEvent.Download(view.document)) },
                     variant = ButtonVariant.Secondary,
                     loading = state.busy,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CloseViewer) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -362,7 +372,7 @@ internal fun PdfDialog(state: DistributionUiState, onEvent: (DistributionEvent) 
                     if (bitmap != null) {
                         Image(
                             bitmap = bitmap,
-                            contentDescription = "Page ${page.page + 1}",
+                            contentDescription = str(S.desktop_page_n, page.page + 1),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -381,13 +391,13 @@ private fun CountsDialog(
     val counts = state.counts ?: return
     val rows = counts.rows.filter { if (counts.downloads) it.downloadCount > 0 else it.viewCount >= 1 }
     ZillitDialogShell(
-        title = if (counts.downloads) "Download count" else "View count",
+        title = if (counts.downloads) str(S.download_count) else str(S.view_count),
         subtitle = counts.document.attachment?.name,
         onDismiss = { onEvent(DistributionEvent.CloseCounts) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(DistributionEvent.CloseCounts) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -396,7 +406,11 @@ private fun CountsDialog(
         when {
             counts.loading -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ZillitSpinner() }
             rows.isEmpty() -> ZillitText(
-                text = if (counts.downloads) "Nobody has downloaded this yet." else "Nobody has viewed this yet.",
+                text = if (counts.downloads) {
+                    str(S.desktop_dist_nobody_downloaded)
+                } else {
+                    str(S.desktop_dist_nobody_viewed)
+                },
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -424,18 +438,18 @@ private fun MoveDialog(state: DistributionUiState, onEvent: (DistributionEvent) 
     val move = state.move ?: return
     val candidates = state.folders.filter { it.key != move.document.name && it.key.isNotBlank() }
     ZillitDialogShell(
-        title = "Move to folder",
+        title = str(S.move_to_folder),
         subtitle = move.document.attachment?.name,
         onDismiss = { onEvent(DistributionEvent.CancelMove) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DistributionEvent.CancelMove) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Move",
+                text = str(S.move),
                 onClick = { onEvent(DistributionEvent.ConfirmMove) },
                 enabled = move.target != null,
                 loading = move.saving,
@@ -444,7 +458,7 @@ private fun MoveDialog(state: DistributionUiState, onEvent: (DistributionEvent) 
     ) {
         if (candidates.isEmpty()) {
             ZillitText(
-                text = "No other folders to move to.",
+                text = str(S.desktop_dist_no_other_folders),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -476,7 +490,7 @@ private fun MoveDialog(state: DistributionUiState, onEvent: (DistributionEvent) 
 
 /** The name the confirms quote — the file's, else a stand-in. */
 private fun com.zillit.desktop.feature.pagedistribution.domain.DistDocument.displayName(): String =
-    attachment?.name?.ifBlank { null } ?: "this document"
+    attachment?.name?.ifBlank { null } ?: str(S.desktop_this_document)
 
 private val FIELD_WIDTH = 220.dp
 private val FOLDER_DIALOG_WIDTH = 820.dp

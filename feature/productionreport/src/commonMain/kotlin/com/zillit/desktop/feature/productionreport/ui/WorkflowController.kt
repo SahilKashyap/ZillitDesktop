@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.productionreport.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ApprovalDecision
 import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
 import com.zillit.desktop.feature.productionreport.domain.BadgeKind
@@ -99,7 +101,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
                 ReviewAssignee(
                     id,
                     member?.fullName?.ifBlank { null } ?: id,
-                    member?.designation?.ifBlank { null } ?: "Approver",
+                    member?.designation?.ifBlank { null } ?: str(S.desktop_approver),
                 )
             }
             when (val sent = ctx.repository.submitForApproval(reportId, approvers, ctx.viewer().displayName)) {
@@ -112,14 +114,14 @@ internal class WorkflowController(private val ctx: ReportContext) {
                             ),
                         )
                     }
-                    ctx.toast("Sent for approval!")
+                    ctx.toast(str(S.desktop_sent_for_approval))
                     ctx.lists.loadSent()
                     ctx.lists.loadApproverSheets(received = true)
                     afterSend()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Failed: ${sent.error.localised()}", isError = true)
+                    ctx.toast(str(S.drive_uploads_status_failed_format, sent.error.localised()), isError = true)
                 }
             }
         }
@@ -127,18 +129,18 @@ internal class WorkflowController(private val ctx: ReportContext) {
 
     private fun noApproversPrompt() = ReportDialog.Confirm(
         action = ConfirmAction.NoApprovers,
-        title = "No Approvers",
-        message = "No approvers exist for this report. Add approvers before sending a production report for signature.",
-        confirmLabel = "OK",
+        title = str(S.desktop_no_approvers),
+        message = str(S.desktop_pr_no_approvers_message),
+        confirmLabel = str(S.ok),
         danger = false,
     )
 
     /** ZL-21398 — the same modal as No Approvers; the send has not happened. */
     private fun missingCallTimesPrompt() = ReportDialog.Confirm(
         action = ConfirmAction.MissingCallTimes,
-        title = "Missing Call Times",
-        message = "Please set Crew Call and Unit Wrap in the Call Times section before sending for approval.",
-        confirmLabel = "OK",
+        title = str(S.pr_missing_call_times_title),
+        message = str(S.pr_missing_call_times_message),
+        confirmLabel = str(S.ok),
         danger = false,
     )
 
@@ -193,7 +195,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
     private fun sendForComments(reportId: String, ids: List<String>, revokeAccess: Boolean) {
         if (!ctx.state.isPoster) return
         if (ids.isEmpty()) {
-            ctx.toast("No recipients selected.", isError = true)
+            ctx.toast(str(S.desktop_no_recipients_selected), isError = true)
             return
         }
         ctx.update { copy(busy = true) }
@@ -214,20 +216,20 @@ internal class WorkflowController(private val ctx: ReportContext) {
                 ReviewAssignee(
                     id,
                     member?.fullName?.ifBlank { null } ?: id,
-                    member?.designation?.ifBlank { null } ?: "Member",
+                    member?.designation?.ifBlank { null } ?: str(S.member),
                 )
             }
             when (val sent = ctx.repository.submitForInternalApproval(reportId, approvers, ctx.viewer().displayName)) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Sent for comments!")
+                    ctx.toast(str(S.desktop_sent_for_comments))
                     ctx.lists.loadDrafts()
                     ctx.lists.loadSent()
                     ctx.lists.loadApproverSheets(received = true)
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Failed: ${sent.error.localised()}", isError = true)
+                    ctx.toast(str(S.drive_uploads_status_failed_format, sent.error.localised()), isError = true)
                 }
             }
         }
@@ -256,7 +258,8 @@ internal class WorkflowController(private val ctx: ReportContext) {
                     ctx.update {
                         copy(dialog = (this.dialog as? ReportDialog.Approve)?.copy(uploading = false) ?: this.dialog)
                     }
-                    ctx.toast("Couldn't upload the signature: ${stored.error.localised()}", isError = true)
+                    val reason = stored.error.localised()
+                    ctx.toast(str(S.desktop_could_not_upload_signature_reason, reason), isError = true)
                 }
             }
         }
@@ -281,7 +284,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
                             ),
                         )
                     }
-                    ctx.toast("Approved!")
+                    ctx.toast(str(S.desktop_approved_exclaim))
                     ctx.lists.loadApproverSheets(received = true)
                     ctx.lists.refreshFinalized()
                 }
@@ -292,7 +295,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
                             dialog = (this.dialog as? ReportDialog.Approve)?.copy(uploading = false) ?: this.dialog,
                         )
                     }
-                    ctx.toast("Approve failed: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_approve_failed_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -321,13 +324,13 @@ internal class WorkflowController(private val ctx: ReportContext) {
                             ),
                         )
                     }
-                    ctx.toast("Rejected.")
+                    ctx.toast(str(S.rejected))
                     ctx.lists.loadSent()
                     ctx.lists.loadApproverSheets(received = true)
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Reject failed: ${result.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_reject_failed_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -353,7 +356,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
             }
             if (assignees.isEmpty()) {
                 ctx.update { copy(busy = false, dialog = null) }
-                ctx.toast("No pending approvers to remind on this report.", isError = true)
+                ctx.toast(str(S.desktop_pr_no_pending_approvers_to_remind), isError = true)
                 return@launchWork
             }
             val me = ctx.state.currentMember
@@ -367,12 +370,12 @@ internal class WorkflowController(private val ctx: ReportContext) {
             when (val sent = ctx.repository.sendReminder(report.id, request)) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(busy = false, dialog = null) }
-                    ctx.toast("Reminder sent!")
+                    ctx.toast(str(S.desktop_reminder_sent_exclaim))
                     ctx.lists.loadSent()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false) }
-                    ctx.toast("Reminder failed: ${sent.error.localised()}", isError = true)
+                    ctx.toast(str(S.desktop_reminder_failed_reason, sent.error.localised()), isError = true)
                 }
             }
         }
@@ -467,11 +470,11 @@ internal class WorkflowController(private val ctx: ReportContext) {
             )
             if (result is ZillitResult.Failure) {
                 ctx.update { copy(busy = false) }
-                ctx.toast("Publish failed: ${result.error.localised()}", isError = true)
+                ctx.toast(str(S.desktop_publish_failed_reason, result.error.localised()), isError = true)
                 return@launchWork
             }
             ctx.update { copy(busy = false, dialog = null) }
-            ctx.toast("Published!")
+            ctx.toast(str(S.desktop_published_exclaim))
             ctx.lists.refreshFinalized()
             ctx.lists.loadPublished()
             ctx.lists.loadSent()
@@ -494,8 +497,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
         val posted = ctx.services.publishing.postToChat(pdf, fileName, replacePrevious, replaceChatId)
         if (posted is ZillitResult.Failure && posted.error.isReplaceTargetGone()) {
             ctx.toast(
-                "That document is no longer in the chat, so nothing was replaced. " +
-                    "The report is published — post the PDF again from the chat.",
+                str(S.desktop_pr_replace_target_gone),
                 isError = true,
             )
         }
@@ -508,7 +510,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
 
     private fun askDocDist(report: ReportSummary, fromDraft: Boolean) {
         if (!ctx.services.publishing.canDistribute()) {
-            ctx.toast("You don't have permission to distribute to Document Distribution.", isError = true)
+            ctx.toast(str(S.dd_no_distribute_permission), isError = true)
             return
         }
         ctx.update { copy(dialog = ReportDialog.DocDistConfirm(report, pdfName(report), fromDraft)) }
@@ -531,11 +533,11 @@ internal class WorkflowController(private val ctx: ReportContext) {
         afterwards: () -> Unit = {},
     ) {
         if (!ctx.services.publishing.canDistribute()) {
-            ctx.toast("You don't have permission to distribute to Document Distribution.", isError = true)
+            ctx.toast(str(S.dd_no_distribute_permission), isError = true)
             return
         }
         ctx.launchWork {
-            ctx.toast("Sending to Document Distribution…")
+            ctx.toast(str(S.dd_distribute_loading))
             val detail = (ctx.repository.report(report.id) as? ZillitResult.Success)?.data
             val date = detail?.payload?.shared?.dateYmd?.ifBlank { null } ?: report.shared?.dateYmd?.ifBlank { null }
             val fileName = pdfName(detail?.summary ?: report)
@@ -552,10 +554,10 @@ internal class WorkflowController(private val ctx: ReportContext) {
                 is ZillitResult.Success -> ctx.update { copy(dialog = ReportDialog.DocDistDone(fileName)) }
                 is ZillitResult.Failure -> ctx.toast(
                     if (alreadyPublished) {
-                        "Published, but the Document Distribution copy failed: ${outcome.error.localised()}"
+                        str(S.desktop_published_but_dd_copy_failed_reason, outcome.error.localised())
                     } else {
                         outcome.error.localised()
-                            .ifBlank { "Couldn't send to Document Distribution — please try again" }
+                            .ifBlank { str(S.dd_distribute_error) }
                     },
                     isError = true,
                 )
@@ -571,7 +573,7 @@ internal class WorkflowController(private val ctx: ReportContext) {
     }
 
     private companion object {
-        const val DEFAULT_REMINDER = "Please review and approve this production report."
+        val DEFAULT_REMINDER: String get() = str(S.desktop_pr_default_reminder)
         const val REPLACE_TARGET_NOT_FOUND = "unit_chat_replace_target_not_found"
     }
 }

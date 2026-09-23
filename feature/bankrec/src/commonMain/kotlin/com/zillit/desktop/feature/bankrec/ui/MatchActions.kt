@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.FraudStatus
 import com.zillit.desktop.feature.bankrec.domain.LedgerEntryKind
 import com.zillit.desktop.feature.bankrec.domain.TxnStatus
@@ -98,7 +100,9 @@ internal class MatchActions(private val vm: BankRecViewModel) {
                     },
                 )
             }
-            vm.notify(if (wasFraud) "Fraud reviewed and match accepted." else "Match confirmed.")
+            vm.notify(
+                if (wasFraud) str(S.desktop_br_fraud_reviewed_accepted) else str(S.desktop_card_match_confirmed),
+            )
             afterMatch()
         }, { error ->
             edit { copy(accepting = false) }
@@ -135,7 +139,8 @@ internal class MatchActions(private val vm: BankRecViewModel) {
                     },
                 )
             }
-            vm.notify("Matched to ${view.ledgerRow(entryId)?.title.orEmpty().ifBlank { "the ledger entry" }}.")
+            val name = view.ledgerRow(entryId)?.title.orEmpty().ifBlank { str(S.desktop_br_the_ledger_entry) }
+            vm.notify(str(S.desktop_br_matched_to, name))
             afterMatch()
         }, { error ->
             edit { copy(manualMatching = false) }

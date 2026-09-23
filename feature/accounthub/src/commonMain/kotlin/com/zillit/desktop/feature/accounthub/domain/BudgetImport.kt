@@ -1,11 +1,14 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /** What an import does to the chart of accounts it lands in — the web's wording. */
-enum class CoaImportMode(val wire: String, val label: String, val detail: String) {
+enum class CoaImportMode(val wire: String, private val labelKey: String, private val detailKey: String) {
     Append(
         "append",
-        "Append",
-        "Merge these codes into the existing chart — existing and new codes coexist.",
+        S.desktop_append,
+        S.desktop_hub_merge_these_codes_into_the_existing_chart_existing_and_new,
     ),
 
     /**
@@ -17,11 +20,13 @@ enum class CoaImportMode(val wire: String, val label: String, val detail: String
      */
     Override(
         "override",
-        "Override existing",
-        "Make these the only active codes. Existing codes are hidden (not deleted), so POs/invoices " +
-            "using them keep working.",
+        S.desktop_override_existing,
+        S.desktop_hub_make_these_the_only_active_codes_existing_codes_are_hidden,
     ),
     ;
+
+    val label: String get() = str(labelKey)
+    val detail: String get() = str(detailKey)
 
     companion object {
         val Default = Append
@@ -183,7 +188,7 @@ object BudgetImports {
             .split(' ')
             .filter { it.isNotBlank() }
             .joinToString(" ")
-            .ifBlank { "Imported Budget" }
+            .ifBlank { str(S.desktop_imported_budget) }
 
     /** An optional `v`, then digits, then anything. */
     private val VERSION = Regex("""\s*[vV]?(\d+).*""")

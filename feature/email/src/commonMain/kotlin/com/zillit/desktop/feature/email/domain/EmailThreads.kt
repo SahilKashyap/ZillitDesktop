@@ -2,6 +2,9 @@
 
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * One row of the message list: a message, or — with conversation view on —
  * the conversation it stands for.
@@ -131,5 +134,5 @@ fun selectionMembers(
 const val SELECTION_LIMIT = 30
 
 /** The web's `email_limit_selection_message`. */
-const val SELECTION_LIMIT_MESSAGE =
-    "The maximum limit for performing actions (Delete and Move) is 30 emails."
+val SELECTION_LIMIT_MESSAGE: String
+    get() = str(S.desktop_email_selection_limit_message)

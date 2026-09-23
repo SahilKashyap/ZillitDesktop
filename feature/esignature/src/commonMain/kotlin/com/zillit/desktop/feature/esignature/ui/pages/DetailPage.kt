@@ -42,6 +42,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.AuditEntry
 import com.zillit.desktop.feature.esignature.domain.EnvelopeRecipient
 import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
@@ -106,14 +108,14 @@ private fun DetailHeader(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ZillitIconButton(ZillitIcons.ArrowLeft, "Back", onClick = { onEvent(EsignEvent.Back) })
+            ZillitIconButton(ZillitIcons.ArrowLeft, str(S.docusign_back), onClick = { onEvent(EsignEvent.Back) })
             Column(Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ZillitText(
-                        envelope.title.ifBlank { envelope.document?.name ?: "Envelope" },
+                        envelope.title.ifBlank { envelope.document?.name ?: str(S.desktop_ds_envelope) },
                         style = ZillitTheme.typography.titleMedium,
                         maxLines = 1,
                     )
@@ -142,14 +144,14 @@ private fun DetailHeader(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
             }
             if (detail.canVoid) {
                 ZillitButton(
-                    "Cancel envelope",
+                    str(S.desktop_ds_cancel_envelope),
                     onClick = { onEvent(EsignEvent.StartVoid) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                 )
             }
             ZillitButton(
-                "Refresh",
+                str(S.docusign_refresh),
                 onClick = { onEvent(EsignEvent.RefreshDetail) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -157,7 +159,7 @@ private fun DetailHeader(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
                 loading = detail.refreshing,
             )
             ZillitButton(
-                "Audit trail",
+                str(S.docusign_audit_trail),
                 onClick = { onEvent(EsignEvent.ToggleAudit) },
                 variant = if (detail.showAudit) ButtonVariant.Primary else ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -176,10 +178,10 @@ private fun RecipientActivity(detail: DetailState, state: EsignUiState, onEvent:
     val done = envelope.signedCount
     val outstanding = signers.count { it.outstanding }
     EsignCard {
-        BlockTitle("Recipient activity") {
+        BlockTitle(str(S.docusign_detail_recipient_activity)) {
             if (envelope.recipients.size > 1) {
                 ZillitButton(
-                    "Signing order",
+                    str(S.desktop_ds_signing_order),
                     onClick = { onEvent(EsignEvent.ToggleOrder) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -190,7 +192,7 @@ private fun RecipientActivity(detail: DetailState, state: EsignUiState, onEvent:
                 Spacer(Modifier.width(6.dp))
                 val cooling = nowMillis() - detail.remindAllAt < REMIND_COOLDOWN_MS
                 ZillitButton(
-                    if (cooling) "Reminded" else "Remind $outstanding",
+                    if (cooling) str(S.desktop_ds_reminded) else "Remind $outstanding",
                     onClick = { onEvent(EsignEvent.Remind(null)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -211,7 +213,7 @@ private fun RecipientActivity(detail: DetailState, state: EsignUiState, onEvent:
         Spacer(Modifier.height(10.dp))
         if (signers.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ZillitText("Progress", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+                ZillitText(str(S.desktop_progress), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
                 ZillitProgressBar(
                     fraction = done.toFloat() / signers.size,
                     modifier = Modifier.weight(1f),
@@ -275,8 +277,8 @@ private fun RecipientCard(
                         style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                     )
-                    if (recipient.isCc) ZillitTag("CC", tone = TagTone.Info)
-                    if (recipient.isExternal) ZillitTag("External", tone = TagTone.Neutral)
+                    if (recipient.isCc) ZillitTag(str(S.dd_label_cc), tone = TagTone.Info)
+                    if (recipient.isExternal) ZillitTag(str(S.docusign_row_external_chip), tone = TagTone.Neutral)
                     if (!recipient.isCc && envelope.settings.signingOrderEnabled) ZillitTag(
                         "#${recipient.routingOrder}",
                         tone = TagTone.Neutral,
@@ -290,7 +292,7 @@ private fun RecipientCard(
                 )
             }
             ZillitStatusPill(
-                label = if (recipient.isCc) "Copy" else recipient.statusLabel,
+                label = if (recipient.isCc) str(S.copy) else recipient.statusLabel,
                 tone = if (recipient.isCc) StatusTone.Neutral else tone,
                 dot = !recipient.isCc,
             )
@@ -327,7 +329,7 @@ private fun RecipientCard(
             val cooling = nowMillis() - since < REMIND_COOLDOWN_MS
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitButton(
-                    if (cooling) "Reminder sent ✓" else "Send reminder",
+                    if (cooling) str(S.desktop_ds_reminder_sent) else str(S.txt_send_reminder),
                     onClick = { onEvent(EsignEvent.Remind(recipient.id)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -338,7 +340,7 @@ private fun RecipientCard(
             }
         } else if (recipient.waitsForTurn(envelope.settings.signingOrderEnabled, envelope.status.isInFlight)) {
             ZillitText(
-                "Notified once the signer before them completes.",
+                str(S.desktop_ds_notified_once_the_signer_before_them_completes),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -354,12 +356,12 @@ private fun ActionsCard(detail: DetailState, state: EsignUiState, onEvent: (Esig
     val showDownload = envelope.signedDocument != null && (state.viewer.canDownload || state.viewer.isAdmin)
     if (!showSigned && !showSign && !showDownload) return
     EsignCard {
-        BlockTitle("Actions")
+        BlockTitle(str(S.dd_actions))
         Spacer(Modifier.height(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (showSign) {
                 ZillitButton(
-                    "Sign now",
+                    str(S.docusign_sign_now),
                     onClick = { onEvent(EsignEvent.OpenSigning(envelope, SigningMode.Sign, fromDetail = true)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Edit,
@@ -368,7 +370,7 @@ private fun ActionsCard(detail: DetailState, state: EsignUiState, onEvent: (Esig
             }
             if (showSigned) {
                 ZillitButton(
-                    "View signed document",
+                    str(S.docusign_view_signed_only),
                     onClick = { onEvent(EsignEvent.OpenSigning(envelope, SigningMode.ViewSigned, fromDetail = true)) },
                     size = ButtonSize.Small,
                     variant = if (showSign) ButtonVariant.Secondary else ButtonVariant.Primary,
@@ -378,7 +380,7 @@ private fun ActionsCard(detail: DetailState, state: EsignUiState, onEvent: (Esig
             }
             if (showDownload) {
                 ZillitButton(
-                    "Download signed PDF",
+                    str(S.desktop_ds_download_signed_pdf),
                     onClick = { onEvent(EsignEvent.DownloadSigned) },
                     size = ButtonSize.Small,
                     variant = ButtonVariant.Secondary,
@@ -396,21 +398,27 @@ private fun DetailsCard(detail: DetailState) {
     val colors = ZillitTheme.colors
     val envelope = detail.envelope
     EsignCard {
-        BlockTitle("Details")
+        BlockTitle(str(S.docusign_section_details))
         Spacer(Modifier.height(8.dp))
         if (envelope.description.isNotBlank()) {
             ZillitText(envelope.description, style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
             Spacer(Modifier.height(8.dp))
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            envelope.created?.let { KeyValue("Created", EsignFormat.dateTime(it)) }
-            envelope.sentOn?.let { KeyValue("Sent", EsignFormat.dateTime(it)) }
-            envelope.completedOn?.let { KeyValue("Completed", EsignFormat.dateTime(it)) }
+            envelope.created?.let { KeyValue(str(S.drive_created), EsignFormat.dateTime(it)) }
+            envelope.sentOn?.let { KeyValue(str(S.txt_sent), EsignFormat.dateTime(it)) }
+            envelope.completedOn?.let { KeyValue(str(S.completed), EsignFormat.dateTime(it)) }
             val expires = envelope.expiresOn
                 ?: envelope.settings.expirationDays?.let { days -> envelope.sentOn?.let { it + days * DAY_MS } }
-            expires?.let { KeyValue("Expires", EsignFormat.dateTime(it)) }
-            KeyValue("Signing order", if (envelope.settings.signingOrderEnabled) "Sequential" else "All at once")
-            if (envelope.settings.initialsOnAllPages) KeyValue("Initials", "On every page")
+            expires?.let { KeyValue(str(S.drive_link_expires_label), EsignFormat.dateTime(it)) }
+            KeyValue(str(S.desktop_ds_signing_order), if (envelope.settings.signingOrderEnabled) {
+                str(S.desktop_ds_sequential)
+            } else {
+                str(S.desktop_ds_all_at_once)
+            })
+            if (envelope.settings.initialsOnAllPages) {
+                KeyValue(str(S.docusign_saved_sig_initials), str(S.desktop_ds_on_every_page))
+            }
         }
     }
 }
@@ -421,7 +429,7 @@ private fun FieldsSummary(detail: DetailState) {
     val envelope = detail.envelope
     if (envelope.fields.isEmpty()) return
     EsignCard {
-        BlockTitle("Fields") {
+        BlockTitle(str(S.docusign_send_confirm_fields_label)) {
             ZillitText("${envelope.fields.size}", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         }
         Spacer(Modifier.height(8.dp))
@@ -462,7 +470,7 @@ private fun DocumentCard(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
             DocTile()
             Column(Modifier.weight(1f)) {
                 ZillitText(
-                    document.name.ifBlank { "Document" },
+                    document.name.ifBlank { str(S.docusign_section_document) },
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     maxLines = 1,
                 )
@@ -478,7 +486,7 @@ private fun DocumentCard(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
         }
         Spacer(Modifier.height(10.dp))
         ZillitButton(
-            "View document",
+            str(S.docusign_view_document),
             onClick = { onEvent(EsignEvent.OpenSigning(detail.envelope, SigningMode.Plain, fromDetail = true)) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -492,7 +500,7 @@ private fun DocumentCard(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
 private fun AuditCard(detail: DetailState, state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     EsignCard {
-        BlockTitle("Audit trail") {
+        BlockTitle(str(S.docusign_audit_trail)) {
             if (state.viewer.canDownload || state.viewer.isAdmin) {
                 ZillitButton(
                     "PDF",
@@ -506,7 +514,7 @@ private fun AuditCard(detail: DetailState, state: EsignUiState, onEvent: (EsignE
         }
         Spacer(Modifier.height(4.dp))
         ZillitText(
-            "Every action on this envelope, newest first — the certificate of completion.",
+            str(S.desktop_ds_every_action_on_this_envelope_newest_first_the),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
@@ -514,7 +522,7 @@ private fun AuditCard(detail: DetailState, state: EsignUiState, onEvent: (EsignE
         when {
             detail.auditLoading && detail.audit.isEmpty() -> ZillitSpinner()
             detail.audit.isEmpty() -> ZillitText(
-                "No events recorded yet.",
+                str(S.docusign_audit_no_events),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -543,7 +551,7 @@ private fun AuditRow(entry: AuditEntry, last: Boolean) {
         }
         Column(Modifier.weight(1f).padding(bottom = if (last) 0.dp else 8.dp)) {
             ZillitText(
-                entry.actionLabel.ifBlank { "Event" },
+                entry.actionLabel.ifBlank { str(S.history_target_event) },
                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             )
             ZillitText(
@@ -566,7 +574,7 @@ private fun OrderDialog(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val envelope = detail.envelope
     ZillitDialogShell(
-        title = "Signing order",
+        title = str(S.desktop_ds_signing_order),
         visible = detail.showOrder,
         onDismiss = { onEvent(EsignEvent.ToggleOrder) },
         scrollable = false,
@@ -576,10 +584,9 @@ private fun OrderDialog(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ZillitText(
                 if (envelope.settings.signingOrderEnabled) {
-                    "Signers are notified one at a time, in this order — each is emailed only after the one " +
-                        "before them completes."
+                    str(S.desktop_ds_sequential_order_hint)
                 } else {
-                    "All signers are notified at once — no set order."
+                    str(S.desktop_ds_all_signers_are_notified_at_once_no_set)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
@@ -625,7 +632,7 @@ private fun OrderDialog(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
 @Composable
 private fun VoidDialog(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Cancel this envelope?",
+        title = str(S.desktop_ds_cancel_this_envelope),
         subtitle = detail.envelope.title.takeIf { it.isNotBlank() },
         icon = ZillitIcons.Warning,
         visible = detail.voiding,
@@ -634,13 +641,13 @@ private fun VoidDialog(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
         width = 460.dp,
         actions = {
             ZillitButton(
-                "Keep it",
+                str(S.desktop_ds_keep_it),
                 onClick = { onEvent(EsignEvent.CancelVoid) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                "Cancel envelope",
+                str(S.desktop_ds_cancel_envelope),
                 onClick = { onEvent(EsignEvent.ConfirmVoid) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -650,15 +657,14 @@ private fun VoidDialog(detail: DetailState, onEvent: (EsignEvent) -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ZillitText(
-                "Everybody it was sent to is told, and nobody can sign it afterwards. " +
-                    "The envelope and its audit trail stay.",
+                str(S.desktop_ds_cancel_envelope_body),
                 style = ZillitTheme.typography.bodyMedium,
             )
             ZillitTextField(
                 value = detail.voidReason,
                 onValueChange = { onEvent(EsignEvent.EditVoidReason(it)) },
-                label = "Reason",
-                helperText = "The recipients are given this, and the trail keeps it.",
+                label = str(S.reason),
+                helperText = str(S.desktop_ds_the_recipients_are_given_this_and_the_trail),
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth(),
             )

@@ -52,6 +52,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BudgetFigures
 import com.zillit.desktop.feature.accounthub.domain.BudgetImports
 import com.zillit.desktop.feature.accounthub.domain.CoaImportMode
@@ -81,7 +83,7 @@ import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
 internal fun BudgetImportDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val import = state.budget.import
     ZillitDialogShell(
-        title = "Import Budget",
+        title = str(S.desktop_import_budget),
         visible = import.open,
         // A commit in flight is not abandoned by a stray click outside.
         onDismiss = { if (!import.committing) onEvent(AccountHubEvent.CloseBudgetImport) },
@@ -104,7 +106,7 @@ internal fun BudgetImportDialog(state: AccountHubUiState, onEvent: (AccountHubEv
 private fun WizardActions(import: BudgetImportState, onEvent: (AccountHubEvent) -> Unit) {
     val cancel = @Composable { enabled: Boolean ->
         ZillitButton(
-            text = "Cancel",
+            text = str(S.cancel),
             onClick = { onEvent(AccountHubEvent.CloseBudgetImport) },
             variant = ButtonVariant.Secondary,
             enabled = enabled,
@@ -114,7 +116,7 @@ private fun WizardActions(import: BudgetImportState, onEvent: (AccountHubEvent) 
         ImportStep.Upload -> {
             cancel(true)
             ZillitButton(
-                text = if (import.uploading) "Parsing…" else "Parse file",
+                text = if (import.uploading) str(S.desktop_parsing) else str(S.desktop_parse_file),
                 onClick = { onEvent(AccountHubEvent.ParseBudgetFile) },
                 loading = import.uploading,
                 enabled = import.canParse,
@@ -122,21 +124,21 @@ private fun WizardActions(import: BudgetImportState, onEvent: (AccountHubEvent) 
         }
         ImportStep.Preview -> {
             ZillitButton(
-                text = "Back",
+                text = str(S.back),
                 onClick = { onEvent(AccountHubEvent.BackToBudgetUpload) },
                 variant = ButtonVariant.Secondary,
                 enabled = !import.committing,
             )
             cancel(!import.committing)
             ZillitButton(
-                text = if (import.committing) "Importing…" else "Import",
+                text = if (import.committing) str(S.desktop_importing) else str(S.dm_rule_import_button),
                 onClick = { onEvent(AccountHubEvent.CommitBudgetImport) },
                 loading = import.committing,
                 enabled = import.canCommit,
             )
         }
         ImportStep.Done -> ZillitButton(
-            text = "Done",
+            text = str(S.ah_done),
             onClick = { onEvent(AccountHubEvent.CloseBudgetImport) },
         )
     }
@@ -204,9 +206,10 @@ private fun UploadStep(import: BudgetImportState, onEvent: (AccountHubEvent) -> 
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            ZillitText(text = "Upload a budget file", style = ZillitTheme.typography.titleSmall)
+            ZillitText(text = str(S.desktop_hub_upload_a_budget_file), style = ZillitTheme.typography.titleSmall)
             ZillitText(
-                text = (if (import.acceptsDrops) "Drag in" else "Choose") + " a PDF, Excel (.xlsx/.xls), or CSV. " +
+                text = (if (import.acceptsDrops) str(S.desktop_drag_in) else str(S.dd_choose)) +
+                    " a PDF, Excel (.xlsx/.xls), or CSV. " +
                     "The file is parsed automatically to extract Chart of Accounts codes and budget amounts; " +
                     "you review the result on the next screen before anything is saved.",
                 style = ZillitTheme.typography.bodySmall,
@@ -220,7 +223,7 @@ private fun UploadStep(import: BudgetImportState, onEvent: (AccountHubEvent) -> 
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitSpinner(size = SMALL_SPINNER)
-                FieldHint("Parsing your budget — this typically takes 10–30 seconds for a ~50-page budget.")
+                FieldHint(str(S.desktop_hub_parsing_your_budget_this_typically_takes_10_30_seconds_for))
             }
         }
         import.parseError?.let { reason ->
@@ -273,7 +276,7 @@ private fun DropZone(import: BudgetImportState, onEvent: (AccountHubEvent) -> Un
                     Modifier
                 },
             )
-            .clickable(enabled = !import.uploading, onClickLabel = "Choose a budget file") {
+            .clickable(enabled = !import.uploading, onClickLabel = str(S.desktop_hub_choose_a_budget_file)) {
                 onEvent(AccountHubEvent.PickBudgetFile)
             }
             .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZONE_PADDING),
@@ -298,7 +301,7 @@ private fun DropZoneContent(import: BudgetImportState, hovering: Boolean) {
             overflow = TextOverflow.Ellipsis,
         )
         FieldHint("${kilobytes(picked.bytes)} KB · ${kindOf(picked.name)}")
-        FieldHint("Click to pick a different file")
+        FieldHint(str(S.desktop_hub_click_to_pick_a_different_file))
     } else {
         ZillitIcon(
             icon = ZillitIcons.Upload,
@@ -306,10 +309,14 @@ private fun DropZoneContent(import: BudgetImportState, hovering: Boolean) {
             size = ZONE_ICON,
         )
         ZillitText(
-            text = if (import.acceptsDrops) "Drop file here, or click to browse" else "Click to browse",
+            text = if (import.acceptsDrops) {
+                str(S.desktop_hub_drop_file_here_or_click_to_browse)
+            } else {
+                str(S.desktop_click_to_browse)
+            },
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
         )
-        FieldHint("PDF · XLSX · XLS · CSV — up to 20 MB")
+        FieldHint(str(S.desktop_hub_pdf_xlsx_xls_csv_up_to_20_mb))
     }
 }
 
@@ -325,8 +332,7 @@ private fun PreviewStep(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
         if (parsed.warnings.isNotEmpty()) Warnings(parsed.warnings)
         if (parsed.isEmpty) {
             ZillitNotice(
-                text = "Nothing was found to import. That usually means the file is laid out in a way the " +
-                    "parser does not recognise.",
+                text = str(S.desktop_hub_nothing_was_found_to_import_that_usually_means_the_file),
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
             )
@@ -334,10 +340,10 @@ private fun PreviewStep(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
         VersionFields(state, onEvent)
         ChartMode(import, onEvent)
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitText(text = "Extracted structure", style = ZillitTheme.typography.titleSmall)
+            ZillitText(text = str(S.desktop_extracted_structure), style = ZillitTheme.typography.titleSmall)
             StructurePreview(parsed)
         }
-        import.commitError?.let { ErrorBanner(title = "Import failed", message = it, onRetry = null) }
+        import.commitError?.let { ErrorBanner(title = str(S.desktop_import_failed), message = it, onRetry = null) }
     }
 }
 
@@ -359,7 +365,7 @@ private fun ParsedStats(parsed: ParsedBudget) {
             modifier = tile,
         )
         ZillitStatTile(
-            label = parsed.currency.ifBlank { "Total" },
+            label = parsed.currency.ifBlank { str(S.asset_total) },
             value = BudgetFigures.money(parsed.total, Money.symbol(parsed.currency)),
             modifier = Modifier.weight(TOTAL_TILE_WEIGHT).fillMaxHeight(),
         )
@@ -415,7 +421,9 @@ private fun Warnings(warnings: List<String>) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClickLabel = if (open) "Hide warnings" else "Show warnings") { open = !open }
+                .clickable(onClickLabel = if (open) str(S.desktop_hide_warnings) else str(S.desktop_show_warnings)) {
+                    open = !open
+                }
                 .padding(ZillitTheme.spacing.md),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -423,7 +431,7 @@ private fun Warnings(warnings: List<String>) {
             ZillitIcon(icon = ZillitIcons.Warning, tint = colors.warning, size = SMALL_ICON)
             ZillitText(
                 text = "${warnings.size} warning${if (warnings.size == 1) "" else "s"} — " +
-                    if (open) "click to hide" else "click to review",
+                    if (open) str(S.desktop_click_to_hide) else str(S.desktop_click_to_review),
                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.warning,
                 modifier = Modifier.weight(1f),
@@ -462,10 +470,10 @@ private fun VersionFields(state: AccountHubUiState, onEvent: (AccountHubEvent) -
         onEvent(AccountHubEvent.EditBudgetImportMeta(next))
     }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitText(text = "New budget version", style = ZillitTheme.typography.titleSmall)
+        ZillitText(text = str(S.desktop_new_budget_version), style = ZillitTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldLabel("Version", required = true)
+                FieldLabel(str(S.drive_settings_version), required = true)
                 ZillitTextField(
                     value = meta.version,
                     onValueChange = { edit(meta.copy(version = it)) },
@@ -476,22 +484,22 @@ private fun VersionFields(state: AccountHubUiState, onEvent: (AccountHubEvent) -
                 VersionGuidance(hint)
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                FieldLabel("Label", required = true)
+                FieldLabel(str(S.ah_lbl_title), required = true)
                 ZillitTextField(
                     value = meta.label,
                     onValueChange = { edit(meta.copy(label = it)) },
-                    placeholder = "Original Greenlight — Sep 2024",
+                    placeholder = str(S.desktop_hub_original_greenlight_sep_2024),
                     enabled = !import.committing,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            FieldLabel("Description")
+            FieldLabel(str(S.description))
             ZillitTextField(
                 value = meta.description,
                 onValueChange = { edit(meta.copy(description = it)) },
-                placeholder = "Approved by board on…",
+                placeholder = str(S.desktop_hub_approved_by_board_on),
                 enabled = !import.committing,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -525,8 +533,8 @@ private fun VersionGuidance(hint: VersionHint) {
                         withStyle(bold) { append(hint.latest) }
                         append(").")
                     }
-                    hint.hasVersions -> append("Next free version in this project.")
-                    else -> append("First budget version in this project.")
+                    hint.hasVersions -> append(str(S.desktop_hub_next_free_version_in_this_project))
+                    else -> append(str(S.desktop_hub_first_budget_version_in_this_project))
                 }
                 hint.continues?.let {
                     append(" Continues “${it.name.trim()}” — its latest is ")
@@ -547,7 +555,7 @@ private fun VersionGuidance(hint: VersionHint) {
 @Composable
 private fun ChartMode(import: BudgetImportState, onEvent: (AccountHubEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitText(text = "Chart of accounts", style = ZillitTheme.typography.titleSmall)
+        ZillitText(text = str(S.desktop_chart_of_accounts), style = ZillitTheme.typography.titleSmall)
         Row(
             modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -563,8 +571,7 @@ private fun ChartMode(import: BudgetImportState, onEvent: (AccountHubEvent) -> U
         }
         if (import.mode == CoaImportMode.Override) {
             ZillitNotice(
-                text = "Existing chart codes not in this budget will be deactivated (hidden) — they aren't " +
-                    "deleted, so anything already referencing them stays intact.",
+                text = str(S.desktop_hub_existing_chart_codes_not_in_this_budget_will_be_deactivated),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Warning,
             )
@@ -675,12 +682,12 @@ private fun StructurePreview(parsed: ParsedBudget) {
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitText(
-                        text = "AWAITING CODE",
+                        text = str(S.desktop_awaiting_code),
                         style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = colors.warning,
                     )
                     ZillitText(
-                        text = "Accountant assigns codes after import",
+                        text = str(S.desktop_hub_accountant_assigns_codes_after_import),
                         style = ZillitTheme.typography.labelSmall,
                         color = colors.warning,
                     )
@@ -768,7 +775,7 @@ private fun DoneStep(import: BudgetImportState) {
             ZillitIcon(icon = ZillitIcons.Check, tint = colors.success, size = DONE_ICON)
         }
         ZillitText(
-            text = "Budget imported",
+            text = str(S.desktop_budget_imported),
             style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
         )
         ZillitText(
@@ -818,7 +825,7 @@ private fun ErrorBanner(title: String?, message: String, onRetry: (() -> Unit)?)
             ZillitText(text = message, style = ZillitTheme.typography.bodySmall, color = colors.danger)
         }
         onRetry?.let {
-            ZillitButton(text = "Retry", onClick = it, variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
+            ZillitButton(text = str(S.retry), onClick = it, variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
         }
     }
 }
@@ -830,10 +837,10 @@ private fun kilobytes(bytes: Long): String {
 
 /** What a picked file is, in words rather than a MIME type. */
 private fun kindOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-    "pdf" -> "PDF document"
-    "xlsx", "xls" -> "Excel workbook"
-    "csv" -> "CSV file"
-    else -> "Unknown type"
+    "pdf" -> str(S.desktop_pdf_document)
+    "xlsx", "xls" -> str(S.desktop_excel_workbook)
+    "csv" -> str(S.desktop_csv_file)
+    else -> str(S.desktop_unknown_type)
 }
 
 private val PREVIEW_MONO

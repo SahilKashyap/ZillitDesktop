@@ -32,6 +32,8 @@ import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Several choices from a list — the web's `MultiSelect`.
@@ -51,10 +53,10 @@ fun <T> ZillitMultiSelect(
     label: (T) -> String,
     onChange: (List<T>) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select…",
+    placeholder: String = str(S.select) + "…",
     enabled: Boolean = true,
     /** What the open list says when there is nothing to offer. */
-    emptyText: String = "Nothing to choose from",
+    emptyText: String = str(S.desktop_nothing_to_choose_from),
 ) {
     var open by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
@@ -115,7 +117,7 @@ fun <T> ZillitMultiSelect(
                     ZillitSearchField(
                         value = search,
                         onValueChange = { search = it },
-                        placeholder = "Search…",
+                        placeholder = str(S.search) + "…",
                         modifier = Modifier.fillMaxWidth(),
                     )
                     val shown = options.filter { search.isBlank() || label(it).contains(search, ignoreCase = true) }
@@ -144,9 +146,12 @@ fun <T> ZillitMultiSelect(
                             )
                         }
                     }
-                    val plural = if (options.size == 1) "" else "s"
+                    val countKey = when (options.size) {
+                        1 -> S.desktop_multiselect_option_count_one
+                        else -> S.desktop_multiselect_option_count_other
+                    }
                     ZillitText(
-                        text = "${options.size} option$plural · ${selected.size} selected",
+                        text = str(countKey, options.size, selected.size),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                         modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xs),
@@ -178,7 +183,7 @@ private fun SelectedChip(text: String, onRemove: (() -> Unit)?) {
         if (onRemove != null) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove $text",
+                contentDescription = str(S.bs_chip_remove, text),
                 onClick = onRemove,
                 size = CHIP_BUTTON,
                 tint = colors.accentText,

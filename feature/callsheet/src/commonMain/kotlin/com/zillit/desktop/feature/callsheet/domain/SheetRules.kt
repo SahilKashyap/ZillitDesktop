@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.callsheet.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -15,21 +17,38 @@ import kotlinx.datetime.toLocalDateTime
  */
 
 /** The top-level tabs, in display order. Labels are the web's raw `TABS` constants. */
-enum class SheetTab(val label: String) {
-    Drafts("Drafts"),
-    Approvals("Approvals"),
-    Published("Published Call sheet"),
-    Permission("Permission"),
+enum class SheetTab(private val labelKey: String) {
+    Drafts(S.cs_drafts),
+    Approvals(S.cs_approvals),
+    Published(S.desktop_cs_published_call_sheet_tab),
+    Permission(S.permission),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The Approvals sections: one flat row Sent | Received | Finalized. */
-enum class ApprovalSection(val label: String) { Sent("Sent"), Received("Received"), Finalized("Finalized") }
+enum class ApprovalSection(private val labelKey: String) {
+    Sent(S.cs_sent),
+    Received(S.cs_received),
+    Finalized(S.cs_finalized),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** The Drafts chips. */
-enum class DraftChip(val label: String) { All("All"), Drafts("Drafts"), Comments("For Comments") }
+enum class DraftChip(private val labelKey: String) {
+    All(S.cs_filter_all),
+    Drafts(S.cs_filter_drafts),
+    Comments(S.cs_filter_for_comments),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /** `callSheetToolDisplayName`: posting users see the creation tool's name. */
-fun sheetToolName(isPoster: Boolean): String = if (isPoster) "Call Sheet Creation" else "Drafts Call Sheet"
+fun sheetToolName(isPoster: Boolean): String = if (isPoster) str(S.cs_title_creation) else str(S.cs_title_drafts)
 
 /**
  * `resolveCallSheetTabs` + `viewOnlyTabAccess` (`shared/workflow/workflowTabs.js`):
@@ -279,11 +298,11 @@ fun approvalStatusEntries(
                 userId = request.assigneeId,
                 name = member?.fullName?.ifBlank { null }
                     ?: request.assigneeName.ifBlank { request.assigneeId.ifBlank { "-" } },
-                role = member?.designation?.ifBlank { null } ?: request.role.ifBlank { "Unknown" },
+                role = member?.designation?.ifBlank { null } ?: request.role.ifBlank { str(S.desktop_unknown) },
                 status = request.status.ifBlank { "PENDING" }.uppercase(),
                 atMillis = request.actedOn ?: request.createdOn,
                 reason = request.reason,
-                stage = if (request.isInternal) "Internal" else "Final",
+                stage = if (request.isInternal) SheetHistory.STAGE_INTERNAL else SheetHistory.STAGE_FINAL,
             )
         }
 
@@ -402,7 +421,7 @@ fun shootDayLabel(shared: SharedHeader?, fallbackTotalDays: String = ""): String
 
 /** The delete confirmation's question — literal on the web. */
 fun deleteQuestion(row: CallSheetSummary): String =
-    "Are you sure you want to delete call sheet #${row.serialNo}? This action cannot be undone."
+    str(S.desktop_cs_delete_question, row.serialNo)
 
 /**
  * `resolveSharedForTemplate`: a SAVED template opens as saved, with metadata

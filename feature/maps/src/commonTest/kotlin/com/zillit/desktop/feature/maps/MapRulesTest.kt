@@ -71,7 +71,14 @@ class MapRulesTest {
 
     @Test
     fun `the directions share matches the spec template`() {
-        val share = buildDirectionsShare("Hotel", LatLng(1.0, 2.0), "Set", LatLng(3.0, 4.0), "5 km (3.1 mi)", "~12 min")!!
+        val share = buildDirectionsShare(
+            "Hotel",
+            LatLng(1.0, 2.0),
+            "Set",
+            LatLng(3.0, 4.0),
+            "5 km (3.1 mi)",
+            "~12 min",
+        )!!
         assertEquals(
             listOf(
                 "🚗 Directions to Set",
@@ -120,7 +127,10 @@ class MapRulesTest {
     fun `the location form refuses in the web's order`() {
         assertEquals("Please fill in required fields", LocationRules.saveError("", "", "", "", null))
         assertEquals("Please enter an address or search for a location", LocationRules.saveError("A", "", "", "", null))
-        assertEquals("Please specify the custom location type", LocationRules.saveError("A", "B", "Other", "", LatLng(1.0, 1.0)))
+        assertEquals(
+            "Please specify the custom location type",
+            LocationRules.saveError("A", "B", "Other", "", LatLng(1.0, 1.0)),
+        )
         assertEquals(
             "Please search and select an address to set the coordinates",
             LocationRules.saveError("A", "B", "Hotel", "", null),
@@ -151,12 +161,22 @@ class MapRulesTest {
         assertNull(ZoneRules.cityOutsideZone("Mumbai", LatLng(19.0, 72.8), LatLng(19.1, 72.8), 30.0))
         assertEquals("MG Road & Ring Road Zone", ZoneRules.intersectionZoneName(" MG Road ", "Ring Road"))
         assertEquals("MG Road, Pune", ZoneRules.intersectionQuery("MG Road", "", "Pune"))
-        assertEquals("Please select Street 1 from the dropdown suggestions", ZoneRules.intersectionSearchError("MG", false, "", false))
+        assertEquals(
+            "Please select Street 1 from the dropdown suggestions",
+            ZoneRules.intersectionSearchError("MG", false, "", false),
+        )
     }
 
     @Test
     fun `zone counts and the form's area check`() {
-        val zone = MapLocation(id = "z", cityId = "c", name = "Z", point = LatLng(19.0, 72.8), isStudioZone = true, miles = 5.0)
+        val zone = MapLocation(
+            id = "z",
+            cityId = "c",
+            name = "Z",
+            point = LatLng(19.0, 72.8),
+            isStudioZone = true,
+            miles = 5.0,
+        )
         val near = base.copy(id = "near", point = LatLng(19.01, 72.8))
         val far = base.copy(id = "far", point = LatLng(21.0, 72.8))
         assertEquals(mapOf("z" to 1), zoneLocationCounts(listOf(zone), listOf(near, far)))
@@ -179,7 +199,10 @@ class MapRulesTest {
         )
         assertEquals("Andheri West", place.pinName)
         assertEquals("Andheri West", place.suggestedCityName)
-        assertEquals("Mumbai", GeocodedPlace("Mumbai, India", listOf(GeoComponent("Mumbai", listOf("locality")))).suggestedCityName)
+        assertEquals(
+            "Mumbai",
+            GeocodedPlace("Mumbai, India", listOf(GeoComponent("Mumbai", listOf("locality")))).suggestedCityName,
+        )
         assertEquals("221B Baker St", GeocodedPlace("221B Baker St, London").pinName)
     }
 }

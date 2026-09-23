@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * An approval queue: who is waiting, what they asked for, and two buttons.
@@ -108,7 +110,7 @@ fun ApprovalsScreen(
                     ZillitSearchField(
                         value = queueState.query,
                         onValueChange = { onEvent(ApprovalsEvent.SearchChanged(queue, it)) },
-                        placeholder = "Search by name, department or role",
+                        placeholder = str(S.desktop_search_by_name_department_or_role),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -136,7 +138,7 @@ private fun Header(
     ) {
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Back to admin settings",
+            contentDescription = str(S.desktop_back_to_admin_settings),
             onClick = onBack,
         )
         Box(
@@ -155,7 +157,7 @@ private fun Header(
             )
         }
         ZillitButton(
-            text = "Refresh",
+            text = str(S.refresh_text),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             enabled = !state.isLoading,
@@ -182,7 +184,7 @@ private fun Body(
 
         state.isFilteredEmpty -> Centred {
             ZillitText(
-                text = "Nobody here matches “${state.query}”.",
+                text = str(S.desktop_nobody_here_matches, state.query),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -250,7 +252,7 @@ private fun ApprovalCard(
                 ZillitTheme.shapes.medium,
             )
             .hoverable(interaction, enabled = !isDeciding)
-            .clickable(enabled = !isDeciding, onClickLabel = "Review this request", onClick = onReview)
+            .clickable(enabled = !isDeciding, onClickLabel = str(S.desktop_review_this_request), onClick = onReview)
             .padding(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
@@ -276,7 +278,7 @@ private fun ApprovalCard(
                 )
                 // Said on the row, because approving it is agreeing to it: this
                 // person will not be named to the rest of the unit.
-                if (request.keepNamePrivate) ZillitTag("Name hidden", tone = TagTone.Neutral)
+                if (request.keepNamePrivate) ZillitTag(str(S.desktop_name_hidden), tone = TagTone.Neutral)
             }
             RequestDetail(queue, request, known)
             Meta(request, loadedAtMillis)
@@ -296,9 +298,9 @@ private fun RequestDetail(queue: ApprovalQueue, request: PendingApproval, known:
             if (queue == ApprovalQueue.ProfileChanges) {
                 // The server sends no before-and-after, so with nobody to
                 // compare against there is genuinely nothing to show but this.
-                "Asked for a change to their profile."
+                str(S.desktop_asked_for_profile_change)
             } else {
-                "No department or role chosen."
+                str(S.desktop_no_department_or_role_chosen)
             }
         }
         ZillitText(
@@ -384,13 +386,13 @@ private fun Decision(isDeciding: Boolean, onApprove: () -> Unit, onDecline: () -
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
     ) {
         ZillitButton(
-            text = "Decline",
+            text = str(S.decline),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             onClick = onDecline,
         )
         ZillitButton(
-            text = "Approve",
+            text = str(S.approve),
             variant = ButtonVariant.Primary,
             size = ButtonSize.Small,
             onClick = onApprove,
@@ -407,7 +409,7 @@ private fun DeclineDialog(
     val request = state.confirming
 
     ZillitDialogShell(
-        title = "Decline this request?",
+        title = str(S.desktop_decline_this_request),
         subtitle = request?.displayName.orEmpty(),
         icon = ZillitIcons.User,
         visible = request != null,
@@ -417,11 +419,10 @@ private fun DeclineDialog(
         ZillitText(
             text = when (queue) {
                 ApprovalQueue.NewCrew ->
-                    "They will not be let onto this project. Nothing tells them why, and " +
-                        "they can ask again with the project code."
+                    str(S.desktop_decline_new_crew_body)
 
                 ApprovalQueue.ProfileChanges ->
-                    "Their profile stays as it is. They can ask for the change again."
+                    str(S.desktop_decline_profile_change_body)
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
@@ -431,12 +432,12 @@ private fun DeclineDialog(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = { onEvent(ApprovalsEvent.DismissDecline(queue)) },
             )
             ZillitButton(
-                text = "Decline",
+                text = str(S.decline),
                 variant = ButtonVariant.Danger,
                 onClick = { onEvent(ApprovalsEvent.ConfirmDecline(queue)) },
             )
@@ -460,7 +461,7 @@ private fun EmptyQueue(queue: ApprovalQueue, failed: Boolean) {
             // Distinguishes an empty queue from a queue that could not be read —
             // the strip above carries the reason, and this must not read as
             // "all clear" when nothing was fetched.
-            text = if (failed) "This queue could not be loaded." else queue.emptyMessage,
+            text = if (failed) str(S.desktop_queue_could_not_be_loaded) else queue.emptyMessage,
             style = ZillitTheme.typography.titleSmall,
             textAlign = TextAlign.Center,
         )
@@ -494,7 +495,7 @@ private fun Strip(
         if (onDismiss != null) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Dismiss",
+                contentDescription = str(S.sync_action_dismiss),
                 onClick = onDismiss,
                 tint = ZillitTheme.colors.textMuted,
             )
@@ -509,22 +510,22 @@ private fun Centred(content: @Composable () -> Unit) {
 
 private val ApprovalQueue.title: String
     get() = when (this) {
-        ApprovalQueue.NewCrew -> "Approve new crew"
-        ApprovalQueue.ProfileChanges -> "Approve profile changes"
+        ApprovalQueue.NewCrew -> str(S.desktop_approve_new_crew)
+        ApprovalQueue.ProfileChanges -> str(S.desktop_approve_profile_changes)
     }
 
 private val ApprovalQueue.emptyMessage: String
     get() = when (this) {
-        ApprovalQueue.NewCrew -> "Nobody is waiting to join."
-        ApprovalQueue.ProfileChanges -> "No profile changes are waiting."
+        ApprovalQueue.NewCrew -> str(S.desktop_nobody_waiting_to_join)
+        ApprovalQueue.ProfileChanges -> str(S.desktop_no_profile_changes_waiting)
     }
 
 /** Says how many, because that is the only reason to open this page. */
 private fun ApprovalQueue.subtitle(state: ApprovalQueueState): String = when {
-    !state.hasLoaded -> "Reading the queue…"
-    state.items.isEmpty() -> "Nothing waiting."
-    state.items.size == 1 -> "1 person waiting."
-    else -> "${state.items.size} people waiting."
+    !state.hasLoaded -> str(S.desktop_reading_the_queue)
+    state.items.isEmpty() -> str(S.desktop_nothing_waiting_period)
+    state.items.size == 1 -> str(S.desktop_one_person_waiting)
+    else -> str(S.desktop_people_waiting, state.items.size)
 }
 
 /**
@@ -543,10 +544,10 @@ internal fun waitedFor(requestedAtMillis: Long?, loadedAtMillis: Long): String? 
 
     val days = elapsed / DAY_MILLIS
     return when {
-        days < 1 -> "asked today"
-        days == 1L -> "waiting 1 day"
-        days < DAYS_IN_WEEK * 2 -> "waiting $days days"
-        else -> "waiting ${days / DAYS_IN_WEEK} weeks"
+        days < 1 -> str(S.desktop_asked_today)
+        days == 1L -> str(S.desktop_waiting_one_day)
+        days < DAYS_IN_WEEK * 2 -> str(S.desktop_waiting_days, days)
+        else -> str(S.desktop_waiting_weeks, days / DAYS_IN_WEEK)
     }
 }
 

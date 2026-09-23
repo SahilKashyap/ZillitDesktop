@@ -30,6 +30,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Chat for the duration of the call, and no longer.
@@ -75,12 +77,12 @@ fun CallChatPanel(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "Call chat",
+            text = str(S.desktop_call_chat),
             style = ZillitTheme.typography.titleSmall,
             color = colors.textPrimary,
         )
         ZillitText(
-            text = "Only for this call — nothing here is saved.",
+            text = str(S.desktop_call_chat_not_saved),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
@@ -88,7 +90,7 @@ fun CallChatPanel(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             if (lines.isEmpty()) {
                 ZillitText(
-                    text = "No messages yet.",
+                    text = str(S.av_no_comments_yet),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                     modifier = Modifier.align(Alignment.Center),
@@ -126,7 +128,7 @@ private fun Composer(draft: String, onDraft: (String) -> Unit, onSend: () -> Uni
     ZillitTextField(
         value = draft,
         onValueChange = onDraft,
-        placeholder = "Message the call",
+        placeholder = str(S.desktop_call_message_the_call),
         singleLine = true,
         maxLength = CHAT_TEXT_LIMIT,
         imeAction = ImeAction.Send,
@@ -135,7 +137,7 @@ private fun Composer(draft: String, onDraft: (String) -> Unit, onSend: () -> Uni
         trailingContent = {
             ZillitIcon(
                 icon = ZillitIcons.Send,
-                contentDescription = "Send",
+                contentDescription = str(S.send),
                 tint = if (draft.isBlank()) colors.textDisabled else colors.accent,
                 size = SEND_ICON,
                 modifier = Modifier.clickable(enabled = draft.isNotBlank(), onClick = onSend),

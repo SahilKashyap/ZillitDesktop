@@ -51,6 +51,8 @@ import com.zillit.desktop.feature.crewlist.ui.components.CrewCopy
 import com.zillit.desktop.feature.crewlist.ui.components.CrewDrawer
 import com.zillit.desktop.feature.crewlist.ui.components.CrewIcons
 import com.zillit.desktop.feature.crewlist.ui.components.crewPalette
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A crew member's profile — the web's `InfoSider` as the crew list opens it
@@ -79,14 +81,14 @@ internal fun MemberProfileDrawer(
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             ActionStrip(shown, isSelf, copy, actions, onClose)
             Column(Modifier.padding(20.dp)) {
-                SectionLabel(copy.t("UserDetails", "User Details"))
+                SectionLabel(copy.t("UserDetails", str(S.user_details)))
                 DetailCard {
                     if (!hideUnit) {
-                        DetailRow(ZillitIcons.Home, copy.t("Unit", "Unit"), last = false) {
+                        DetailRow(ZillitIcons.Home, copy.t("Unit", str(S.dm_step2_unit)), last = false) {
                             DetailValue(copy.label(shown.unitName).ifBlank { "—" })
                         }
                     }
-                    DetailRow(ZillitIcons.Calendar, copy.t("joining_date", "Joining Date"), last = true) {
+                    DetailRow(ZillitIcons.Calendar, copy.t("joining_date", str(S.joining_date)), last = true) {
                         DetailValue(joiningDate(shown.joiningDate).ifBlank { "—" })
                     }
                 }
@@ -123,7 +125,11 @@ private fun Header(member: CrewMember, face: ImageBitmap?, copy: CrewCopy, onClo
                 maxLines = 1,
             )
         }
-        ZillitIconButton(icon = ZillitIcons.Close, contentDescription = copy.t("Close", "Close"), onClick = onClose)
+        ZillitIconButton(
+            icon = ZillitIcons.Close,
+            contentDescription = copy.t("Close", str(S.close)),
+            onClick = onClose,
+        )
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(ZillitTheme.colors.divider))
 }
@@ -145,18 +151,18 @@ private fun ActionStrip(
     ) {
         val onZillit = !member.isExternal
         if (onZillit) {
-            ActionButton(ZillitIcons.Phone, copy.t("Audio", "Audio"), enabled = !isSelf && actions.call != null) {
+            ActionButton(ZillitIcons.Phone, copy.t("Audio", str(S.audio)), enabled = !isSelf && actions.call != null) {
                 actions.call?.invoke(member, false)
             }
-            ActionButton(CrewIcons.Video, copy.t("Video", "Video"), enabled = !isSelf && actions.call != null) {
+            ActionButton(CrewIcons.Video, copy.t("Video", str(S.video)), enabled = !isSelf && actions.call != null) {
                 actions.call?.invoke(member, true)
             }
-            ActionButton(ZillitIcons.Chat, copy.t("Chat", "Chat"), enabled = !isSelf && actions.chat != null) {
+            ActionButton(ZillitIcons.Chat, copy.t("Chat", str(S.chat)), enabled = !isSelf && actions.chat != null) {
                 onClose()
                 actions.chat?.invoke(member)
             }
         }
-        ActionButton(ZillitIcons.Mail, copy.t("Email", "Email"), enabled = !isSelf && actions.email != null) {
+        ActionButton(ZillitIcons.Mail, copy.t("Email", str(S.email)), enabled = !isSelf && actions.email != null) {
             actions.email?.invoke(composeAddress(member))
         }
     }
@@ -212,23 +218,23 @@ private fun ContactDetails(member: CrewMember, isSelf: Boolean, copy: CrewCopy, 
     val phone = if (member.phone.isNotBlank()) member.countryCode + member.phone else ""
     if (primary.isBlank() && zillit.isBlank() && phone.isBlank()) return
 
-    SectionLabel(copy.t("contact_details", "Contact Details"))
+    SectionLabel(copy.t("contact_details", str(S.txt_contact_details)))
     DetailCard {
         if (primary.isNotBlank()) {
-            DetailRow(ZillitIcons.Mail, copy.t("Email", "Email"), last = zillit.isBlank() && phone.isBlank()) {
+            DetailRow(ZillitIcons.Mail, copy.t("Email", str(S.email)), last = zillit.isBlank() && phone.isBlank()) {
                 LinkValue(primary, enabled = actions.email != null) { actions.email?.invoke(primary) }
             }
         }
         if (zillit.isNotBlank()) {
-            DetailRow(ZillitIcons.Mail, copy.t("zillitEmailLabel", "Zillit Email"), last = phone.isBlank()) {
+            DetailRow(ZillitIcons.Mail, copy.t("zillitEmailLabel", str(S.zillit_email_txt)), last = phone.isBlank()) {
                 LinkValue(zillit, enabled = !isSelf && actions.email != null) { actions.email?.invoke(zillit) }
             }
         }
         if (phone.isNotBlank()) {
-            DetailRow(ZillitIcons.Phone, copy.t("Phone", "Phone"), last = true) {
+            DetailRow(ZillitIcons.Phone, copy.t("Phone", str(S.phone)), last = true) {
                 val gsm = copy.t(
                     "you_can_call_gsm_contacts_through_mobile",
-                    "You can call GSM contacts only through a mobile device.",
+                    str(S.desktop_cl_gsm_mobile_only),
                 )
                 ZillitTooltip(gsm) {
                     DetailValue(phone)

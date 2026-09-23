@@ -2,6 +2,8 @@ package com.zillit.desktop.core.media
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The kinds of thing a composer can attach, as the phones offer them.
@@ -18,10 +20,10 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
  */
 val PreviewKind.label: String
     get() = when (this) {
-        PreviewKind.Image -> "Photo"
-        PreviewKind.Video -> "Video"
-        PreviewKind.Document -> "Document"
-        PreviewKind.Audio -> "Audio"
+        PreviewKind.Image -> str(S.photo)
+        PreviewKind.Video -> str(S.video)
+        PreviewKind.Document -> str(S.document)
+        PreviewKind.Audio -> str(S.audio)
     }
 
 val PreviewKind.icon: ImageVector
@@ -35,10 +37,10 @@ val PreviewKind.icon: ImageVector
 /** What the OS dialog is titled — the kind, so the filter is explained. */
 val PreviewKind.pickerTitle: String
     get() = when (this) {
-        PreviewKind.Image -> "Choose photos"
-        PreviewKind.Video -> "Choose videos"
-        PreviewKind.Document -> "Choose documents"
-        PreviewKind.Audio -> "Choose audio"
+        PreviewKind.Image -> str(S.desktop_media_choose_photos)
+        PreviewKind.Video -> str(S.desktop_media_choose_videos)
+        PreviewKind.Document -> str(S.desktop_media_choose_documents)
+        PreviewKind.Audio -> str(S.desktop_media_choose_audio)
     }
 
 /**

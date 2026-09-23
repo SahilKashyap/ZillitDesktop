@@ -15,6 +15,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -181,19 +183,18 @@ fun NotificationPermissionPrompt() {
 @Composable
 fun NotificationPermissionDialog(visible: Boolean, onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
     ZillitDialogShell(
-        title = "Allow notifications",
-        subtitle = "Zillit is not allowed to show notifications on this computer.",
+        title = str(S.desktop_allow_notifications),
+        subtitle = str(S.desktop_notifications_blocked),
         icon = ZillitIcons.Bell,
         visible = visible,
         onDismiss = onDismiss,
         actions = {
-            ZillitButton(text = "Not now", variant = ButtonVariant.Secondary, onClick = onDismiss)
-            ZillitButton(text = "Open Notification Settings", onClick = onOpenSettings)
+            ZillitButton(text = str(S.desktop_not_now), variant = ButtonVariant.Secondary, onClick = onDismiss)
+            ZillitButton(text = str(S.desktop_open_notification_settings), onClick = onOpenSettings)
         },
     ) {
         ZillitText(
-            text = "Calls, messages and notices arrive silently while the window is behind something else. " +
-                "Turn on Allow Notifications for Zillit in System Settings, then come back.",
+            text = str(S.desktop_notifications_blocked_body),
             style = ZillitTheme.typography.bodyMedium,
         )
     }

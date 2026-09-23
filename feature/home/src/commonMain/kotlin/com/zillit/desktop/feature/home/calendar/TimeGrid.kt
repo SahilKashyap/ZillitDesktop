@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.toLocalDateTime
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
@@ -326,7 +328,7 @@ private fun AllDayStrip(state: CalendarUiState, days: List<LocalDate>) {
     ) {
         Box(Modifier.width(TIME_GUTTER_WIDTH)) {
             ZillitText(
-                text = "All day",
+                text = str(S.all_day),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
                 modifier = Modifier

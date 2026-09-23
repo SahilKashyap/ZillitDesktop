@@ -30,6 +30,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budget.domain.BudgetActivity
 import com.zillit.desktop.feature.budget.domain.BudgetRules
 import kotlinx.datetime.LocalDate
@@ -55,19 +57,19 @@ internal fun BudgetDialogs(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit,
 private fun UploadDialog(state: BudgetUiState, draft: BudgetUploadDraft, onEvent: (BudgetEvent) -> Unit) {
     val zone = TimeZone.currentSystemDefault()
     ZillitDialogShell(
-        title = "Upload budget",
+        title = str(S.upload_budget),
         subtitle = draft.departmentName.ifBlank { state.mode.title },
         icon = ZillitIcons.Upload,
         visible = true,
         onDismiss = { onEvent(BudgetEvent.UploadCancel) },
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(BudgetEvent.UploadCancel) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Upload",
+                text = str(S.upload),
                 onClick = { onEvent(BudgetEvent.UploadConfirm) },
                 leadingIcon = ZillitIcons.Upload,
                 enabled = !state.busy,
@@ -111,25 +113,25 @@ private fun UploadDialog(state: BudgetUiState, draft: BudgetUploadDraft, onEvent
                     }.getOrNull()
                     onEvent(BudgetEvent.UploadDateChanged(text, millis))
                 },
-                label = "Budget date",
+                label = str(S.budget_date),
                 helperText = draft.dateMillis
                     ?.let { BudgetRules.uploadTitle(state.mode.type, draft.departmentName, BudgetRules.dateLabel(it)) }
                     ?.let { "Will be titled “$it”" }
-                    ?: "Names the version — today or earlier.",
+                    ?: str(S.desktop_budget_date_hint),
                 errorText = draft.complaint?.takeIf { it.contains("date", ignoreCase = true) },
             )
             if (state.context.isTelevision) {
                 ZillitTextField(
                     value = draft.episode,
                     onValueChange = { onEvent(BudgetEvent.UploadEpisodeChanged(it)) },
-                    label = "Episode number",
+                    label = str(S.txt_episode_number),
                     placeholder = "e.g. 3",
                     errorText = draft.complaint?.takeIf { it.contains("episode", ignoreCase = true) },
                 )
             }
             if (draft.sizeBytes > OVERSIZE_NOTICE_BYTES) {
                 ZillitNotice(
-                    text = "Over 25 MB: the file is kept here, and every admin is told it will not be mailed out.",
+                    text = str(S.desktop_budget_over_25mb),
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Warning,
                 )
@@ -148,7 +150,7 @@ private fun MembersDialog(dialog: BudgetMembersDialog, onEvent: (BudgetEvent) ->
     val isGroup = dialog.kind == BudgetMembersDialog.Kind.Group
     ZillitDialogShell(
         title = dialog.kind.title,
-        subtitle = if (isGroup) "Everyone who can see this budget" else "Start a private conversation",
+        subtitle = if (isGroup) str(S.desktop_budget_group_subtitle) else str(S.desktop_budget_member_subtitle),
         icon = if (isGroup) ZillitIcons.Users else ZillitIcons.UserPlus,
         visible = true,
         onDismiss = { onEvent(BudgetEvent.DismissMembers) },
@@ -158,12 +160,12 @@ private fun MembersDialog(dialog: BudgetMembersDialog, onEvent: (BudgetEvent) ->
         } else {
             {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(BudgetEvent.DismissMembers) },
                     variant = ButtonVariant.Tertiary,
                 )
                 ZillitButton(
-                    text = "Create group",
+                    text = str(S.create_group),
                     onClick = { onEvent(BudgetEvent.ConfirmMembers) },
                     leadingIcon = ZillitIcons.Users,
                     loading = dialog.saving,
@@ -177,7 +179,7 @@ private fun MembersDialog(dialog: BudgetMembersDialog, onEvent: (BudgetEvent) ->
                 ZillitTextField(
                     value = dialog.groupName,
                     onValueChange = { onEvent(BudgetEvent.GroupNameChanged(it)) },
-                    label = "Group name",
+                    label = str(S.group_name),
                     placeholder = "3 to 25 characters",
                     errorText = dialog.complaint,
                 )
@@ -189,13 +191,13 @@ private fun MembersDialog(dialog: BudgetMembersDialog, onEvent: (BudgetEvent) ->
                 ZillitSearchField(
                     value = dialog.search,
                     onValueChange = { onEvent(BudgetEvent.MembersSearch(it)) },
-                    placeholder = "Search by name or designation",
+                    placeholder = str(S.desktop_transport_search_name_or_designation),
                     modifier = Modifier.weight(1f),
                 )
                 if (isGroup && dialog.visible.isNotEmpty()) {
                     val allPicked = dialog.visible.all { it.userId in dialog.picked }
                     ZillitButton(
-                        text = if (allPicked) "Clear" else "Select all",
+                        text = if (allPicked) str(S.ah_clear) else str(S.select_all),
                         onClick = { onEvent(BudgetEvent.PickAll) },
                         variant = ButtonVariant.Tertiary,
                     )
@@ -206,12 +208,12 @@ private fun MembersDialog(dialog: BudgetMembersDialog, onEvent: (BudgetEvent) ->
                 dialog.visible.isEmpty() -> ZillitText(
                     text = if (dialog.candidates.isEmpty()) {
                         if (isGroup) {
-                            "Nobody else can see this budget yet."
+                            str(S.desktop_budget_nobody_else)
                         } else {
-                            "Everyone who can see this budget is already listed."
+                            str(S.desktop_budget_everyone_listed)
                         }
                     } else {
-                        "No one matches."
+                        str(S.dm_nda_no_one_matches)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
@@ -291,13 +293,13 @@ private fun ActivityDialog(dialog: BudgetActivityDialog, onEvent: (BudgetEvent) 
             ZillitSearchField(
                 value = dialog.search,
                 onValueChange = { onEvent(BudgetEvent.ActivitySearch(it)) },
-                placeholder = "Search by name",
+                placeholder = str(S.desktop_search_by_name),
                 modifier = Modifier.fillMaxWidth(),
             )
             when {
                 dialog.loading -> repeat(SKELETON_ROWS) { ZillitSkeletonBar(Modifier.fillMaxWidth(), height = 48.dp) }
                 rows.isEmpty() -> ZillitText(
-                    text = "No data found.",
+                    text = str(S.no_data_found),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                     modifier = Modifier.padding(ZillitTheme.spacing.md),
@@ -308,7 +310,7 @@ private fun ActivityDialog(dialog: BudgetActivityDialog, onEvent: (BudgetEvent) 
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 ) {
                     rows.forEach { row ->
-                        val name = seams.nameOf(row.userId) ?: "Crew member"
+                        val name = seams.nameOf(row.userId) ?: str(S.crew_member)
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -348,8 +350,8 @@ private fun ActivityDialog(dialog: BudgetActivityDialog, onEvent: (BudgetEvent) 
 @Suppress("LongMethod") // One dialog, drawn in one place.
 private fun DepartmentDrawer(drawer: BudgetDepartmentDrawer, onEvent: (BudgetEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Departments",
-        subtitle = "Departments without a budget yet",
+        title = str(S.departments),
+        subtitle = str(S.desktop_budget_departments_without),
         icon = ZillitIcons.Building,
         visible = true,
         onDismiss = { onEvent(BudgetEvent.CloseDrawer) },
@@ -359,16 +361,16 @@ private fun DepartmentDrawer(drawer: BudgetDepartmentDrawer, onEvent: (BudgetEve
             ZillitSearchField(
                 value = drawer.search,
                 onValueChange = { onEvent(BudgetEvent.DrawerSearch(it)) },
-                placeholder = "Search department",
+                placeholder = str(S.desktop_cl_search_department),
                 modifier = Modifier.fillMaxWidth(),
             )
             val rows = drawer.visible
             if (rows.isEmpty()) {
                 ZillitText(
                     text = if (drawer.departments.isEmpty()) {
-                        "Every department already has a budget."
+                        str(S.desktop_budget_every_department_has)
                     } else {
-                        "No department matches."
+                        str(S.desktop_continuity_no_department_matches)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
@@ -398,7 +400,7 @@ private fun DepartmentDrawer(drawer: BudgetDepartmentDrawer, onEvent: (BudgetEve
                                 modifier = Modifier.weight(1f),
                             )
                             ZillitButton(
-                                text = "Upload budget",
+                                text = str(S.upload_budget),
                                 onClick = { onEvent(BudgetEvent.UploadRequested(department.id)) },
                                 variant = ButtonVariant.Secondary,
                                 leadingIcon = ZillitIcons.Upload,

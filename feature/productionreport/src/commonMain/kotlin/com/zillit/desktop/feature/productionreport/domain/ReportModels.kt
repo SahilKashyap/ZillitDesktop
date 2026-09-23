@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.productionreport.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A production report's lifecycle state.
  *
@@ -9,17 +12,19 @@ package com.zillit.desktop.feature.productionreport.domain
  * from any of the middle states restarts the review. Labels are the web's
  * `STATUS_UI` (`productionReportConstants.js:26-35`).
  */
-enum class ReportStatus(val wire: String, val label: String) {
-    Draft("DRAFT", "Draft"),
-    PendingInternalApproval("PENDING_INTERNAL_APPROVAL", "For Comments"),
-    InternalApproved("INTERNAL_APPROVED", "Comments Approved"),
-    PendingApproval("PENDING_APPROVAL", "Pending Signature"),
-    ApprovalRejected("APPROVAL_REJECTED", "Final Rejected"),
-    ApprovedForPublish("APPROVED_FOR_PUBLISH", "Final Approved"),
-    Published("PUBLISHED", "Published"),
-    Deleted("DELETED", "Deleted"),
-    Unknown("", "-"),
+enum class ReportStatus(val wire: String, private val labelKey: String) {
+    Draft("DRAFT", S.pr_status_draft),
+    PendingInternalApproval("PENDING_INTERNAL_APPROVAL", S.pr_status_for_comments),
+    InternalApproved("INTERNAL_APPROVED", S.pr_status_comments_approved),
+    PendingApproval("PENDING_APPROVAL", S.pr_status_pending_signature),
+    ApprovalRejected("APPROVAL_REJECTED", S.pr_status_final_rejected),
+    ApprovedForPublish("APPROVED_FOR_PUBLISH", S.pr_status_final_approved),
+    Published("PUBLISHED", S.pr_status_published),
+    Deleted("DELETED", S.drive_deleted_default),
+    Unknown("", ""),
     ;
+
+    val label: String get() = if (labelKey.isEmpty()) "-" else str(labelKey)
 
     /** `LOCKED_STATUSES`: no edit, no delete, no send. */
     val locked: Boolean get() = this == ApprovedForPublish || this == Published

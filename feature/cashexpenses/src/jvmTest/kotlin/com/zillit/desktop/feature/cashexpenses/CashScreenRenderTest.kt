@@ -570,7 +570,7 @@ class CashScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("Request a float").assertIsDisplayed()
+            onNodeWithText("Request a Float").assertIsDisplayed()
         }
     }
 }

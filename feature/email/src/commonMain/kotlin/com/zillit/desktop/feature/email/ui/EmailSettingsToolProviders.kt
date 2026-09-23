@@ -11,6 +11,8 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.feature.email.rules.EmailRulesViewModel
 import com.zillit.desktop.feature.email.rules.EmailRulesRepositoryImpl
@@ -83,7 +85,7 @@ class EmailSettingsToolProvider(
 ) : ToolProvider {
 
     override val path: String = EMAIL_SETTINGS_PATH
-    override val title: String = "Email Settings"
+    override val title: String get() = str(S.email_settings)
     override val icon = ZillitIcons.Settings
     override val defaultSize: DpSize = DpSize(720.dp, 720.dp)
 
@@ -164,7 +166,7 @@ class EmailContactsToolProvider(
 ) : ToolProvider {
 
     override val path: String = EMAIL_CONTACTS_PATH
-    override val title: String = "My Contacts"
+    override val title: String get() = str(S.contacts_txt)
     override val icon = ZillitIcons.Users
     override val defaultSize: DpSize = DpSize(680.dp, 640.dp)
 

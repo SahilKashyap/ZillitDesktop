@@ -72,6 +72,8 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.ColumnSpec
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
 import com.zillit.desktop.feature.callsheet.domain.SheetTime
@@ -123,7 +125,7 @@ internal fun PaneSelect(
     options: List<Pair<String, String>>,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select",
+    placeholder: String = str(S.select),
     enabled: Boolean = true,
     borderless: Boolean = false,
     fontSize: Int = 14,
@@ -336,7 +338,7 @@ internal fun DateInput(
     value: String,
     onPick: (Long?) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select date",
+    placeholder: String = str(S.hint_date),
     boxed: Boolean = false,
     clearable: Boolean = true,
     disablePast: Boolean = false,
@@ -387,7 +389,7 @@ internal fun DateInput(
                 if (clearable && label != null) {
                     Icon(
                         ZillitIcons.Close,
-                        contentDescription = "Clear date",
+                        contentDescription = str(S.desktop_clear_date),
                         tint = colors.textMuted,
                         modifier = Modifier.size(12.dp).alpha(if (hovered) 1f else 0f).plainClick { onPick(null) },
                     )
@@ -418,15 +420,21 @@ private fun MonthGrid(selected: LocalDate?, disablePast: Boolean, onPick: (Local
     var month by remember { mutableStateOf(LocalDate(anchor.year, anchor.month, 1)) }
     Column(Modifier.width(252.dp).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CalendarNav(ZillitIcons.ChevronLeft, "Previous month") { month = month.plus(-1, DateTimeUnit.MONTH) }
+            CalendarNav(
+                ZillitIcons.ChevronLeft,
+                str(S.desktop_previous_month),
+            ) { month = month.plus(-1, DateTimeUnit.MONTH) }
             Text(
-                "${MONTH_NAMES[month.month.ordinal]} ${month.year}",
+                "${str(MONTH_NAMES[month.month.ordinal])} ${month.year}",
                 style = sheetText(13.sp, FontWeight.SemiBold),
                 color = colors.textPrimary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
-            CalendarNav(ZillitIcons.ChevronRight, "Next month") { month = month.plus(1, DateTimeUnit.MONTH) }
+            CalendarNav(
+                ZillitIcons.ChevronRight,
+                str(S.desktop_next_month),
+            ) { month = month.plus(1, DateTimeUnit.MONTH) }
         }
         Row(Modifier.padding(top = 6.dp)) {
             listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su").forEach {
@@ -461,7 +469,7 @@ private fun MonthGrid(selected: LocalDate?, disablePast: Boolean, onPick: (Local
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.End) {
             Text(
-                "Today",
+                str(S.today),
                 style = sheetText(12.sp, FontWeight.SemiBold),
                 color = colors.accent,
                 modifier = Modifier
@@ -474,18 +482,18 @@ private fun MonthGrid(selected: LocalDate?, disablePast: Boolean, onPick: (Local
 }
 
 private val MONTH_NAMES = listOf(
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+    S.desktop_month_full_january,
+    S.desktop_month_full_february,
+    S.desktop_month_full_march,
+    S.desktop_month_full_april,
+    S.desktop_month_short_may,
+    S.desktop_month_full_june,
+    S.desktop_month_full_july,
+    S.desktop_month_full_august,
+    S.desktop_month_full_september,
+    S.desktop_month_full_october,
+    S.desktop_month_full_november,
+    S.desktop_month_full_december,
 )
 private const val DAYS_IN_WEEK = 7
 
@@ -552,7 +560,7 @@ internal fun TimeInput(
     onChange: (String) -> Unit,
     sheetDateMs: Long?,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select time",
+    placeholder: String = str(S.hint_scheduled_time),
     onFocus: () -> Unit = {},
 ) {
     val colors = SheetTheme.colors
@@ -581,10 +589,10 @@ internal fun TimeInput(
                 onFocus = onFocus,
                 modifier = Modifier.weight(1f),
             )
-            ZillitTooltip("Pick a time") {
+            ZillitTooltip(str(S.desktop_pick_a_time)) {
                 Icon(
                     ZillitIcons.Clock,
-                    contentDescription = "Pick a time",
+                    contentDescription = str(S.desktop_pick_a_time),
                     tint = if (open) colors.accent else colors.textMuted,
                     modifier = Modifier.padding(end = 6.dp).size(13.dp).plainClick {
                         onFocus()
@@ -635,7 +643,7 @@ private fun TimePanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Clear",
+                str(S.ah_clear),
                 style = sheetText(12.sp),
                 color = colors.textMuted,
                 modifier = Modifier
@@ -645,7 +653,7 @@ private fun TimePanel(
             )
             Box(Modifier.weight(1f))
             SheetButton(
-                "Done",
+                str(S.ah_done),
                 onDone,
                 kind = ButtonKind.Accent,
                 height = 28.dp,
@@ -711,7 +719,7 @@ internal fun UsersInput(
     members: List<SheetMember>,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Select user(s)",
+    placeholder: String = str(S.desktop_select_users_placeholder),
     onFocus: () -> Unit = {},
 ) {
     val colors = SheetTheme.colors
@@ -750,10 +758,10 @@ internal fun UsersInput(
                     color = colors.chipOnText,
                     maxLines = 1,
                 )
-                ZillitTooltip("Remove ${member.fullName}") {
+                ZillitTooltip(str(S.bs_chip_remove, member.fullName)) {
                     Icon(
                         ZillitIcons.Close,
-                        contentDescription = "Remove ${member.fullName}",
+                        contentDescription = str(S.bs_chip_remove, member.fullName),
                         tint = colors.red,
                         modifier = Modifier.size(9.dp).plainClick { toggle(member.userId) },
                     )
@@ -817,9 +825,9 @@ private fun UsersDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Select Users", style = sheetText(16.sp, FontWeight.SemiBold), color = colors.textPrimary)
+                    Text(str(S.select_users), style = sheetText(16.sp, FontWeight.SemiBold), color = colors.textPrimary)
                     Text(
-                        if (ids.isEmpty()) "Choose team members" else "${ids.size} selected",
+                        if (ids.isEmpty()) str(S.desktop_choose_team_members) else str(S.dd_n_selected, ids.size),
                         style = sheetText(12.sp),
                         color = colors.textMuted,
                         modifier = Modifier.padding(top = 2.dp),
@@ -833,7 +841,7 @@ private fun UsersDialog(
                     search,
                     { search = it },
                     Modifier.fillMaxWidth(),
-                    placeholder = "Search by name, role, department...",
+                    placeholder = str(S.desktop_search_by_name_role_department),
                     autoFocus = true,
                     leadingIcon = ZillitIcons.Search,
                 )
@@ -856,7 +864,7 @@ private fun UsersDialog(
             Column(Modifier.weight(1f, fill = false).heightIn(min = 300.dp).verticalScroll(rememberScrollState())) {
                 if (pool.isEmpty()) {
                     Text(
-                        "No members found",
+                        str(S.desktop_no_members_found),
                         style = sheetText(14.sp),
                         color = colors.textMuted,
                         textAlign = TextAlign.Center,
@@ -904,13 +912,13 @@ private fun UsersDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    if (pool.size == 1) "1 member" else "${pool.size} members",
+                    str(S.desktop_ce_member_count, pool.size),
                     style = sheetText(12.sp),
                     color = colors.textTertiary,
                     modifier = Modifier.weight(1f),
                 )
                 SheetButton(
-                    "Done",
+                    str(S.ah_done),
                     onClose,
                     kind = ButtonKind.Accent,
                     height = 36.dp,
@@ -949,7 +957,7 @@ internal fun Divider() {
 }
 
 @Composable
-internal fun CloseSquare(onClose: () -> Unit, description: String = "Close", size: Int = 28) {
+internal fun CloseSquare(onClose: () -> Unit, description: String = str(S.close), size: Int = 28) {
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
     ZillitTooltip(description) {
@@ -993,10 +1001,10 @@ internal fun PersonChip(member: SheetMember, onRemove: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 110.dp),
         )
-        ZillitTooltip("Remove approver") {
+        ZillitTooltip(str(S.desktop_remove_approver)) {
             Icon(
                 ZillitIcons.Close,
-                contentDescription = "Remove ${member.fullName}",
+                contentDescription = str(S.bs_chip_remove, member.fullName),
                 tint = colors.red,
                 modifier = Modifier.size(11.dp).plainClick(onClick = onRemove),
             )
@@ -1085,7 +1093,7 @@ internal fun InSelector(
                 value.removePrefix(SheetTime.OTHER_PREFIX),
                 { onChange(SheetTime.OTHER_PREFIX + it) },
                 Modifier.fillMaxWidth(),
-                placeholder = "Enter value...",
+                placeholder = str(S.docusign_text_value_hint),
                 radius = 4.dp,
                 textStyle = sheetText(14.sp),
                 onFocusChange = { if (it) onFocus() },
@@ -1105,9 +1113,9 @@ internal fun placeholderFor(column: ColumnSpec?): String {
         "phone" -> "+1 555 123 4567"
         "email" -> "name@example.com"
         "url" -> "https://..."
-        "date" -> "Select date"
-        "time" -> "Select time"
-        "users" -> "Select user(s)"
+        "date" -> str(S.hint_date)
+        "time" -> str(S.hint_scheduled_time)
+        "users" -> str(S.desktop_select_users_placeholder)
         else -> ""
     }
 }

@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.rates.AgreementFormat
 import com.zillit.desktop.feature.dealmemo.domain.rates.Js
 import com.zillit.desktop.feature.dealmemo.domain.rates.RateFormat
@@ -105,10 +107,10 @@ internal fun NonUnionRulesSection(state: DealMemoUiState, builder: BuilderState,
 private fun RulesPreview(rows: List<BulkRuleRow>, onOpen: () -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(text = "Pay rules", style = DmType.sans(13.sp, FontWeight.Bold), color = rp.ink)
+            ZillitText(text = str(S.desktop_dm_pay_rules), style = DmType.sans(13.sp, FontWeight.Bold), color = rp.ink)
             CountPill(rows.size, Modifier.padding(start = 8.dp))
             Spacer(Modifier.weight(1f))
-            PrimarySmallButton(if (rows.isEmpty()) "Add rules" else "Edit rules", onOpen)
+            PrimarySmallButton(if (rows.isEmpty()) str(S.desktop_dm_add_rules) else str(S.dm_rules_edit), onOpen)
         }
         if (rows.isEmpty()) {
             val (source, hovered) = rememberHover()
@@ -126,7 +128,7 @@ private fun RulesPreview(rows: List<BulkRuleRow>, onOpen: () -> Unit) {
             ) {
                 ZillitIcon(ZillitIcons.Add, size = 13.dp, tint = if (hovered) rp.cta else rp.ink3)
                 ZillitText(
-                    text = "Add overtime, premium & penalty rules",
+                    text = str(S.desktop_dm_add_overtime_premium_penalty_rules),
                     style = DmType.sans(13.sp, FontWeight.SemiBold),
                     color = if (hovered) rp.cta else rp.ink2,
                     modifier = Modifier.padding(start = 6.dp),
@@ -181,7 +183,7 @@ private fun PreviewRow(number: Int, row: BulkRuleRow, onOpen: () -> Unit) {
         row.rateType == "percentage" -> "${row.amount}%"
         else -> row.amount.toDoubleOrNull()?.let(RateFormat::groupAmountAuto) ?: "NaN"
     }
-    ZillitTooltip(text = "Edit rules") {
+    ZillitTooltip(text = str(S.dm_rules_edit)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -213,7 +215,7 @@ private fun PreviewRow(number: Int, row: BulkRuleRow, onOpen: () -> Unit) {
                 PreviewCell(2, PREVIEW_COLUMNS[2].second) {
                     if (row.label.isEmpty()) {
                         ZillitText(
-                            text = "Untitled",
+                            text = str(S.untitled),
                             style = DmType.sans(12.5.sp).copy(fontStyle = FontStyle.Italic),
                             color = rp.ink3,
                             modifier = Modifier.padding(horizontal = 9.dp),
@@ -228,7 +230,7 @@ private fun PreviewRow(number: Int, row: BulkRuleRow, onOpen: () -> Unit) {
                     color = rp.ink3,
                 )
                 PreviewText(4, amount, color = tone.fg, weight = FontWeight.Bold, mono = true)
-                PreviewText(5, "per ${RuleSummary.basis(row.basis)}", color = rp.ink3)
+                PreviewText(5, str(S.desktop_dm_per_basis, RuleSummary.basis(row.basis)), color = rp.ink3)
                 PreviewText(6, triggerText(row), color = rp.ink)
                 PreviewText(7, row.dayType.ifEmpty { "—" }, color = rp.ink, mono = true)
                 PreviewText(
@@ -328,22 +330,22 @@ private fun PrimarySmallButton(text: String, onClick: () -> Unit) {
     }
 }
 
-private val PREVIEW_COLUMNS: List<Pair<String, Dp>> = listOf(
+private val PREVIEW_COLUMNS: List<Pair<String, Dp>> get() = listOf(
     "" to 28.dp,
-    "Rule type" to 196.dp,
-    "Name" to 200.dp,
-    "Rate type" to 132.dp,
-    "Amount" to 78.dp,
-    "Base rate" to 118.dp,
-    "Trigger" to 128.dp,
-    "Day type" to 104.dp,
-    "OT Increment" to 104.dp,
-    "Basic + OT on Top" to 112.dp,
-    "Min Basic Daily Rate to apply OT" to 136.dp,
-    "Max Basic Daily Rate no OT applied" to 136.dp,
-    "OT Cap" to 96.dp,
-    "Nominal" to 96.dp,
-    "Notes" to 200.dp,
+    str(S.desktop_rule_type) to 196.dp,
+    str(S.name) to 200.dp,
+    str(S.dm_rule_rate_type) to 132.dp,
+    str(S.dm_rule_amount) to 78.dp,
+    str(S.dm_rates_scale_base_rate) to 118.dp,
+    str(S.desktop_dm_trigger) to 128.dp,
+    str(S.dm_rule_day_type) to 104.dp,
+    str(S.desktop_dm_ot_increment) to 104.dp,
+    str(S.dm_rule_add_on_top) to 112.dp,
+    str(S.dm_rule_bdr_min) to 136.dp,
+    str(S.dm_rule_bdr_max) to 136.dp,
+    str(S.desktop_dm_ot_cap) to 96.dp,
+    str(S.dm_rule_nominal) to 96.dp,
+    str(S.dm_rates_scale_notes) to 200.dp,
 )
 private val EDGE_COLUMNS = setOf(7, 8, 12, 13, 14)
 private val PREVIEW_WIDTH = PREVIEW_COLUMNS.fold(30.dp) { total, (_, width) -> total + width }
@@ -358,15 +360,15 @@ private fun DayTypesEditor(draft: DayTypesDraft, onEvent: (DealMemoEvent) -> Uni
     Column {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
-                ZillitText(text = "Day Types", style = DmType.sans(14.sp, FontWeight.Bold), color = p.ink)
+                ZillitText(text = str(S.desktop_day_types), style = DmType.sans(14.sp, FontWeight.Bold), color = p.ink)
                 ZillitText(
                     text = buildAnnotatedString {
-                        append("Contracted working-day catalogue for non-union deals. ")
-                        bold("Working min")
-                        append(" sets the basic/overtime split; ")
-                        bold("meal break")
-                        append(" drives the short-break penalty. Non-union deals snapshot this list at save time. ")
-                        bold("SWD, CWD and SCWD")
+                        append(str(S.desktop_dm_contracted_working_day_catalogue_for_non_union) + " ")
+                        bold(str(S.desktop_working_min))
+                        append(" " + str(S.desktop_dm_day_types_note_split) + " ")
+                        bold(str(S.desktop_dm_meal_break))
+                        append(" " + str(S.desktop_dm_day_types_note_penalty) + " ")
+                        bold(str(S.desktop_dm_swd_cwd_and_scwd))
                         append(
                             " are the base day types — retune their values here (codes are fixed); add other codes " +
                                 "below for custom day types.",
@@ -379,7 +381,7 @@ private fun DayTypesEditor(draft: DayTypesDraft, onEvent: (DealMemoEvent) -> Uni
             }
             if (draft.dirty) {
                 DmButton(
-                    text = if (draft.saving) "Saving…" else "Save Day Types",
+                    text = if (draft.saving) str(S.dm_nda_saving) else str(S.desktop_dm_save_day_types),
                     onClick = { onEvent(BuilderEvent.SaveDayTypes) },
                     style = DmButtonStyle.ModalPrimary,
                     enabled = !draft.saving,
@@ -391,10 +393,10 @@ private fun DayTypesEditor(draft: DayTypesDraft, onEvent: (DealMemoEvent) -> Uni
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             listOf(
-                "Code" to 1.2f,
-                "Working min" to 1f,
-                "Meal break min" to 1f,
-                "Label" to 1.6f,
+                str(S.dm_phone_code_hint) to 1.2f,
+                str(S.desktop_working_min) to 1f,
+                str(S.desktop_meal_break_min) to 1f,
+                str(S.dm_rule_label) to 1.6f,
             ).forEach { (title, weight) ->
                 ZillitText(
                     text = title.uppercase(),
@@ -410,14 +412,14 @@ private fun DayTypesEditor(draft: DayTypesDraft, onEvent: (DealMemoEvent) -> Uni
         }
         if (draft.rows.none { !it.isDefault }) {
             ZillitText(
-                text = "Only the defaults above apply. Add a custom day type below.",
+                text = str(S.desktop_dm_only_the_defaults_above_apply_add_a),
                 style = DmType.sans(12.5.sp).copy(fontStyle = FontStyle.Italic),
                 color = p.muted,
                 modifier = Modifier.padding(vertical = 12.dp),
             )
         }
         DashedAddButton(
-            label = "+ Add day type",
+            label = str(S.desktop_dm_add_day_type_plus),
             onClick = { onEvent(BuilderEvent.AddDayType) },
             modifier = Modifier.padding(top = 12.dp),
         )
@@ -479,12 +481,16 @@ private fun DayTypeLine(row: DayTypeRow, onEvent: (DealMemoEvent) -> Unit) {
             )
         }
         Box(Modifier.weight(1.6f)) {
-            BuilderInput(value = row.label, onValueChange = { edit(row.copy(label = it)) }, placeholder = "10-hour day")
+            BuilderInput(
+                value = row.label,
+                onValueChange = { edit(row.copy(label = it)) },
+                placeholder = str(S.desktop_10_hour_day),
+            )
         }
         Box(Modifier.width(ROW_ACTION).heightIn(min = CONTROL_HEIGHT), contentAlignment = Alignment.Center) {
             if (!row.isDefault) {
                 val (source, hovered) = rememberHover()
-                ZillitTooltip(text = "Remove") {
+                ZillitTooltip(text = str(S.dm_rules_remove)) {
                     Box(
                         modifier = Modifier
                             .size(32.dp)
@@ -522,6 +528,7 @@ private fun Modifier.bottomRule(color: Color): Modifier = drawBehind {
  * preview of the rules it would add. Rendered over the rules grid.
  */
 @Composable
+@Suppress("LongMethod") // Layout in one place; the sweep's wrapped calls added the lines.
 internal fun RuleImportModal(builder: BuilderState, onEvent: (DealMemoEvent) -> Unit) {
     val import = builder.setupPage.ruleImport
     val projected = remember(import?.agreement) {
@@ -533,19 +540,27 @@ internal fun RuleImportModal(builder: BuilderState, onEvent: (DealMemoEvent) -> 
     val total = AgreementRuleImport.count(projected)
     DmModal(
         visible = import != null,
-        title = "Import rules from a union agreement",
+        title = str(S.desktop_dm_import_rules_from_a_union_agreement),
         onDismiss = { onEvent(BuilderEvent.CloseRuleImport) },
         maxWidth = 640.dp,
         footer = {
             ZillitText(
-                text = if (total > 0) "$total rule${if (total == 1) "" else "s"} ready to import" else "",
+                text = when {
+                    total == 1 -> str(S.desktop_dm_one_rule_ready_to_import)
+                    total > 1 -> str(S.desktop_dm_n_rules_ready_to_import, total)
+                    else -> ""
+                },
                 style = DmType.sans(12.sp),
                 color = bp.muted,
                 modifier = Modifier.weight(1f),
             )
-            DmButton("Cancel", { onEvent(BuilderEvent.CloseRuleImport) }, DmButtonStyle.ModalNeutral)
+            DmButton(str(S.dm_cancel), { onEvent(BuilderEvent.CloseRuleImport) }, DmButtonStyle.ModalNeutral)
             DmButton(
-                text = if (total > 0) "Import $total rule${if (total == 1) "" else "s"}" else "Import",
+                text = when {
+                    total == 1 -> str(S.dm_rule_import_button_one)
+                    total > 1 -> str(S.dm_rule_import_button_many, total)
+                    else -> str(S.dm_rule_import_button)
+                },
                 onClick = { onEvent(BuilderEvent.ConfirmRuleImport) },
                 style = DmButtonStyle.ModalPrimary,
                 enabled = total > 0,
@@ -563,13 +578,13 @@ internal fun RuleImportModal(builder: BuilderState, onEvent: (DealMemoEvent) -> 
                 .padding(horizontal = 24.dp, vertical = 16.dp),
         ) {
             when {
-                import.agreementId.isEmpty() -> ImportEmpty("Select a territory and agreement to preview its rules.")
-                import.agreementLoading -> ImportEmpty("Loading agreement…")
-                total == 0 -> ImportEmpty("This agreement has no importable rules.")
+                import.agreementId.isEmpty() -> ImportEmpty(str(S.dm_rule_import_prompt))
+                import.agreementLoading -> ImportEmpty(str(S.dm_rule_import_loading))
+                total == 0 -> ImportEmpty(str(S.dm_rule_import_empty))
                 else -> listOf(
-                    RuleList.Overtimes to "Overtimes",
-                    RuleList.Premiums to "Premiums",
-                    RuleList.Penalties to "Penalties",
+                    RuleList.Overtimes to str(S.dm_rates_overtimes),
+                    RuleList.Premiums to str(S.dm_rates_premiums),
+                    RuleList.Penalties to str(S.dm_rates_penalties),
                 )
                     .forEach { (list, label) ->
                         projected.lists[list].orEmpty().takeIf { it.isNotEmpty() }?.let { ImportGroup(label, it) }
@@ -588,19 +603,19 @@ private fun ImportSelectors(builder: BuilderState, import: RuleImportState, onEv
     // Side by side at any width — the dialog is narrower than the grid's stacking breakpoint.
     Row(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.weight(1f)) {
-            Field("Territory") {
+            Field(str(S.dm_section_territory)) {
                 RichSelect(
                     options = territories.map { PickOption(it.id, it.label) },
                     selectedKey = import.territory.ifEmpty { null },
                     onPick = { onEvent(BuilderEvent.PickImportTerritory(it)) },
-                    placeholder = "Select a territory…",
+                    placeholder = str(S.dm_rule_import_territory_placeholder),
                     leading = { TerritoryCatalogue.territory(import.territory)?.let { TerritoryFlag(it.id, 16.dp) } },
                     rowLeading = { option -> TerritoryFlag(option.key, 18.dp) },
                 )
             }
         }
         Box(Modifier.weight(1f)) {
-            Field("Agreement") {
+            Field(str(S.dm_rule_import_agreement)) {
                 RichSelect(
                     options = import.agreements.map { agreement ->
                         PickOption(
@@ -613,9 +628,9 @@ private fun ImportSelectors(builder: BuilderState, import: RuleImportState, onEv
                     selectedKey = import.agreementId.ifEmpty { null },
                     onPick = { onEvent(BuilderEvent.PickImportAgreement(it)) },
                     placeholder = when {
-                        import.territory.isEmpty() -> "Pick a territory first"
-                        import.agreementsLoading -> "Loading agreements…"
-                        else -> "Select an agreement…"
+                        import.territory.isEmpty() -> str(S.dm_rule_import_agreement_first)
+                        import.agreementsLoading -> str(S.desktop_loading_agreements)
+                        else -> str(S.dm_rule_import_agreement_placeholder)
                     },
                     enabled = import.territory.isNotEmpty(),
                 )

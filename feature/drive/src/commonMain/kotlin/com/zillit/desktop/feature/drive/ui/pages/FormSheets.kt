@@ -37,6 +37,8 @@ import com.zillit.desktop.feature.drive.ui.MAX_FOLDER_NAME
 import com.zillit.desktop.feature.drive.ui.NewFolderDraft
 import com.zillit.desktop.feature.drive.ui.PickedFile
 import com.zillit.desktop.feature.drive.ui.UploadDraft
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The upload drawer — `UploadFilesDrawer.jsx`: a destination (at the root),
@@ -50,20 +52,20 @@ internal fun UploadSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val draft = state.upload
     var hovering by remember { mutableStateOf(false) }
     DriveSideSheet(
-        title = "Upload files",
-        subtitle = if (state.folderId != null) "Destination: ${state.currentFolderName}" else null,
+        title = str(S.dd_empty_upload_cta),
+        subtitle = if (state.folderId != null) str(S.drive_destination_format, state.currentFolderName) else null,
         visible = draft != null,
         onDismiss = { onEvent(DriveEvent.CloseUpload) },
         icon = ZillitIcons.Upload,
         width = SHEET_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DriveEvent.CloseUpload) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Upload",
+                text = str(S.upload),
                 onClick = { onEvent(DriveEvent.SubmitUpload) },
                 enabled = draft?.canSubmit == true,
                 leadingIcon = ZillitIcons.Upload,
@@ -77,9 +79,9 @@ internal fun UploadSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                 pickExisting = draft.pickExisting,
                 selectedId = draft.destinationFolderId,
                 onChange = { existing, id -> onEvent(DriveEvent.UploadDestination(existing, id)) },
-                title = "Destination",
-                rootLabel = "Drive root",
-                rootHint = "Files will land at the top level of your Drive.",
+                title = str(S.drive_pick_dest_title),
+                rootLabel = str(S.drive_pick_drive_root),
+                rootHint = str(S.desktop_drive_upload_files_root_hint),
             )
         }
 
@@ -95,7 +97,11 @@ internal fun UploadSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         if (draft.unsupported.isNotEmpty()) UnsupportedList(draft, onEvent)
 
         ZillitButton(
-            text = if (draft.showDetails) "Hide details" else "Add details (optional)",
+            text = if (draft.showDetails) {
+                str(S.desktop_drive_hide_details)
+            } else {
+                str(S.desktop_drive_add_details_optional)
+            },
             onClick = { onEvent(DriveEvent.ToggleUploadDetails) },
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
@@ -104,15 +110,15 @@ internal fun UploadSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             ZillitTextField(
                 value = draft.description,
                 onValueChange = { onEvent(DriveEvent.UploadDescription(it)) },
-                label = "Description",
-                placeholder = "What these files are for…",
+                label = str(S.description),
+                placeholder = str(S.desktop_drive_files_purpose_hint),
                 singleLine = false,
             )
         }
 
         if (state.sharePeople.isNotEmpty()) {
             CollapsibleAccess(
-                title = "File permissions",
+                title = str(S.drive_file_permissions),
                 expanded = draft.accessExpanded,
                 count = draft.access.selectedCount,
                 onToggle = { onEvent(DriveEvent.ToggleUploadAccess) },
@@ -122,7 +128,7 @@ internal fun UploadSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
                     onChange = { onEvent(DriveEvent.UploadAccess(it)) },
                     people = state.sharePeople.filterNot { it.id == state.viewer.userId },
                     forFolder = false,
-                    privateHint = "Skip assigning permissions to keep these files private and accessible only to you.",
+                    privateHint = str(S.desktop_drive_skip_permissions_files),
                     showInherit = false,
                 )
             }
@@ -156,9 +162,9 @@ internal fun DropZone(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitIcon(icon = ZillitIcons.Inbox, tint = colors.accent, size = DROP_ICON)
-        ZillitText(text = "Drag files or folders here", style = ZillitTheme.typography.titleSmall)
+        ZillitText(text = str(S.desktop_drive_drag_files_here), style = ZillitTheme.typography.titleSmall)
         ZillitText(
-            text = "Folder structure will be preserved on upload.",
+            text = str(S.desktop_drive_folder_structure_preserved),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textSecondary,
         )
@@ -167,13 +173,13 @@ internal fun DropZone(
             modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
         ) {
             ZillitButton(
-                text = "Choose files",
+                text = str(S.desktop_drive_choose_files),
                 onClick = onPickFiles,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Choose folder",
+                text = str(S.choose_folder),
                 onClick = onPickFolder,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -189,10 +195,14 @@ private fun PickedFilesTree(draft: UploadDraft, onEvent: (DriveEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val grouped = draft.files.groupBy { it.relativeDirectory }.toSortedMap()
     SheetSection(
-        title = "${draft.files.size} file${if (draft.files.size == 1) "" else "s"} selected",
+        title = if (draft.files.size == 1) {
+            str(S.desktop_drive_files_selected_one)
+        } else {
+            str(S.desktop_drive_files_selected_many, draft.files.size)
+        },
         trailing = {
             ZillitButton(
-                text = "Clear all",
+                text = str(S.docusign_initials_clear_all),
                 onClick = { onEvent(DriveEvent.ClearUploadFiles) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -236,7 +246,7 @@ private fun PickedFilesTree(draft: UploadDraft, onEvent: (DriveEvent) -> Unit) {
                         )
                         ZillitIconButton(
                             icon = ZillitIcons.Close,
-                            contentDescription = "Remove ${file.name}",
+                            contentDescription = str(S.bs_chip_remove, file.name),
                             onClick = { onEvent(DriveEvent.RemoveUploadFile(file.path)) },
                             size = REMOVE_SIZE,
                         )
@@ -273,20 +283,23 @@ private fun UnsupportedList(draft: UploadDraft, onEvent: (DriveEvent) -> Unit) {
         ) {
             ZillitIcon(icon = ZillitIcons.Warning, tint = colors.warning, size = ZillitTheme.spacing.lg)
             ZillitText(
-                text = "${draft.unsupported.size} unsupported file" +
-                    (if (draft.unsupported.size == 1) "" else "s") + " skipped",
+                text = if (draft.unsupported.size == 1) {
+                    str(S.desktop_drive_unsupported_skipped_one)
+                } else {
+                    str(S.desktop_drive_unsupported_skipped_many, draft.unsupported.size)
+                },
                 style = ZillitTheme.typography.label,
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Clear",
+                text = str(S.ah_clear),
                 onClick = { onEvent(DriveEvent.ClearUnsupported) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
         }
         ZillitText(
-            text = "These files won't be uploaded — their format isn't supported.",
+            text = str(S.desktop_drive_unsupported_note),
             style = ZillitTheme.typography.bodySmall,
             color = colors.textSecondary,
         )
@@ -333,7 +346,7 @@ internal fun CollapsibleAccess(
         ) {
             ZillitIcon(icon = ZillitIcons.Lock, tint = colors.accent, size = ZillitTheme.spacing.lg)
             ZillitText(text = title, style = ZillitTheme.typography.label)
-            ZillitText(text = "(optional)", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(text = str(S.optional), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
             if (count > 0) {
                 Box(
                     modifier = Modifier
@@ -351,7 +364,7 @@ internal fun CollapsibleAccess(
             Box(Modifier.weight(1f))
             ZillitIconButton(
                 icon = if (expanded) ZillitIcons.ChevronUp else ZillitIcons.ChevronDown,
-                contentDescription = if (expanded) "Collapse" else "Expand",
+                contentDescription = if (expanded) str(S.desktop_collapse) else str(S.desktop_expand),
                 onClick = onToggle,
             )
         }
@@ -368,19 +381,19 @@ internal fun CollapsibleAccess(
 internal fun NewFolderSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val draft = state.newFolder
     DriveSideSheet(
-        title = "Create folder",
-        subtitle = if (state.folderId != null) "Inside ${state.currentFolderName}" else null,
+        title = str(S.dd_empty_create_cta),
+        subtitle = if (state.folderId != null) str(S.desktop_drive_inside_folder, state.currentFolderName) else null,
         visible = draft != null,
         onDismiss = { onEvent(DriveEvent.CloseNewFolder) },
         icon = ZillitIcons.FolderPlus,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DriveEvent.CloseNewFolder) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Create folder",
+                text = str(S.dd_empty_create_cta),
                 onClick = { onEvent(DriveEvent.SubmitNewFolder) },
                 enabled = draft?.canSubmit == true,
                 loading = draft?.submitting == true,
@@ -396,18 +409,18 @@ internal fun NewFolderSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) 
                 pickExisting = draft.pickExisting,
                 selectedId = draft.destinationFolderId,
                 onChange = { existing, id -> onEvent(DriveEvent.NewFolderDestination(existing, id)) },
-                title = "Location",
-                rootLabel = "Drive root",
-                rootHint = "This folder will be created at the top level of your Drive.",
+                title = str(S.location),
+                rootLabel = str(S.drive_pick_drive_root),
+                rootHint = str(S.drive_pick_create_root_hint),
             )
         }
         if (state.sharePeople.isNotEmpty()) {
             SheetSection(
-                title = "Access control",
+                title = str(S.drive_access_control),
                 trailing = {
                     if (!draft.access.projectWide && draft.access.selectedCount > 0) {
                         ZillitText(
-                            text = "${draft.access.selectedCount} selected",
+                            text = str(S.dd_n_selected, draft.access.selectedCount),
                             style = ZillitTheme.typography.labelSmall,
                             color = ZillitTheme.colors.textSecondary,
                         )
@@ -419,7 +432,7 @@ internal fun NewFolderSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) 
                     onChange = { onEvent(DriveEvent.NewFolderAccess(it)) },
                     people = state.sharePeople.filterNot { it.id == state.viewer.userId },
                     forFolder = true,
-                    privateHint = "Skip assigning permissions to keep this folder private and accessible only to you.",
+                    privateHint = str(S.drive_permissions_skip_hint_folder),
                     enabled = !draft.submitting,
                 )
             }
@@ -433,18 +446,18 @@ private fun NewFolderForm(draft: NewFolderDraft, onEvent: (DriveEvent) -> Unit) 
         ZillitTextField(
             value = draft.name,
             onValueChange = { onEvent(DriveEvent.NewFolderName(it)) },
-            label = "Folder name",
-            placeholder = "Enter a folder name",
+            label = str(S.folder_name),
+            placeholder = str(S.drive_enter_folder_name),
             leadingIcon = ZillitIcons.Folder,
-            errorText = "Folder name must be under $MAX_FOLDER_NAME characters"
+            errorText = str(S.desktop_drive_folder_name_too_long, MAX_FOLDER_NAME)
                 .takeIf { draft.name.length > MAX_FOLDER_NAME },
             enabled = !draft.submitting,
         )
         ZillitTextField(
             value = draft.description,
             onValueChange = { onEvent(DriveEvent.NewFolderDescription(it)) },
-            label = "Description",
-            placeholder = "Describe what this folder is for…",
+            label = str(S.description),
+            placeholder = str(S.desktop_drive_folder_purpose_hint),
             singleLine = false,
             enabled = !draft.submitting,
         )
@@ -455,18 +468,21 @@ private fun NewFolderForm(draft: NewFolderDraft, onEvent: (DriveEvent) -> Unit) 
 @Composable
 internal fun EditItemSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     val draft: EditDraft? = state.edit
-    val kind = if (draft?.item?.isFolder == true) "folder" else "file"
     DriveSideSheet(
-        title = "Edit $kind",
+        title = if (draft?.item?.isFolder == true) str(S.dd_edit_folder) else str(S.drive_edit_file),
         subtitle = draft?.item?.name,
         visible = draft != null,
         onDismiss = { onEvent(DriveEvent.CloseEdit) },
         icon = ZillitIcons.Edit,
         width = EDIT_WIDTH,
         actions = {
-            ZillitButton(text = "Cancel", onClick = { onEvent(DriveEvent.CloseEdit) }, variant = ButtonVariant.Tertiary)
             ZillitButton(
-                text = "Save changes",
+                text = str(S.cancel),
+                onClick = { onEvent(DriveEvent.CloseEdit) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = str(S.dm_setup_save),
                 onClick = { onEvent(DriveEvent.SubmitEdit) },
                 enabled = draft?.canSubmit == true,
                 loading = draft?.submitting == true,
@@ -478,10 +494,10 @@ internal fun EditItemSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         ZillitTextField(
             value = draft.name,
             onValueChange = { onEvent(DriveEvent.EditName(it)) },
-            label = "Name",
-            placeholder = "Enter name",
+            label = str(S.name),
+            placeholder = str(S.cs_enter_name),
             helperText = if (!draft.item.isFolder && draft.item.extension.isNotBlank()) {
-                "The .${draft.item.extension} extension is kept."
+                str(S.desktop_drive_extension_kept, draft.item.extension)
             } else {
                 null
             },
@@ -490,8 +506,8 @@ internal fun EditItemSheet(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         ZillitTextField(
             value = draft.description,
             onValueChange = { onEvent(DriveEvent.EditDescription(it)) },
-            label = "Description",
-            placeholder = "Enter a description",
+            label = str(S.description),
+            placeholder = str(S.desktop_drive_enter_description),
             singleLine = false,
             enabled = !draft.submitting,
         )

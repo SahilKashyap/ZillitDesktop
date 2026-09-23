@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.DraftChip
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.SavedTemplate
@@ -91,13 +93,13 @@ private fun TemplateGroup(state: ReportUiState, onEvent: (ReportEvent) -> Unit) 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Drafts Template",
+                str(S.cs_drafts_template_group),
                 style = reportText(14.sp, FontWeight.SemiBold),
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "Shared with everyone who can create production reports",
+                str(S.desktop_pr_template_shared_hint),
                 style = reportText(12.sp),
                 color = colors.textTertiary,
             )
@@ -106,10 +108,10 @@ private fun TemplateGroup(state: ReportUiState, onEvent: (ReportEvent) -> Unit) 
         ReportTable(
             columns = listOf(
                 TableColumn("#", width = 44.dp),
-                TableColumn("Template Name", weight = 1.4f),
-                TableColumn("Created By", width = 190.dp),
-                TableColumn("Updated", width = 190.dp),
-                TableColumn("Actions", width = 110.dp, alignment = Alignment.End),
+                TableColumn(str(S.template_name), weight = 1.4f),
+                TableColumn(str(S.pr_created_by), width = 190.dp),
+                TableColumn(str(S.desktop_updated), width = 190.dp),
+                TableColumn(str(S.dd_actions), width = 110.dp, alignment = Alignment.End),
             ),
             rows = state.savedTemplates,
             roomy = true,
@@ -133,7 +135,7 @@ private fun TemplateCell(
         0 -> MetaCell("${index + 1}")
         1 -> Column(Modifier.plainClick { onEvent(DialogEvent.OpenSavedTemplate(template)) }) {
             Text(
-                template.name.ifBlank { "Untitled" },
+                template.name.ifBlank { str(S.untitled) },
                 style = reportText(13.sp, FontWeight.SemiBold),
                 color = colors.textPrimary,
             )
@@ -151,7 +153,7 @@ private fun TemplateCell(
         3 -> MetaCell(if (template.updatedOn != null) formatDateTime(template.updatedOn) else "—")
         else -> ReportIconButton(
             icon = ZillitIcons.Trash,
-            description = "Delete template",
+            description = str(S.ah_delete_template),
             onClick = { onEvent(DialogEvent.DeleteSavedTemplate(template)) },
             tint = colors.textSecondary,
             hoverTint = Color(0xFFDC2626),
@@ -188,7 +190,11 @@ private fun DraftsCard(state: ReportUiState, onEvent: (ReportEvent) -> Unit, now
             }
         }
         ViewBar(
-            caption = "${filtered.size} ${if (filtered.size == 1) "draft" else "drafts"}",
+            caption = if (filtered.size == 1) {
+                str(S.desktop_n_draft, filtered.size)
+            } else {
+                str(S.desktop_n_drafts, filtered.size)
+            },
             view = state.draftsView,
         ) {
             onEvent(ListEvent.SetDraftsView(it))
@@ -196,14 +202,14 @@ private fun DraftsCard(state: ReportUiState, onEvent: (ReportEvent) -> Unit, now
         list.error?.let { Box(Modifier.padding(16.dp)) { ReportErrorLine(it) { onEvent(ListEvent.Retry) } } }
         val visible = filtered.drop(page * PAGE_SIZE).take(PAGE_SIZE)
         when {
-            !list.loaded && list.loading -> ReportEmptyState("Loading drafts…", bordered = false)
-            filtered.isEmpty() -> ReportEmptyState("No draft production reports.", bordered = false)
+            !list.loaded && list.loading -> ReportEmptyState(str(S.desktop_loading_drafts), bordered = false)
+            filtered.isEmpty() -> ReportEmptyState(str(S.desktop_pr_no_draft_production_reports), bordered = false)
             state.draftsView == ListView.Table -> DraftsTable(state, visible, page * PAGE_SIZE, onEvent)
             else -> Box(Modifier.fillMaxWidth().background(colors.elevated).padding(16.dp)) {
                 CardGrid(visible) { row, modifier -> DraftCard(state, row, nowMillis, onEvent, modifier) }
             }
         }
-        if (filtered.size > PAGE_SIZE) Pager(page, filtered.size, "draft") { page = it }
+        if (filtered.size > PAGE_SIZE) Pager(page, filtered.size) { page = it }
     }
 }
 
@@ -214,13 +220,13 @@ private fun DraftsTable(state: ReportUiState, rows: List<ReportSummary>, offset:
     ReportTable(
         columns = listOf(
             TableColumn("#", width = 60.dp, alignment = Alignment.CenterHorizontally),
-            TableColumn("Name", weight = 1.3f),
-            TableColumn("Day", width = 90.dp, alignment = Alignment.CenterHorizontally),
-            TableColumn("Created By", weight = 1f),
-            TableColumn("Created At", width = 180.dp),
-            TableColumn("Updated At", width = 180.dp),
-            TableColumn("Status", width = 175.dp),
-            TableColumn("Actions", width = 150.dp, alignment = Alignment.End),
+            TableColumn(str(S.name), weight = 1.3f),
+            TableColumn(str(S.bs_day), width = 90.dp, alignment = Alignment.CenterHorizontally),
+            TableColumn(str(S.pr_created_by), weight = 1f),
+            TableColumn(str(S.ah_lbl_created_at), width = 180.dp),
+            TableColumn(str(S.ah_lbl_updated_at), width = 180.dp),
+            TableColumn(str(S.status), width = 175.dp),
+            TableColumn(str(S.dd_actions), width = 150.dp, alignment = Alignment.End),
         ),
         rows = rows,
         roomy = true,
@@ -332,7 +338,7 @@ internal fun ViewBar(caption: String, view: ListView, onChange: (ListView) -> Un
 @Composable
 internal fun ViewToggle(view: ListView, onChange: (ListView) -> Unit) {
     Segmented(
-        options = listOf(ListView.Table to "Table", ListView.Cards to "Cards"),
+        options = listOf(ListView.Table to str(S.desktop_table), ListView.Cards to str(S.ah_cards)),
         selected = view,
         onSelect = onChange,
         icons = mapOf(ListView.Table to ReportIcons.Table, ListView.Cards to ZillitIcons.Grid),
@@ -356,12 +362,12 @@ internal fun RowViewButton(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(ZillitIcons.Eye, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(13.dp))
-        Text("View", style = reportText(13.sp, FontWeight.SemiBold), color = colors.textPrimary)
+        Text(str(S.view), style = reportText(13.sp, FontWeight.SemiBold), color = colors.textPrimary)
     }
 }
 
 @Composable
-internal fun Pager(page: Int, total: Int, noun: String, onPage: (Int) -> Unit) {
+internal fun Pager(page: Int, total: Int, onPage: (Int) -> Unit) {
     val colors = ReportTheme.colors
     val pages = (total + PAGE_SIZE - 1) / PAGE_SIZE
     Row(
@@ -369,9 +375,18 @@ internal fun Pager(page: Int, total: Int, noun: String, onPage: (Int) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("$total ${if (total == 1) noun else "${noun}s"}", style = reportText(12.sp), color = colors.textTertiary)
+        Text(
+            if (total == 1) str(S.desktop_n_draft, total) else str(S.desktop_n_drafts, total),
+            style = reportText(12.sp),
+            color = colors.textTertiary,
+        )
         Spacer(Modifier.size(8.dp))
-        ReportIconButton(ZillitIcons.ChevronLeft, "Previous page", { onPage(page - 1) }, enabled = page > 0)
+        ReportIconButton(
+            ZillitIcons.ChevronLeft,
+            str(S.docusign_page_nav_prev_cd),
+            { onPage(page - 1) },
+            enabled = page > 0,
+        )
         repeat(pages) { index ->
             val on = index == page
             Box(
@@ -387,6 +402,11 @@ internal fun Pager(page: Int, total: Int, noun: String, onPage: (Int) -> Unit) {
                 )
             }
         }
-        ReportIconButton(ZillitIcons.ChevronRight, "Next page", { onPage(page + 1) }, enabled = page < pages - 1)
+        ReportIconButton(
+            ZillitIcons.ChevronRight,
+            str(S.docusign_page_nav_next_cd),
+            { onPage(page + 1) },
+            enabled = page < pages - 1,
+        )
     }
 }

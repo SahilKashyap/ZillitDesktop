@@ -28,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import com.zillit.desktop.feature.invoices.ui.EnterInvoiceForm
@@ -40,20 +42,24 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
     val colors = ZillitTheme.colors
     val change = { updated: EnterInvoiceForm -> onEvent(InvoicesEvent.EnterChanged(updated)) }
     ZillitDialogShell(
-        title = "Enter invoice",
-        subtitle = "Lands in the inbox for processing",
+        title = str(S.desktop_enter_invoice),
+        subtitle = str(S.desktop_inv_enter_subtitle),
         onDismiss = { if (!form.busy) onEvent(InvoicesEvent.CloseEnter) },
         visible = true,
         width = ENTER_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CloseEnter) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !form.busy,
             )
             ZillitButton(
-                text = if (form.mismatchAcknowledged && form.amountsMismatch) "Create anyway" else "Submit Invoice",
+                text = if (form.mismatchAcknowledged && form.amountsMismatch) {
+                    str(S.desktop_create_anyway)
+                } else {
+                    str(S.desktop_submit_invoice)
+                },
                 onClick = { onEvent(InvoicesEvent.SubmitEnter) },
                 enabled = !form.busy,
                 loading = form.saving,
@@ -70,15 +76,15 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
             FileRow(form, onEvent)
             if (form.tab == EnterTab.Upload && form.extraction != null) {
                 ZillitNotice(
-                    text = "Fields prefilled from the document" +
-                        (form.extraction.confidence?.let { " · ${it.toInt()}% confidence" } ?: "") +
-                        ". Check them before submitting.",
+                    text = form.extraction.confidence?.let {
+                        str(S.desktop_inv_fields_prefilled_confidence, it.toInt())
+                    } ?: str(S.desktop_inv_fields_prefilled_check),
                     tone = StatusTone.Ready,
                 )
             }
             if (form.tab == EnterTab.Upload && form.extractionFailed) {
                 ZillitNotice(
-                    text = "Extraction could not read this document — fill the fields in by hand.",
+                    text = str(S.desktop_inv_extraction_failed_fill_by_hand),
                     tone = StatusTone.Pending,
                 )
             }
@@ -87,13 +93,13 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 ZillitTextField(
                     value = form.invoiceNumber,
                     onValueChange = { change(form.copy(invoiceNumber = it)) },
-                    label = "Invoice number *",
+                    label = str(S.desktop_invoice_number_required_label),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitTextField(
                     value = form.description,
                     onValueChange = { change(form.copy(description = it)) },
-                    label = "Description",
+                    label = str(S.description),
                     modifier = Modifier.weight(2f),
                 )
             }
@@ -101,20 +107,20 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 ZillitDateField(
                     value = form.invoiceDate,
                     onValueChange = { change(form.copy(invoiceDate = it)) },
-                    label = "Invoice date *",
+                    label = str(S.desktop_invoice_date_required_label),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitDateField(
                     value = form.dueDate,
                     onValueChange = { change(form.copy(dueDate = it)) },
-                    label = "Due date",
+                    label = str(S.desktop_due_date_title),
                     placeholder = "30 days if blank",
                     modifier = Modifier.weight(1f),
                 )
                 ZillitDateField(
                     value = form.effectiveDate,
                     onValueChange = { change(form.copy(effectiveDate = it)) },
-                    label = "Effective date *",
+                    label = str(S.desktop_effective_date_required_label),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -123,7 +129,7 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 verticalAlignment = Alignment.Bottom,
             ) {
                 LabelledSelect(
-                    label = "Department *",
+                    label = str(S.dm_step2_department),
                     modifier = Modifier.weight(1f),
                 ) {
                     val options = listOf("") + state.departmentNames.keys.sortedBy { state.departmentName(it) }
@@ -131,11 +137,15 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                         value = form.departmentId,
                         options = options,
                         onSelect = { change(form.copy(departmentId = it)) },
-                        label = { id -> if (id.isBlank()) "Pick a department" else state.departmentName(id) },
+                        label = { id -> if (id.isBlank()) {
+                            str(S.desktop_pick_a_department)
+                        } else {
+                            state.departmentName(id)
+                        }},
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                LabelledSelect(label = "Payment method", modifier = Modifier.weight(1f)) {
+                LabelledSelect(label = str(S.desktop_payment_method), modifier = Modifier.weight(1f)) {
                     ZillitSelect(
                         value = form.payMethod,
                         options = listOf(PayMethod.Bacs, PayMethod.Wire, PayMethod.Cheque, PayMethod.Faster),
@@ -144,12 +154,12 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                LabelledSelect(label = "Bank", modifier = Modifier.weight(1f)) {
+                LabelledSelect(label = str(S.desktop_bank), modifier = Modifier.weight(1f)) {
                     ZillitSelect(
                         value = form.bankId,
                         options = listOf("") + state.banks.map { it.id },
                         onSelect = { change(form.copy(bankId = it)) },
-                        label = { id -> state.banks.firstOrNull { it.id == id }?.displayName ?: "None" },
+                        label = { id -> state.banks.firstOrNull { it.id == id }?.displayName ?: str(S.none) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -158,21 +168,21 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 ZillitTextField(
                     value = form.currency,
                     onValueChange = { change(form.copy(currency = it.uppercase())) },
-                    label = "Currency",
+                    label = str(S.asset_currency),
                     placeholder = state.projectCurrency,
                     modifier = Modifier.width(CURRENCY_WIDTH),
                 )
                 ZillitTextField(
                     value = form.poNumber,
                     onValueChange = { change(form.copy(poNumber = it)) },
-                    label = "PO reference",
+                    label = str(S.desktop_po_reference),
                     modifier = Modifier.weight(1f),
                 )
                 if (state.viewer.isTelevision) {
                     ZillitTextField(
                         value = form.episode,
                         onValueChange = { change(form.copy(episode = it)) },
-                        label = "Episode",
+                        label = str(S.episode),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -181,24 +191,24 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 ZillitTextField(
                     value = form.net,
                     onValueChange = { onEvent(InvoicesEvent.EnterNetChanged(it)) },
-                    label = "Net",
+                    label = str(S.desktop_net),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitTextField(
                     value = form.tax,
                     onValueChange = { onEvent(InvoicesEvent.EnterTaxChanged(it)) },
-                    label = "Tax",
+                    label = str(S.ah_lbl_vat),
                     modifier = Modifier.weight(1f),
                 )
                 ZillitTextField(
                     value = form.gross,
                     onValueChange = { onEvent(InvoicesEvent.EnterGrossChanged(it)) },
-                    label = "Gross *",
+                    label = str(S.desktop_gross_required_label),
                     modifier = Modifier.weight(1f),
                 )
             }
             if (form.amountsMismatch) {
-                ZillitNotice(text = "Net + Tax does not equal Gross.", tone = StatusTone.Pending)
+                ZillitNotice(text = str(S.desktop_inv_net_tax_not_equal_gross), tone = StatusTone.Pending)
             }
             ZillitText(
                 text = "* required",
@@ -217,7 +227,7 @@ private fun FileRow(form: EnterInvoiceForm, onEvent: (InvoicesEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitButton(
-            text = if (form.file == null) "Choose file" else "Replace file",
+            text = if (form.file == null) str(S.desktop_choose_file) else str(S.desktop_replace_file),
             onClick = { onEvent(InvoicesEvent.EnterPickFile) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -231,9 +241,9 @@ private fun FileRow(form: EnterInvoiceForm, onEvent: (InvoicesEvent) -> Unit) {
             modifier = Modifier.weight(1f),
         )
         when {
-            form.uploading -> StatusWithSpinner("Uploading…")
-            form.extracting -> StatusWithSpinner("Extracting…")
-            form.attachment != null -> ZillitStatusPill(label = "Uploaded", tone = StatusTone.Done)
+            form.uploading -> StatusWithSpinner(str(S.ah_uploading))
+            form.extracting -> StatusWithSpinner(str(S.desktop_extracting))
+            form.attachment != null -> ZillitStatusPill(label = str(S.sides_uploaded), tone = StatusTone.Done)
         }
     }
 }
@@ -261,12 +271,16 @@ private fun VendorRow(state: InvoicesUiState, form: EnterInvoiceForm, change: (E
         ZillitTextField(
             value = form.vendorQuery,
             onValueChange = { change(form.copy(vendorQuery = it)) },
-            label = "Vendor *",
-            placeholder = "Type to filter suppliers",
+            label = str(S.desktop_vendor_required_label),
+            placeholder = str(S.desktop_type_to_filter_suppliers),
             modifier = Modifier.weight(1f),
         )
         LabelledSelect(
-            label = if (selected == null) "Pick from ${state.vendors.size} suppliers" else "Selected",
+            label = if (selected == null) {
+                str(S.desktop_pick_from_n_suppliers, state.vendors.size)
+            } else {
+                str(S.selected)
+            },
             modifier = Modifier.weight(1f),
         ) {
             ZillitSelect(

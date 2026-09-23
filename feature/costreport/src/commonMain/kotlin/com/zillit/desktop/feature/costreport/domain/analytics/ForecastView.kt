@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.costreport.domain.analytics
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
@@ -39,7 +41,8 @@ data class ForecastView(
     val driver: String?,
 ) {
     val varianceTone: String get() = if (over) "red" else "green"
-    val varianceLabel: String get() = if (over) "over budget" else "under budget"
+    val varianceLabel: String
+        get() = if (over) str(S.desktop_cr_over_budget_lower) else str(S.desktop_cr_under_budget_lower)
 
     /** The week the projection ends on, as an index into [labels]. */
     val projectionEnd: Int
@@ -94,7 +97,7 @@ data class ForecastView(
                 over = over,
                 cumulative = data.cum.map { it / divisor },
                 projection = data.proj.map { it / divisor },
-                labels = List(total) { "W${it + 1}" },
+                labels = List(total) { str(S.desktop_cr_week_short, it + 1) },
                 driver = data.driver?.takeIf { it.isNotBlank() },
             )
         }

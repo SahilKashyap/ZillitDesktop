@@ -53,7 +53,8 @@ class MapWireTest {
             json("""{"name":"Hotel","icon":"Z","sub_types":[{"name":"5 star"}],"is_active":true}"""),
             typeBody(TypeDraft("Hotel", "", listOf("5 star")), id = null),
         )
-        assertEquals("t1", typeBody(TypeDraft("Hotel", "🏨", emptyList()), id = "t1")["location_type_id"].toString().trim('"'))
+        val body = typeBody(TypeDraft("Hotel", "🏨", emptyList()), id = "t1")
+        assertEquals("t1", body["location_type_id"].toString().trim('"'))
     }
 
     private val draft = LocationDraft(
@@ -73,7 +74,9 @@ class MapWireTest {
             json(
                 """{"city_id":"c1","location_name":"Base Camp","location_type":"Base Camp","description":"North gate",
                 "location":{"lat":19.16,"long":72.87},"location_address":"Film City Rd","scene_number":"12A",
-                "location_sub_type":["Tents"],"is_studio_zone":false,"miles":0,"center_point_type":"point","distribute":false}""",
+                "location_sub_type":[
+                    "Tents",
+                ],"is_studio_zone":false,"miles":0,"center_point_type":"point","distribute":false}""",
             ),
             locationBody(draft, id = null),
         )
@@ -84,7 +87,14 @@ class MapWireTest {
         val edited = locationBody(draft, id = "l1")
         assertEquals("[]", edited["attachments"].toString())
         assertEquals("\"l1\"", edited["location_id"].toString())
-        val photo = MapAttachment(media = "map/1/a.jpg", bucket = "b", region = "r", name = "a.jpg", contentType = "image", contentSubtype = "jpg")
+        val photo = MapAttachment(
+            media = "map/1/a.jpg",
+            bucket = "b",
+            region = "r",
+            name = "a.jpg",
+            contentType = "image",
+            contentSubtype = "jpg",
+        )
         val withPhoto = locationBody(draft.copy(attachments = listOf(photo)), id = null)
         assertEquals(
             json(
@@ -100,13 +110,21 @@ class MapWireTest {
         val point = zoneBody(ZoneDraft("c1", "Andheri Zone", LatLng(19.1, 72.8), 30.0), id = null)
         assertEquals(
             json(
-                """{"city_id":"c1","location_name":"Andheri Zone","location_type":"","location":{"lat":19.1,"long":72.8},
+                """{"city_id":"c1","location_name":"Andheri Zone","location_type":"",
+                "location":{"lat":19.1,"long":72.8},
                 "is_studio_zone":true,"miles":30.0,"center_point_type":"point"}""",
             ),
             point,
         )
         val crossing = zoneBody(
-            ZoneDraft("c1", "MG & Ring Zone", LatLng(19.1, 72.8), 12.5, CenterPointType.Intersection, IntersectionStreets("MG Road", "Ring Road")),
+            ZoneDraft(
+                "c1",
+                "MG & Ring Zone",
+                LatLng(19.1, 72.8),
+                12.5,
+                CenterPointType.Intersection,
+                IntersectionStreets("MG Road", "Ring Road"),
+            ),
             id = "z1",
         )
         assertEquals(json("""{"street1":"MG Road","street2":"Ring Road"}"""), crossing["intersection_streets"])
@@ -118,7 +136,8 @@ class MapWireTest {
     fun `cities read coordinates, the center point and the count`() {
         val city = parseCity(
             json(
-                """{"_id":"c1","name":"Mumbai","coordinates":{"lat":19.07,"long":72.87},"center_point":{"lat":19.1,"long":72.9},
+                """{"_id":"c1","name":"Mumbai","coordinates":{"lat":19.07,"long":72.87},
+                "center_point":{"lat":19.1,"long":72.9},
                 "radius":0,"location_count":4,"has_locations":true}""",
             ),
         )!!
@@ -131,7 +150,9 @@ class MapWireTest {
 
     @Test
     fun `types read sub-types in either spelling`() {
-        val type = parseType(json("""{"_id":"t","name":"Hotel","icon":"🏨","sub_types":[{"name":"5 star"},"Budget"]}"""))!!
+        val type = parseType(
+            json("""{"_id":"t","name":"Hotel","icon":"🏨","sub_types":[{"name":"5 star"},"Budget"]}"""),
+        )!!
         assertEquals(listOf("5 star", "Budget"), type.subTypes)
         assertEquals("🏨", type.icon)
     }
@@ -142,7 +163,9 @@ class MapWireTest {
             json(
                 """{"_id":"l1","city_id":"c1","location_name":"Unit Base","location_type":"Base Camp",
                 "location":{"lat":"19.16","lng":72.87},"location_address":"Film City","scene_number":"4",
-                "location_sub_type":["Tents"],"attachments":[{"media":"k","bucket":"b","region":"r","width":640,"height":480,"name":"a.jpg"}],
+                "location_sub_type":[
+                    "Tents",
+                ],"attachments":[{"media":"k","bucket":"b","region":"r","width":640,"height":480,"name":"a.jpg"}],
                 "is_studio_zone":false}""",
             ),
         )!!
@@ -151,7 +174,8 @@ class MapWireTest {
         assertEquals("a.jpg", location.attachments.single().name)
         val zone = parseLocation(
             json(
-                """{"_id":"z1","city_id":"c1","location_name":"Z","latitude":1,"longitude":2,"is_studio_zone":true,"miles":40,
+                """{"_id":"z1","city_id":"c1","location_name":"Z","latitude":1,"longitude":2,"is_studio_zone":true,
+                "miles":40,
                 "center_point_type":"intersection","intersection_streets":{"street1":"MG Road","street2":""}}""",
             ),
         )!!
@@ -175,22 +199,35 @@ class MapWireTest {
 
     @Test
     fun `pinned-location frames are zones unless they say otherwise`() {
-        val pinned = json("""{"project_id":"p1","entity_data":{"_id":"z1","city_id":"c1","location_name":"Z","location":{"lat":1,"long":2}}}""")
+        val pinned = json(
+            """{"project_id":"p1",
+                "entity_data":{"_id":"z1","city_id":"c1","location_name":"Z","location":{"lat":1,"long":2}}}""",
+        )
         val zone = assertIs<MapSyncEvent.LocationUpserted>(mapSyncEvent("map:pinnedLocation:added", pinned, "p1", null))
         assertTrue(zone.location.isStudioZone)
         val location = assertIs<MapSyncEvent.LocationUpserted>(mapSyncEvent("map:location:updated", pinned, "p1", null))
         assertFalse(location.location.isStudioZone)
         assertFalse(location.isNew)
         val deleted = assertIs<MapSyncEvent.LocationDeleted>(
-            mapSyncEvent("map:location:deleted", json("""{"project_id":"p1","entity_data":{"_id":"l1","city_id":"c1"}}"""), "p1", null),
+            mapSyncEvent(
+                "map:location:deleted",
+                json("""{"project_id":"p1","entity_data":{"_id":"l1","city_id":"c1"}}"""),"p1",
+                null,
+            ),
         )
         assertEquals("l1", deleted.id)
     }
 
     @Test
     fun `frames without a record refetch`() {
-        assertEquals(MapSyncEvent.CitiesReordered, mapSyncEvent("map:city:reordered", json("""{"project_id":"p1"}"""), "p1", null))
-        assertEquals(MapSyncEvent.Refetch(MapList.Types), mapSyncEvent("map:locationType:deleted", json("""{"project_id":"p1"}"""), "p1", null))
+        assertEquals(
+            MapSyncEvent.CitiesReordered,
+            mapSyncEvent("map:city:reordered", json("""{"project_id":"p1"}"""), "p1", null),
+        )
+        assertEquals(
+            MapSyncEvent.Refetch(MapList.Types),
+            mapSyncEvent("map:locationType:deleted", json("""{"project_id":"p1"}"""), "p1", null),
+        )
         assertEquals(MapSyncEvent.Refetch(MapList.Cities), mapSyncEvent("city:updated", null, "p1", null))
         assertNotNull(mapSyncEvent("map:location:added", json("""{"project_id":"p1"}"""), "p1", null))
     }

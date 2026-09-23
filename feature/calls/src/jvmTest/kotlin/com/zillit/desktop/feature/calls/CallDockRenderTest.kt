@@ -39,7 +39,7 @@ class CallDockRenderTest {
 
         listOf(
             "Audio settings", "Mute", "Video settings", "Turn camera on",
-            "Raise hand", "Present", "Send a reaction", "More options", "Leave call", "Chat",
+            "Raise Hand", "Present", "Send a reaction", "More options", "Leave call", "Chat",
         ).forEach { onNodeWithContentDescription(it).assertIsDisplayed() }
     }
 
@@ -86,7 +86,7 @@ class CallDockRenderTest {
             }
         }
 
-        onNodeWithContentDescription("Raise hand").performClick()
+        onNodeWithContentDescription("Raise Hand").performClick()
         onNodeWithContentDescription("Mute").performClick()
 
         assertEquals(listOf<CallEvent>(CallEvent.ToggleMic), events)

@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortKey
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
@@ -69,7 +71,10 @@ internal fun PoListPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             ZillitSectionCard(
                 title = state.destination.label,
                 icon = ZillitIcons.File,
-                meta = "${rows.size} order${if (rows.size == 1) "" else "s"}",
+                meta = str(
+                    if (rows.size == 1) S.desktop_po_order_count_one else S.desktop_po_order_count_other,
+                    rows.size,
+                ),
                 padded = false,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -95,34 +100,34 @@ internal fun PoStatRow(rows: List<PurchaseOrder>) {
     val posted = rows.count { it.status == PoStatus.Posted }
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         ZillitStatTile(
-            label = "All POs",
+            label = str(S.ah_tab_all),
             value = rows.size.toString(),
             icon = ZillitIcons.File,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Pending",
+            label = str(S.pending),
             value = pending.toString(),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Clock,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Approved",
+            label = str(S.approved),
             value = approved.toString(),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Shield,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Posted",
+            label = str(S.ah_posted_label),
             value = posted.toString(),
             tone = StatusTone.Done,
             icon = ZillitIcons.Ledger,
             modifier = Modifier.weight(1f),
         )
         ZillitStatTile(
-            label = "Total value",
+            label = str(S.ah_total_value),
             value = rows.totalValue(),
             sub = rows.currencyNote(),
             tone = StatusTone.Progress,
@@ -142,13 +147,13 @@ internal fun PoStatRow(rows: List<PurchaseOrder>) {
  */
 internal fun List<PurchaseOrder>.totalValue(): String {
     val codes = map { it.currency.orEmpty().uppercase() }.filter { it.isNotBlank() }.distinct()
-    if (codes.size > 1) return "Mixed"
+    if (codes.size > 1) return str(S.desktop_dm_mixed)
     return Money.format(sumOf { it.gross }, codes.firstOrNull())
 }
 
 internal fun List<PurchaseOrder>.currencyNote(): String? {
     val codes = map { it.currency.orEmpty().uppercase() }.filter { it.isNotBlank() }.distinct()
-    return if (codes.size > 1) "${codes.size} currencies" else null
+    return if (codes.size > 1) str(S.desktop_po_currencies_count, codes.size) else null
 }
 
 /** Quick filters, the department picker and the sort — the web's `QuickFilters`, in its order. */
@@ -160,7 +165,7 @@ internal fun PoFilterRow(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "QUICK FILTERS",
+            text = str(S.ah_quick_filters),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -173,7 +178,7 @@ internal fun PoFilterRow(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         }
         Spacer(modifier = Modifier.weight(1f))
         ZillitText(
-            text = "DEPT",
+            text = str(S.ah_dept_label_upper),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -181,11 +186,11 @@ internal fun PoFilterRow(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             value = state.departmentFilter,
             options = listOf(null) + state.departments.map { it.id },
             onSelect = { onEvent(PoEvent.FilterDepartment(it)) },
-            label = { id -> id?.let { state.departmentName(it) } ?: "All" },
+            label = { id -> id?.let { state.departmentName(it) } ?: str(S.all) },
             modifier = Modifier.width(DEPT_WIDTH),
         )
         ZillitText(
-            text = "SORT",
+            text = str(S.drive_sort),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -217,13 +222,13 @@ internal fun PoOrderTable(state: PoUiState, rows: List<PurchaseOrder>, onEvent: 
         // The page scrolls, so the table lays out every row rather than
         // virtualising inside a box of its own.
         virtualised = false,
-        emptyTitle = if (state.search.isBlank()) "Nothing here" else "Nothing matches that search",
+        emptyTitle = if (state.search.isBlank()) str(S.desktop_nothing_here) else str(S.dm_nda_empty_search),
         emptyMessage = when (state.destination) {
-            PoDestination.ApprovalQueue -> "Orders routed to you for a decision appear here."
-            PoDestination.MyPos -> "Orders you raise appear here with their progress."
-            PoDestination.DepartmentPos -> "Orders raised by your department appear here."
-            PoDestination.Drafts -> "Orders you save without submitting wait here."
-            else -> "Purchase orders on this project appear here."
+            PoDestination.ApprovalQueue -> str(S.desktop_po_empty_approval_queue)
+            PoDestination.MyPos -> str(S.desktop_po_empty_my_pos)
+            PoDestination.DepartmentPos -> str(S.desktop_po_empty_department_pos)
+            PoDestination.Drafts -> str(S.desktop_po_empty_drafts)
+            else -> str(S.desktop_po_empty_all_pos)
         },
     )
 }
@@ -249,7 +254,7 @@ internal fun poColumns(
     }
     add(
         TableColumn(
-            header = "PO Number",
+            header = str(S.ah_lbl_po_number),
             width = ColumnWidth.Fixed(NUMBER_WIDTH),
             cell = { order ->
                 Column {
@@ -258,7 +263,9 @@ internal fun poColumns(
                         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                     ) {
                         ZillitText(
-                            text = order.number.ifBlank { if (order.isLocalOnly) "Not yet numbered" else "—" },
+                            text = order.number.ifBlank {
+                                if (order.isLocalOnly) str(S.desktop_po_not_yet_numbered) else "—"
+                            },
                             style = ZillitTheme.typography.numeric,
                             maxLines = 1,
                         )
@@ -267,7 +274,11 @@ internal fun poColumns(
                     }
                     if (order.isLocalOnly) {
                         ZillitText(
-                            text = if (order.local?.failed == true) "Needs attention" else "Waiting to send",
+                            text = if (order.local?.failed == true) {
+                                str(S.desktop_po_needs_attention)
+                            } else {
+                                str(S.desktop_waiting_to_send)
+                            },
                             style = ZillitTheme.typography.bodySmall,
                             color = ZillitTheme.colors.textMuted,
                             maxLines = 1,
@@ -279,11 +290,11 @@ internal fun poColumns(
     )
     add(
         TableColumn(
-            header = "Vendor",
+            header = str(S.ah_lbl_vendor),
             cell = { order ->
                 Column {
                     ZillitText(
-                        text = state.vendorName(order).ifBlank { "No vendor" },
+                        text = state.vendorName(order).ifBlank { str(S.desktop_po_no_vendor) },
                         style = ZillitTheme.typography.bodyMedium,
                         maxLines = 1,
                     )
@@ -301,35 +312,35 @@ internal fun poColumns(
     )
     add(
         textColumn(
-            header = "Dept",
+            header = str(S.desktop_po_dept_column),
             width = ColumnWidth.Fixed(DEPT_COLUMN),
             muted = true,
         ) { order -> state.departmentName(order.departmentId).ifBlank { "—" } },
     )
     add(
         textColumn(
-            header = "Amount",
+            header = str(S.amount),
             width = ColumnWidth.Fixed(AMOUNT_WIDTH),
             numeric = true,
         ) { order -> Money.format(order.gross, order.currency) },
     )
     add(
         textColumn(
-            header = "Eff. Date",
+            header = str(S.ah_row_eff_date_upper),
             width = ColumnWidth.Fixed(DATE_WIDTH),
             muted = true,
         ) { order -> EpochDate.date(order.effectiveDate).ifBlank { "—" } },
     )
     add(
         TableColumn(
-            header = "Status",
+            header = str(S.status),
             width = ColumnWidth.Fixed(STATUS_WIDTH),
             cell = { order -> ZillitStatusPill(label = order.statusLabel, tone = order.status.tone()) },
         ),
     )
     add(
         TableColumn(
-            header = "Assigned",
+            header = str(S.assigned),
             width = ColumnWidth.Fixed(ASSIGNED_WIDTH),
             cell = { order ->
                 val name = state.assigneeName(order)
@@ -388,17 +399,24 @@ internal fun PoBulkBar(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
         ) {
             Column {
                 ZillitText(
-                    text = "${selection.size} purchase order${if (selection.size == 1) "" else "s"}",
+                    text = str(
+                        if (selection.size == 1) {
+                            S.desktop_po_purchase_order_count_one
+                        } else {
+                            S.desktop_po_purchase_order_count_other
+                        },
+                        selection.size,
+                    ),
                     style = ZillitTheme.typography.titleSmall,
                 )
                 ZillitText(
-                    text = "Total ${selected.totalValue()}",
+                    text = str(S.desktop_po_total_value, selected.totalValue()),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
             }
             ZillitButton(
-                text = "Reassign",
+                text = str(S.desktop_po_reassign),
                 onClick = { onEvent(PoEvent.AskBulkReassign(selection.toList())) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -406,7 +424,7 @@ internal fun PoBulkBar(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
                 enabled = !state.busy,
             )
             ZillitButton(
-                text = "Set Effective Date",
+                text = str(S.desktop_po_set_effective_date),
                 onClick = { onEvent(PoEvent.AskBulkDate(selection.toList())) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -414,7 +432,7 @@ internal fun PoBulkBar(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
                 enabled = !state.busy,
             )
             ZillitButton(
-                text = "Clear selection",
+                text = str(S.ah_clear_selection),
                 onClick = { onEvent(PoEvent.ClearSelection) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,

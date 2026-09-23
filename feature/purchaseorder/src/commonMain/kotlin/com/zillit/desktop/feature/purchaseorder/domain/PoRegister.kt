@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.purchaseorder.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.serialization.Serializable
 
 /**
@@ -86,10 +88,10 @@ data class PoAddress(
      * before the shape of the email or the length of the phone number.
      */
     fun validationError(): String? = when {
-        name.isBlank() && line1.isBlank() -> "Enter at least a name or address line."
-        email.isNotBlank() && !email.looksLikeEmail() -> "Enter a valid email address."
+        name.isBlank() && line1.isBlank() -> str(S.desktop_po_address_needs_name_or_line)
+        email.isNotBlank() && !email.looksLikeEmail() -> str(S.desktop_enter_valid_email)
         phone.isNotBlank() && phone.count { it.isDigit() } < MIN_PHONE_DIGITS ->
-            "Phone number must be at least 5 digits."
+            str(S.ah_err_phone_min)
 
         else -> null
     }

@@ -8,6 +8,8 @@ import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.PaymentRun
 import com.zillit.desktop.feature.invoices.domain.PaymentRuns
 import com.zillit.desktop.feature.invoices.domain.SalesInvoice
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Paying, billing and handing on — the Payment Runs, Sales Invoices and
@@ -51,7 +53,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
     fun processSelected(method: PayMethod?) {
         val rows = vm.state.value.selectedPaymentRows
         if (rows.isEmpty()) {
-            vm.update { copy(error = "Tick the invoices to pay first.") }
+            vm.update { copy(error = str(S.desktop_inv_tick_to_pay_first)) }
             return
         }
         val chosen = method ?: vm.state.value.selectedPayMethod
@@ -65,7 +67,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
             // A cheque is not paid from here: it is printed, which is the
             // detail dialog. The web opens the first of the selection too.
             chosen == PayMethod.Cheque -> rows.firstOrNull { it.payMethod == chosen }?.let { vm.openInvoice(it) }
-            else -> vm.update { copy(error = "${chosen.label} invoices are not processed here.") }
+            else -> vm.update { copy(error = str(S.desktop_inv_not_processed_here, chosen.label)) }
         }
     }
 
@@ -78,7 +80,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
     fun createBacsRuns() {
         val groups = vm.state.value.bacsGroups
         if (groups.isEmpty()) {
-            vm.update { copy(error = "Nothing ticked is paid by BACS.") }
+            vm.update { copy(error = str(S.desktop_inv_nothing_ticked_bacs)) }
             return
         }
         vm.update { copy(runDraft = runDraft?.copy(busy = PayMethod.Bacs), busy = true) }
@@ -107,7 +109,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                     error = failure?.localised(),
                 )
             }
-            if (failure == null) vm.notice("Payment run created (${groups.size})")
+            if (failure == null) vm.notice(str(S.desktop_inv_payment_run_created_n, groups.size))
             loadPaymentRuns()
             vm.refresh()
         }
@@ -127,7 +129,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                 )
             }
             if (result is ZillitResult.Success) {
-                vm.notice("Marked paid (${ids.size})")
+                vm.notice(str(S.desktop_inv_marked_paid_n, ids.size))
                 vm.refresh()
             }
         }
@@ -146,7 +148,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                 )
             }
             if (result is ZillitResult.Success) {
-                vm.notice("Run rejected")
+                vm.notice(str(S.ah_run_rejected_toast))
                 loadPaymentRuns()
                 vm.refresh()
             }
@@ -189,7 +191,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                 )
             }
             if (result is ZillitResult.Success) {
-                vm.notice("Sales invoice raised")
+                vm.notice(str(S.desktop_inv_sales_invoice_raised))
                 loadSalesInvoices()
             }
         }
@@ -218,7 +220,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
     fun startAssign() {
         val ids = vm.state.value.selected.toList()
         if (ids.isEmpty()) {
-            vm.update { copy(error = "Tick the invoices to assign first.") }
+            vm.update { copy(error = str(S.desktop_inv_tick_to_assign_first)) }
             return
         }
         vm.update { copy(assignFor = AssignRequest(invoiceIds = ids), assignees = vm.team()) }
@@ -246,7 +248,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                 )
             }
             if (failure == null) {
-                vm.notice("Assigned (${request.invoiceIds.size})")
+                vm.notice(str(S.desktop_inv_assigned_n, request.invoiceIds.size))
                 vm.refresh()
             }
         }

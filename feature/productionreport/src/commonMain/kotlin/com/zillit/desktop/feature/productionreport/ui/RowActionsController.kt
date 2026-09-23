@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.BadgeKind
 import com.zillit.desktop.feature.productionreport.domain.ManageTab
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
@@ -31,9 +33,9 @@ internal class RowActionsController(private val ctx: ReportContext) {
                 copy(
                     dialog = ReportDialog.Confirm(
                         action = ConfirmAction.DeleteReport(event.report),
-                        title = "Delete Production Report",
+                        title = str(S.desktop_pr_delete_production_report),
                         message = deleteQuestion(event.report),
-                        confirmLabel = "Delete",
+                        confirmLabel = str(S.delete),
                         danger = true,
                         reportId = event.report.id,
                     ),
@@ -57,7 +59,7 @@ internal class RowActionsController(private val ctx: ReportContext) {
             when (val bytes = ctx.services.delivery.pdf(report.id)) {
                 is ZillitResult.Failure -> {
                     ctx.update { copy(pdf = null) }
-                    ctx.toast(bytes.error.withPrefix("Failed to generate PDF: "), isError = true)
+                    ctx.toast(bytes.error.withPrefix(str(S.desktop_cl_failed_to_generate_pdf) + ": "), isError = true)
                 }
                 is ZillitResult.Success -> when (val pages = ctx.services.delivery.renderPages(
                     bytes.data,
@@ -65,7 +67,8 @@ internal class RowActionsController(private val ctx: ReportContext) {
                 )) {
                     is ZillitResult.Failure -> {
                         ctx.update { copy(pdf = null) }
-                        ctx.toast(pages.error.withPrefix("Failed to generate PDF: "), isError = true)
+                        val prefix = str(S.desktop_cl_failed_to_generate_pdf) + ": "
+                        ctx.toast(pages.error.withPrefix(prefix), isError = true)
                     }
                     is ZillitResult.Success -> ctx.update {
                         if (pdf?.reportId != report.id) this else copy(
@@ -83,8 +86,9 @@ internal class RowActionsController(private val ctx: ReportContext) {
         val fileName = overlay.title.let { if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf" }
         ctx.launchWork {
             when (val saved = ctx.services.delivery.savePdf(fileName, bytes)) {
-                is ZillitResult.Success -> ctx.toast("Saved $fileName to Downloads.")
-                is ZillitResult.Failure -> ctx.toast(saved.error.withPrefix("Couldn't save the PDF: "), isError = true)
+                is ZillitResult.Success -> ctx.toast(str(S.desktop_saved_file_to_downloads, fileName))
+                is ZillitResult.Failure ->
+                    ctx.toast(saved.error.withPrefix(str(S.desktop_couldnt_save_the_pdf) + ": "), isError = true)
             }
         }
     }
@@ -102,13 +106,13 @@ internal class RowActionsController(private val ctx: ReportContext) {
             when (val result = ctx.repository.delete(report.id)) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(busy = false, dialog = null, lists = lists.without(report.id)) }
-                    ctx.toast("Deleted!")
+                    ctx.toast(str(S.desktop_deleted_exclaim))
                 }
                 is ZillitResult.Failure -> {
                     ctx.update {
                         copy(busy = false, dialog = (dialog as? ReportDialog.Confirm)?.copy(busy = false) ?: dialog)
                     }
-                    ctx.toast(result.error.withPrefix("Delete failed: "), isError = true)
+                    ctx.toast(result.error.withPrefix(str(S.desktop_delete_failed) + ": "), isError = true)
                 }
             }
         }
@@ -125,10 +129,10 @@ internal class RowActionsController(private val ctx: ReportContext) {
             val entries = detail?.let { ReportHistory.entries(it, members) }
                 ?: ReportHistory.entries(ReportDetail(report, SheetPayload()), members)
             val publishedTab = ctx.state.tab == ManageTab.Published
-            val emptyText = if (title == "History" && publishedTab) {
-                "No history found for this production report."
+            val emptyText = if (title == str(S.history) && publishedTab) {
+                str(S.desktop_pr_no_history_found)
             } else {
-                "No history found."
+                str(S.desktop_no_history_found)
             }
             ctx.update {
                 copy(
@@ -167,11 +171,11 @@ internal class RowActionsController(private val ctx: ReportContext) {
             when (outcome) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(dialog = if (dialog.sameAs(this.dialog)) null else this.dialog) }
-                    ctx.toast("Production report PDF sent to chat.")
+                    ctx.toast(str(S.desktop_pr_pdf_sent_to_chat))
                 }
                 is ZillitResult.Failure -> {
                     updateChat { copy(sending = false) }
-                    ctx.toast(outcome.error.withPrefix("Couldn't send the PDF to chat: "), isError = true)
+                    ctx.toast(outcome.error.withPrefix(str(S.desktop_couldnt_send_pdf_to_chat) + ": "), isError = true)
                 }
             }
         }
@@ -189,11 +193,11 @@ internal class RowActionsController(private val ctx: ReportContext) {
         ctx.launchWork {
             when (val result = ctx.services.publishing.attachDocuments(replacePrevious = false)) {
                 is ZillitResult.Success -> if (result.data > 0) {
-                    ctx.toast("Document attached successfully!")
+                    ctx.toast(str(S.desktop_document_attached))
                     ctx.lists.loadPublished()
                 }
                 is ZillitResult.Failure -> ctx.toast(
-                    "Attach document failed: ${result.error.localised()}",
+                    str(S.desktop_attach_document_failed_reason, result.error.localised()),
                     isError = true,
                 )
             }

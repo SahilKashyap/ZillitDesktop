@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.callsheet.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -62,24 +64,24 @@ data class WeatherValue(
     fun forecastLabel(): String {
         val seconds = forecastDate ?: return ""
         val date = Instant.fromEpochMilliseconds(seconds * MILLIS).toLocalDateTime(TimeZone.currentSystemDefault()).date
-        return "${date.day} ${SHORT_MONTHS[date.month.ordinal]}"
+        return "${date.day} ${str(SHORT_MONTHS[date.month.ordinal])}"
     }
 
     companion object {
         private const val MILLIS = 1000L
         internal val SHORT_MONTHS = listOf(
-            "Jan",
-            "Feb",
-            "Mar",
-            "Apr",
-            "May",
-            "Jun",
-            "Jul",
-            "Aug",
-            "Sep",
-            "Oct",
-            "Nov",
-            "Dec",
+            S.desktop_month_short_jan,
+            S.desktop_month_short_feb,
+            S.desktop_month_short_mar,
+            S.desktop_month_short_apr,
+            S.desktop_month_short_may,
+            S.desktop_month_short_jun,
+            S.desktop_month_short_jul,
+            S.desktop_month_short_aug,
+            S.desktop_month_short_sep,
+            S.desktop_month_short_oct,
+            S.desktop_month_short_nov,
+            S.desktop_month_short_dec,
         )
 
         /** The stored JSON, or null when the value is free text (or empty). */

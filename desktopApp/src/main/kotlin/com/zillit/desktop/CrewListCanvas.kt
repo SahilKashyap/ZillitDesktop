@@ -21,6 +21,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.crewlist.ui.CanvasDocument
 import com.zillit.desktop.feature.crewlist.ui.dialogs.CrewCanvas
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -158,7 +160,7 @@ private class CrewCanvasSession {
     suspend fun show(document: CanvasDocument) = lock.withLock {
         if (closed || shownKey == document.key) return@withLock
         val file = withContext(Dispatchers.IO) { write(document) } ?: run {
-            failure.value = "The preview could not be prepared."
+            failure.value = str(S.desktop_preview_not_prepared)
             return@withLock
         }
         val url = "file://${file.absolutePath}"
@@ -321,9 +323,9 @@ private class CrewCanvasSession {
     }
 
     private fun unavailableReason(): String = when (val reason = KcefRuntime.failure) {
-        KcefRuntime.Failure.NoJcefRuntime -> "This build has no embedded browser, so the preview cannot be shown."
-        is KcefRuntime.Failure.Broken -> "The embedded browser could not start (${reason.reason})."
-        null -> "The embedded browser is unavailable."
+        KcefRuntime.Failure.NoJcefRuntime -> str(S.desktop_no_embedded_browser_preview)
+        is KcefRuntime.Failure.Broken -> str(S.desktop_embedded_browser_failed, reason.reason)
+        null -> str(S.desktop_browser_unavailable)
     }
 
     private companion object {

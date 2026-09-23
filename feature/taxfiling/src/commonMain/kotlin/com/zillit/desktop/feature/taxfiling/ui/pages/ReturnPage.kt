@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.FilingObligation
 import com.zillit.desktop.feature.taxfiling.domain.TaxRegistration
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
@@ -130,10 +132,14 @@ private fun DetailHeader(
             }
         }
         if (registration.connected) {
-            MtdPill(text = "Connected to HMRC", tone = PillTone.Connected, leading = ZillitIcons.Shield)
+            MtdPill(
+                text = str(S.desktop_tax_connected_to_hmrc),
+                tone = PillTone.Connected,
+                leading = ZillitIcons.Shield,
+            )
         } else {
             MtdButton(
-                text = if (connecting) "Connecting…" else "Connect to HMRC",
+                text = if (connecting) str(S.desktop_connecting_ellipsis) else str(S.desktop_tax_connect_to_hmrc),
                 onClick = { onEvent(TaxFilingEvent.Connect(registration)) },
                 variant = MtdButtonVariant.Primary,
                 icon = ZillitIcons.Link,
@@ -149,11 +155,11 @@ private fun DetailHeader(
 private fun ObligationCard(state: ReturnState, canReachAuthority: Boolean, onEvent: (TaxFilingEvent) -> Unit) {
     MtdCard(modifier = Modifier.fillMaxWidth(), padding = 24.dp) {
         MtdSectionHead(
-            title = "Obligation period",
-            subtitle = "Sync HMRC obligations for this company, then pick the open period to file.",
+            title = str(S.desktop_tax_obligation_period),
+            subtitle = str(S.desktop_tax_obligation_subtitle),
             right = {
                 MtdButton(
-                    text = if (state.syncing) "Syncing…" else "Sync obligations",
+                    text = if (state.syncing) str(S.desktop_tax_syncing) else str(S.desktop_tax_sync_obligations),
                     onClick = { onEvent(TaxFilingEvent.SyncObligations) },
                     variant = MtdButtonVariant.Secondary,
                     icon = ZillitIcons.Reload,
@@ -164,15 +170,15 @@ private fun ObligationCard(state: ReturnState, canReachAuthority: Boolean, onEve
         )
         MtdRule(Modifier.padding(top = 20.dp, bottom = 22.dp))
         Column(Modifier.widthIn(max = 620.dp).fillMaxWidth()) {
-            MtdFieldLabel("Obligation period")
+            MtdFieldLabel(str(S.desktop_tax_obligation_period))
             MtdDropdown(
                 value = state.periodKey.takeIf { it.isNotBlank() },
                 options = state.obligations.map { it.option() },
                 onChange = { onEvent(TaxFilingEvent.SelectPeriod(it.orEmpty())) },
                 placeholder = when {
-                    state.obligationsLoading -> "Loading obligations…"
-                    state.obligations.isNotEmpty() -> "Select an obligation…"
-                    else -> "No obligations — sync to fetch from HMRC."
+                    state.obligationsLoading -> str(S.desktop_tax_loading_obligations)
+                    state.obligations.isNotEmpty() -> str(S.desktop_tax_select_obligation)
+                    else -> str(S.desktop_tax_no_obligations)
                 },
                 clearable = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -185,8 +191,12 @@ private fun ObligationCard(state: ReturnState, canReachAuthority: Boolean, onEve
 private fun FilingObligation.option() = MtdOption(
     value = periodKey,
     label = pickerLabel,
-    sub = due.takeIf { it.isNotBlank() }?.let { "Due $it" },
-    pill = if (isOpen) "Open" to PillTone.Open else "Fulfilled" to PillTone.Neutral,
+    sub = due.takeIf { it.isNotBlank() }?.let { str(S.desktop_due_on, it) },
+    pill = if (isOpen) {
+        str(S.recce_open) to PillTone.Open
+    } else {
+        str(S.desktop_tax_fulfilled) to PillTone.Neutral
+    },
 )
 
 /** The chosen period at a glance, and whether HMRC is connected to receive it. */
@@ -206,16 +216,16 @@ private fun SummaryStrip(period: FilingObligation, connected: Boolean) {
         itemVerticalAlignment = Alignment.CenterVertically,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        MtdSummaryStat(label = "Period", value = period.range, mono = true)
+        MtdSummaryStat(label = str(S.cr_meta_period), value = period.range, mono = true)
         MtdStripDivider()
-        MtdSummaryStat(label = "Period key", value = period.periodKey, mono = true)
+        MtdSummaryStat(label = str(S.desktop_tax_period_key), value = period.periodKey, mono = true)
         MtdStripDivider()
-        MtdSummaryStat(label = "Due", value = period.due.ifBlank { "—" })
+        MtdSummaryStat(label = str(S.desktop_due), value = period.due.ifBlank { "—" })
         MtdStripDivider()
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ZillitText(text = "OBLIGATION", style = mtdEyebrow(), color = palette.muted)
+            ZillitText(text = str(S.desktop_tax_obligation_caps), style = mtdEyebrow(), color = palette.muted)
             MtdPill(
-                text = if (period.isOpen) "Open" else "Fulfilled",
+                text = if (period.isOpen) str(S.recce_open) else str(S.desktop_tax_fulfilled),
                 tone = if (period.isOpen) PillTone.Open else PillTone.Fulfilled,
             )
         }
@@ -228,7 +238,11 @@ private fun SummaryStrip(period: FilingObligation, connected: Boolean) {
             val tint = if (connected) palette.green else palette.ink3
             ZillitIcon(icon = if (connected) ZillitIcons.Shield else ZillitIcons.Link, tint = tint, size = 15.dp)
             ZillitText(
-                text = if (connected) "Connected to HMRC" else "Not connected to HMRC",
+                text = if (connected) {
+                    str(S.desktop_tax_connected_to_hmrc)
+                } else {
+                    str(S.desktop_tax_not_connected)
+                },
                 style = mtdText(12.5.sp, FontWeight.Medium),
                 color = tint,
             )
@@ -247,12 +261,12 @@ private fun SelectPeriodPrompt() {
         ) {
             MtdIconTile(icon = ZillitIcons.Info, size = 46.dp, iconSize = 20.dp, radius = 13.dp)
             ZillitText(
-                text = "Select an obligation period",
+                text = str(S.desktop_tax_select_period_prompt),
                 style = mtdText(16.sp, FontWeight.Bold),
                 color = palette.ink,
             )
             ZillitText(
-                text = "Sync HMRC obligations above, then pick a period to map its boxes and file the return.",
+                text = str(S.desktop_tax_select_period_prompt_detail),
                 style = mtdText(13.5.sp),
                 color = palette.ink3,
                 textAlign = TextAlign.Center,

@@ -30,6 +30,8 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.ui.AuthViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.launch
 
 /**
@@ -182,8 +184,8 @@ private fun WidgetToolBody(
 ) {
     when {
         projects.isEmpty() -> ZillitEmptyState(
-            title = "No projects",
-            message = "This device is not on any project yet.",
+            title = str(S.desktop_no_projects),
+            message = str(S.desktop_device_on_no_project),
             icon = ZillitIcons.Users,
         )
 
@@ -191,7 +193,7 @@ private fun WidgetToolBody(
             Box(Modifier.fillMaxSize(), Alignment.Center) { ZillitSpinner() }
 
         session.error != null -> ZillitErrorState(
-            title = "Could not open this project",
+            title = str(S.desktop_could_not_open_project),
             message = session.error,
             onRetry = onRetry,
         )

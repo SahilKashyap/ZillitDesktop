@@ -42,6 +42,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.LinkedPo
@@ -67,8 +69,8 @@ internal fun PoReviewOverlay(
 ) {
     val invoice = review.invoice
     ZillitDialogShell(
-        title = "Review ${invoice.displayNumber}",
-        subtitle = "Check the invoice against its purchase order before it goes for approval.",
+        title = str(S.desktop_review_named, invoice.displayNumber),
+        subtitle = str(S.desktop_inv_review_subtitle),
         visible = true,
         onDismiss = { if (!review.acting) onEvent(InvoicesEvent.CloseReview) },
         icon = ZillitIcons.Receipt,
@@ -81,9 +83,9 @@ internal fun PoReviewOverlay(
             modifier = Modifier.fillMaxWidth().height(PANE_HEIGHT),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            Pane("Invoice document", Modifier.weight(1f)) { DocumentPane(review) }
-            Pane("Purchase order", Modifier.weight(1f)) { OrderPane(state, review, onEvent) }
-            Pane("Invoice details", Modifier.width(DETAIL_WIDTH)) { RecordPane(state, review) }
+            Pane(str(S.desktop_invoice_document), Modifier.weight(1f)) { DocumentPane(review) }
+            Pane(str(S.purchase_order), Modifier.weight(1f)) { OrderPane(state, review, onEvent) }
+            Pane(str(S.desktop_invoice_details), Modifier.width(DETAIL_WIDTH)) { RecordPane(state, review) }
         }
     }
 }
@@ -129,11 +131,11 @@ private fun DocumentPane(review: ReviewOverlay) {
     Box(Modifier.fillMaxSize().background(colors.surfaceSunken), contentAlignment = Alignment.Center) {
         when {
             review.loading && attachment == null -> ZillitSpinner()
-            attachment == null -> PaneMessage("No document attached")
+            attachment == null -> PaneMessage(str(S.desktop_no_document_attached))
             pages.isNotEmpty() -> ScrolledPages(pages, attachment.name)
             review.previewLoading -> ZillitSpinner()
-            review.previewFailed -> PaneMessage("Could not load the document")
-            else -> PaneMessage("${attachment.name.ifBlank { "Document" }} — open it from the invoice to read it")
+            review.previewFailed -> PaneMessage(str(S.docusign_template_detail_doc_error))
+            else -> PaneMessage("${attachment.name.ifBlank { str(S.document) }} — open it from the invoice to read it")
         }
     }
 }
@@ -179,8 +181,8 @@ private fun OrderPane(state: InvoicesUiState, review: ReviewOverlay, onEvent: (I
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                ZillitStatusPill(label = "No PO", tone = StatusTone.Rejected)
-                PaneMessage("This invoice has no purchase order behind it.")
+                ZillitStatusPill(label = str(S.desktop_no_po), tone = StatusTone.Rejected)
+                PaneMessage(str(S.desktop_inv_no_po_behind))
             }
         }
         return
@@ -222,7 +224,7 @@ private fun OrderSummary(state: InvoicesUiState, invoice: Invoice, po: LinkedPo)
     ZillitText(text = vendor, style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary)
     Spacer(Modifier.height(ZillitTheme.spacing.xs))
     CompareRow("PO total", Money.format(poTotal, currency))
-    CompareRow("Invoice gross", Money.format(invoice.grossAmount, currency))
+    CompareRow(str(S.desktop_invoice_gross), Money.format(invoice.grossAmount, currency))
     variance?.let {
         val over = it > VARIANCE_TOLERANCE
         Row(
@@ -231,7 +233,7 @@ private fun OrderSummary(state: InvoicesUiState, invoice: Invoice, po: LinkedPo)
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             ZillitText(
-                text = "Variance",
+                text = str(S.desktop_variance),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 modifier = Modifier.weight(1f),
@@ -244,7 +246,7 @@ private fun OrderSummary(state: InvoicesUiState, invoice: Invoice, po: LinkedPo)
         }
         if (over) {
             ZillitNotice(
-                text = "The invoice is over the order by ${Money.format(it, currency)}.",
+                text = str(S.desktop_inv_over_the_order_by, Money.format(it, currency)),
                 tone = StatusTone.Pending,
             )
         }
@@ -287,33 +289,33 @@ private fun RecordPane(state: InvoicesUiState, review: ReviewOverlay) {
                 color = colors.accentText,
             )
             ZillitText(
-                text = invoice.description.ifBlank { "No description" },
+                text = invoice.description.ifBlank { str(S.desktop_no_description) },
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textSecondary,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 ZillitStatusPill(label = invoice.statusLabel, tone = StatusTone.Pending)
-                if (!review.hasPo) ZillitStatusPill(label = "No PO", tone = StatusTone.Rejected)
+                if (!review.hasPo) ZillitStatusPill(label = str(S.desktop_no_po), tone = StatusTone.Rejected)
             }
             if (invoice.status == com.zillit.desktop.feature.invoices.domain.InvoiceStatus.Held) {
                 ZillitNotice(
                     text = listOf(invoice.holdReason, invoice.holdNote).filter { it.isNotBlank() }
-                        .joinToString(" · ").ifBlank { "On hold" },
+                        .joinToString(" · ").ifBlank { str(S.desktop_call_on_hold) },
                     tone = StatusTone.Pending,
                 )
             }
             Spacer(Modifier.height(ZillitTheme.spacing.xs))
-            Fact("Vendor", state.vendorName(invoice))
-            Fact("Department", state.departmentName(invoice.departmentId))
-            Fact("Pay method", invoice.payMethod.label)
-            Fact("Currency", currency)
-            Fact("Net", Money.format(invoice.netAmount, currency))
-            Fact("Tax", Money.format(invoice.taxAmount, currency))
-            Fact("Gross", Money.format(invoice.grossAmount, currency))
-            Fact("Invoice date", InvoiceFormat.date(invoice.invoiceDateMs))
-            Fact("Due", InvoiceFormat.date(invoice.dueDateMs))
-            Fact("Raised by", review.nameOf(invoice.userId))
-            if (invoice.updatedBy.isNotBlank()) Fact("Last change", review.nameOf(invoice.updatedBy))
+            Fact(str(S.ah_lbl_vendor), state.vendorName(invoice))
+            Fact(str(S.department), state.departmentName(invoice.departmentId))
+            Fact(str(S.desktop_pay_method), invoice.payMethod.label)
+            Fact(str(S.asset_currency), currency)
+            Fact(str(S.desktop_net), Money.format(invoice.netAmount, currency))
+            Fact(str(S.ah_lbl_vat), Money.format(invoice.taxAmount, currency))
+            Fact(str(S.desktop_gross), Money.format(invoice.grossAmount, currency))
+            Fact(str(S.desktop_invoice_date), InvoiceFormat.date(invoice.invoiceDateMs))
+            Fact(str(S.desktop_due), InvoiceFormat.date(invoice.dueDateMs))
+            Fact(str(S.txt_raised_by), review.nameOf(invoice.userId))
+            if (invoice.updatedBy.isNotBlank()) Fact(str(S.docusign_last_change), review.nameOf(invoice.updatedBy))
         }
         ZillitScrollRail(scroll)
     }
@@ -352,14 +354,14 @@ private fun ReviewActions(state: InvoicesUiState, review: ReviewOverlay, onEvent
     val canOverride = state.viewer.canOverride
     if (!review.isOnHold) {
         ZillitButton(
-            text = "Hold",
+            text = str(S.desktop_hold),
             onClick = { onEvent(InvoicesEvent.StartHold(review.invoice)) },
             variant = ButtonVariant.Secondary,
             enabled = !review.acting,
         )
     }
     ZillitButton(
-        text = "Close",
+        text = str(S.close),
         onClick = { onEvent(InvoicesEvent.CloseReview) },
         variant = ButtonVariant.Tertiary,
         enabled = !review.acting,
@@ -367,14 +369,14 @@ private fun ReviewActions(state: InvoicesUiState, review: ReviewOverlay, onEvent
     if (review.isOnHold) return
     if (canOverride) {
         ZillitButton(
-            text = if (review.hasPo) "Confirm & override" else "Override",
+            text = if (review.hasPo) str(S.desktop_confirm_and_override) else str(S.dm_nom_table_override),
             onClick = { onEvent(InvoicesEvent.ReviewOverride) },
             variant = ButtonVariant.Secondary,
             enabled = !review.acting,
         )
     }
     ZillitButton(
-        text = if (review.hasPo) "Confirm & send for approval" else "Send for approval",
+        text = if (review.hasPo) str(S.desktop_confirm_and_send_for_approval) else str(S.av_send_for_approval),
         onClick = { onEvent(InvoicesEvent.ReviewSendToApproval) },
         loading = review.acting,
         enabled = !review.acting,

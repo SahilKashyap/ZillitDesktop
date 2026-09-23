@@ -12,6 +12,8 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.AuditEntry
 import com.zillit.desktop.feature.esignature.domain.BulkJob
 import com.zillit.desktop.feature.esignature.domain.Envelope
@@ -97,7 +99,8 @@ class EsignRepositoryImpl(
     ).map { element -> element.rows("envelopes").decodeRows(EnvelopeDto.serializer()).mapNotNull { it.toDomain() } }
 
     override suspend fun envelope(id: String): ZillitResult<Envelope> =
-        get("$base/envelopes/$id", EnvelopeDto.serializer()).asEnvelope("The envelope came back without an id.")
+        get("$base/envelopes/$id", EnvelopeDto.serializer())
+            .asEnvelope(str(S.desktop_ds_the_envelope_came_back_without_an_id))
 
     override suspend fun create(draft: EnvelopeDraft): ZillitResult<Envelope> = apiClient.request(
         verb = HttpVerb.Post,
@@ -105,7 +108,7 @@ class EsignRepositoryImpl(
         serializer = EnvelopeDto.serializer(),
         module = RequestModule.ProjectUser,
         body = draft.toWire(),
-    ).asEnvelope("Create answered without an envelope.")
+    ).asEnvelope(str(S.desktop_ds_create_answered_without_an_envelope))
 
     override suspend fun update(envelopeId: String, draft: EnvelopeDraft): ZillitResult<Envelope> =
         apiClient.request(
@@ -114,7 +117,7 @@ class EsignRepositoryImpl(
             serializer = EnvelopeDto.serializer(),
             module = RequestModule.ProjectUser,
             body = draft.toWire(),
-        ).asEnvelope("Update answered without an envelope.")
+        ).asEnvelope(str(S.desktop_ds_update_answered_without_an_envelope))
 
     override suspend fun send(envelopeId: String): ZillitResult<Unit> =
         post("$base/envelopes/$envelopeId/send", buildJsonObject { })
@@ -165,7 +168,7 @@ class EsignRepositoryImpl(
             module = RequestModule.ProjectUser,
             body = buildJsonObject {
                 put("status", "declined")
-                put("declined_reason", reason.ifBlank { "Recipient declined digital signature" })
+                put("declined_reason", reason.ifBlank { str(S.desktop_ds_recipient_declined_digital_signature) })
             },
         ).map { }
 
@@ -180,7 +183,7 @@ class EsignRepositoryImpl(
 
     override suspend fun auditTrailPdf(envelopeId: String): ZillitResult<ByteArray> =
         rawGet?.invoke("$base/envelopes/$envelopeId/audit-trail/pdf")
-            ?: ZillitResult.Failure(ZillitError.Validation("The audit trail PDF is not available here."))
+            ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_ds_the_audit_trail_pdf_is_not_available_here)))
 
     // ---------------------------------------------------------------- marks
 
@@ -254,7 +257,9 @@ class EsignRepositoryImpl(
             },
         ).flatMap { dto ->
             dto.toDomain()?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Validation("The bulk send answered without a job id."))
+                ?: ZillitResult.Failure(
+                    ZillitError.Validation(str(S.desktop_ds_the_bulk_send_answered_without_a_job_id)),
+                )
         }
 
     override suspend fun bulkJobs(): ZillitResult<List<BulkJob>> =
@@ -265,7 +270,7 @@ class EsignRepositoryImpl(
     override suspend fun bulkJob(jobId: String): ZillitResult<BulkJob> =
         get("$base/bulk-jobs/$jobId", BulkJobDto.serializer()).flatMap { dto ->
             dto.toDomain()?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Validation("The job came back without an id."))
+                ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_ds_the_job_came_back_without_an_id)))
         }
 
     override suspend fun retryFailedRows(jobId: String): ZillitResult<Unit> =
@@ -317,7 +322,7 @@ class EsignRepositoryImpl(
 
     private fun ZillitResult<TemplateDto>.asTemplate(): ZillitResult<EnvelopeTemplate> = flatMap { dto ->
         dto.toDomain()?.let { ZillitResult.Success(it) }
-            ?: ZillitResult.Failure(ZillitError.Validation("The template came back without an id."))
+            ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_ds_the_template_came_back_without_an_id)))
     }
 
     private companion object {

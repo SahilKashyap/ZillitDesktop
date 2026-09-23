@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.formatBytes
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistUiState
@@ -51,18 +53,22 @@ internal fun DocumentPickerDialog(state: DocDistUiState, onEvent: (DocDistEvent)
     val allVisible = visible.isNotEmpty() && visible.all { it.id in picker?.selected.orEmpty() }
     val count = picker?.selected?.size ?: 0
     ZillitDialogShell(
-        title = "Attach documents",
-        subtitle = "Pick files from any folder in your library",
+        title = str(S.desktop_docdist_attach_documents),
+        subtitle = str(S.desktop_docdist_pick_files_from_library),
         visible = picker != null,
         onDismiss = { onEvent(DocDistEvent.ClosePicker) },
         icon = ZillitIcons.Paperclip,
         width = 960.dp,
         scrollable = false,
         actions = {
-            ZillitText(text = "$count selected", style = ZillitTheme.typography.label, color = c.textSecondary)
+            ZillitText(
+                text = str(S.dd_n_selected, count),
+                style = ZillitTheme.typography.label,
+                color = c.textSecondary,
+            )
             if (count > 0) {
                 ZillitButton(
-                    text = "Clear all",
+                    text = str(S.dd_history_sender_picker_clear_all),
                     onClick = { onEvent(DocDistEvent.PickerClear) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -70,12 +76,12 @@ internal fun DocumentPickerDialog(state: DocDistUiState, onEvent: (DocDistEvent)
             }
             Box(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DocDistEvent.ClosePicker) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = if (count > 0) "Attach $count selected" else "Attach",
+                text = if (count > 0) str(S.dd_attach_n_selected, count) else str(S.dd_action_attach),
                 onClick = { onEvent(DocDistEvent.PickerConfirm) },
                 enabled = count > 0,
                 leadingIcon = ZillitIcons.Check,
@@ -97,7 +103,7 @@ internal fun DocumentPickerDialog(state: DocDistUiState, onEvent: (DocDistEvent)
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
             ) {
                 FolderPick(
-                    "All documents",
+                    str(S.dd_all_documents),
                     depth = 0,
                     count = picker.documents.size,
                     active = picker.folderId == null,
@@ -106,7 +112,7 @@ internal fun DocumentPickerDialog(state: DocDistUiState, onEvent: (DocDistEvent)
                 }
                 if (state.folders.isNotEmpty()) {
                     FieldLabel(
-                        "Folders",
+                        str(S.folders),
                         Modifier.padding(
                             start = ZillitTheme.spacing.sm,
                             top = ZillitTheme.spacing.sm,
@@ -135,12 +141,12 @@ internal fun DocumentPickerDialog(state: DocDistUiState, onEvent: (DocDistEvent)
                     ZillitSearchField(
                         value = picker.search,
                         onValueChange = { onEvent(DocDistEvent.PickerSearch(it)) },
-                        placeholder = "Search by filename",
+                        placeholder = str(S.desktop_docdist_search_by_filename),
                         modifier = Modifier.weight(1f),
                     )
                     if (visible.isNotEmpty()) {
                         ZillitButton(
-                            text = if (allVisible) "Deselect all" else "Select all",
+                            text = str(if (allVisible) S.dd_deselect_all else S.dd_select_all),
                             onClick = { onEvent(DocDistEvent.PickerToggleAllVisible) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -159,9 +165,9 @@ internal fun DocumentPickerDialog(state: DocDistUiState, onEvent: (DocDistEvent)
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
                         visible.isEmpty() -> ZillitEmptyState(
                             title = if (picker.search.isNotBlank()) {
-                                "No documents match your search"
+                                str(S.desktop_docdist_no_documents_match_search)
                             } else {
-                                "No documents in this folder"
+                                str(S.desktop_docdist_no_documents_in_folder)
                             },
                             icon = ZillitIcons.File,
                         )
@@ -213,7 +219,7 @@ private fun FolderPick(name: String, depth: Int, count: Int, active: Boolean, on
     val c = ZillitTheme.colors
     HoverRow(selected = active, onClick = onClick, padding = ZillitTheme.spacing.sm) {
         Box(Modifier.width((depth * INDENT).dp))
-        if (depth == 0 && name == "All documents") {
+        if (depth == 0 && name == str(S.dd_all_documents)) {
             com.zillit.desktop.core.designsystem.component.ZillitIcon(
                 icon = ZillitIcons.Grid,
                 tint = if (active) c.accent else c.textSecondary,

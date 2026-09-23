@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.maps.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.BoundaryChoice
 import com.zillit.desktop.feature.maps.domain.BoundaryMode
 import com.zillit.desktop.feature.maps.domain.BoundaryStatus
@@ -37,7 +39,7 @@ internal class PinController(
             return
         }
         if (store.state.selectedCityId == null) {
-            store.notice("Please select a city first before pinning a location", NoticeTone.Warning)
+            store.notice(str(S.desktop_map_select_city_first), NoticeTone.Warning)
             return
         }
         store.update { copy(pinMode = true) }
@@ -91,7 +93,7 @@ internal class PinController(
             return
         }
         if (store.state.selectedCityId == null) {
-            store.notice("Please select a city first before pinning a location", NoticeTone.Warning)
+            store.notice(str(S.desktop_map_select_city_first), NoticeTone.Warning)
             return
         }
         store.spawn {
@@ -131,7 +133,7 @@ internal class PinController(
         if (state.movingId != null) {
             // One save at a time: two overlapping PUTs on one record race,
             // and the loser silently wins on the server.
-            store.notice("Please wait for the previous move to finish.", NoticeTone.Info)
+            store.notice(str(S.desktop_map_wait_previous_move), NoticeTone.Info)
             snapBack()
             return
         }
@@ -156,7 +158,10 @@ internal class PinController(
             )
             when (val result = store.repository.updateLocation(locationId, draft)) {
                 is ZillitResult.Success -> {
-                    store.notice("'${location.name.ifBlank { "Location" }}' moved", NoticeTone.Success)
+                    store.notice(
+                        str(S.desktop_map_location_moved, location.name.ifBlank { str(S.location) }),
+                        NoticeTone.Success,
+                    )
                     // Held until the list carries the new point, so the pin
                     // never flickers back through its old position.
                     store.update {
@@ -171,7 +176,7 @@ internal class PinController(
                     store.hooks.reloadLocations()
                 }
                 is ZillitResult.Failure -> {
-                    store.failed(result.error, "Could not move the location")
+                    store.failed(result.error, str(S.desktop_map_could_not_move))
                     store.update { copy(movingId = null) }
                     snapBack()
                 }

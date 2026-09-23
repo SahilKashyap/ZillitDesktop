@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.crewlist.data.CrewDesignDocument
 import com.zillit.desktop.feature.crewlist.domain.CrewListRepository
 import com.zillit.desktop.feature.crewlist.domain.HeaderLayout
 import com.zillit.desktop.feature.crewlist.domain.LayoutHistory
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Customise & Preview (ZL-19725): the Design canvas — the backend's stacked
@@ -168,7 +170,7 @@ internal class CrewDesignController(
                     recomposeDesign()
                 }
                 is ZillitResult.Failure -> {
-                    val message = outcome.error.readable().ifBlank { "Failed to load preview" }
+                    val message = outcome.error.readable().ifBlank { str(S.desktop_failed_to_load_preview) }
                     store.update { copy(customise = customise?.copy(designLoading = false, failure = message)) }
                     store.toast(message, CrewListEffect.Tone.Error)
                 }
@@ -204,7 +206,7 @@ internal class CrewDesignController(
                     }
                 }
                 is ZillitResult.Failure -> {
-                    val message = outcome.error.readable().ifBlank { "Failed to load preview" }
+                    val message = outcome.error.readable().ifBlank { str(S.desktop_failed_to_load_preview) }
                     store.update { copy(customise = customise?.copy(previewLoading = false, failure = message)) }
                     store.toast(message, CrewListEffect.Tone.Error)
                 }

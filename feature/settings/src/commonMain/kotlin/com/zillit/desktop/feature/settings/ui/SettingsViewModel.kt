@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.UnitRepository
 import com.zillit.desktop.feature.settings.account.AccountPage
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
@@ -28,6 +30,10 @@ import kotlinx.coroutines.flow.flowOf
 class SettingsViewModel(
     private val setTheme: (ThemeMode) -> Unit,
     private val setScale: (Int) -> Unit,
+    /** Writes the language preference; the store that loads the words follows it. */
+    private val setLanguage: (String) -> Unit = {},
+    /** The stored language preference, mirrored so the row ticks what is actually in force. */
+    language: Flow<String> = flowOf(""),
     private val notifications: NotificationSettings = NotificationSettings(),
     private val signOut: suspend () -> Unit,
     /**
@@ -80,6 +86,7 @@ class SettingsViewModel(
         launch { notifications.widgets.collect { list -> setState { copy(widgets = list) } } }
         setState { copy(startAtLoginAvailable = notifications.startAtLoginAvailable) }
         launch { unitContext.collect(::onUnitContext) }
+        launch { language.collect { code -> setState { copy(language = code) } } }
         // Only once there is something to show. The profile loads after the
         // window does, and an empty summary arriving first would blank a card
         // that a project switch is about to repopulate.
@@ -114,15 +121,23 @@ class SettingsViewModel(
         }
     }
 
+    private fun onThemeChanged(mode: ThemeMode) {
+        setState { copy(themeMode = mode) }
+        setTheme(mode)
+    }
+
+    private fun onLanguageChanged(code: String) {
+        setState { copy(language = code) }
+        setLanguage(code)
+    }
+
     // Exhaustive dispatch over the sealed event set — the branch count is the
     // pattern, not a complexity problem (see ChatViewModel's onEvent).
     @Suppress("CyclomaticComplexMethod")
     override fun onEvent(event: SettingsEvent) {
         when (event) {
-            is SettingsEvent.ThemeChanged -> {
-                setState { copy(themeMode = event.mode) }
-                setTheme(event.mode)
-            }
+            is SettingsEvent.ThemeChanged -> onThemeChanged(event.mode)
+            is SettingsEvent.LanguageChanged -> onLanguageChanged(event.code)
 
             is SettingsEvent.ScaleChanged -> applyScale(currentState.uiScalePercent + event.by)
             SettingsEvent.ScaleReset -> applyScale(SettingsUiState.DEFAULT_SCALE)
@@ -371,4 +386,4 @@ class SettingsViewModel(
 
 /** Says the change did not take, rather than what the server called it. */
 private val ZillitError.unitMessage: String
-    get() = "Could not change your unit. ${userMessage}"
+    get() = str(S.desktop_could_not_change_unit, userMessage)

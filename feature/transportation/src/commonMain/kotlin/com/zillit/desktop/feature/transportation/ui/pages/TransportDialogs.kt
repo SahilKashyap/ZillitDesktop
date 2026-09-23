@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.transportation.ui.pages
 
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.transportation.ui.TransportConfirm
 import com.zillit.desktop.feature.transportation.ui.TransportEvent
 import com.zillit.desktop.feature.transportation.ui.TransportUiState
@@ -36,39 +38,37 @@ private fun ConfirmOverlay(state: TransportUiState, confirm: TransportConfirm, o
     val accept = { onEvent(TransportEvent.AcceptConfirm) }
     when (confirm) {
         is TransportConfirm.DeleteVehicles -> ConfirmDialog(
-            title = "Confirm deletion",
-            text = if (confirm.ids.size == 1) "Are you sure you want to delete this vehicle?"
-            else "Are you sure you want to delete ${confirm.ids.size} vehicles?",
-            confirmLabel = "Delete", onConfirm = accept, onCancel = cancel, busy = state.busy,
+            title = str(S.desktop_email_confirm_deletion),
+            text = if (confirm.ids.size == 1) str(S.desktop_transport_delete_vehicle_confirm)
+            else str(S.desktop_transport_delete_vehicles_confirm, confirm.ids.size),
+            confirmLabel = str(S.delete), onConfirm = accept, onCancel = cancel, busy = state.busy,
         )
         is TransportConfirm.UnassignPermanent -> ConfirmDialog(
-            title = "Unassign allocation",
-            text = "End this permanent allocation? The driver and vehicle become available again.",
-            confirmLabel = "Unassign", onConfirm = accept, onCancel = cancel, busy = state.busy,
+            title = str(S.desktop_transport_unassign_allocation),
+            text = str(S.desktop_transport_unassign_allocation_confirm),
+            confirmLabel = str(S.txt_unassign), onConfirm = accept, onCancel = cancel, busy = state.busy,
         )
         is TransportConfirm.DeletePermanent -> ConfirmDialog(
-            title = "Delete draft",
-            text = "Delete this draft allocation?",
-            confirmLabel = "Delete", onConfirm = accept, onCancel = cancel, busy = state.busy,
+            title = str(S.ah_delete_draft),
+            text = str(S.desktop_transport_delete_draft_confirm),
+            confirmLabel = str(S.delete), onConfirm = accept, onCancel = cancel, busy = state.busy,
         )
         is TransportConfirm.ChangePrivateDriver -> ConfirmDialog(
-            title = "Change driver",
-            text = "This is the driver's own vehicle. Assigning another driver takes it out of their hands for this " +
-                "trip. Continue?",
-            confirmLabel = "Yes", onConfirm = accept, onCancel = cancel, danger = false,
+            title = str(S.txt_change_driver),
+            text = str(S.desktop_transport_change_driver_confirm),
+            confirmLabel = str(S.yes), onConfirm = accept, onCancel = cancel, danger = false,
         )
         is TransportConfirm.TempDriverVehicle -> ConfirmDialog(
-            title = "Personal vehicle",
-            text = "Does ${confirm.user.fullName} bring their own vehicle? You can add its details now.",
-            confirmLabel = "Yes, add vehicle", cancelLabel = "No",
+            title = str(S.desktop_transport_personal_vehicle),
+            text = str(S.desktop_transport_personal_vehicle_question, confirm.user.fullName),
+            confirmLabel = str(S.desktop_transport_yes_add_vehicle), cancelLabel = str(S.no),
             onConfirm = accept, onCancel = { onEvent(TransportEvent.DeclineConfirm) }, onDismiss = cancel,
             danger = false, busy = state.busy,
         )
         is TransportConfirm.UnassignTempDriver -> ConfirmDialog(
-            title = "Remove temporary driver",
-            text = "${confirm.user.fullName} will no longer be offered as a driver, and their personal vehicle is " +
-                "removed from the fleet.",
-            confirmLabel = "Remove", onConfirm = accept, onCancel = cancel, busy = state.busy,
+            title = str(S.desktop_transport_remove_temp_driver),
+            text = str(S.desktop_transport_remove_temp_driver_confirm, confirm.user.fullName),
+            confirmLabel = str(S.remove), onConfirm = accept, onCancel = cancel, busy = state.busy,
         )
     }
 }

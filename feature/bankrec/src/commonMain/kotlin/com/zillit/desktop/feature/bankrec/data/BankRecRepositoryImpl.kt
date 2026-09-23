@@ -8,6 +8,8 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.AuditExportFormat
 import com.zillit.desktop.feature.bankrec.domain.AuditFilters
 import com.zillit.desktop.feature.bankrec.domain.BankAccountRef
@@ -377,7 +379,7 @@ class BankRecRepositoryImpl(
 
     private suspend fun exportBytes(url: String, body: JsonObject): ZillitResult<ByteArray> =
         binaryPost?.post(url, body)
-            ?: ZillitResult.Failure(ZillitError.Validation("This installation cannot download exported files."))
+            ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_cannot_download_exports)))
 
     /**
      * The three lists, newest (or riskiest) first, at the service's page cap.

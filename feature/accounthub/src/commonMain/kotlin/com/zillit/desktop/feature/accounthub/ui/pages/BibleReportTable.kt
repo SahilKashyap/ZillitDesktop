@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.BibleAccount
 import com.zillit.desktop.feature.accounthub.domain.BibleFormat
 import com.zillit.desktop.feature.accounthub.domain.LedgerTransaction
@@ -166,14 +168,14 @@ private fun Banner(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         ) {
-            Meta("Production:", state.projectName.ifBlank { "—" })
-            Meta("Date Range:", "${BibleFormat.shortDate(start, zone)} — ${BibleFormat.shortDate(end, zone)}")
-            if (accountStart.isNotBlank()) Meta("Accts:", "$accountStart – ${accountEnd.ifBlank { "end" }}")
-            Meta("Open POs:", if (openPos) "Included" else "Excluded")
-            Meta("Lines:", report.transactionCount.toString())
+            Meta(str(S.production), state.projectName.ifBlank { "—" })
+            Meta(str(S.cs_date_range), "${BibleFormat.shortDate(start, zone)} — ${BibleFormat.shortDate(end, zone)}")
+            if (accountStart.isNotBlank()) Meta(str(S.desktop_accts), "$accountStart – ${accountEnd.ifBlank { "end" }}")
+            Meta(str(S.desktop_open_pos_2), if (openPos) str(S.desktop_included) else str(S.excluded))
+            Meta(str(S.desktop_lines), report.transactionCount.toString())
         }
         ZillitText(
-            text = if (allFolded) "Expand all" else "Collapse all",
+            text = if (allFolded) str(S.ah_expand_all) else str(S.ah_collapse_all),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
             color = ZillitTheme.colors.accentText,
             modifier = Modifier
@@ -213,16 +215,16 @@ private fun ColumnHeadings() {
         horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Heading("Src", Modifier.width(SRC_WIDTH))
-        Heading("Eff Date", Modifier.width(DATE_WIDTH))
-        Heading("Invoice No.", Modifier.width(INVOICE_WIDTH))
-        Heading("P/O No.", Modifier.width(PO_WIDTH))
-        Heading("Vendor / Employee", Modifier.weight(VENDOR_WEIGHT))
-        Heading("Description", Modifier.weight(DESCRIPTION_WEIGHT))
+        Heading(str(S.desktop_src), Modifier.width(SRC_WIDTH))
+        Heading(str(S.desktop_eff_date), Modifier.width(DATE_WIDTH))
+        Heading(str(S.desktop_invoice_no), Modifier.width(INVOICE_WIDTH))
+        Heading(str(S.desktop_p_o_no), Modifier.width(PO_WIDTH))
+        Heading(str(S.desktop_vendor_employee), Modifier.weight(VENDOR_WEIGHT))
+        Heading(str(S.description), Modifier.weight(DESCRIPTION_WEIGHT))
         // Two lines rather than a wide column: the web's label is long and the
         // values under it are three letters.
-        Heading("Currency (Original)", Modifier.width(CURRENCY_WIDTH), TextAlign.Center, maxLines = 2)
-        Heading("Amount", Modifier.width(AMOUNT_WIDTH), TextAlign.End)
+        Heading(str(S.desktop_currency_original_paren), Modifier.width(CURRENCY_WIDTH), TextAlign.Center, maxLines = 2)
+        Heading(str(S.amount), Modifier.width(AMOUNT_WIDTH), TextAlign.End)
     }
 }
 
@@ -386,7 +388,7 @@ private fun GrandTotal(total: Double, symbol: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "GRAND TOTAL",
+            text = str(S.grand_total).uppercase(),
             style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp),
             modifier = Modifier.weight(1f),
         )

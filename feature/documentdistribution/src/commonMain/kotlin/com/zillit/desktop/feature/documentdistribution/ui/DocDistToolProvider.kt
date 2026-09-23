@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -35,7 +37,7 @@ class DocDistToolProvider(
 ) : ToolProvider {
 
     override val path: String = DOCUMENT_DISTRIBUTION_PATH
-    override val title: String = "Document Distribution"
+    override val title: String get() = str(S.dd_title)
     override val icon = ZillitToolIcons.IcDistribution
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -67,7 +69,7 @@ class DocDistToolProvider(
         // The tab title names the open page, so several torn-off windows of the
         // same tool are told apart on the taskbar.
         LaunchedEffect(state.destination) {
-            navigator.setTitle("Distribution · ${state.destination.label}")
+            navigator.setTitle(str(S.desktop_docdist_tab_title, state.destination.label))
         }
 
         DocDistScreen(state = state, onEvent = viewModel::onEvent)

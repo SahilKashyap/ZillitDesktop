@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.TaxFormat
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
 import com.zillit.desktop.feature.taxfiling.ui.ReturnState
@@ -53,7 +55,7 @@ internal fun SubmitDialog(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> 
 
     MtdModal(
         visible = state.returnState.confirmingSubmit,
-        title = "Submit this VAT return to HMRC?",
+        title = str(S.desktop_tax_submit_title),
         subtitle = period?.let { "$company · ${it.periodKey} (${it.range})" },
         icon = ZillitIcons.Shield,
         iconTone = palette.green,
@@ -63,13 +65,13 @@ internal fun SubmitDialog(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> 
         onDismiss = { onEvent(TaxFilingEvent.DismissSubmit) },
         footer = {
             MtdButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(TaxFilingEvent.DismissSubmit) },
                 variant = MtdButtonVariant.Ghost,
                 enabled = !returnState.submitting,
             )
             MtdButton(
-                text = if (returnState.submitting) "Submitting…" else "Submit to HMRC",
+                text = if (returnState.submitting) str(S.ah_submitting) else str(S.desktop_tax_submit_to_hmrc),
                 onClick = { onEvent(TaxFilingEvent.ConfirmSubmit) },
                 variant = MtdButtonVariant.Green,
                 icon = ZillitIcons.Shield,
@@ -81,7 +83,7 @@ internal fun SubmitDialog(state: TaxFilingUiState, onEvent: (TaxFilingEvent) -> 
         Declaration()
         Figures(returnState)
         ZillitText(
-            text = "Once submitted, this period is fulfilled with HMRC and can't be submitted again.",
+            text = str(S.desktop_tax_submit_warning),
             style = mtdText(12.sp),
             color = palette.muted,
             modifier = Modifier.padding(top = 14.dp),
@@ -105,8 +107,7 @@ private fun Declaration() {
     ) {
         ZillitIcon(icon = ZillitIcons.Warning, tint = palette.amber, size = 16.dp)
         ZillitText(
-            text = "When you submit this VAT information you are making a legal declaration that the " +
-                "information is true and complete. A false declaration can result in prosecution.",
+            text = str(S.desktop_tax_submit_declaration),
             style = mtdText(13.sp, FontWeight.Medium),
             color = palette.ink,
         )
@@ -131,7 +132,7 @@ private fun Figures(state: ReturnState) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 ZillitText(
-                    text = "BOX ${box.number}",
+                    text = str(S.desktop_tax_box_number, box.number),
                     style = mtdText(10.5.sp, FontWeight.Bold, mono = true),
                     color = if (net) palette.accentText else palette.muted,
                     modifier = Modifier.width(40.dp),
@@ -143,7 +144,12 @@ private fun Figures(state: ReturnState) {
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
-                if (net) MtdPill(text = if (shown.isPayable) "To pay" else "To reclaim", tone = PillTone.Open)
+                if (net) {
+                    MtdPill(
+                        text = if (shown.isPayable) str(S.desktop_tax_to_pay) else str(S.desktop_tax_to_reclaim),
+                        tone = PillTone.Open,
+                    )
+                }
                 ZillitText(
                     text = TaxFormat.gbp(shown[box], box.decimals),
                     style = mtdText(13.sp, if (net) FontWeight.ExtraBold else FontWeight.SemiBold, mono = true),

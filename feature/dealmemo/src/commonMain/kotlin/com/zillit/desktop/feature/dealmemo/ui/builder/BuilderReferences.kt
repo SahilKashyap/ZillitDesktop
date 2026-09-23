@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.ui.builder
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderSeeds
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealForm
 import com.zillit.desktop.feature.dealmemo.domain.isNonUnionId
@@ -360,7 +362,7 @@ internal class BuilderReferences(private val vm: DealMemoViewModel, private val 
         val NON_UNION: JsonObject = buildJsonObject {
             put("id", "non_union")
             put("_identifier", "non_union")
-            put("label", "Non-Union")
+            put("label", str(S.dm_create_non_union))
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.costreport.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -29,7 +31,8 @@ data class WeekWindow(
      * are kept exactly as the web has them, because the label names locks,
      * posts and exports that the web wrote first.
      */
-    val label: String get() = "Wk $number · w/e ${CrDates.dayMonthYear(sunday.minus(1, DateTimeUnit.DAY))}"
+    val label: String
+        get() = str(S.desktop_cr_week_label, number, CrDates.dayMonthYear(sunday.minus(1, DateTimeUnit.DAY)))
 
     /** `04 May–10 May 2026` — the period stepper, the loader and the lock dialog. */
     val range: String get() = "${CrDates.dayMonth(monday)}–${CrDates.dayMonth(sunday)} ${sunday.year}"
@@ -76,8 +79,18 @@ private const val DAYS_TO_SUNDAY = 6
 
 /** The tool's date renderings, all in the machine's zone like the web. */
 object CrDates {
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    private val WEEKDAYS = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    private val MONTHS: List<String>
+        get() = listOf(
+            S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+            S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+            S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+        ).map { str(it) }
+
+    private val WEEKDAYS: List<String>
+        get() = listOf(
+            S.day_monday, S.day_tuesday, S.day_wednesday, S.day_thursday,
+            S.day_friday, S.day_saturday, S.day_sunday,
+        ).map { str(it) }
 
     /** `24 May 2026`. */
     fun dayMonthYear(date: LocalDate): String = "${date.day} ${MONTHS[date.month.number - 1]} ${date.year}"

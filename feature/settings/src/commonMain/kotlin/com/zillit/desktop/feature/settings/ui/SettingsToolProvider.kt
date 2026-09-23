@@ -7,6 +7,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -62,7 +64,7 @@ class SettingsToolProvider(
 ) : ToolProvider {
 
     override val path: String = SETTINGS_PATH
-    override val title: String = "Settings"
+    override val title: String get() = str(S.settings)
     override val icon = ZillitIcons.Settings
 
     override val defaultSize: DpSize = DpSize(760.dp, 720.dp)

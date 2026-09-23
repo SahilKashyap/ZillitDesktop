@@ -33,6 +33,8 @@ import com.zillit.desktop.feature.crewlist.ui.dialogs.GeneratePdfDialog
 import com.zillit.desktop.feature.crewlist.ui.dialogs.MemberProfileDrawer
 import com.zillit.desktop.feature.crewlist.ui.dialogs.PublishConfirmDialog
 import com.zillit.desktop.feature.crewlist.ui.dialogs.WorkingOverlay
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Crew List — `CrewListCustom.jsx`: title and banner, the toolbar, the
@@ -64,7 +66,7 @@ fun CrewListScreen(
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.surface)) {
         if (viewer.isBlocked) {
             ZillitText(
-                text = "You don't have access to the ${viewer.toolName}.",
+                text = str(S.desktop_cl_no_access_to_tool, viewer.toolName),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
                 modifier = Modifier.align(Alignment.Center),

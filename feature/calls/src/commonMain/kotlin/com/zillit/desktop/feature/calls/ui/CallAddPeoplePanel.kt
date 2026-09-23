@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 
 /**
@@ -65,20 +67,24 @@ internal fun CallAddPeoplePanel(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(
-            text = "Add people",
+            text = str(S.desktop_call_add_people),
             style = ZillitTheme.typography.titleSmall,
             color = colors.textPrimary,
         )
         ZillitSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Search crew",
+            placeholder = str(S.desktop_search_crew),
             modifier = Modifier.fillMaxWidth(),
         )
         if (shown.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 ZillitText(
-                    text = if (crew.isEmpty()) "Everyone is already here." else "No one matches.",
+                    text = if (crew.isEmpty()) {
+                        str(S.desktop_call_everyone_already_here)
+                    } else {
+                        str(S.dm_nda_no_one_matches)
+                    },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )

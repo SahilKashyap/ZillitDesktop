@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.CrewContact
@@ -63,11 +65,11 @@ internal fun EditMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Unit)
     val unchanged = state.editDraft.trim() == target.body.trim()
 
     ZillitDialogShell(
-        title = "Edit message",
+        title = str(S.edit_message),
         subtitle = if (target.attachment != null) {
-            "The caption changes for everyone."
+            str(S.desktop_chat_caption_changes_for_everyone)
         } else {
-            "The words change for everyone."
+            str(S.desktop_chat_words_change_for_everyone)
         },
         icon = ZillitIcons.Edit,
         visible = state.editing != null,
@@ -76,12 +78,12 @@ internal fun EditMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Unit)
         actions = {
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(ChatEvent.CancelEdit) },
                 variant = ButtonVariant.Secondary,
             )
             ZillitButton(
-                text = "Save",
+                text = str(S.save),
                 enabled = state.editDraft.isNotBlank() && !overLimit && !unchanged,
                 onClick = { onEvent(ChatEvent.SubmitEdit) },
             )
@@ -90,7 +92,7 @@ internal fun EditMessageDialog(state: ChatUiState, onEvent: (ChatEvent) -> Unit)
         ZillitTextField(
             value = state.editDraft,
             onValueChange = { onEvent(ChatEvent.EditDraftChanged(it)) },
-            placeholder = "Your message",
+            placeholder = str(S.desktop_chat_your_message),
             singleLine = false,
             errorText = ChatComposerRules.BODY_TOO_LONG.takeIf { overLimit },
             modifier = Modifier.fillMaxWidth(),
@@ -122,7 +124,7 @@ internal fun ForwardDialog(
     val crew = remember(people, query) { people.searchCrew(query) }
 
     ZillitDialogShell(
-        title = "Forward",
+        title = str(S.forward),
         subtitle = forwardSubtitle(source),
         icon = ZillitIcons.Forward,
         visible = state.forwarding != null,
@@ -131,18 +133,18 @@ internal fun ForwardDialog(
         scrollable = false,
         actions = {
             ZillitText(
-                text = if (picked.isEmpty()) "" else "${picked.size} selected",
+                text = if (picked.isEmpty()) "" else str(S.dd_n_selected, picked.size),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(ChatEvent.CancelForward) },
                 variant = ButtonVariant.Secondary,
             )
             ZillitButton(
-                text = "Send",
+                text = str(S.send),
                 enabled = picked.isNotEmpty(),
                 onClick = { onEvent(ChatEvent.ForwardTo(picked.toList())) },
             )
@@ -151,7 +153,7 @@ internal fun ForwardDialog(
         ZillitSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Search people and groups",
+            placeholder = str(S.desktop_chat_search_people_and_groups),
             modifier = Modifier.fillMaxWidth(),
         )
         val listState = rememberLazyListState()
@@ -160,7 +162,7 @@ internal fun ForwardDialog(
             modifier = Modifier.fillMaxWidth().heightIn(max = FORWARD_LIST_HEIGHT),
         ) {
             if (rooms.isNotEmpty()) {
-                item(key = "groups-heading") { SectionHeading("Groups") }
+                item(key = "groups-heading") { SectionHeading(str(S.groups_txt)) }
                 items(rooms, key = { "g-${it.id}" }) { room ->
                     val target = ForwardTarget(room.id, isGroup = true)
                     TargetRow(
@@ -172,7 +174,7 @@ internal fun ForwardDialog(
                 }
             }
             if (crew.isNotEmpty()) {
-                item(key = "people-heading") { SectionHeading("People") }
+                item(key = "people-heading") { SectionHeading(str(S.section_people)) }
                 items(crew, key = { "u-${it.userId}" }) { person ->
                     val target = ForwardTarget(person.userId, isGroup = false)
                     TargetRow(
@@ -187,7 +189,7 @@ internal fun ForwardDialog(
             if (rooms.isEmpty() && crew.isEmpty()) {
                 item(key = "empty") {
                     ZillitText(
-                        text = "Nobody matches.",
+                        text = str(S.desktop_nobody_matches),
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textMuted,
                         modifier = Modifier.padding(ZillitTheme.spacing.sm),
@@ -200,7 +202,7 @@ internal fun ForwardDialog(
 
 /** What is being forwarded, in a line: the words, or the file's name, or the place. */
 private fun forwardSubtitle(source: ChatMessage): String = when {
-    source.location != null -> "A shared location."
+    source.location != null -> str(S.desktop_chat_a_shared_location)
     source.attachment != null -> source.attachment.name
     else -> source.body
 }.take(FORWARD_SUBTITLE_CHARS)
@@ -277,7 +279,7 @@ internal fun ReadByDialog(
     val unread = view.report?.unread?.named(resolveContact, selfId, query)
 
     ZillitDialogShell(
-        title = "Read by",
+        title = str(S.read_byr),
         icon = ZillitIcons.Eye,
         visible = state.readBy != null,
         onDismiss = { onEvent(ChatEvent.DismissReadBy) },
@@ -286,7 +288,7 @@ internal fun ReadByDialog(
         actions = {
             Spacer(Modifier.weight(1f))
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(ChatEvent.DismissReadBy) },
                 variant = ButtonVariant.Secondary,
             )
@@ -295,12 +297,12 @@ internal fun ReadByDialog(
         ZillitSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Search users",
+            placeholder = str(S.invitees_search_users),
             modifier = Modifier.fillMaxWidth(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            ReadByTab("Read", read?.size, !showUnread) { showUnread = false }
-            ReadByTab("Unread", unread?.size, showUnread) { showUnread = true }
+            ReadByTab(str(S.read), read?.size, !showUnread) { showUnread = false }
+            ReadByTab(str(S.unread_txt), unread?.size, showUnread) { showUnread = true }
         }
         when {
             view.error != null -> ZillitText(
@@ -309,7 +311,7 @@ internal fun ReadByDialog(
                 color = ZillitTheme.colors.danger,
             )
             view.isLoading -> ZillitText(
-                text = "Loading…",
+                text = str(S.ah_loading),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -317,7 +319,11 @@ internal fun ReadByDialog(
                 val rows = (if (showUnread) unread else read).orEmpty()
                 if (rows.isEmpty()) {
                     ZillitText(
-                        text = if (showUnread) "Everyone in the group has read this." else "No one has read this yet.",
+                        text = if (showUnread) {
+                            str(S.desktop_chat_everyone_has_read)
+                        } else {
+                            str(S.desktop_chat_no_one_has_read_yet)
+                        },
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textMuted,
                     )
@@ -384,14 +390,14 @@ private fun ReadByTab(label: String, count: Int?, selected: Boolean, onClick: ()
 private fun ReaderRow(reader: NamedReader, unread: Boolean) {
     val row = reader.row
     val caption = if (unread) {
-        if (row.isDelivered) "Delivered" else "Not delivered"
+        if (row.isDelivered) str(S.delivered) else str(S.not_delivered)
     } else {
         buildString {
-            row.readAtMillis?.takeIf { it > 0 }?.let { append("Read ${lastMessageAt(it)}") }
+            row.readAtMillis?.takeIf { it > 0 }?.let { append(str(S.desktop_read_at, lastMessageAt(it))) }
             val delivered = row.deliveredAtMillis
             if (delivered != null) {
                 if (isNotEmpty()) append(" · ")
-                append("Delivered ${if (delivered == 0L) "Today" else lastMessageAt(delivered)}")
+                append(str(S.desktop_delivered_at, if (delivered == 0L) str(S.today) else lastMessageAt(delivered)))
             }
         }
     }

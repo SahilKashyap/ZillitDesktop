@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.documentdistribution.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistHost
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
@@ -66,5 +67,5 @@ internal fun DocDistUiState.singleSelectedFolder(): LibraryFolder? =
 internal fun <T> Set<T>.toggled(value: T): Set<T> =
     if (value in this) this - value else this + value
 
-/** "1 file", "3 files". */
-internal fun plural(count: Int, noun: String): String = "$count $noun" + if (count == 1) "" else "s"
+/** "1 file", "3 files" — [one] and [other] are catalogue keys taking the count. */
+internal fun plural(count: Int, one: String, other: String): String = str(if (count == 1) one else other, count)

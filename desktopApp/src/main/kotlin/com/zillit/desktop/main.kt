@@ -36,6 +36,9 @@ import com.zillit.desktop.core.badges.BadgeCounts
 import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.badges.LedgerRead
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.Strings
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.PreferenceStoreFactory
@@ -366,10 +369,8 @@ private fun reportAlreadyRunning() {
     runCatching {
         javax.swing.JOptionPane.showMessageDialog(
             null,
-            "Zillit-Desktop is already running.\n\n" +
-                "Only one copy can be open at a time, because they share the same " +
-                "local data. Switch to the window that is already open.",
-            "Zillit-Desktop",
+            str(S.desktop_already_running_body),
+            str(S.desktop_zillit_desktop_title),
             javax.swing.JOptionPane.INFORMATION_MESSAGE,
         )
     }
@@ -436,6 +437,11 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
             sessionStore = FileWorkspaceSessionStore(),
             idGenerator = { UUID.randomUUID().toString() },
         )
+    }
+    // Window titles are stored at open time; a language change re-asks each
+    // provider for its title so the tab strip follows the rest of the frame.
+    LaunchedEffect(workspaceViewModel, Strings.language) {
+        workspaceViewModel.onEvent(WorkspaceEvent.RefreshTitles)
     }
 
     // The frame, once it exists, so the tray's Show has something to raise.
@@ -550,8 +556,8 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
                 mainVisible = false
                 TrayNotifier(trayState).post(
                     DesktopNotification(
-                        title = "Zillit is still running",
-                        body = "Calls and messages still reach you. Quit from the tray icon.",
+                        title = str(S.desktop_still_running_title),
+                        body = str(S.desktop_still_running_body),
                     ),
                 )
             } else {
@@ -677,6 +683,10 @@ private fun ApplicationScope.ZillitWindows(
     val themeMode by preferences
         .observeAs(ZillitPreferences.ThemeMode, ThemeMode::fromId)
         .collectAsState(initial = ThemeMode.System)
+    // The stored choice, blank for "follow the system". The catalogue that
+    // is actually on screen follows this through `StringStore` in the graph;
+    // the bar only needs to know which row to tick.
+    val language by preferences.observe(ZillitPreferences.Language).collectAsState(initial = "")
 
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
@@ -703,7 +713,7 @@ private fun ApplicationScope.ZillitWindows(
         onCloseRequest = onCloseMain,
         state = windowState,
         visible = mainVisible,
-        title = "Zillit-Desktop",
+        title = str(S.desktop_zillit_desktop_title),
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         // Preview so shortcuts beat focused controls, but unhandled keys fall
         // through — a handler that swallows everything breaks typing.
@@ -728,6 +738,10 @@ private fun ApplicationScope.ZillitWindows(
                         themeMode = themeMode,
                         onThemeModeChange = { mode ->
                             scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
+                        },
+                        language = language,
+                        onLanguageChange = { code ->
+                            scope.launch { preferences.set(ZillitPreferences.Language, code) }
                         },
                     )
                 }
@@ -812,8 +826,8 @@ private fun ApplicationScope.ZillitWindows(
         showMain = widgetMount.showMain,
     )
     ToolWidgetWindow(
-        title = "Zillit Chat",
-        what = "The Chat widget",
+        title = str(S.desktop_zillit_chat),
+        what = str(S.desktop_the_chat_widget),
         keys = ZillitPreferences.ChatWidget,
         projectKey = ZillitPreferences.ChatWidgetProject,
         host = widgetMount.chatHost,
@@ -827,8 +841,8 @@ private fun ApplicationScope.ZillitWindows(
         showMain = widgetMount.showMain,
     )
     ToolWidgetWindow(
-        title = "Zillit Crew",
-        what = "The Crew List widget",
+        title = str(S.desktop_zillit_crew),
+        what = str(S.desktop_the_crew_list_widget),
         keys = ZillitPreferences.CrewWidget,
         projectKey = ZillitPreferences.CrewWidgetProject,
         host = widgetMount.crewHost,
@@ -1423,6 +1437,8 @@ private fun ZillitContent(
     authViewModel: AuthViewModel?,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
 ) {
     if (graph is AppGraph.Unconfigured) {
         UnconfiguredScreen(graph.reason)
@@ -1458,7 +1474,10 @@ private fun ZillitContent(
 
     Box {
         if (authState.step == AuthStep.Complete) {
-            SignedInShell(ready, registry, viewModels, workspaceViewModel, authViewModel, themeMode, onThemeModeChange)
+            SignedInShell(
+                ready, registry, viewModels, workspaceViewModel, authViewModel,
+                themeMode, onThemeModeChange, language, onLanguageChange,
+            )
         } else {
             AuthScreen(
                 viewModel = authViewModel,
@@ -1467,6 +1486,8 @@ private fun ZillitContent(
                 // not reachable until they pick a production.
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
+                language = language,
+                onLanguageChange = onLanguageChange,
                 createViewModel = createViewModel,
                 joinViewModel = joinViewModel,
                 // On the sign-in page, where someone who cannot get in can
@@ -1494,6 +1515,8 @@ private fun SignedInShell(
     authViewModel: AuthViewModel,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
 ) {
     val authState by authViewModel.state.collectAsState()
     val homeState by (viewModels.home?.state ?: MutableStateFlow(HomeUiState())).collectAsState()
@@ -1524,6 +1547,8 @@ private fun SignedInShell(
         registry = registry,
         themeMode = themeMode,
         onThemeModeChange = onThemeModeChange,
+        language = language,
+        onLanguageChange = onLanguageChange,
         projectName = authState.activeProject?.name,
         statusText = statusText(socketState, syncStatus),
         statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
@@ -1616,10 +1641,9 @@ private fun UnconfiguredScreen(reason: String) {
             modifier = Modifier.width(UNCONFIGURED_WIDTH),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitText("Zillit is not configured", style = ZillitTheme.typography.titleMedium)
+            ZillitText(str(S.desktop_not_configured_title), style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "This installation has no server configuration, so it cannot sign in. " +
-                    "Contact your administrator.",
+                text = str(S.desktop_not_configured_body),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textSecondary,
             )
@@ -2118,7 +2142,7 @@ private fun chatProvider(
     canDownload = canDownload,
     // Chat & Calls is a tool like any other, so a missing download right is
     // something an admin can grant — the refusal offers to ask for it.
-    requestDownloadRights = { ready.rightsRequests.ask("Chat & Calls", RightsKind.Download) },
+    requestDownloadRights = { ready.rightsRequests.ask(str(S.desktop_chat_calls), RightsKind.Download) },
     // The keep-name-private honour is applied here, before the screen ever
     // sees the list — the same rule Android's members tab keeps.
     crew = {
@@ -2554,11 +2578,11 @@ private const val SHOW_ZILLIT_DRAFT = false
 
 private fun localToolSections(): List<ToolSection> = listOfNotNull(
     ToolSection(
-        title = "Writing",
+        title = str(S.desktop_writing_section),
         tools = listOf(
             ToolPresentation(
                 identifier = "zillit_draft",
-                label = "Zillit Draft",
+                label = str(S.desktop_zillit_draft),
                 icon = ZillitIcons.Edit,
                 route = WorkspaceRoute.Tool(DRAFT_PATH),
             ),
@@ -3048,7 +3072,7 @@ private fun buildRegistry(
     val info = viewModels.info?.let { feed ->
         BoardToolProvider(
             path = BoardToolProvider.INFO_PATH,
-            title = "Info",
+            title = str(S.info),
             icon = ZillitToolIcons.Info,
             feedViewModel = feed,
             board = boardContext,
@@ -3144,21 +3168,27 @@ private fun buildRegistry(
     val ready = graph as? AppGraph.Ready
     val scheduleDistribution = viewModels.scheduleDistribution?.let { vm ->
         ready?.distributionProvider(
-            vm, DistributionToolProvider.SCHEDULE_PATH, "Schedule Full & One Line", ZillitToolIcons.Chedule, scope,
+            vm,
+            DistributionToolProvider.SCHEDULE_PATH,
+            str(S.dd_pub_dest_schedule_card),
+            ZillitToolIcons.Chedule,
+            scope,
         )
     }
     val scriptDistribution = viewModels.scriptDistribution?.let { vm ->
         ready?.distributionProvider(
-            vm, DistributionToolProvider.SCRIPT_PATH, "Script & Pages Distribution", ZillitToolIcons.Script, scope,
+            vm, DistributionToolProvider.SCRIPT_PATH, str(S.dd_pub_dest_script_card), ZillitToolIcons.Script, scope,
         )
     }
     val scheduleDod = viewModels.scheduleDod?.let { vm ->
-        ready?.distributionProvider(vm, DistributionToolProvider.DOD_PATH, "Schedule D.O.D", ZillitToolIcons.Dod, scope)
+        ready?.distributionProvider(
+            vm, DistributionToolProvider.DOD_PATH, str(S.dd_pub_dest_dod_card), ZillitToolIcons.Dod, scope,
+        )
     }
     val confidentialInfo = viewModels.confidentialInfo?.let { feed ->
         BoardToolProvider(
             path = BoardToolProvider.CONFIDENTIAL_INFO_PATH,
-            title = "Confidential Info",
+            title = str(S.confidential_info),
             icon = ZillitToolIcons.Info,
             feedViewModel = feed,
             board = boardContext,
@@ -3168,7 +3198,7 @@ private fun buildRegistry(
     val catering = viewModels.catering?.let { feed ->
         BoardToolProvider(
             path = BoardToolProvider.CATERING_PATH,
-            title = "Catering",
+            title = str(S.catering),
             icon = ZillitToolIcons.Catering,
             feedViewModel = feed,
             board = boardContext,
@@ -3178,7 +3208,7 @@ private fun buildRegistry(
     val accounts = viewModels.accounts?.let { feed ->
         BoardToolProvider(
             path = BoardToolProvider.ACCOUNTS_PATH,
-            title = "Message Accounts",
+            title = str(S.desktop_message_accounts),
             icon = ZillitToolIcons.Account,
             feedViewModel = feed,
             board = boardContext,
@@ -3190,7 +3220,7 @@ private fun buildRegistry(
     val reports = viewModels.reports?.let { feed ->
         BoardToolProvider(
             path = BoardToolProvider.REPORTS_PATH,
-            title = "Camera & Sound Report",
+            title = str(S.desktop_camera_sound_report),
             icon = ZillitToolIcons.ProductionReport,
             feedViewModel = feed,
             board = boardContext,
@@ -3200,7 +3230,7 @@ private fun buildRegistry(
     val scriptNotes = viewModels.scriptNotes?.let { feed ->
         BoardToolProvider(
             path = BoardToolProvider.SCRIPT_NOTES_PATH,
-            title = "Script Notes",
+            title = str(S.script_notes),
             icon = ZillitToolIcons.ScriptNote,
             feedViewModel = feed,
             board = boardContext,
@@ -3624,12 +3654,12 @@ private fun callSupport(
             ?.id
             .orEmpty()
         when {
-            userId.isBlank() -> "Open a project first, then call support."
+            userId.isBlank() -> str(S.desktop_support_open_project_first)
             // A blank receiver is dropped from the request body, so this would
             // place a call nobody was ever invited to.
             primary.isBlank() -> {
                 ZillitLog.w(SUPPORT_TAG) { "no primary device on this account; support call not placed" }
-                "Could not find your primary device. Try again in a moment."
+                str(S.desktop_support_no_primary_device)
             }
             else -> {
                 ZillitLog.i(SUPPORT_TAG) { "placing a support call to the primary device" }
@@ -3639,7 +3669,7 @@ private fun callSupport(
                         receiverDeviceId = primary,
                         mode = CallMode.Private,
                         type = CallType.Audio,
-                        displayName = "Zillit support",
+                        displayName = str(S.desktop_zillit_support),
                         receiverUserId = userId,
                         is247Call = true,
                     ),
@@ -3749,6 +3779,10 @@ private fun buildSettings(
         setScale = { percent ->
             scope.launch { preferences.set(ZillitPreferences.UiScalePercent, percent) }
         },
+        // The same preference the bar's globe writes; the graph's string
+        // store and the label refresh both follow it.
+        setLanguage = { code -> scope.launch { preferences.set(ZillitPreferences.Language, code) } },
+        language = preferences.observe(ZillitPreferences.Language),
         notifications = notificationSettings(preferences, scope),
         // Clears the encrypted cache with the session — the dialog says so.
         signOut = { ready?.authRepository?.signOut() },
@@ -4002,7 +4036,7 @@ private fun widgetToggles(
         ZillitWidget.entries.mapIndexed { index, widget ->
             com.zillit.desktop.feature.settings.ui.WidgetToggle(
                 id = widget.name,
-                label = "${widget.label} widget",
+                label = str(S.desktop_widget_row_label, widget.label),
                 detail = widget.widgetDetail,
                 on = open[index],
             )
@@ -4012,12 +4046,9 @@ private fun widgetToggles(
 /** What each widget's Settings row says it does. */
 private val ZillitWidget.widgetDetail: String
     get() = when (this) {
-        ZillitWidget.Drive -> "A small window onto one project's drive — browse, upload and " +
-            "download beside whatever else you are working in. It can pick a project of its own."
-        ZillitWidget.Chat -> "Conversations and calls in a small window that stays on top, so a " +
-            "thread is one glance away while you work in something else."
-        ZillitWidget.Crew -> "The project's crew — names, roles, phone and email — in a small " +
-            "window you can search without leaving what you are doing."
+        ZillitWidget.Drive -> str(S.desktop_widget_detail_drive)
+        ZillitWidget.Chat -> str(S.desktop_widget_detail_chat)
+        ZillitWidget.Crew -> str(S.desktop_widget_detail_crew)
     }
 
 /** The chat module names a line by its wire word; the calls module by its provider. */

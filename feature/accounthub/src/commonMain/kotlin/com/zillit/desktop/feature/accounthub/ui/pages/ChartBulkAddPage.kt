@@ -64,6 +64,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.CoaBulk
 import com.zillit.desktop.feature.accounthub.domain.CoaBulkRow
 import com.zillit.desktop.feature.accounthub.domain.CoaBulkStatus
@@ -119,7 +121,7 @@ internal fun ChartBulkAddPage(state: AccountHubUiState, bulk: BulkAddState, onEv
                     )
                 }
                 Box(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-                    BulkButton("Add entry", dashed = true) { onEvent(AccountHubEvent.AddBulkRows(1)) }
+                    BulkButton(str(S.desktop_add_entry), dashed = true) { onEvent(AccountHubEvent.AddBulkRows(1)) }
                 }
             }
         }
@@ -148,14 +150,14 @@ private fun BulkTopBar(bulk: BulkAddState, onEvent: (AccountHubEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ZillitText(
-                "ACCOUNTING · CHART OF ACCOUNTS",
+                str(S.desktop_hub_accounting_chart_of_accounts),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.88.sp),
                 color = colors.accent,
                 maxLines = 1,
             )
             ZillitText("/", style = ZillitTheme.typography.bodySmall, color = colors.borderStrong)
             ZillitText(
-                "Add chart-of-accounts entries",
+                str(S.desktop_hub_add_chart_of_accounts_entries),
                 style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold),
                 color = colors.textSecondary,
                 maxLines = 1,
@@ -174,7 +176,7 @@ private fun BulkTopBar(bulk: BulkAddState, onEvent: (AccountHubEvent) -> Unit) {
             )
         }
         ZillitButton(
-            text = if (bulk.finishing) "Finishing…" else "Done",
+            text = if (bulk.finishing) str(S.drive_uploads_status_posting) else str(S.ah_done),
             onClick = { onEvent(AccountHubEvent.FinishBulkAdd) },
             loading = bulk.finishing,
         )
@@ -187,7 +189,7 @@ private fun BackButton(enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val shape = RoundedCornerShape(10.dp)
-    ZillitTooltip("Back to chart of accounts") {
+    ZillitTooltip(str(S.desktop_hub_back_to_chart_of_accounts)) {
         Box(
             modifier = Modifier
                 .size(36.dp)
@@ -199,7 +201,12 @@ private fun BackButton(enabled: Boolean, onClick: () -> Unit) {
                 .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            ZillitIcon(CoaIcons.ChevronLeft, contentDescription = "Back", tint = colors.textSecondary, size = 13.dp)
+            ZillitIcon(
+                CoaIcons.ChevronLeft,
+                contentDescription = str(S.back),
+                tint = colors.textSecondary,
+                size = 13.dp,
+            )
         }
     }
 }
@@ -219,7 +226,7 @@ private fun BulkIntro(bulk: BulkAddState) {
             append("Adding top-level entries — ")
         }
         append("each row saves itself automatically once it has a code, no Save button needed. ")
-        withStyle(strong) { append("Cost type") }
+        withStyle(strong) { append(str(S.desktop_cost_type)) }
         append(
             " sets the accounting class: Asset (Cash, Bank), Liability (Loans), Capital (Equity), " +
                 "Income (Revenue, Tax Credits), Expense (Costs).",
@@ -247,7 +254,7 @@ private fun BulkToolbar(count: Int, onEvent: (AccountHubEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         ZillitText(
-            "Entries",
+            str(S.desktop_entries),
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
             color = colors.textPrimary,
         )
@@ -261,7 +268,7 @@ private fun BulkToolbar(count: Int, onEvent: (AccountHubEvent) -> Unit) {
             ZillitText(count.toString(), style = coaMono(10.5.sp, FontWeight.Bold), color = colors.textMuted)
         }
         Box(Modifier.weight(1f))
-        BulkButton("Add entry", dashed = true) { onEvent(AccountHubEvent.AddBulkRows(1)) }
+        BulkButton(str(S.desktop_add_entry), dashed = true) { onEvent(AccountHubEvent.AddBulkRows(1)) }
         BulkButton("Add ${CoaBulk.BATCH_ROWS} rows") { onEvent(AccountHubEvent.AddBulkRows(CoaBulk.BATCH_ROWS)) }
     }
 }
@@ -329,12 +336,12 @@ private fun BulkHeader() {
             .padding(start = 18.dp, end = 12.dp),
     ) {
         GridCell(RAIL_COLUMN, first = true) { }
-        GridCell(TYPE_COLUMN) { HeadText("Line type", required = true) }
-        GridCell(CODE_COLUMN) { HeadText("Code", required = true) }
-        GridCell(COST_COLUMN) { HeadText("Cost type", required = true) }
-        GridCell(null) { HeadText("Display name") }
-        GridCell(ACTIVE_COLUMN, center = true) { HeadText("Active", padded = false) }
-        GridCell(POSTING_COLUMN, center = true) { HeadText("Posting", padded = false) }
+        GridCell(TYPE_COLUMN) { HeadText(str(S.desktop_line_type), required = true) }
+        GridCell(CODE_COLUMN) { HeadText(str(S.code), required = true) }
+        GridCell(COST_COLUMN) { HeadText(str(S.desktop_cost_type), required = true) }
+        GridCell(null) { HeadText(str(S.av_display_name)) }
+        GridCell(ACTIVE_COLUMN, center = true) { HeadText(str(S.active), padded = false) }
+        GridCell(POSTING_COLUMN, center = true) { HeadText(str(S.txt_posting), padded = false) }
         GridCell(REMOVE_COLUMN) { }
     }
 }
@@ -445,7 +452,7 @@ private fun BulkGridRow(
             GridInput(
                 value = row.name,
                 onValueChange = { edit(row.copy(name = it)) },
-                placeholder = "Display name (optional)",
+                placeholder = str(S.dd_publish_display_name_placeholder),
                 // Tab off the last row's name extends the grid, spreadsheet-style;
                 // Shift+Tab still walks backwards.
                 onTab = if (isLast) ({ onEvent(AccountHubEvent.AddBulkRows(1, focus = true)) }) else null,
@@ -622,7 +629,7 @@ private fun GridRemove(onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val shape = RoundedCornerShape(7.dp)
-    ZillitTooltip("Remove entry") {
+    ZillitTooltip(str(S.desktop_remove_entry)) {
         Box(
             modifier = Modifier
                 .size(28.dp)
@@ -634,7 +641,7 @@ private fun GridRemove(onClick: () -> Unit) {
         ) {
             ZillitIcon(
                 CoaIcons.Trash,
-                contentDescription = "Remove entry",
+                contentDescription = str(S.desktop_remove_entry),
                 tint = if (hovered) colors.danger else colors.textMuted,
                 size = 13.dp,
             )

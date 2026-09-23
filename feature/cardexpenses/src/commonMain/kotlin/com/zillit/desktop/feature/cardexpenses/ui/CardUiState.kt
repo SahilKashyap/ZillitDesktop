@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
 import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
 import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
@@ -254,12 +256,12 @@ data class NewCardDraft(
      * would make the form unusable until somebody visits Settings.
      */
     fun validationError(providersConfigured: Boolean, holderRequired: Boolean): String? = when {
-        holderRequired && holderId.isBlank() -> "Choose who the card is for."
-        limitValue <= 0 -> "The proposed limit has to be more than zero."
-        currency.isBlank() -> "Choose the currency the card is held in."
-        providersConfigured && providerId.isBlank() -> "Choose a card provider."
-        bsControlCode.isBlank() -> "A balance-sheet control code is required."
-        justification.isBlank() -> "Say what the card is for."
+        holderRequired && holderId.isBlank() -> str(S.desktop_card_choose_holder_error)
+        limitValue <= 0 -> str(S.desktop_card_limit_positive_error)
+        currency.isBlank() -> str(S.desktop_card_choose_currency_error)
+        providersConfigured && providerId.isBlank() -> str(S.desktop_card_choose_provider_error)
+        bsControlCode.isBlank() -> str(S.desktop_card_control_code_required)
+        justification.isBlank() -> str(S.desktop_card_justification_required)
         else -> null
     }
 }
@@ -289,11 +291,11 @@ data class CardEditDraft(
     val newBalance: Double get() = (currentBalance + (limitValue - currentLimit)).coerceAtLeast(0.0)
 
     fun validationError(providersConfigured: Boolean): String? = when {
-        limitValue <= 0 -> "The proposed limit has to be more than zero."
-        currency.isBlank() -> "Choose the currency the card is held in."
-        providersConfigured && providerId.isBlank() -> "Choose a card provider."
-        bsControlCode.isBlank() -> "A balance-sheet control code is required."
-        justification.isBlank() -> "Say what the card is for."
+        limitValue <= 0 -> str(S.desktop_card_limit_positive_error)
+        currency.isBlank() -> str(S.desktop_card_choose_currency_error)
+        providersConfigured && providerId.isBlank() -> str(S.desktop_card_choose_provider_error)
+        bsControlCode.isBlank() -> str(S.desktop_card_control_code_required)
+        justification.isBlank() -> str(S.desktop_card_justification_required)
         else -> null
     }
 

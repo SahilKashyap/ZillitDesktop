@@ -51,6 +51,8 @@ import com.zillit.desktop.feature.invoices.ui.InvoiceDetail
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.decodeImageBitmap
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 @Composable
 internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
@@ -58,33 +60,33 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
     val tiers = state.tiersOf(invoice)
     val viewer = state.viewer
     ZillitDialogShell(
-        title = "Invoice ${invoice.displayNumber}",
+        title = str(S.desktop_invoice_named, invoice.displayNumber),
         subtitle = state.vendorName(invoice),
         onDismiss = { onEvent(InvoicesEvent.CloseDetail) },
         visible = true,
         width = DETAIL_WIDTH,
         actions = {
             ZillitButton(
-                text = "History",
+                text = str(S.history),
                 onClick = { onEvent(InvoicesEvent.ShowHistory) },
                 variant = ButtonVariant.Tertiary,
             )
             if (InvoiceRules.showApproveReject(invoice, tiers, viewer)) {
                 ZillitButton(
-                    text = "Reject",
+                    text = str(S.reject),
                     onClick = { onEvent(InvoicesEvent.StartReject) },
                     variant = ButtonVariant.Danger,
                     enabled = !detail.acting,
                 )
                 ZillitButton(
-                    text = "Approve",
+                    text = str(S.approve),
                     onClick = { onEvent(InvoicesEvent.Approve(invoice)) },
                     loading = detail.acting,
                 )
             }
             if (InvoiceRules.showOverride(invoice, tiers, viewer)) {
                 ZillitButton(
-                    text = "Override",
+                    text = str(S.dm_nom_table_override),
                     onClick = { onEvent(InvoicesEvent.Override(invoice)) },
                     variant = ButtonVariant.Secondary,
                     loading = detail.acting,
@@ -92,13 +94,13 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
             }
             if (InvoiceRules.showOverrideAndPay(invoice, viewer) && !invoice.isApproved) {
                 ZillitButton(
-                    text = "Override & Pay",
+                    text = str(S.desktop_override_and_pay),
                     onClick = { onEvent(InvoicesEvent.OverrideAndPay(invoice)) },
                     loading = detail.acting,
                 )
             }
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(InvoicesEvent.CloseDetail) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -160,7 +162,7 @@ private fun AttachmentPane(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Un
         ) {
             when {
                 attachment == null -> ZillitText(
-                    text = if (detail.loading) "Loading…" else "No document attached",
+                    text = if (detail.loading) str(S.ah_loading) else str(S.desktop_no_document_attached),
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textMuted,
                 )
@@ -171,14 +173,14 @@ private fun AttachmentPane(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Un
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitText(
-                        text = attachment.name.ifBlank { attachment.extension.uppercase().ifBlank { "Document" } },
+                        text = attachment.name.ifBlank { attachment.extension.uppercase().ifBlank { str(S.document) } },
                         style = ZillitTheme.typography.titleSmall,
                         color = colors.textPrimary,
                     )
                     ZillitText(
                         text = when {
-                            detail.previewFailed -> "Could not load the preview"
-                            attachment.isPdf -> "This PDF could not be rendered — open it to read it"
+                            detail.previewFailed -> str(S.desktop_inv_could_not_load_preview)
+                            attachment.isPdf -> str(S.desktop_inv_pdf_not_rendered)
                             else -> attachment.mimeType
                         },
                         style = ZillitTheme.typography.bodySmall,
@@ -193,13 +195,13 @@ private fun AttachmentPane(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Un
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ZillitText(
-                    text = attachment.name.ifBlank { "Attachment" },
+                    text = attachment.name.ifBlank { str(S.attachment) },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary,
                     modifier = Modifier.weight(1f),
                 )
                 ZillitButton(
-                    text = "Save & open",
+                    text = str(S.desktop_save_and_open),
                     onClick = { onEvent(InvoicesEvent.OpenAttachment) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -228,7 +230,11 @@ private fun DetailPane(state: InvoicesUiState, detail: InvoiceDetail, tiers: Lis
         VendorBlock(state, invoice)
         if (invoice.status == InvoiceStatus.Held) {
             ZillitNotice(
-                text = "On hold" + invoice.holdReason.humanised().let { if (it.isBlank()) "" else " — $it" } +
+                text = str(S.desktop_call_on_hold) + invoice.holdReason.humanised().let { if (it.isBlank()) {
+                    ""
+                } else {
+                    " — $it"
+                }} +
                     invoice.holdNote.let { if (it.isBlank()) "" else ": $it" },
                 tone = StatusTone.Escalated,
             )
@@ -236,36 +242,36 @@ private fun DetailPane(state: InvoicesUiState, detail: InvoiceDetail, tiers: Lis
         ZillitDivider()
         val bank = state.banks.firstOrNull { it.id == invoice.bankId }?.displayName ?: invoice.bankId.ifBlank { "—" }
         val episode = if (state.viewer.isTelevision) {
-            listOf("Episode" to invoice.episode.ifBlank { "—" })
+            listOf(str(S.episode) to invoice.episode.ifBlank { "—" })
         } else {
             emptyList()
         }
         FieldGrid(
             listOf(
-                "Department" to state.departmentName(invoice.departmentId),
-                "Currency" to currency,
-                "Payment Method" to invoice.payMethod.label,
-                "Bank" to bank,
+                str(S.department) to state.departmentName(invoice.departmentId),
+                str(S.asset_currency) to currency,
+                str(S.desktop_payment_method) to invoice.payMethod.label,
+                str(S.desktop_bank) to bank,
             ) + episode,
         )
         ZillitDivider()
         FieldGrid(
             listOf(
-                "Net" to InvoiceFormat.money(invoice.netAmount, currency),
-                "Tax" to InvoiceFormat.money(invoice.taxAmount, currency),
-                "Gross" to InvoiceFormat.money(invoice.grossAmount, currency),
+                str(S.desktop_net) to InvoiceFormat.money(invoice.netAmount, currency),
+                str(S.ah_lbl_vat) to InvoiceFormat.money(invoice.taxAmount, currency),
+                str(S.desktop_gross) to InvoiceFormat.money(invoice.grossAmount, currency),
             ),
         )
         FieldGrid(
             listOf(
-                "Invoice Date" to InvoiceFormat.date(invoice.invoiceDateMs),
-                "Due Date" to InvoiceFormat.date(invoice.dueDateMs),
-                "Effective Date" to InvoiceFormat.date(invoice.effectiveDateMs),
+                str(S.desktop_invoice_date_title) to InvoiceFormat.date(invoice.invoiceDateMs),
+                str(S.desktop_due_date_title) to InvoiceFormat.date(invoice.dueDateMs),
+                str(S.ah_lbl_eff_date) to InvoiceFormat.date(invoice.effectiveDateMs),
             ),
         )
         if (invoice.linkedPos.isNotEmpty()) {
             ZillitDivider()
-            ZillitSectionLabel("Linked purchase orders")
+            ZillitSectionLabel(str(S.desktop_inv_linked_purchase_orders))
             invoice.linkedPos.forEach { po ->
                 Row(
                     modifier = Modifier
@@ -295,21 +301,26 @@ private fun DetailPane(state: InvoicesUiState, detail: InvoiceDetail, tiers: Lis
         }
         if (InvoiceRules.showChain(invoice, tiers)) {
             ZillitDivider()
-            ZillitSectionLabel("Approval chain")
+            ZillitSectionLabel(str(S.ah_run_approval_chain))
             ApprovalChainPanel(detail, tiers)
         }
         if (invoice.isRejected && invoice.rejectionReason.isNotBlank()) {
             ZillitNotice(
-                text = "Rejected by ${detail.nameOf(invoice.rejectedBy)} · " +
-                    "${InvoiceFormat.dateTime(invoice.rejectedAtMs)}\n${invoice.rejectionReason}",
+                text = str(
+                    S.desktop_inv_rejected_by_at,
+                    detail.nameOf(invoice.rejectedBy),
+                    InvoiceFormat.dateTime(invoice.rejectedAtMs),
+                ) +
+                    "\n${invoice.rejectionReason}",
                 tone = StatusTone.Rejected,
             )
         }
         ZillitDivider()
         FieldGrid(
             listOf(
-                "Created by" to "${detail.nameOf(invoice.userId)} · ${InvoiceFormat.dateTime(invoice.createdAtMs)}",
-                "Updated by" to if (invoice.updatedBy.isBlank()) {
+                str(S.cs_created_by) to
+                    "${detail.nameOf(invoice.userId)} · ${InvoiceFormat.dateTime(invoice.createdAtMs)}",
+                str(S.desktop_updated_by) to if (invoice.updatedBy.isBlank()) {
                     "—"
                 } else {
                     "${detail.nameOf(invoice.updatedBy)} · ${InvoiceFormat.dateTime(invoice.updatedAtMs)}"
@@ -327,13 +338,16 @@ private fun Badges(state: InvoicesUiState, invoice: Invoice, tiers: List<Resolve
     ) {
         when {
             invoice.payMethod.isUrgent -> BadgePill(InvoiceRules.urgentBadge(invoice))
-            invoice.isApproved -> ZillitStatusPill(label = "Approved", tone = StatusTone.Done)
+            invoice.isApproved -> ZillitStatusPill(label = str(S.approved), tone = StatusTone.Done)
             invoice.status == InvoiceStatus.Approval && tiers.isNotEmpty() ->
-                ZillitStatusPill(label = "Pending ${invoice.approvedCount}/${tiers.size}", tone = StatusTone.Pending)
+                ZillitStatusPill(
+                    label = str(S.desktop_inv_pending_of, invoice.approvedCount, tiers.size),
+                    tone = StatusTone.Pending,
+                )
             else -> ZillitStatusPill(label = invoice.statusLabel, tone = invoice.status.statusTone())
         }
         if (!invoice.payMethod.isUrgent) PoCell(invoice)
-        if (invoice.ocrConfidence != null) ZillitStatusPill(label = "OCR", tone = StatusTone.Escalated)
+        if (invoice.ocrConfidence != null) ZillitStatusPill(label = str(S.desktop_ocr), tone = StatusTone.Escalated)
         if (state.viewer.isAccountant && invoice.approvalStatus.label != invoice.statusLabel) {
             ZillitStatusPill(label = invoice.approvalStatus.label, tone = StatusTone.Neutral)
         }
@@ -436,9 +450,9 @@ private fun ApprovalChainPanel(detail: InvoiceDetail, tiers: List<ResolvedTier>)
                     )
                     ZillitText(
                         text = when {
-                            approval != null -> "Approved"
-                            tier.number == current -> "Awaiting approval"
-                            else -> "Pending"
+                            approval != null -> str(S.approved)
+                            tier.number == current -> str(S.av_subtab_awaiting_approval)
+                            else -> str(S.pending)
                         },
                         style = ZillitTheme.typography.labelSmall,
                         color = colors.textMuted,
@@ -455,13 +469,13 @@ private fun ApprovalChainPanel(detail: InvoiceDetail, tiers: List<ResolvedTier>)
 private fun HistoryDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "History",
-        subtitle = "Invoice ${detail.invoice.displayNumber}",
+        title = str(S.history),
+        subtitle = str(S.desktop_invoice_named, detail.invoice.displayNumber),
         onDismiss = { onEvent(InvoicesEvent.HideHistory) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(InvoicesEvent.HideHistory) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -471,7 +485,7 @@ private fun HistoryDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Uni
         when {
             detail.historyLoading || rows == null -> LoadingRow()
             rows.isEmpty() -> ZillitText(
-                text = "No history yet.",
+                text = str(S.history_no_history),
                 style = ZillitTheme.typography.bodyMedium,
                 color = colors.textMuted,
             )
@@ -505,18 +519,18 @@ private fun HistoryDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Uni
 @Composable
 private fun RejectDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Reject invoice",
-        subtitle = "Invoice ${detail.invoice.displayNumber}",
+        title = str(S.ah_reject_invoice),
+        subtitle = str(S.desktop_invoice_named, detail.invoice.displayNumber),
         onDismiss = { onEvent(InvoicesEvent.CancelReject) },
         visible = true,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(InvoicesEvent.CancelReject) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Reject",
+                text = str(S.reject),
                 onClick = { onEvent(InvoicesEvent.ConfirmReject) },
                 variant = ButtonVariant.Danger,
                 enabled = detail.rejectReason.isNotBlank(),
@@ -527,8 +541,8 @@ private fun RejectDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit
         ZillitTextField(
             value = detail.rejectReason,
             onValueChange = { onEvent(InvoicesEvent.RejectReasonChanged(it)) },
-            label = "Reason (required)",
-            placeholder = "Why is this invoice being rejected?",
+            label = str(S.docusign_decline_reason_label),
+            placeholder = str(S.desktop_inv_why_rejected_placeholder),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )

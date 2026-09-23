@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.FxRates
 import com.zillit.desktop.feature.bankrec.domain.FxVariance
@@ -81,10 +83,13 @@ fun ColumnScope.FxVariancesPage(state: BankRecUiState, onEvent: (BankRecEvent) -
         PeriodFilter(state, page.periodChoice) { onEvent(BankRecEvent.SetFxPeriod(it)) }
         if (rows.isNotEmpty()) {
             val codes = rows.map { it.invoiceCurrency }.filter { it.isNotBlank() }.distinct()
-            BrTag("${codes.joinToString(", ")} · ${state.projectCurrency} account", BrTone.Teal)
-            ZillitTooltip(if (blocking.isNotEmpty()) "Some rows are missing a budget or bank rate" else "") {
+            BrTag(
+                str(S.desktop_br_fx_currency_account, codes.joinToString(", "), state.projectCurrency),
+                BrTone.Teal,
+            )
+            ZillitTooltip(if (blocking.isNotEmpty()) str(S.desktop_br_missing_rates) else "") {
                 ZillitButton(
-                    text = if (page.postingAll) "Posting…" else "Post All Variances",
+                    text = if (page.postingAll) str(S.ah_posting_btn) else str(S.desktop_br_post_all_variances),
                     onClick = { onEvent(BankRecEvent.PostAllFx) },
                     size = ButtonSize.Small,
                     loading = page.postingAll,
@@ -96,9 +101,8 @@ fun ColumnScope.FxVariancesPage(state: BankRecUiState, onEvent: (BankRecEvent) -
 
     if (rows.isEmpty()) {
         BrEmpty(
-            title = "No FX Variances",
-            message = "No foreign currency transactions detected in this period. Import a statement with " +
-                "international payments to see FX variances here.",
+            title = str(S.desktop_br_no_fx_variances),
+            message = str(S.desktop_br_no_fx_variances_detail),
             icon = BankRecIcons.Swap,
             tone = BrTone.Teal,
         )
@@ -110,9 +114,8 @@ fun ColumnScope.FxVariancesPage(state: BankRecUiState, onEvent: (BankRecEvent) -
     BrBanner(
         tone = BrTone.Teal,
         icon = ZillitIcons.Info,
-        title = "How it works",
-        message = "When actual bank rates differ from budget rates, the variance is captured here for posting " +
-            "to the cost report and nominal ledger.",
+        title = str(S.desktop_br_how_it_works),
+        message = str(S.desktop_br_how_it_works_detail),
         modifier = Modifier.fillMaxWidth(),
     )
 
@@ -125,15 +128,16 @@ fun ColumnScope.FxVariancesPage(state: BankRecUiState, onEvent: (BankRecEvent) -
 @Composable
 private fun RatesMissing(blocking: List<FxVariance>) {
     val codes = blocking.map { it.invoiceCurrency }.filter { it.isNotBlank() }.distinct()
-    val noun = if (blocking.size == 1) "row" else "rows"
     val which = if (codes.isEmpty()) "" else " (${codes.joinToString(", ")})"
     BrBanner(
         tone = BrTone.Amber,
         icon = ZillitIcons.Warning,
-        title = "Rates missing",
-        message = "${blocking.size} unposted $noun$which have no budget or bank rate, so Post All Variances is " +
-            "unavailable. Set the rate in Production Setup → Project Currencies, or open a row and enter it " +
-            "when posting.",
+        title = str(S.desktop_br_rates_missing),
+        message = if (blocking.size == 1) {
+            str(S.desktop_br_rates_missing_one, blocking.size, which)
+        } else {
+            str(S.desktop_br_rates_missing_many, blocking.size, which)
+        },
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -143,7 +147,12 @@ private fun RatesMissing(blocking: List<FxVariance>) {
 private fun RatesChart(rows: List<FxVariance>, state: BankRecUiState) {
     val colors = ZillitTheme.colors
     val net = rows.sumOf { it.variance }
-    BrCard(Modifier.fillMaxWidth(), title = "Bank Rates vs Budget", icon = ZillitIcons.BarChart, padded = true) {
+    BrCard(
+        Modifier.fillMaxWidth(),
+        title = str(S.desktop_br_bank_rates_vs_budget),
+        icon = ZillitIcons.BarChart,
+        padded = true,
+    ) {
         rows.forEachIndexed { index, row ->
             ChartRow(row, state)
             if (index != rows.lastIndex) ZillitDivider()
@@ -153,7 +162,11 @@ private fun RatesChart(rows: List<FxVariance>, state: BankRecUiState) {
             horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ZillitText("Net FX ${if (net >= 0) "Gain" else "Loss"}", style = mono(11.sp), color = colors.textMuted)
+            ZillitText(
+                if (net >= 0) str(S.desktop_br_net_fx_gain) else str(S.desktop_br_net_fx_loss),
+                style = mono(11.sp),
+                color = colors.textMuted,
+            )
             ZillitText(
                 BankRecFormat.signedMoney(net, state.projectCurrency),
                 style = mono(13.sp, FontWeight.Bold),
@@ -169,7 +182,6 @@ private fun ChartRow(row: FxVariance, state: BankRecUiState) {
     val resolved = FxRates.resolve(row, state.rates)
     val tint = if (row.isGain) colors.success else colors.danger
     val arrow = if (row.isGain) "▲" else "▼"
-    val word = if (row.isGain) "Gain" else "Loss"
     Row(
         Modifier.fillMaxWidth().padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -202,7 +214,11 @@ private fun ChartRow(row: FxVariance, state: BankRecUiState) {
             modifier = Modifier.width(56.dp),
         )
         ZillitText(
-            "$arrow ${BankRecFormat.signedRate(FxRates.rateDelta(resolved))} · $word",
+            if (row.isGain) {
+                str(S.desktop_br_rate_delta_gain, arrow, BankRecFormat.signedRate(FxRates.rateDelta(resolved)))
+            } else {
+                str(S.desktop_br_rate_delta_loss, arrow, BankRecFormat.signedRate(FxRates.rateDelta(resolved)))
+            },
             style = mono(11.sp),
             color = tint,
             maxLines = 1,
@@ -232,30 +248,33 @@ private fun VarianceTable(rows: List<FxVariance>, state: BankRecUiState, onEvent
             key = { it.id },
             minWeightWidth = 120.dp,
             columns = listOf(
-                BrColumn("Date", width = 48.dp) { row ->
+                BrColumn(str(S.date), width = 48.dp) { row ->
                     ZillitText(
                         BankRecFormat.localShortDay(row.createdAtMillis),
                         style = mono(12.sp),
                         color = colors.textSecondary,
                     )
                 },
-                BrColumn("Supplier", weight = 1.2f) { row -> SupplierCell(row) },
-                BrColumn("Curr.", width = 64.dp) { row -> BrTag(currencyTag(row.invoiceCurrency), BrTone.Teal) },
-                BrColumn("Foreign Amt", width = 84.dp, align = BrAlign.End) { row ->
+                BrColumn(str(S.supplier), weight = 1.2f) { row -> SupplierCell(row) },
+                BrColumn(str(S.desktop_br_currency_short), width = 64.dp) { row ->
+                    BrTag(currencyTag(row.invoiceCurrency), BrTone.Teal)
+                },
+                BrColumn(str(S.desktop_br_foreign_amount_short), width = 84.dp, align = BrAlign.End) { row ->
                     ZillitText(
                         BankRecFormat.wholeMoney(row.foreignAmount, row.invoiceCurrency),
                         style = figure,
                         maxLines = 1,
                     )
                 },
-                BrColumn("Budget Rate", width = 84.dp, align = BrAlign.End) { row ->
+                BrColumn(str(S.desktop_budget_rate), width = 84.dp, align = BrAlign.End) { row ->
                     val resolved = FxRates.resolve(row, state.rates)
-                    val why = if (resolved.budget == null && !resolved.isPosted) BUDGET_RATE_MISSING else ""
+                    val missing = resolved.budget == null && !resolved.isPosted
+                    val why = if (missing) str(S.desktop_br_budget_rate_missing) else ""
                     ZillitTooltip(why) {
                         ZillitText(BankRecFormat.rate(resolved.budget), style = figure, color = colors.textSecondary)
                     }
                 },
-                BrColumn("Budget $code", width = 96.dp, align = BrAlign.End) { row ->
+                BrColumn(str(S.desktop_br_budget_in_currency, code), width = 96.dp, align = BrAlign.End) { row ->
                     ZillitText(
                         BankRecFormat.money(row.budgetAmount, code),
                         style = figure,
@@ -263,9 +282,9 @@ private fun VarianceTable(rows: List<FxVariance>, state: BankRecUiState, onEvent
                         maxLines = 1,
                     )
                 },
-                BrColumn("Bank Rate", width = 72.dp, align = BrAlign.End) { row ->
+                BrColumn(str(S.desktop_bank_rate), width = 72.dp, align = BrAlign.End) { row ->
                     val bank = FxRates.resolve(row, state.rates).bank
-                    ZillitTooltip(if (bank == null) "No bank rate on this transaction" else "") {
+                    ZillitTooltip(if (bank == null) str(S.desktop_br_no_bank_rate_short) else "") {
                         ZillitText(
                             BankRecFormat.rate(bank),
                             style = mono(12.5.sp, FontWeight.SemiBold),
@@ -273,10 +292,10 @@ private fun VarianceTable(rows: List<FxVariance>, state: BankRecUiState, onEvent
                         )
                     }
                 },
-                BrColumn("$code Paid", width = 96.dp, align = BrAlign.End) { row ->
+                BrColumn(str(S.desktop_br_currency_paid, code), width = 96.dp, align = BrAlign.End) { row ->
                     ZillitText(BankRecFormat.money(row.paidAmount, code), style = bold, maxLines = 1)
                 },
-                BrColumn("Variance", width = 88.dp, align = BrAlign.End) { row ->
+                BrColumn(str(S.desktop_variance), width = 88.dp, align = BrAlign.End) { row ->
                     ZillitText(
                         BankRecFormat.signedMoney(row.variance, code),
                         style = bold,
@@ -284,9 +303,9 @@ private fun VarianceTable(rows: List<FxVariance>, state: BankRecUiState, onEvent
                         maxLines = 1,
                     )
                 },
-                BrColumn("Status", width = 76.dp) { row ->
+                BrColumn(str(S.status), width = 76.dp) { row ->
                     BrBadge(
-                        if (row.isPosted) "Posted" else "Unposted",
+                        if (row.isPosted) str(S.ah_status_posted) else str(S.desktop_unposted),
                         if (row.isPosted) BrTone.Green else BrTone.Amber,
                     )
                 },
@@ -316,12 +335,12 @@ private fun SupplierCell(row: FxVariance) {
 @Composable
 private fun PostCell(row: FxVariance, state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
     if (row.isPosted) {
-        BrBadge("Posted ✓", BrTone.Green)
+        BrBadge(str(S.desktop_br_posted_tick), BrTone.Green)
         return
     }
     val posting = state.fxPage.post?.let { it.varianceId == row.id && it.posting } == true
     ZillitButton(
-        text = if (posting) "…" else "Post",
+        text = if (posting) "…" else str(S.txt_post),
         onClick = { onEvent(BankRecEvent.OpenFxPost(row.id)) },
         variant = ButtonVariant.Secondary,
         size = ButtonSize.Small,
@@ -343,11 +362,11 @@ private fun JournalPreview(rows: List<FxVariance>, defaultCode: String) {
     val lines = FxRates.journal(rows, defaultCode).withIndex().toList()
     BrCard(
         Modifier.fillMaxWidth(),
-        title = "Journal Preview — Post All Variances",
+        title = str(S.desktop_br_journal_preview),
         icon = ZillitIcons.File,
         titleRight = {
             ZillitText(
-                "Auto-generated Dr/Cr entries",
+                str(S.desktop_br_auto_generated_entries),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -357,14 +376,18 @@ private fun JournalPreview(rows: List<FxVariance>, defaultCode: String) {
             rows = lines,
             key = { it.index },
             columns = listOf(
-                BrColumn<IndexedValue<JournalLine>>("Nominal", width = 80.dp) { (_, line) ->
+                BrColumn<IndexedValue<JournalLine>>(str(S.dm_rule_nominal), width = 80.dp) { (_, line) ->
                     ZillitText(line.nominal, style = mono(12.sp, FontWeight.SemiBold), color = colors.teal)
                 },
-                BrColumn("Description", weight = 2f) { (_, line) ->
+                BrColumn(str(S.description), weight = 2f) { (_, line) ->
                     ZillitText(line.description, style = ZillitTheme.typography.bodySmall, maxLines = 1)
                 },
-                BrColumn("Dr", width = 124.dp, align = BrAlign.End) { (_, line) -> DrCr(line.debit, "Dr") },
-                BrColumn("Cr", width = 124.dp, align = BrAlign.End) { (_, line) -> DrCr(line.credit, "Cr") },
+                BrColumn(str(S.desktop_br_dr), width = 124.dp, align = BrAlign.End) { (_, line) ->
+                    DrCr(line.debit, str(S.desktop_br_dr))
+                },
+                BrColumn(str(S.desktop_br_cr), width = 124.dp, align = BrAlign.End) { (_, line) ->
+                    DrCr(line.credit, str(S.desktop_br_cr))
+                },
             ),
         )
         Row(
@@ -372,7 +395,11 @@ private fun JournalPreview(rows: List<FxVariance>, defaultCode: String) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                "Net FX ${if (net >= 0) "Gain" else "Loss"} to P&L (${FxRates.FX_NOMINAL})",
+                if (net >= 0) {
+                    str(S.desktop_br_net_fx_gain_to_pl, FxRates.FX_NOMINAL)
+                } else {
+                    str(S.desktop_br_net_fx_loss_to_pl, FxRates.FX_NOMINAL)
+                },
                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.weight(1f),
             )
@@ -397,5 +424,3 @@ private fun DrCr(amount: Double?, side: String) {
     }
 }
 
-private const val BUDGET_RATE_MISSING =
-    "Not set in Production Setup → Project Currencies — enter it when posting"

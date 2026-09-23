@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.auth.domain.AuthRepository
 import com.zillit.desktop.feature.auth.domain.DeviceStatus
 import com.zillit.desktop.feature.auth.domain.Project
@@ -314,7 +316,7 @@ class AuthViewModel(
             block = { authRepository.requestOtp(email) },
             onSuccess = {
                 setState { copy(isBusy = false, step = AuthStep.Otp(email), otpSentTo = email, otp = "") }
-                if (resend) sendEffect(AuthEffect.Message("A new code is on its way to $email"))
+                if (resend) sendEffect(AuthEffect.Message(str(S.desktop_new_code_on_its_way, email)))
             },
             onError = { fail(it) },
         )
@@ -549,7 +551,7 @@ class AuthViewModel(
      */
     private fun startQrLogin(notice: String? = null) {
         val repository = qrLoginRepository ?: run {
-            setState { copy(error = "QR sign-in is not available.") }
+            setState { copy(error = str(S.desktop_qr_sign_in_unavailable)) }
             return
         }
 
@@ -675,10 +677,9 @@ class AuthViewModel(
         const val TAG = "Auth"
 
         /** Says what happened and what to do, without blaming the user. */
-        const val SESSION_EXPIRED_MESSAGE = "Your session has ended. Scan the code to sign in again."
-        const val NO_OFFLINE_DATA = "No offline data available for this project. Connect to the internet to open it."
-        const val PENDING_APPROVAL =
-            "This project is still awaiting approval. You can open it once a coordinator accepts your request."
+        val SESSION_EXPIRED_MESSAGE: String get() = str(S.desktop_session_ended_scan_again)
+        val NO_OFFLINE_DATA: String get() = str(S.desktop_no_offline_data)
+        val PENDING_APPROVAL: String get() = str(S.desktop_project_awaiting_approval_message)
     }
 }
 

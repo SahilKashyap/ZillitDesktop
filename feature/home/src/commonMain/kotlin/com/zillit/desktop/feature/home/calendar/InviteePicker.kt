@@ -43,6 +43,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 
 /**
@@ -88,7 +90,7 @@ internal fun InviteePicker(
 
         Box {
             ZillitButton(
-                text = "Add crew",
+                text = str(S.desktop_cal_add_crew),
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.UserPlus,
@@ -142,7 +144,7 @@ private fun InviteeChip(
         )
         ZillitIcon(
             icon = ZillitIcons.Close,
-            contentDescription = "Remove ${invitee.name}",
+            contentDescription = str(S.bs_chip_remove, invitee.name),
             tint = ZillitTheme.colors.textMuted,
             size = CHIP_REMOVE,
             modifier = Modifier.clip(ZillitTheme.shapes.pill).clickable(onClick = onRemove),
@@ -167,7 +169,7 @@ private fun CrewMenu(
         ZillitTextField(
             value = search,
             onValueChange = onSearch,
-            placeholder = "Search name or designation",
+            placeholder = str(S.desktop_cal_search_name_or_designation),
             modifier = Modifier.fillMaxWidth(),
         )
 

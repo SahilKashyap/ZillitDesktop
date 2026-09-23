@@ -58,6 +58,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.pagedistribution.domain.DistFolder
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.ui.DistributionDates
@@ -102,7 +104,7 @@ fun DodScreen(
                     .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
-                if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to ${state.tool.title}.")
+                if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_dist_no_access, state.tool.title))
                 state.error?.let { message ->
                     ZillitNotice(
                         text = message,
@@ -110,7 +112,7 @@ fun DodScreen(
                         icon = ZillitIcons.Warning,
                         action = {
                             ZillitButton(
-                                text = "Dismiss",
+                                text = str(S.sync_action_dismiss),
                                 onClick = { onEvent(DistributionEvent.DismissError) },
                                 variant = ButtonVariant.Tertiary,
                                 size = ButtonSize.Small,
@@ -121,7 +123,7 @@ fun DodScreen(
                 // ZL-17014 — the web's history alert.
                 if (!live) {
                     ZillitNotice(
-                        text = "Records of deleted documents. They can be viewed and downloaded, not changed.",
+                        text = str(S.desktop_dist_history_deleted_note),
                         tone = StatusTone.Progress,
                         icon = ZillitIcons.Info,
                     )
@@ -164,31 +166,34 @@ private fun DodHeader(state: DistributionUiState, onEvent: (DistributionEvent) -
                         style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = colors.textPrimary,
                     )
-                    if (!live) ZillitStatusPill(label = "History", tone = StatusTone.Neutral)
+                    if (!live) ZillitStatusPill(label = str(S.history), tone = StatusTone.Neutral)
                     val total = state.folderUnread.values.sum()
                     if (live && total > 0) {
-                        ZillitStatusPill(label = "$total unread", tone = StatusTone.Rejected, dot = true)
+                        ZillitStatusPill(
+                            label = str(S.desktop_unread_count, total),
+                            tone = StatusTone.Rejected,
+                            dot = true,
+                        )
                     }
                 }
                 ZillitText(
                     text = if (live) {
-                        "Day-out-of-days PDFs filed into named folders. " +
-                            "Open a folder to view, download, move or publish."
+                        str(S.desktop_dod_description)
                     } else {
-                        "Documents deleted from the folders, kept for the record."
+                        str(S.desktop_dod_history_description)
                     },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
             }
             ZillitButton(
-                text = if (live) "History" else "Back to live",
+                text = if (live) str(S.history) else str(S.desktop_dist_back_to_live),
                 onClick = { onEvent(DistributionEvent.ToggleHistory) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = if (live) ZillitIcons.Clock else ZillitIcons.ArrowLeft,
             )
             ZillitButton(
-                text = "Refresh",
+                text = str(S.refresh_text),
                 onClick = { onEvent(DistributionEvent.Refresh) },
                 variant = ButtonVariant.Tertiary,
                 leadingIcon = ZillitIcons.Reload,
@@ -196,7 +201,7 @@ private fun DodHeader(state: DistributionUiState, onEvent: (DistributionEvent) -
             )
             if (live) {
                 ZillitButton(
-                    text = "Upload PDF",
+                    text = str(S.desktop_dist_upload_pdf),
                     onClick = { onEvent(DistributionEvent.PickPdf()) },
                     leadingIcon = ZillitIcons.Paperclip,
                     loading = state.busy && state.upload == null,
@@ -214,17 +219,17 @@ private fun DodFolderGrid(state: DistributionUiState, onEvent: (DistributionEven
     when {
         state.loading && state.folders.isEmpty() -> SkeletonGrid()
         state.folders.isEmpty() -> ZillitEmptyState(
-            title = if (live) "No folders yet" else "Nothing in the history",
+            title = if (live) str(S.drive_empty_no_folders) else str(S.desktop_dist_nothing_in_history),
             message = if (live) {
-                "Upload the first D.O.D PDF — it is filed under the folder name you give it."
+                str(S.desktop_dod_empty_message)
             } else {
-                "Deleted documents will be listed here."
+                str(S.desktop_dist_deleted_documents_listed)
             },
             icon = ZillitIcons.Folder,
             action = if (live) {
                 {
                     ZillitButton(
-                        text = "Upload PDF",
+                        text = str(S.desktop_dist_upload_pdf),
                         onClick = { onEvent(DistributionEvent.PickPdf()) },
                         leadingIcon = ZillitIcons.Paperclip,
                     )
@@ -299,20 +304,20 @@ internal fun DodFolderCard(folder: DistFolder, unread: Int, onClick: () -> Unit)
                 ZillitIcon(icon = ZillitIcons.Folder, tint = colors.accent, size = FOLDER_GLYPH)
             }
             ZillitText(
-                text = folder.key.ifBlank { "Untitled" },
+                text = folder.key.ifBlank { str(S.untitled) },
                 style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textPrimary,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
             )
             ZillitText(
-                text = "Uploaded on\n${DistributionDates.dateTime(folder.createdMs)}",
+                text = str(S.desktop_dist_uploaded_on_line) + "\n" + DistributionDates.dateTime(folder.createdMs),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
             )
-            if (folder.deleted) ZillitStatusPill(label = "Deleted", tone = StatusTone.Rejected)
+            if (folder.deleted) ZillitStatusPill(label = str(S.drive_deleted_default), tone = StatusTone.Rejected)
         }
         if (unread > 0) {
             UnreadBadge(
@@ -393,12 +398,12 @@ private fun DropOverlay(visible: Boolean) {
                 ZillitIcon(icon = ZillitIcons.Upload, tint = colors.accent, size = FOLDER_GLYPH)
                 Spacer(Modifier.height(ZillitTheme.spacing.sm))
                 ZillitText(
-                    text = "Drop a PDF to upload it",
+                    text = str(S.desktop_dist_drop_pdf),
                     style = ZillitTheme.typography.titleMedium,
                     color = colors.textPrimary,
                 )
                 ZillitText(
-                    text = "You will name its folder next.",
+                    text = str(S.desktop_dod_drop_hint),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )

@@ -56,6 +56,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.CoaAccount
 import com.zillit.desktop.feature.accounthub.domain.CoaCostType
 import com.zillit.desktop.feature.accounthub.domain.CoaLineType
@@ -168,8 +170,8 @@ internal fun CoaCard(modifier: Modifier = Modifier, content: @Composable ColumnS
  */
 @Composable
 internal fun CoaStatusChips(account: CoaAccount) {
-    if (!account.isActive) CoaStatusChip("Inactive")
-    if (!account.isPosting) CoaStatusChip("Non-posting")
+    if (!account.isActive) CoaStatusChip(str(S.desktop_inactive))
+    if (!account.isPosting) CoaStatusChip(str(S.desktop_non_posting))
 }
 
 @Composable
@@ -351,7 +353,7 @@ internal fun CoaRowAction(
 @Composable
 internal fun CoaUnnamed(style: TextStyle) {
     ZillitText(
-        "Unnamed",
+        str(S.desktop_unnamed),
         style = style.copy(fontStyle = FontStyle.Italic, fontWeight = FontWeight.Normal),
         color = ZillitTheme.colors.textPrimary,
         modifier = Modifier.alpha(0.45f),

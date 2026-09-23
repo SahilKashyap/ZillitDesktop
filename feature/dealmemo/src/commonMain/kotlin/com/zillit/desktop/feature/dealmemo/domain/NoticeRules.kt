@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.dealmemo.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -8,10 +10,13 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toInstant
 
 /** The three groups of the Notices table, in display order. */
-enum class NoticeGroupKind(val title: String) {
-    Deactivated("Deactivated"),
-    WithNotice("With Notice Period"),
-    WithoutNotice("Without Notice Period"),
+enum class NoticeGroupKind(private val titleKey: String) {
+    Deactivated(S.dm_notices_group_deactivated),
+    WithNotice(S.dm_notices_group_with_notice),
+    WithoutNotice(S.dm_notices_group_without_notice),
+    ;
+
+    val title: String get() = str(titleKey)
 }
 
 data class NoticeGroup(val kind: NoticeGroupKind, val deals: List<DealDoc>) {
@@ -34,16 +39,17 @@ object NoticeRules {
         "Your last pay day will be {{last_pay_day}}.\n\n" +
         "Thank you for your contribution to the production."
 
-    private val LEGACY_LABELS = mapOf(
-        "statutory" to "Statutory minimum",
-        "1week" to "1 week",
-        "2week" to "2 weeks",
-        "4week" to "4 weeks",
-        "1month" to "1 month",
-        "production" to "Duration of production",
-        "negotiated" to "Negotiated",
-        "none" to "N/A (fixed term)",
-    )
+    private val LEGACY_LABELS: Map<String, String>
+        get() = mapOf(
+            "statutory" to str(S.desktop_dm_notice_statutory_minimum),
+            "1week" to str(S.desktop_dm_notice_1_week),
+            "2week" to str(S.desktop_dm_notice_2_weeks),
+            "4week" to str(S.desktop_dm_notice_4_weeks),
+            "1month" to str(S.desktop_dm_notice_1_month),
+            "production" to str(S.desktop_dm_notice_duration_of_production),
+            "negotiated" to str(S.desktop_negotiated),
+            "none" to str(S.desktop_dm_notice_na_fixed_term),
+        )
 
     private val LEGACY_RANK = mapOf(
         "production" to 9999,
@@ -101,7 +107,14 @@ object NoticeRules {
         if (value.isNullOrEmpty()) return DealCrewLabels.DASH
         LEGACY_LABELS[value]?.let { return it }
         val (count, unit) = parseDuration(value) ?: return DealLabels.formatLabel(value)
-        return "$count ${unit.replaceFirstChar { it.uppercase() }}${if (count == 1L) "" else "s"}"
+        val one = count == 1L
+        val key = when (unit) {
+            "day" -> if (one) S.desktop_dm_dur_day else S.desktop_dm_dur_days
+            "week" -> if (one) S.desktop_dm_dur_week else S.desktop_dm_dur_weeks
+            "month" -> if (one) S.desktop_dm_dur_month else S.desktop_dm_dur_months
+            else -> if (one) S.desktop_dm_dur_hour else S.desktop_dm_dur_hours
+        }
+        return str(key, count)
     }
 
     /** Longest first: duration of production, then the period in days; unknown just above statutory. */

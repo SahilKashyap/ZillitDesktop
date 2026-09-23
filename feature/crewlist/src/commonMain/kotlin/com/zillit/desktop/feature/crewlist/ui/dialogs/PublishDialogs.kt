@@ -29,23 +29,25 @@ import com.zillit.desktop.feature.crewlist.ui.CrewWork
 import com.zillit.desktop.feature.crewlist.ui.DistributionPrompt
 import com.zillit.desktop.feature.crewlist.ui.components.CrewCopy
 import com.zillit.desktop.feature.crewlist.ui.components.swallowPresses
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The viewer's Publish, asked first — the web's Popconfirm, with its Yes and No. */
 @Composable
 internal fun PublishConfirmDialog(visible: Boolean, copy: CrewCopy, onConfirm: () -> Unit, onCancel: () -> Unit) {
     ZillitDialogShell(
-        title = copy.t("PublishCrewList", "Publish {tool_name}"),
+        title = copy.t("PublishCrewList", str(S.desktop_cl_publish_tool)),
         icon = ZillitIcons.Send,
         visible = visible,
         onDismiss = onCancel,
         width = 420.dp,
         actions = {
-            ZillitButton(text = copy.t("No", "No"), variant = ButtonVariant.Tertiary, onClick = onCancel)
-            ZillitButton(text = copy.t("Yes", "Yes"), onClick = onConfirm)
+            ZillitButton(text = copy.t("No", str(S.no)), variant = ButtonVariant.Tertiary, onClick = onCancel)
+            ZillitButton(text = copy.t("Yes", str(S.yes)), onClick = onConfirm)
         },
     ) {
         ZillitText(
-            text = copy.t("publish_crew_list_confirmation", "Are you sure you want to publish the {tool_name}?"),
+            text = copy.t("publish_crew_list_confirmation", str(S.desktop_cl_publish_confirmation)),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -72,21 +74,21 @@ internal fun DistributionDialogs(
     val sending = prompt?.stage == DistributionPrompt.Stage.Sending
 
     ZillitDialogShell(
-        title = "Publish to Document Distribution",
+        title = str(S.dd_publish_confirm_title),
         icon = ZillitIcons.Send,
         visible = asking,
         onDismiss = { if (!sending) onCancel() },
         width = 460.dp,
         actions = {
-            ZillitButton(text = "Cancel", variant = ButtonVariant.Tertiary, enabled = !sending, onClick = onCancel)
-            ZillitButton(text = "Publish", loading = sending, enabled = !sending, onClick = onConfirm)
+            ZillitButton(text = str(S.cancel), variant = ButtonVariant.Tertiary, enabled = !sending, onClick = onCancel)
+            ZillitButton(text = str(S.publish), loading = sending, enabled = !sending, onClick = onConfirm)
         },
     ) {
         ZillitText(
             text = if (sending) {
-                "Sending to Document Distribution…"
+                str(S.dd_distribute_loading)
             } else {
-                "Publish \"$name\" to the Document Distribution library?"
+                str(S.desktop_cl_publish_to_library_question, name)
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
@@ -94,12 +96,12 @@ internal fun DistributionDialogs(
     }
 
     ZillitDialogShell(
-        title = "Published.",
+        title = str(S.cs_published),
         icon = ZillitIcons.Check,
         visible = prompt?.stage == DistributionPrompt.Stage.Done,
         onDismiss = onDismiss,
         width = 420.dp,
-        actions = { ZillitButton(text = "OK", onClick = onDismiss) },
+        actions = { ZillitButton(text = str(S.ok), onClick = onDismiss) },
     ) {
         ZillitText(
             text = "\"$name\" was added to Document Distribution.",
@@ -137,9 +139,9 @@ internal fun WorkingOverlay(work: CrewWork?, copy: CrewCopy) {
                 ZillitSpinner(size = 22.dp)
                 ZillitText(
                     text = when (work ?: held[0]) {
-                        CrewWork.Publishing -> "Publishing the ${copy.toolName}…"
-                        CrewWork.Distributing -> "Sending to Document Distribution…"
-                        else -> "Generating the ${copy.toolName}…"
+                        CrewWork.Publishing -> str(S.desktop_cl_publishing_tool, copy.toolName)
+                        CrewWork.Distributing -> str(S.dd_distribute_loading)
+                        else -> str(S.desktop_cl_generating_tool, copy.toolName)
                     },
                     style = ZillitTheme.typography.bodyMedium,
                     color = ZillitTheme.colors.textPrimary,

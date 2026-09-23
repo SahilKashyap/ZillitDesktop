@@ -18,6 +18,8 @@ import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.location.domain.MediaAttachment
 import com.zillit.desktop.feature.location.domain.PickedLocationFile
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /** The location library as a workspace tool, at the web's path (`/film-tools/location`). */
 class LocationToolProvider(
@@ -30,7 +32,7 @@ class LocationToolProvider(
 ) : ToolProvider {
 
     override val path: String = LOCATION_PATH
-    override val title: String = "Location"
+    override val title: String get() = str(S.location)
     override val icon = ZillitToolIcons.Location
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true

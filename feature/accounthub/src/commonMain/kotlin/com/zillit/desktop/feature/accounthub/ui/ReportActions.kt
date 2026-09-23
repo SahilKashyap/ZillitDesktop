@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.accounthub.ui
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.asTree
 import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
 import com.zillit.desktop.feature.accounthub.domain.ClosingReport
@@ -207,7 +209,10 @@ internal class ReportActions(
     private fun lockedThroughText(lock: PeriodLock): String {
         val shown = IsoDate.toEpochMillis(lock.lockedThrough)?.let { EpochDate.date(it) }
             ?: lock.lockedThrough
-        return if (shown.isBlank()) "The lock has moved." else "Locked through $shown."
+        return if (shown.isBlank()) str(S.desktop_hub_the_lock_has_moved) else str(
+            S.desktop_hub_locked_through_x,
+            shown,
+        )
     }
 
     private fun defaultCloseDate(lock: PeriodLock): String {
@@ -271,10 +276,10 @@ internal class ReportActions(
                         lock = lock,
                         closing = false,
                         pendingCloseMillis = null,
-                        result = CloseResult(true, "Period closed. ${lockedThroughText(lock)}"),
+                        result = CloseResult(true, str(S.desktop_hub_period_closed_x, lockedThroughText(lock))),
                         closeDateText = defaultCloseDate(lock),
                     ),
-                    notice = "Period closed. ${lockedThroughText(lock)}",
+                    notice = str(S.desktop_hub_period_closed_x, lockedThroughText(lock)),
                 )
             }
         }, { error ->
@@ -308,14 +313,15 @@ internal class ReportActions(
         editPublish { copy(publishing = true, result = null) }
         vm.runResult({ vm.repo.publishClosingPackage(valid) }, {
             editPublish {
-                copy(publishing = false, result = CloseResult(true, "Published ${plural(valid.size, "package")}."))
+                copy(publishing = false, result = CloseResult(true, publishedText(valid.size)))
             }
         }, { error ->
             editPublish { copy(publishing = false, result = CloseResult(false, error.localised())) }
         })
     }
 
-    private fun plural(n: Int, word: String) = "$n $word${if (n == 1) "" else "s"}"
+    private fun publishedText(n: Int) =
+        if (n == 1) str(S.desktop_hub_published_one_package) else str(S.desktop_hub_published_n_packages, n)
 
     private companion object {
         const val DAY_MILLIS = 86_400_000L

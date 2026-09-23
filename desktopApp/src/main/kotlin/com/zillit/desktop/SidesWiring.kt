@@ -13,6 +13,8 @@ import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.domain.SidesTransfer
 import com.zillit.desktop.feature.sides.domain.StoredAttachment
 import com.zillit.desktop.feature.sides.ui.PickedDoc
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
@@ -121,7 +123,7 @@ internal fun AppGraph.Ready.sidesRawGet(): suspend (String) -> ZillitResult<Stri
 
 /** A PDF, or PDF/Final Draft, picker for the sides forms. */
 internal suspend fun pickSidesDocument(pdfOnly: Boolean): PickedDoc? = withContext(Dispatchers.IO) {
-    val title = if (pdfOnly) "Choose a PDF" else "Choose a PDF or Final Draft file"
+    val title = if (pdfOnly) str(S.desktop_choose_pdf) else str(S.desktop_choose_pdf_or_fdx)
     val dialog = FileDialog(null as Frame?, title, FileDialog.LOAD)
     dialog.setFilenameFilter { _, name -> if (pdfOnly) SidesRules.isPdf(name) else SidesRules.isPdfOrFdx(name) }
     dialog.isVisible = true
@@ -132,7 +134,7 @@ internal suspend fun pickSidesDocument(pdfOnly: Boolean): PickedDoc? = withConte
 
 /** The save-to-disk half of a download: a native save dialog seeded with the suggested name. */
 internal suspend fun saveSidesFile(fileName: String, bytes: ByteArray): Unit = withContext(Dispatchers.IO) {
-    val dialog = FileDialog(null as Frame?, "Save sides", FileDialog.SAVE)
+    val dialog = FileDialog(null as Frame?, str(S.desktop_save_sides), FileDialog.SAVE)
     dialog.file = fileName
     dialog.isVisible = true
     val directory = dialog.directory ?: return@withContext

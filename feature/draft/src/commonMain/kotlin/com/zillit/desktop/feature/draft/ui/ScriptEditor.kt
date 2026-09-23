@@ -50,6 +50,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.draft.domain.ElementType
 import com.zillit.desktop.feature.draft.domain.ScreenplayLayout
 import com.zillit.desktop.feature.draft.domain.ScriptElement
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The page. Each element is its own text field laid out where the format
@@ -114,7 +116,7 @@ private fun PageBreak(page: Int) {
     ) {
         Box(Modifier.weight(1f).height(1.dp).background(colors.border))
         ZillitText(
-            text = "  page $page  ",
+            text = "  ${str(S.desktop_draft_page_number, page)}  ",
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
@@ -230,7 +232,11 @@ private fun ElementRow(
                             color = colors.accentText)
                     }
                 }
-                ZillitText(text = "Tab accepts", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+                ZillitText(
+                    text = str(S.desktop_draft_tab_accepts),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
             }
         }
     }
@@ -290,14 +296,14 @@ private fun handleKey(
 }
 
 private fun placeholder(type: ElementType): String = when (type) {
-    ElementType.SceneHeading -> "INT. LOCATION - DAY"
-    ElementType.Action -> "Action"
-    ElementType.Character -> "CHARACTER"
-    ElementType.Parenthetical -> "(parenthetical)"
-    ElementType.Dialogue -> "Dialogue"
-    ElementType.Transition -> "CUT TO:"
-    ElementType.Shot -> "SHOT"
-    ElementType.General -> "General"
+    ElementType.SceneHeading -> str(S.desktop_draft_hint_scene_heading)
+    ElementType.Action -> str(S.txt_action)
+    ElementType.Character -> str(S.desktop_draft_hint_character)
+    ElementType.Parenthetical -> str(S.desktop_draft_hint_parenthetical)
+    ElementType.Dialogue -> str(S.desktop_draft_dialogue)
+    ElementType.Transition -> str(S.desktop_draft_hint_transition)
+    ElementType.Shot -> str(S.desktop_draft_hint_shot)
+    ElementType.General -> str(S.ce_note_type_general)
 }
 
 private val DIGITS = listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight)

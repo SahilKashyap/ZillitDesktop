@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.forms.customValues
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.sync.LocalDraft
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
@@ -103,9 +105,8 @@ internal class PoFormActions(
             PoPrompt.Confirm(
                 action = PoConfirmAction.AmendOrder,
                 targetId = id,
-                title = "Amend this PO?",
-                message = "This order has been fully approved. Editing it replaces the approved version and " +
-                    "sends it back through its approval chain.",
+                title = str(S.desktop_po_amend_title),
+                message = str(S.desktop_po_amend_message),
                 destructive = true,
             ),
         )
@@ -211,12 +212,14 @@ internal class PoFormActions(
         val form = vm.ui.form ?: return
         val parent = form.lines.getOrNull(index) ?: return
         if (!parent.isDivisibleRental) {
-            vm.fail("A period split needs an expenditure type of Rent and a start and end date.")
+            vm.fail(str(S.desktop_po_period_split_needs_rent))
             return
         }
         val periods = periodsIn(parent, vm.ui.projectSettings.splitCadence.days)
         if (periods.size < 2) {
-            vm.fail("This rental window is shorter than one ${vm.ui.projectSettings.splitCadence.label.lowercase()}.")
+            vm.fail(
+                str(S.desktop_po_rental_window_too_short, vm.ui.projectSettings.splitCadence.label.lowercase()),
+            )
             return
         }
         val parentKey = parent.id ?: "line-$index"
@@ -253,7 +256,7 @@ internal class PoFormActions(
     private fun attach() {
         val files = vm.attachmentFiles
         if (files == null) {
-            vm.fail("Attachments are not available here.")
+            vm.fail(str(S.desktop_po_attachments_unavailable))
             return
         }
         vm.launchWork {
@@ -306,7 +309,7 @@ internal class PoFormActions(
             vm.update { copy(form = form.copy(problems = problems)) }
             return
         }
-        send(form, request, "Order raised")
+        send(form, request, str(S.desktop_order_raised))
     }
 
     /** Saves without submitting — the order waits as a draft. */
@@ -318,10 +321,10 @@ internal class PoFormActions(
         // description-less shell is refused, because there would be nothing to
         // come back to.
         if (request.vendorName.isBlank() && request.description.isBlank() && request.lines.isEmpty()) {
-            vm.update { copy(form = form.copy(problems = listOf("Add a vendor or a description before saving."))) }
+            vm.update { copy(form = form.copy(problems = listOf(str(S.desktop_po_needs_vendor_or_description)))) }
             return
         }
-        send(form, request, "Draft saved")
+        send(form, request, str(S.ah_draft_saved_msg))
     }
 
     private fun send(form: PoFormState, request: NewPurchaseOrder, success: String) {
@@ -364,8 +367,8 @@ internal class PoFormActions(
             PoPrompt.WithReason(
                 action = PoReasonAction.NameTemplate,
                 targetId = "",
-                title = "Save as Template",
-                label = "Template Name",
+                title = str(S.save_as_template),
+                label = str(S.nda_template_name),
                 reason = form.templateName.ifBlank { form.description.trim() },
             ),
         )
@@ -374,7 +377,7 @@ internal class PoFormActions(
     fun saveTemplate(name: String) {
         val form = vm.ui.form ?: return
         if (name.isBlank()) {
-            vm.update { copy(form = form.copy(problems = listOf("Template Name is required"))) }
+            vm.update { copy(form = form.copy(problems = listOf(str(S.ah_template_name_required)))) }
             return
         }
         vm.update { copy(form = form.copy(saving = true, problems = emptyList())) }
@@ -393,7 +396,7 @@ internal class PoFormActions(
             )
             when (val answer = repository.saveTemplate(template)) {
                 is ZillitResult.Success -> {
-                    vm.update { copy(form = null, notice = "Template saved") }
+                    vm.update { copy(form = null, notice = str(S.ah_template_saved_msg)) }
                     vm.registerActions.loadTemplates()
                 }
 
@@ -420,24 +423,24 @@ internal class PoFormActions(
     private fun validate(request: NewPurchaseOrder, form: PoFormState, layout: FormLayout): List<String> = buildList {
         request.validationError()?.let { add(it) }
         if (form.lines.any { it.isDivisibleRental && it.rentalEnd!! <= it.rentalStart!! }) {
-            add("A rental line's end date must be after its start date.")
+            add(str(S.desktop_po_rental_end_after_start))
         }
         if (!layout.isLoaded) return@buildList
         val required = { label: String -> layout.isRequired(PoFormFields.DETAILS, label) }
         if (required(PoFormFields.VENDOR) && form.vendorId.isNullOrBlank()) {
-            add("This production requires a vendor on every order.")
+            add(str(S.desktop_po_requires_vendor))
         }
         if (required(PoFormFields.ACCOUNT_CODE) && form.nominalCode.isBlank()) {
-            add("This production requires a nominal code on every order.")
+            add(str(S.desktop_po_requires_nominal_code))
         }
         if (required(PoFormFields.DESCRIPTION) && form.description.isBlank()) {
-            add("This production requires a description on every order.")
+            add(str(S.desktop_po_requires_description))
         }
         if (required(PoFormFields.NOTES) && form.notes.isBlank()) {
-            add("This production requires a note on every order.")
+            add(str(S.desktop_po_requires_note))
         }
         layout.missingCustom(PoFormFields.DETAILS, form.customFields).forEach { field ->
-            add("${field.name} is required on this production's orders.")
+            add(str(S.desktop_po_field_required_on_orders, field.name))
         }
     }
 

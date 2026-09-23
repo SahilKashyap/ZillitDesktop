@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.auth.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.feature.auth.domain.Department
 import com.zillit.desktop.feature.auth.domain.Designation
@@ -80,9 +82,8 @@ enum class JoinStep { Code, Details, Submitted }
  */
 val JoinStatus.joinMessage: String
     get() = when (this) {
-        JoinStatus.Approved -> "You are in. The project is ready to open."
-        JoinStatus.Pending -> "Request sent. A coordinator has to approve it before " +
-            "the project opens — you will see it in your list marked as waiting."
-        JoinStatus.Rejected -> "That request was declined. Ask the project for the code again."
-        JoinStatus.NotJoined -> "The request did not go through. Try again."
+        JoinStatus.Approved -> str(S.desktop_join_status_approved)
+        JoinStatus.Pending -> str(S.desktop_join_status_pending)
+        JoinStatus.Rejected -> str(S.desktop_join_status_rejected)
+        JoinStatus.NotJoined -> str(S.desktop_join_status_not_joined)
     }

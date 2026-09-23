@@ -51,6 +51,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsOption
 
 /**
@@ -107,10 +109,10 @@ private fun FilterPanel(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
     ) {
         PanelHeader(state, onEvent)
         Column(Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState())) {
-            FilterSection("Period / date range") { PeriodChoices(state, onEvent) }
-            FilterSection("Currency") {
+            FilterSection(str(S.desktop_cr_period_date_range)) { PeriodChoices(state, onEvent) }
+            FilterSection(str(S.asset_currency)) {
                 if (state.options.currencies.isEmpty()) {
-                    ZillitText("No currencies", style = AnalyticsType.text(12f), color = colors.ink3)
+                    ZillitText(str(S.desktop_cr_no_currencies), style = AnalyticsType.text(12f), color = colors.ink3)
                 }
                 val effective = state.draft.effectiveCurrency(state.options)
                 state.options.currencies.forEach { currency ->
@@ -119,8 +121,10 @@ private fun FilterPanel(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
                     }
                 }
             }
-            FilterSection("Entity / company") {
-                FilterChip("All companies", on = state.draft.entity.isBlank()) { onEvent(AnalyticsEvent.SetEntity("")) }
+            FilterSection(str(S.desktop_cr_entity_company)) {
+                FilterChip(str(S.cr_all_companies), on = state.draft.entity.isBlank()) {
+                    onEvent(AnalyticsEvent.SetEntity(""))
+                }
                 state.options.entities.forEach { entity ->
                     FilterChip(
                         entity.label,
@@ -129,8 +133,10 @@ private fun FilterPanel(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
                 }
             }
             DepartmentSection(state, onEvent)
-            FilterSection("Unit", last = true) {
-                FilterChip("All units", on = state.draft.unitIds.isEmpty()) { onEvent(AnalyticsEvent.AllUnits) }
+            FilterSection(str(S.dm_step2_unit), last = true) {
+                FilterChip(str(S.recce_unit_all), on = state.draft.unitIds.isEmpty()) {
+                    onEvent(AnalyticsEvent.AllUnits)
+                }
                 state.options.units.forEach { unit ->
                     FilterChip(
                         unit.label,
@@ -152,24 +158,24 @@ private fun PanelHeader(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         ZillitText(
-            "Filter analytics",
+            str(S.desktop_cr_filter_analytics),
             style = AnalyticsType.text(14f, FontWeight.Bold),
             color = colors.ink,
             modifier = Modifier.weight(1f),
         )
         ZillitText(
-            "$count filter${if (count == 1) "" else "s"} active",
+            str(if (count == 1) S.desktop_cr_filter_one_active else S.desktop_cr_filter_many_active, count),
             style = AnalyticsType.mono(11f),
             color = colors.ink3,
         )
         ZillitText(
-            "Reset all",
+            str(S.desktop_reset_all),
             style = AnalyticsType.text(12f, FontWeight.Bold),
             color = if (count > 0) colors.amber else colors.ink4,
             modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { onEvent(AnalyticsEvent.ResetFilters) },
         )
         ZillitText(
-            "Done",
+            str(S.done_text),
             style = AnalyticsType.text(12.5f, FontWeight.Bold),
             color = Color.White,
             modifier = Modifier
@@ -234,7 +240,7 @@ private fun DepartmentSection(state: AnalyticsUiState, onEvent: (AnalyticsEvent)
     val byId = state.options.departments.associateBy { it.value }
     Column(Modifier.fillMaxWidth().bottomRule(true, colors.line).padding(horizontal = 18.dp, vertical = 14.dp)) {
         ZillitText(
-            "DEPARTMENT",
+            str(S.department).uppercase(),
             style = AnalyticsType.mono(10f, FontWeight.Bold, 0.09f),
             color = colors.ink3,
             modifier = Modifier.padding(bottom = 10.dp),
@@ -291,7 +297,7 @@ private fun DepartmentSelect(options: List<AnalyticsOption>, selected: List<Stri
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ZillitText(
-                text ?: "Select departments…",
+                text ?: str(S.desktop_select_departments_2),
                 style = AnalyticsType.text(13f, if (text == null) FontWeight.Normal else FontWeight.SemiBold),
                 color = if (text == null) colors.ink3 else colors.ink,
                 modifier = Modifier.weight(1f),
@@ -337,13 +343,17 @@ private fun DepartmentList(
         ZillitSearchField(
             value = search,
             onValueChange = onSearch,
-            placeholder = "Search…",
+            placeholder = str(S.search),
             modifier = Modifier.fillMaxWidth(),
         )
         Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
             if (shown.isEmpty()) {
                 ZillitText(
-                    if (options.isEmpty()) "No departments" else "No results for “$search”",
+                    if (options.isEmpty()) {
+                        str(S.desktop_cr_no_departments)
+                    } else {
+                        str(S.desktop_no_results_for, search)
+                    },
                     style = AnalyticsType.text(12f),
                     color = colors.ink3,
                     modifier = Modifier.padding(8.dp),
@@ -358,10 +368,14 @@ private fun DepartmentList(
                 )
             }
         }
-        val plural = if (shown.size == 1) "option" else "options"
-        val picked = if (selected.isEmpty()) "" else " · ${selected.size} selected"
+        val plural = if (shown.size == 1) {
+            str(S.desktop_dm_one_option_suffix)
+        } else {
+            str(S.desktop_dm_options_suffix)
+        }
+        val picked = if (selected.isEmpty()) "" else str(S.desktop_selected_suffix, selected.size)
         ZillitText(
-            "${shown.size} $plural$picked",
+            str(S.desktop_cr_options_count, shown.size, plural, picked),
             style = AnalyticsType.text(11.5f, FontWeight.SemiBold),
             color = colors.ink3,
             modifier = Modifier.padding(4.dp),

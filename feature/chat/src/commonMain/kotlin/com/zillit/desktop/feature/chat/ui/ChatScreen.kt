@@ -62,6 +62,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.data.MessageHit
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.GroupRoom
@@ -275,12 +277,12 @@ private fun DirectoryHeading(onOpenWidget: (() -> Unit)?) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
+        ZillitText(text = str(S.desktop_chat_calls), style = ZillitTheme.typography.titleLarge)
         if (onOpenWidget != null) {
             Spacer(Modifier.weight(1f))
             ZillitIconButton(
                 icon = ZillitIcons.Detach,
-                contentDescription = "Open the Chat widget",
+                contentDescription = str(S.desktop_open_chat_widget),
                 onClick = onOpenWidget,
             )
         }
@@ -303,11 +305,11 @@ private fun CompactBackRow(title: String, onBack: () -> Unit) {
     ) {
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Back to conversations",
+            contentDescription = str(S.desktop_back_to_conversations),
             onClick = onBack,
         )
         ZillitText(
-            text = title.ifBlank { "Back" },
+            text = title.ifBlank { str(S.back) },
             style = ZillitTheme.typography.titleSmall,
             maxLines = 1,
         )
@@ -345,7 +347,7 @@ private fun DetailPane(
 
         else -> PaneMessage(
             icon = ZillitIcons.User,
-            text = "Pick a contact to see their card.",
+            text = str(S.desktop_chat_pick_a_contact),
         )
     }
 }
@@ -408,11 +410,14 @@ private fun OpenThread(
  * The strip's tabs, in Android's order — `ChatAndCall.kt:81-140` pages 0
  * Chat, 1 Call, 2 Contacts. Declaration order is display order.
  */
-private enum class DirectoryTab(val label: String) {
-    Chats("Chats"),
-    Calls("Calls"),
+private enum class DirectoryTab(private val labelKey: String) {
+    Chats(S.chats_text),
+    Calls(S.desktop_calls),
     /** The production's people — "Contacts", as the crew asked, not "Crew". */
-    Contacts("Contacts"),
+    Contacts(S.contacts),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The left pane: title, the two tabs, and whichever list the tab shows. */
@@ -468,7 +473,7 @@ private fun DirectoryPane(
             ZillitSearchField(
                 value = query,
                 onValueChange = onQuery,
-                placeholder = "Search name, role, department",
+                placeholder = str(S.desktop_chat_search_name_role_department),
             )
             CrewList(
                 // Someone who left or was removed is not a contact any more —
@@ -506,7 +511,7 @@ private fun DirectoryPane(
         } else {
             PaneMessage(
                 icon = ZillitIcons.Chat,
-                text = "Chats need a signed-in project.",
+                text = str(S.desktop_chat_need_signed_in_project),
             )
         }
     }
@@ -539,13 +544,13 @@ private fun ChatsTab(
         ZillitSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Search chats",
+            placeholder = str(S.desktop_search_chats),
             modifier = Modifier.weight(1f),
         )
         if (onNewGroup != null) {
             ZillitIconButton(
                 icon = ZillitIcons.UserPlus,
-                contentDescription = "New group",
+                contentDescription = str(S.desktop_new_group),
                 onClick = onNewGroup,
             )
         }
@@ -614,10 +619,9 @@ private fun RecentsList(
         PaneMessage(
             icon = ZillitIcons.Chat,
             text = when {
-                query.isNotBlank() -> "Nothing matches \"${query.trim()}\"."
-                chosen == ChatFilter.All ->
-                    "No conversations yet — message someone from the Contacts tab."
-                else -> "Nothing under ${chosen.label} right now."
+                query.isNotBlank() -> str(S.desktop_nothing_matches_query, query.trim())
+                chosen == ChatFilter.All -> str(S.desktop_chat_no_conversations_yet)
+                else -> str(S.desktop_chat_nothing_under_filter, chosen.label)
             },
         )
         return
@@ -680,7 +684,7 @@ private fun GroupRowWithDelete(
         onClick = { onEvent(ChatEvent.OpenGroup(row.room)) },
         // The newest line, led by who wrote it — "You:" or a first name —
         // the way a room's row reads on the phones; "Group" until one is cached.
-        subtitle = state.previews[row.room.id]?.line(selfId, inRoom = true, nameFor = nameFor) ?: "Group",
+        subtitle = state.previews[row.room.id]?.line(selfId, inRoom = true, nameFor = nameFor) ?: str(S.group),
         // The room's newest word, as a clock or a date at the row's end — the
         // mail list's column, where "Last Message At: Sep 15, 2026 at 06:…"
         // used to run under the name and ellipsise its own time away.
@@ -691,7 +695,7 @@ private fun GroupRowWithDelete(
             {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete ${row.room.name}",
+                    contentDescription = str(S.desktop_delete_named, row.room.name),
                     enabled = !deleting,
                     onClick = { confirming = true },
                 )
@@ -738,18 +742,18 @@ private fun DeleteGroupDialog(
 ) {
     ZillitDialogShell(
         title = roomName,
-        subtitle = "Are you sure you want to delete this group ?",
+        subtitle = str(S.are_you_sure_you_want_to_delete_this_group),
         icon = ZillitIcons.Trash,
         visible = visible,
         onDismiss = onDismiss,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 variant = ButtonVariant.Tertiary,
                 onClick = onDismiss,
             )
             ZillitButton(
-                text = "Delete",
+                text = str(S.delete),
                 variant = ButtonVariant.Danger,
                 loading = deleting,
                 onClick = onConfirm,
@@ -946,7 +950,7 @@ private fun CrewIdentity(
         // the caption says why the composer will be gone.
         if (contact.hasLeft) {
             ZillitText(
-                text = "Disconnected",
+                text = str(S.disconnected),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.danger,
                 maxLines = 1,
@@ -1026,7 +1030,7 @@ private fun RowTrailing(
     if (isFavourite != null) {
         ZillitIconButton(
             icon = if (isFavourite) ZillitIcons.StarFilled else ZillitIcons.StarOutline,
-            contentDescription = if (isFavourite) "Unstar" else "Star",
+            contentDescription = if (isFavourite) str(S.desktop_unstar) else str(S.desktop_star),
             onClick = onToggleFavourite,
             tint = if (isFavourite) ZillitTheme.colors.warning else ZillitTheme.colors.textMuted,
             size = STAR_SIZE,
@@ -1046,7 +1050,7 @@ private fun ChatPreview.line(
 ): String {
     val words = text.lineSequence().firstOrNull().orEmpty().trim()
     val by = when {
-        selfId != null && senderId == selfId -> "You"
+        selfId != null && senderId == selfId -> str(S.you)
         inRoom -> nameFor(senderId)?.substringBefore(' ')
         else -> null
     }
@@ -1179,7 +1183,7 @@ private fun CardBody(
         }
     }
     ZillitButton(
-        text = "Message",
+        text = str(S.message),
         onClick = { onMessage(contact) },
     )
 }
@@ -1197,7 +1201,7 @@ private fun CardIdentity(contact: CrewContact, loadAvatar: suspend (String) -> I
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitText(text = contact.fullName, style = ZillitTheme.typography.titleLarge)
-        if (contact.isAdmin) ZillitTag("Admin", tone = TagTone.Accent)
+        if (contact.isAdmin) ZillitTag(str(S.admin), tone = TagTone.Accent)
     }
     val role = listOfNotNull(
         contact.department?.takeIf { it.isNotBlank() },

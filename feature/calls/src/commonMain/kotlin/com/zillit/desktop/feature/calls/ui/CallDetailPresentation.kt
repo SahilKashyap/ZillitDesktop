@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.calls.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.plural
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
@@ -20,15 +23,15 @@ import kotlinx.datetime.toLocalDateTime
 
 /** "Audio call · Line 2" — the header's second line (`CallActivityDetailSheet.kt:88-101`). */
 fun CallLogEntry.detailSubtitle(): String {
-    val kind = if (type == CallType.Audio) "Audio call" else "Video call"
+    val kind = if (type == CallType.Audio) str(S.txt_audio_call_label) else str(S.txt_video_call_label)
     return "$kind · ${line.label}"
 }
 
 /** The direction chip's word (`:105-109`): a miss outranks the direction. */
 fun CallLogEntry.directionLabel(): String = when {
-    missed -> "Missed"
-    direction == CallLogDirection.Outgoing -> "Outgoing"
-    else -> "Incoming"
+    missed -> MISSED
+    direction == CallLogDirection.Outgoing -> str(S.txt_call_outgoing)
+    else -> str(S.txt_call_incoming)
 }
 
 /**
@@ -86,7 +89,7 @@ private fun CallLogEntry.detailedRow(
     val isSelf = person.userId == selfUserId
     val directoryName = if (person.isGuest) "" else nameFor(person.userId).orEmpty()
     val name = when {
-        isSelf -> "You"
+        isSelf -> str(S.you)
         directoryName.isNotBlank() -> directoryName
         person.displayName.isNotBlank() -> person.displayName
         else -> UNKNOWN_NAME
@@ -100,7 +103,7 @@ private fun CallLogEntry.detailedRow(
         name = name,
         subLabel = when {
             person.isCaller -> STARTED_THE_CALL
-            inviter != null -> "Added by $inviter"
+            inviter != null -> str(S.drivers_added_by, inviter)
             else -> null
         },
         badge = detailedBadge(person),
@@ -126,8 +129,8 @@ private fun attendanceLine(person: CallLogParticipant): String {
     if (person.totalMillis <= 0 && person.joinCount <= 0) return NOT_JOINED
     val parts = buildList {
         formatMillis(person.totalMillis)?.let(::add)
-        if (person.joinCount > 1) add("${person.joinCount} joins")
-        if (person.leaveCount > 1) add("${person.leaveCount} leaves")
+        if (person.joinCount > 1) add(str(S.desktop_call_n_joins, person.joinCount))
+        if (person.leaveCount > 1) add(str(S.desktop_call_n_leaves, person.leaveCount))
     }
     return parts.joinToString(" · ").ifBlank { NOT_JOINED }
 }
@@ -157,7 +160,7 @@ private fun CallLogEntry.legacyParticipants(
         CallDetailParticipant(
             userId = userId,
             name = when {
-                userId == selfUserId -> "You"
+                userId == selfUserId -> str(S.you)
                 else -> nameFor(userId)?.takeIf { it.isNotBlank() } ?: UNKNOWN_NAME
             },
             subLabel = STARTED_THE_CALL.takeIf { isCaller },
@@ -185,11 +188,11 @@ private fun CallLogEntry.legacyBadge(status: String?, isCaller: Boolean): String
 
 /** The status words both rosters share (`:304-309`, `:359-364`). */
 private fun statusBadge(status: String?): String? = when (status?.trim()?.lowercase()) {
-    "in_call", "incall" -> "In call"
+    "in_call", "incall" -> str(S.txt_badge_in_call)
     "left", "leave" -> LEFT
-    "declined" -> "Declined"
+    "declined" -> str(S.declined_events)
     "missed" -> MISSED
-    "ringing", "requested" -> "Ringing"
+    "ringing", "requested" -> str(S.txt_ringing)
     else -> null
 }
 
@@ -222,14 +225,14 @@ fun clock12h(atMillis: Long, zone: TimeZone = TimeZone.currentSystemDefault()): 
 }
 
 /** "3 Participants", "1 Participant" — the roster's heading (`R.plurals.txt_participants_count`). */
-fun participantsHeading(count: Int): String = if (count == 1) "1 Participant" else "$count Participants"
+fun participantsHeading(count: Int): String = plural(S.txt_participants_count, count)
 
-private const val HOST = "Host"
-private const val LEFT = "Left"
-private const val MISSED = "Missed"
-private const val NOT_JOINED = "Not joined"
-private const val STARTED_THE_CALL = "Started the call"
-private const val UNKNOWN_NAME = "Unknown"
+private val HOST: String get() = str(S.host_txt)
+private val LEFT: String get() = str(S.left)
+private val MISSED: String get() = str(S.missed)
+private val NOT_JOINED: String get() = str(S.txt_participant_not_joined)
+private val STARTED_THE_CALL: String get() = str(S.txt_started_the_call)
+private val UNKNOWN_NAME: String get() = str(S.desktop_unknown)
 private const val MILLIS_PER_SECOND = 1_000L
 private const val SECONDS_PER_MINUTE = 60L
 private const val SECONDS_PER_HOUR = 3_600L

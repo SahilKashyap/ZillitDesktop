@@ -18,6 +18,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.conflate
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The Crew List — `CrewListCustom.jsx` on the web: the roster and its search,
@@ -179,7 +181,7 @@ class CrewListViewModel(
         if (currentState.problems.isNotEmpty()) {
             val message = words(
                 "crew_list_fix_errors_before_done",
-                "Please fix the highlighted phone / country code errors first.",
+                str(S.desktop_cl_fix_errors_first),
             )
             sendEffect(CrewListEffect.Toast(message, CrewListEffect.Tone.Error))
             return
@@ -212,7 +214,7 @@ class CrewListViewModel(
     private fun addExternalUser() {
         val viewer = resolveViewer().also { setState { copy(viewer = it) } }
         if (!viewer.canAddExternalUser) {
-            refuse(rightsLine(EXTERNAL_USERS), EXTERNAL_USERS)
+            refuse(rightsLine(str(S.external_invitees)), EXTERNAL_USERS)
             return
         }
         setState { copy(addingExternalUser = true) }
@@ -222,8 +224,11 @@ class CrewListViewModel(
         text(key, fallback).replace("{tool_name}", currentState.viewer.toolName)
 
     private fun rightsLine(module: String): String =
-        "You do not have ${RightsKind.Post.verb} rights on $module" +
-            if (rights == null) "." else " — asking an administrator."
+        if (rights == null) {
+            str(S.desktop_no_rights_on_module, RightsKind.Post.verb, module)
+        } else {
+            str(S.desktop_no_rights_on_module_asking_admin, RightsKind.Post.verb, module)
+        }
 
     /** Says why, then offers the one thing that changes the answer. */
     private fun refuse(message: String, module: String) {

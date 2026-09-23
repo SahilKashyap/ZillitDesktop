@@ -37,6 +37,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.FxRates
 import com.zillit.desktop.feature.bankrec.domain.QuickEntryType
@@ -84,7 +86,7 @@ internal fun QuickEntryPanel(
                 Modifier.fillMaxWidth().background(colors.surfaceSunken).padding(horizontal = 16.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ZillitText("Quick Entry", style = titleStyle(13.5.sp), modifier = Modifier.weight(1f))
+                ZillitText(str(S.desktop_br_quick_entry), style = titleStyle(13.5.sp), modifier = Modifier.weight(1f))
                 Box(
                     Modifier.size(22.dp).clip(CircleShape).background(colors.accent),
                     contentAlignment = Alignment.Center,
@@ -199,7 +201,11 @@ private fun ColumnScope.GeneralForm(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                ZillitText("QUICK ADDING", style = mono(9.5.sp, FontWeight.SemiBold), color = colors.info)
+                ZillitText(
+                    str(S.desktop_br_quick_adding),
+                    style = mono(9.5.sp, FontWeight.SemiBold),
+                    color = colors.info,
+                )
                 ZillitText(
                     adding.title,
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
@@ -208,27 +214,27 @@ private fun ColumnScope.GeneralForm(
             }
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Stop quick adding",
+                contentDescription = str(S.desktop_br_stop_quick_adding),
                 onClick = { onEvent(BankRecEvent.ClearQuickAdd) },
             )
         }
     }
-    Field("Effective Date") {
+    Field(str(S.ah_lbl_eff_date)) {
         LockedDateField(
             value = form.effectiveDate,
             onValueChange = { onEvent(BankRecEvent.EditQuickEntry(form.copy(effectiveDate = it))) },
             lockedThrough = state.lookups.lockedThrough,
         )
     }
-    Field("Description") {
+    Field(str(S.description)) {
         ZillitTextField(
             value = form.description,
             onValueChange = { onEvent(BankRecEvent.EditQuickEntry(form.copy(description = it))) },
-            placeholder = "e.g. Bank charges Feb 25",
+            placeholder = str(S.desktop_br_description_hint),
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    Field("Amount") {
+    Field(str(S.amount)) {
         AmountField(
             value = form.amount,
             onValueChange = { onEvent(BankRecEvent.EditQuickEntry(form.copy(amount = it))) },
@@ -236,18 +242,18 @@ private fun ColumnScope.GeneralForm(
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    Field("Tax") {
+    Field(str(S.ah_lbl_vat)) {
         TaxField(form, state.lookups.taxTypes, onChange = { onEvent(BankRecEvent.EditQuickEntry(it)) })
     }
-    Field("Nominal Code") {
+    Field(str(S.dm_allow_nominal)) {
         NominalCodeField(
             value = form.nominal,
             onValueChange = { onEvent(BankRecEvent.EditQuickEntry(form.copy(nominal = it))) },
             codes = state.lookups.nominalCodes,
-            placeholder = "Select nominal…",
+            placeholder = str(S.desktop_br_select_nominal),
         )
     }
-    Field("Cost Centre") {
+    Field(str(S.desktop_cost_centre)) {
         CostCentreSelect(
             value = form.costCentre,
             onSelect = { onEvent(BankRecEvent.EditQuickEntry(form.copy(costCentre = it))) },
@@ -256,7 +262,7 @@ private fun ColumnScope.GeneralForm(
     }
     if (entry.type == QuickEntryType.FraudFlag) FraudDetails(entry, onEvent)
     ZillitButton(
-        text = if (entry.adding) "Adding…" else "Add & Match",
+        text = if (entry.adding) str(S.desktop_adding) else str(S.desktop_br_add_and_match),
         onClick = { onEvent(BankRecEvent.AddAndMatch) },
         size = ButtonSize.Small,
         loading = entry.adding,
@@ -265,13 +271,13 @@ private fun ColumnScope.GeneralForm(
     )
     if (adding == null) {
         ZillitText(
-            "Choose Quick Add on an unmatched line to fill this form.",
+            str(S.desktop_br_choose_quick_add_hint),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
     } else if (adding.txn.exceptionId.isBlank()) {
         ZillitText(
-            "This line has no exception to post through — use Manual Match instead.",
+            str(S.desktop_br_no_exception_use_manual),
             style = ZillitTheme.typography.labelSmall,
             color = colors.warning,
         )
@@ -286,11 +292,15 @@ private fun FraudDetails(entry: QuickEntryState, onEvent: (BankRecEvent) -> Unit
             .border(1.dp, BrTone.Red.edge(), RoundedCornerShape(8.dp)).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        ZillitText("FRAUD FLAG DETAILS", style = mono(9.5.sp, FontWeight.SemiBold), color = colors.danger)
+        ZillitText(
+            str(S.desktop_br_fraud_flag_details),
+            style = mono(9.5.sp, FontWeight.SemiBold),
+            color = colors.danger,
+        )
         ZillitTextField(
             value = entry.fraudReason,
             onValueChange = { onEvent(BankRecEvent.EditQuickEntryFraud(it, entry.fraudPriority)) },
-            placeholder = "Describe the fraud concern…",
+            placeholder = str(S.desktop_br_describe_fraud_concern),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -298,7 +308,13 @@ private fun FraudDetails(entry: QuickEntryState, onEvent: (BankRecEvent) -> Unit
             value = entry.fraudPriority,
             options = listOf("High", "Medium", "Low"),
             onSelect = { onEvent(BankRecEvent.EditQuickEntryFraud(entry.fraudReason, it)) },
-            label = { it },
+            label = { priority ->
+                when (priority) {
+                    "Medium" -> str(S.medium)
+                    "Low" -> str(S.desktop_weather_uv_low)
+                    else -> str(S.desktop_weather_uv_high)
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -322,7 +338,7 @@ private fun ColumnScope.FxForm(
     val budget = entry.fxBudgetRate.toDoubleOrNull()
     val bank = entry.fxBankRate.toDoubleOrNull()
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Field("Currency", Modifier.weight(1f)) {
+        Field(str(S.asset_currency), Modifier.weight(1f)) {
             ZillitSelect(
                 value = entry.fxCurrency,
                 options = (FX_CURRENCIES + entry.fxCurrency).distinct(),
@@ -331,7 +347,7 @@ private fun ColumnScope.FxForm(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Field("Amount (${entry.fxCurrency})", Modifier.weight(1f)) {
+        Field(str(S.desktop_br_amount_in_currency, entry.fxCurrency), Modifier.weight(1f)) {
             AmountField(
                 value = entry.fxForeignAmount,
                 onValueChange = { onEvent(BankRecEvent.EditFxEntry(entry.fxCurrency, it, entry.fxBankRate)) },
@@ -340,7 +356,7 @@ private fun ColumnScope.FxForm(
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Field("Budget Rate", Modifier.weight(1f)) {
+        Field(str(S.desktop_budget_rate), Modifier.weight(1f)) {
             ZillitTextField(
                 value = entry.fxBudgetRate,
                 onValueChange = {},
@@ -348,7 +364,7 @@ private fun ColumnScope.FxForm(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Field("Bank Rate", Modifier.weight(1f)) {
+        Field(str(S.desktop_bank_rate), Modifier.weight(1f)) {
             ZillitTextField(
                 value = entry.fxBankRate,
                 onValueChange = { onEvent(BankRecEvent.EditFxEntry(entry.fxCurrency, entry.fxForeignAmount, it)) },
@@ -358,28 +374,28 @@ private fun ColumnScope.FxForm(
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Field("Booked at Budget", Modifier.weight(1f)) {
+        Field(str(S.desktop_br_booked_at_budget), Modifier.weight(1f)) {
             ReadOnlyFigure(
                 BankRecFormat.plainMoney(FxRates.converted(foreign, budget) ?: 0.0, view.statementCurrency),
                 emphasised = false,
             )
         }
-        Field("Actually Paid", Modifier.weight(1f)) {
+        Field(str(S.desktop_br_actually_paid), Modifier.weight(1f)) {
             ReadOnlyFigure(
                 BankRecFormat.plainMoney(FxRates.converted(foreign, bank) ?: 0.0, view.statementCurrency),
                 emphasised = true,
             )
         }
     }
-    Field("Nominal Code") {
+    Field(str(S.dm_allow_nominal)) {
         NominalCodeField(
             value = entry.form.nominal,
             onValueChange = { onEvent(BankRecEvent.EditQuickEntry(entry.form.copy(nominal = it))) },
             codes = state.lookups.nominalCodes,
-            placeholder = "Select nominal…",
+            placeholder = str(S.desktop_br_select_nominal),
         )
     }
-    Field("Cost Centre") {
+    Field(str(S.desktop_cost_centre)) {
         CostCentreSelect(
             value = entry.form.costCentre,
             onSelect = { onEvent(BankRecEvent.EditQuickEntry(entry.form.copy(costCentre = it))) },
@@ -389,15 +405,15 @@ private fun ColumnScope.FxForm(
     val fx = entry.fx
     when {
         fx == null || fx.varianceId.isBlank() -> ZillitText(
-            "Choose Post on a foreign payment's FX line to post its variance.",
+            str(S.desktop_br_choose_post_hint),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
 
-        entry.fxPosted -> PostedNote("Posted")
-        fx.isPosted -> PostedNote("Already Posted")
+        entry.fxPosted -> PostedNote(str(S.ah_status_posted))
+        fx.isPosted -> PostedNote(str(S.desktop_br_already_posted))
         else -> ZillitButton(
-            text = if (entry.fxPosting) "Posting…" else "Post Variance",
+            text = if (entry.fxPosting) str(S.txt_posting) else str(S.desktop_br_post_variance),
             onClick = { onEvent(BankRecEvent.PostWorkspaceFx) },
             size = ButtonSize.Small,
             loading = entry.fxPosting,
@@ -454,9 +470,13 @@ private fun StillUnmatched(view: WorkspaceView) {
     val colors = ZillitTheme.colors
     val unmatched = view.bankRows.filter { it.status == TxnStatus.Unmatched }
     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        BrFieldLabel("Still Unmatched")
+        BrFieldLabel(str(S.desktop_br_still_unmatched))
         if (unmatched.isEmpty()) {
-            ZillitText("No unmatched transactions", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_br_no_unmatched_transactions),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
             return@Column
         }
         Column(

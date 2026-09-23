@@ -1,6 +1,9 @@
 package com.zillit.desktop.feature.callsheet.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDetail
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.SheetHistory
@@ -36,9 +39,9 @@ internal class RowActionsController(private val ctx: SheetContext) {
                     copy(
                         dialog = SheetDialog.Confirm(
                             action = ConfirmAction.DeleteSheet(event.sheet),
-                            title = "Delete Call Sheet",
+                            title = str(S.desktop_cs_delete_call_sheet),
                             message = deleteQuestion(event.sheet),
-                            confirmLabel = "Delete",
+                            confirmLabel = str(S.delete),
                             danger = true,
                         ),
                     )
@@ -65,14 +68,14 @@ internal class RowActionsController(private val ctx: SheetContext) {
             when (val bytes = ctx.services.delivery.pdf(sheet.id)) {
                 is ZillitResult.Failure -> {
                     ctx.update { copy(pdf = null) }
-                    ctx.toast(bytes.error.withPrefix("Failed to generate PDF: "), isError = true)
+                    ctx.toast(str(S.dm_pdf_failed, bytes.error.localised()), isError = true)
                 }
                 is ZillitResult.Success -> when (
                     val pages = ctx.services.delivery.renderPages(bytes.data, PDF_RENDER_WIDTH)
                 ) {
                     is ZillitResult.Failure -> {
                         ctx.update { copy(pdf = null) }
-                        ctx.toast(pages.error.withPrefix("Failed to generate PDF: "), isError = true)
+                        ctx.toast(str(S.dm_pdf_failed, pages.error.localised()), isError = true)
                     }
                     is ZillitResult.Success -> ctx.update {
                         if (pdf?.sheetId != sheet.id) {
@@ -95,8 +98,11 @@ internal class RowActionsController(private val ctx: SheetContext) {
         val fileName = overlay.title.let { if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf" }
         ctx.launchWork {
             when (val saved = ctx.services.delivery.savePdf(fileName, bytes)) {
-                is ZillitResult.Success -> ctx.toast("Saved $fileName to Downloads.")
-                is ZillitResult.Failure -> ctx.toast(saved.error.withPrefix("Couldn't save the PDF: "), isError = true)
+                is ZillitResult.Success -> ctx.toast(str(S.desktop_saved_file_to_downloads, fileName))
+                is ZillitResult.Failure -> ctx.toast(
+                    str(S.desktop_could_not_save_pdf_reason, saved.error.localised()),
+                    isError = true,
+                )
             }
         }
     }
@@ -113,12 +119,12 @@ internal class RowActionsController(private val ctx: SheetContext) {
             when (val result = ctx.repository.delete(sheet.id)) {
                 is ZillitResult.Success -> {
                     ctx.update { copy(busy = false, dialog = closedConfirm(), lists = lists.without(sheet.id)) }
-                    ctx.toast("Deleted!")
+                    ctx.toast(str(S.desktop_deleted_exclaim))
                     ctx.lists.refreshCurrent()
                 }
                 is ZillitResult.Failure -> {
                     ctx.update { copy(busy = false, dialog = closedConfirm()) }
-                    ctx.toast(result.error.withPrefix("Delete failed: "), isError = true)
+                    ctx.toast(str(S.desktop_delete_failed_reason, result.error.localised()), isError = true)
                 }
             }
         }
@@ -135,9 +141,9 @@ internal class RowActionsController(private val ctx: SheetContext) {
     private fun history(sheet: CallSheetSummary, title: String, fromDetail: Boolean) {
         if (ctx.state.historyLoadingId != null) return
         val emptyText = if (ctx.state.activeTab == SheetTab.Published) {
-            "No history found for this call sheet."
+            str(S.desktop_cs_no_history_found)
         } else {
-            "No history found."
+            str(S.desktop_no_history_found)
         }
         if (!fromDetail) {
             val entries = SheetHistory.entries(CallSheetDetail(sheet, SheetPayload()), ctx.state.members)
@@ -164,7 +170,7 @@ internal class RowActionsController(private val ctx: SheetContext) {
         val stage = stageForStatus(sheet.status)
         if (sheet.approvalsIncluded && sheet.approvals.isNotEmpty()) {
             val entries = approvalStatusEntries(sheet.approvals, stage, ctx.state.members)
-            ctx.update { copy(dialog = SheetDialog.ApprovalStatus("Approval Status", entries)) }
+            ctx.update { copy(dialog = SheetDialog.ApprovalStatus(str(S.onboarding_status), entries)) }
             return
         }
         ctx.update { copy(statusLoadingId = sheet.id) }
@@ -173,7 +179,7 @@ internal class RowActionsController(private val ctx: SheetContext) {
                 ?: sheet.approvals
             val entries = approvalStatusEntries(approvals, stage, ctx.state.members)
             ctx.update {
-                copy(statusLoadingId = null, dialog = SheetDialog.ApprovalStatus("Approval Status", entries))
+                copy(statusLoadingId = null, dialog = SheetDialog.ApprovalStatus(str(S.onboarding_status), entries))
             }
         }
     }

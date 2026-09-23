@@ -30,6 +30,8 @@ import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import com.zillit.desktop.feature.home.data.videoThumbnailJpeg
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -136,7 +138,7 @@ internal fun AppGraph.Ready.continuityTransfer(): ContinuityTransfer = object : 
                 ZillitResult.Failure(
                     com.zillit.desktop.core.common.ZillitError.Storage(
                         technical = it.message,
-                        userMessage = "Could not open the file.",
+                        userMessage = str(S.desktop_could_not_open_file),
                     ),
                 )
             },

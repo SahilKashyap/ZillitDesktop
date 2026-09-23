@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.externalusers.domain
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * One external contact — a project-scoped address-book record.
@@ -51,11 +53,13 @@ data class DialCode(val name: String, val dialCode: String, val isoCode: String 
 data class Creator(val userId: String, val fullName: String, val designation: String = "")
 
 /** `male` | `female` | `non-binary`, plus the legacy `other` (ZL-13367). */
-enum class Gender(val wire: String, val label: String) {
-    Male("male", "Male"),
-    Female("female", "Female"),
-    NonBinary("non-binary", "Non-binary"),
+enum class Gender(val wire: String, private val labelKey: String) {
+    Male("male", S.male),
+    Female("female", S.female),
+    NonBinary("non-binary", S.desktop_gender_non_binary),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         /** The web's card rule: `other` reads as Non-binary, anything else as itself, upper-cased. */
@@ -75,12 +79,15 @@ val ExternalUser.phoneLine: String
  * The filter buckets, as both clients bucket the free-form type: the two
  * known labels are themselves, anything else non-blank is Others.
  */
-enum class ExternalUserBucket(val wire: String, val label: String) {
-    All("all", "All"),
-    Crew(CREW_TYPE, "Crew member"),
-    Vendor(VENDOR_TYPE, "Vendor"),
-    Others("others", "Others"),
+enum class ExternalUserBucket(val wire: String, private val labelKey: String) {
+    All("all", S.all),
+    Crew(CREW_TYPE, S.crew_member),
+    Vendor(VENDOR_TYPE, S.ah_lbl_vendor),
+    Others("others", S.others),
     ;
+
+    /** Title-cased because the catalogue's `others` is lower-case. */
+    val label: String get() = str(labelKey).replaceFirstChar { it.titlecase() }
 
     companion object {
         fun of(userType: String): ExternalUserBucket = when {
@@ -139,18 +146,18 @@ data class ExternalUsersViewer(
  * Answers a field→message map; empty means the draft may be sent.
  */
 fun ExternalUser.validationErrors(): Map<String, String> = buildMap {
-    if (fullName.isBlank()) put("fullName", "Please enter the full name")
-    if (!email.trim().looksLikeEmail()) put("email", "Please enter a valid email")
+    if (fullName.isBlank()) put("fullName", str(S.desktop_please_enter_the_full_name))
+    if (!email.trim().looksLikeEmail()) put("email", str(S.desktop_please_enter_a_valid_email))
     if (phone.isNotBlank() && countryCode.isBlank()) {
-        put("countryCode", "Please select the country code")
+        put("countryCode", str(S.desktop_please_select_the_country_code))
     }
     phoneError()?.let { put("phone", it) }
-    if (userType.isBlank()) put("userType", "Please enter the type")
-    if (userType == CREW_TYPE && departmentId.isBlank()) put("departmentId", "Select a department")
+    if (userType.isBlank()) put("userType", str(S.desktop_please_enter_the_type))
+    if (userType == CREW_TYPE && departmentId.isBlank()) put("departmentId", str(S.desktop_select_a_department))
     otherInfo.forEachIndexed { index, row ->
         // A half-filled row is the error; both blank is simply an unused row.
         if (row.label.isBlank() != row.value.isBlank()) {
-            put("otherInfo$index", "Both the title and the description are needed")
+            put("otherInfo$index", str(S.desktop_both_title_and_description_needed))
         }
     }
 }
@@ -164,9 +171,9 @@ private fun String.looksLikeEmail(): Boolean =
  * writing to the same key in turn.
  */
 private fun ExternalUser.phoneError(): String? = when {
-    countryCode.isNotBlank() && phone.isBlank() -> "Phone number is required"
-    phone.isNotBlank() && phone.length < MIN_PHONE_DIGITS -> "Phone number is too short"
-    phone.length > MAX_PHONE_DIGITS -> "Phone number is too long"
+    countryCode.isNotBlank() && phone.isBlank() -> str(S.ah_err_phone_required)
+    phone.isNotBlank() && phone.length < MIN_PHONE_DIGITS -> str(S.desktop_phone_number_too_short)
+    phone.length > MAX_PHONE_DIGITS -> str(S.desktop_phone_number_too_long)
     else -> null
 }
 

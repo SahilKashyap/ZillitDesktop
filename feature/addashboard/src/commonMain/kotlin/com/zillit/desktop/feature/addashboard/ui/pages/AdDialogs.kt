@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.addashboard.domain.Artiste
 import com.zillit.desktop.feature.addashboard.ui.AdEvent
 import com.zillit.desktop.feature.addashboard.ui.AdUiState
@@ -36,8 +38,11 @@ internal fun AddToDayDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     val candidates = state.addable(open.search)
 
     ZillitDialogShell(
-        title = "Add to ${EpochDate.date(state.shootDate).ifEmpty { "the day" }}",
-        subtitle = "${open.chosen.size} chosen",
+        title = str(
+            S.desktop_ad_add_to_day_title,
+            EpochDate.date(state.shootDate).ifEmpty { str(S.desktop_ad_the_day) },
+        ),
+        subtitle = str(S.desktop_ad_n_chosen, open.chosen.size),
         visible = true,
         onDismiss = { onEvent(AdEvent.CancelAddToDay) },
         icon = ZillitIcons.UserPlus,
@@ -45,13 +50,13 @@ internal fun AddToDayDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
         ZillitSearchField(
             value = open.search,
             onValueChange = { onEvent(AdEvent.AddSearch(it)) },
-            placeholder = "Search the register",
+            placeholder = str(S.desktop_ad_search_the_register),
             modifier = Modifier.fillMaxWidth(),
         )
         ZillitTextField(
             value = open.callTime,
             onValueChange = { onEvent(AdEvent.AddCallTime(it)) },
-            label = "Call time (optional)",
+            label = str(S.desktop_ad_call_time_optional),
             placeholder = "07:00",
         )
 
@@ -62,12 +67,12 @@ internal fun AddToDayDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AdEvent.CancelAddToDay) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Add",
+                text = str(S.add),
                 onClick = { onEvent(AdEvent.ConfirmAddToDay) },
                 loading = open.saving,
                 enabled = open.ready && !open.saving,
@@ -86,9 +91,9 @@ private fun CandidateList(
     if (candidates.isEmpty()) {
         ZillitText(
             text = if (search.isBlank()) {
-                "Everyone on the register is already on this day."
+                str(S.desktop_ad_everyone_already_on_day)
             } else {
-                "Nobody on the register matches that."
+                str(S.desktop_ad_nobody_on_register_matches)
             },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
@@ -132,8 +137,8 @@ internal fun BlockDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     val open = state.block ?: return
 
     ZillitDialogShell(
-        title = "Block ${open.artiste.name}",
-        subtitle = "They stay on the register but cannot be added to a day",
+        title = str(S.desktop_ad_block_title, open.artiste.name),
+        subtitle = str(S.desktop_ad_block_subtitle),
         visible = true,
         onDismiss = { onEvent(AdEvent.CancelBlock) },
         icon = ZillitIcons.Warning,
@@ -141,8 +146,8 @@ internal fun BlockDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
         ZillitTextField(
             value = open.reason,
             onValueChange = { onEvent(AdEvent.BlockReason(it)) },
-            label = "Why (optional)",
-            placeholder = "Recorded against the artiste",
+            label = str(S.desktop_ad_why_optional),
+            placeholder = str(S.desktop_ad_recorded_against_artiste),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -151,12 +156,12 @@ internal fun BlockDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(AdEvent.CancelBlock) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Block",
+                text = str(S.block),
                 onClick = { onEvent(AdEvent.ConfirmBlock) },
                 variant = ButtonVariant.Danger,
                 loading = open.saving,
@@ -178,18 +183,20 @@ internal fun SubmitDayDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     if (!state.confirmSubmit) return
 
     ZillitDialogShell(
-        title = "Submit ${EpochDate.date(state.shootDate).ifEmpty { "this day" }}?",
-        subtitle = "${state.onToday} on the call · ${state.unsignedToday} not yet signed",
+        title = str(
+            S.desktop_ad_submit_day_title,
+            EpochDate.date(state.shootDate).ifEmpty { str(S.desktop_ad_this_day) },
+        ),
+        subtitle = str(S.desktop_ad_submit_day_subtitle, state.onToday, state.unsignedToday),
         visible = true,
         onDismiss = { onEvent(AdEvent.CancelSubmitDay) },
         icon = ZillitIcons.Send,
     ) {
         ZillitText(
             text = if (state.unsignedToday > 0) {
-                "${state.unsignedToday} artiste(s) have not signed yet. Submitting locks the day " +
-                    "and they will have to be chased another way."
+                str(S.desktop_ad_submit_unsigned_warning, state.unsignedToday)
             } else {
-                "Everyone has signed. Submitting locks the day and sends it on."
+                str(S.desktop_ad_submit_all_signed)
             },
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
@@ -199,12 +206,12 @@ internal fun SubmitDayDialog(state: AdUiState, onEvent: (AdEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Not yet",
+                text = str(S.desktop_ad_not_yet),
                 onClick = { onEvent(AdEvent.CancelSubmitDay) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Submit day",
+                text = str(S.desktop_ad_submit_day),
                 onClick = { onEvent(AdEvent.ConfirmSubmitDay) },
                 variant = ButtonVariant.Danger,
             )

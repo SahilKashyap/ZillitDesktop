@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.formsignature.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.ChatUnit
 import com.zillit.desktop.feature.formsignature.domain.ExternalSigner
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureUnread
@@ -32,9 +34,12 @@ enum class FormSignScreen {
 }
 
 /** The standard-documents tabs, in the web's order and wire vocabulary. */
-enum class StandardTab(val wire: String, val label: String) {
-    All("all-forms", "Documents"),
-    Mine("your-forms", "My Downloads"),
+enum class StandardTab(val wire: String, private val labelKey: String) {
+    All("all-forms", S.txt_documents),
+    Mine("your-forms", S.txt_my_downloads),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 data class StandardFormsState(
@@ -350,24 +355,24 @@ data class FormSignatureUiState(
     val title: String
         get() = when (screen) {
             FormSignScreen.Tiles -> TOOL_TITLE
-            FormSignScreen.StandardDocuments -> "Standard Documents"
-            FormSignScreen.DocumentsForSignature -> "Documents for Signature"
-            FormSignScreen.SignatureBlock -> "Set/Edit Signature Block"
+            FormSignScreen.StandardDocuments -> str(S.standard_forms)
+            FormSignScreen.DocumentsForSignature -> str(S.douments_for_sign_txt)
+            FormSignScreen.SignatureBlock -> str(S.set_signature_edit)
             FormSignScreen.DrawSignature -> draw?.let {
                 when {
-                    it.existingId != null && it.isSignature -> "Edit Signature"
-                    it.existingId != null -> "Edit Initials"
-                    it.isSignature -> "Add Signature"
-                    else -> "Add Initials"
+                    it.existingId != null && it.isSignature -> str(S.edit_signature)
+                    it.existingId != null -> str(S.desktop_fs_edit_initials)
+                    it.isSignature -> str(S.add_signature)
+                    else -> str(S.txt_add_initials)
                 }
-            } ?: "Add Signature"
-            FormSignScreen.Detail -> detail?.title?.ifBlank { null } ?: "Contract Details"
+            } ?: str(S.add_signature)
+            FormSignScreen.Detail -> detail?.title?.ifBlank { null } ?: str(S.desktop_fs_contract_details)
             // The web's heading for the parent room is the `discussion_chat` label; the unit's own name is a key.
-            FormSignScreen.Chat -> "Discussion Chat"
+            FormSignScreen.Chat -> str(S.desktop_fs_discussion_chat)
         }
 
     companion object {
-        const val TOOL_TITLE = "Documents & Signature"
+        val TOOL_TITLE: String get() = str(S.desktop_fs_tool_title)
     }
 }
 

@@ -47,6 +47,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ExportFormat
 
 /**
@@ -91,7 +93,7 @@ fun SectionShell(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
                 ZillitText(text = title, style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                if (onSave != null && dirty) Pill("Unsaved", tone = StatusTone.Pending, dot = true)
+                if (onSave != null && dirty) Pill(str(S.asset_unsaved), tone = StatusTone.Pending, dot = true)
             }
             FieldHint(description)
             leftPanel?.invoke(this)
@@ -112,7 +114,7 @@ fun SectionShell(
                     if (onSave != null && dirty) {
                         if (onCancel != null) {
                             ZillitButton(
-                                text = "Cancel",
+                                text = str(S.cancel),
                                 onClick = onCancel,
                                 variant = ButtonVariant.Tertiary,
                                 size = ButtonSize.Small,
@@ -120,7 +122,7 @@ fun SectionShell(
                             )
                         }
                         ZillitButton(
-                            text = if (saving) "Saving…" else "Save changes",
+                            text = if (saving) str(S.ah_saving) else str(S.dm_setup_save),
                             onClick = onSave,
                             size = ButtonSize.Small,
                             loading = saving,
@@ -147,7 +149,7 @@ fun HubModuleCard(
     icon: ImageVector,
     onConfigure: () -> Unit,
     modifier: Modifier = Modifier,
-    actionText: String = "Configure ›",
+    actionText: String = str(S.desktop_configure_chevron),
     enabled: Boolean = true,
 ) {
     val colors = ZillitTheme.colors
@@ -204,7 +206,7 @@ fun ExportMenu(
     val drop = with(LocalDensity.current) { (ZillitDimens.controlHeight + EXPORT_MENU_GAP).roundToPx() }
     Box(modifier = modifier) {
         ZillitButton(
-            text = if (exporting != null) "Exporting…" else "Export",
+            text = if (exporting != null) str(S.desktop_exporting) else str(S.asset_export),
             onClick = { onOpen(!open) },
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Download,
@@ -238,7 +240,7 @@ private fun ExportMenuPanel(onExport: (ExportFormat) -> Unit) {
             .padding(7.dp),
     ) {
         ZillitText(
-            text = "DOWNLOAD AS",
+            text = str(S.desktop_download_as),
             style = ZillitTheme.typography.labelSmall.copy(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -348,9 +350,9 @@ private val ExportFormat.badge: String
 /** What each file is for, in the web's words. */
 private val ExportFormat.purpose: String
     get() = when (this) {
-        ExportFormat.Pdf -> "Formatted document, print-ready"
-        ExportFormat.Excel -> "Editable spreadsheet with live data"
-        ExportFormat.Csv -> "Plain comma-separated values"
+        ExportFormat.Pdf -> str(S.desktop_hub_formatted_document_print_ready)
+        ExportFormat.Excel -> str(S.desktop_hub_editable_spreadsheet_with_live_data)
+        ExportFormat.Csv -> str(S.desktop_hub_plain_comma_separated_values)
     }
 
 private val LEFT_WIDTH = 260.dp

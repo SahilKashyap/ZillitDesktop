@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.ui.BuilderEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoUiState
@@ -60,12 +62,12 @@ internal fun SetupPickerBanner(state: DealMemoUiState, builder: BuilderState, on
     ) {
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = "This deal starts from a ${group.label} setup",
+                text = str(S.dm_banner_from_setup, group.label),
                 style = DmType.sans(15.5.sp, FontWeight.Bold),
                 color = p.pickerTitle,
             )
             ZillitText(
-                text = "Switching reloads rates, allowances and conditions — later edits apply to this deal only.",
+                text = str(S.dm_banner_from_setup_sub),
                 style = DmType.sans(14.sp).copy(lineHeight = 21.sp),
                 color = p.pickerBody,
                 modifier = Modifier.padding(top = 4.dp),
@@ -76,9 +78,9 @@ internal fun SetupPickerBanner(state: DealMemoUiState, builder: BuilderState, on
             selectedKey = builder.pickedTemplateId,
             onPick = { onEvent(BuilderEvent.PickSetup(it)) },
             placeholder = when {
-                setups == null -> "Loading setups…"
-                setups.isEmpty() -> "No ${group.label} setups yet"
-                else -> "Select a setup…"
+                setups == null -> str(S.dm_create_loading_setups)
+                setups.isEmpty() -> str(S.desktop_dm_no_group_setups_yet, group.label)
+                else -> str(S.desktop_dm_select_a_setup)
             },
             enabled = setups != null,
             dropdownWidth = 300.dp,
@@ -114,7 +116,7 @@ private fun ResetButton(enabled: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            text = "Reset to setup",
+            text = str(S.dm_banner_reset),
             style = DmType.sans(13.5.sp, FontWeight.Bold),
             color = p.title,
             maxLines = 1,

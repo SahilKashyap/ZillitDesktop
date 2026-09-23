@@ -12,6 +12,8 @@ import androidx.compose.ui.window.rememberTrayState
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import java.awt.Desktop
 
 /**
@@ -44,24 +46,24 @@ internal fun ApplicationScope.AppTray(
         Tray(
             state = trayState,
             icon = rememberVectorPainter(ZillitIcons.Mark),
-            tooltip = "Zillit-Desktop",
+            tooltip = str(S.desktop_zillit_desktop_title),
             // The click that does *not* open the menu — right-click on macOS,
             // double-click on Windows — still does the obvious thing rather
             // than nothing.
             onAction = onShow,
         ) {
-            Item("Show Zillit", onClick = onShow)
+            Item(str(S.desktop_show_zillit), onClick = onShow)
             ZillitWidget.entries.forEach { widget ->
                 val shown = widgets.isOpen(widget)
                 Item(
-                    if (shown) "Hide ${widget.label} widget" else "Show ${widget.label} widget",
+                    if (shown) str(S.desktop_hide_widget, widget.label) else str(S.desktop_show_widget, widget.label),
                     onClick = { widgets.toggle(widget) },
                 )
             }
             Separator()
             // Named, not just "Quit": in a menu bar full of other apps' icons,
             // an unqualified Quit is a coin flip about what is about to close.
-            Item("Quit Zillit", onClick = onQuit)
+            Item(str(S.desktop_quit_zillit), onClick = onQuit)
         }
     }
 

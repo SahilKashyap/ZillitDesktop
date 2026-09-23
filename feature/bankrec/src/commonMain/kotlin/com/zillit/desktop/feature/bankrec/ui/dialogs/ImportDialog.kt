@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankAccountRef
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.ImportResult
@@ -83,28 +85,32 @@ internal fun ImportDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit
     val flow = rememberLast(state.import.takeIf { it.open }) ?: return
     val done = flow.result != null
     ZillitDialogShell(
-        title = if (flow.processing) "Importing Statement" else "Import Bank Statement",
+        title = if (flow.processing) {
+            str(S.desktop_br_importing_statement)
+        } else {
+            str(S.desktop_br_import_bank_statement)
+        },
         onDismiss = { if (!flow.processing || done) onEvent(BankRecEvent.CloseImport) },
         visible = state.import.open,
         icon = ZillitIcons.Upload,
         width = 560.dp,
         actions = {
             when {
-                done -> ZillitButton(text = "Done", onClick = { onEvent(BankRecEvent.CloseImport) })
+                done -> ZillitButton(text = str(S.done_text), onClick = { onEvent(BankRecEvent.CloseImport) })
                 flow.processing -> ZillitText(
-                    "Processing…",
+                    str(S.txt_processing),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
 
                 else -> {
                     ZillitButton(
-                        text = "Cancel",
+                        text = str(S.cancel),
                         onClick = { onEvent(BankRecEvent.CloseImport) },
                         variant = ButtonVariant.Tertiary,
                     )
                     ZillitButton(
-                        text = "Import & Auto-Match",
+                        text = str(S.desktop_br_import_auto_match),
                         onClick = { onEvent(BankRecEvent.StartImport) },
                         leadingIcon = BankRecIcons.Bolt,
                         enabled = flow.file != null && flow.bankAccountId.isNotBlank(),
@@ -125,10 +131,10 @@ internal fun ImportDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit
 private fun Choose(flow: ImportState, state: BankRecUiState, onEvent: (BankRecEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        BrFieldLabel("Select Bank Account")
+        BrFieldLabel(str(S.desktop_br_select_bank_account))
         if (state.bankAccounts.isEmpty()) {
             ZillitText(
-                "No bank accounts found. Add one in Accounts & Rules first.",
+                str(S.desktop_br_no_bank_accounts),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -149,10 +155,10 @@ private fun Choose(flow: ImportState, state: BankRecUiState, onEvent: (BankRecEv
     // The file is asked for only once the account is known, as on the web.
     if (flow.bankAccountId.isNotBlank()) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            BrFieldLabel("Upload File")
+            BrFieldLabel(str(S.drive_upload_file))
             DropZone(flow, onEvent)
             ZillitText(
-                "Supported formats: CSV, OFX, QIF, MT940, PDF",
+                str(S.desktop_br_supported_formats),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -187,7 +193,7 @@ private fun RowScope.AccountCard(account: BankAccountRef, selected: Boolean, onC
         BrInitialTile(account.displayName, size = 32.dp)
         Column(Modifier.weight(1f)) {
             ZillitText(
-                account.displayName.ifBlank { "Bank account" },
+                account.displayName.ifBlank { str(S.dm_pay_card_bank) },
                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
             )
@@ -248,20 +254,21 @@ private fun DropZone(flow: ImportState, onEvent: (BankRecEvent) -> Unit) {
                 textAlign = TextAlign.Center,
             )
             ZillitText(
-                "${sizeLabel(file.bytes.size.toLong())} · click to choose another",
+                str(S.desktop_br_click_to_choose_another, sizeLabel(file.bytes.size.toLong())),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val body = ZillitTheme.typography.bodyMedium
-                ZillitText("Drop ", style = body, color = colors.textSecondary)
-                ZillitText(".CSV .OFX .QIF .MT940", style = mono(12.sp), color = colors.textSecondary)
-                ZillitText(" or ", style = body, color = colors.textSecondary)
-                ZillitText(".PDF", style = mono(12.sp), color = colors.textSecondary)
-                ZillitText(" here", style = body, color = colors.textSecondary)
-            }
-            ZillitText("or click to browse", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_br_drop_statement_here),
+                style = ZillitTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+            )
+            ZillitText(
+                str(S.desktop_br_or_click_to_browse),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
         }
     }
 }
@@ -290,14 +297,14 @@ private fun Processing(flow: ImportState, account: BankAccountRef?) {
                 maxLines = 1,
             )
             ZillitText(
-                "${account?.displayName?.ifBlank { null } ?: "Bank"} statement",
+                str(S.desktop_br_named_statement, account?.displayName?.ifBlank { null } ?: str(S.desktop_bank)),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
         }
         if (result != null) {
             ZillitText(
-                "${result.imported} transactions",
+                str(S.desktop_card_transactions_count, result.imported),
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.success,
                 modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(colors.successSoft)
@@ -374,10 +381,10 @@ private fun pulse(): Float = rememberInfiniteTransition().animateFloat(
 @Composable
 private fun ResultTiles(result: ImportResult) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        ResultTile(result.matched, "Matched", BrTone.Green)
-        ResultTile(result.suggested, "Suggested", BrTone.Amber)
-        ResultTile(result.unmatched, "Unmatched", BrTone.Gray)
-        ResultTile(result.fraud, "Fraud Flags", BrTone.Red)
+        ResultTile(result.matched, str(S.desktop_matched), BrTone.Green)
+        ResultTile(result.suggested, str(S.desktop_suggested), BrTone.Amber)
+        ResultTile(result.unmatched, str(S.desktop_dm_unmatched), BrTone.Gray)
+        ResultTile(result.fraud, str(S.desktop_fraud_flags), BrTone.Red)
     }
 }
 

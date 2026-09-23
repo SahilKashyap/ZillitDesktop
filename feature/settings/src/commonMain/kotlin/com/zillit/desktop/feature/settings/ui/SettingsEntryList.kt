@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * A run of settings destinations under one heading.
@@ -162,7 +164,7 @@ private fun EntryAffordance(entry: SettingsEntry, hovered: Boolean) {
     if (!entry.isOpenable) {
         // Says why the row does not respond, on the row, rather than leaving
         // the reader to click it twice and wonder.
-        ZillitTag("Soon", tone = TagTone.Neutral)
+        ZillitTag(str(S.desktop_soon), tone = TagTone.Neutral)
         return
     }
 
@@ -249,7 +251,7 @@ fun NoEntriesMatched(query: String, modifier: Modifier = Modifier) {
             size = EMPTY_GLYPH,
         )
         ZillitText(
-            text = "Nothing here matches “$query”.",
+            text = str(S.desktop_nothing_here_matches, query),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -276,8 +278,7 @@ fun PlannedNotice(modifier: Modifier = Modifier) {
             size = NOTICE_GLYPH,
         )
         ZillitText(
-            text = "Rows marked Soon are on their way to the desktop app. " +
-                "They work on the phone and web apps today.",
+            text = str(S.desktop_soon_rows_notice),
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )

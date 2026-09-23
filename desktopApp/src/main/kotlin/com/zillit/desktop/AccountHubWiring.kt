@@ -12,6 +12,8 @@ import com.zillit.desktop.core.forms.FormTemplateSource
 import com.zillit.desktop.core.media.AwtAttachmentPicker
 import com.zillit.desktop.core.media.PickRefusal
 import com.zillit.desktop.core.media.PreviewKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.core.common.map
@@ -399,8 +401,7 @@ internal fun AppGraph.Ready.hubDocumentOpener(): HubDocumentOpener {
             // the remote config — the three ways a document can be unreachable.
             ZillitResult.Failure(
                 ZillitError.Unknown(
-                    "${document.name.ifBlank { "This document" }} cannot be opened — " +
-                        "its storage location or the app's storage keys are missing.",
+                    str(S.desktop_document_cannot_open, document.name.ifBlank { str(S.desktop_this_document) }),
                 ),
             )
         } else {

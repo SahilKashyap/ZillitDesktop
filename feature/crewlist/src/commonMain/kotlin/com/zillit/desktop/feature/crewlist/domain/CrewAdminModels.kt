@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.crewlist.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 /**
  * The two admin-only surfaces the crew list reaches from its own screen, as
  * the web mounts them there: the department listing order (Settings →
@@ -151,11 +153,12 @@ object CompanyRules {
     fun validate(details: CompanyDetails, text: (key: String, fallback: String) -> String): List<CompanyProblem> =
         buildList {
             if (details.email.isNotBlank() && !details.email.trim().looksLikeEmail()) {
-                add(CompanyProblem(CompanyField.Email, text("InvalidEmail", "Please enter a valid email")))
+                add(CompanyProblem(CompanyField.Email, text("InvalidEmail", str(S.desktop_please_enter_a_valid_email))))
             }
             details.customFields.forEachIndexed { index, field ->
                 if (field.label.isBlank()) {
-                    add(CompanyProblem(CompanyField.CustomLabel, text("LabelRequired", "Label is required"), index))
+                    val message = text("LabelRequired", str(S.desktop_label_is_required))
+                    add(CompanyProblem(CompanyField.CustomLabel, message, index))
                 }
             }
             val phone = details.phone.trim()
@@ -164,19 +167,19 @@ object CompanyRules {
                 phone.isNotEmpty() && code.isEmpty() -> add(
                     CompanyProblem(
                         CompanyField.Phone,
-                        text("please_select_your_country_code", "Please select a country code for the phone number"),
+                        text("please_select_your_country_code", str(S.desktop_cl_select_country_code_for_phone)),
                     ),
                 )
                 code.isNotEmpty() && phone.isEmpty() -> add(
                     CompanyProblem(
                         CompanyField.Phone,
-                        text("please_enter_phone_number", "Please enter a phone number for the selected country code"),
+                        text("please_enter_phone_number", str(S.desktop_cl_enter_phone_for_country_code)),
                     ),
                 )
                 phone.isNotEmpty() && phone.length !in MIN_PHONE..MAX_PHONE -> add(
                     CompanyProblem(
                         CompanyField.Phone,
-                        text("phone_number_character_error", "Phone number must be between 5 and 20 digits"),
+                        text("phone_number_character_error", str(S.desktop_cl_phone_between_5_and_20)),
                     ),
                 )
             }

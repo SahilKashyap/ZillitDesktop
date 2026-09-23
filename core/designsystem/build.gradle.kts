@@ -8,6 +8,10 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core:common"))
+            // `api`, not `implementation`: every feature module reaches
+            // `str(S.key)` through the design system, so the words and the
+            // widgets that show them arrive together.
+            api(project(":core:strings"))
         }
         jvmMain.dependencies {
             implementation(libs.zxing.core)

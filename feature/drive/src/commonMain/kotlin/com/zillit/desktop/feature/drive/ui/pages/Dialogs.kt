@@ -18,6 +18,8 @@ import com.zillit.desktop.feature.drive.domain.descendantsOf
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DrivePrompt
 import com.zillit.desktop.feature.drive.ui.DriveUiState
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * "Move to…" — `MoveToDialog.jsx`: the scope's folder tree with the Drive
@@ -34,20 +36,20 @@ internal fun MoveToDialog(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         ?.toSet()
         .orEmpty()
     ZillitDialogShell(
-        title = "Move to…",
-        subtitle = "Moving: " + if (names.length > NAMES_MAX) names.take(NAMES_MAX) + "…" else names,
+        title = str(S.drive_move_to_ellipsis),
+        subtitle = str(S.desktop_drive_moving, if (names.length > NAMES_MAX) names.take(NAMES_MAX) + "…" else names),
         visible = picker != null,
         onDismiss = { onEvent(DriveEvent.CloseMoveTo) },
         icon = ZillitIcons.ArrowRight,
         width = MOVE_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DriveEvent.CloseMoveTo) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Move here",
+                text = str(S.dd_action_move_here),
                 onClick = { onEvent(DriveEvent.ConfirmMove) },
                 leadingIcon = ZillitIcons.Check,
             )
@@ -59,7 +61,11 @@ internal fun MoveToDialog(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             selectedId = picker.targetFolderId,
             onSelect = { onEvent(DriveEvent.PickMoveTarget(it)) },
             excluded = excluded,
-            rootLabel = if (state.section == DriveSection.SharedWithMe) "Shared with me (root)" else "Drive (root)",
+            rootLabel = if (state.section == DriveSection.SharedWithMe) {
+                str(S.desktop_drive_shared_root)
+            } else {
+                str(S.desktop_drive_drive_root)
+            },
         )
     }
 }
@@ -73,25 +79,29 @@ internal fun DropPermissionsDialog(state: DriveUiState, onEvent: (DriveEvent) ->
     val drop = state.dropUpload
     val count = drop?.files?.size ?: 0
     ZillitDialogShell(
-        title = "Set file permissions",
-        subtitle = "$count file${if (count == 1) "" else "s"} ready to upload to ${state.currentFolderName}",
+        title = str(S.desktop_drive_set_file_permissions),
+        subtitle = if (count == 1) {
+            str(S.desktop_drive_ready_to_upload_one, state.currentFolderName)
+        } else {
+            str(S.desktop_drive_ready_to_upload_many, count, state.currentFolderName)
+        },
         visible = drop != null,
         onDismiss = { onEvent(DriveEvent.CancelDrop) },
         icon = ZillitIcons.Lock,
         width = DROP_WIDTH,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DriveEvent.CancelDrop) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Skip & upload",
+                text = str(S.desktop_drive_skip_and_upload),
                 onClick = { onEvent(DriveEvent.ConfirmDrop(withAccess = false)) },
                 variant = ButtonVariant.Secondary,
             )
             ZillitButton(
-                text = "Set permissions & upload",
+                text = str(S.desktop_drive_set_permissions_and_upload),
                 onClick = { onEvent(DriveEvent.ConfirmDrop(withAccess = true)) },
                 leadingIcon = ZillitIcons.Upload,
             )
@@ -99,7 +109,11 @@ internal fun DropPermissionsDialog(state: DriveUiState, onEvent: (DriveEvent) ->
     ) {
         if (drop == null) return@ZillitDialogShell
         ZillitText(
-            text = "Set who can access ${if (count > 1) "these files" else "this file"}, or skip to use the defaults.",
+            text = if (count > 1) {
+                str(S.desktop_drive_set_access_these_files)
+            } else {
+                str(S.desktop_drive_set_access_this_file)
+            },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -136,7 +150,7 @@ internal fun DrivePromptDialog(prompt: DrivePrompt?, onEvent: (DriveEvent) -> Un
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(DriveEvent.DismissPrompt) },
                 variant = ButtonVariant.Tertiary,
             )

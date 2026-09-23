@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.bankrec.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.PickedStatement
 import com.zillit.desktop.feature.bankrec.domain.StatementFiles
 import kotlinx.coroutines.Job
@@ -31,7 +33,7 @@ internal class ImportActions(
     fun onEvent(event: BankRecEvent): Boolean {
         when (event) {
             BankRecEvent.OpenImport -> {
-                if (files == null) return true.also { vm.refuse("This installation cannot upload files.") }
+                if (files == null) return true.also { vm.refuse(str(S.desktop_cannot_upload_files)) }
                 vm.update { copy(import = ImportState(open = true)) }
             }
 
@@ -72,9 +74,9 @@ internal class ImportActions(
         if (state.processing) return
         val refusal = when {
             file.extension !in StatementFiles.EXTENSIONS ->
-                "${file.name} is not a statement file. Supported formats: CSV, OFX, QIF, MT940, PDF."
+                str(S.desktop_br_not_statement_file, file.name)
 
-            file.bytes.size > StatementFiles.MAX_BYTES -> "${file.name} is over the 20 MB limit."
+            file.bytes.size > StatementFiles.MAX_BYTES -> str(S.desktop_br_over_size_limit, file.name)
             else -> null
         }
         edit {
@@ -108,7 +110,8 @@ internal class ImportActions(
             stepper?.cancel()
             when (outcome) {
                 is ZillitResult.Failure -> edit {
-                    copy(processing = false, step = 0, error = outcome.error.localised().ifBlank { "Import failed" })
+                    val said = outcome.error.localised().ifBlank { str(S.desktop_import_failed) }
+                    copy(processing = false, step = 0, error = said)
                 }
 
                 is ZillitResult.Success -> {

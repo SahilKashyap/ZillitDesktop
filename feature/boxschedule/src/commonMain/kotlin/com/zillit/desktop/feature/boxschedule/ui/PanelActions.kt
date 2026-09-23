@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.boxschedule.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.DiaryExports
 import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfAction
 import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfLayout
@@ -87,7 +89,7 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
             PanelEvent.GenerateShareLink -> generateShareLink()
             PanelEvent.CopyShareLink -> vm.currentState.overlays.share?.link?.let { link ->
                 vm.copyText(link)
-                vm.notice("Link copied to clipboard", success = true)
+                vm.notice(str(S.drive_link_copied), success = true)
                 vm.updateOverlays { copy(share = share?.copy(linkCopied = true)) }
             }
             PanelEvent.CopyScheduleText -> copyScheduleText()
@@ -116,10 +118,10 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
         vm.work {
             when (val result = vm.repo.updateType(typeId, title = null, color = color)) {
                 is ZillitResult.Success -> {
-                    vm.notice("Schedule type updated", success = true)
+                    vm.notice(str(S.desktop_bs_type_updated), success = true)
                     vm.refresh()
                 }
-                is ZillitResult.Failure -> vm.notice(failure(result.error, "Failed to update type"))
+                is ZillitResult.Failure -> vm.notice(failure(result.error, str(S.desktop_bs_type_update_failed)))
             }
         }
     }
@@ -151,12 +153,12 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
             when (val result = vm.repo.updateType(typeId, newTitle, newColor)) {
                 is ZillitResult.Success -> {
                     types { copy(editingId = null, savingEdit = false) }
-                    vm.notice("Schedule type updated", success = true)
+                    vm.notice(str(S.desktop_bs_type_updated), success = true)
                     vm.refresh()
                 }
                 is ZillitResult.Failure -> {
                     types { copy(savingEdit = false) }
-                    vm.notice(failure(result.error, "Failed to update type"))
+                    vm.notice(failure(result.error, str(S.desktop_bs_type_update_failed)))
                 }
             }
         }
@@ -169,10 +171,10 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
         vm.work {
             when (val result = vm.repo.deleteType(typeId)) {
                 is ZillitResult.Success -> {
-                    vm.notice("Schedule type deleted", success = true)
+                    vm.notice(str(S.desktop_bs_type_deleted), success = true)
                     vm.refresh()
                 }
-                is ZillitResult.Failure -> vm.notice(failure(result.error, "Failed to delete type"))
+                is ZillitResult.Failure -> vm.notice(failure(result.error, str(S.desktop_bs_type_delete_failed)))
             }
         }
     }
@@ -186,12 +188,12 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
             when (val result = vm.repo.createType(title, manager.newColor)) {
                 is ZillitResult.Success -> {
                     types { copy(creating = false, newTitle = "", newColor = TypesManager.DEFAULT_TYPE_COLOR) }
-                    vm.notice("Schedule type created", success = true)
+                    vm.notice(str(S.desktop_bs_type_created), success = true)
                     vm.refresh()
                 }
                 is ZillitResult.Failure -> {
                     types { copy(creating = false) }
-                    vm.notice(failure(result.error, "Failed to create type"))
+                    vm.notice(failure(result.error, str(S.desktop_bs_failed_to_create_type)))
                 }
             }
         }
@@ -222,7 +224,7 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
                         presets = presetList,
                     )
                 }
-                if (log is ZillitResult.Failure) vm.notice(failure(log.error, "Failed to load history"))
+                if (log is ZillitResult.Failure) vm.notice(failure(log.error, str(S.desktop_bs_history_load_failed)))
             }
         }
     }
@@ -240,7 +242,7 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
                 is ZillitResult.Success -> presets { copy(loading = false, presets = result.data) }
                 is ZillitResult.Failure -> {
                     presets { copy(loading = false) }
-                    vm.notice(failure(result.error, "Failed to load presets"))
+                    vm.notice(failure(result.error, str(S.bs_preset_failed)))
                 }
             }
         }
@@ -258,21 +260,21 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
         val form = vm.currentState.overlays.presets?.form ?: return
         if (!vm.mayEdit() || form.saving) return
         when {
-            form.name.isBlank() -> return vm.notice("Preset name is required")
-            form.userIds.isEmpty() -> return vm.notice("Select at least one user")
+            form.name.isBlank() -> return vm.notice(str(S.desktop_bs_preset_name_required))
+            form.userIds.isEmpty() -> return vm.notice(str(S.desktop_bs_select_at_least_one_user))
         }
         presetForm { copy(saving = true) }
         vm.work {
             when (val result = vm.repo.savePreset(form.presetId, form.name.trim(), form.userIds)) {
                 is ZillitResult.Success -> {
-                    vm.notice(if (form.isEdit) "Preset updated" else "Preset created", success = true)
+                    vm.notice(str(if (form.isEdit) S.bs_preset_updated else S.bs_preset_created), success = true)
                     presets { copy(form = null, loading = true) }
                     reloadPresets()
                 }
                 is ZillitResult.Failure -> {
                     presetForm { copy(saving = false) }
-                    val fallback = if (form.isEdit) "Failed to update preset" else "Failed to create preset"
-                    vm.notice(failure(result.error, fallback))
+                    val fallback = if (form.isEdit) S.bs_preset_update_failed else S.desktop_bs_preset_create_failed
+                    vm.notice(failure(result.error, str(fallback)))
                 }
             }
         }
@@ -287,12 +289,12 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
             when (val result = vm.repo.deletePreset(presetId)) {
                 is ZillitResult.Success -> {
                     presets { copy(confirmDelete = null, deleting = false, loading = true) }
-                    vm.notice("Preset deleted", success = true)
+                    vm.notice(str(S.bs_preset_deleted), success = true)
                     reloadPresets()
                 }
                 is ZillitResult.Failure -> {
                     presets { copy(deleting = false) }
-                    vm.notice(failure(result.error, "Failed to delete preset"))
+                    vm.notice(failure(result.error, str(S.bs_preset_delete_failed)))
                 }
             }
         }
@@ -334,17 +336,17 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
                 is ZillitResult.Success -> when (sheet.destination) {
                     PdfDestination.Print -> host.transfer?.open(staged.data)
                     PdfDestination.Publish -> host.publisher?.publish(staged.data)
-                } ?: ZillitResult.Failure(ZillitError.Validation("This is not available here."))
+                } ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_not_available_here)))
             }
             when (outcome) {
                 is ZillitResult.Failure -> {
                     vm.updateOverlays { copy(pdf = null) }
-                    vm.notice(failure(outcome.error, "Failed to generate PDF"))
+                    vm.notice(failure(outcome.error, str(S.desktop_cl_failed_to_generate_pdf)))
                 }
                 is ZillitResult.Success -> {
                     vm.updateOverlays { copy(pdf = null) }
                     if (sheet.destination == PdfDestination.Publish) {
-                        vm.notice("Published to Document Distribution", success = true)
+                        vm.notice(str(S.desktop_board_published_to_docdist), success = true)
                     }
                 }
             }
@@ -370,7 +372,7 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
         vm.work {
             val result = printer.print(page)
             vm.updateOverlays { copy(printSelected = null) }
-            if (result is ZillitResult.Failure) vm.notice(failure(result.error, "Failed to print"))
+            if (result is ZillitResult.Failure) vm.notice(failure(result.error, str(S.desktop_bs_print_failed)))
         }
     }
 
@@ -387,7 +389,7 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
                 }
                 is ZillitResult.Failure -> {
                     vm.updateOverlays { copy(share = share?.copy(generating = false)) }
-                    vm.notice("Failed to generate link")
+                    vm.notice(str(S.drive_err_failed_to_generate_link))
                 }
             }
         }
@@ -396,7 +398,7 @@ internal class PanelActions(private val vm: BoxScheduleViewModel) {
     private fun copyScheduleText() {
         val state = vm.currentState
         vm.copyText(DiaryExports.scheduleText(state.rows, state.today, state.zone))
-        vm.notice("Schedule copied as text — paste into email", success = true)
+        vm.notice(str(S.desktop_bs_schedule_copied_as_text), success = true)
         vm.updateOverlays { copy(share = share?.copy(textCopied = true)) }
     }
 }

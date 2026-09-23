@@ -31,6 +31,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.FraudDetection
 import com.zillit.desktop.feature.bankrec.domain.MatchRule
@@ -79,7 +81,7 @@ fun ColumnScope.SettingsPage(state: BankRecUiState, onEvent: (BankRecEvent) -> U
 private fun BankAccountsCard(state: BankRecUiState) {
     val colors = ZillitTheme.colors
     val figure = mono(12.sp)
-    BrCard(Modifier.fillMaxWidth(), title = "Connected Bank Accounts", icon = ZillitIcons.Bank) {
+    BrCard(Modifier.fillMaxWidth(), title = str(S.desktop_br_connected_bank_accounts), icon = ZillitIcons.Bank) {
         if (state.periodsLoading && state.bankAccounts.isEmpty()) {
             BrSkeletonRows(2)
             return@BrCard
@@ -89,7 +91,7 @@ private fun BankAccountsCard(state: BankRecUiState) {
             key = { it.id },
             empty = {
                 ZillitText(
-                    "No bank accounts yet. Add one from Production Setup → Bank Accounts.",
+                    str(S.desktop_br_no_bank_accounts_yet),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                     textAlign = TextAlign.Center,
@@ -97,7 +99,7 @@ private fun BankAccountsCard(state: BankRecUiState) {
                 )
             },
             columns = listOf(
-                BrColumn("Bank Name", weight = 1.4f) { account ->
+                BrColumn(str(S.bank_name_label), weight = 1.4f) { account ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -106,7 +108,7 @@ private fun BankAccountsCard(state: BankRecUiState) {
                         BrBankIdentity(account.displayName, compact = false)
                     }
                 },
-                BrColumn("Account Holder") { account ->
+                BrColumn(str(S.account_holder)) { account ->
                     ZillitText(
                         account.holderName.ifBlank { BankRecFormat.DASH },
                         style = ZillitTheme.typography.bodySmall,
@@ -114,7 +116,7 @@ private fun BankAccountsCard(state: BankRecUiState) {
                         maxLines = 1,
                     )
                 },
-                BrColumn("Sort / Account", width = 170.dp) { account ->
+                BrColumn(str(S.desktop_br_sort_account), width = 170.dp) { account ->
                     val sort = BankRecFormat.sortCode(account.sortCode).ifBlank { BankRecFormat.DASH }
                     ZillitText(
                         "$sort · ${account.accountNumber.ifBlank { BankRecFormat.DASH }}",
@@ -123,7 +125,7 @@ private fun BankAccountsCard(state: BankRecUiState) {
                         maxLines = 1,
                     )
                 },
-                BrColumn("IBAN", weight = 1.2f) { account ->
+                BrColumn(str(S.ah_lbl_iban_row), weight = 1.2f) { account ->
                     ZillitText(
                         account.iban.ifBlank { BankRecFormat.DASH },
                         style = figure,
@@ -131,7 +133,7 @@ private fun BankAccountsCard(state: BankRecUiState) {
                         maxLines = 1,
                     )
                 },
-                BrColumn("Nominal", width = 80.dp) { account ->
+                BrColumn(str(S.dm_rule_nominal), width = 80.dp) { account ->
                     ZillitText(
                         account.nominalCode.ifBlank { BankRecFormat.DASH },
                         style = mono(13.sp),
@@ -146,7 +148,7 @@ private fun BankAccountsCard(state: BankRecUiState) {
 @Composable
 private fun MatchRulesCard(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit, modifier: Modifier) {
     val rules = state.rules
-    BrCard(modifier, title = "Auto-Match Rules", icon = BankRecIcons.Bolt) {
+    BrCard(modifier, title = str(S.desktop_br_auto_match_rules), icon = BankRecIcons.Bolt) {
         if (rules.loading) {
             BrSkeletonRows(4)
             return@BrCard
@@ -171,9 +173,9 @@ private fun FraudRulesCard(state: BankRecUiState, onEvent: (BankRecEvent) -> Uni
     val rules = state.rules
     BrCard(
         modifier,
-        title = "Fraud Detection Thresholds",
+        title = str(S.desktop_br_fraud_thresholds),
         icon = ZillitIcons.Shield,
-        titleRight = { BrBadge("Active", BrTone.Red) },
+        titleRight = { BrBadge(str(S.active), BrTone.Red) },
     ) {
         if (rules.loading) {
             BrSkeletonRows(4)
@@ -263,7 +265,7 @@ private fun SaveBar(saving: Boolean, onSave: () -> Unit) {
         horizontalArrangement = Arrangement.End,
     ) {
         ZillitButton(
-            text = if (saving) "Saving…" else "Save",
+            text = if (saving) str(S.ah_saving) else str(S.save),
             onClick = onSave,
             size = ButtonSize.Small,
             loading = saving,

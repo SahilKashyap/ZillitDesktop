@@ -7,6 +7,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * What the picker page announces back to Kotlin.
@@ -83,10 +85,8 @@ object LocationPickerWire {
             // Google's `gm_authFailure` hook — a referrer-restricted key
             // rejecting the file:// origin lands here. Without it the picker
             // is a silent grey slab with a search box on it.
-            "auth-failed" -> LocationPickerEvent.Failed(
-                "Google rejected this project's Maps key, so the picker cannot load.",
-            )
-            "error" -> LocationPickerEvent.Failed(body.str("message") ?: "map picker error")
+            "auth-failed" -> LocationPickerEvent.Failed(str(S.desktop_location_picker_maps_key_rejected))
+            "error" -> LocationPickerEvent.Failed(body.str("message") ?: str(S.desktop_location_picker_error))
             else -> null
         }
     }

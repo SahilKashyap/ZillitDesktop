@@ -30,6 +30,8 @@ import com.zillit.desktop.feature.auth.ui.AuthViewModel
 import com.zillit.desktop.feature.drive.ui.handle
 import com.zillit.desktop.feature.drive.ui.DriveScreen
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.launch
 
 /**
@@ -68,7 +70,7 @@ internal fun ApplicationScope.DriveWidgetWindow(
     showMain: () -> Unit,
 ) {
     WidgetWindow(
-        title = "Zillit Drive",
+        title = str(S.desktop_zillit_drive),
         keys = ZillitPreferences.DriveWidget,
         preferences = preferences,
         visible = visible,
@@ -113,7 +115,7 @@ private fun WidgetContent(
 
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         if (host == null || authState == null || !signedIn) {
-            WidgetSignedOut(what = "The Drive widget", onOpenZillit = showMain)
+            WidgetSignedOut(what = str(S.desktop_the_drive_widget), onOpenZillit = showMain)
             return@Column
         }
 
@@ -155,13 +157,13 @@ private fun WidgetContent(
 private fun WidgetBody(projects: List<Project>, session: DriveWidgetHost.Session?, onRetry: () -> Unit) {
     when {
         projects.isEmpty() -> ZillitEmptyState(
-            title = "No projects",
-            message = "This device is not on any project yet.",
+            title = str(S.desktop_no_projects),
+            message = str(S.desktop_device_on_no_project),
             icon = ZillitIcons.Drive,
         )
         session == null || session.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { ZillitSpinner() }
         session.error != null -> ZillitErrorState(
-            title = "Could not open this drive",
+            title = str(S.desktop_could_not_open_drive),
             message = session.error,
             onRetry = onRetry,
         )

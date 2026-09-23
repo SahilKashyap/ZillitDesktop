@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.chat.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A line a call can be placed on, as the phones name them.
  *
@@ -7,16 +10,19 @@ package com.zillit.desktop.feature.chat.ui
  * wire word and the host maps it to a provider. Three because that is what
  * the server offers: separate plumbing each, not one line with three modes.
  */
-enum class CallLine(val wire: String, val label: String) {
+enum class CallLine(val wire: String, private val labelKey: String) {
     /** Agora. Listed first: every deployment has it, and a plain Return picks it. */
-    Two("agora", "Line 2"),
+    Two("agora", S.txt_line_two),
 
     /** The mediasoup SFU. */
-    One("mediasoup", "Line 1"),
+    One("mediasoup", S.txt_line_one),
 
     /** LiveKit — offered only where remote config lists the production. */
-    Three("livekit", "Line 3"),
+    Three("livekit", S.txt_line_three),
     ;
+
+    /** The line's name as the phones show it. */
+    val label: String get() = str(labelKey)
 
     companion object {
         /** What every production has. Line 3 is added by the host when it is switched on. */

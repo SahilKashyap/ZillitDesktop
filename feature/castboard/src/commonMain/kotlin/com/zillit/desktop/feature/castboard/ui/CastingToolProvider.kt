@@ -26,7 +26,7 @@ class CastingToolProvider(
     private val loadPhoto: (suspend (CastingMedia) -> ImageBitmap?)? = null,
 ) : ToolProvider {
 
-    override val title: String = viewModel.board.title
+    override val title: String get() = viewModel.board.title
     override val icon =
         if (viewModel.board.showsScenes) ZillitToolIcons.Wardrobe else ZillitToolIcons.Casting
     override val openMode: OpenMode = OpenMode.Maximized

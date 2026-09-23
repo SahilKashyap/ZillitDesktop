@@ -27,6 +27,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.notifications.domain.ProjectNotification
 
 /**
@@ -48,7 +50,7 @@ fun NotificationsScreen(state: NotificationsUiState, onEvent: (NotificationsEven
                     tone = StatusTone.Rejected,
                     action = {
                         ZillitButton(
-                            text = "Dismiss",
+                            text = str(S.sync_action_dismiss),
                             onClick = { onEvent(NotificationsEvent.DismissError) },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
@@ -60,8 +62,8 @@ fun NotificationsScreen(state: NotificationsUiState, onEvent: (NotificationsEven
                 state.loading && state.rows.isEmpty() ->
                     Box(Modifier.fillMaxWidth(), Alignment.Center) { ZillitSpinner() }
                 state.loaded && state.rows.isEmpty() -> ZillitEmptyState(
-                    title = "No notifications",
-                    message = "Nothing has been posted to this project's notification list.",
+                    title = str(S.no_notifications),
+                    message = str(S.desktop_notifications_empty_message),
                     icon = ZillitIcons.Bell,
                 )
                 else -> NotificationList(state, onEvent)
@@ -74,17 +76,17 @@ fun NotificationsScreen(state: NotificationsUiState, onEvent: (NotificationsEven
 @Composable
 private fun Header(state: NotificationsUiState, onEvent: (NotificationsEvent) -> Unit) {
     ZillitPageHeader(
-        title = "Notifications",
-        description = "Everything the project has sent you, newest first.",
+        title = str(S.notifications),
+        description = str(S.desktop_notifications_description),
         actions = {
             ZillitIconButton(
                 icon = ZillitIcons.Reload,
-                contentDescription = "Refresh notifications",
+                contentDescription = str(S.desktop_refresh_notifications),
                 onClick = { onEvent(NotificationsEvent.Refresh) },
                 enabled = !state.loading,
             )
             ZillitButton(
-                text = "Delete all",
+                text = str(S.delete_all),
                 onClick = { onEvent(NotificationsEvent.AskDeleteAll) },
                 variant = ButtonVariant.Danger,
                 leadingIcon = ZillitIcons.Trash,
@@ -106,7 +108,7 @@ private fun NotificationList(state: NotificationsUiState, onEvent: (Notification
                         ZillitSpinner()
                     } else {
                         ZillitButton(
-                            text = "Show older",
+                            text = str(S.desktop_show_older),
                             onClick = { onEvent(NotificationsEvent.LoadOlder) },
                             variant = ButtonVariant.Secondary,
                             size = ButtonSize.Small,
@@ -156,7 +158,7 @@ private fun NotificationRow(
             }
             ZillitIconButton(
                 icon = ZillitIcons.Trash,
-                contentDescription = "Delete notification",
+                contentDescription = str(S.desktop_delete_notification),
                 onClick = { onEvent(NotificationsEvent.AskDelete(row.id)) },
                 enabled = !busy,
                 tint = ZillitTheme.colors.danger,
@@ -169,22 +171,22 @@ private fun NotificationRow(
 @Composable
 private fun ConfirmDialog(confirm: NotificationsConfirm, onEvent: (NotificationsEvent) -> Unit) {
     val message = when (confirm) {
-        is NotificationsConfirm.DeleteOne -> "Are you sure you want to delete this notification?"
-        NotificationsConfirm.DeleteAll -> "Are you sure you want to delete all notification?"
+        is NotificationsConfirm.DeleteOne -> str(S.desktop_delete_this_notification_confirm)
+        NotificationsConfirm.DeleteAll -> str(S.are_you_sure_you_want_to_delete_all_notification)
     }
     ZillitDialogShell(
-        title = "Alert",
+        title = str(S.alert),
         onDismiss = { onEvent(NotificationsEvent.CancelDelete) },
         visible = true,
         icon = ZillitIcons.Warning,
         actions = {
             ZillitButton(
-                text = "No",
+                text = str(S.no),
                 onClick = { onEvent(NotificationsEvent.CancelDelete) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Yes",
+                text = str(S.yes),
                 onClick = { onEvent(NotificationsEvent.ConfirmDelete) },
                 variant = ButtonVariant.Danger,
             )

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.costreport.ui
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CoaRow
 import com.zillit.desktop.feature.costreport.domain.CostReportTab
@@ -112,15 +114,15 @@ data class LedgerView(
     /** "Line items", "Actuals", or "Commits · Card" — what the drill was opened on. */
     val subtitle: String
         get() = when (type) {
-            null -> "Line items"
-            LedgerType.Actuals -> "Actuals"
+            null -> str(S.desktop_cr_line_items)
+            LedgerType.Actuals -> str(S.desktop_actuals)
             LedgerType.Commits -> when (source) {
-                "po" -> "Commits · PO"
-                "card" -> "Commits · Card"
-                "cash" -> "Commits · Cash"
-                "payroll" -> "Commits · Payroll"
-                null -> "Commits"
-                else -> "Commits · $source"
+                "po" -> str(S.desktop_cr_commits_po)
+                "card" -> str(S.desktop_cr_commits_card)
+                "cash" -> str(S.desktop_cr_commits_cash)
+                "payroll" -> str(S.desktop_cr_commits_payroll)
+                null -> str(S.desktop_cr_commits)
+                else -> str(S.desktop_cr_commits_source, source)
             }
         }
 }

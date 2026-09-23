@@ -32,6 +32,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * `crewlist` on the units host (web `unitApi.js`, Android `ApiUrl.kt:200-201`)
@@ -56,7 +58,7 @@ class CrewListRepositoryImpl(
      * envelope client cannot read.
      */
     private val rawPost: suspend (url: String, body: JsonObject) -> ZillitResult<ByteArray> =
-        { _, _ -> ZillitResult.Failure(ZillitError.Storage(userMessage = "The preview is unavailable here.")) },
+        { _, _ -> ZillitResult.Failure(ZillitError.Storage(userMessage = str(S.desktop_cl_preview_unavailable_here))) },
     /** The Info board's unit — the `info_tool` row of the tools grid. */
     private val infoUnitId: () -> String? = { null },
     /** The boards' cipher: a post's `message` travels encrypted. */
@@ -103,7 +105,9 @@ class CrewListRepositoryImpl(
                 if (outcome.data.status != REFUSED && pdf != null && pdf.media.isNotBlank()) {
                     ZillitResult.Success(pdf)
                 } else {
-                    ZillitResult.Failure(ZillitError.Validation(outcome.data.refusal("The server answered no PDF.")))
+                    ZillitResult.Failure(
+                        ZillitError.Validation(outcome.data.refusal(str(S.desktop_cl_server_answered_no_pdf))),
+                    )
                 }
             }
         }
@@ -113,7 +117,7 @@ class CrewListRepositoryImpl(
 
     override suspend fun publishToInfo(pdf: CrewListPdf, caption: String): ZillitResult<Unit> {
         val unitId = infoUnitId()?.takeIf { it.isNotBlank() }
-            ?: return ZillitResult.Failure(ZillitError.Validation("Info is not switched on for this production."))
+            ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_cl_info_not_switched_on)))
         val message = when (val sealed = encrypt(caption)) {
             is ZillitResult.Failure -> return sealed
             is ZillitResult.Success -> sealed.data
@@ -140,12 +144,12 @@ class CrewListRepositoryImpl(
             module = RequestModule.ProjectUser,
             options = callOptions(),
             body = body,
-        ).accepted("The crew list could not be published.")
+        ).accepted(str(S.desktop_cl_crew_list_not_published))
     }
 
     override suspend fun companyDetails(): ZillitResult<CompanyDetails> {
         val project = currentProjectId()?.takeIf { it.isNotBlank() }
-            ?: return ZillitResult.Failure(ZillitError.Validation("No production is open."))
+            ?: return ZillitResult.Failure(ZillitError.Validation(str(S.desktop_no_production_is_open)))
         return apiClient.request(
             verb = HttpVerb.Get,
             url = "${core}project/$project",
@@ -164,7 +168,7 @@ class CrewListRepositoryImpl(
                 verb = HttpVerb.Delete,
                 url = "${core}project/company-logo",
                 module = RequestModule.ProjectUser,
-            ).accepted("The logo could not be removed.")
+            ).accepted(str(S.desktop_cl_logo_not_removed))
             if (removed is ZillitResult.Failure) return removed
         }
         return apiClient.envelope(
@@ -172,7 +176,7 @@ class CrewListRepositoryImpl(
             url = "${core}project",
             module = RequestModule.ProjectUser,
             body = details.toPatchBody(newLogo),
-        ).accepted("The company details could not be saved.")
+        ).accepted(str(S.desktop_cl_company_details_not_saved))
     }
 
     override suspend fun departmentPeople(departmentId: String): ZillitResult<List<OrderedPerson>> =
@@ -200,7 +204,9 @@ class CrewListRepositoryImpl(
             is ZillitResult.Failure -> outcome
             is ZillitResult.Success ->
                 if (outcome.data.status == REFUSED) {
-                    ZillitResult.Failure(ZillitError.Validation(outcome.data.refusal("The order could not be saved.")))
+                    ZillitResult.Failure(
+                        ZillitError.Validation(outcome.data.refusal(str(S.desktop_cl_order_not_saved))),
+                    )
                 } else {
                     ZillitResult.Success(outcome.data.message.orEmpty())
                 }

@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderSeeds
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealStructureRules
 import com.zillit.desktop.feature.dealmemo.domain.rates.Js
@@ -43,6 +45,7 @@ import com.zillit.desktop.feature.dealmemo.ui.builder.BuilderState
 import com.zillit.desktop.feature.dealmemo.ui.components.DmType
 import com.zillit.desktop.feature.dealmemo.ui.components.rememberHover
 import com.zillit.desktop.feature.dealmemo.ui.pages.preview.FileTypeBadge
+import kotlin.math.round
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -50,48 +53,56 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlin.math.round
 
 /** A deal type the picker offers. */
 private data class DealTypeOption(val id: String, val name: String, val sub: String, val icon: ImageVector)
 
-private val DEAL_TYPE_OPTIONS = listOf(
+private val DEAL_TYPE_OPTIONS get() = listOf(
     DealTypeOption(
         "weekly",
-        "Weekly Rolling",
-        "Standard week-by-week engagement. Rates and working rules in Step 4.",
+        str(S.desktop_dm_deal_type_weekly_rolling),
+        str(S.dm_ds_type_weekly_desc),
         ZillitIcons.Calendar,
     ),
     DealTypeOption(
         "fixed",
-        "Fixed Term",
-        "Defined start & end date. End date is contractually binding.",
+        str(S.desktop_dm_deal_type_fixed_term),
+        str(S.dm_ds_type_fixed_desc),
         ZillitIcons.Pin,
     ),
     DealTypeOption(
         "dayplayer",
-        "Day Player",
-        "Daily hire. Rate agreed per day. Engagement may end at day's end.",
+        str(S.desktop_dm_deal_type_day_player),
+        str(S.dm_ds_type_dayplayer_desc),
         ZillitIcons.Camera,
     ),
-    DealTypeOption("buyout", "Buy-Out", "Flat fee covers all hours. No overtime generated.", ZillitIcons.Wallet),
-    DealTypeOption("picture", "Picture Deal", "Single all-in production fee. No phase breakdowns.", ZillitIcons.Play),
+    DealTypeOption("buyout", str(S.desktop_dm_deal_type_buy_out), str(S.dm_ds_type_buyout_desc), ZillitIcons.Wallet),
+    DealTypeOption(
+        "picture",
+        str(S.desktop_dm_deal_type_picture_deal),
+        str(S.dm_ds_type_picture_desc),
+        ZillitIcons.Play,
+    ),
     DealTypeOption(
         "boxrental",
-        "Box Rental Only",
-        "Equipment rental only — no labour element coded.",
+        str(S.desktop_dm_deal_type_box_rental_only),
+        str(S.dm_ds_type_boxrental_desc),
         ZillitIcons.Grid,
     ),
 )
 
-private val NOTICE_CHIPS = listOf("none" to "None", "1week" to "1 Week", "2week" to "2 Weeks", "custom" to "Custom")
+private val NOTICE_CHIPS get() = listOf(
+    "none" to str(S.dm_rule_increment_none),
+    "1week" to str(S.desktop_dm_one_week),
+    "2week" to str(S.desktop_dm_two_weeks),
+    "custom" to str(S.custom),
+)
 
-private val NOTICE_TEXTS = mapOf(
-    "none" to "No notice period set for this engagement.",
-    "1week" to "1-week mutual notice. Either party may terminate with 1 week's written notice.",
-    "2week" to "2-week mutual notice. Either party may terminate with 2 weeks written notice. Statutory minimum " +
-        "applies if less favourable.",
-    "custom" to "Custom notice terms — specify below.",
+private val NOTICE_TEXTS get() = mapOf(
+    "none" to str(S.dm_ds_notice_none_desc),
+    "1week" to str(S.desktop_dm_notice_one_week_desc),
+    "2week" to str(S.dm_ds_notice_2week_desc),
+    "custom" to str(S.desktop_dm_custom_notice_terms_specify_below),
 )
 
 /**
@@ -113,11 +124,11 @@ internal fun DealStructureEditor(
     DatesCard(state, builder, ops)
     if (!flatContract) NoticeCard(builder, ops)
     if (flatContract) LongFormContractCard(builder, ops, onEvent)
-    CardBlock(title = "Additional Notes") {
+    CardBlock(title = str(S.dm_ds_card_additional_notes)) {
         BuilderTextArea(
             value = form.text("additionalNotes"),
             onValueChange = { ops.set("additionalNotes", it) },
-            placeholder = "Any deal-specific terms, agent instructions, or notes for the accountant…",
+            placeholder = str(S.desktop_dm_any_deal_specific_terms_agent_instructions_or),
         )
     }
     MemoDates(builder, ops)
@@ -126,14 +137,18 @@ internal fun DealStructureEditor(
 @Composable
 private fun DealTypeCard(type: String, ops: FormOps) {
     val selected = DEAL_TYPE_OPTIONS.firstOrNull { it.id == type }
-    CardBlock(title = "Deal Type", tag = selected?.name ?: "Weekly Rolling", tone = BuilderTone.Gold) {
+    CardBlock(
+        title = str(S.dm_ds_card_type),
+        tag = selected?.name ?: str(S.desktop_dm_deal_type_weekly_rolling),
+        tone = BuilderTone.Gold,
+    ) {
         RichSelect(
             options = DEAL_TYPE_OPTIONS.map {
                 PickOption(key = it.id, label = it.name, sub = it.sub, search = "${it.name} ${it.sub}")
             },
             selectedKey = type.ifEmpty { null },
             onPick = { ops.set("dealType", it.orEmpty()) },
-            placeholder = "Select deal type…",
+            placeholder = str(S.dm_ds_type_placeholder),
             dropdownWidth = 420.dp,
             leading = { selected?.let { TypeTile(it.icon, active = true) } },
             rowLeading = { option ->
@@ -161,15 +176,15 @@ private fun TypeTile(icon: ImageVector, active: Boolean) {
 private fun DatesCard(state: DealMemoUiState, builder: BuilderState, ops: FormOps) {
     val form = builder.form
     val p = bp
-    CardBlock(title = "Dates & Duration") {
+    CardBlock(title = str(S.dm_ds_card_dates)) {
         BuilderGrid(columns = 2) {
             cell {
-                Field("Start Date", required = true) {
+                Field(str(S.dm_ds_start_date), required = true) {
                     IsoDateInput(value = form.text("dealStart"), onChange = { ops.set("dealStart", it) })
                 }
             }
             cell {
-                Field("Estimated End Date", required = true) {
+                Field(str(S.dm_ds_end_date), required = true) {
                     IsoDateInput(
                         value = form.text("dealEnd"),
                         onChange = { ops.set("dealEnd", it) },
@@ -180,8 +195,8 @@ private fun DatesCard(state: DealMemoUiState, builder: BuilderState, ops: FormOp
         }
         Rule(p.hairline, Modifier.padding(vertical = 14.dp))
         ToggleRow(
-            title = "Set Prep / Shoot / Wrap Schedule",
-            sub = "Turn the toggle on to define production phase dates for cost estimates and phase-rate calculations",
+            title = str(S.dm_ds_phase_schedule_title),
+            sub = str(S.desktop_dm_turn_the_toggle_on_to_define_production),
             checked = form.flag("schedOn"),
             onChange = { ops.set("schedOn", it) },
         )
@@ -196,7 +211,14 @@ private fun PhaseTable(builder: BuilderState, ops: FormOps) {
     val form = builder.form
     val errors = DealStructureRules.phaseErrors(form)
     Column(Modifier.padding(top = 8.dp)) {
-        TableHead(listOf("Phase" to PHASE_COLUMN, "Start" to null, "End" to null, "Days" to DAYS_COLUMN))
+        TableHead(
+            listOf(
+                str(S.desktop_dm_phase) to PHASE_COLUMN,
+                str(S.dm_ds_phase_start_hint) to null,
+                str(S.dm_ds_phase_end_hint) to null,
+                str(S.dm_ds_unit_days) to DAYS_COLUMN,
+            ),
+        )
         DealStructureRules.PHASES.forEachIndexed { index, phase ->
             val rowErrors = errors[phase.label].orEmpty()
             val days = BuilderSeeds.inclusiveDays(form.text(phase.startKey), form.text(phase.endKey))
@@ -250,25 +272,35 @@ private fun CustomDays(state: DealMemoUiState, builder: BuilderState, ops: FormO
     Column(Modifier.padding(top = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                ZillitText(text = "Custom days", style = DmType.sans(11.sp, FontWeight.Bold), color = p.ink)
                 ZillitText(
-                    text = "Named date ranges for this crew member — they can overlap each other and the phases above.",
+                    text = str(S.dm_ds_custom_days_title),
+                    style = DmType.sans(11.sp, FontWeight.Bold),
+                    color = p.ink,
+                )
+                ZillitText(
+                    text = str(S.desktop_dm_named_date_ranges_for_this_crew_member),
                     style = DmType.sans(11.sp),
                     color = p.muted,
                 )
             }
             if (defaults.isNotEmpty()) {
-                SmallTextButton("Reset to production days") {
+                SmallTextButton(str(S.desktop_dm_reset_to_production_days)) {
                     ops.edit { it.with("customDays", BuilderSeeds.customDaysFromProduction(JsonArray(defaults))) }
                 }
             }
         }
         Spacer(Modifier.height(8.dp))
         if (rows.isEmpty()) {
-            EmptyNote("No custom days on this deal.")
+            EmptyNote(str(S.desktop_dm_no_custom_days_on_this_deal))
         } else {
             TableHead(
-                listOf("Name" to null, "Start" to null, "End" to null, "Days" to DAYS_COLUMN, "" to REMOVE_COLUMN),
+                listOf(
+                    str(S.name) to null,
+                    str(S.dm_ds_phase_start_hint) to null,
+                    str(S.dm_ds_phase_end_hint) to null,
+                    str(S.dm_ds_unit_days) to DAYS_COLUMN,
+                    "" to REMOVE_COLUMN,
+                ),
             )
             rows.forEachIndexed { index, row ->
                 val errors = DealStructureRules.customDayErrors(row, form.text("dealStart"), form.text("dealEnd"))
@@ -286,7 +318,7 @@ private fun CustomDays(state: DealMemoUiState, builder: BuilderState, ops: FormO
                                 it.with("customDays", patchCustomDay(it.list("customDays"), index, "name", value))
                             }
                         },
-                        placeholder = "e.g. Night Shoot",
+                        placeholder = str(S.desktop_hub_e_g_night_shoot),
                         modifier = Modifier.weight(1f),
                     )
                     IsoDateInput(
@@ -308,7 +340,7 @@ private fun CustomDays(state: DealMemoUiState, builder: BuilderState, ops: FormO
                         modifier = Modifier.weight(1f),
                     )
                     DayCount(BuilderSeeds.inclusiveDays(start, end), errors.isNotEmpty())
-                    RemoveButton(tooltip = "Remove custom day", size = REMOVE_COLUMN.dp, onClick = {
+                    RemoveButton(tooltip = str(S.desktop_remove_custom_day), size = REMOVE_COLUMN.dp, onClick = {
                         ops.edit { form ->
                             form.with(
                                 "customDays",
@@ -322,7 +354,7 @@ private fun CustomDays(state: DealMemoUiState, builder: BuilderState, ops: FormO
         DealStructureRules.customDayBanner(rows, form.text("dealStart"), form.text("dealEnd"))?.let {
             WarningBanner(it)
         }
-        SmallTextButton("+ Add custom day", modifier = Modifier.padding(top = 8.dp)) {
+        SmallTextButton(str(S.desktop_dm_add_custom_day_plus), modifier = Modifier.padding(top = 8.dp)) {
             ops.edit { form ->
                 form.with(
                     "customDays",
@@ -358,14 +390,14 @@ private fun Totals(builder: BuilderState) {
     Column(Modifier.padding(top = 16.dp)) {
         Rule(p.hairline)
         Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (schedOn && phaseTotal > 0) TotalRow("Phase Total", "${phaseTotal}d", p.ink)
-            TotalRow("Deal Span", if (span > 0) "${span}d" else DASH, p.cta)
-            TotalRow("Approximate Weeks", if (span > 0) oneDecimal(span / WEEK_DAYS) else DASH, p.cta)
+            if (schedOn && phaseTotal > 0) TotalRow(str(S.dm_ds_phase_total), "${phaseTotal}d", p.ink)
+            TotalRow(str(S.dm_ds_deal_span), if (span > 0) "${span}d" else DASH, p.cta)
+            TotalRow(str(S.dm_ds_approx_weeks), if (span > 0) oneDecimal(span / WEEK_DAYS) else DASH, p.cta)
             val diff = span - phaseTotal
             val mismatched = span > 0 && diff != 0
             if (schedOn && phaseTotal > 0 && mismatched) {
                 if (diff > 0) {
-                    TotalRow("${diff}d unscheduled", "+$diff", p.cta, labelColor = p.muted)
+                    TotalRow(str(S.desktop_dm_days_unscheduled, diff), "+$diff", p.cta, labelColor = p.muted)
                 } else {
                     TotalRow("${-diff}d over deal span", "$diff", p.red, labelColor = p.red)
                 }
@@ -392,8 +424,8 @@ private fun NoticeCard(builder: BuilderState, ops: FormOps) {
     val form = builder.form
     val notice = form.text("noticeType")
     CardBlock(
-        title = "Notice Period",
-        tag = NOTICE_CHIPS.firstOrNull { it.first == notice }?.second ?: "Standard",
+        title = str(S.dm_ds_card_notice),
+        tag = NOTICE_CHIPS.firstOrNull { it.first == notice }?.second ?: str(S.standard),
         tone = BuilderTone.Blue,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 14.dp)) {
@@ -403,13 +435,17 @@ private fun NoticeCard(builder: BuilderState, ops: FormOps) {
         }
         NOTICE_TEXTS[notice]?.let { BuilderAlert(it) }
         if (notice == "custom") {
-            Field("Custom Notice Period", required = true, modifier = Modifier.padding(top = 14.dp)) {
+            Field(str(S.desktop_dm_custom_notice_period), required = true, modifier = Modifier.padding(top = 14.dp)) {
                 NumberWithUnit(
                     value = form.text("noticeCustomValue"),
                     onValue = { ops.set("noticeCustomValue", it) },
-                    placeholder = "e.g. 3",
+                    placeholder = str(S.dm_ds_notice_value_hint),
                     unit = form.text("noticeCustomUnit"),
-                    units = listOf("day" to "Days", "week" to "Weeks", "month" to "Months"),
+                    units = listOf(
+                        "day" to str(S.dm_ds_unit_days),
+                        "week" to str(S.dm_ds_unit_weeks),
+                        "month" to str(S.dm_ds_unit_months),
+                    ),
                     onUnit = { ops.set("noticeCustomUnit", it) },
                 )
             }
@@ -417,15 +453,15 @@ private fun NoticeCard(builder: BuilderState, ops: FormOps) {
         if (notice != "none") {
             Rule(bp.hairline, Modifier.padding(vertical = 14.dp))
             Field(
-                "Notice Reminder",
-                hint = "We'll remind you this far ahead of the notice deadline so notice can be served on time.",
+                str(S.desktop_dm_notice_reminder),
+                hint = str(S.desktop_dm_well_remind_you_this_far_ahead_of),
             ) {
                 NumberWithUnit(
                     value = form.text("noticeReminderValue"),
                     onValue = { ops.set("noticeReminderValue", it) },
-                    placeholder = "e.g. 24",
+                    placeholder = str(S.desktop_dm_e_g_24),
                     unit = form.text("noticeReminderUnit"),
-                    units = listOf("hour" to "Hours", "day" to "Days"),
+                    units = listOf("hour" to str(S.dm_ds_unit_hours), "day" to str(S.dm_ds_unit_days)),
                     onUnit = { ops.set("noticeReminderUnit", it) },
                 )
             }
@@ -464,10 +500,9 @@ private fun NumberWithUnit(
 private fun LongFormContractCard(builder: BuilderState, ops: FormOps, onEvent: (DealMemoEvent) -> Unit) {
     val p = bp
     val contract = builder.form.obj("longFormContract")
-    CardBlock(title = "Long-Form Contract", tag = "Outside standard deal memo scope", tone = BuilderTone.Teal) {
+    CardBlock(title = str(S.dm_ds_lfc_title), tag = str(S.dm_ds_lfc_tag), tone = BuilderTone.Teal) {
         BuilderAlert(
-            "This deal type typically uses a bespoke long-form contract rather than a standard deal memo. Upload the " +
-                "executed contract here.",
+            str(S.desktop_dm_this_deal_type_typically_uses_a_bespoke),
             modifier = Modifier.padding(bottom = 14.dp),
         )
         if (contract == null) {
@@ -489,20 +524,26 @@ private fun LongFormContractCard(builder: BuilderState, ops: FormOps, onEvent: (
             ) {
                 ZillitIcon(ZillitIcons.File, size = 22.dp, tint = p.muted)
                 ZillitText(
-                    text = if (builder.contractUploading) "Uploading…" else "Drop contract PDF or DOCX here",
+                    text = if (builder.contractUploading) str(S.dm_nda_uploading) else str(S.dm_ds_lfc_dropzone),
                     style = DmType.display(13.sp, FontWeight.Bold),
                     color = p.ink,
                 )
-                ZillitText(text = "PDF, DOC or DOCX", style = DmType.sans(11.5.sp), color = p.muted)
+                ZillitText(text = str(S.desktop_dm_pdf_doc_or_docx), style = DmType.sans(11.5.sp), color = p.muted)
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(50))
                         .background(p.amberSoft)
                         .padding(horizontal = 12.dp, vertical = 4.dp),
-                ) { ZillitText(text = "Browse Files", style = DmType.sans(11.5.sp, FontWeight.Bold), color = p.cta) }
+                ) {
+                    ZillitText(
+                        text = str(S.dm_docs_upload_browse),
+                        style = DmType.sans(11.5.sp, FontWeight.Bold),
+                        color = p.cta,
+                    )
+                }
             }
         } else {
-            val name = text(contract["name"]).ifEmpty { "Contract" }
+            val name = text(contract["name"]).ifEmpty { str(S.contract_text) }
             val kind = text(contract["content_subtype"]).uppercase().ifEmpty { "FILE" }
             val shape = RoundedCornerShape(10.dp)
             Row(
@@ -526,14 +567,14 @@ private fun LongFormContractCard(builder: BuilderState, ops: FormOps, onEvent: (
                     )
                     ZillitText(text = kind, style = DmType.mono(10.5.sp), color = p.muted)
                 }
-                SmallTextButton("View") { onEvent(BuilderEvent.ViewLongFormContract) }
+                SmallTextButton(str(S.dm_docs_view)) { onEvent(BuilderEvent.ViewLongFormContract) }
                 if (builder.contractUploading) {
                     ZillitSpinner(size = 14.dp, color = p.cta)
                 } else {
-                    SmallTextButton("Replace") { onEvent(BuilderEvent.PickLongFormContract) }
+                    SmallTextButton(str(S.dm_nda_action_replace)) { onEvent(BuilderEvent.PickLongFormContract) }
                 }
                 RemoveButton(
-                    tooltip = "Remove contract",
+                    tooltip = str(S.desktop_dm_remove_contract),
                     size = 30.dp,
                     onClick = { ops.set("longFormContract", JsonNull) },
                 )
@@ -548,13 +589,13 @@ private fun MemoDates(builder: BuilderState, ops: FormOps) {
     val form = builder.form
     BuilderGrid(columns = 2, modifier = Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Top) {
         cell {
-            Field("Deal Memo Date") {
+            Field(str(S.desktop_dm_deal_memo_date)) {
                 IsoDateInput(value = form.text("dealMemoDate"), onChange = {}, enabled = false)
-                HintText("Stamped as today's date when the memo is issued.", Modifier.padding(top = 6.dp))
+                HintText(str(S.desktop_dm_stamped_as_todays_date_when_the_memo), Modifier.padding(top = 6.dp))
             }
         }
         cell {
-            Field("Date Due") {
+            Field(str(S.dm_prev_date_due)) {
                 IsoDateInput(value = form.text("completionDue"), onChange = { ops.set("completionDue", it) })
             }
         }
@@ -571,7 +612,7 @@ private fun TableHead(columns: List<Pair<String, Int?>>) {
                     text = title.uppercase(),
                     style = style,
                     color = bp.muted,
-                    textAlign = if (title == "Days") TextAlign.End else TextAlign.Start,
+                    textAlign = if (title == str(S.dm_ds_unit_days)) TextAlign.End else TextAlign.Start,
                     modifier = Modifier.width(width.dp),
                 )
             } else {

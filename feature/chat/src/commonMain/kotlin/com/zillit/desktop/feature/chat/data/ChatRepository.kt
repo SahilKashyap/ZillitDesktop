@@ -15,6 +15,8 @@ import com.zillit.desktop.core.database.ChatCache
 import com.zillit.desktop.core.database.ChatMessageRow
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.SocketMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import kotlinx.coroutines.flow.merge
@@ -1034,7 +1036,7 @@ internal fun ZillitResult<com.zillit.desktop.core.network.ApiEnvelope>.refuseSta
     is ZillitResult.Success ->
         if (data.status == 0) {
             ZillitResult.Failure(
-                ZillitError.Validation(data.message ?: "The server refused the change."),
+                ZillitError.Validation(data.message ?: str(S.desktop_server_refused_the_change)),
             )
         } else {
             this

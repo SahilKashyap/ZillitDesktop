@@ -9,6 +9,8 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoDeliveryAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
@@ -134,7 +136,7 @@ internal data class PoTemplateDto(
             id = identifier,
             // A template with no name is still a template; the list says
             // "Untitled" rather than dropping a row somebody saved.
-            name = name?.takeIf { it.isNotBlank() } ?: "Untitled",
+            name = name?.takeIf { it.isNotBlank() } ?: str(S.untitled),
             vendorId = vendorId,
             vendorName = vendorName.orEmpty(),
             departmentId = departmentId,

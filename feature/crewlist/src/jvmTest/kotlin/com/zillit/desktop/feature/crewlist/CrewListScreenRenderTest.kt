@@ -54,14 +54,14 @@ class CrewListScreenRenderTest {
         onNodeWithText("+445550001").assertExists()
         onNodeWithText("aisha@crew.example").assertExists()
         onNodeWithText("aisha@zillit.org").assertExists()
-        onNodeWithText("Not on Zillit").assertExists()
+        onNodeWithText("Not On Zillit").assertExists()
         // Ravi is external: his one address is PROFILE, his PROJECT an em dash.
         onNodeWithText("ravi@vendor.example").assertExists()
         onAllNodesWithText("PROFILE").assertCountEquals(2)
         onNodeWithText("You can rearrange the department listing", substring = true).assertExists()
 
         onNodeWithText("Generate PDF").performClick()
-        onNodeWithText("Click Here").performClick()
+        onNodeWithText("Click here").performClick()
         onNodeWithText("Aisha Khan").performClick()
         assertTrue(CrewListEvent.Document.OpenChooser in events)
         assertTrue(CrewListEvent.Admin.OpenDepartments in events)
@@ -126,7 +126,7 @@ class CrewListScreenRenderTest {
         onNodeWithText("CUSTOMISE").assertExists()
         onNodeWithText("Logo size: 160px").assertExists()
         onNodeWithText("Show internal lines").assertExists()
-        onNodeWithText("Edit details").assertExists()
+        onNodeWithText("Edit Details").assertExists()
         onNodeWithText("The preview needs the embedded browser", substring = true).assertExists()
     }
 

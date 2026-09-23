@@ -1,24 +1,28 @@
 package com.zillit.desktop.feature.dealmemo.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.rates.RateFormat
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 /** All Deals' status pills (`DMDealsPage.jsx:49-63`). */
-enum class DealQuickFilter(val label: String) {
-    All("All"),
-    Drafts("Drafts"),
-    Issued("Issued to Crew"),
-    AwaitingApproval("Awaiting Approval"),
+enum class DealQuickFilter(private val labelKey: String) {
+    All(S.all),
+    Drafts(S.cs_drafts),
+    Issued(S.dm_filter_status_issued),
+    AwaitingApproval(S.dm_filter_status_pending),
 
     /** Approved and already active. */
-    Approved("Approved"),
-    Rejected("Rejected"),
+    Approved(S.approved),
+    Rejected(S.rejected),
 
     /** Scheduled (active with a last pay date) and finished deactivations. */
-    Deactivated("Deactivated"),
+    Deactivated(S.dm_filter_status_deactivated),
     ;
+
+    val label: String get() = str(labelKey)
 
     fun matches(deal: DealDoc): Boolean = when (this) {
         All -> true
@@ -32,11 +36,14 @@ enum class DealQuickFilter(val label: String) {
 }
 
 /** All Deals' sort select. */
-enum class DealSort(val label: String) {
-    DateDesc("Date ↓"),
-    DateAsc("Date ↑"),
-    NameAsc("Crew A–Z"),
-    RateDesc("Day Rate ↓"),
+enum class DealSort(private val labelKey: String) {
+    DateDesc(S.desktop_dm_sort_date_desc),
+    DateAsc(S.desktop_dm_sort_date_asc),
+    NameAsc(S.desktop_dm_sort_crew_az),
+    RateDesc(S.desktop_dm_sort_day_rate_desc),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** One department option of the All Deals select. */
@@ -112,12 +119,12 @@ object DealListRules {
     /** `Weekly Rolling`, `Fixed Term`… — any other type humanised, nothing a dash. */
     fun dealTypeLabel(type: String?): String = when (type) {
         null, "" -> DealCrewLabels.DASH
-        "weekly" -> "Weekly Rolling"
-        "fixed" -> "Fixed Term"
-        "dayplayer", "daily" -> "Day Player"
-        "buyout", "buy-out" -> "Buy-Out"
-        "picture" -> "Picture Deal"
-        "boxrental" -> "Box Rental Only"
+        "weekly" -> str(S.desktop_dm_deal_type_weekly_rolling)
+        "fixed" -> str(S.desktop_dm_deal_type_fixed_term)
+        "dayplayer", "daily" -> str(S.desktop_dm_deal_type_day_player)
+        "buyout", "buy-out" -> str(S.desktop_dm_deal_type_buy_out)
+        "picture" -> str(S.desktop_dm_deal_type_picture_deal)
+        "boxrental" -> str(S.desktop_dm_deal_type_box_rental_only)
         else -> DealLabels.formatLabel(type)
     }
 
@@ -128,13 +135,13 @@ object DealListRules {
     /** The delete confirmation, worded by status. */
     fun deleteMessage(deal: DealDoc): String {
         val what = when (deal.rawStatus) {
-            DealStatus.AwaitingApproval.wire -> "the awaiting-approval deal"
-            DealStatus.Rejected.wire -> "the rejected deal"
-            DealStatus.Issued.wire -> "the ISSUED deal (the crew already have its portal link)"
-            else -> "draft"
+            DealStatus.AwaitingApproval.wire -> str(S.desktop_dm_delete_what_awaiting)
+            DealStatus.Rejected.wire -> str(S.desktop_dm_delete_what_rejected)
+            DealStatus.Issued.wire -> str(S.desktop_dm_delete_what_issued)
+            else -> str(S.desktop_dm_delete_what_draft)
         }
-        val name = deal.reference ?: deal.crewName ?: "this deal memo"
-        return "Are you sure you want to delete $what \"$name\"? This action cannot be undone."
+        val name = deal.reference ?: deal.crewName ?: str(S.desktop_dm_delete_name_fallback)
+        return str(S.desktop_dm_delete_confirm, what, name)
     }
 
     private val DELETABLE = setOf(DealStatus.Draft.wire, DealStatus.Issued.wire, DealStatus.AwaitingApproval.wire)
@@ -143,7 +150,13 @@ object DealListRules {
 /** The deal-memo date formats (`en-GB`), in the zones the web renders them in. */
 object DealDates {
 
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val MONTHS: List<String>
+        get() = listOf(
+            str(S.desktop_month_short_jan), str(S.desktop_month_short_feb), str(S.desktop_month_short_mar),
+            str(S.desktop_month_short_apr), str(S.desktop_month_short_may), str(S.desktop_month_short_jun),
+            str(S.desktop_month_short_jul), str(S.desktop_month_short_aug), str(S.desktop_month_short_sep),
+            str(S.desktop_month_short_oct), str(S.desktop_month_short_nov), str(S.desktop_month_short_dec),
+        )
 
     /** `01 Jun 26` in the reader's zone — list dates. */
     fun short(millis: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String =

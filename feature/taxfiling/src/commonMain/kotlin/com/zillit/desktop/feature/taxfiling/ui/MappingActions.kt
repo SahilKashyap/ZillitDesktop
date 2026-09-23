@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.taxfiling.ui
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.BoxMapping
 import com.zillit.desktop.feature.taxfiling.domain.TaxRegistration
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
@@ -98,7 +100,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
     /** A date typed but not a date would be saved as no date at all — so it is not saved. */
     private fun refuseInvalidDates(state: ReturnState): Boolean {
         val box = state.invalidDateBox ?: return false
-        vm.info("Box ${box.number} has a date that isn't a valid date. Use YYYY-MM-DD, or clear it.")
+        vm.info(str(S.desktop_tax_box_date_invalid, box.number))
         return true
     }
 
@@ -109,7 +111,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
         vm.update { copy(returnState = returnState.copy(savingMapping = true)) }
         vm.request({ vm.repository.saveBoxMap(registration.companyId, state.mappingRows) }, {
             if (isOpen(registration.id)) vm.update { copy(returnState = returnState.copy(savingMapping = false)) }
-            vm.toast("Box mapping saved for ${registration.companyName}")
+            vm.toast(str(S.desktop_tax_mapping_saved, registration.companyName))
         }, { error ->
             if (isOpen(registration.id)) vm.update { copy(returnState = returnState.copy(savingMapping = false)) }
             vm.fail(error)
@@ -126,7 +128,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
         val state = vm.current.returnState
         val registration = state.registration ?: return
         if (state.calculating || state.savingMapping) return
-        if (state.periodKey.isBlank()) return vm.info("Select an obligation period first.")
+        if (state.periodKey.isBlank()) return vm.info(str(S.desktop_tax_select_period_first))
         if (refuseInvalidDates(state)) return
         val rows = state.mappingRows
         val periodKey = state.periodKey
@@ -156,7 +158,7 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
                 ),
             )
         }
-        if (built.isAllZero) vm.info(built.allZeroExplanation) else vm.toast("Recalculated from ledger")
+        if (built.isAllZero) vm.info(built.allZeroExplanation) else vm.toast(str(S.desktop_tax_recalculated))
     }
 
     private fun stopCalculating(error: ZillitError) {
@@ -174,8 +176,8 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
     private fun exportLedger() {
         val state = vm.current.returnState
         val registration = state.registration ?: return
-        if (state.periodKey.isBlank()) return vm.info("Select an obligation period first.")
-        val sink = vm.fileSink ?: return vm.fail("This installation cannot save files.")
+        if (state.periodKey.isBlank()) return vm.info(str(S.desktop_tax_select_period_first))
+        val sink = vm.fileSink ?: return vm.fail(str(S.desktop_cannot_save_files))
         if (state.exporting) return
         val periodKey = state.periodKey
 
@@ -183,14 +185,14 @@ internal class MappingActions(private val vm: TaxFilingViewModel) {
         vm.request({ vm.repository.ledgerLines(registration.id, periodKey) }, { rows ->
             if (rows.isEmpty()) {
                 vm.update { copy(returnState = returnState.copy(exporting = false)) }
-                return@request vm.info("No ledger rows to export for this period.")
+                return@request vm.info(str(S.desktop_tax_no_ledger_rows))
             }
             vm.work {
                 val name = ledgerFileName(periodKey, vm.exportStamp())
                 val saved = sink.save(name, ledgerWorkbook(rows), open = true)
                 vm.update { copy(returnState = returnState.copy(exporting = false)) }
                 when (saved) {
-                    is ZillitResult.Success -> vm.toast("Exported ledger to .xlsx")
+                    is ZillitResult.Success -> vm.toast(str(S.desktop_tax_exported_ledger))
                     is ZillitResult.Failure -> vm.fail(saved.error)
                 }
             }

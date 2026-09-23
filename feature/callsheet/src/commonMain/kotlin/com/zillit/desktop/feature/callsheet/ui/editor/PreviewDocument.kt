@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.callsheet.domain.CellKind
 import com.zillit.desktop.feature.callsheet.domain.EditorSelection
 import com.zillit.desktop.feature.callsheet.domain.InsertKind
@@ -119,7 +121,7 @@ internal fun PreviewDocument(
         Disclaimer()
         if (document.rows.isEmpty()) {
             Text(
-                "No sections to preview",
+                str(S.desktop_no_sections_to_preview),
                 style = sheetText(14.sp, lineHeight = 20.sp),
                 color = doc.meta,
                 textAlign = TextAlign.Center,
@@ -254,7 +256,7 @@ private fun TitleBar(
         val days = "${shared.shootDayNumber.ifBlank { "0" }} of ${shared.totalDays.ifBlank { "0" }}"
         "CALL SHEET $days" + if (dayType.isNotEmpty()) " — $dayType" else ""
     } else {
-        "CALL SHEET"
+        str(S.desktop_call_sheet_upper)
     }
     val script = sharedText(shared, "currentScript").ifBlank { fieldFromRows(document, "Current Script") }
     val schedule = sharedText(shared, "currentSchedule").ifBlank { fieldFromRows(document, "Current Schedule") }
@@ -331,9 +333,7 @@ private fun fieldFromRows(document: SheetPayload, field: String): String {
 private fun Disclaimer() {
     val doc = docColors()
     Text(
-        "This Document is highly confidential. Personal information must not be disclosed to any " +
-            "unauthorized person(s) and must be kept securely. Therefore please ensure it is not left in " +
-            "a place where it could be taken by a third party. All callsheets are to be shredded on disposal.",
+        str(S.desktop_cs_disclaimer),
         style = sheetText(9.sp, lineHeight = 12.sp),
         color = doc.disclaimer,
         textAlign = TextAlign.Center,
@@ -362,12 +362,12 @@ private fun PageBreakDivider(removable: Boolean, onRemove: () -> Unit) {
             },
         )
         Text(
-            "PAGE BREAK",
+            str(S.desktop_page_break_upper),
             style = sheetText(10.sp, FontWeight.SemiBold, 14.sp),
             color = accent,
             modifier = Modifier.align(Alignment.Center).background(doc.page).padding(horizontal = 8.dp),
         )
-        if (removable) ZillitTooltip("Remove page break") {
+        if (removable) ZillitTooltip(str(S.desktop_remove_page_break)) {
             Box(
                 Modifier
                     .align(Alignment.CenterEnd)
@@ -379,7 +379,7 @@ private fun PageBreakDivider(removable: Boolean, onRemove: () -> Unit) {
             ) {
                 Icon(
                     ZillitIcons.Close,
-                    contentDescription = "Remove page break",
+                    contentDescription = str(S.desktop_remove_page_break),
                     tint = accent,
                     modifier = Modifier.size(11.dp),
                 )
@@ -457,7 +457,7 @@ private const val REVEAL_MS = 150
 
 @Composable
 private fun PlusButton(modifier: Modifier, onClick: () -> Unit) {
-    ZillitTooltip("Insert section") {
+    ZillitTooltip(str(S.desktop_insert_section)) {
         Box(
             modifier
                 .size(18.dp)
@@ -469,7 +469,7 @@ private fun PlusButton(modifier: Modifier, onClick: () -> Unit) {
         ) {
             Icon(
                 ZillitIcons.Add,
-                contentDescription = "Insert section",
+                contentDescription = str(S.desktop_insert_section),
                 tint = Color.White,
                 modifier = Modifier.size(12.dp),
             )

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Addresses blind-copied on every message this user sends.
@@ -47,9 +49,9 @@ enum class BccPresetError {
     /** Android's strings, `res/values/strings.xml`. */
     val message: String
         get() = when (this) {
-            Empty -> "Please add email to continue"
-            Invalid -> "Please enter a valid email"
-            Duplicate -> "Email already in preset list."
+            Empty -> str(S.add_email_validate)
+            Invalid -> str(S.desktop_please_enter_a_valid_email)
+            Duplicate -> str(S.email_already_in_preset_list)
         }
 }
 

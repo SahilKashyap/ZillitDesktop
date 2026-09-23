@@ -52,6 +52,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.domain.EnvelopeField
 import com.zillit.desktop.feature.esignature.domain.FieldOption
 import com.zillit.desktop.feature.esignature.domain.FieldType
@@ -84,9 +86,13 @@ internal fun PlaceStep(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (editor.loadingDoc) ZillitSpinner() else ZillitText("No document yet", color = colors.textMuted)
+                    if (editor.loadingDoc) {
+                        ZillitSpinner()
+                    } else {
+                        ZillitText(str(S.desktop_ds_no_document_yet), color = colors.textMuted)
+                    }
                     if (!editor.loadingDoc) ZillitButton(
-                        "Choose a PDF",
+                        str(S.desktop_choose_pdf),
                         onClick = { onEvent(EsignEvent.PickDocument) },
                         size = ButtonSize.Small,
                     )
@@ -142,13 +148,17 @@ private fun Toolbar(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column(Modifier.width(196.dp).fillMaxHeight().background(colors.surface)) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
-            ZillitText("FIELDS", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(
+                str(S.docusign_send_confirm_fields_label),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
             Spacer(Modifier.height(2.dp))
             ZillitText(
                 if (editor.placementMode == PlacementMode.FastPlace) {
-                    "Pick a type, then click the page."
+                    str(S.desktop_ds_pick_a_type_then_click_the_page)
                 } else {
-                    "Click the page, then pick who signs."
+                    str(S.desktop_ds_click_the_page_then_pick_who_signs)
                 },
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textSecondary,
@@ -180,10 +190,14 @@ private fun Toolbar(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         }
         Hairline()
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ZillitText("MODE", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_ds_mode_upper),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
             ZillitText(editor.placementMode.label, style = ZillitTheme.typography.bodySmall)
             ZillitButton(
-                "Change",
+                str(S.docusign_change),
                 onClick = { onEvent(EsignEvent.EditCompose { copy(modeAsked = false) }) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
@@ -203,7 +217,7 @@ private fun ZoomBar(editor: EditorState, onEvent: (EsignEvent) -> Unit, modifier
     ) {
         ZillitIconButton(
             ZillitIcons.Minimize,
-            "Zoom out",
+            str(S.docusign_zoom_out),
             onClick = { onEvent(EsignEvent.SetZoom(editor.zoom - ZOOM_STEP)) },
             size = 24.dp,
         )
@@ -214,7 +228,7 @@ private fun ZoomBar(editor: EditorState, onEvent: (EsignEvent) -> Unit, modifier
         )
         ZillitIconButton(
             ZillitIcons.Add,
-            "Zoom in",
+            str(S.docusign_zoom_in),
             onClick = { onEvent(EsignEvent.SetZoom(editor.zoom + ZOOM_STEP)) },
             size = 24.dp,
         )
@@ -331,13 +345,13 @@ private fun SignersRail(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         Modifier.fillMaxSize().padding(RAIL_PADDING),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        BlockTitle(if (editor.isTemplate) "Roles" else "Signers")
+        BlockTitle(if (editor.isTemplate) str(S.desktop_ds_roles) else str(S.docusign_section_signers))
         if (editor.signers.isEmpty()) {
             ZillitText(
                 if (editor.isTemplate) {
-                    "Click the page to create Signer 1."
+                    str(S.desktop_ds_click_the_page_to_create_signer_1)
                 } else {
-                    "Add a signer in the prepare step to place fields."
+                    str(S.desktop_ds_add_a_signer_in_the_prepare_step_to)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
@@ -382,7 +396,7 @@ private fun SignersRail(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         }
         if (editor.isTemplate) {
             ZillitButton(
-                "Add role slot",
+                str(S.desktop_ds_add_role_slot),
                 onClick = {
                     onEvent(
                         EsignEvent.EditCompose {
@@ -399,14 +413,14 @@ private fun SignersRail(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
         ZillitSwitch(
             checked = editor.settings.initialsOnAllPages,
             onCheckedChange = { onEvent(EsignEvent.SetInitialsOnAllPages(it)) },
-            label = "Initials on every page",
+            label = str(S.docusign_initials_on_all_pages),
         )
         Hairline()
-        ZillitText("TIPS", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+        ZillitText(str(S.desktop_ds_tips_upper), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
         listOf(
-            "Click a field to edit its label, whether it is required, and its options.",
-            "Drag a field to move it; drag the corner handle to resize.",
-            "Every signer needs at least one field before the envelope can be sent.",
+            str(S.desktop_ds_click_a_field_to_edit_its_label_whether),
+            str(S.desktop_ds_drag_a_field_to_move_it_drag_the),
+            str(S.desktop_ds_every_signer_needs_at_least_one_field_before),
         ).forEach { tip ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitText("•", style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
@@ -437,7 +451,7 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
             Column(Modifier.weight(1f)) {
                 ZillitText(field.type.label, style = ZillitTheme.typography.titleSmall)
                 ZillitText(
-                    "Page ${field.page} · ${owner?.name?.ifBlank { owner.email } ?: "Signer"}",
+                    "Page ${field.page} · ${owner?.name?.ifBlank { owner.email } ?: str(S.docusign_role_signer)}",
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                     maxLines = 1,
@@ -445,19 +459,22 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
             }
             ZillitIconButton(
                 ZillitIcons.Close,
-                "Done",
+                str(S.docusign_done),
                 onClick = { onEvent(EsignEvent.SelectField(null)) },
                 size = 24.dp,
             )
         }
         Hairline()
         if (editor.signers.size > 1) {
-            ZillitText("SIGNED BY", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(str(S.signed_by_label), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
             ZillitSelect(
                 value = field.recipientIndex,
                 options = editor.signerIndexes,
                 onSelect = { ri -> edit { it.copy(recipientIndex = ri) } },
-                label = { ri -> editor.recipients.getOrNull(ri)?.let { it.name.ifBlank { it.email } } ?: "Signer" },
+                label = { ri ->
+                    editor.recipients.getOrNull(ri)?.let { it.name.ifBlank { it.email } }
+                        ?: str(S.docusign_role_signer)
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -465,20 +482,20 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
             ZillitTextField(
                 value = field.label,
                 onValueChange = { v -> edit { it.copy(label = v) } },
-                label = "Label",
-                placeholder = "e.g. Full legal name",
-                helperText = "What the signer sees they must fill in.",
+                label = str(S.ah_lbl_title),
+                placeholder = str(S.desktop_ds_full_legal_name_hint),
+                helperText = str(S.desktop_ds_what_the_signer_sees_they_must_fill_in),
             )
         }
         if (!field.type.isAutoStamped) {
             ZillitSwitch(
                 checked = field.required,
                 onCheckedChange = { on -> edit { it.copy(required = on) } },
-                label = if (field.required) "Required" else "Optional",
+                label = if (field.required) str(S.docusign_signing_required) else str(S.docusign_signing_optional),
             )
         }
         if (field.type.hasOptions) {
-            ZillitText("OPTIONS", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(str(S.options), style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
             field.options.forEachIndexed { oi, option ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -494,14 +511,14 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
                         placeholder = "Option ${oi + 1}",
                         modifier = Modifier.weight(1f),
                         errorText = if (option.label.isBlank() && index in editor.invalidFields) {
-                            "Needs a label"
+                            str(S.desktop_ds_needs_a_label)
                         } else {
                             null
                         },
                     )
                     ZillitIconButton(
                         ZillitIcons.Close,
-                        "Remove option",
+                        str(S.av_option_remove),
                         onClick = { edit { f -> f.copy(options = f.options.filterIndexed { i, _ -> i != oi }) } },
                         enabled = field.options.size > 1,
                         size = 22.dp,
@@ -509,7 +526,7 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
                 }
             }
             ZillitButton(
-                "Add option",
+                str(S.desktop_ds_add_option),
                 onClick = {
                     edit { f ->
                         f.copy(options = f.options + FieldOption("opt${f.options.size + 1}_${newOptionSalt()}", ""))
@@ -522,14 +539,18 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
         }
         if (field.type.supportsDefault || field.type.isTyped || field.type == FieldType.Date) {
             Hairline()
-            ZillitText("ADVANCED", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            ZillitText(
+                str(S.desktop_ds_advanced_upper),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
             when {
                 field.type == FieldType.Checkbox -> ZillitCheckbox(
                     checked = field.defaultValue == "true",
                     onCheckedChange = { on ->
                         edit { it.copy(defaultValue = if (on) "true" else "", locked = it.locked && on) }
                     },
-                    label = "Checked by default",
+                    label = str(S.desktop_ds_checked_by_default),
                 )
                 field.type.hasOptions -> ZillitSelect(
                     value = field.options.firstOrNull { it.id == field.defaultValue },
@@ -537,25 +558,31 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
                     onSelect = { opt ->
                         edit { it.copy(defaultValue = opt?.id.orEmpty(), locked = it.locked && opt != null) }
                     },
-                    label = { opt -> opt?.label?.ifBlank { "(unlabelled)" } ?: "No default" },
+                    label = { opt ->
+                        opt?.label?.ifBlank { str(S.desktop_ds_unlabelled) } ?: str(S.desktop_ds_no_default)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 else -> ZillitTextField(
                     value = field.defaultValue,
                     onValueChange = { v -> edit { it.copy(defaultValue = v, locked = it.locked && v.isNotBlank()) } },
-                    label = "Default value",
-                    placeholder = if (field.type == FieldType.Date) "YYYY-MM-DD" else "Pre-filled for the signer",
+                    label = str(S.docusign_prop_default_value),
+                    placeholder = if (field.type == FieldType.Date) {
+                        "YYYY-MM-DD"
+                    } else {
+                        str(S.desktop_ds_pre_filled_for_the_signer)
+                    },
                 )
             }
             ZillitSwitch(
                 checked = field.locked,
                 onCheckedChange = { on -> edit { it.copy(locked = on) } },
                 enabled = field.defaultValue.isNotBlank(),
-                label = "Locked — read-only to the signer",
+                label = str(S.desktop_ds_locked_read_only),
             )
             if (field.defaultValue.isBlank()) {
                 ZillitText(
-                    "Set a default value to lock the field.",
+                    str(S.desktop_ds_set_a_default_value_to_lock_the_field),
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )
@@ -564,13 +591,13 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
         Hairline()
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ZillitButton(
-                "Duplicate",
+                str(S.docusign_template_menu_duplicate),
                 onClick = { onEvent(EsignEvent.DuplicateField(index)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                "Delete field",
+                str(S.docusign_prop_delete_field),
                 onClick = { onEvent(EsignEvent.DeleteField(index)) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
@@ -586,8 +613,8 @@ private fun PropertyPanel(editor: EditorState, index: Int, field: EnvelopeField,
 private fun ModePickerDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
-        title = "How is your document set up?",
-        subtitle = "This decides what a click on the page does. You can change it any time.",
+        title = str(S.docusign_mode_picker_title),
+        subtitle = str(S.desktop_ds_this_decides_what_a_click_on_the_page),
         visible = !editor.modeAsked && editor.pages.isNotEmpty(),
         onDismiss = { onEvent(EsignEvent.ChoosePlacementMode(editor.placementMode)) },
         scrollable = false,
@@ -621,7 +648,7 @@ private fun PendingDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val pending = editor.pending
     ZillitDialogShell(
-        title = "Who fills this field?",
+        title = str(S.desktop_ds_who_fills_this_field),
         subtitle = pending?.let { "Page ${it.page} — pick the signer, then the type" },
         visible = pending != null,
         onDismiss = { onEvent(EsignEvent.CancelPending) },
@@ -654,7 +681,7 @@ private fun PendingDialog(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                 }
             }
             ZillitText(
-                "Several signers place one field each, side by side.",
+                str(S.desktop_ds_several_signers_place_one_field_each_side_by),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )

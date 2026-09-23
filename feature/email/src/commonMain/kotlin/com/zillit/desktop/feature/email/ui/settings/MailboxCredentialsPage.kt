@@ -16,6 +16,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.MailboxServer
 import com.zillit.desktop.feature.email.ui.DialogButtons
 import com.zillit.desktop.feature.email.ui.ModalCard
@@ -37,8 +39,8 @@ internal fun MailboxCredentialsPage(
     onBack: () -> Unit,
 ) {
     SettingsPage(
-        title = "Email Setup Externally",
-        subtitle = "View IMAP/SMTP credentials for external clients",
+        title = str(S.email_credentials),
+        subtitle = str(S.desktop_email_credentials_subtitle),
         onBack = onBack,
     ) {
         state.error?.let { message ->
@@ -54,15 +56,15 @@ internal fun MailboxCredentialsPage(
 
         val credentials = state.credentials
         when {
-            state.isLoading && credentials == null -> SettingsHint("Loading…")
+            state.isLoading && credentials == null -> SettingsHint(str(S.ah_loading))
 
             credentials == null ->
-                SettingsHint("This account has no mailbox yet, so there is nothing to set up elsewhere.")
+                SettingsHint(str(S.desktop_email_credentials_no_mailbox))
 
             else -> {
-                CopyableRow("Email address", credentials.emailAddress, onCopy)
-                ServerBlock("IMAP (incoming)", credentials.imap, onCopy)
-                ServerBlock("SMTP (outgoing)", credentials.smtp, onCopy)
+                CopyableRow(str(S.hint_email), credentials.emailAddress, onCopy)
+                ServerBlock(str(S.desktop_email_imap_incoming), credentials.imap, onCopy)
+                ServerBlock(str(S.desktop_email_smtp_outgoing), credentials.smtp, onCopy)
                 PasswordRow(state, onEvent, onCopy)
             }
         }
@@ -77,9 +79,9 @@ internal fun MailboxCredentialsPage(
 private fun ServerBlock(title: String, server: MailboxServer, onCopy: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         ZillitText(text = title, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
-        CopyableRow("Host", server.host, onCopy)
-        if (server.portLabel.isNotEmpty()) CopyableRow("Port", server.portLabel, onCopy)
-        CopyableRow("Username", server.username, onCopy)
+        CopyableRow(str(S.host_txt), server.host, onCopy)
+        if (server.portLabel.isNotEmpty()) CopyableRow(str(S.port_txt), server.portLabel, onCopy)
+        CopyableRow(str(S.desktop_username), server.username, onCopy)
     }
 }
 
@@ -93,7 +95,7 @@ private fun CopyableRow(label: String, value: String, onCopy: (String) -> Unit) 
         }
         ZillitIconButton(
             icon = ZillitIcons.File,
-            contentDescription = "Copy $label",
+            contentDescription = str(S.desktop_copy_named, label),
             onClick = { onCopy(value) },
         )
     }
@@ -109,7 +111,7 @@ private fun PasswordRow(
     SettingsRow {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             ZillitText(
-                text = "Password",
+                text = str(S.password_txt),
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -121,13 +123,13 @@ private fun PasswordRow(
         }
         ZillitIconButton(
             icon = ZillitIcons.Eye,
-            contentDescription = if (state.isRevealed) "Hide password" else "Show password",
+            contentDescription = str(if (state.isRevealed) S.hide_password_txt else S.show_password_txt),
             enabled = !state.isRevealing,
             onClick = { onEvent(MailboxCredentialsEvent.ToggleReveal) },
         )
         ZillitIconButton(
             icon = ZillitIcons.File,
-            contentDescription = "Copy password",
+            contentDescription = str(S.desktop_email_copy_password),
             enabled = !state.isRevealing,
             onClick = {
                 // Already on screen? Copy it here; otherwise the view model
@@ -136,7 +138,7 @@ private fun PasswordRow(
             },
         )
         ZillitButton(
-            text = "Change",
+            text = str(S.change),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             onClick = { onEvent(MailboxCredentialsEvent.ChangePassword) },
@@ -147,16 +149,16 @@ private fun PasswordRow(
 @Composable
 private fun ChangePasswordDialog(state: MailboxCredentialsUiState, onEvent: (MailboxCredentialsEvent) -> Unit) {
     ModalCard(onDismiss = { onEvent(MailboxCredentialsEvent.CancelNewPassword) }) {
-        ZillitText(text = "Change mailbox password", style = ZillitTheme.typography.titleMedium)
+        ZillitText(text = str(S.desktop_email_change_mailbox_password), style = ZillitTheme.typography.titleMedium)
         ZillitText(
-            text = "Any mail client using the old password will stop collecting mail until you update it there too.",
+            text = str(S.desktop_email_change_password_warning),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
         ZillitTextField(
             value = state.newPassword,
             onValueChange = { onEvent(MailboxCredentialsEvent.NewPasswordChanged(it)) },
-            label = "New password",
+            label = str(S.desktop_email_new_password),
             enabled = !state.isUpdatingPassword,
             visualTransformation = PasswordVisualTransformation(),
             imeAction = ImeAction.Done,
@@ -164,7 +166,7 @@ private fun ChangePasswordDialog(state: MailboxCredentialsUiState, onEvent: (Mai
             modifier = Modifier.fillMaxWidth(),
         )
         DialogButtons(
-            action = "Change password",
+            action = str(S.change_password_txt),
             enabled = state.canUpdatePassword && !state.isUpdatingPassword,
             loading = state.isUpdatingPassword,
             onConfirm = { onEvent(MailboxCredentialsEvent.ConfirmNewPassword) },

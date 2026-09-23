@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -26,7 +28,7 @@ class RecceToolProvider(
 ) : ToolProvider {
 
     override val path: String = RECCE_PATH
-    override val title: String = "Recce"
+    override val title: String get() = str(S.recce_title)
     override val icon = ZillitToolIcons.Location
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
@@ -54,8 +56,9 @@ class RecceToolProvider(
         // unsaved-edits mark while the form is dirty.
         val windowTitle = when (val page = state.route) {
             ReccePage.Index -> title
-            is ReccePage.Detail -> state.selected?.title?.takeIf { it.isNotBlank() }?.let { "$it · Recce" } ?: title
-            is ReccePage.Form -> if (page.id == null) "Create Recce" else "Edit Recce"
+            is ReccePage.Detail -> state.selected?.title?.takeIf { it.isNotBlank() }
+                ?.let { str(S.desktop_recce_window_title, it) } ?: title
+            is ReccePage.Form -> if (page.id == null) str(S.recce_create_recce) else str(S.recce_edit_recce)
         }
         LaunchedEffect(windowTitle) { navigator.setTitle(windowTitle) }
         val dirty = state.editor?.dirty == true

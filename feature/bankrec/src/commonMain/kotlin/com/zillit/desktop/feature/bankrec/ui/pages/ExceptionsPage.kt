@@ -34,6 +34,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankException
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.ExceptionStatus
@@ -81,9 +83,9 @@ fun ColumnScope.ExceptionsPage(state: BankRecUiState, onEvent: (BankRecEvent) ->
         },
     ) {
         val single = periodId != ALL_PERIODS
-        ZillitTooltip(if (single) "" else "Select a single period to export") {
+        ZillitTooltip(if (single) "" else str(S.desktop_br_select_single_period_short)) {
             ZillitButton(
-                text = if (page.exporting) "Exporting…" else "Export PDF",
+                text = if (page.exporting) str(S.desktop_exporting) else str(S.recce_export_pdf),
                 onClick = { onEvent(BankRecEvent.ExportExceptionsPdf) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -100,8 +102,8 @@ fun ColumnScope.ExceptionsPage(state: BankRecUiState, onEvent: (BankRecEvent) ->
 
         (state.exceptionsLoading || state.periodsLoading) && state.exceptions.isEmpty() -> BrSkeletonRows(5)
         rows.isEmpty() -> BrEmpty(
-            title = "No exceptions detected",
-            message = "All transactions are matched or flagged.",
+            title = str(S.desktop_br_no_exceptions_detected),
+            message = str(S.desktop_br_no_exceptions_detail),
             icon = ZillitIcons.Check,
             tone = BrTone.Green,
         )
@@ -111,20 +113,28 @@ fun ColumnScope.ExceptionsPage(state: BankRecUiState, onEvent: (BankRecEvent) ->
             val actioned = rows.filter { it.status != ExceptionStatus.Open }
             if (notInZillit.isNotEmpty()) {
                 Group(
-                    "✕ Not In Zillit",
+                    str(S.desktop_br_group_not_in_zillit),
                     BrTone.Red,
-                    "Bank transactions with no matching Zillit entry (${notInZillit.size})",
+                    str(S.desktop_br_group_not_in_zillit_sub, notInZillit.size),
                 ) {
                     notInZillit.forEach { ExceptionCard(it, state, onEvent) }
                 }
             }
             if (openFx.isNotEmpty()) {
-                Group("€ FX Variations", BrTone.Teal, "Foreign currency payments (${openFx.size})") {
+                Group(
+                    str(S.desktop_br_group_fx_variations),
+                    BrTone.Teal,
+                    str(S.desktop_br_group_fx_variations_sub, openFx.size),
+                ) {
                     openFx.forEach { ExceptionCard(it, state, onEvent) }
                 }
             }
             if (actioned.isNotEmpty()) {
-                Group("Resolved", BrTone.Gray, "Previously actioned (${actioned.size})") {
+                Group(
+                    str(S.ah_alert_filter_resolved),
+                    BrTone.Gray,
+                    str(S.desktop_br_group_previously_actioned, actioned.size),
+                ) {
                     actioned.forEach { ExceptionCard(it, state, onEvent) }
                 }
             }
@@ -215,7 +225,7 @@ private fun ExceptionCard(item: BankException, state: BankRecUiState, onEvent: (
                 )
             }
             ZillitText(
-                if (item.debit > 0) "DEBIT" else "CREDIT",
+                if (item.debit > 0) str(S.desktop_debit) else str(S.desktop_credit),
                 style = mono(9.sp),
                 color = colors.textMuted,
                 textAlign = TextAlign.End,
@@ -231,7 +241,7 @@ private fun CardActions(item: BankException, acting: ExceptionStatus?, onEvent: 
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         when {
             item.status == ExceptionStatus.UnderInvestigation -> ZillitButton(
-                text = if (acting == ExceptionStatus.Investigated) "…" else "Investigated",
+                text = if (acting == ExceptionStatus.Investigated) "…" else str(S.desktop_investigated),
                 onClick = { onEvent(BankRecEvent.SetExceptionStatus(item.id, ExceptionStatus.Investigated)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -240,7 +250,7 @@ private fun CardActions(item: BankException, acting: ExceptionStatus?, onEvent: 
 
             item.status != ExceptionStatus.Open -> Unit
             item.isFx -> BrToneButton(
-                text = "View FX",
+                text = str(S.desktop_br_view_fx),
                 tone = BrTone.Teal,
                 onClick = { onEvent(BankRecEvent.OpenTab(BankTab.FxVariances)) },
                 icon = BankRecIcons.Swap,
@@ -248,7 +258,7 @@ private fun CardActions(item: BankException, acting: ExceptionStatus?, onEvent: 
 
             else -> {
                 ZillitButton(
-                    text = if (acting == ExceptionStatus.Ignored) "…" else "Ignore",
+                    text = if (acting == ExceptionStatus.Ignored) "…" else str(S.txt_ignore),
                     onClick = { onEvent(BankRecEvent.SetExceptionStatus(item.id, ExceptionStatus.Ignored)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -256,7 +266,11 @@ private fun CardActions(item: BankException, acting: ExceptionStatus?, onEvent: 
                 )
                 if (item.isCredit) {
                     BrToneButton(
-                        text = if (acting == ExceptionStatus.UnderInvestigation) "…" else "Investigate",
+                        text = if (acting == ExceptionStatus.UnderInvestigation) {
+                            "…"
+                        } else {
+                            str(S.desktop_card_investigate)
+                        },
                         tone = BrTone.Purple,
                         onClick = {
                             onEvent(BankRecEvent.SetExceptionStatus(item.id, ExceptionStatus.UnderInvestigation))
@@ -265,7 +279,7 @@ private fun CardActions(item: BankException, acting: ExceptionStatus?, onEvent: 
                     )
                 } else {
                     ZillitButton(
-                        text = "Quick Add",
+                        text = str(S.desktop_quick_add),
                         onClick = { onEvent(BankRecEvent.OpenExceptionQuickAdd(item.id)) },
                         size = ButtonSize.Small,
                         enabled = !busy,

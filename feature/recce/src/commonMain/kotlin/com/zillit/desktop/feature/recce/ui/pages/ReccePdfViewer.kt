@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.media.decodeImageBitmap
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.recce.domain.ReccePdfPage
 import com.zillit.desktop.feature.recce.ui.RecceEvent
 import com.zillit.desktop.feature.recce.ui.ReccePdfViewer
@@ -102,7 +104,7 @@ private fun ViewerBar(viewer: ReccePdfViewer, onEvent: (RecceEvent) -> Unit) {
             modifier = Modifier.weight(1f),
         )
         ZillitButton(
-            text = "Download",
+            text = str(S.download),
             onClick = { onEvent(RecceEvent.DownloadPdf) },
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Download,
@@ -110,7 +112,7 @@ private fun ViewerBar(viewer: ReccePdfViewer, onEvent: (RecceEvent) -> Unit) {
             loading = viewer.downloading,
         )
         ZillitButton(
-            text = "Print",
+            text = str(S.print),
             onClick = { onEvent(RecceEvent.PrintPdf) },
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Print,
@@ -119,7 +121,7 @@ private fun ViewerBar(viewer: ReccePdfViewer, onEvent: (RecceEvent) -> Unit) {
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close",
+            contentDescription = str(S.close),
             onClick = { onEvent(RecceEvent.ClosePdf) },
             tint = Color.White,
         )

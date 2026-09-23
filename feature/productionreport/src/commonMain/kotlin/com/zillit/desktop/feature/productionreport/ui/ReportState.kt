@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.productionreport.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.ApprovalRequest
 import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
 import com.zillit.desktop.feature.productionreport.domain.BadgeKind
@@ -238,7 +240,7 @@ sealed interface ReportDialog {
         /** No composer: a locked report, or a viewer who is neither the creator nor a comment recipient. */
         val readOnly: Boolean,
         /** Why the composer is missing, under the thread. */
-        val closedNote: String = "Comments are closed on a report approved for publishing.",
+        val closedNote: String = str(S.desktop_pr_comments_closed_note),
         val comments: List<com.zillit.desktop.feature.productionreport.domain.ReportComment> = emptyList(),
         val loading: Boolean = true,
         val draft: String = "",
@@ -256,7 +258,7 @@ sealed interface ReportDialog {
     data class History(
         val title: String,
         val entries: List<com.zillit.desktop.feature.productionreport.domain.HistoryEntry>,
-        val emptyText: String = "No history found.",
+        val emptyText: String = str(S.desktop_no_history_found),
     ) : ReportDialog
 
     /**
@@ -292,10 +294,18 @@ sealed interface ReportDialog {
 }
 
 /** Where a publish goes. */
-enum class PublishDestination(val label: String, val hint: String, val needsDocDist: Boolean) {
-    InApp("Publish in App", "Appears in the Published tab.", false),
-    DocDist("Publish via Document Distribution", "Sends the PDF to the library only.", true),
-    Both("Publish on Both", "Published in the app and copied to the library.", true),
+enum class PublishDestination(
+    private val labelKey: String,
+    private val hintKey: String,
+    val needsDocDist: Boolean,
+) {
+    InApp(S.pub_dest_in_app, S.desktop_pub_dest_in_app_hint, false),
+    DocDist(S.pub_dest_dd, S.desktop_pub_dest_dd_hint, true),
+    Both(S.pub_dest_both, S.desktop_pub_dest_both_hint, true),
+    ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 }
 
 /**
@@ -304,15 +314,14 @@ enum class PublishDestination(val label: String, val hint: String, val needsDocD
  * apart by the target it names; the wipe flag follows the CHOICE, never the
  * presence of a target (a Replace with an empty target must append).
  */
-enum class PublishType(val wire: String, val label: String, val hint: String) {
-    Continuation(
-        "CONTINUATION",
-        "Continuation",
-        "Keep the existing report in the chat and add this version alongside it.",
-    ),
-    New("NEW", "New", "Replace every previous report in the chat with this new version."),
-    Replace("NEW", "Replace", "Swap one document in the chat for this version; the rest stay."),
+enum class PublishType(val wire: String, private val labelKey: String, private val hintKey: String) {
+    Continuation("CONTINUATION", S.continuation, S.desktop_pr_publish_continuation_hint),
+    New("NEW", S.continue_new, S.desktop_pr_publish_new_hint),
+    Replace("NEW", S.replace, S.desktop_pr_publish_replace_hint),
     ;
+
+    val label: String get() = str(labelKey)
+    val hint: String get() = str(hintKey)
 
     val wipesChat: Boolean get() = this == New
 }

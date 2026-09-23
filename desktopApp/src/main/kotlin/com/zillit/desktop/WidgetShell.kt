@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.auth.ui.AuthStep
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import java.awt.event.WindowAdapter
@@ -200,7 +202,7 @@ private fun GripStrip(title: String, onClose: () -> Unit) {
         )
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = "Close the widget",
+            contentDescription = str(S.desktop_close_widget),
             onClick = onClose,
             size = GRIP_BUTTON,
             modifier = Modifier.align(Alignment.CenterEnd),
@@ -217,13 +219,13 @@ internal fun WidgetActions(chrome: WidgetChrome, onOpenZillit: () -> Unit) {
     val desktop = chrome.mode == WidgetMode.Desktop
     ZillitIconButton(
         icon = if (desktop) ZillitIcons.Home else ZillitIcons.Pin,
-        contentDescription = if (desktop) "Float on top instead" else "Fix on the desktop",
+        contentDescription = if (desktop) str(S.desktop_widget_float) else str(S.desktop_widget_fix),
         onClick = chrome.onToggleMode,
         tint = ZillitTheme.colors.accent,
     )
     ZillitIconButton(
         icon = ZillitIcons.Monitor,
-        contentDescription = "Open Zillit",
+        contentDescription = str(S.desktop_open_zillit),
         onClick = onOpenZillit,
     )
 }
@@ -259,12 +261,15 @@ internal fun WidgetBar(
 internal fun WidgetSignedOut(what: String, onOpenZillit: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg), contentAlignment = Alignment.Center) {
         ZillitEmptyState(
-            title = "Zillit is signed out",
-            message = "$what uses the main Zillit app's session. Sign in there — scan the QR " +
-                "code — and the widget will work again.",
+            title = str(S.desktop_widget_signed_out),
+            message = str(S.desktop_widget_signed_out_body, what),
             icon = ZillitIcons.Shield,
             action = {
-                ZillitButton(text = "Open Zillit to sign in", onClick = onOpenZillit, size = ButtonSize.Small)
+                ZillitButton(
+                    text = str(S.desktop_open_zillit_to_sign_in),
+                    onClick = onOpenZillit,
+                    size = ButtonSize.Small,
+                )
             },
         )
     }

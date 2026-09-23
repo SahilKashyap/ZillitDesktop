@@ -13,6 +13,8 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * Email Forwarding — Android's forwarding half of `SettingsViewModel`
@@ -30,8 +32,8 @@ internal fun EmailForwardingPage(
     onBack: () -> Unit,
 ) {
     SettingsPage(
-        title = "Email Forwarding",
-        subtitle = "Auto-forward incoming emails to an external address",
+        title = str(S.desktop_email_forwarding),
+        subtitle = str(S.desktop_email_forwarding_subtitle),
         onBack = onBack,
     ) {
         state.error?.let { message ->
@@ -42,13 +44,13 @@ internal fun EmailForwardingPage(
         }
 
         if (state.isLoading && state.saved == null) {
-            SettingsHint("Loading…")
+            SettingsHint(str(S.ah_loading))
             return@SettingsPage
         }
 
         ZillitText(
-            text = state.saved?.let { "Mail is being forwarded to ${it.address}." }
-                ?: "Mail is not being forwarded. Add an address to start.",
+            text = state.saved?.let { str(S.desktop_email_forwarding_to, it.address) }
+                ?: str(S.desktop_email_forwarding_off),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
@@ -56,7 +58,7 @@ internal fun EmailForwardingPage(
         ZillitTextField(
             value = state.address,
             onValueChange = { onEvent(EmailForwardingEvent.AddressChanged(it)) },
-            label = "Forward to",
+            label = str(S.desktop_email_forward_to),
             placeholder = "name@example.com",
             errorText = state.inputError,
             enabled = !state.isSaving,
@@ -74,14 +76,14 @@ internal fun EmailForwardingPage(
             // not a dialog: the address is still in the field to put back.
             if (state.isConfigured) {
                 ZillitButton(
-                    text = "Turn off",
+                    text = str(S.desktop_turn_off),
                     variant = ButtonVariant.Tertiary,
                     enabled = !state.isSaving,
                     onClick = { onEvent(EmailForwardingEvent.Remove) },
                 )
             }
             ZillitButton(
-                text = if (state.isConfigured) "Update" else "Start forwarding",
+                text = str(if (state.isConfigured) S.update else S.desktop_email_start_forwarding),
                 enabled = state.canSave && !state.isSaving,
                 loading = state.isSaving,
                 onClick = { onEvent(EmailForwardingEvent.Save) },

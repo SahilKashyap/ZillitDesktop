@@ -26,6 +26,8 @@ import com.zillit.desktop.feature.saportal.ui.day
 import com.zillit.desktop.feature.saportal.ui.money
 import com.zillit.desktop.feature.saportal.ui.shift
 import com.zillit.desktop.feature.saportal.ui.title
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * One day, in full — and the place it is signed.
@@ -67,12 +69,12 @@ internal fun VoucherDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Something looks wrong",
+                text = str(S.desktop_sa_something_looks_wrong),
                 onClick = { onEvent(SaEvent.StartQuery(voucher)) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Close",
+                text = str(S.close),
                 onClick = { onEvent(SaEvent.CloseVoucher) },
                 variant = ButtonVariant.Tertiary,
             )
@@ -80,7 +82,7 @@ internal fun VoucherDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
             // so the control is absent rather than disabled.
             if (voucher.signable) {
                 ZillitButton(
-                    text = "Sign this day",
+                    text = str(S.desktop_sa_sign_this_day),
                     onClick = { onEvent(SaEvent.StartSigning(voucher)) },
                 )
             }
@@ -93,15 +95,15 @@ internal fun VoucherDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
 private fun ColumnScope.VoucherBreakdown(detail: VoucherDetail) {
     val currency = detail.voucher.currency
     if (detail.ratesAndOvertime.isNotEmpty()) {
-        ZillitSectionLabel("Rates and overtime")
+        ZillitSectionLabel(str(S.desktop_sa_rates_and_overtime))
         detail.ratesAndOvertime.forEach { line -> LineRow(line.label, line.amount, currency) }
     }
     if (detail.allowances.isNotEmpty()) {
-        ZillitSectionLabel("Allowances")
+        ZillitSectionLabel(str(S.allowances_label))
         detail.allowances.forEach { line -> LineRow(line.label, line.amount, currency) }
     }
     if (detail.meals.isNotEmpty()) {
-        ZillitSectionLabel("Meal breaks")
+        ZillitSectionLabel(str(S.desktop_sa_meal_breaks))
         detail.meals.forEach { meal ->
             ZillitText(
                 text = listOf(meal.label, "${meal.from} – ${meal.to}")
@@ -113,11 +115,11 @@ private fun ColumnScope.VoucherBreakdown(detail: VoucherDetail) {
         }
     }
     detail.notes.takeIf { it.isNotBlank() }?.let {
-        ZillitSectionLabel("Notes")
+        ZillitSectionLabel(str(S.notes))
         ZillitText(text = it, style = ZillitTheme.typography.bodySmall)
     }
     detail.signature?.let { signature ->
-        ZillitSectionLabel("Signed")
+        ZillitSectionLabel(str(S.signed))
         ZillitText(
             text = "${signature.typedName} · ${day(signature.signedAt)}",
             style = ZillitTheme.typography.bodySmall,
@@ -154,7 +156,7 @@ internal fun SignDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
     val sign = state.sign ?: return
 
     ZillitDialogShell(
-        title = "Sign ${day(sign.voucher.shootDate)}",
+        title = str(S.desktop_sa_sign_title, day(sign.voucher.shootDate)),
         subtitle = money(sign.voucher.gross, sign.voucher.currency) + " · " + shift(sign.voucher),
         visible = true,
         onDismiss = { onEvent(SaEvent.CancelSign) },
@@ -164,18 +166,18 @@ internal fun SignDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
             ZillitCheckbox(
                 checked = sign.consentAccuracy,
                 onCheckedChange = { onEvent(SaEvent.SignAccuracy(it)) },
-                label = "The hours and payments shown for this day are correct.",
+                label = str(S.desktop_sa_consent_accuracy),
             )
             ZillitCheckbox(
                 checked = sign.consentESign,
                 onCheckedChange = { onEvent(SaEvent.SignESign(it)) },
-                label = "I agree that typing my name counts as my signature.",
+                label = str(S.desktop_sa_consent_esign),
             )
             ZillitTextField(
                 value = sign.typedName,
                 onValueChange = { onEvent(SaEvent.SignName(it)) },
-                label = "Your full name",
-                placeholder = "As it appears on your contract",
+                label = str(S.desktop_sa_your_full_name),
+                placeholder = str(S.desktop_sa_name_placeholder),
             )
         }
         Row(
@@ -183,12 +185,12 @@ internal fun SignDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(SaEvent.CancelSign) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Sign",
+                text = str(S.sign),
                 onClick = { onEvent(SaEvent.ConfirmSign) },
                 loading = sign.saving,
                 enabled = sign.ready && !sign.saving,
@@ -203,8 +205,8 @@ internal fun QueryDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
     val draft = state.queryDraft ?: return
 
     ZillitDialogShell(
-        title = "Raise a query",
-        subtitle = draft.voucherCode.ifBlank { "About this day" },
+        title = str(S.desktop_sa_raise_query),
+        subtitle = draft.voucherCode.ifBlank { str(S.desktop_sa_about_this_day) },
         visible = true,
         onDismiss = { onEvent(SaEvent.CancelQuery) },
         icon = ZillitIcons.Info,
@@ -212,8 +214,8 @@ internal fun QueryDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
         ZillitTextField(
             value = draft.text,
             onValueChange = { onEvent(SaEvent.QueryText(it)) },
-            label = "What looks wrong?",
-            placeholder = "The wrap time is an hour early",
+            label = str(S.desktop_sa_what_looks_wrong),
+            placeholder = str(S.desktop_sa_query_placeholder),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -222,12 +224,12 @@ internal fun QueryDialog(state: SaUiState, onEvent: (SaEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
         ) {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(SaEvent.CancelQuery) },
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Send",
+                text = str(S.send),
                 onClick = { onEvent(SaEvent.SubmitQuery) },
                 loading = draft.saving,
                 enabled = draft.ready && !draft.saving,

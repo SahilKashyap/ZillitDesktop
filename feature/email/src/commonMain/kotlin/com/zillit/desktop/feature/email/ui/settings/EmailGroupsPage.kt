@@ -24,6 +24,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailGroup
 import com.zillit.desktop.feature.email.ui.DialogButtons
@@ -46,12 +48,12 @@ internal fun EmailGroupsPage(
     }
 
     SettingsPage(
-        title = "Email Groups",
-        subtitle = "Manage your email groups",
+        title = str(S.email_groups),
+        subtitle = str(S.desktop_email_groups_subtitle),
         onBack = onBack,
         actions = {
             ZillitButton(
-                text = "New group",
+                text = str(S.desktop_new_group),
                 leadingIcon = ZillitIcons.Add,
                 size = ButtonSize.Small,
                 onClick = { onEvent(EmailGroupsEvent.Edit(null)) },
@@ -62,23 +64,26 @@ internal fun EmailGroupsPage(
             SettingsMessage(text = message, tone = StatusTone.Rejected, onDismiss = { onEvent(EmailGroupsEvent.Load) })
         }
         when {
-            state.isLoading -> SettingsHint("Loading…")
+            state.isLoading -> SettingsHint(str(S.ah_loading))
             state.groups.isEmpty() ->
-                SettingsHint("No email groups yet. Create one to write to several people at once.")
+                SettingsHint(str(S.desktop_email_no_groups_yet))
             else -> state.groups.forEach { group -> GroupRow(group, onEvent) }
         }
     }
 
     state.pendingDelete?.let { group ->
         ModalCard(onDismiss = { onEvent(EmailGroupsEvent.DismissDelete) }) {
-            ZillitText(text = "Delete \"${group.name}\"?", style = ZillitTheme.typography.titleMedium)
             ZillitText(
-                text = "The group and its member list will be removed. This cannot be undone.",
+                text = str(S.drive_delete_item_title_format, group.name),
+                style = ZillitTheme.typography.titleMedium,
+            )
+            ZillitText(
+                text = str(S.desktop_email_delete_group_body),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textSecondary,
             )
             DialogButtons(
-                action = "Delete",
+                action = str(S.delete),
                 variant = ButtonVariant.Danger,
                 onConfirm = { onEvent(EmailGroupsEvent.ConfirmDelete) },
                 onDismiss = { onEvent(EmailGroupsEvent.DismissDelete) },
@@ -95,19 +100,22 @@ private fun GroupRow(group: EmailGroup, onEvent: (EmailGroupsEvent) -> Unit) {
             // The group's own address, when it has one, is the useful line:
             // it is what goes in a To field.
             ZillitText(
-                text = group.address ?: "${group.members.size} member${if (group.members.size == 1) "" else "s"}",
+                text = group.address ?: when (group.members.size) {
+                    1 -> str(S.desktop_email_one_member)
+                    else -> str(S.desktop_email_n_members, group.members.size)
+                },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
         }
         ZillitButton(
-            text = "Edit",
+            text = str(S.edit),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             onClick = { onEvent(EmailGroupsEvent.Edit(group)) },
         )
         ZillitButton(
-            text = "Delete",
+            text = str(S.delete),
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             onClick = { onEvent(EmailGroupsEvent.AskDelete(group)) },
@@ -126,15 +134,15 @@ private fun GroupEditor(state: EmailGroupsUiState, onEvent: (EmailGroupsEvent) -
     val draft = state.draft ?: return
 
     SettingsPage(
-        title = if (draft.isNew) "New email group" else "Edit email group",
+        title = str(if (draft.isNew) S.desktop_email_new_email_group else S.edit_email_group),
         subtitle = null,
         onBack = { onEvent(EmailGroupsEvent.CancelEdit) },
     ) {
         ZillitTextField(
             value = draft.name,
             onValueChange = { onEvent(EmailGroupsEvent.NameChanged(it)) },
-            label = "Group name",
-            placeholder = "e.g. Camera department",
+            label = str(S.mtg_group_name_hint),
+            placeholder = str(S.desktop_email_group_name_placeholder),
             enabled = draft.isNew,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -142,7 +150,7 @@ private fun GroupEditor(state: EmailGroupsUiState, onEvent: (EmailGroupsEvent) -
         MemberField(draft, onEvent)
 
         if (draft.members.isEmpty()) {
-            SettingsHint("No members yet. Add at least one address.")
+            SettingsHint(str(S.desktop_email_no_members_yet))
         } else {
             draft.members.forEach { address ->
                 SettingsRow {
@@ -153,7 +161,7 @@ private fun GroupEditor(state: EmailGroupsUiState, onEvent: (EmailGroupsEvent) -
                     )
                     ZillitIconButton(
                         icon = ZillitIcons.Close,
-                        contentDescription = "Remove $address",
+                        contentDescription = str(S.bs_chip_remove, address),
                         onClick = { onEvent(EmailGroupsEvent.RemoveMember(address)) },
                     )
                 }
@@ -165,7 +173,7 @@ private fun GroupEditor(state: EmailGroupsUiState, onEvent: (EmailGroupsEvent) -
         }
 
         DialogButtons(
-            action = if (draft.isNew) "Create" else "Save",
+            action = str(if (draft.isNew) S.create else S.save),
             enabled = draft.canSave,
             loading = state.isSaving,
             onConfirm = { onEvent(EmailGroupsEvent.Save) },
@@ -182,15 +190,15 @@ private fun MemberField(draft: GroupDraft, onEvent: (EmailGroupsEvent) -> Unit) 
             ZillitTextField(
                 value = draft.memberInput,
                 onValueChange = { onEvent(EmailGroupsEvent.MemberInputChanged(it)) },
-                label = "Members",
-                placeholder = "Type an address or a crew name",
+                label = str(S.members),
+                placeholder = str(S.desktop_email_members_placeholder),
                 errorText = draft.inputError,
                 imeAction = ImeAction.Done,
                 onImeAction = { onEvent(EmailGroupsEvent.AddTypedMember) },
                 modifier = Modifier.weight(1f),
             )
             ZillitButton(
-                text = "Add",
+                text = str(S.add),
                 variant = ButtonVariant.Secondary,
                 onClick = { onEvent(EmailGroupsEvent.AddTypedMember) },
                 modifier = Modifier.padding(top = FIELD_LABEL_OFFSET),

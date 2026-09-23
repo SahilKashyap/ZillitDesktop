@@ -22,6 +22,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.addashboard.ui.pages.AddToDayDialog
 import com.zillit.desktop.feature.addashboard.ui.pages.BlockDialog
 import com.zillit.desktop.feature.addashboard.ui.pages.RegisterPage
@@ -39,8 +41,8 @@ import com.zillit.desktop.feature.addashboard.ui.pages.TodayPage
 fun AdScreen(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     if (state.viewer.isBlocked) {
         ZillitEmptyState(
-            title = "No access",
-            message = "This project has not given you the AD dashboard.",
+            title = str(S.dd_publish_no_access_badge),
+            message = str(S.desktop_ad_not_given_dashboard),
             icon = ZillitIcons.Shield,
         )
         return
@@ -48,11 +50,11 @@ fun AdScreen(state: AdUiState, onEvent: (AdEvent) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         ZillitPageHeader(
-            title = "AD dashboard",
-            eyebrow = "Supporting artistes",
+            title = str(S.desktop_ad_dashboard),
+            eyebrow = str(S.desktop_ad_supporting_artistes),
             actions = {
                 ZillitButton(
-                    text = "Refresh",
+                    text = str(S.refresh_text),
                     onClick = { onEvent(AdEvent.Refresh) },
                     variant = ButtonVariant.Tertiary,
                     loading = state.loading,
@@ -90,7 +92,7 @@ private fun ColumnScope.AdBody(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     // discovering it button by button.
     if (state.viewer.isReadOnly) {
         ZillitNotice(
-            text = "You can see the roster and the day but not change them.",
+            text = str(S.desktop_ad_read_only_notice),
             tone = StatusTone.Neutral,
             icon = ZillitIcons.Info,
             modifier = Modifier.fillMaxWidth(),

@@ -38,6 +38,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.ui.BankRecEvent
 import com.zillit.desktop.feature.bankrec.ui.BankRecUiState
@@ -71,9 +73,8 @@ fun WorkspacePage(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit, modifi
                 contentAlignment = Alignment.Center,
             ) {
                 BrEmpty(
-                    title = "No Active Period",
-                    message = "There are no in-progress reconciliation periods. Import a bank statement from " +
-                        "the Overview tab to start a new period.",
+                    title = str(S.desktop_br_no_active_period),
+                    message = str(S.desktop_br_no_active_period_workspace),
                     icon = ZillitIcons.Bank,
                 )
             }
@@ -128,11 +129,11 @@ private fun SplitPanels(state: BankRecUiState, view: WorkspaceView, onEvent: (Ba
             Column(Modifier.weight(fraction).fillMaxHeight().background(ZillitTheme.colors.surface)) {
                 PanelHeader(
                     icon = ZillitIcons.Bank,
-                    title = "Bank Statement",
+                    title = str(S.desktop_br_bank_statement),
                     subtitle = "${view.account?.displayName?.ifBlank { null } ?: BankRecFormat.DASH} · " +
                         view.period?.let(BankRecFormat::periodLabel).orEmpty(),
                     total = view.bankTotal,
-                    caption = "Bank transactions — imported from statement",
+                    caption = str(S.desktop_br_bank_statement_caption),
                 )
                 PanelList(bankList, Modifier.weight(1f)) {
                     items(view.visibleBank, key = { it.id }) { row ->
@@ -151,9 +152,9 @@ private fun SplitPanels(state: BankRecUiState, view: WorkspaceView, onEvent: (Ba
                         item {
                             PanelNote(
                                 if (view.bankRows.isEmpty()) {
-                                    "No transactions imported yet"
+                                    str(S.desktop_br_no_transactions_imported)
                                 } else {
-                                    "No transactions match this filter"
+                                    str(S.desktop_br_no_transactions_match)
                                 },
                             )
                         }
@@ -167,10 +168,13 @@ private fun SplitPanels(state: BankRecUiState, view: WorkspaceView, onEvent: (Ba
             Column(Modifier.weight(1f - fraction).fillMaxHeight().background(ZillitTheme.colors.surface)) {
                 PanelHeader(
                     icon = ZillitIcons.Ledger,
-                    title = "Zillit Ledger",
-                    subtitle = "Ready to Pay · ${view.period?.let(BankRecFormat::periodLabel).orEmpty()}",
+                    title = str(S.desktop_br_zillit_ledger),
+                    subtitle = str(
+                        S.desktop_br_ready_to_pay,
+                        view.period?.let(BankRecFormat::periodLabel).orEmpty(),
+                    ),
                     total = view.ledgerTotal,
-                    caption = "Zillit cash book entries — matched against bank",
+                    caption = str(S.desktop_br_ledger_caption),
                 )
                 PanelList(ledgerList, Modifier.weight(1f)) {
                     items(view.visibleLedger, key = { it.id }) { row ->
@@ -189,9 +193,9 @@ private fun SplitPanels(state: BankRecUiState, view: WorkspaceView, onEvent: (Ba
                         item {
                             PanelNote(
                                 if (view.ledgerRows.isEmpty()) {
-                                    "No invoices ready to pay"
+                                    str(S.desktop_br_no_invoices_ready)
                                 } else {
-                                    "No invoices match this filter"
+                                    str(S.desktop_br_no_invoices_match)
                                 },
                             )
                         }
@@ -241,7 +245,11 @@ private fun RerunOverlay() {
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
         ZillitSpinner(size = 28.dp, color = colors.accent)
-        ZillitText("Re-running auto-match…", style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary)
+        ZillitText(
+            str(S.desktop_br_rerunning_auto_match),
+            style = ZillitTheme.typography.bodyMedium,
+            color = colors.textSecondary,
+        )
     }
 }
 

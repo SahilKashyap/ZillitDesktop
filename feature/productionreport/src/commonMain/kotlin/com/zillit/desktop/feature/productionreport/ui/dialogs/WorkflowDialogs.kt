@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
 import com.zillit.desktop.feature.productionreport.ui.PublishDestination
@@ -68,13 +70,13 @@ internal fun DraftNameDialog(dialog: ReportDialog.DraftName, onEvent: (ReportEve
                 .background(colors.surface).swallowClicks().padding(20.dp),
         ) {
             Text(
-                "Save As",
+                str(S.pr_save_as),
                 style = reportText(14.sp, FontWeight.SemiBold),
                 color = colors.textPrimary,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
             Text(
-                "Draft Name",
+                str(S.desktop_draft_name),
                 style = reportText(12.sp),
                 color = colors.textSecondary,
                 modifier = Modifier.padding(bottom = 4.dp),
@@ -82,7 +84,7 @@ internal fun DraftNameDialog(dialog: ReportDialog.DraftName, onEvent: (ReportEve
             ReportInput(
                 value = dialog.name,
                 onChange = { onEvent(DialogEvent.EditDraftName(it)) },
-                placeholder = "Enter draft name",
+                placeholder = str(S.desktop_enter_draft_name),
                 autoFocus = true,
                 radius = 4.dp,
                 onEnter = { onEvent(DialogEvent.ConfirmDraftName) },
@@ -92,8 +94,12 @@ internal fun DraftNameDialog(dialog: ReportDialog.DraftName, onEvent: (ReportEve
                 Modifier.fillMaxWidth().padding(top = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                ReportButton("Cancel", { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost)
-                ReportButton("Confirm", { onEvent(DialogEvent.ConfirmDraftName) }, enabled = dialog.name.isNotBlank())
+                ReportButton(str(S.cancel), { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost)
+                ReportButton(
+                    str(S.confirm),
+                    { onEvent(DialogEvent.ConfirmDraftName) },
+                    enabled = dialog.name.isNotBlank(),
+                )
             }
         }
     }
@@ -129,12 +135,16 @@ private fun RecipientPickerDialog(
     val previous = filtered.filter { it.userId in dialog.initial }
     val others = filtered.filterNot { it.userId in dialog.initial }
     val count = dialog.selected.count { id -> selectable.any { it.userId == id } }
-    ReportModal("Select Recipients for Comments", { onEvent(DialogEvent.Dismiss) }, scrollable = false) {
+    ReportModal(
+        str(S.desktop_pr_select_recipients_for_comments),
+        { onEvent(DialogEvent.Dismiss) },
+        scrollable = false,
+    ) {
         Column(Modifier.fillMaxWidth().height(540.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ReportInput(
                 value = dialog.search,
                 onChange = { onEvent(WorkflowEvent.SearchRecipients(it)) },
-                placeholder = "Search by name, role, department...",
+                placeholder = str(S.desktop_search_by_name_role_department),
                 leadingIcon = ZillitIcons.Search,
                 autoFocus = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -148,7 +158,11 @@ private fun RecipientPickerDialog(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    if (count == selectable.size && selectable.isNotEmpty()) "Deselect All" else "Select All",
+                    if (count == selectable.size && selectable.isNotEmpty()) {
+                        str(S.dd_deselect_all)
+                    } else {
+                        str(S.select_all)
+                    },
                     style = reportText(12.sp, FontWeight.Medium),
                     color = colors.accent,
                     modifier = Modifier.plainClick { onEvent(WorkflowEvent.ToggleAllRecipients) },
@@ -164,16 +178,16 @@ private fun RecipientPickerDialog(
             ) {
                 if (filtered.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
-                        Text("No members found", style = reportText(14.sp), color = colors.textSecondary)
+                        Text(str(S.desktop_no_members_found), style = reportText(14.sp), color = colors.textSecondary)
                     }
                 }
-                if (previous.isNotEmpty()) SectionHeader("Previously Selected")
+                if (previous.isNotEmpty()) SectionHeader(str(S.cs_previously_selected))
                 previous.forEach { member ->
                     MemberRow(member, member.userId in dialog.selected) {
                         onEvent(WorkflowEvent.ToggleRecipient(member.userId))
                     }
                 }
-                if (others.isNotEmpty()) SectionHeader("All Members")
+                if (others.isNotEmpty()) SectionHeader(str(S.desktop_all_members))
                 others.forEach { member ->
                     MemberRow(member, member.userId in dialog.selected) {
                         onEvent(WorkflowEvent.ToggleRecipient(member.userId))
@@ -182,7 +196,7 @@ private fun RecipientPickerDialog(
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 ReportButton(
-                    "Cancel",
+                    str(S.cancel),
                     { onEvent(DialogEvent.Dismiss) },
                     kind = ButtonKind.Ghost,
                     height = 40.dp,
@@ -252,7 +266,7 @@ private fun MemberRow(member: SheetMember, checked: Boolean, onToggle: () -> Uni
 @Composable
 private fun RemovalPrompt(removed: List<SheetMember>, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
-    ReportModal("Remove from comments?", { onEvent(WorkflowEvent.CancelRemoval) }, width = 720.dp) {
+    ReportModal(str(S.cmt_removal_title), { onEvent(WorkflowEvent.CancelRemoval) }, width = 720.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 removed.joinToString(", ") { it.fullName },
@@ -260,33 +274,32 @@ private fun RemovalPrompt(removed: List<SheetMember>, onEvent: (ReportEvent) -> 
                 color = colors.textPrimary,
             )
             Text(
-                "This user will stop receiving comment notifications on all production reports in this project.",
+                str(S.desktop_pr_comment_removal_message),
                 style = reportText(14.sp),
                 color = colors.textSecondary,
             )
             Text(
-                "Do you also want to remove their viewing access to Drafts Production Report / " +
-                    "Production Report Creation? Users who are still approvers keep their access either way.",
+                str(S.desktop_pr_comment_removal_access_question),
                 style = reportText(14.sp),
                 color = colors.textSecondary,
             )
             Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 ReportButton(
-                    "Cancel",
+                    str(S.cancel),
                     { onEvent(WorkflowEvent.CancelRemoval) },
                     kind = ButtonKind.Ghost,
                     height = 40.dp,
                 )
                 ReportButton(
-                    "Remove from comments only",
+                    str(S.cmt_removal_keep_access),
                     { onEvent(WorkflowEvent.FinishSend(false)) },
                     kind = ButtonKind.Outline,
                     height = 40.dp,
                     fontSize = 14.sp,
                 )
                 ReportButton(
-                    "Remove comments and viewing access",
+                    str(S.cmt_removal_revoke_access),
                     { onEvent(WorkflowEvent.FinishSend(true)) },
                     kind = ButtonKind.Danger,
                     height = 40.dp,
@@ -307,7 +320,7 @@ private fun RemovalPrompt(removed: List<SheetMember>, onEvent: (ReportEvent) -> 
 @Composable
 internal fun PublishDialog(state: ReportUiState, dialog: ReportDialog.Publish, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
-    ReportModal("Publish Production Report", { onEvent(DialogEvent.Dismiss) }) {
+    ReportModal(str(S.desktop_pr_publish_production_report), { onEvent(DialogEvent.Dismiss) }) {
         Column(
             Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -325,7 +338,7 @@ internal fun PublishDialog(state: ReportUiState, dialog: ReportDialog.Publish, o
             } else {
                 TypeStep(state, dialog, onEvent)
             }
-            ReportButton("Cancel", { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost)
+            ReportButton(str(S.cancel), { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost)
         }
     }
 }
@@ -334,7 +347,7 @@ internal fun PublishDialog(state: ReportUiState, dialog: ReportDialog.Publish, o
 private fun DestinationStep(state: ReportUiState, dialog: ReportDialog.Publish, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
     Text(
-        "Where would you like to publish this Production Report?",
+        str(S.desktop_pr_where_to_publish),
         style = reportText(15.sp, FontWeight.Medium),
         color = colors.textPrimary,
         textAlign = TextAlign.Center,
@@ -342,7 +355,7 @@ private fun DestinationStep(state: ReportUiState, dialog: ReportDialog.Publish, 
     )
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "Where should it go?",
+            str(S.desktop_where_should_it_go),
             style = reportText(12.sp, FontWeight.SemiBold),
             color = colors.textSecondary,
             modifier = Modifier.padding(bottom = 2.dp),
@@ -354,7 +367,11 @@ private fun DestinationStep(state: ReportUiState, dialog: ReportDialog.Publish, 
         }
     }
     ReportButton(
-        text = if (dialog.destination == PublishDestination.DocDist) "Publish to Document Distribution" else "Continue",
+        text = if (dialog.destination == PublishDestination.DocDist) {
+            str(S.dd_publish_confirm_title)
+        } else {
+            str(S.continue_text)
+        },
         onClick = { onEvent(WorkflowEvent.ContinuePublish) },
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
         radius = 12.dp,
@@ -367,7 +384,7 @@ private fun DestinationStep(state: ReportUiState, dialog: ReportDialog.Publish, 
 private fun OptionRow(label: String, hint: String, selected: Boolean, blocked: Boolean, onClick: () -> Unit) {
     val colors = ReportTheme.colors
     com.zillit.desktop.core.designsystem.component.ZillitTooltip(
-        if (blocked) "Needs Document Distribution posting rights" else hint,
+        if (blocked) str(S.pub_dest_needs_dd_rights) else hint,
     ) {
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
@@ -388,7 +405,7 @@ private fun OptionRow(label: String, hint: String, selected: Boolean, blocked: B
                 )
                 Text(hint, style = reportText(12.sp), color = colors.textTertiary)
             }
-            if (blocked) Text("no rights", style = reportText(10.sp), color = colors.textMuted)
+            if (blocked) Text(str(S.desktop_no_rights_lower), style = reportText(10.sp), color = colors.textMuted)
         }
     }
 }
@@ -411,7 +428,7 @@ private fun RadioDot(selected: Boolean, size: androidx.compose.ui.unit.Dp) {
 private fun TypeStep(state: ReportUiState, dialog: ReportDialog.Publish, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
     Text(
-        "How would you like to publish this Production Report?",
+        str(S.desktop_pr_how_to_publish),
         style = reportText(15.sp, FontWeight.Medium),
         color = colors.textPrimary,
         textAlign = TextAlign.Center,
@@ -426,13 +443,13 @@ private fun TypeStep(state: ReportUiState, dialog: ReportDialog.Publish, onEvent
         if (dialog.type == PublishType.Replace) ReplacePicker(dialog, onEvent)
     }
     val label = when (dialog.type) {
-        PublishType.Continuation -> "Publish as Continuation"
-        PublishType.New -> "Publish as New"
-        PublishType.Replace -> "Publish and Replace"
-        null -> "Select an option to publish"
+        PublishType.Continuation -> str(S.desktop_publish_as_continuation)
+        PublishType.New -> str(S.desktop_publish_as_new)
+        PublishType.Replace -> str(S.desktop_publish_and_replace)
+        null -> str(S.desktop_select_an_option_to_publish)
     }
     ReportButton(
-        text = if (state.busy) "Publishing…" else label,
+        text = if (state.busy) str(S.desktop_publishing) else label,
         onClick = { onEvent(WorkflowEvent.ConfirmPublish) },
         modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
         enabled = dialog.type != null && !state.busy,
@@ -450,7 +467,7 @@ private fun ReplacePicker(dialog: ReportDialog.Publish, onEvent: (ReportEvent) -
         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, colors.border, RoundedCornerShape(8.dp)),
     ) {
         Text(
-            "Document to replace",
+            str(S.um_document_to_replace),
             style = reportText(12.sp, FontWeight.SemiBold),
             color = colors.textSecondary,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -520,9 +537,9 @@ private fun TypeCard(title: String, description: String, selected: Boolean, onCl
 /** "Reject Production Report" — the reason is optional. */
 @Composable
 internal fun RejectDialog(state: ReportUiState, dialog: ReportDialog.Reject, onEvent: (ReportEvent) -> Unit) {
-    ReportModal("Reject Production Report", { onEvent(DialogEvent.Dismiss) }) {
+    ReportModal(str(S.desktop_pr_reject_production_report), { onEvent(DialogEvent.Dismiss) }) {
         Text(
-            "Reason for rejection (optional):",
+            str(S.hint_rejection_reason),
             style = reportText(14.sp),
             color = ReportTheme.colors.textSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -530,7 +547,7 @@ internal fun RejectDialog(state: ReportUiState, dialog: ReportDialog.Reject, onE
         ReportInput(
             value = dialog.reason,
             onChange = { onEvent(WorkflowEvent.EditRejectReason(it)) },
-            placeholder = "Reason...",
+            placeholder = str(S.reason),
             singleLine = false,
             minLines = 3,
             radius = 4.dp,
@@ -539,7 +556,7 @@ internal fun RejectDialog(state: ReportUiState, dialog: ReportDialog.Reject, onE
         )
         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ReportButton(
-                "Reject",
+                str(S.reject),
                 { onEvent(WorkflowEvent.ConfirmReject) },
                 kind = ButtonKind.Danger,
                 enabled = !state.busy,
@@ -547,7 +564,7 @@ internal fun RejectDialog(state: ReportUiState, dialog: ReportDialog.Reject, onE
                 height = 40.dp,
                 fontSize = 14.sp,
             )
-            ReportButton("Cancel", { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost, height = 40.dp)
+            ReportButton(str(S.cancel), { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost, height = 40.dp)
         }
     }
 }
@@ -559,9 +576,9 @@ internal fun ReminderComposeDialog(
     dialog: ReportDialog.ReminderCompose,
     onEvent: (ReportEvent) -> Unit,
 ) {
-    ReportModal("Send Reminder", { onEvent(DialogEvent.Dismiss) }) {
+    ReportModal(str(S.pr_send_reminder), { onEvent(DialogEvent.Dismiss) }) {
         Text(
-            "Write a message to send along with the reminder:",
+            str(S.desktop_reminder_message_prompt),
             style = reportText(14.sp),
             color = ReportTheme.colors.textSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -569,7 +586,7 @@ internal fun ReminderComposeDialog(
         ReportInput(
             value = dialog.message,
             onChange = { onEvent(WorkflowEvent.EditReminder(it)) },
-            placeholder = "Please review and approve this production report.",
+            placeholder = str(S.desktop_pr_default_reminder),
             singleLine = false,
             minLines = 3,
             radius = 4.dp,
@@ -578,14 +595,14 @@ internal fun ReminderComposeDialog(
         )
         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ReportButton(
-                "Send Reminder",
+                str(S.pr_send_reminder),
                 { onEvent(WorkflowEvent.ConfirmReminder) },
                 enabled = !state.busy,
                 radius = 12.dp,
                 height = 40.dp,
                 fontSize = 14.sp,
             )
-            ReportButton("Cancel", { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost, height = 40.dp)
+            ReportButton(str(S.cancel), { onEvent(DialogEvent.Dismiss) }, kind = ButtonKind.Ghost, height = 40.dp)
         }
     }
 }

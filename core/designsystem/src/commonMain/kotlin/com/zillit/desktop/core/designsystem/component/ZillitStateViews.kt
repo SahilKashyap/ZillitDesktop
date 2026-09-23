@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * What a screen shows when there is nothing to show.
@@ -88,7 +90,7 @@ fun ZillitErrorState(
     message: String,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "Could not load this",
+    title: String = str(S.desktop_could_not_load_this),
 ) {
     ZillitEmptyState(
         title = title,
@@ -97,7 +99,7 @@ fun ZillitErrorState(
         modifier = modifier,
         action = {
             ZillitButton(
-                text = "Try again",
+                text = str(S.docusign_token_gateway_retry),
                 onClick = onRetry,
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,

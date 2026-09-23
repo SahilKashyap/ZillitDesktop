@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.email.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * One row in the message list.
  *
@@ -82,7 +85,7 @@ private fun String.isReference(): Boolean = trim().let { it.isNotEmpty() && it !
  */
 internal fun String.headerName(): String {
     val trimmed = trim()
-    if (trimmed.isEmpty()) return "Unknown sender"
+    if (trimmed.isEmpty()) return str(S.desktop_sos_unknown_sender)
 
     val angle = trimmed.indexOf('<')
 

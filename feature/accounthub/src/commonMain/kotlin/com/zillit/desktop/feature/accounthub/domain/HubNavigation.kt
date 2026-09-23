@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * What a sidebar entry opens.
  *
@@ -24,17 +27,19 @@ sealed interface HubTarget {
 }
 
 /** A screen the hub itself renders. */
-enum class HubArea(val slug: String, val label: String) {
-    ProductionSetup("production-setup", "Production Setup"),
-    ChartOfAccounts("chart-of-accounts", "Chart of Accounts"),
-    Vendors("vendors", "Vendors"),
-    Approvers("approvers", "Approvers"),
-    Budget("budget", "Budget"),
-    TrialBalance("trial-balance", "Trial Balance"),
-    PeriodClose("period-close", "Period Close"),
-    BibleReport("bible-report", "Bible Report"),
-    FormConfig("form-config", "Forms Configuration"),
+enum class HubArea(val slug: String, private val labelKey: String) {
+    ProductionSetup("production-setup", S.ps_production_setup),
+    ChartOfAccounts("chart-of-accounts", S.desktop_chart_of_accounts),
+    Vendors("vendors", S.ah_vendors),
+    Approvers("approvers", S.desktop_approvers),
+    Budget("budget", S.budget_text),
+    TrialBalance("trial-balance", S.desktop_trial_balance),
+    PeriodClose("period-close", S.desktop_period_close),
+    BibleReport("bible-report", S.desktop_bible_report),
+    FormConfig("form-config", S.desktop_forms_configuration),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun fromSlug(slug: String?): HubArea? = entries.firstOrNull { it.slug == slug }
@@ -78,7 +83,7 @@ object HubNavigation {
     /** Areas this module renders, versus tools it hands off to. */
     val sections: List<HubSection> = listOf(
         HubSection(
-            title = "Setup",
+            title = str(S.desktop_setup),
             items = listOf(
                 HubItem(
                     id = "production-setup",
@@ -88,7 +93,7 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = "Transactions",
+            title = str(S.desktop_transactions),
             items = listOf(
                 HubItem(
                     id = "purchase-orders",
@@ -121,7 +126,7 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = "Payroll Management",
+            title = str(S.desktop_payroll_management),
             items = listOf(
                 HubItem(
                     id = "payroll",
@@ -138,7 +143,7 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = "Reports",
+            title = str(S.reports),
             items = listOf(
                 // Cost Report first, then Period Close, which is the web's
                 // own order in this group.
@@ -158,7 +163,7 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = "Management",
+            title = str(S.desktop_management),
             items = listOf(
                 HubItem(
                     id = "vendors",
@@ -209,7 +214,7 @@ object HubNavigation {
             ),
         ),
         HubSection(
-            title = "Configuration",
+            title = str(S.desktop_configuration),
             items = listOf(
                 HubItem(
                     id = "approvers",

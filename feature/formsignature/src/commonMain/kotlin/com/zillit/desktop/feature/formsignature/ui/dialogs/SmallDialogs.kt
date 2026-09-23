@@ -39,6 +39,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureHost
 import com.zillit.desktop.feature.formsignature.domain.HistoryPerson
 import com.zillit.desktop.feature.formsignature.ui.ConfirmState
@@ -52,16 +54,17 @@ private data class ConfirmCopy(val title: String, val text: String, val isDelete
 /** The web's words for each confirmation. */
 private fun copyFor(confirm: ConfirmState?): ConfirmCopy = when (confirm) {
     is ConfirmState.DeleteForm, is ConfirmState.DeleteDocument ->
-        ConfirmCopy("Delete", "Are you sure you want to delete this document?", isDelete = true)
-    is ConfirmState.DeleteSignature -> ConfirmCopy("Delete", "Are you sure you want to delete this?", isDelete = true)
+        ConfirmCopy(str(S.delete), str(S.are_you_sure_you_want_to_delete_this_document), isDelete = true)
+    is ConfirmState.DeleteSignature ->
+        ConfirmCopy(str(S.delete), str(S.desktop_fs_delete_this_confirm), isDelete = true)
     ConfirmState.LeaveSigned ->
         ConfirmCopy(
-            "Sign Document",
-            "You have signed this document. Are you sure you want to go back?",
+            str(S.sign_document_text),
+            str(S.desktop_fs_leave_signed_confirm),
             isDelete = false,
         )
     ConfirmState.SendSigned ->
-        ConfirmCopy("Sign Document", "Are you sure you placed the signature in the correct position?", isDelete = false)
+        ConfirmCopy(str(S.sign_document_text), str(S.txt_signature_submit), isDelete = false)
     null -> ConfirmCopy("", "", isDelete = false)
 }
 
@@ -79,13 +82,13 @@ internal fun ConfirmDialog(state: FormSignatureUiState, onEvent: (FormSignatureE
         scrollable = false,
         actions = {
             ZillitButton(
-                text = if (isDelete) "Cancel" else "No",
+                text = if (isDelete) str(S.cancel) else str(S.no),
                 onClick = { onEvent(FormSignatureEvent.ConfirmNo) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = if (isDelete) "Delete" else "Yes",
+                text = if (isDelete) str(S.delete) else str(S.yes),
                 onClick = { onEvent(FormSignatureEvent.ConfirmYes) },
                 variant = if (isDelete) ButtonVariant.Danger else ButtonVariant.Primary,
                 size = ButtonSize.Small,
@@ -123,7 +126,7 @@ internal fun HistoryDialog(
 ) {
     val form = state.history?.form
     ZillitDialogShell(
-        title = "Update History",
+        title = str(S.update_history),
         subtitle = form?.name?.takeIf { it.isNotBlank() },
         visible = form != null,
         onDismiss = { onEvent(FormSignatureEvent.CloseHistory) },
@@ -142,7 +145,7 @@ internal fun HistoryDialog(
             val person = host.crew(copy.signedBy)
             HistoryPerson(
                 userId = copy.signedBy,
-                fullName = person?.fullName ?: if (copy.signedBy == state.currentUserId) "You" else copy.signedBy,
+                fullName = person?.fullName ?: if (copy.signedBy == state.currentUserId) str(S.you) else copy.signedBy,
                 designation = person?.designation.orEmpty(),
                 at = copy.signedOn,
             )
@@ -152,11 +155,19 @@ internal fun HistoryDialog(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(end = 24.dp),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitText("Uploaded by", style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+            ZillitText(
+                str(S.txt_uploaded_by),
+                style = ZillitTheme.typography.label,
+                color = ZillitTheme.colors.textSecondary,
+            )
             HistoryRow(uploader)
             if (signers.isNotEmpty()) {
                 ZillitDivider()
-                ZillitText("Signed by", style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+                ZillitText(
+                    str(S.signed_by_label),
+                    style = ZillitTheme.typography.label,
+                    color = ZillitTheme.colors.textSecondary,
+                )
                 signers.forEach { HistoryRow(it) }
             }
         }
@@ -189,7 +200,7 @@ internal fun ReceiverPickerDialog(state: FormSignatureUiState, onEvent: (FormSig
     val chat = state.chat
     var search by remember { mutableStateOf("") }
     ZillitDialogShell(
-        title = "Select User",
+        title = str(S.select_user),
         visible = chat.pickingReceiver,
         onDismiss = { onEvent(FormSignatureEvent.CloseReceiverPicker) },
         icon = ZillitIcons.User,
@@ -198,7 +209,7 @@ internal fun ReceiverPickerDialog(state: FormSignatureUiState, onEvent: (FormSig
         actions = {
             if (chat.receiver != null) {
                 ZillitButton(
-                    text = "Clear selection",
+                    text = str(S.ah_clear_selection),
                     onClick = { onEvent(FormSignatureEvent.ChooseReceiver(null)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
@@ -207,7 +218,7 @@ internal fun ReceiverPickerDialog(state: FormSignatureUiState, onEvent: (FormSig
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitSearchField(value = search, onValueChange = { search = it }, placeholder = "Search")
+            ZillitSearchField(value = search, onValueChange = { search = it }, placeholder = str(S.search))
             val needle = search.trim().lowercase()
             val rows = chat.options.filter { needle.isEmpty() || it.label.lowercase().contains(needle) }
             ZillitScrollColumn(

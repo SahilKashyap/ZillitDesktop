@@ -66,7 +66,7 @@ class ExternalUsersScreenRenderTest {
         setContent { ZillitTheme { ExternalUsersScreen(state = state, onEvent = { events += it }) } }
 
         onNodeWithText("ops@griphire.example").performClick()
-        onNodeWithText("View more details").performClick()
+        onNodeWithText("View More Details").performClick()
 
         assertTrue(events.contains(ExternalUsersEvent.WriteTo("ops@griphire.example")))
         assertTrue(events.contains(ExternalUsersEvent.ShowDetails(vendor)))
@@ -98,13 +98,13 @@ class ExternalUsersScreenRenderTest {
 
         onNodeWithText("Full name *").assertExists()
         onNodeWithText("Email *").assertExists()
-        onNodeWithText("Country code").assertExists()
+        onNodeWithText("Country Code").assertExists()
         onNodeWithText("Phone").assertExists()
         onNodeWithText("Select gender").assertExists()
         // A fresh draft is a crew member, so the department picker is up.
         onNodeWithText("Select department").assertExists()
         onNodeWithText("Submit").assertExists()
-        onNodeWithText("Add more information").assertExists()
+        onNodeWithText("Add More Information").assertExists()
     }
 
     @Test

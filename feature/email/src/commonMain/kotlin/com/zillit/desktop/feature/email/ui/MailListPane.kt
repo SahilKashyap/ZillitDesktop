@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.EmailFilters
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.ReadStatus
@@ -81,8 +83,9 @@ internal fun MailListPane(
                 state.error != null && state.rows.isEmpty() -> Centred(state.error)
 
                 state.rows.isEmpty() -> Centred(
-                    if (state.searchTerm.isNotBlank() || state.filtersActive) "No emails found"
-                    else "${state.selectedFolder?.displayName ?: "This folder"} is empty",
+                    if (state.searchTerm.isNotBlank() || state.filtersActive) str(S.desktop_email_no_emails_found)
+                    else state.selectedFolder?.displayName?.let { str(S.desktop_email_folder_is_empty, it) }
+                        ?: str(S.drive_empty_folder_title),
                 )
 
                 else -> ListWithNotice(state.error) { MailList(state, onEvent, loadAvatar, drag) }
@@ -110,7 +113,7 @@ private fun MailListHeader(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
         ZillitSearchField(
             value = state.searchTerm,
             onValueChange = { onEvent(EmailEvent.QueryChanged(it)) },
-            placeholder = "Search Mail...",
+            placeholder = str(S.desktop_email_search_mail),
             modifier = Modifier.fillMaxWidth().testTag(SEARCH_TAG),
         )
         if (state.searchTerm.isNotBlank()) {
@@ -123,10 +126,10 @@ private fun MailListHeader(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
         ) {
             if (state.rows.isNotEmpty()) SelectAllControl(state, onEvent)
 
-            ZillitTooltip("Refresh") {
+            ZillitTooltip(str(S.refresh_text)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Reload,
-                    contentDescription = "Refresh",
+                    contentDescription = str(S.refresh_text),
                     onClick = { onEvent(EmailEvent.Refresh) },
                     enabled = !state.isRefreshing,
                     modifier = Modifier.testTag(REFRESH_TAG),
@@ -134,10 +137,10 @@ private fun MailListHeader(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
             }
 
             if (state.hasSelection) {
-                ZillitTooltip("Delete") {
+                ZillitTooltip(str(S.delete)) {
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
-                        contentDescription = "Delete",
+                        contentDescription = str(S.delete),
                         tint = colors.danger,
                         onClick = { onEvent(EmailEvent.DeleteSelected) },
                         modifier = Modifier.testTag(DELETE_SELECTED_TAG),
@@ -169,15 +172,18 @@ private fun SearchScopeRow(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
     ) {
         ZillitText(
             text = if (state.searchAllFolders) {
-                "Searching every folder"
+                str(S.desktop_email_searching_every_folder)
             } else {
-                "In ${state.selectedFolder?.displayName ?: "this folder"}"
+                state.selectedFolder?.displayName?.let { str(S.desktop_email_searching_in_folder, it) }
+                    ?: str(S.desktop_email_searching_in_this_folder)
             },
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
         ZillitText(
-            text = if (state.searchAllFolders) "Only this folder" else "Search all folders",
+            text = str(
+                if (state.searchAllFolders) S.desktop_email_only_this_folder else S.desktop_email_search_all_folders,
+            ),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
             color = colors.accentText,
             modifier = Modifier
@@ -223,7 +229,7 @@ private fun SelectAllControl(state: EmailUiState, onEvent: (EmailEvent) -> Unit)
             ) {
                 ZillitIcon(
                     ZillitIcons.ChevronDown,
-                    contentDescription = "Select",
+                    contentDescription = str(S.select),
                     tint = colors.textMuted,
                     size = CARET,
                 )
@@ -232,12 +238,12 @@ private fun SelectAllControl(state: EmailUiState, onEvent: (EmailEvent) -> Unit)
                 expanded = open,
                 onDismissRequest = { open = false },
                 entries = listOf(
-                    "All" to SelectionChoice.All,
-                    "None" to SelectionChoice.None,
-                    "Read" to SelectionChoice.Read,
-                    "Unread" to SelectionChoice.Unread,
+                    S.all to SelectionChoice.All,
+                    S.none to SelectionChoice.None,
+                    S.read to SelectionChoice.Read,
+                    S.unread_txt to SelectionChoice.Unread,
                 ).map { (label, choice) ->
-                    ZillitMenuEntry.Action(label) { onEvent(EmailEvent.SelectRows(choice)) }
+                    ZillitMenuEntry.Action(str(label)) { onEvent(EmailEvent.SelectRows(choice)) }
                 },
             )
         }
@@ -251,7 +257,7 @@ private fun TrashMenu(onEvent: (EmailEvent) -> Unit) {
     Box {
         ZillitIconButton(
             icon = ZillitIcons.MoreVertical,
-            contentDescription = "More",
+            contentDescription = str(S.more),
             onClick = { open = true },
             modifier = Modifier.testTag(TRASH_MENU_TAG),
         )
@@ -259,7 +265,7 @@ private fun TrashMenu(onEvent: (EmailEvent) -> Unit) {
             expanded = open,
             onDismissRequest = { open = false },
             entries = listOf(
-                ZillitMenuEntry.Action("Empty Trash", ZillitIcons.Trash, ZillitMenuTone.Danger) {
+                ZillitMenuEntry.Action(str(S.empty_trash), ZillitIcons.Trash, ZillitMenuTone.Danger) {
                     onEvent(EmailEvent.EmptyTrash)
                 },
             ),
@@ -281,10 +287,10 @@ internal fun MoveButton(
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
-        ZillitTooltip("Move") {
+        ZillitTooltip(str(S.move)) {
             ZillitIconButton(
                 icon = icon,
-                contentDescription = "Move",
+                contentDescription = str(S.move),
                 onClick = { open = true },
                 modifier = Modifier.testTag(MOVE_TAG),
             )
@@ -323,14 +329,14 @@ internal fun MovePicker(targets: List<EmailFolder>, onCreateFolder: () -> Unit, 
             ZillitSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search Folder",
+                placeholder = str(S.desktop_email_search_folder),
                 modifier = Modifier.weight(1f),
             )
-            ZillitButton(text = "+ Add new", size = ButtonSize.Small, onClick = onCreateFolder)
+            ZillitButton(text = str(S.desktop_email_add_new_folder), size = ButtonSize.Small, onClick = onCreateFolder)
         }
         if (shown.isEmpty()) {
             ZillitText(
-                text = "No folders to move to",
+                text = str(S.desktop_email_no_folders_to_move_to),
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
                 modifier = Modifier.padding(ZillitTheme.spacing.sm),
@@ -344,7 +350,7 @@ internal fun MovePicker(targets: List<EmailFolder>, onCreateFolder: () -> Unit, 
         picked?.let { target ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 ZillitButton(
-                    text = "Move",
+                    text = str(S.move),
                     size = ButtonSize.Small,
                     onClick = { onMove(target) },
                     modifier = Modifier.testTag(MOVE_CONFIRM_TAG),
@@ -409,7 +415,11 @@ private fun FiltersButton(filters: EmailFilters, onEvent: (EmailEvent) -> Unit) 
                     )
                 }
             }
-            ZillitText(text = "Filters", style = ZillitTheme.typography.labelSmall, color = colors.textSecondary)
+            ZillitText(
+                text = str(S.asset_filters),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textSecondary,
+            )
         }
         ZillitMenuSurface(expanded = open, onDismissRequest = { open = false }) {
             FiltersPopover(
@@ -441,10 +451,14 @@ internal fun FiltersPopover(filters: EmailFilters, onApply: (EmailFilters) -> Un
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(text = "Filters", style = ZillitTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            ZillitText(
+                text = str(S.asset_filters),
+                style = ZillitTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
             if (draft.isActive) {
                 ZillitText(
-                    text = "Clear Filters",
+                    text = str(S.dd_empty_clear_filters),
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.accentText,
                     modifier = Modifier
@@ -455,17 +469,17 @@ internal fun FiltersPopover(filters: EmailFilters, onApply: (EmailFilters) -> Un
             }
         }
 
-        FilterHeading("Read Status")
+        FilterHeading(str(S.desktop_email_read_status))
         ReadStatusRow(draft.readStatus) { draft = draft.copy(readStatus = it) }
         AttachmentsChip(draft.hasAttachments) { draft = draft.copy(hasAttachments = !draft.hasAttachments) }
 
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
 
-        FilterHeading("Address")
+        FilterHeading(str(S.address))
         AddressFilters(draft) { draft = it }
 
         ZillitButton(
-            text = "Apply Filters",
+            text = str(S.bs_filter_apply),
             onClick = { onApply(draft) },
             modifier = Modifier.fillMaxWidth().testTag(FILTERS_APPLY_TAG),
         )
@@ -504,7 +518,11 @@ private fun ReadStatusRow(current: ReadStatus, onPick: (ReadStatus) -> Unit) {
                     )
                 }
                 ZillitText(
-                    text = status.name,
+                    text = when (status) {
+                        ReadStatus.All -> str(S.all)
+                        ReadStatus.Read -> str(S.read)
+                        ReadStatus.Unread -> str(S.unread_txt)
+                    },
                     style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = if (selected) colors.textOnAccent else colors.textSecondary,
                 )
@@ -535,7 +553,7 @@ private fun AttachmentsChip(on: Boolean, onToggle: () -> Unit) {
             size = CARET_LARGE,
         )
         ZillitText(
-            text = "Has Attachments",
+            text = str(S.has_attachments_txt),
             style = ZillitTheme.typography.labelSmall,
             color = if (on) colors.textOnAccent else colors.textSecondary,
         )
@@ -548,26 +566,26 @@ private fun AddressFilters(draft: EmailFilters, onChange: (EmailFilters) -> Unit
     ZillitTextField(
         value = draft.from,
         onValueChange = { onChange(draft.copy(from = it)) },
-        placeholder = "From",
+        placeholder = str(S.fromText),
         modifier = Modifier.fillMaxWidth(),
     )
     ZillitTextField(
         value = draft.to,
         onValueChange = { onChange(draft.copy(to = it)) },
-        placeholder = "To",
+        placeholder = str(S.toText),
         modifier = Modifier.fillMaxWidth(),
     )
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         ZillitTextField(
             value = draft.cc,
             onValueChange = { onChange(draft.copy(cc = it)) },
-            placeholder = "CC",
+            placeholder = str(S.dd_label_cc),
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = draft.bcc,
             onValueChange = { onChange(draft.copy(bcc = it)) },
-            placeholder = "BCC",
+            placeholder = str(S.dd_label_bcc),
             modifier = Modifier.weight(1f),
         )
     }

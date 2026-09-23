@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.bankrec.ui.pages
 
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.ui.components.BankRecIcons
 import com.zillit.desktop.feature.bankrec.ui.components.BrEmpty
 import com.zillit.desktop.feature.bankrec.ui.components.BrTone
@@ -16,9 +18,8 @@ import com.zillit.desktop.feature.bankrec.ui.components.BrTone
 @Composable
 fun ColumnScope.OpenBankingPage() {
     BrEmpty(
-        title = "Open Banking",
-        message = "Coming soon — connect bank accounts via PSD2 Open Banking for live transaction feeds and " +
-            "automated reconciliation.",
+        title = str(S.desktop_open_banking),
+        message = str(S.desktop_br_open_banking_soon),
         icon = BankRecIcons.Link,
         tone = BrTone.Accent,
     )

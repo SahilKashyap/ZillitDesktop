@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.bankrec.data
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.AlertInvoice
 import com.zillit.desktop.feature.bankrec.domain.BankAccountRef
 import com.zillit.desktop.feature.bankrec.domain.BankException
@@ -400,7 +402,7 @@ internal data class FraudAlertDto(
     private fun signalOf(element: JsonElement): FraudSignal? = when (element) {
         is JsonPrimitive -> element.content.takeIf { it.isNotBlank() }?.let { FraudSignal(it, it) }
         is JsonObject -> FraudSignal(
-            title = element["title"].asText().ifBlank { "Signal" },
+            title = element["title"].asText().ifBlank { str(S.desktop_signal) },
             detail = element["detail"].asText(),
         )
 

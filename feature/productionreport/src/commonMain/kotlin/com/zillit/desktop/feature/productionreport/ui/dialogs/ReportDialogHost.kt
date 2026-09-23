@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
 import com.zillit.desktop.feature.productionreport.domain.reminderSender
@@ -82,9 +84,9 @@ internal fun ReportDialogHost(state: ReportUiState, onEvent: (ReportEvent) -> Un
         is ReportDialog.Reminders -> RemindersDialog(state, dialog, dismiss)
         is ReportDialog.SendForChat -> SendForChatDialog(state, dialog, onEvent)
         is ReportDialog.DocDistConfirm -> ConfirmModal(
-            title = "Publish to Document Distribution",
-            message = "Publish \"${dialog.fileName}\" to the Document Distribution library?",
-            confirmLabel = "Publish",
+            title = str(S.dd_publish_confirm_title),
+            message = str(S.desktop_pr_publish_to_dd_message, dialog.fileName),
+            confirmLabel = str(S.publish),
             danger = false,
             onConfirm = { onEvent(WorkflowEvent.ConfirmDocDist) },
             onCancel = dismiss,
@@ -159,10 +161,14 @@ private fun HistoryDialog(dialog: ReportDialog.History, onClose: () -> Unit) {
 @Composable
 private fun RemindersDialog(state: ReportUiState, dialog: ReportDialog.Reminders, onClose: () -> Unit) {
     val colors = ReportTheme.colors
-    val title = if (dialog.reminders.size > 1) "Reminders (${dialog.reminders.size})" else "Reminder"
+    val title = if (dialog.reminders.size > 1) {
+        str(S.desktop_reminders_n, dialog.reminders.size)
+    } else {
+        str(S.reminder)
+    }
     ReportModal(title, onClose) {
         if (dialog.reminders.isEmpty()) {
-            Text("No reminders yet.", style = reportText(14.sp), color = colors.textMeta)
+            Text(str(S.desktop_no_reminders_yet), style = reportText(14.sp), color = colors.textMeta)
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             dialog.reminders.forEach { reminder ->
@@ -213,14 +219,14 @@ private fun SendForChatDialog(state: ReportUiState, dialog: ReportDialog.SendFor
             .any { it.lowercase().contains(query) }
     }
     val close = { if (!dialog.sending) onEvent(DialogEvent.Dismiss) }
-    ReportModal("Send for Chat", close, scrollable = false) {
+    ReportModal(str(S.cs_action_send_for_chat), close, scrollable = false) {
         Column(
             Modifier.fillMaxWidth().height(CHAT_PICKER_HEIGHT.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row {
                 Text(
-                    "Shares this production report as a PDF in a 1:1 chat.",
+                    str(S.desktop_pr_send_for_chat_hint),
                     style = reportText(14.sp),
                     color = colors.textSecondary,
                 )
@@ -234,7 +240,7 @@ private fun SendForChatDialog(state: ReportUiState, dialog: ReportDialog.SendFor
             ReportInput(
                 value = dialog.search,
                 onChange = { onEvent(ListEvent.SearchChatRecipient(it)) },
-                placeholder = "Search by name, role, department...",
+                placeholder = str(S.desktop_search_by_name_role_department),
                 leadingIcon = ZillitIcons.Search,
                 autoFocus = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -246,7 +252,7 @@ private fun SendForChatDialog(state: ReportUiState, dialog: ReportDialog.SendFor
             ) {
                 if (filtered.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
-                        Text("No members found", style = reportText(14.sp), color = colors.textSecondary)
+                        Text(str(S.desktop_no_members_found), style = reportText(14.sp), color = colors.textSecondary)
                     }
                 }
                 filtered.forEach { member ->
@@ -256,9 +262,9 @@ private fun SendForChatDialog(state: ReportUiState, dialog: ReportDialog.SendFor
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                ReportButton("Cancel", close, kind = ButtonKind.Ghost, height = 40.dp, enabled = !dialog.sending)
+                ReportButton(str(S.cancel), close, kind = ButtonKind.Ghost, height = 40.dp, enabled = !dialog.sending)
                 ReportButton(
-                    if (dialog.sending) "Sending…" else "Send",
+                    if (dialog.sending) str(S.dd_busy_sending) else str(S.send),
                     { onEvent(ListEvent.ConfirmSendForChat) },
                     enabled = dialog.selected != null && !dialog.sending,
                     height = 40.dp,
@@ -316,7 +322,7 @@ private fun ChatRecipientRow(member: SheetMember, selected: Boolean, onPick: () 
 @Composable
 private fun DocDistDoneDialog(dialog: ReportDialog.DocDistDone, onClose: () -> Unit) {
     val colors = ReportTheme.colors
-    ReportModal("Published.", onClose, width = 440.dp) {
+    ReportModal(str(S.pr_published), onClose, width = 440.dp) {
         Column(
             Modifier.fillMaxWidth().heightIn(min = 120.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -334,7 +340,7 @@ private fun DocDistDoneDialog(dialog: ReportDialog.DocDistDone, onClose: () -> U
                 color = colors.textSecondary,
                 textAlign = TextAlign.Center,
             )
-            ReportButton("OK", onClose, kind = ButtonKind.Accent)
+            ReportButton(str(S.ok), onClose, kind = ButtonKind.Accent)
         }
     }
 }

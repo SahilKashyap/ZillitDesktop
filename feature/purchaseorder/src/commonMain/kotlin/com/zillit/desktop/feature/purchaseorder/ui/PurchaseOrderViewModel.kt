@@ -6,6 +6,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.data.LOCAL_ID_PREFIX
 import com.zillit.desktop.feature.purchaseorder.data.PO_CREATE_KIND
 import com.zillit.desktop.feature.purchaseorder.data.QueuedPurchaseOrder
@@ -506,7 +508,7 @@ class PurchaseOrderViewModel(
     /** Queues an order the network could not carry, so nobody retypes it later. */
     internal suspend fun queueOrder(support: OfflineSupport, request: NewPurchaseOrder) {
         val queued = QueuedPurchaseOrder(order = request, raisedBy = currentState.viewer.userId, queuedAt = nowMillis())
-        val label = "Purchase order: ${request.vendorName} — ${request.description}".take(LABEL_MAX)
+        val label = str(S.desktop_po_outbox_label, request.vendorName, request.description).take(LABEL_MAX)
         val enqueued = support.engine.enqueue(
             NewOperation(
                 kind = PO_CREATE_KIND,
@@ -516,7 +518,7 @@ class PurchaseOrderViewModel(
         )
         if (enqueued == null) {
             setState { copy(busy = false) }
-            sendEffect(PoEffect.Failed("Open a project before raising an order."))
+            sendEffect(PoEffect.Failed(str(S.desktop_po_open_project_first)))
             return
         }
         formActions.forgetDraft()
@@ -582,16 +584,16 @@ class PurchaseOrderViewModel(
         val prompt = currentState.prompt ?: return
         setState { copy(prompt = null) }
         if (refusesPrompt(prompt)) {
-            sendEffect(PoEffect.Failed("You do not have the rights to do that on this project."))
+            sendEffect(PoEffect.Failed(str(S.desktop_po_no_rights_on_project)))
             return
         }
         when (prompt) {
             is PoPrompt.Confirm -> when (prompt.action) {
-                PoConfirmAction.Approve -> act("Order approved", readsBadgeOf = prompt.targetId) {
+                PoConfirmAction.Approve -> act(str(S.desktop_order_approved), readsBadgeOf = prompt.targetId) {
                     repository.approve(prompt.targetId, null)
                 }
-                PoConfirmAction.Post -> act("Order posted") { repository.post(prompt.targetId, null) }
-                PoConfirmAction.Delete -> act("Order deleted") {
+                PoConfirmAction.Post -> act(str(S.desktop_order_posted)) { repository.post(prompt.targetId, null) }
+                PoConfirmAction.Delete -> act(str(S.desktop_order_deleted)) {
                     repository.delete(prompt.targetId)
                 }.also { setState { copy(detail = null) } }
 
@@ -616,8 +618,8 @@ class PurchaseOrderViewModel(
             sendEffect(
                 PoEffect.Failed(
                     when (prompt.action) {
-                        PoReasonAction.NameTemplate -> "Template Name is required"
-                        PoReasonAction.Reject -> "A reason is required."
+                        PoReasonAction.NameTemplate -> str(S.ah_template_name_required)
+                        PoReasonAction.Reject -> str(S.desktop_a_reason_is_required)
                     },
                 ),
             )
@@ -625,7 +627,7 @@ class PurchaseOrderViewModel(
             return
         }
         when (prompt.action) {
-            PoReasonAction.Reject -> act("Order rejected", readsBadgeOf = prompt.targetId) {
+            PoReasonAction.Reject -> act(str(S.desktop_order_rejected), readsBadgeOf = prompt.targetId) {
                 repository.reject(prompt.targetId, answer)
             }
             PoReasonAction.NameTemplate -> formActions.saveTemplate(answer)
@@ -686,7 +688,7 @@ class PurchaseOrderViewModel(
         const val STATUS_DRAFT = "DRAFT"
         const val DRAFT_KIND = "po.draft"
         const val VENDORS_CACHE = "po.vendors"
-        const val QUEUED_NOTICE = "Saved on this computer — it will be raised when you're back online."
+        val QUEUED_NOTICE: String get() = str(S.desktop_po_queued_offline)
 
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L

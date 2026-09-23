@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.cashexpenses.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A petty-cash float: an amount of cash issued to one crew member, spent
  * against, and eventually returned or closed.
@@ -250,11 +253,13 @@ data class DeductionRule(
 )
 
 /** What a [DeductionRule] does when it fires. */
-enum class RuleProcess(val wire: String, val label: String) {
-    DeductAmount("deduct_amount", "Deduct"),
-    SeniorReview("senior_review", "Senior review"),
-    NeedQuery("need_query", "Raise a query"),
+enum class RuleProcess(val wire: String, private val labelKey: String) {
+    DeductAmount("deduct_amount", S.desktop_ce_deduct),
+    SeniorReview("senior_review", S.desktop_ce_senior_review),
+    NeedQuery("need_query", S.desktop_sa_raise_query),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): RuleProcess =
@@ -263,10 +268,12 @@ enum class RuleProcess(val wire: String, val label: String) {
 }
 
 /** How a [DeductionRule]'s threshold is read. */
-enum class RuleThreshold(val wire: String, val label: String) {
-    Percentage("percentage", "% of the receipt"),
-    MinAmount("min_amount", "Over an amount"),
+enum class RuleThreshold(val wire: String, private val labelKey: String) {
+    Percentage("percentage", S.desktop_ce_percent_of_receipt),
+    MinAmount("min_amount", S.desktop_ce_over_an_amount),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): RuleThreshold =

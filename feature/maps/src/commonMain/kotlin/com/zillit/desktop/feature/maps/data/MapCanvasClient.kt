@@ -50,6 +50,7 @@ import kotlinx.serialization.json.put
  * Every request times out ([REQUEST_TIMEOUT_MS]) and answers null: a page
  * that never booted (no key, no browser) must not hang a form.
  */
+@Suppress("TooManyFunctions") // One function per page message; the bridge is the contract.
 class MapCanvasClient(
     private val host: MapCanvasHost?,
     private val scope: CoroutineScope,

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -13,12 +15,14 @@ import kotlin.math.roundToLong
  * Archived version is read-only — the way to change one is to clone it and
  * edit the clone, which is why this screen never offers an edit on those.
  */
-enum class BudgetStatus(val wire: String, val label: String) {
-    Draft("DRAFT", "Draft"),
-    Approved("APPROVED", "Approved"),
-    Live("LIVE", "Live"),
-    Archived("ARCHIVED", "Archived"),
+enum class BudgetStatus(val wire: String, private val labelKey: String) {
+    Draft("DRAFT", S.draft),
+    Approved("APPROVED", S.approved),
+    Live("LIVE", S.desktop_status_live),
+    Archived("ARCHIVED", S.desktop_archived),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Whether the version is fixed. */
     val isLocked: Boolean get() = this == Live || this == Archived
@@ -263,7 +267,12 @@ object BudgetFigures {
 
     private fun Int.pad(): String = toString().padStart(2, '0')
 
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val MONTHS: List<String>
+        get() = listOf(
+            S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar, S.desktop_month_short_apr,
+            S.desktop_month_short_may, S.desktop_month_short_jun, S.desktop_month_short_jul, S.desktop_month_short_aug,
+            S.desktop_month_short_sep, S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+        ).map { str(it) }
     private const val PERCENT = 100.0
     private const val TENTH = 0.1
     private const val MIN_BAR = 2.0

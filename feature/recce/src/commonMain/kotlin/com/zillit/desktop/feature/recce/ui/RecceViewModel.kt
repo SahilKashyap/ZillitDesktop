@@ -11,6 +11,8 @@ import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.core.socket.SocketMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.feature.recce.data.RECCE_SYNC_EVENTS
 import com.zillit.desktop.feature.recce.data.eventProjectId
@@ -410,9 +412,8 @@ class RecceViewModel(
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, editor = null) }
-                    sendEffect(
-                        RecceEffect.Notice(if (status == RecceStatus.Published) "Recce published" else "Draft saved"),
-                    )
+                    val saved = if (status == RecceStatus.Published) S.recce_published_toast else S.ah_draft_saved_msg
+                    sendEffect(RecceEffect.Notice(str(saved)))
                     // A create adds a row and a publish moves one between
                     // tabs — the list re-answers the active badge itself.
                     loadList()
@@ -439,7 +440,7 @@ class RecceViewModel(
     private fun requestDelete(id: String) {
         if (refuses(RightsKind.Post)) return
         val title = (currentState.selected?.takeIf { it.id == id } ?: currentState.recces.firstOrNull { it.id == id })
-            ?.title?.takeIf { it.isNotBlank() } ?: "this recce"
+            ?.title?.takeIf { it.isNotBlank() } ?: str(S.desktop_recce_this_recce)
         setState { copy(deleteTarget = DeleteTarget(id, title)) }
     }
 
@@ -482,7 +483,7 @@ class RecceViewModel(
                 routeMap = if (viewingDeleted) null else routeMap,
             )
         }
-        sendEffect(RecceEffect.Notice("Recce deleted"))
+        sendEffect(RecceEffect.Notice(str(S.recce_deleted)))
         loadList(page = nextPage)
         loadCounts(covered = if (search.isEmpty()) currentState.filter else null)
     }
@@ -503,7 +504,7 @@ class RecceViewModel(
                 is ZillitResult.Success -> {
                     val (fileName, bytes) = fetched.data
                     setState { copy(pdf = pdf?.copy(name = fileName, bytes = bytes)) }
-                    sendEffect(RecceEffect.Notice("PDF generated"))
+                    sendEffect(RecceEffect.Notice(str(S.desktop_pdf_generated)))
                     when (val pages = host.renderPages(bytes, PDF_PAGE_WIDTH_PX)) {
                         is ZillitResult.Failure -> setState {
                             copy(pdf = pdf?.copy(loading = false, failed = pages.error.localised()))
@@ -548,7 +549,7 @@ class RecceViewModel(
             setState { copy(pdf = pdf?.copy(downloading = false)) }
             when (saved) {
                 is ZillitResult.Failure -> sendEffect(RecceEffect.Notice(saved.error.localised(), success = false))
-                is ZillitResult.Success -> sendEffect(RecceEffect.Notice("Saved to Downloads"))
+                is ZillitResult.Success -> sendEffect(RecceEffect.Notice(str(S.docusign_signing_attachment_saved)))
             }
         }
     }
@@ -588,7 +589,7 @@ class RecceViewModel(
             setState {
                 copy(route = ReccePage.Index, selected = null, editor = null, leavePrompt = false, routeMap = null)
             }
-            sendEffect(RecceEffect.Notice("This recce was deleted", success = false))
+            sendEffect(RecceEffect.Notice(str(S.desktop_recce_was_deleted), success = false))
         }
         setState { copy(recces = recces.filterNot { it.id in ids }) }
         loadList()

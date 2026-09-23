@@ -22,6 +22,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -86,7 +88,7 @@ class EmailToolProvider(
 ) : ToolProvider {
 
     override val path: String = "/email"
-    override val title: String = "Email"
+    override val title: String get() = str(S.email)
     override val icon = ZillitIcons.Mail
 
     /** The composers, and their view models — shared with the pop-out window. */
@@ -318,7 +320,7 @@ class EmailToolProvider(
 class EmailComposePopoutProvider(private val mailbox: EmailToolProvider) : ToolProvider {
 
     override val path: String = COMPOSE_POPOUT_PATH
-    override val title: String = "New Email"
+    override val title: String get() = str(S.desktop_email_new_email)
     override val icon = ZillitIcons.Edit
     override val defaultSize: DpSize = DpSize(820.dp, 720.dp)
 
@@ -334,7 +336,7 @@ class EmailComposePopoutProvider(private val mailbox: EmailToolProvider) : ToolP
 
         if (composer == null || viewModel == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                ZillitEmptyState(title = "This message was sent or closed.", icon = ZillitIcons.Mail)
+                ZillitEmptyState(title = str(S.desktop_email_composer_gone), icon = ZillitIcons.Mail)
             }
             return
         }
@@ -391,19 +393,19 @@ class EmailThreadPopoutProvider(
 ) : ToolProvider {
 
     override val path: String = THREAD_POPOUT_PATH
-    override val title: String = "Email"
+    override val title: String get() = str(S.email)
     override val icon = ZillitIcons.Mail
     override val defaultSize: DpSize = DpSize(900.dp, 720.dp)
 
     override fun titleFor(route: WorkspaceRoute): String =
-        mailbox.poppedThreads.atRoute(route.path)?.subject?.ifBlank { "(no subject)" } ?: title
+        mailbox.poppedThreads.atRoute(route.path)?.subject?.ifBlank { str(S.no_subject_parenthesis) } ?: title
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val popped = mailbox.poppedThreads.atRoute(route.path)
         if (popped == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                ZillitEmptyState(title = "This conversation is no longer open.", icon = ZillitIcons.Mail)
+                ZillitEmptyState(title = str(S.desktop_email_conversation_gone), icon = ZillitIcons.Mail)
             }
             return
         }
@@ -453,7 +455,7 @@ class SignatureToolProvider(
 ) : ToolProvider {
 
     override val path: String = SIGNATURES_PATH
-    override val title: String = "Signatures"
+    override val title: String get() = str(S.signatures)
     override val icon = ZillitIcons.Signature
 
     override val defaultSize: DpSize = DpSize(640.dp, 560.dp)

@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.media.decodeImageBitmap
 import com.zillit.desktop.core.permissions.gatedClick
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.FileKind
 import com.zillit.desktop.feature.documentdistribution.domain.fileKindOf
 import com.zillit.desktop.feature.documentdistribution.domain.formatBytes
@@ -70,7 +72,7 @@ internal fun FilePreviewDialog(state: DocDistUiState, onEvent: (DocDistEvent) ->
         actions = {
             if (stamp == null && available && document != null) {
                 ZillitButton(
-                    text = "Send by email",
+                    text = str(S.desktop_docdist_send_by_email),
                     onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(
                         DocDistEvent.DistributeDocument(document.id),
                     ) },
@@ -79,7 +81,7 @@ internal fun FilePreviewDialog(state: DocDistUiState, onEvent: (DocDistEvent) ->
                 )
                 if (document.isWatermarkable) {
                     ZillitButton(
-                        text = "Watermark",
+                        text = str(S.dd_watermark),
                         onClick = gatedClick(canDownload, { onEvent(askDownload) }) { onEvent(
                             DocDistEvent.OpenWatermarkDownload(document.id),
                         ) },
@@ -88,7 +90,7 @@ internal fun FilePreviewDialog(state: DocDistUiState, onEvent: (DocDistEvent) ->
                     )
                 }
                 ZillitButton(
-                    text = "Download",
+                    text = str(S.download),
                     onClick = gatedClick(canDownload, { onEvent(askDownload) }) { onEvent(
                         DocDistEvent.DownloadDocument(document.id),
                     ) },
@@ -97,7 +99,7 @@ internal fun FilePreviewDialog(state: DocDistUiState, onEvent: (DocDistEvent) ->
                 )
             } else {
                 ZillitButton(
-                    text = "Close",
+                    text = str(S.close),
                     onClick = { onEvent(DocDistEvent.ClosePreview) },
                     variant = ButtonVariant.Tertiary,
                 )
@@ -132,7 +134,7 @@ private fun PreviewBody(
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             ZillitSpinner()
-            ZillitText(text = "Opening document…", color = Color(0xFFCBD5E1))
+            ZillitText(text = str(S.dd_opening_document), color = Color(0xFFCBD5E1))
         }
         preview.error != null -> Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -141,7 +143,7 @@ private fun PreviewBody(
         ) {
             ZillitIcon(icon = ZillitIcons.Warning, tint = Color(0xFFFBBF24), size = 48.dp)
             ZillitText(
-                text = "Couldn’t load this document",
+                text = str(S.dd_load_failed),
                 style = ZillitTheme.typography.titleMedium,
                 color = Color.White,
             )
@@ -151,7 +153,7 @@ private fun PreviewBody(
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             ZillitButton(
-                text = "Remove this record",
+                text = str(S.dd_remove_record),
                 onClick = gatedClick(canPost, { onEvent(askPost) }) { onEvent(DocDistEvent.RemoveMissingRecord) },
                 variant = ButtonVariant.Danger,
                 leadingIcon = ZillitIcons.Trash,
@@ -224,10 +226,11 @@ private fun StampedImage(
 @Composable
 private fun DownloadCard(kind: FileKind, preview: PreviewState, onEvent: (DocDistEvent) -> Unit) {
     val (title, sub) = when (kind) {
-        FileKind.Word -> "Word document" to "Word documents preview best in Microsoft Word or Google Docs."
-        FileKind.Excel -> "Spreadsheet" to "Excel sheets preview best in Excel or Google Sheets."
-        FileKind.ImageUnsupported -> "Preview not available" to "This image format can’t be rendered inline."
-        else -> "Preview not available for this file type" to "Download to open in the native application."
+        FileKind.Word -> str(S.desktop_docdist_word_document) to str(S.desktop_docdist_word_preview_hint)
+        FileKind.Excel -> str(S.desktop_file_kind_spreadsheet) to str(S.desktop_docdist_excel_preview_hint)
+        FileKind.ImageUnsupported ->
+            str(S.desktop_preview_not_available) to str(S.desktop_docdist_image_not_renderable)
+        else -> str(S.desktop_docdist_preview_not_available_for_type) to str(S.desktop_docdist_download_to_open_native)
     }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -238,7 +241,7 @@ private fun DownloadCard(kind: FileKind, preview: PreviewState, onEvent: (DocDis
         ZillitText(text = title, style = ZillitTheme.typography.titleMedium, color = Color.White)
         ZillitText(text = sub, color = Color(0xFFCBD5E1), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         ZillitButton(
-            text = "Download to open",
+            text = str(S.dd_download_to_open),
             onClick = { onEvent(DocDistEvent.DownloadDocument(preview.document.id)) },
             leadingIcon = ZillitIcons.Download,
             loading = preview.downloading,

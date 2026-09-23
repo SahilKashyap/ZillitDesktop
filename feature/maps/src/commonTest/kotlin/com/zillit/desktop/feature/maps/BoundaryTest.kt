@@ -87,7 +87,10 @@ class BoundaryTest {
 
     @Test
     fun `a zone reaching beyond the city radius short-circuits to inside`() {
-        assertEquals(BoundaryStatus.Inside, evaluatePinBoundary(at(20.0), city, zone(milesNorth = 14.0, miles = 10.0)).status)
+        assertEquals(
+            BoundaryStatus.Inside,
+            evaluatePinBoundary(at(20.0), city, zone(milesNorth = 14.0, miles = 10.0)).status,
+        )
     }
 
     @Test
@@ -110,7 +113,12 @@ class BoundaryTest {
     @Test
     fun `outside the zone uses the J1 copy`() {
         val prompt = assertNotNull(
-            buildBoundaryPrompt(BoundaryStatus.OutsideZone, BoundaryMode.Add, zoneName = "Burbank Zone", address = "123 Main St"),
+            buildBoundaryPrompt(
+                BoundaryStatus.OutsideZone,
+                BoundaryMode.Add,
+                zoneName = "Burbank Zone",
+                address = "123 Main St",
+            ),
         )
         assertEquals("Outside Studio Zone", prompt.title)
         assertEquals("Location is outside the Burbank Zone. Do you want to pin the location?", prompt.message)
@@ -121,7 +129,9 @@ class BoundaryTest {
 
     @Test
     fun `outside the city offers three stacked choices`() {
-        val prompt = assertNotNull(buildBoundaryPrompt(BoundaryStatus.OutsideCity, BoundaryMode.Add, cityName = "Mumbai"))
+        val prompt = assertNotNull(
+            buildBoundaryPrompt(BoundaryStatus.OutsideCity, BoundaryMode.Add, cityName = "Mumbai"),
+        )
         assertEquals("Outside Mumbai", prompt.title)
         assertEquals(
             "This location is outside the selected city and studio zone. What would you like to do?",
@@ -131,7 +141,10 @@ class BoundaryTest {
             listOf("Create Another City & Pin Location", "Pin Location in the Same City", "Cancel"),
             prompt.actions.map { it.label },
         )
-        assertEquals(listOf(BoundaryChoice.CreateCity, BoundaryChoice.Confirm, BoundaryChoice.Cancel), prompt.actions.map { it.choice })
+        assertEquals(
+            listOf(BoundaryChoice.CreateCity, BoundaryChoice.Confirm, BoundaryChoice.Cancel),
+            prompt.actions.map { it.choice },
+        )
         assertTrue(prompt.stacked)
     }
 
@@ -145,13 +158,17 @@ class BoundaryTest {
 
     @Test
     fun `a move outside the zone swaps the verb`() {
-        val prompt = assertNotNull(buildBoundaryPrompt(BoundaryStatus.OutsideZone, BoundaryMode.Move, zoneName = "Zone A"))
+        val prompt = assertNotNull(
+            buildBoundaryPrompt(BoundaryStatus.OutsideZone, BoundaryMode.Move, zoneName = "Zone A"),
+        )
         assertEquals("Location is outside the Zone A. Do you want to move the location?", prompt.message)
     }
 
     @Test
     fun `a move outside the city has its own copy and no create-city`() {
-        val prompt = assertNotNull(buildBoundaryPrompt(BoundaryStatus.OutsideCity, BoundaryMode.Move, cityName = "Mumbai"))
+        val prompt = assertNotNull(
+            buildBoundaryPrompt(BoundaryStatus.OutsideCity, BoundaryMode.Move, cityName = "Mumbai"),
+        )
         assertEquals("The new position is outside Mumbai and any studio zone. Move the pin anyway?", prompt.message)
         assertEquals(listOf("Cancel", "Move"), prompt.actions.map { it.label })
     }

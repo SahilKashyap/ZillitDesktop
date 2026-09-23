@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.callsheet.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * A call sheet's lifecycle state.
  *
@@ -9,17 +12,19 @@ package com.zillit.desktop.feature.callsheet.domain
  * from any of the middle states moves the sheet back to Draft and restarts the
  * review. Labels are the web's `STATUS_UI` (`callsheetConstants.js:26-35`).
  */
-enum class CallSheetStatus(val wire: String, val label: String) {
-    Draft("DRAFT", "Draft"),
-    PendingInternalApproval("PENDING_INTERNAL_APPROVAL", "For Comments"),
-    InternalApproved("INTERNAL_APPROVED", "Comments Approved"),
-    PendingApproval("PENDING_APPROVAL", "Pending Signature"),
-    ApprovalRejected("APPROVAL_REJECTED", "Final Rejected"),
-    ApprovedForPublish("APPROVED_FOR_PUBLISH", "Final Approved"),
-    Published("PUBLISHED", "Published"),
-    Deleted("DELETED", "Deleted"),
-    Unknown("", "-"),
+enum class CallSheetStatus(val wire: String, private val labelKey: String) {
+    Draft("DRAFT", S.cs_status_draft),
+    PendingInternalApproval("PENDING_INTERNAL_APPROVAL", S.cs_status_for_comments),
+    InternalApproved("INTERNAL_APPROVED", S.cs_status_comments_approved),
+    PendingApproval("PENDING_APPROVAL", S.cs_status_pending_signature),
+    ApprovalRejected("APPROVAL_REJECTED", S.cs_status_final_rejected),
+    ApprovedForPublish("APPROVED_FOR_PUBLISH", S.cs_status_final_approved),
+    Published("PUBLISHED", S.cs_status_published),
+    Deleted("DELETED", S.drive_deleted_default),
+    Unknown("", ""),
     ;
+
+    val label: String get() = if (labelKey.isEmpty()) "-" else str(labelKey)
 
     /** `LOCKED_STATUSES`: no edit, no delete, no send. */
     val locked: Boolean get() = this == ApprovedForPublish || this == Published

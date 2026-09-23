@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.sides.domain.SidesRecord
 import com.zillit.desktop.feature.sides.domain.SidesRules
 import com.zillit.desktop.feature.sides.domain.SidesStatus
@@ -73,9 +75,9 @@ internal fun SidesListPage(list: SidesListState, onEvent: (SidesEvent) -> Unit) 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                ZillitText("Extract scene-specific pages from your scripts", style = ZillitTheme.typography.titleMedium)
+                ZillitText(str(S.desktop_sides_list_title), style = ZillitTheme.typography.titleMedium)
                 ZillitText(
-                    text = "Manage and download side packages for your scripts.",
+                    text = str(S.desktop_sides_list_subtitle),
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -89,14 +91,14 @@ internal fun SidesListPage(list: SidesListState, onEvent: (SidesEvent) -> Unit) 
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             when {
-                list.loading && list.sides.isEmpty() -> SidesLoader("Loading sides…")
+                list.loading && list.sides.isEmpty() -> SidesLoader(str(S.desktop_sides_loading))
                 list.sides.isEmpty() -> ZillitEmptyState(
-                    title = "No sides yet",
-                    message = "Generate sides from your script using a call sheet or scene selection.",
+                    title = str(S.sides_empty_title),
+                    message = str(S.sides_empty_subtitle),
                     icon = ZillitIcons.File,
                     action = {
                         ZillitButton(
-                            text = "Generate Sides",
+                            text = str(S.sides_generate),
                             onClick = { onEvent(SidesEvent.OpenGenerate) },
                             leadingIcon = ZillitIcons.Add,
                         )
@@ -147,7 +149,7 @@ private fun SideCard(record: SidesRecord, history: Boolean, onEvent: (SidesEvent
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ZillitText(
-                        text = record.title.ifBlank { "Sides" },
+                        text = record.title.ifBlank { str(S.txt_sides) },
                         style = ZillitTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -196,7 +198,7 @@ private fun SideCard(record: SidesRecord, history: Boolean, onEvent: (SidesEvent
 @Composable
 private fun CardChips(record: SidesRecord) {
     if (record.sceneNumbers.isNotEmpty()) {
-        ChipRow(label = "Scenes") {
+        ChipRow(label = str(S.av_scenes)) {
             record.sceneNumbers.take(SidesRules.SCENE_CHIP_CAP).forEach { SceneChip(it) }
             val overflow = record.sceneNumbers.size - SidesRules.SCENE_CHIP_CAP
             if (overflow > 0) {
@@ -210,12 +212,14 @@ private fun CardChips(record: SidesRecord) {
     }
     val pages = record.pageRefs
     if (pages.isNotEmpty()) {
-        ChipRow(label = "Pages") {
+        ChipRow(label = str(S.pages)) {
             pages.take(SidesRules.PAGE_CHIP_CAP).forEach { page ->
                 SceneChip(
                     text = page.sceneNumber,
                     tint = hexColor(page.color),
-                    tip = page.sceneNumbers.joinToString(", ").let { if (it.isEmpty()) "" else "Scenes: $it" },
+                    tip = page.sceneNumbers.joinToString(", ").let {
+                        if (it.isEmpty()) "" else str(S.desktop_sides_scenes_list, it)
+                    },
                 )
             }
             val overflow = pages.size - SidesRules.PAGE_CHIP_CAP
@@ -251,7 +255,7 @@ private fun ChipRow(label: String, chips: @Composable () -> Unit) {
 @Composable
 private fun StatusPill(record: SidesRecord, history: Boolean) {
     when {
-        history -> ZillitStatusPill("Archived", tone = StatusTone.Done)
+        history -> ZillitStatusPill(str(S.desktop_archived), tone = StatusTone.Done)
         record.status == SidesStatus.Ready -> Unit
         record.status == SidesStatus.Unknown && record.rawStatus.isNotBlank() ->
             ZillitStatusPill(record.rawStatus, tone = StatusTone.Neutral)
@@ -269,25 +273,25 @@ private fun RowActions(record: SidesRecord, history: Boolean, small: Boolean, on
         if (record.status == SidesStatus.Generating) GeneratingPill()
         if (record.status.viewable) {
             if (small) {
-                ZillitTooltip("View") {
-                    ZillitIconButton(ZillitIcons.Eye, "View", onClick = { onEvent(SidesEvent.ViewSides(record)) })
+                ZillitTooltip(str(S.view)) {
+                    ZillitIconButton(ZillitIcons.Eye, str(S.view), onClick = { onEvent(SidesEvent.ViewSides(record)) })
                 }
-                ZillitTooltip("Download") {
+                ZillitTooltip(str(S.download)) {
                     ZillitIconButton(
                         ZillitIcons.Download,
-                        "Download",
+                        str(S.download),
                         onClick = { onEvent(SidesEvent.DownloadSides(record)) },
                     )
                 }
             } else {
                 ZillitButton(
-                    text = "View",
+                    text = str(S.view),
                     onClick = { onEvent(SidesEvent.ViewSides(record)) },
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Eye,
                 )
                 ZillitButton(
-                    text = "Download",
+                    text = str(S.download),
                     onClick = { onEvent(SidesEvent.DownloadSides(record)) },
                     variant = ButtonVariant.Secondary,
                     size = ButtonSize.Small,
@@ -296,10 +300,10 @@ private fun RowActions(record: SidesRecord, history: Boolean, small: Boolean, on
             }
         }
         if (!history) {
-            ZillitTooltip("Delete") {
+            ZillitTooltip(str(S.delete)) {
                 ZillitIconButton(
                     icon = ZillitIcons.Trash,
-                    contentDescription = "Delete sides",
+                    contentDescription = str(S.desktop_sides_delete),
                     onClick = { onEvent(SidesEvent.AskDeleteSides(record)) },
                     tint = ZillitTheme.colors.danger,
                 )
@@ -315,7 +319,7 @@ private fun RowActions(record: SidesRecord, history: Boolean, small: Boolean, on
 private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (SidesEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val columns = listOf(
-        TableColumn<SidesRecord>("Name", ColumnWidth.Weight(2.2f)) { record ->
+        TableColumn<SidesRecord>(str(S.name), ColumnWidth.Weight(2.2f)) { record ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SidesTile(size = 30.dp)
                 Column(Modifier.weight(1f)) {
@@ -324,7 +328,7 @@ private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (Side
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         ZillitText(
-                            text = record.title.ifBlank { "Sides" },
+                            text = record.title.ifBlank { str(S.txt_sides) },
                             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -346,10 +350,10 @@ private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (Side
                 }
             }
         },
-        TableColumn("Scenes", ColumnWidth.Fixed(80.dp), numeric = true) { record ->
+        TableColumn(str(S.av_scenes), ColumnWidth.Fixed(80.dp), numeric = true) { record ->
             ZillitText(record.sceneCount.toString(), style = ZillitTheme.typography.bodySmall)
         },
-        TableColumn("Pages", ColumnWidth.Fixed(80.dp), numeric = true) { record ->
+        TableColumn(str(S.pages), ColumnWidth.Fixed(80.dp), numeric = true) { record ->
             val pages = record.pageRefs
             ZillitTooltip(pages.joinToString(", ") { it.sceneNumber }) {
                 ZillitText(
@@ -358,7 +362,7 @@ private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (Side
                 )
             }
         },
-        TableColumn("Generated By", ColumnWidth.Weight(1.2f)) { record ->
+        TableColumn(str(S.desktop_generated_by), ColumnWidth.Weight(1.2f)) { record ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CreatorAvatar(record.generatedById, record.generatedByName, size = 26.dp)
                 ZillitText(
@@ -369,16 +373,16 @@ private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (Side
                 )
             }
         },
-        TableColumn("Downloads", ColumnWidth.Fixed(90.dp), numeric = true) { record ->
+        TableColumn(str(S.desktop_downloads), ColumnWidth.Fixed(90.dp), numeric = true) { record ->
             ZillitText(record.downloadCount.toString(), style = ZillitTheme.typography.bodySmall)
         },
-        TableColumn("Date", ColumnWidth.Fixed(170.dp)) { record ->
+        TableColumn(str(S.date), ColumnWidth.Fixed(170.dp)) { record ->
             ZillitText(SidesRules.formatDateTime(record.createdAt), style = ZillitTheme.typography.bodySmall)
         },
-        TableColumn("Size", ColumnWidth.Fixed(80.dp), numeric = true) { record ->
+        TableColumn(str(S.drive_sort_size), ColumnWidth.Fixed(80.dp), numeric = true) { record ->
             ZillitText(SidesRules.formatBytes(record.attachmentSize) ?: "—", style = ZillitTheme.typography.bodySmall)
         },
-        TableColumn("Actions", ColumnWidth.Fixed(if (history) 100.dp else 140.dp)) { record ->
+        TableColumn(str(S.dd_actions), ColumnWidth.Fixed(if (history) 100.dp else 140.dp)) { record ->
             RowActions(record, history, small = true, onEvent)
         },
     )
@@ -388,7 +392,7 @@ private fun SidesTable(rows: List<SidesRecord>, history: Boolean, onEvent: (Side
         key = { it.id },
         // Inside a scrolling page: a virtualised table would measure to nothing.
         virtualised = false,
-        emptyTitle = "No sides",
+        emptyTitle = str(S.desktop_sides_none),
     )
 }
 
@@ -417,7 +421,7 @@ private fun HistoryPanel(list: SidesListState, onEvent: (SidesEvent) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             SidesTile(icon = ZillitIcons.Clock, size = 30.dp)
-            ZillitText("History", style = ZillitTheme.typography.titleMedium)
+            ZillitText(str(S.history), style = ZillitTheme.typography.titleMedium)
             if (list.historyOpen && list.history.isNotEmpty()) CountChip(list.history.size)
             Spacer(Modifier.weight(1f))
             ZillitIcon(
@@ -433,9 +437,9 @@ private fun HistoryPanel(list: SidesListState, onEvent: (SidesEvent) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when {
-                    list.historyLoading && list.history.isEmpty() -> SidesLoader("Loading history…")
+                    list.historyLoading && list.history.isEmpty() -> SidesLoader(str(S.desktop_loading_history))
                     list.history.isEmpty() -> ZillitText(
-                        text = "No archived sides",
+                        text = str(S.desktop_sides_no_archived),
                         style = ZillitTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )
@@ -443,13 +447,13 @@ private fun HistoryPanel(list: SidesListState, onEvent: (SidesEvent) -> Unit) {
                         ZillitSearchField(
                             value = list.historySearch,
                             onValueChange = { onEvent(SidesEvent.HistorySearch(it)) },
-                            placeholder = "Search archived sides by name or creator…",
+                            placeholder = str(S.desktop_sides_search_archived),
                             modifier = Modifier.width(360.dp),
                         )
                         val rows = list.filteredHistory
                         when {
                             rows.isEmpty() -> ZillitText(
-                                text = "No archived sides match “${list.historySearch}”",
+                                text = str(S.desktop_sides_no_archived_match, list.historySearch),
                                 style = ZillitTheme.typography.bodySmall,
                                 color = colors.textMuted,
                             )

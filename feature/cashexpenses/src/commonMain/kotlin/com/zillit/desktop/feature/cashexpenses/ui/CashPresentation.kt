@@ -14,6 +14,8 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitMeter
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
@@ -100,9 +102,9 @@ fun LifecycleBar(status: BatchStatus, modifier: Modifier = Modifier) {
         if (lifecycle is Lifecycle.NeedsAction) {
             ZillitStatusPill(
                 label = if (lifecycle.reason == BatchStatus.Rejected) {
-                    "Rejected — resubmit required"
+                    str(S.desktop_ce_rejected_resubmit)
                 } else {
-                    "Queried — action needed"
+                    str(S.desktop_ce_queried_action_needed)
                 },
                 tone = lifecycle.reason.tone,
                 dot = true,

@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.settings.account
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.settings.approvals.ApprovalPresets
 import com.zillit.desktop.feature.settings.approvals.CrewDepartment
 import com.zillit.desktop.feature.settings.approvals.CrewRole
@@ -321,7 +323,7 @@ class AccountViewModel(
 
             is AccountEvent.CopyInvite -> {
                 sendEffect(AccountEffect.CopyToClipboard(event.text))
-                announce("Invite copied. Paste it wherever you talk to the crew.")
+                announce(str(S.desktop_invite_copied))
             }
         }
     }
@@ -397,7 +399,7 @@ class AccountViewModel(
                     copy(
                         profile = profile.copy(
                             isSaving = false,
-                            error = "Could not save your profile. ${saved.error.localised()}",
+                            error = str(S.desktop_could_not_save_profile, saved.error.localised()),
                         ),
                     )
                 }
@@ -414,14 +416,14 @@ class AccountViewModel(
             when (val saved = repository.setRecoveryEmail(state.email)) {
                 is ZillitResult.Success -> {
                     setState { copy(recovery = recovery.copy(isSaving = false, isSaved = true)) }
-                    announce("Recovery email saved. Keep it somewhere you can reach without this app.")
+                    announce(str(S.desktop_recovery_email_saved))
                 }
 
                 is ZillitResult.Failure -> setState {
                     copy(
                         recovery = recovery.copy(
                             isSaving = false,
-                            error = "Could not save that address. ${saved.error.localised()}",
+                            error = str(S.desktop_could_not_save_address, saved.error.localised()),
                         ),
                     )
                 }
@@ -472,7 +474,7 @@ class AccountViewModel(
                     if (device.isThisDevice) {
                         sendEffect(AccountEffect.SignedOutHere)
                     } else {
-                        announce("${device.displayName} signed out.")
+                        announce(str(S.desktop_device_signed_out, device.displayName))
                     }
                 }
 
@@ -480,7 +482,7 @@ class AccountViewModel(
                     copy(
                         devices = devices.copy(
                             unlinkingId = null,
-                            error = "Could not sign that device out. ${done.error.localised()}",
+                            error = str(S.desktop_could_not_sign_device_out, done.error.localised()),
                         ),
                     )
                 }
@@ -504,7 +506,7 @@ class AccountViewModel(
                     copy(
                         leave = leave.copy(
                             isLeaving = false,
-                            error = "Could not leave this project. ${left.error.localised()}",
+                            error = str(S.desktop_could_not_leave_project, left.error.localised()),
                         ),
                     )
                 }
@@ -522,9 +524,9 @@ class AccountViewModel(
 /** What the toast says, which differs by which of the two paths the save took. */
 private val ProfileSaveOutcome.announcement: String
     get() = when (this) {
-        ProfileSaveOutcome.Saved -> "Profile saved."
+        ProfileSaveOutcome.Saved -> str(S.desktop_profile_saved)
         ProfileSaveOutcome.SentForApproval ->
-            "Sent to the project's admins. Your profile changes once one approves them."
+            str(S.desktop_profile_sent_to_admins)
     }
 
 /** The form as the session says it should be — the state a fresh open shows. */

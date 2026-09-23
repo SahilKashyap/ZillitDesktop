@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.crewlist.domain
 
+import com.zillit.desktop.core.strings.S
 /**
  * The crew-list PDF's letterhead, as the web customiser designs it
  * (`CrewListCustom.jsx`, ZL-19725): three sections — the title block, the
@@ -20,10 +21,10 @@ enum class HeaderSection(val wire: String, val label: String) {
 }
 
 /** Where the logo sits inside its own cell — only meaningful once it has one. */
-enum class LogoAlign(val wire: String, val label: String) {
-    Left("left", "Left"),
-    Center("center", "Center"),
-    Right("right", "Right"),
+enum class LogoAlign(val wire: String, val label: String, val labelKey: String) {
+    Left("left", "Left", S.left),
+    Center("center", "Center", S.desktop_align_center),
+    Right("right", "Right", S.desktop_align_right),
 }
 
 /** A section's content nudged inside its cell, in CSS pixels. */

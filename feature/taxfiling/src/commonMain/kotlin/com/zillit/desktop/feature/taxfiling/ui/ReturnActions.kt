@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.taxfiling.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.taxfiling.domain.DraftDiagnostics
 import com.zillit.desktop.feature.taxfiling.domain.FraudSignals
 import com.zillit.desktop.feature.taxfiling.domain.TaxRegistration
@@ -39,7 +41,7 @@ internal class ReturnActions(
      */
     private fun open(registration: TaxRegistration) {
         val named = registration.named(vm.current.companies)
-        if (!named.connected) return vm.info("Connect to HMRC to file a VAT return.")
+        if (!named.connected) return vm.info(str(S.desktop_tax_connect_before_open))
         vm.update {
             copy(
                 view = TaxFilingView.Return,
@@ -124,7 +126,7 @@ internal class ReturnActions(
                         ),
                     )
                 }
-                vm.toast("Synced obligations from HMRC")
+                vm.toast(str(S.desktop_tax_synced_obligations))
             }, { error ->
                 if (isOpen(registration.id)) {
                     vm.update { copy(returnState = returnState.copy(syncing = false, obligationsLoading = false)) }
@@ -138,9 +140,9 @@ internal class ReturnActions(
     private fun askSubmit() {
         val state = vm.current.returnState
         when {
-            !state.connected -> vm.info("Connect to HMRC before submitting.")
-            state.draft == null -> vm.info("Calculate the return before submitting.")
-            state.draftStale -> vm.info("The mapping has changed. Recalculate before submitting.")
+            !state.connected -> vm.info(str(S.desktop_tax_connect_before_submit))
+            state.draft == null -> vm.info(str(S.desktop_tax_calculate_before_submit))
+            state.draftStale -> vm.info(str(S.desktop_tax_recalculate_before_submit))
             state.canSubmit -> vm.update { copy(returnState = returnState.copy(confirmingSubmit = true)) }
         }
     }
@@ -179,7 +181,7 @@ internal class ReturnActions(
                         ),
                     )
                 }
-                vm.toast("Return submitted to HMRC")
+                vm.toast(str(S.desktop_tax_return_submitted))
                 // Re-ask HMRC rather than re-read the local list: the authority
                 // decides when a period is fulfilled, and the stored rows still
                 // say open until it has said otherwise.

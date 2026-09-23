@@ -29,6 +29,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.ExceptionType
 import com.zillit.desktop.feature.bankrec.domain.FxRates
@@ -69,25 +71,25 @@ internal fun ExceptionQuickAddDialog(state: BankRecUiState, onEvent: (BankRecEve
     val currency = exception?.transaction?.currency ?: exception?.currency
         ?: state.currencyOf(state.period(exception?.periodId))
     val problem = lockProblem(form.effectiveDate, lookups.lockedThrough)
-        ?: "Enter the amount to add.".takeIf { form.amountValue == null }
+        ?: str(S.desktop_br_enter_amount).takeIf { form.amountValue == null }
     fun edit(change: (QuickAddForm) -> QuickAddForm) = onEvent(BankRecEvent.EditExceptionQuickAdd(change(form)))
 
     ZillitDialogShell(
-        title = "Quick Add to Zillit Ledger",
+        title = str(S.desktop_br_quick_add_title),
         onDismiss = { if (!dialog.saving) onEvent(BankRecEvent.CloseExceptionQuickAdd) },
         visible = state.exceptionsPage.quickAdd != null,
         icon = ZillitIcons.Ledger,
         width = 680.dp,
         actions = {
             ZillitButton(
-                text = "Cancel",
+                text = str(S.cancel),
                 onClick = { onEvent(BankRecEvent.CloseExceptionQuickAdd) },
                 variant = ButtonVariant.Tertiary,
                 enabled = !dialog.saving,
             )
             ZillitTooltip(problem.orEmpty()) {
                 ZillitButton(
-                    text = if (dialog.saving) "Adding…" else "Add Entry",
+                    text = if (dialog.saving) str(S.desktop_adding) else str(S.desktop_add_entry),
                     onClick = { onEvent(BankRecEvent.SubmitExceptionQuickAdd) },
                     leadingIcon = ZillitIcons.Add,
                     loading = dialog.saving,
@@ -114,30 +116,30 @@ internal fun ExceptionQuickAddDialog(state: BankRecUiState, onEvent: (BankRecEve
         }
         FieldPair(
             left = {
-                Field("Date") {
+                Field(str(S.date)) {
                     ZillitDateField(value = form.date, onValueChange = { v -> edit { it.copy(date = v) } })
                 }
             },
             right = {
-                Field("Invoice Number") {
+                Field(str(S.desktop_invoice_number)) {
                     ZillitTextField(
                         value = form.invoiceNumber,
                         onValueChange = { v -> edit { it.copy(invoiceNumber = v) } },
-                        placeholder = "e.g. INV-2026-001",
+                        placeholder = str(S.desktop_br_invoice_number_hint),
                     )
                 }
             },
         )
-        Field("Description") {
+        Field(str(S.description)) {
             ZillitTextField(
                 value = form.description,
                 onValueChange = { v -> edit { it.copy(description = v) } },
-                placeholder = "e.g. Bank charges Feb 25",
+                placeholder = str(S.desktop_br_description_hint),
             )
         }
         FieldPair(
             left = {
-                Field("Effective Date") {
+                Field(str(S.ah_lbl_eff_date)) {
                     LockedDateField(
                         value = form.effectiveDate,
                         onValueChange = { v -> edit { it.copy(effectiveDate = v) } },
@@ -149,7 +151,7 @@ internal fun ExceptionQuickAddDialog(state: BankRecUiState, onEvent: (BankRecEve
         )
         FieldPair(
             left = {
-                Field("Amount") {
+                Field(str(S.amount)) {
                     AmountField(
                         value = form.amount,
                         onValueChange = { v -> edit { it.copy(amount = v) } },
@@ -158,24 +160,24 @@ internal fun ExceptionQuickAddDialog(state: BankRecUiState, onEvent: (BankRecEve
                 }
             },
             right = {
-                Field("Tax") {
+                Field(str(S.ah_lbl_vat)) {
                     TaxField(form = form, options = lookups.taxTypes, onChange = { next -> edit { next } })
                 }
             },
         )
         FieldPair(
             left = {
-                Field("Nominal Code") {
+                Field(str(S.dm_allow_nominal)) {
                     NominalCodeField(
                         value = form.nominal,
                         onValueChange = { v -> edit { it.copy(nominal = v) } },
                         codes = lookups.nominalCodes,
-                        placeholder = "e.g. 7600",
+                        placeholder = str(S.desktop_br_nominal_hint_7600),
                     )
                 }
             },
             right = {
-                Field("Cost Centre") {
+                Field(str(S.desktop_cost_centre)) {
                     CostCentreSelect(
                         value = form.costCentre,
                         onSelect = { v -> edit { it.copy(costCentre = v) } },
@@ -203,7 +205,7 @@ internal fun FxPostDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit
     val resolved = row?.let { FxRates.resolve(it, state.rates) }
     val budgetLocked = resolved?.budgetEditable == false
     ZillitDialogShell(
-        title = "Post FX Variance",
+        title = str(S.desktop_br_post_fx_variance),
         onDismiss = { if (!post.posting) onEvent(BankRecEvent.CloseFxPost) },
         visible = state.fxPage.post != null,
         icon = BankRecIcons.Swap,
@@ -216,21 +218,21 @@ internal fun FxPostDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit
                 ) {
                     ZillitIcon(ZillitIcons.Check, tint = ZillitTheme.colors.success, size = 16.dp)
                     ZillitText(
-                        "Posted successfully",
+                        str(S.desktop_br_posted_successfully),
                         style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = ZillitTheme.colors.success,
                     )
                 }
             } else {
                 ZillitButton(
-                    text = "Cancel",
+                    text = str(S.cancel),
                     onClick = { onEvent(BankRecEvent.CloseFxPost) },
                     variant = ButtonVariant.Tertiary,
                     enabled = !post.posting,
                 )
-                ZillitTooltip(if (post.ready) "" else "Enter both rates to post") {
+                ZillitTooltip(if (post.ready) "" else str(S.desktop_br_enter_both_rates)) {
                     ZillitButton(
-                        text = if (post.posting) "Posting…" else "Confirm & Post",
+                        text = if (post.posting) str(S.ah_posting_btn) else str(S.desktop_br_confirm_and_post),
                         onClick = { onEvent(BankRecEvent.ConfirmFxPost) },
                         loading = post.posting,
                         enabled = post.ready && !post.posting,
@@ -242,19 +244,23 @@ internal fun FxPostDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit
         val code = state.projectCurrency
         val invoiceCurrency = row?.invoiceCurrency.orEmpty()
         FigureRow {
-            BrFigure("Supplier", row?.supplierLabel ?: BankRecFormat.DASH, Modifier.weight(1f))
+            BrFigure(str(S.supplier), row?.supplierLabel ?: BankRecFormat.DASH, Modifier.weight(1f))
             BrFigure(
-                "Reference",
+                str(S.desktop_reference),
                 row?.reference?.ifBlank { null } ?: BankRecFormat.DASH,
                 Modifier.weight(1f),
                 valueStyle = mono(13.sp, FontWeight.SemiBold),
             )
-            BrFigure("Currency", currencyTag(invoiceCurrency).ifBlank { BankRecFormat.DASH }, Modifier.weight(1f))
+            BrFigure(
+                str(S.asset_currency),
+                currencyTag(invoiceCurrency).ifBlank { BankRecFormat.DASH },
+                Modifier.weight(1f),
+            )
         }
         ZillitDivider()
         FigureRow {
             BrFigure(
-                "Foreign Amount",
+                str(S.desktop_foreign_amount),
                 row?.let { BankRecFormat.wholeMoney(it.foreignAmount, it.invoiceCurrency) } ?: BankRecFormat.DASH,
                 Modifier.weight(1f),
                 valueStyle = mono(14.sp, FontWeight.Bold),
@@ -268,21 +274,21 @@ internal fun FxPostDialog(state: BankRecUiState, onEvent: (BankRecEvent) -> Unit
         if (!post.ready) RateNeeded(post, invoiceCurrency, code)
         FieldPair(
             left = {
-                Field("Nominal Code") {
+                Field(str(S.dm_allow_nominal)) {
                     NominalCodeField(
                         value = post.nominalCode,
                         onValueChange = { v -> onEvent(post.edit(nominalCode = v)) },
                         codes = state.lookups.nominalCodes,
-                        placeholder = "e.g. 7850",
+                        placeholder = str(S.desktop_br_nominal_hint_7850),
                     )
                 }
             },
             right = {
-                Field("Cost Centre") {
+                Field(str(S.desktop_cost_centre)) {
                     ZillitTextField(
                         value = post.costCentre,
                         onValueChange = { v -> onEvent(post.edit(costCentre = v)) },
-                        placeholder = "e.g. PROD-001",
+                        placeholder = str(S.desktop_br_cost_centre_hint),
                     )
                 }
             },
@@ -305,19 +311,23 @@ private fun PostedFigures(post: FxPostState, foreign: Double, code: String) {
     val variance = if (budget != null && paid != null) budget - paid else null
     FigureRow {
         BrFigure(
-            "Budget $code",
+            str(S.desktop_br_budget_in_currency, code),
             budget?.let { BankRecFormat.money(it, code) } ?: "-",
             Modifier.weight(1f),
             valueStyle = mono(13.sp, FontWeight.SemiBold),
         )
         BrFigure(
-            "$code Paid",
+            str(S.desktop_br_currency_paid, code),
             paid?.let { BankRecFormat.money(it, code) } ?: "-",
             Modifier.weight(1f),
             valueStyle = mono(13.sp, FontWeight.Bold),
         )
         BrFigure(
-            "FX ${when { variance == null -> "Variance"; variance >= 0 -> "Gain"; else -> "Loss" }}",
+            when {
+                variance == null -> str(S.desktop_fx_variance)
+                variance >= 0 -> str(S.desktop_fx_gain)
+                else -> str(S.desktop_fx_loss)
+            },
             variance?.let { BankRecFormat.signedMoney(it, code) } ?: "-",
             Modifier.weight(1f),
             valueStyle = mono(13.sp, FontWeight.Bold),
@@ -340,7 +350,7 @@ private fun RateFields(
     val colors = ZillitTheme.colors
     FieldPair(
         left = {
-            Field("Budget Rate") {
+            Field(str(S.desktop_budget_rate)) {
                 if (budgetLocked) {
                     val shape = ZillitTheme.shapes.medium
                     Row(
@@ -355,16 +365,20 @@ private fun RateFields(
                             modifier = Modifier.weight(1f),
                         )
                         ZillitText(
-                            "Production Setup",
+                            str(S.ps_production_setup),
                             style = ZillitTheme.typography.labelSmall,
                             color = colors.textMuted,
                         )
                     }
                 } else {
-                    RateInput(post.budgetRate, "e.g. 1.1650") { onEvent(post.edit(budgetRate = it)) }
+                    RateInput(post.budgetRate, str(S.desktop_br_budget_rate_hint)) {
+                        onEvent(post.edit(budgetRate = it))
+                    }
                     ZillitText(
-                        "${invoiceCurrency.ifBlank { "This currency" }} isn’t in Production Setup → " +
-                            "Project Currencies. Enter its rate to post.",
+                        str(
+                            S.desktop_br_currency_not_in_setup,
+                            invoiceCurrency.ifBlank { str(S.desktop_br_this_currency_caps) },
+                        ),
                         style = ZillitTheme.typography.labelSmall,
                         color = colors.textMuted,
                     )
@@ -372,8 +386,8 @@ private fun RateFields(
             }
         },
         right = {
-            Field("Bank Rate") {
-                RateInput(post.bankRate, "e.g. 1.2010") { onEvent(post.edit(bankRate = it)) }
+            Field(str(S.desktop_bank_rate)) {
+                RateInput(post.bankRate, str(S.desktop_br_bank_rate_hint)) { onEvent(post.edit(bankRate = it)) }
             }
         },
     )
@@ -407,17 +421,19 @@ private fun RateNeeded(post: FxPostState, invoiceCurrency: String, code: String)
     val parts = buildList {
         if (post.budgetRateValue <= 0) {
             add(
-                "No budget rate for ${invoiceCurrency.ifBlank { "this currency" }} in Production Setup → Project " +
-                    "Currencies. Enter it here to post this variance (it is saved with the posting).",
+                str(
+                    S.desktop_br_no_budget_rate,
+                    invoiceCurrency.ifBlank { str(S.desktop_br_this_currency) },
+                ),
             )
         }
-        if (post.bankRateValue <= 0) add("No bank rate on this transaction — enter the rate the bank actually used.")
-        add("Both rates are required: the variance is $code at budget minus $code actually paid.")
+        if (post.bankRateValue <= 0) add(str(S.desktop_br_no_bank_rate))
+        add(str(S.desktop_br_both_rates_required, code))
     }
     BrBanner(
         tone = BrTone.Amber,
         icon = ZillitIcons.Warning,
-        title = "Rate needed",
+        title = str(S.desktop_br_rate_needed),
         message = parts.joinToString(" "),
         modifier = Modifier.fillMaxWidth(),
     )

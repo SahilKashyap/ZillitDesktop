@@ -33,6 +33,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.formsignature.ui.DetailSource
 import com.zillit.desktop.feature.formsignature.ui.DetailState
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
@@ -89,7 +91,7 @@ private fun TopActions(detail: DetailState, onEvent: (FormSignatureEvent) -> Uni
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
     ) {
         ZillitButton(
-            text = "Download in device",
+            text = str(S.desktop_fs_download_in_device),
             onClick = { onEvent(FormSignatureEvent.DownloadDetail) },
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
@@ -97,7 +99,7 @@ private fun TopActions(detail: DetailState, onEvent: (FormSignatureEvent) -> Uni
         )
         if (!detail.notPdf) {
             ZillitButton(
-                text = "Print",
+                text = str(S.print),
                 onClick = { onEvent(FormSignatureEvent.PrintDetail) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
@@ -112,22 +114,19 @@ private fun TopActions(detail: DetailState, onEvent: (FormSignatureEvent) -> Uni
 private fun Guidance(detail: DetailState) {
     when {
         detail.alreadySigned -> ZillitNotice(
-            text = "You have signed this document.",
+            text = str(S.desktop_fs_you_have_signed),
             tone = StatusTone.Done,
             icon = ZillitIcons.Tick,
         )
         detail.offersSend && detail.placeholderFlow -> InfoBand {
             ZillitText(
-                "Click on the highlighted placeholder boxes to add your signature or initials. " +
-                    "The placeholders show where signatures are required.",
+                str(S.desktop_fs_placeholder_guidance),
                 style = ZillitTheme.typography.bodySmall,
             )
         }
         detail.offersSend -> InfoBand {
             ZillitText(
-                "If you need to place the same signature on the following pages, navigate to the next page. " +
-                    "Drag and drop the highlighted signature to the desired location, then click the Sign button " +
-                    "below to set the signature where it was placed.",
+                str(S.desktop_fs_free_sign_guidance),
                 style = ZillitTheme.typography.bodySmall,
             )
         }
@@ -143,7 +142,7 @@ private fun Pages(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitText("Page", style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textSecondary)
+        ZillitText(str(S.page), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textSecondary)
         ZillitText(
             "${detail.page + 1} / ${detail.pageCount}",
             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -151,13 +150,13 @@ private fun Pages(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
         Spacer(Modifier.weight(1f))
         ZillitIconButton(
             icon = ZillitIcons.ChevronLeft,
-            contentDescription = "Previous page",
+            contentDescription = str(S.docusign_page_nav_prev_cd),
             enabled = paging && detail.page > 0,
             onClick = { onEvent(FormSignatureEvent.TurnPage(-1)) },
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronRight,
-            contentDescription = "Next page",
+            contentDescription = str(S.docusign_page_nav_next_cd),
             enabled = paging && detail.page < detail.pageCount - 1,
             onClick = { onEvent(FormSignatureEvent.TurnPage(1)) },
         )
@@ -214,9 +213,9 @@ private fun NotPdfCard(detail: DetailState) {
             ZillitText(detail.title, style = ZillitTheme.typography.titleSmall)
             ZillitText(
                 if (detail.stored?.isWord == true) {
-                    "A Word document — it is converted to PDF when you add a signature."
+                    str(S.desktop_fs_word_converted_hint)
                 } else {
-                    "This file cannot be shown here. Download it to view it."
+                    str(S.desktop_fs_file_not_shown_hint)
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textSecondary,
@@ -234,7 +233,7 @@ private fun Footer(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
     ) {
         if (detail.source == DetailSource.LibraryAll) {
             ZillitButton(
-                text = "Transfer this form to your My Downloads",
+                text = str(S.desktop_fs_transfer_to_downloads),
                 onClick = { onEvent(FormSignatureEvent.TransferToDownloads) },
                 variant = ButtonVariant.Secondary,
                 loading = detail.transferring,
@@ -244,7 +243,7 @@ private fun Footer(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
         if (detail.offersFreeSign) {
             val placing = detail.freeMark != null
             ZillitButton(
-                text = if (placing) "Sign Document" else "Add Signature",
+                text = if (placing) str(S.sign_document_text) else str(S.add_signature),
                 onClick = {
                     onEvent(if (placing) FormSignatureEvent.ConfirmFreeMark else FormSignatureEvent.AddSignature)
                 },
@@ -256,7 +255,7 @@ private fun Footer(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
         }
         if (detail.offersSend) {
             ZillitButton(
-                text = "Send Document",
+                text = str(S.send_document),
                 onClick = { onEvent(FormSignatureEvent.AskSendSigned) },
                 enabled = detail.readyToSend,
                 loading = detail.sending,

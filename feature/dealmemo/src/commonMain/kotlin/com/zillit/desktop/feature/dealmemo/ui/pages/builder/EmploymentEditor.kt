@@ -15,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.DocRead
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormRules
 import com.zillit.desktop.feature.dealmemo.domain.preview.CrewFormValues
@@ -35,9 +37,9 @@ internal fun EmploymentEditor(state: DealMemoUiState, builder: BuilderState, ops
     val form = builder.form
     val union = builder.reference.selectedUnionForSteps
     val statuses = (union?.get("emp_statuses") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-    CardBlock(title = "Employment Status", tag = "Select Status", tone = BuilderTone.Purple) {
+    CardBlock(title = str(S.dm_crew_emp_status), tag = str(S.desktop_dm_select_status), tone = BuilderTone.Purple) {
         when {
-            statuses.isNotEmpty() -> Field("Employment Status", required = true) {
+            statuses.isNotEmpty() -> Field(str(S.dm_crew_emp_status), required = true) {
                 RichSelect(
                     options = statuses.mapNotNull { row ->
                         val id = DocRead.text(row, "id") ?: return@mapNotNull null
@@ -52,20 +54,20 @@ internal fun EmploymentEditor(state: DealMemoUiState, builder: BuilderState, ops
                     },
                     selectedKey = form.text("employmentStatus").ifEmpty { null },
                     onPick = { ops.set("employmentStatus", it.orEmpty()) },
-                    placeholder = "Select employment status…",
+                    placeholder = str(S.dm_step2_emp_status_placeholder),
                     dropdownWidth = 360.dp,
                 )
             }
-            union != null -> CenteredNote("No employee status present for selected agreement.")
+            union != null -> CenteredNote(str(S.desktop_dm_no_employee_status_present_for_selected_agreement))
         }
     }
     if (CrewStatus.isLoanOut(form.text("employmentStatus"))) {
-        CardBlock(title = "Loan Out Company", tag = "Company Details", tone = BuilderTone.Blue) {
+        CardBlock(title = str(S.dm_loanout_section_title), tag = str(S.company_details), tone = BuilderTone.Blue) {
             val email = form.text("loanOutEmail")
             val phone = form.text("loanOutPhoneNumber")
             BuilderGrid(columns = 2) {
                 cell {
-                    Field("Company Name") {
+                    Field(str(S.dm_loanout_name)) {
                         BuilderInput(
                             value = form.text("loanOutCompanyName"),
                             onValueChange = { ops.set("loanOutCompanyName", it) },
@@ -75,8 +77,9 @@ internal fun EmploymentEditor(state: DealMemoUiState, builder: BuilderState, ops
                 }
                 cell {
                     Field(
-                        "Email",
-                        error = "Enter a valid email address".takeUnless { CrewFormRules.validEmail(email) },
+                        str(S.dm_req_email),
+                        error = str(S.desktop_dm_enter_a_valid_email_address)
+                            .takeUnless { CrewFormRules.validEmail(email) },
                     ) {
                         BuilderInput(
                             value = email,
@@ -87,7 +90,7 @@ internal fun EmploymentEditor(state: DealMemoUiState, builder: BuilderState, ops
                     }
                 }
                 cell {
-                    Field("Phone Number") {
+                    Field(str(S.dm_loanout_phone)) {
                         PhoneFields(
                             countries = state.production.countries,
                             storedCode = form.text("loanOutCountryCode"),
@@ -95,7 +98,7 @@ internal fun EmploymentEditor(state: DealMemoUiState, builder: BuilderState, ops
                             mode = CodeMode.Dial,
                             onCode = { ops.set("loanOutCountryCode", it) },
                             onNumber = { ops.set("loanOutPhoneNumber", it) },
-                            error = "Enter a valid phone number (5–15 digits)".takeUnless {
+                            error = str(S.desktop_dm_enter_a_valid_phone_number_5_15).takeUnless {
                                 CrewFormRules.validPhone(phone)
                             },
                         )
@@ -104,7 +107,7 @@ internal fun EmploymentEditor(state: DealMemoUiState, builder: BuilderState, ops
             }
             Column(Modifier.padding(top = 18.dp)) {
                 ZillitText(
-                    text = "Address",
+                    text = str(S.dm_address_label),
                     style = DmType.sans(13.sp, FontWeight.Bold),
                     color = bp.ink,
                     modifier = Modifier.padding(bottom = 10.dp),

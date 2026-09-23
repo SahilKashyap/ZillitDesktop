@@ -60,6 +60,8 @@ import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.domain.ToolPresentation
 
@@ -122,8 +124,7 @@ fun HomeScreen(
 
         state.staleSince?.let { since ->
             ZillitNotice(
-                text = "You're offline — showing the tools saved ${EpochDate.dateTime(since)}. " +
-                    "They'll refresh when the connection is back.",
+                text = str(S.desktop_tools_offline_notice, EpochDate.dateTime(since)),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
                 modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
@@ -131,16 +132,13 @@ fun HomeScreen(
         }
 
         when {
-            state.isBusy && state.gridTools.isEmpty() -> Centred("Loading your tools…")
+            state.isBusy && state.gridTools.isEmpty() -> Centred(str(S.desktop_tools_loading))
 
             state.error != null -> ErrorState(state.error, onEvent)
 
-            state.gridTools.isEmpty() -> Centred(
-                "No tools are switched on for you in this project yet. " +
-                    "A coordinator can grant access.",
-            )
+            state.gridTools.isEmpty() -> Centred(str(S.desktop_tools_none_switched_on))
 
-            shown.isEmpty() -> Centred("No tool matches \"${query.trim()}\".")
+            shown.isEmpty() -> Centred(str(S.desktop_tools_no_match, query.trim()))
 
             else -> ToolGrid(shown, onEvent, toolBadges, query)
         }
@@ -176,16 +174,16 @@ private fun ReorderGroupsDialog(
     var order by remember(visible) { mutableStateOf(groups.map { it.identifier }) }
     val titles = remember(groups) { groups.associate { it.identifier to it.name } }
     ZillitDialogShell(
-        title = "Reorder groups",
-        subtitle = "Drag the groups into the order you want on your Tools page. This is saved only for you.",
+        title = str(S.reorder_groups),
+        subtitle = str(S.desktop_tools_reorder_subtitle),
         icon = ZillitIcons.Grid,
         visible = visible,
         onDismiss = onDismiss,
         width = REORDER_WIDTH,
         actions = {
             Spacer(Modifier.weight(1f))
-            ZillitButton(text = "Cancel", variant = ButtonVariant.Secondary, onClick = onDismiss)
-            ZillitButton(text = "Save", onClick = { onSave(order) })
+            ZillitButton(text = str(S.cancel), variant = ButtonVariant.Secondary, onClick = onDismiss)
+            ZillitButton(text = str(S.save), onClick = { onSave(order) })
         },
     ) {
         ReorderableGroupList(order, titles, onOrderChange = { order = it })
@@ -261,7 +259,7 @@ private fun ReorderableGroupRow(
         Box(
             modifier = Modifier
                 .size(GRIP_SIZE)
-                .semantics { contentDescription = "Drag to reorder $title" }
+                .semantics { contentDescription = str(S.desktop_tools_drag_to_reorder, title) }
                 .pointerInput(title) {
                     detectVerticalDragGestures(
                         onDragStart = { onDragStart() },
@@ -289,13 +287,13 @@ private fun ReorderableGroupRow(
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronDown,
-            contentDescription = "Move down",
+            contentDescription = str(S.dd_cd_move_down),
             enabled = canMoveDown,
             onClick = { onMove(1) },
         )
         ZillitIconButton(
             icon = ZillitIcons.ChevronDown,
-            contentDescription = "Move up",
+            contentDescription = str(S.dd_cd_move_up),
             enabled = canMoveUp,
             onClick = { onMove(-1) },
             modifier = Modifier.rotate(HALF_TURN),
@@ -406,12 +404,12 @@ private fun GridHeader(
                 .background(ZillitTheme.colors.accent),
         )
         Column {
-            ZillitText(text = "Film Tools", style = ZillitTheme.typography.displayLarge)
+            ZillitText(text = str(S.desktop_film_tools), style = ZillitTheme.typography.displayLarge)
             ZillitText(
                 text = when (toolCount) {
-                    0 -> "The project's departments, in one grid."
-                    1 -> "1 tool switched on for you."
-                    else -> "$toolCount tools switched on for you."
+                    0 -> str(S.desktop_tools_departments_grid)
+                    1 -> str(S.desktop_tools_one_switched_on)
+                    else -> str(S.desktop_tools_count_switched_on, toolCount)
                 },
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
@@ -421,7 +419,7 @@ private fun GridHeader(
         ZillitTextField(
             value = query,
             onValueChange = onQueryChange,
-            placeholder = "Search tools…",
+            placeholder = str(S.desktop_search_tools_ellipsis),
             leadingIcon = ZillitIcons.Search,
             shape = ZillitTheme.shapes.pill,
             modifier = Modifier.width(SEARCH_WIDTH),
@@ -430,7 +428,7 @@ private fun GridHeader(
         if (canReorder) {
             ZillitIconButton(
                 icon = ZillitIcons.Filter,
-                contentDescription = "Reorder groups",
+                contentDescription = str(S.reorder_groups),
                 onClick = onReorder,
             )
         }
@@ -439,7 +437,7 @@ private fun GridHeader(
         onCustomiseTools?.let { open ->
             ZillitIconButton(
                 icon = ZillitIcons.Settings,
-                contentDescription = "Customise tools",
+                contentDescription = str(S.desktop_tools_customise),
                 onClick = open,
             )
         }
@@ -650,7 +648,7 @@ private fun ErrorState(message: String, onEvent: (HomeEvent) -> Unit) {
             )
             // Retryable, because a failed rights call leaves the user with an
             // empty app and no way forward.
-            ZillitButton(text = "Try again", onClick = { onEvent(HomeEvent.Reload) })
+            ZillitButton(text = str(S.try_again), onClick = { onEvent(HomeEvent.Reload) })
         }
     }
 }

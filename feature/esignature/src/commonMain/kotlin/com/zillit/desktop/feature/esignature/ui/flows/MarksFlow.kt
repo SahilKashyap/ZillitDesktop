@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.esignature.ui.flows
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.esignature.ui.EsignStore
 import com.zillit.desktop.feature.esignature.ui.MARK_RASTER_HEIGHT
 import com.zillit.desktop.feature.esignature.ui.MARK_RASTER_WIDTH
@@ -55,9 +57,9 @@ internal class MarksFlow(private val store: EsignStore) {
         if (!pad.canApply) {
             store.failed(
                 when (pad.mode) {
-                    PadMode.Draw -> "Draw something first."
-                    PadMode.Type -> "Type your name first."
-                    else -> "Choose an image first."
+                    PadMode.Draw -> str(S.desktop_ds_draw_something_first)
+                    PadMode.Type -> str(S.desktop_ds_type_your_name_first)
+                    else -> str(S.desktop_ds_choose_an_image_first)
                 },
             )
             return
@@ -73,7 +75,7 @@ internal class MarksFlow(private val store: EsignStore) {
                     MARK_RASTER_HEIGHT,
                 )
                 else -> pad.uploadBytes?.let { ZillitResult.Success(it) }
-                    ?: ZillitResult.Failure(ZillitError.Validation("Choose an image first."))
+                    ?: ZillitResult.Failure(ZillitError.Validation(str(S.desktop_ds_choose_an_image_first)))
             }
             val bytes = when (png) {
                 is ZillitResult.Failure -> {
@@ -94,11 +96,15 @@ internal class MarksFlow(private val store: EsignStore) {
             when (saved) {
                 is ZillitResult.Failure -> {
                     editPad { it.copy(busy = false) }
-                    store.failed("The mark could not be saved.")
+                    store.failed(str(S.desktop_ds_the_mark_could_not_be_saved))
                 }
                 is ZillitResult.Success -> {
                     store.update { copy(marks = marks.copy(pad = PadState(mode = pad.mode))) }
-                    store.notice(if (marks.forSignature) "Signature saved." else "Initials saved.")
+                    store.notice(if (marks.forSignature) {
+                        str(S.txt_signature_saved)
+                    } else {
+                        str(S.desktop_fs_initials_saved)
+                    })
                     load()
                 }
             }
@@ -107,7 +113,7 @@ internal class MarksFlow(private val store: EsignStore) {
 
     fun imagePicked(name: String, bytes: ByteArray) {
         if (bytes.size > SigningFlow.MAX_UPLOAD_BYTES) {
-            store.failed("Images must be under 8 MB.")
+            store.failed(str(S.desktop_ds_images_must_be_under_8_mb))
             return
         }
         editPad { it.copy(mode = PadMode.Upload, uploadBytes = bytes, uploadName = name) }

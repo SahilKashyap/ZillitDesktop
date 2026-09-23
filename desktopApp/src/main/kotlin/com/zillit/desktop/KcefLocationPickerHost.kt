@@ -6,6 +6,8 @@ import com.zillit.desktop.core.locationpicker.LocationPickerEvent
 import com.zillit.desktop.core.locationpicker.LocationPickerWire
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.PickerTheme
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -189,7 +191,7 @@ class KcefLocationPickerHost(
             .onFailure { thrown -> ZillitLog.w(TAG) { "picker page not extracted: ${thrown.message}" } }
             .getOrNull()
         if (page == null) {
-            _failure.value = "The map page could not be prepared."
+            _failure.value = str(S.desktop_map_page_not_prepared)
             return@withLock false
         }
         // On the EDT: this builds AWT components, and JCEF is unforgiving
@@ -204,10 +206,10 @@ class KcefLocationPickerHost(
 
     private fun unavailableReason(): String = when (val reason = KcefRuntime.failure) {
         KcefRuntime.Failure.NoJcefRuntime ->
-            "This build has no embedded browser, so the map picker cannot open."
+            str(S.desktop_no_embedded_browser_map_picker)
         is KcefRuntime.Failure.Broken ->
-            "The embedded browser could not start (${reason.reason})."
-        null -> "The embedded browser is unavailable."
+            str(S.desktop_embedded_browser_failed, reason.reason)
+        null -> str(S.desktop_browser_unavailable)
     }
 
     private fun buildBrowser(cefClient: CefClient, page: File) {
@@ -298,7 +300,7 @@ class KcefLocationPickerHost(
             val key = runCatching { googleMapsKey() }.getOrNull()
             if (key.isNullOrBlank()) {
                 ZillitLog.w(TAG) { "no Google Maps key in remote config; picker stays blank" }
-                _failure.value = "This project has no Google Maps key, so the map cannot load."
+                _failure.value = str(S.desktop_no_maps_key)
                 return@launch
             }
             run(target, LocationPickerWire.bootScript(key, LocationPickerWire.themeJson(theme)))

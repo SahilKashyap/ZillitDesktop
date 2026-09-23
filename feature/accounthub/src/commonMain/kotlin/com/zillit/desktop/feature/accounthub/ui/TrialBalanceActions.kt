@@ -16,6 +16,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlin.time.Clock
 import kotlin.time.Instant
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The trial balance — the web's `TrialBalanceModule`.
@@ -188,7 +190,7 @@ internal class TrialBalanceActions(
                     val name = "${HubExportReport.TrialBalance.fileStem}_${exportStamp()}.${format.extension}"
                     when (val saved = files.saveAndOpen(name, bytes.data)) {
                         is ZillitResult.Failure -> vm.report(saved.error)
-                        is ZillitResult.Success -> vm.update { copy(notice = "Exported $name.") }
+                        is ZillitResult.Success -> vm.update { copy(notice = str(S.desktop_exported_file, name)) }
                     }
                 }
             }

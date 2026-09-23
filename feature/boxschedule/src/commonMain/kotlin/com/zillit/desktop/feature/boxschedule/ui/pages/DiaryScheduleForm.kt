@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
 import com.zillit.desktop.feature.boxschedule.domain.DateTab
 import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
@@ -57,16 +59,20 @@ import kotlinx.datetime.plus
 internal fun ScheduleFormSheet(state: BoxScheduleUiState, form: ScheduleForm, onEvent: (BoxScheduleEvent) -> Unit) {
     DiarySheet(
         title = when {
-            form.isSingleDay -> "EDIT DAY"
-            form.isEdit -> "EDIT SCHEDULE"
-            else -> "ADD NEW SCHEDULE"
+            form.isSingleDay -> str(S.desktop_bs_edit_day_upper)
+            form.isEdit -> str(S.desktop_bs_edit_schedule_upper)
+            else -> str(S.desktop_bs_add_new_schedule_upper)
         },
         onDismiss = { onEvent(ScheduleEvent.CloseForm) },
         width = FORM_WIDTH,
         footer = {
-            ZillitButton("Cancel", onClick = { onEvent(ScheduleEvent.CloseForm) }, variant = ButtonVariant.Secondary)
             ZillitButton(
-                text = if (form.isEdit) "Save Changes" else "Save Schedule",
+                str(S.cancel),
+                onClick = { onEvent(ScheduleEvent.CloseForm) },
+                variant = ButtonVariant.Secondary,
+            )
+            ZillitButton(
+                text = if (form.isEdit) str(S.dm_setup_save) else str(S.txt_save_schedule),
                 onClick = { onEvent(ScheduleEvent.Save) },
                 enabled = form.canSave,
                 loading = form.saving,
@@ -78,7 +84,7 @@ internal fun ScheduleFormSheet(state: BoxScheduleUiState, form: ScheduleForm, on
             SingleDayChoice(state, form, onEvent)
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("How to set dates")
+                FieldLabel(str(S.cs_how_to_set_dates))
                 ZillitTabStrip(
                     tabs = DateTab.entries.map { ZillitTab(it.name, it.label) },
                     activeId = form.tab.name,
@@ -96,11 +102,11 @@ internal fun ScheduleFormSheet(state: BoxScheduleUiState, form: ScheduleForm, on
             Summary(form)
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FieldLabel("Details", note = "(optional)")
+            FieldLabel(str(S.details), note = str(S.optional))
             ZillitTextField(
                 value = form.title,
                 onValueChange = { onEvent(ScheduleEvent.SetTitle(it)) },
-                placeholder = "e.g., Studio A — night exteriors",
+                placeholder = str(S.desktop_bs_schedule_details_hint),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -111,14 +117,14 @@ internal fun ScheduleFormSheet(state: BoxScheduleUiState, form: ScheduleForm, on
 private fun TypeField(state: BoxScheduleUiState, form: ScheduleForm, onEvent: (BoxScheduleEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        FieldLabel("Type", required = true)
+        FieldLabel(str(S.type), required = true)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DiaryDropdown(
                 selected = state.types.firstOrNull { it.id == form.typeId },
                 options = state.types,
                 onSelect = { type: ScheduleType -> onEvent(ScheduleEvent.SetType(type.id)) },
                 label = { it.title },
-                placeholder = "Select schedule type",
+                placeholder = str(S.select_page_type),
                 leading = { Dot(swatchColor(it.color), size = 10.dp, square = true) },
                 modifier = Modifier.weight(1f),
             )
@@ -131,7 +137,7 @@ private fun TypeField(state: BoxScheduleUiState, form: ScheduleForm, onEvent: (B
             ) {
                 ZillitIconButton(
                     icon = ZillitIcons.Add,
-                    contentDescription = "Add new type",
+                    contentDescription = str(S.desktop_bs_add_new_type),
                     onClick = { onEvent(ScheduleEvent.OpenNewType) },
                 )
             }
@@ -153,14 +159,14 @@ private fun NewTypeCard(draft: NewTypeDraft, onEvent: (BoxScheduleEvent) -> Unit
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FieldLabel("New Type Name")
+        FieldLabel(str(S.desktop_bs_new_type_name))
         ZillitTextField(
             value = draft.name,
             onValueChange = { onEvent(ScheduleEvent.SetNewTypeName(it)) },
-            placeholder = "e.g., Rehearsal",
+            placeholder = str(S.desktop_bs_type_name_hint),
             modifier = Modifier.fillMaxWidth(),
         )
-        FieldLabel("Color")
+        FieldLabel(str(S.color))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SwatchRow(
                 current = draft.color,
@@ -176,13 +182,13 @@ private fun NewTypeCard(draft: NewTypeDraft, onEvent: (BoxScheduleEvent) -> Unit
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             ZillitButton(
-                "Cancel",
+                str(S.cancel),
                 onClick = { onEvent(ScheduleEvent.CancelNewType) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
             )
             ZillitButton(
-                text = "Add Type",
+                text = str(S.desktop_map_add_type),
                 onClick = { onEvent(ScheduleEvent.CreateNewType) },
                 size = ButtonSize.Small,
                 enabled = draft.name.isNotBlank(),
@@ -217,7 +223,7 @@ private fun DateRangeTab(state: BoxScheduleUiState, form: ScheduleForm, onEvent:
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         RangeModes(form.rangeMode, onEvent)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FieldLabel("Start Date")
+            FieldLabel(str(S.start_date))
             DiaryDateField(
                 value = form.start,
                 onPick = { onEvent(ScheduleEvent.SetStart(it)) },
@@ -232,12 +238,12 @@ private fun DateRangeTab(state: BoxScheduleUiState, form: ScheduleForm, onEvent:
         }
         if (form.rangeMode == RangeMode.ByDays) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                FieldLabel("Number of Days")
+                FieldLabel(str(S.cs_number_of_days))
                 ZillitTextField(
                     value = form.countText,
                     onValueChange = { onEvent(ScheduleEvent.SetCount(it)) },
                     placeholder = "1 – ${ScheduleDates.MAX_DAYS}",
-                    errorText = "Between 1 and ${ScheduleDates.MAX_DAYS}".takeIf {
+                    errorText = str(S.desktop_bs_between_1_and_n, ScheduleDates.MAX_DAYS).takeIf {
                         form.countText.isNotBlank() && form.count == 0
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -245,7 +251,7 @@ private fun DateRangeTab(state: BoxScheduleUiState, form: ScheduleForm, onEvent:
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                FieldLabel("End Date")
+                FieldLabel(str(S.end_date))
                 DiaryDateField(
                     value = form.end,
                     onPick = { onEvent(ScheduleEvent.SetEnd(it)) },
@@ -286,7 +292,7 @@ private fun RangeModes(current: RangeMode, onEvent: (BoxScheduleEvent) -> Unit) 
 private fun CalendarTab(state: BoxScheduleUiState, form: ScheduleForm, onEvent: (BoxScheduleEvent) -> Unit) {
     val colors = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FieldLabel("Click dates to select/deselect")
+        FieldLabel(str(S.desktop_bs_click_dates_to_select))
         Box(
             Modifier
                 .clip(RoundedCornerShape(8.dp))
@@ -303,7 +309,11 @@ private fun CalendarTab(state: BoxScheduleUiState, form: ScheduleForm, onEvent: 
             )
         }
         ZillitText(
-            text = if (form.picked.isEmpty()) "No dates selected" else "${form.picked.size} date(s) selected",
+            text = if (form.picked.isEmpty()) {
+                str(S.desktop_bs_no_dates_selected)
+            } else {
+                str(S.desktop_bs_n_dates_selected, form.picked.size)
+            },
             style = ZillitTheme.typography.bodySmall,
             color = colors.textMuted,
         )
@@ -341,7 +351,7 @@ private fun PickedChip(date: LocalDate, locked: Boolean, past: Boolean, onEvent:
         if (!locked && !past) {
             ZillitIconButton(
                 icon = ZillitIcons.Close,
-                contentDescription = "Remove date",
+                contentDescription = str(S.desktop_bs_remove_date),
                 onClick = { onEvent(ScheduleEvent.TogglePick(date)) },
                 size = 18.dp,
             )
@@ -354,12 +364,12 @@ private fun DayWiseTab(state: BoxScheduleUiState, form: ScheduleForm, onEvent: (
     val colors = ZillitTheme.colors
     val available = ScheduleDates.availableWeekdays(form.dayWiseStart, form.dayWiseEnd)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        FieldLabel("Select Date Range")
+        FieldLabel(str(S.desktop_bs_select_date_range))
         DiaryDateField(
             value = form.dayWiseStart,
             onPick = { onEvent(ScheduleEvent.SetDayWiseStart(it)) },
             today = state.today,
-            placeholder = "Start date",
+            placeholder = str(S.start_date),
             enabled = form.lockedStart == null,
             clearable = form.lockedStart == null,
             selectable = { it >= state.today },
@@ -370,13 +380,13 @@ private fun DayWiseTab(state: BoxScheduleUiState, form: ScheduleForm, onEvent: (
             value = form.dayWiseEnd,
             onPick = { onEvent(ScheduleEvent.SetDayWiseEnd(it)) },
             today = state.today,
-            placeholder = "End date",
+            placeholder = str(S.end_date),
             clearable = true,
             selectable = { it >= state.today && (form.dayWiseStart == null || it >= form.dayWiseStart) },
             markers = form.existingDays,
             modifier = Modifier.fillMaxWidth(),
         )
-        FieldLabel("Select Days")
+        FieldLabel(str(S.txt_select_days))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ScheduleDates.WEEKDAYS.forEach { day ->
                 val enabled = day in available
@@ -427,8 +437,12 @@ private fun Summary(form: ScheduleForm) {
     ) {
         ZillitIcon(icon = ZillitIcons.Calendar, tint = colors.accentText, size = 14.dp)
         ZillitText(
-            text = "${days.size} day(s): " +
-                "${DiaryFormat.monthDay(days.first())} – ${DiaryFormat.mediumDate(days.last())}",
+            text = str(
+                S.cs_days_summary,
+                days.size,
+                DiaryFormat.monthDay(days.first()),
+                DiaryFormat.mediumDate(days.last()),
+            ),
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
             color = colors.accentText,
         )
@@ -449,10 +463,10 @@ private fun SingleDayChoice(state: BoxScheduleUiState, form: ScheduleForm, onEve
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        FieldLabel("Date")
+        FieldLabel(str(S.date))
         ZillitText(DiaryFormat.longDate(date, state.zone), style = ZillitTheme.typography.titleSmall)
         ZillitText(
-            "Date cannot be changed when editing a single day",
+            str(S.desktop_bs_date_locked_single_day),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
         )
@@ -462,26 +476,24 @@ private fun SingleDayChoice(state: BoxScheduleUiState, form: ScheduleForm, onEve
     val old = form.originalTypeName
     val total = form.originalDays.size
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FieldLabel("How should this change be applied?")
+        FieldLabel(str(S.desktop_bs_how_should_change_apply))
         OptionCard(
             selected = form.singleAction == ConflictAction.Replace,
-            title = "Replace",
-            description = "Remove $day from the current $old block and assign it to the new type. " +
-                "The $old block will shrink from $total to ${(total - 1).coerceAtLeast(0)} day(s).",
+            title = str(S.replace),
+            description = str(S.desktop_bs_replace_description, day, old, total, (total - 1).coerceAtLeast(0)),
             onClick = { onEvent(ScheduleEvent.SetSingleAction(ConflictAction.Replace)) },
         )
         OptionCard(
             selected = form.singleAction == ConflictAction.Extend,
-            title = "Extend",
-            description = "Remove $day from $old and assign it to the new type. " +
-                "The $old block will extend by 1 day at the end to keep the same total ($total days).",
+            title = str(S.txt_extent),
+            description = str(S.desktop_bs_extend_description, day, old, total),
             extra = extendLine(form, state),
             onClick = { onEvent(ScheduleEvent.SetSingleAction(ConflictAction.Extend)) },
         )
         OptionCard(
             selected = form.singleAction == ConflictAction.Overlap,
-            title = "Overlap",
-            description = "Keep the existing $old on this date and also add the new type. Both will appear on $day.",
+            title = str(S.txt_overlap),
+            description = str(S.desktop_bs_overlap_description, old, day),
             onClick = { onEvent(ScheduleEvent.SetSingleAction(ConflictAction.Overlap)) },
         )
     }
@@ -497,7 +509,7 @@ private fun extendLine(form: ScheduleForm, state: BoxScheduleUiState): String? {
     val extended = DiaryCalendar.dateOf(last, state.zone).plus(1, DateTimeUnit.DAY)
     val currentEnd = form.originalDays.max()
     val was = DiaryFormat.monthDay(currentEnd, state.zone)
-    return "${form.originalTypeName} will now end on ${DiaryFormat.monthDay(extended)} instead of $was."
+    return str(S.desktop_bs_will_now_end_on, form.originalTypeName, DiaryFormat.monthDay(extended), was)
 }
 
 private val FORM_WIDTH = 440.dp

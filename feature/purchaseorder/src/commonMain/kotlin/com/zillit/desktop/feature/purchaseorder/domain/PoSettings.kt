@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.purchaseorder.domain
 
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The production's purchase-order settings — the web's `POSettings` document
@@ -28,8 +30,7 @@ data class PoSettings(
         const val PREFIX_MAX = 8
 
         /** Under the prefix field — the web's `PO_PREFIX_HINT`. */
-        const val PREFIX_HINT =
-            "Goes at the start of every new PO number. POs you've already created keep their existing numbers."
+        val PREFIX_HINT: String get() = str(S.desktop_hub_goes_at_the_start_of_every_new_po_number_pos)
 
         /** The currency the settings' amounts print in until the production says otherwise. */
         const val DEFAULT_CURRENCY = "GBP"
@@ -40,14 +41,17 @@ data class PoSettings(
 }
 
 /** How a posted line's ledger description is built from the PO line and the posting date. */
-enum class PoDescriptionFormat(val wire: String, val label: String, val sample: String) {
-    DayMonthItem("DDMON_ITEM", "DDMON → ITEM", "03MAR ALEXA MINI LF HIRE"),
-    DayMonthNumericItem("DDMM_ITEM", "DDMM → ITEM", "03/03 ALEXA MINI LF HIRE"),
-    ItemDayMonth("ITEM_DDMON", "ITEM → DDMON", "ALEXA MINI LF HIRE 03MAR"),
+enum class PoDescriptionFormat(val wire: String, private val labelKey: String, private val sampleKey: String) {
+    DayMonthItem("DDMON_ITEM", S.desktop_hub_po_format_ddmon_item, S.desktop_hub_po_sample_ddmon_item),
+    DayMonthNumericItem("DDMM_ITEM", S.desktop_hub_po_format_ddmm_item, S.desktop_hub_po_sample_ddmm_item),
+    ItemDayMonth("ITEM_DDMON", S.desktop_hub_po_format_item_ddmon, S.desktop_hub_po_sample_item_ddmon),
 
     /** Decoded when stored, never offered — the web lists the three above only. */
-    Custom("CUSTOM", "Custom", "Define your own pattern"),
+    Custom("CUSTOM", S.custom, S.desktop_hub_define_your_own_pattern),
     ;
+
+    val label: String get() = str(labelKey)
+    val sample: String get() = str(sampleKey)
 
     companion object {
         val Default = DayMonthItem
@@ -60,16 +64,18 @@ enum class PoDescriptionFormat(val wire: String, val label: String, val sample: 
 }
 
 /** How a rental order is split into periods when it posts. */
-enum class PoSplitType(val wire: String, val label: String, val days: Int) {
-    Weekly("weekly", "Weekly", days = 7),
-    Daily("daily", "Daily", days = 1),
+enum class PoSplitType(val wire: String, private val labelKey: String, val days: Int) {
+    Weekly("weekly", S.ce_weekly, days = 7),
+    Daily("daily", S.daily, days = 1),
     // A calendar month is not a fixed number of days, and a rental split does
     // not need it to be: the web divides the window evenly and clips the last
     // period to the line's own end, so 30 is the cadence, not a claim about
     // February.
-    Monthly("monthly", "Monthly", days = 30),
-    FourWeek("four_week", "Four Week", days = 28),
+    Monthly("monthly", S.ce_monthly, days = 30),
+    FourWeek("four_week", S.desktop_four_week, days = 28),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         val Default = Weekly
@@ -79,12 +85,14 @@ enum class PoSplitType(val wire: String, val label: String, val days: Int) {
 }
 
 /** The expenditure types the asset register rule can be narrowed to — the web's `ASSET_EXP_TYPES`. */
-enum class AssetExpenditureType(val wire: String, val label: String) {
-    Purchase("Purchase", "Purchase"),
+enum class AssetExpenditureType(val wire: String, private val labelKey: String) {
+    Purchase("Purchase", S.ah_exp_purchase),
 
     /** The stored value stays the server's enum; only the wording changed. */
-    Consumption("Consumption", "Consumables"),
+    Consumption("Consumption", S.ah_exp_consumption),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun labelFor(wire: String): String = entries.firstOrNull { it.wire == wire }?.label ?: wire
@@ -118,9 +126,9 @@ data class AssetFilters(
             val highBound = high
             return when {
                 lowBound != null && highBound != null && lowBound > highBound ->
-                    "Price low must not exceed price high."
-                lowBound != null && lowBound < 0 -> "Price low must be zero or more."
-                highBound != null && highBound < 0 -> "Price high must be zero or more."
+                    str(S.desktop_hub_price_low_must_not_exceed_price_high)
+                lowBound != null && lowBound < 0 -> str(S.desktop_hub_price_low_must_be_zero_or_more)
+                highBound != null && highBound < 0 -> str(S.desktop_hub_price_high_must_be_zero_or_more)
                 else -> null
             }
         }
@@ -132,14 +140,23 @@ data class AssetFilters(
         val parts = mutableListOf<String>()
         when {
             lowBound != null && highBound != null ->
-                parts += "total ${amount(symbol, lowBound)}–${amount(symbol, highBound)}"
-            lowBound != null -> parts += "total ≥ ${amount(symbol, lowBound)}"
-            highBound != null -> parts += "total ≤ ${amount(symbol, highBound)}"
+                parts += str(
+                    S.desktop_hub_asset_rule_total_between,
+                    amount(symbol, lowBound),
+                    amount(symbol, highBound),
+                )
+
+            lowBound != null -> parts += str(S.desktop_hub_asset_rule_total_at_least, amount(symbol, lowBound))
+            highBound != null -> parts += str(S.desktop_hub_asset_rule_total_at_most, amount(symbol, highBound))
         }
-        if (expTypes.isNotEmpty()) parts += expTypes.joinToString(" or ") { AssetExpenditureType.labelFor(it) }
-        if (tags.isNotEmpty()) parts += "tagged ${tags.joinToString(" or ")}"
-        if (parts.isEmpty()) return "Every line item on a posted or closed PO — no constraint set."
-        return "Lines on a posted or closed PO matching ${parts.joinToString(", and ")}."
+        val or = " ${str(S.or)} "
+        if (expTypes.isNotEmpty()) parts += expTypes.joinToString(or) { AssetExpenditureType.labelFor(it) }
+        if (tags.isNotEmpty()) parts += str(S.desktop_hub_asset_rule_tagged, tags.joinToString(or))
+        if (parts.isEmpty()) return str(S.desktop_hub_every_line_item_on_a_posted_or_closed_po_no)
+        return str(
+            S.desktop_hub_lines_on_a_posted_or_closed_po_matching,
+            parts.joinToString(", ${str(S.and)} "),
+        )
     }
 }
 
@@ -168,11 +185,17 @@ data class PoAssignmentRule(
     /** "2 depts | 1 vendor | ≥ £500", or what the web says when nothing is set — `buildRuleSummary`. */
     fun summary(symbol: String): String {
         val parts = mutableListOf<String>()
-        if (departments.isNotEmpty()) parts += "${departments.size} dept${if (departments.size > 1) "s" else ""}"
-        if (vendors.isNotEmpty()) parts += "${vendors.size} vendor${if (vendors.size > 1) "s" else ""}"
-        if (nominalCodes.isNotEmpty()) parts += "${nominalCodes.size} nominal"
+        if (departments.isNotEmpty()) {
+            val key = if (departments.size > 1) S.desktop_dept_count_other else S.desktop_dept_count_one
+            parts += str(key, departments.size)
+        }
+        if (vendors.isNotEmpty()) {
+            val key = if (vendors.size > 1) S.ah_run_detail_summary_vendors else S.desktop_vendor_count_one
+            parts += str(key, vendors.size)
+        }
+        if (nominalCodes.isNotEmpty()) parts += str(S.desktop_n_nominal, nominalCodes.size)
         amountMinValue?.let { parts += "≥ ${amount(symbol, it)}" }
-        return if (parts.isEmpty()) "No condition set" else parts.joinToString(" | ")
+        return if (parts.isEmpty()) str(S.desktop_no_condition_set) else parts.joinToString(" | ")
     }
 
     companion object {

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
 import com.zillit.desktop.feature.cardexpenses.domain.PickKind
 
@@ -36,7 +38,9 @@ internal class CardStatementActions(
                 is ZillitResult.Success -> {
                     val file = stored.data ?: return@run
                     val currency = vm.current.statementCurrency.trim().takeIf { it.isNotEmpty() }
-                    vm.act("${file.fileName} imported") { vm.repo.importStatement(file.key, currency) }
+                    vm.act(str(S.desktop_card_file_imported, file.fileName)) {
+                        vm.repo.importStatement(file.key, currency)
+                    }
                 }
             }
         }
@@ -72,10 +76,10 @@ internal class CardStatementActions(
         val importId = vm.current.openImportId ?: return
         val ids = vm.current.selection.toList()
         if (ids.isEmpty()) {
-            vm.fail("Tick the rows to accept first.")
+            vm.fail(str(S.desktop_card_tick_rows_first))
             return
         }
-        vm.act("${ids.size} row(s) accepted") { vm.repo.processImport(importId, ids) }
+        vm.act(str(S.desktop_card_rows_accepted, ids.size)) { vm.repo.processImport(importId, ids) }
         vm.update { copy(selection = emptySet()) }
     }
 
@@ -89,12 +93,15 @@ internal class CardStatementActions(
         val ticked = vm.current.importRows.filter { it.id in vm.current.selection }
         val sendable = ticked.filter { it.canSubmit }
         if (sendable.isEmpty()) {
-            vm.fail("None of the ticked rows has a cardholder on it, so there is nobody to ask.")
+            vm.fail(str(S.desktop_card_no_holder_to_ask))
             return
         }
         val skipped = ticked.size - sendable.size
-        val message = "${sendable.size} row(s) sent" +
-            if (skipped > 0) " · $skipped skipped with no holder" else ""
+        val message = if (skipped > 0) {
+            str(S.desktop_card_rows_sent_with_skipped, sendable.size, skipped)
+        } else {
+            str(S.desktop_card_rows_sent, sendable.size)
+        }
         vm.act(message) { vm.repo.submitRowsToHolders(sendable.map { it.id }) }
         vm.update { copy(selection = emptySet()) }
     }

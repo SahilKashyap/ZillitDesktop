@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.maps.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The location form's rules — `hooks/useLocationForm.js`, kept pure so the
  * messages and their order are testable without a screen.
@@ -26,10 +29,10 @@ object LocationRules {
      */
     fun saveError(name: String, address: String, type: String, customType: String, point: LatLng?): String? =
         when {
-            name.isBlank() -> "Please fill in required fields"
-            address.isBlank() -> "Please enter an address or search for a location"
-            isOtherType(type) && customType.isBlank() -> "Please specify the custom location type"
-            point == null -> "Please search and select an address to set the coordinates"
+            name.isBlank() -> str(S.desktop_map_fill_required_fields)
+            address.isBlank() -> str(S.desktop_map_enter_address)
+            isOtherType(type) && customType.isBlank() -> str(S.desktop_map_specify_custom_type)
+            point == null -> str(S.desktop_map_select_address_coords)
             else -> null
         }
 
@@ -53,9 +56,9 @@ object ZoneRules {
      */
     fun customRadiusError(useCustom: Boolean, text: String): String? {
         if (!useCustom) return null
-        if (text.isBlank()) return "Zone radius is required when Custom is selected."
+        if (text.isBlank()) return str(S.desktop_map_zone_radius_required)
         val parsed = text.trim().toDoubleOrNull()
-        return if (parsed == null || parsed <= 0 || parsed.isNaN()) "Enter a radius greater than 0 miles." else null
+        return if (parsed == null || parsed <= 0 || parsed.isNaN()) str(S.desktop_map_zone_radius_positive) else null
     }
 
     /** The radius the preview draws — a valid custom value, else 30; the preset otherwise. */
@@ -70,8 +73,7 @@ object ZoneRules {
         if (city == null || centre == null) return null
         val miles = Geo.distanceMiles(centre, city)
         if (miles <= radiusMiles) return null
-        return "$cityName is ${toFixed(miles, 1)} miles from the center point, but zone radius is " +
-            "${jsNumber(radiusMiles)} miles. Please adjust the center or increase the radius."
+        return str(S.desktop_map_city_outside_zone, cityName, toFixed(miles, 1), jsNumber(radiusMiles))
     }
 
     /** The zone name an intersection suggests: "MG Road & Ring Road Zone". */
@@ -79,14 +81,18 @@ object ZoneRules {
         if (street2.isBlank()) "${street1.trim()} Zone" else "${street1.trim()} & ${street2.trim()} Zone"
 
     /** Why "Select Intersection" cannot run yet, or null. */
-    fun intersectionSearchError(street1: String, street1Picked: Boolean, street2: String, street2Picked: Boolean): String? =
+    fun intersectionSearchError(
+        street1: String,
+        street1Picked: Boolean,
+        street2: String,
+        street2Picked: Boolean,
+    ): String? =
         when {
-            street1.isBlank() -> "Please enter street 1"
+            street1.isBlank() -> str(S.desktop_map_enter_street_1)
             // A real place from the suggestions, not typed text: the geocoder
             // happily resolves "." to the city and reports a false hit.
-            !street1Picked -> "Please select Street 1 from the dropdown suggestions"
-            street2.isNotBlank() && !street2Picked ->
-                "Please select Street 2 from the dropdown suggestions, or clear it"
+            !street1Picked -> str(S.desktop_map_select_street_1)
+            street2.isNotBlank() && !street2Picked -> str(S.desktop_map_select_street_2)
             else -> null
         }
 

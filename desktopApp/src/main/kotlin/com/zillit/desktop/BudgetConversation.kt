@@ -19,6 +19,8 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budget.domain.BudgetChatEntry
 import com.zillit.desktop.feature.budget.domain.BudgetViewer
 import com.zillit.desktop.feature.budget.ui.BudgetUiState
@@ -113,7 +115,7 @@ internal fun BudgetConversationPane(
         // the server answers a send `budget_cnc_user_not_valid`.
         if (state.selectedChatRevoked) {
             ZillitNotice(
-                text = "This person no longer has access to this budget, so new messages will be refused.",
+                text = str(S.desktop_budget_chat_revoked),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Warning,
                 modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),

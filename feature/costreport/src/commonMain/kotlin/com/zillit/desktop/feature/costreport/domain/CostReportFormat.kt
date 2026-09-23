@@ -1,38 +1,49 @@
 package com.zillit.desktop.feature.costreport.domain
 
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import kotlin.math.abs
 
 /** The grouped header the eleven numeric columns sit under. */
-enum class CrColumnGroup(val label: String) {
-    Actuals("Actuals"),
-    Commitments("Commitments"),
-    Forecast("Forecast"),
-    Budget(""),
-    Analysis("Analysis"),
+enum class CrColumnGroup(private val labelKey: String?) {
+    Actuals(S.desktop_actuals),
+    Commitments(S.desktop_cr_commitments),
+    Forecast(S.desktop_cr_forecast),
+    Budget(null),
+    Analysis(S.desktop_cr_analysis),
+    ;
+
+    val label: String get() = labelKey?.let { str(it) } ?: ""
 }
 
 /** The eleven numeric columns, in worksheet order (spec §2.2). */
 enum class CrColumn(
     val group: CrColumnGroup,
-    val line1: String,
-    val line2: String,
+    private val line1Key: String,
+    private val line2Key: String?,
     val key: String,
     /** The one-line name — the sort chip and the mode strip (the web's `COL_LABELS`). */
-    val label: String,
+    private val labelKey: String,
 ) {
-    Atp(CrColumnGroup.Actuals, "Actuals", "This Period", "atp", "Actuals This Period"),
-    Atd(CrColumnGroup.Actuals, "Actuals", "To Date", "atd", "Actuals to Date"),
-    Po(CrColumnGroup.Commitments, "PO", "Commits", "po", "PO Commits"),
-    Card(CrColumnGroup.Commitments, "Card", "Commits", "card", "Card Commits"),
-    Cash(CrColumnGroup.Commitments, "Cash", "Commits", "cash", "Cash Commits"),
-    Pr(CrColumnGroup.Commitments, "Payroll", "Commits", "pr", "Payroll Commits"),
-    Etc(CrColumnGroup.Forecast, "Estimate", "To Complete", "etc", "ETC"),
-    Efc(CrColumnGroup.Forecast, "Estimated", "Final Cost", "efc", "EFC"),
-    Bud(CrColumnGroup.Budget, "Budget", "", "bud", "Budget"),
-    Tv(CrColumnGroup.Analysis, "Total", "Variance", "tv", "Total Variance"),
-    Vtp(CrColumnGroup.Analysis, "Variance", "This Period", "vtp", "Variance This Period"),
+    Atp(CrColumnGroup.Actuals, S.desktop_actuals, S.desktop_this_period, "atp", S.desktop_cr_actuals_this_period),
+    Atd(CrColumnGroup.Actuals, S.desktop_actuals, S.desktop_cr_to_date, "atd", S.cr_kpi_actuals_to_date),
+    Po(CrColumnGroup.Commitments, S.desktop_po, S.desktop_cr_commits, "po", S.desktop_cr_po_commits),
+    Card(CrColumnGroup.Commitments, S.ah_my_cards, S.desktop_cr_commits, "card", S.desktop_cr_card_commits),
+    Cash(CrColumnGroup.Commitments, S.desktop_cr_cash, S.desktop_cr_commits, "cash", S.desktop_cr_cash_commits),
+    Pr(CrColumnGroup.Commitments, S.dm_section_payroll, S.desktop_cr_commits, "pr", S.desktop_cr_payroll_commits),
+    Etc(CrColumnGroup.Forecast, S.desktop_cr_estimate, S.desktop_cr_to_complete, "etc", S.desktop_cr_etc),
+    Efc(CrColumnGroup.Forecast, S.desktop_cr_estimated, S.desktop_cr_final_cost, "efc", S.desktop_cr_efc),
+    Bud(CrColumnGroup.Budget, S.budget_text, null, "bud", S.budget_text),
+    Tv(CrColumnGroup.Analysis, S.asset_total, S.desktop_variance, "tv", S.desktop_cr_total_variance),
+    Vtp(CrColumnGroup.Analysis, S.desktop_variance, S.desktop_this_period, "vtp", S.desktop_cr_variance_this_period),
     ;
+
+    val line1: String get() = str(line1Key)
+
+    val line2: String get() = line2Key?.let { str(it) } ?: ""
+
+    val label: String get() = str(labelKey)
 
     val isVariance: Boolean get() = this == Tv || this == Vtp
 
@@ -42,8 +53,8 @@ enum class CrColumn(
     /** What a drill into this cell's ledger is called — the cell's hover hint. */
     val drillHint: String?
         get() = when {
-            isActuals -> "View actuals detail"
-            isCommits -> "View ${ledgerSource} commitment detail"
+            isActuals -> str(S.desktop_cr_view_actuals_detail)
+            isCommits -> str(S.desktop_cr_view_commit_detail, ledgerSource.orEmpty())
             else -> null
         }
     val isActuals: Boolean get() = group == CrColumnGroup.Actuals
@@ -129,9 +140,10 @@ object CrFormat {
         return if (value < 0) "($body)" else body
     }
 
-    /** `↑ £12.00 vs last` / `↓ £12.00 vs last`. */
-    fun delta(value: Double, symbol: String): String {
+    /** `↑ £12.00 vs last` / `↓ £12.00 vs last`; [caps] for the timeline's upper-case tail. */
+    fun delta(value: Double, symbol: String, caps: Boolean = false): String {
         val arrow = if (value >= 0) "↑" else "↓"
-        return "$arrow ${symbol}${Money.group(abs(value), MONEY_DP)} vs last"
+        val money = symbol + Money.group(abs(value), MONEY_DP)
+        return str(if (caps) S.desktop_cr_delta_vs_last_caps else S.desktop_cr_delta_vs_last, arrow, money)
     }
 }

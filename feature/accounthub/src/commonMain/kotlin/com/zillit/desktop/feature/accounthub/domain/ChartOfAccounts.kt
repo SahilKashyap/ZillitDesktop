@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Where a code sits in the nominal taxonomy.
  *
@@ -12,12 +15,14 @@ package com.zillit.desktop.feature.accounthub.domain
  * [tagLabel] supplies "Group" for the flat surfaces that need something to
  * print in a Type column.
  */
-enum class CoaLineType(val wire: String, val label: String) {
-    Header("header", ""),
-    Section("section", "Headers"),
-    Category("category", "Nominal"),
-    SubCategory("sub_category", "Code"),
+enum class CoaLineType(val wire: String, private val labelKey: String?) {
+    Header("header", null),
+    Section("section", S.desktop_headers),
+    Category("category", S.dm_rule_nominal),
+    SubCategory("sub_category", S.code),
     ;
+
+    val label: String get() = labelKey?.let { str(it) } ?: ""
 
     /**
      * How far down the tree this sits.
@@ -29,7 +34,7 @@ enum class CoaLineType(val wire: String, val label: String) {
      */
     val depth: Int get() = ordinal
 
-    val tagLabel: String get() = label.ifBlank { "Group" }
+    val tagLabel: String get() = label.ifBlank { str(S.group) }
 
     /** The level immediately above, or null at the top. */
     val parentType: CoaLineType?
@@ -45,9 +50,9 @@ enum class CoaLineType(val wire: String, val label: String) {
      */
     val addChildLabel: String?
         get() = when (this) {
-            Header -> "Add Header for Group"
-            Section -> "Add Nominal for Headers"
-            Category -> "Add Sub-code for nominals"
+            Header -> str(S.desktop_hub_add_header_for_group)
+            Section -> str(S.desktop_hub_add_nominal_for_headers)
+            Category -> str(S.desktop_hub_add_sub_code_for_nominals)
             SubCategory -> null
         }
 
@@ -58,13 +63,15 @@ enum class CoaLineType(val wire: String, val label: String) {
 }
 
 /** The five double-entry classes. */
-enum class CoaCostType(val wire: String, val label: String) {
-    Asset("asset", "Asset"),
-    Liability("liability", "Liability"),
-    Capital("capital", "Capital"),
-    Income("income", "Income"),
-    Expense("expense", "Expense"),
+enum class CoaCostType(val wire: String, private val labelKey: String) {
+    Asset("asset", S.desktop_asset),
+    Liability("liability", S.desktop_liability),
+    Capital("capital", S.desktop_capital),
+    Income("income", S.desktop_income),
+    Expense("expense", S.desktop_expense),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** Everything that is not an expense — the balance-sheet view. */
     val isBalanceSheet: Boolean get() = this != Expense
@@ -340,12 +347,17 @@ object ChartOfAccounts {
         val wanted = parentId?.takeIf { it.isNotBlank() }
         val parent = wanted?.let { id -> rows.firstOrNull { it.id == id } }
         return when {
-            required == null -> if (wanted != null) "Header rows cannot have a parent." else null
+            required == null -> if (wanted != null) str(S.desktop_hub_header_rows_cannot_have_a_parent) else null
             wanted == null -> null
-            wanted == selfId -> "A row cannot be its own parent."
-            parent == null -> "Parent not found in this project."
+            wanted == selfId -> str(S.desktop_hub_a_row_cannot_be_its_own_parent)
+            parent == null -> str(S.desktop_hub_parent_not_found_in_this_project)
             parent.lineType != required ->
-                "Parent must be a ${required.tagLabel}; \"${parent.code}\" is a ${parent.lineType.tagLabel}."
+                str(
+                    S.desktop_hub_parent_must_be_a_x_code_is_a_y,
+                    required.tagLabel,
+                    parent.code,
+                    parent.lineType.tagLabel,
+                )
             else -> null
         }
     }
@@ -447,17 +459,26 @@ object ChartOfAccounts {
 }
 
 /** How the chart is drawn — the web's Tree | Table switch. */
-enum class ChartMode(val label: String) { Tree("Tree"), Table("Table") }
+enum class ChartMode(private val labelKey: String) {
+    Tree(S.desktop_tree),
+    Table(S.desktop_table),
+    ;
+
+    val label: String get() = str(labelKey)
+}
 
 /**
  * The table's sortable columns. [key] is the word the footer prints
  * ("Sorted by cost ↑"), as the web prints its sort key.
  */
-enum class ChartSortKey(val label: String, val key: String) {
-    Code("Code", "code"),
-    Type("Type", "type"),
-    Name("Name", "name"),
-    CostType("Cost type", "cost"),
+enum class ChartSortKey(private val labelKey: String, val key: String) {
+    Code(S.code, "code"),
+    Type(S.type, "type"),
+    Name(S.name, "name"),
+    CostType(S.desktop_cost_type, "cost"),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** A column and a direction. */
@@ -555,15 +576,14 @@ object CoaBulk {
         val code = row.normalisedCode
         if (code.isEmpty()) return null
         if (rows.any { it.localId != row.localId && it.normalisedCode == code }) {
-            return "Code \"$code\" is used by another row in this list"
+            return str(S.desktop_hub_code_used_by_another_row_in_this_list, code)
         }
         val match = chart.firstOrNull { it.code.trim().equals(code, ignoreCase = true) }
         return when {
             match != null && !match.isActive ->
-                "Code \"$code\" was previously used and retired — reactivate it from the Chart of Accounts " +
-                    "list instead of creating it again"
-            match != null -> "Code \"$code\" already exists"
-            code in createdCodes -> "Code \"$code\" was already used earlier in this session and can't be reused here"
+                str(S.desktop_hub_code_previously_used_and_retired, code)
+            match != null -> str(S.desktop_hub_code_already_exists, code)
+            code in createdCodes -> str(S.desktop_hub_code_already_used_earlier_in_this_session, code)
             else -> null
         }
     }
@@ -692,14 +712,14 @@ object TrackingSets {
 
     /** Why a set cannot be saved, or null. A blank prefix is allowed: the server derives one. */
     fun setProblem(name: String, prefix: String): String? = when {
-        name.isBlank() -> "Give the layer a name."
-        prefix.isNotBlank() && prefix.length < PREFIX_MIN -> "A prefix is 2–10 letters or digits."
+        name.isBlank() -> str(S.desktop_hub_give_the_layer_a_name)
+        prefix.isNotBlank() && prefix.length < PREFIX_MIN -> str(S.desktop_hub_a_prefix_is_2_10_letters_or_digits)
         else -> null
     }
 
     fun nodeProblem(code: String, label: String): String? = when {
-        code.isBlank() -> "Give the code a value."
-        label.isBlank() -> "Give the code a label."
+        code.isBlank() -> str(S.desktop_hub_give_the_code_a_value)
+        label.isBlank() -> str(S.desktop_hub_give_the_code_a_label)
         else -> null
     }
 }

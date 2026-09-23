@@ -6,6 +6,8 @@ import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.data.MapCanvasClient
 import com.zillit.desktop.feature.maps.domain.MapHost
 import com.zillit.desktop.feature.maps.domain.MapRepository
@@ -78,8 +80,12 @@ internal fun MapStore.pushPanel(panel: MapPanel) = update { copy(panels = panels
 
 /** Pops the top panel when it is [panel]'s kind; leaves the rest of the stack. */
 internal fun MapStore.popPanel(matches: (MapPanel) -> Boolean) = update {
-    if (panels.lastOrNull()?.let(matches) == true) copy(panels = panels.dropLast(1)) else copy(panels = panels.filterNot(matches))
+    if (panels.lastOrNull()?.let(matches) == true) {
+        copy(panels = panels.dropLast(1))
+    } else {
+        copy(panels = panels.filterNot(matches))
+    }
 }
 
 /** What the tool is called in a rights request an admin reads. */
-internal const val MODULE_LABEL = "Map"
+internal val MODULE_LABEL: String get() = str(S.map)

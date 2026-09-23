@@ -36,6 +36,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolWindow
 import com.zillit.desktop.core.workspace.WindowRect
 import kotlin.math.roundToInt
@@ -187,7 +189,7 @@ private fun WindowTitleBar(
             } else {
                 ZillitIcons.Maximize
             },
-            contentDescription = "Maximize or restore ${window.title}",
+            contentDescription = str(S.desktop_workspace_maximize_or_restore_window, window.title),
             onClick = onToggleMaximize,
             size = CONTROL_SIZE,
         )

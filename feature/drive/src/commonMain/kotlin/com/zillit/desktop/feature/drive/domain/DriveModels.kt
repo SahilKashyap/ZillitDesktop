@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.drive.domain
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * What kind of thing a drive row is.
  *
@@ -125,11 +128,14 @@ data class DrivePermissions(
 }
 
 /** The three folder-level roles, which the server inherits down a tree. */
-enum class DriveRole(val wire: String, val label: String, val description: String) {
-    Owner("owner", "Owner", "Full access — view, edit, download, delete"),
-    Editor("editor", "Editor", "Can view, edit, and download"),
-    Viewer("viewer", "Viewer", "View only"),
+enum class DriveRole(val wire: String, private val labelKey: String, private val descriptionKey: String) {
+    Owner("owner", S.drive_role_owner, S.desktop_drive_role_owner_desc),
+    Editor("editor", S.drive_role_editor, S.desktop_drive_access_view_edit_download),
+    Viewer("viewer", S.drive_role_viewer, S.drive_link_badge_view),
     ;
+
+    val label: String get() = str(labelKey)
+    val description: String get() = str(descriptionKey)
 
     /** What this role grants once resolved onto an item. */
     val permissions: DrivePermissions
@@ -151,11 +157,14 @@ enum class DriveRole(val wire: String, val label: String, val description: Strin
  * collapses into the `{can_view, can_edit, can_download}` flags the server
  * takes, so no wire change is needed.
  */
-enum class FileAccessLevel(val label: String, val description: String) {
-    View("View", "Can view only"),
-    Download("Download", "Can view and download"),
-    Edit("Edit", "Can view, edit, and download"),
+enum class FileAccessLevel(private val labelKey: String, private val descriptionKey: String) {
+    View(S.view, S.desktop_drive_access_view_only),
+    Download(S.download, S.desktop_drive_access_view_download),
+    Edit(S.edit, S.desktop_drive_access_view_edit_download),
     ;
+
+    val label: String get() = str(labelKey)
+    val description: String get() = str(descriptionKey)
 
     val permissions: DrivePermissions
         get() = when (this) {
@@ -304,14 +313,14 @@ data class DriveActivity(
     val detail: String = "",
 ) {
     /** What the Activity list shows in its "who" line. */
-    val displayName: String get() = userName.ifBlank { "Unknown" }
+    val displayName: String get() = userName.ifBlank { str(S.desktop_unknown) }
 
     /**
      * `file_created` → "File uploaded", the web's `ACTION_LABELS`; anything
      * unlisted is de-snaked. The server sends underscore action keys.
      */
     val label: String
-        get() = LABELS[action] ?: action.replace('.', ' ').replace('_', ' ').trim()
+        get() = LABELS[action]?.let { str(it) } ?: action.replace('.', ' ').replace('_', ' ').trim()
             .replaceFirstChar { it.uppercase() }
 
     /** The web's filter chips: which family a row belongs to. */
@@ -325,18 +334,18 @@ data class DriveActivity(
 
     private companion object {
         val LABELS = mapOf(
-            "file_created" to "File uploaded",
-            "file_updated" to "File updated",
-            "file_deleted" to "File deleted",
-            "file_moved" to "File moved",
-            "file_restored" to "File restored",
-            "folder_created" to "Folder created",
-            "folder_updated" to "Folder updated",
-            "folder_deleted" to "Folder deleted",
-            "folder_moved" to "Folder moved",
-            "folder_restored" to "Folder restored",
-            "access_updated" to "Access updated",
-            "access_inherited" to "Access inherited",
+            "file_created" to S.desktop_drive_activity_file_uploaded,
+            "file_updated" to S.desktop_drive_activity_file_updated,
+            "file_deleted" to S.drive_file_deleted,
+            "file_moved" to S.desktop_drive_activity_file_moved,
+            "file_restored" to S.desktop_drive_activity_file_restored,
+            "folder_created" to S.desktop_drive_activity_folder_created,
+            "folder_updated" to S.dd_folder_updated,
+            "folder_deleted" to S.desktop_drive_activity_folder_deleted,
+            "folder_moved" to S.desktop_drive_activity_folder_moved,
+            "folder_restored" to S.desktop_drive_activity_folder_restored,
+            "access_updated" to S.desktop_drive_activity_access_updated,
+            "access_inherited" to S.desktop_drive_activity_access_inherited,
         )
     }
 }
@@ -375,10 +384,12 @@ data class DrivePerson(
 )
 
 /** The link's grant — the web's `PERMISSION_OPTIONS`. */
-enum class LinkPermission(val wire: String, val label: String) {
-    View("view", "View only"),
-    ViewDownload("view_download", "View + download"),
+enum class LinkPermission(val wire: String, private val labelKey: String) {
+    View("view", S.drive_link_badge_view),
+    ViewDownload("view_download", S.drive_link_badge_view_download),
     ;
+
+    val label: String get() = str(labelKey)
 
     companion object {
         fun from(wire: String?): LinkPermission = entries.firstOrNull { it.wire == wire } ?: View

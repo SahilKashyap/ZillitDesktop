@@ -17,6 +17,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
 import com.zillit.desktop.feature.cashexpenses.ui.AmountAction
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
@@ -44,26 +46,26 @@ fun ReconciliationPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         StatRow(
             listOf(
                 StatTileSpec(
-                    label = "Book balance",
+                    label = str(S.desktop_ce_book_balance),
                     value = money(book, null),
-                    sub = "What the ledger expects",
+                    sub = str(S.desktop_ce_what_ledger_expects),
                     icon = ZillitIcons.Ledger,
                 ),
                 StatTileSpec(
-                    label = "Last counted",
+                    label = str(S.desktop_ce_last_counted),
                     value = money(latest?.countedBalance, latest?.currency),
-                    sub = latest?.let { date(it.createdAt) } ?: "Never counted",
+                    sub = latest?.let { date(it.createdAt) } ?: str(S.desktop_ce_never_counted),
                     icon = ZillitIcons.Wallet,
                 ),
                 StatTileSpec(
-                    label = "Variance",
+                    label = str(S.desktop_variance),
                     value = money(latest?.variance, latest?.currency),
                     sub = if (latest == null) {
-                        "Start a count to compare"
+                        str(S.desktop_ce_start_a_count)
                     } else if (abs(latest.variance) < PENNY) {
-                        "Balanced"
+                        str(S.desktop_card_balanced)
                     } else {
-                        "Needs explaining"
+                        str(S.desktop_ce_needs_explaining)
                     },
                     tone = when {
                         latest == null -> null
@@ -77,29 +79,28 @@ fun ReconciliationPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
         if (book == null) {
             ZillitNotice(
-                text = "The ledger balance could not be fetched, so a variance cannot be computed here. " +
-                    "You can still record a count.",
+                text = str(S.desktop_ce_no_ledger_balance),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Warning,
             )
         }
 
         ZillitSectionCard(
-            title = "Reconciliations",
+            title = str(S.desktop_ce_reconciliations),
             icon = ZillitIcons.Bank,
             padded = false,
             modifier = Modifier.weight(1f),
             action = {
                 ZillitButton(
-                    text = "Record a count",
+                    text = str(S.desktop_ce_record_a_count),
                     onClick = {
                         onEvent(
                             CashEvent.Ask(
                                 CashPrompt.WithAmount(
                                     action = AmountAction.CreateReconciliation,
                                     targetId = "",
-                                    title = "Record a cash count",
-                                    label = "Cash counted in the box",
+                                    title = str(S.desktop_ce_record_a_cash_count),
+                                    label = str(S.desktop_ce_cash_counted_in_box),
                                 ),
                             ),
                         )
@@ -116,8 +117,8 @@ fun ReconciliationPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 columns = reconciliationColumns(state, onEvent),
                 key = { it.id },
                 loading = state.loading,
-                emptyTitle = "No counts recorded",
-                emptyMessage = "Record a cash count to reconcile the box against the ledger.",
+                emptyTitle = str(S.desktop_ce_no_counts_recorded),
+                emptyMessage = str(S.desktop_ce_record_count_hint),
             )
         }
     }
@@ -128,14 +129,16 @@ private fun reconciliationColumns(
     state: CashUiState,
     onEvent: (CashEvent) -> Unit,
 ): List<TableColumn<Reconciliation>> = listOf(
-    textColumn("Reference", ColumnWidth.Weight(1f)) { it.reference ?: it.id.take(REF_FALLBACK) },
-    textColumn("Period", ColumnWidth.Weight(1.2f), muted = true) {
+    textColumn(str(S.desktop_reference), ColumnWidth.Weight(1f)) { it.reference ?: it.id.take(REF_FALLBACK) },
+    textColumn(str(S.cr_meta_period), ColumnWidth.Weight(1.2f), muted = true) {
         listOf(date(it.periodStart), date(it.periodEnd)).joinToString(" – ")
     },
-    textColumn("Book", ColumnWidth.Weight(1f), numeric = true) { money(it.bookBalance, it.currency) },
-    textColumn("Counted", ColumnWidth.Weight(1f), numeric = true) { money(it.countedBalance, it.currency) },
+    textColumn(str(S.desktop_ce_book), ColumnWidth.Weight(1f), numeric = true) { money(it.bookBalance, it.currency) },
+    textColumn(str(S.desktop_ce_counted), ColumnWidth.Weight(1f), numeric = true) {
+        money(it.countedBalance, it.currency)
+    },
     TableColumn(
-        header = "Variance",
+        header = str(S.desktop_variance),
         width = ColumnWidth.Weight(1f),
         numeric = true,
         cell = { row ->
@@ -152,11 +155,11 @@ private fun reconciliationColumns(
         },
     ),
     TableColumn(
-        header = "Status",
+        header = str(S.status),
         width = ColumnWidth.Fixed(STATUS_COLUMN),
         cell = { row ->
             ZillitStatusPill(
-                label = row.status.lowercase().replaceFirstChar { it.uppercase() }.ifBlank { "Draft" },
+                label = row.status.lowercase().replaceFirstChar { it.uppercase() }.ifBlank { str(S.draft) },
                 tone = when (row.status) {
                     SIGNED_OFF -> StatusTone.Done
                     UNDER_REVIEW -> StatusTone.Progress
@@ -174,15 +177,15 @@ private fun reconciliationColumns(
             // is offered only where it is both permitted and still possible.
             if (state.viewer.isSenior && row.status != SIGNED_OFF) {
                 ZillitButton(
-                    text = "Sign off",
+                    text = str(S.desktop_br_sign_off),
                     onClick = {
                         onEvent(
                             CashEvent.Ask(
                                 CashPrompt.Confirm(
                                     ConfirmAction.SignOffReconciliation,
                                     row.id,
-                                    "Sign off this reconciliation",
-                                    "The period is closed and the variance is accepted as recorded.",
+                                    str(S.desktop_ce_sign_off_reconciliation),
+                                    str(S.desktop_ce_sign_off_note),
                                 ),
                             ),
                         )

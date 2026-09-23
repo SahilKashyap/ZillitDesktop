@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.MapCity
 import com.zillit.desktop.feature.maps.ui.CurrentPlace
 import com.zillit.desktop.feature.maps.ui.MapEvent
@@ -54,6 +56,7 @@ import com.zillit.desktop.feature.maps.ui.MapUiState
  * its own order — dragged by the handle to rearrange — and the way to add one.
  */
 @Composable
+@Suppress("LongMethod") // One panel, read top to bottom; the order is the reading order.
 internal fun CitiesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     val panel = state.citiesPanel
     SidePanelFrame(
@@ -61,19 +64,23 @@ internal fun CitiesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
         header = {
             HeroHeader(
                 accent = MapColors.Brand,
-                title = "Cities",
-                subtitle = "Switch between cities or add a new one to the map.",
+                title = str(S.cities),
+                subtitle = str(S.desktop_map_cities_subtitle),
                 onClose = { onEvent(MapEvent.Cities.Close) },
                 trailing = {
                     HeroChip(
-                        text = "${state.cities.size} ${if (state.cities.size == 1) "City" else "Cities"}",
+                        text = if (state.cities.size == 1) {
+                            str(S.desktop_map_city_count_one, state.cities.size)
+                        } else {
+                            str(S.desktop_map_city_count_other, state.cities.size)
+                        },
                         icon = MapIcons.Map,
                     )
                     // The header's add is for those who can post; the empty
                     // state's add asks for rights instead (the web's split).
                     if (state.viewer.mayPost) {
                         HeroPillButton(
-                            text = "Add Another City",
+                            text = str(S.desktop_map_add_another_city),
                             icon = ZillitIcons.Add,
                             onClick = { onEvent(MapEvent.Cities.Add) },
                         )
@@ -82,11 +89,15 @@ internal fun CitiesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
             )
         },
     ) {
-        Column(Modifier.fillMaxWidth().background(ZillitTheme.colors.surface).padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(ZillitTheme.colors.surface)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+        ) {
             com.zillit.desktop.core.designsystem.component.ZillitTextField(
                 value = panel.search,
                 onValueChange = { onEvent(MapEvent.Cities.Search(it)) },
-                placeholder = "Search cities...",
+                placeholder = str(S.desktop_map_search_cities),
                 leadingIcon = ZillitIcons.Search,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -116,11 +127,15 @@ internal fun CitiesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 filtered.isEmpty() -> EmptyBlock(
                     icon = MapIcons.MapPin,
                     accent = MapColors.Brand,
-                    title = if (panel.search.isBlank()) "No cities added yet" else "No cities match your search",
+                    title = if (panel.search.isBlank()) {
+                        str(S.desktop_map_no_cities_yet)
+                    } else {
+                        str(S.desktop_map_no_cities_match)
+                    },
                     action = if (panel.search.isBlank()) {
                         {
                             ZillitButton(
-                                text = "Add Another City",
+                                text = str(S.desktop_map_add_another_city),
                                 onClick = { onEvent(MapEvent.Cities.Add) },
                                 leadingIcon = ZillitIcons.Add,
                             )
@@ -158,7 +173,7 @@ private fun CurrentPlaceCard(place: CurrentPlace, onAdd: () -> Unit) {
         IconChip(icon = MapIcons.Navigation, tint = Color.White, background = MapColors.Info, size = 36.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             ZillitText(
-                text = "CURRENT LOCATION",
+                text = str(S.desktop_weather_current_location),
                 style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
                 color = MapColors.Info,
             )
@@ -179,7 +194,7 @@ private fun CurrentPlaceCard(place: CurrentPlace, onAdd: () -> Unit) {
                 )
             }
         }
-        ZillitButton(text = "Add", onClick = onAdd, leadingIcon = ZillitIcons.Add, size = ButtonSize.Small)
+        ZillitButton(text = str(S.add), onClick = onAdd, leadingIcon = ZillitIcons.Add, size = ButtonSize.Small)
     }
 }
 
@@ -189,6 +204,7 @@ private fun CurrentPlaceCard(place: CurrentPlace, onAdd: () -> Unit) {
  * arrangement (`reorder-cities`), and a request per row crossed would race.
  */
 @Composable
+@Suppress("CyclomaticComplexMethod", "LongMethod") // One list, with drag state read in place.
 private fun ReorderableCities(state: MapUiState, shown: List<MapCity>, onEvent: (MapEvent) -> Unit) {
     var order by remember(shown) { mutableStateOf(shown) }
     // The gesture outlives recompositions; it must read today's lists, not
@@ -223,7 +239,9 @@ private fun ReorderableCities(state: MapUiState, shown: List<MapCity>, onEvent: 
                             val moved = order.map { it.id } != currentShown.map { it.id }
                             dragging = null
                             offset = 0f
-                            if (moved) onEvent(MapEvent.Cities.Reorder(fullOrder(allCities, currentShown, order, city.id)))
+                            if (moved) {
+                                onEvent(MapEvent.Cities.Reorder(fullOrder(allCities, currentShown, order, city.id)))
+                            }
                         },
                         onDragCancel = {
                             dragging = null
@@ -259,7 +277,12 @@ private fun ReorderableCities(state: MapUiState, shown: List<MapCity>, onEvent: 
  * dnd-kit's `arrayMove` from the dragged city's place to the place of the city
  * it landed on.
  */
-internal fun fullOrder(all: List<MapCity>, shown: List<MapCity>, reordered: List<MapCity>, movedId: String): List<String> {
+internal fun fullOrder(
+    all: List<MapCity>,
+    shown: List<MapCity>,
+    reordered: List<MapCity>,
+    movedId: String,
+): List<String> {
     val target = reordered.indexOfFirst { it.id == movedId }
     val overId = shown.getOrNull(target)?.id ?: return all.map { it.id }
     val ids = all.map { it.id }.toMutableList()
@@ -271,6 +294,7 @@ internal fun fullOrder(all: List<MapCity>, shown: List<MapCity>, reordered: List
 }
 
 @Composable
+@Suppress("LongMethod") // One row, laid out in one place.
 private fun CityRow(
     city: MapCity,
     selected: Boolean,
@@ -308,7 +332,7 @@ private fun CityRow(
     ) {
         ZillitIcon(
             icon = MapIcons.DragHandle,
-            contentDescription = "Drag to reorder",
+            contentDescription = str(S.ad_report_drag_to_reorder),
             tint = colors.textMuted,
             size = 14.dp,
             modifier = handle.pointerHoverIcon(PointerIcon.Crosshair),

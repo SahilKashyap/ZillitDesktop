@@ -48,6 +48,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.budget.domain.BudgetMode
 import com.zillit.desktop.feature.budget.domain.BudgetRules
 
@@ -70,8 +72,8 @@ fun BudgetScreen(
     Box(modifier.fillMaxSize().background(colors.canvas)) {
         when {
             state.viewer.resolved && !state.viewer.canView(state.mode) -> ZillitEmptyState(
-                title = "No access to ${state.mode.title}",
-                message = "This tool is not shared with you. An administrator can grant viewing rights.",
+                title = str(S.desktop_budget_no_access_to, state.mode.title),
+                message = str(S.desktop_budget_not_shared),
                 icon = ZillitIcons.Shield,
                 modifier = Modifier.align(Alignment.Center),
             )
@@ -161,8 +163,8 @@ private fun RailHeader(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
                 )
                 ZillitText(
                     text = when (state.mode) {
-                        BudgetMode.Main -> "The production's budget and the conversations about it"
-                        BudgetMode.Department -> "One budget per department, discussed with its crew"
+                        BudgetMode.Main -> str(S.desktop_budget_main_description)
+                        BudgetMode.Department -> str(S.desktop_budget_department_description)
                     },
                     style = ZillitTheme.typography.labelSmall,
                     color = colors.textMuted,
@@ -182,11 +184,11 @@ private fun RailHeader(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
 private fun Breadcrumb(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
     val crumbs = buildList {
         if (state.context.isTelevision && state.selectedEpisode.isNotBlank()) {
-            add("Episode List" to { onEvent(BudgetEvent.BackToEpisodes) })
-            add("Episode - ${state.selectedEpisode}" to null)
+            add(str(S.desktop_budget_episode_list) to { onEvent(BudgetEvent.BackToEpisodes) })
+            add(str(S.desktop_budget_episode_crumb, state.selectedEpisode) to null)
         }
         if (state.mode == BudgetMode.Department && state.openDepartment != null) {
-            add("Department List" to { onEvent(BudgetEvent.BackToDirectory) })
+            add(str(S.desktop_budget_department_list) to { onEvent(BudgetEvent.BackToDirectory) })
             add(state.openDepartment.name to null)
         }
     }
@@ -225,14 +227,14 @@ private fun EpisodeList(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
         ZillitSearchField(
             value = state.episodeSearch,
             onValueChange = { onEvent(BudgetEvent.EpisodeSearch(it)) },
-            placeholder = "Search episode",
+            placeholder = str(S.desktop_search_episode),
             modifier = Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.lg),
         )
         val episodes = state.episodesVisible
         if (episodes.isEmpty()) {
             RailEmpty(
-                title = if (state.loading) "Loading…" else "No episodes yet",
-                message = if (state.loading) null else "Upload a budget and its episode appears here.",
+                title = if (state.loading) str(S.ah_loading) else str(S.desktop_budget_no_episodes),
+                message = if (state.loading) null else str(S.desktop_budget_no_episodes_message),
             )
             return
         }
@@ -243,8 +245,8 @@ private fun EpisodeList(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
         ) {
             episodes.forEach { episode ->
                 RailRowCard(
-                    title = "Episode $episode",
-                    subtitle = state.episodes[episode].orEmpty().size.let { "$it budget".plural(it) },
+                    title = str(S.desktop_episode_numbered, episode),
+                    subtitle = str(S.desktop_budget_n_budgets, state.episodes[episode].orEmpty().size),
                     leading = { RailInitial(episode.take(2)) },
                     badge = state.episodeUnread(episode),
                     onClick = { onEvent(BudgetEvent.OpenEpisode(episode)) },
@@ -264,7 +266,7 @@ private fun DepartmentDirectory(state: BudgetUiState, onEvent: (BudgetEvent) -> 
             ZillitSearchField(
                 value = state.directorySearch,
                 onValueChange = { onEvent(BudgetEvent.DirectorySearch(it)) },
-                placeholder = "Search department",
+                placeholder = str(S.desktop_cl_search_department),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.lg),
             )
         }
@@ -273,12 +275,12 @@ private fun DepartmentDirectory(state: BudgetUiState, onEvent: (BudgetEvent) -> 
             state.loading && rows.isEmpty() -> LoadingRows()
             rows.isEmpty() -> RailEmpty(
                 title = if (state.directorySearch.isBlank()) {
-                    "No department has a budget yet"
+                    str(S.desktop_budget_no_department_has)
                 } else {
-                    "No department matches"
+                    str(S.desktop_continuity_no_department_matches)
                 },
                 message = if (state.directorySearch.isBlank() && state.canPost) {
-                    "Use + to upload the first one."
+                    str(S.desktop_budget_use_plus_first)
                 } else {
                     null
                 },
@@ -436,7 +438,7 @@ private fun RailFloatingActions(state: BudgetUiState, onEvent: (BudgetEvent) -> 
             Box {
                 FloatingButton(
                     icon = ZillitIcons.Chat,
-                    tooltip = "Discuss this budget",
+                    tooltip = str(S.desktop_budget_discuss),
                     primary = false,
                     onClick = { onEvent(BudgetEvent.ChatMenu(!state.chatMenuOpen)) },
                 )
@@ -445,7 +447,11 @@ private fun RailFloatingActions(state: BudgetUiState, onEvent: (BudgetEvent) -> 
         }
         FloatingButton(
             icon = ZillitIcons.Add,
-            tooltip = if (state.stage == BudgetStage.Directory) "Add a department's budget" else "Upload budget",
+            tooltip = if (state.stage == BudgetStage.Directory) {
+                str(S.desktop_budget_add_department_budget)
+            } else {
+                str(S.upload_budget)
+            },
             primary = true,
             onClick = {
                 if (state.stage == BudgetStage.Directory) {
@@ -490,18 +496,17 @@ internal fun FloatingButton(icon: ImageVector, tooltip: String, primary: Boolean
 private fun ConversationPlaceholder(state: BudgetUiState, modifier: Modifier = Modifier) {
     val (title, message) = when {
         state.mode == BudgetMode.Department && state.stage == BudgetStage.Directory ->
-            "Pick a department" to "Click on any department to start a conversation about its budget."
+            str(S.desktop_pick_a_department) to str(S.desktop_budget_pick_department_hint)
         state.stage == BudgetStage.Episodes ->
-            "Pick an episode" to "Each episode keeps its own budgets and conversations."
+            str(S.desktop_budget_pick_episode) to str(S.desktop_budget_pick_episode_hint)
         !state.hasDocuments ->
-            "No budget yet" to "Upload a budget, then discuss it with the crew who can see it."
+            str(S.desktop_budget_no_budget_yet) to str(S.desktop_budget_no_budget_hint)
         else ->
-            "Pick a conversation" to "Click on any user or group to start a conversation."
+            str(S.desktop_pick_a_conversation) to str(S.desktop_budget_pick_conversation_hint)
     }
     ZillitEmptyState(title = title, message = message, icon = ZillitIcons.Chat, modifier = modifier)
 }
 
-private fun String.plural(count: Int): String = if (count == 1) this else this + "s"
 
 private val RAIL_WIDTH = 380.dp
 private val HEADER_ICON = 36.dp

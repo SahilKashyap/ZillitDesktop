@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.maps.domain.toFixed
 import com.zillit.desktop.feature.maps.ui.DirectionsState
 import com.zillit.desktop.feature.maps.ui.MapEvent
@@ -72,6 +74,7 @@ private fun BarCard(content: @Composable () -> Unit) {
  * list only — the map's pins are never hidden by a search.
  */
 @Composable
+@Suppress("LongMethod") // One bar, laid out in one place.
 internal fun SearchBar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     val search = state.search ?: return
     val colors = ZillitTheme.colors
@@ -82,7 +85,7 @@ internal fun SearchBar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
             ZillitTextField(
                 value = search.query,
                 onValueChange = { onEvent(MapEvent.Bars.SearchQuery(it)) },
-                placeholder = "Search locations by name, address, or type...",
+                placeholder = str(S.desktop_map_search_locations),
                 leadingIcon = ZillitIcons.Search,
                 modifier = Modifier.fillMaxWidth().padding(10.dp).focusRequester(focus),
                 trailingContent = if (search.query.isNotEmpty()) {
@@ -98,7 +101,7 @@ internal fun SearchBar(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
                 if (results.isEmpty()) {
                     ZillitText(
-                        text = "No locations found",
+                        text = str(S.desktop_map_no_locations_found),
                         style = ZillitTheme.typography.bodyMedium,
                         color = colors.textMuted,
                         modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -166,14 +169,14 @@ internal fun FilterPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 ZillitText(
-                    text = "Filter by Type",
+                    text = str(S.desktop_map_filter_by_type),
                     style = ZillitTheme.typography.titleSmall,
                     color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
                 )
                 if (state.typeFilters.isNotEmpty()) {
                     ZillitButton(
-                        text = "Clear All",
+                        text = str(S.txt_clear_all),
                         onClick = { onEvent(MapEvent.Bars.ClearTypeFilters) },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -183,10 +186,17 @@ internal fun FilterPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
             Spacer(Modifier.height(8.dp))
             val types = state.presentTypes
             if (types.isEmpty()) {
-                ZillitText(text = "No types available", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+                ZillitText(
+                    text = str(S.desktop_map_no_types_available),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
             } else {
                 val counts = state.typeCounts
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     types.forEach { type ->
                         TypeFilterChip(
                             name = type,
@@ -244,6 +254,7 @@ private fun TypeFilterChip(name: String, count: Int, active: Boolean, state: Map
  * distance and time, and the two ways onward — share it, or call a driver.
  */
 @Composable
+@Suppress("LongMethod") // One panel, read top to bottom; the order is the reading order.
 internal fun DirectionsPanel(state: DirectionsState, onEvent: (MapEvent) -> Unit) {
     val colors = ZillitTheme.colors
     BarCard {
@@ -258,7 +269,7 @@ internal fun DirectionsPanel(state: DirectionsState, onEvent: (MapEvent) -> Unit
             ) {
                 IconChip(icon = MapIcons.Navigation, tint = Color.White, background = MapColors.Info, size = 30.dp)
                 ZillitText(
-                    text = "Get Directions",
+                    text = str(S.desktop_map_get_directions),
                     style = ZillitTheme.typography.titleSmall,
                     color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
@@ -271,11 +282,14 @@ internal fun DirectionsPanel(state: DirectionsState, onEvent: (MapEvent) -> Unit
             ) {
                 RouteDots()
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         ZillitTextField(
                             value = state.pickupText,
                             onValueChange = { onEvent(MapEvent.Directions.PickupText(it)) },
-                            placeholder = "Pickup location",
+                            placeholder = str(S.txt_pickup_location),
                             modifier = Modifier.weight(1f),
                         )
                         CurrentLocationButton(
@@ -287,7 +301,7 @@ internal fun DirectionsPanel(state: DirectionsState, onEvent: (MapEvent) -> Unit
                     ZillitTextField(
                         value = state.dropText,
                         onValueChange = { onEvent(MapEvent.Directions.DropText(it)) },
-                        placeholder = "Drop-off / Destination",
+                        placeholder = str(S.desktop_map_dropoff_destination),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     SuggestionList(state.dropSuggestions, onPick = { onEvent(MapEvent.Directions.DropPick(it)) })
@@ -301,34 +315,49 @@ internal fun DirectionsPanel(state: DirectionsState, onEvent: (MapEvent) -> Unit
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ZillitSpinner(size = 16.dp)
-                    ZillitText(text = "Finding best route...", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+                    ZillitText(
+                        text = str(S.desktop_map_finding_route),
+                        style = ZillitTheme.typography.bodyMedium,
+                        color = colors.textMuted,
+                    )
                 }
             }
             val route = state.route
             if (route != null && !state.loading) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
                 Row(
-                    modifier = Modifier.fillMaxWidth().background(colors.surfaceSunken).padding(horizontal = 20.dp, vertical = 14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                        .background(colors.surfaceSunken)
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
                     // The figures share a top line; the duration has no second
                     // line, and centring would drop its label below distance's.
                     Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Top) {
-                        RouteFigure("DISTANCE", route.distanceText, "${toFixed(route.distanceMeters * MILES_PER_METER, 1)} mi")
-                        Box(Modifier.width(1.dp).height(40.dp).background(colors.border).align(Alignment.CenterVertically))
-                        RouteFigure("DURATION", route.durationText, null)
+                        RouteFigure(
+                            str(S.desktop_map_distance),
+                            route.distanceText,
+                            str(S.desktop_map_miles_short, toFixed(route.distanceMeters * MILES_PER_METER, 1)),
+                        )
+                        Box(
+                            Modifier.width(1.dp)
+                                .height(40.dp)
+                                .background(colors.border)
+                                .align(Alignment.CenterVertically),
+                        )
+                        RouteFigure(str(S.desktop_cal_duration), route.durationText, null)
                     }
                     Spacer(Modifier.weight(1f))
                     ZillitButton(
-                        text = "Share",
+                        text = str(S.share),
                         onClick = { onEvent(MapEvent.Directions.Share) },
                         variant = ButtonVariant.Secondary,
                         leadingIcon = MapIcons.Share,
                         enabled = state.pickup != null && state.drop != null,
                     )
                     ZillitButton(
-                        text = "Call a Driver",
+                        text = str(S.desktop_map_call_a_driver),
                         onClick = { onEvent(MapEvent.Directions.CallDriver) },
                         leadingIcon = MapIcons.Truck,
                         enabled = state.pickup != null && state.drop != null,
@@ -351,7 +380,11 @@ private fun RouteDots() {
             Modifier
                 .width(2.dp)
                 .height(34.dp)
-                .background(Brush.verticalGradient(listOf(MapColors.PickupDot.copy(alpha = 0.6f), MapColors.DropDot.copy(alpha = 0.6f)))),
+                .background(
+                    Brush.verticalGradient(
+                        listOf(MapColors.PickupDot.copy(alpha = 0.6f), MapColors.DropDot.copy(alpha = 0.6f)),
+                    ),
+                ),
         )
         Dot(MapColors.DropDot)
     }
@@ -384,7 +417,7 @@ private fun CurrentLocationButton(active: Boolean, onClick: () -> Unit) {
     ) {
         ZillitIcon(
             icon = MapIcons.Target,
-            contentDescription = "Use my current location",
+            contentDescription = str(S.recce_picker_my_location),
             tint = if (active) Color.White else if (hovered) MapColors.Info else colors.textSecondary,
             size = 16.dp,
         )
@@ -400,7 +433,11 @@ private fun RouteFigure(label: String, value: String, sub: String?) {
             style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
             color = colors.textMuted,
         )
-        ZillitText(text = value, style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold), color = colors.textPrimary)
+        ZillitText(
+            text = value,
+            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+            color = colors.textPrimary,
+        )
         if (sub != null) ZillitText(text = sub, style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
     }
 }

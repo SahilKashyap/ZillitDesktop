@@ -21,6 +21,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.chat.data.MessageHit
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.GroupRoom
@@ -60,7 +62,7 @@ internal fun messageHitRows(
 @Composable
 internal fun MessageHitsHeader() {
     ZillitText(
-        text = "Messages",
+        text = str(S.desktop_messages),
         style = ZillitTheme.typography.labelSmall,
         color = ZillitTheme.colors.textMuted,
         modifier = Modifier.padding(

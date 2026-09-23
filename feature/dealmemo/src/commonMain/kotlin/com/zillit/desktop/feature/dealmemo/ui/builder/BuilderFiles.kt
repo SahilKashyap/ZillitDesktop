@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.dealmemo.ui.builder
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.dealmemo.domain.authoring.BuilderDocuments
 import com.zillit.desktop.feature.dealmemo.domain.authoring.DealPayload
 import com.zillit.desktop.feature.dealmemo.domain.preview.DealAttachment
@@ -14,6 +16,7 @@ import com.zillit.desktop.feature.dealmemo.ui.PickedDealFile
 import com.zillit.desktop.feature.dealmemo.ui.preview.FileViewer
 import com.zillit.desktop.feature.dealmemo.ui.preview.FileViewerKind
 import com.zillit.desktop.feature.dealmemo.ui.preview.ViewerContent
+import kotlin.random.Random
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -21,7 +24,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlin.random.Random
 
 /**
  * The builder's file work: custom documents picked for a later upload,
@@ -68,7 +70,7 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
         if (state.passportUploading) return
         val room = PASSPORT_MAX - DealPayload.passports(state.form["passportAttachment"]).size
         if (room <= 0) {
-            vm.toast("You can upload up to 2 files.", DealToastTone.Error)
+            vm.toast(str(S.desktop_dm_you_can_upload_up_to_2_files), DealToastTone.Error)
             return
         }
         vm.work {
@@ -78,7 +80,7 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
                 file.name.substringAfterLast('.', "").lowercase() in PASSPORT_TYPES || file.mime in PASSPORT_MIMES
             }
             if (accepted.isEmpty()) {
-                vm.toast("Please upload a PDF, JPG or PNG file.", DealToastTone.Error)
+                vm.toast(str(S.dm_edit_personal_passport_type), DealToastTone.Error)
                 return@work
             }
             session.update { copy(passportUploading = true) }
@@ -98,7 +100,7 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
             }
             session.update { copy(passportUploading = false) }
             if (uploaded.any { it == null }) {
-                vm.toast("Couldn't upload the passport / ID. Please try again.", DealToastTone.Error)
+                vm.toast(str(S.desktop_dm_couldnt_upload_the_passport_id_please_try), DealToastTone.Error)
                 return@work
             }
             session.edit { form ->
@@ -193,7 +195,7 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
             val file = store.pickFiles(listOf("pdf", "doc", "docx"), multiple = false).firstOrNull() ?: return@work
             val ext = file.name.substringAfterLast('.', "").lowercase()
             if (ext !in CONTRACT_EXTENSIONS) {
-                vm.toast("Please upload a PDF or DOC/DOCX file.", DealToastTone.Error)
+                vm.toast(str(S.desktop_dm_please_upload_a_pdf_or_doc_docx), DealToastTone.Error)
                 return@work
             }
             session.update { copy(contractUploading = true) }
@@ -209,7 +211,7 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
                     session.edit { it.with("longFormContract", attachment) }
                 }
                 is ZillitResult.Failure ->
-                    vm.toast("Couldn't upload the contract. Please try again.", DealToastTone.Error)
+                    vm.toast(str(S.desktop_dm_couldnt_upload_the_contract_please_try_again), DealToastTone.Error)
             }
             session.update { copy(contractUploading = false) }
         }
@@ -218,12 +220,12 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
     private fun viewPassport(index: Int) {
         val form = session.state()?.form ?: return
         val attachment = DealPayload.passports(form["passportAttachment"]).getOrNull(index) as? JsonObject ?: return
-        open(attachment["name"]?.let(Js::text) ?: "Passport / ID", DealAttachment(attachment))
+        open(attachment["name"]?.let(Js::text) ?: str(S.dm_step2_passport), DealAttachment(attachment))
     }
 
     private fun viewContract() {
         val attachment = session.state()?.form?.obj("longFormContract") ?: return
-        val name = attachment["name"]?.let(Js::text) ?: "Contract"
+        val name = attachment["name"]?.let(Js::text) ?: str(S.contract_text)
         open(name, DealAttachment(attachment))
     }
 
@@ -234,7 +236,7 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
         val attachment = row["attachment"] as? JsonObject
         val pending = session.pendingFiles[docId]
         val title = (row["file"] as? JsonObject)?.get("name")?.let(Js::text)
-            ?: attachment?.get("name")?.let(Js::text) ?: attachment?.get("title")?.let(Js::text) ?: "Document"
+            ?: attachment?.get("name")?.let(Js::text) ?: attachment?.get("title")?.let(Js::text) ?: str(S.document)
         when {
             pending != null -> openBytes(title, pending)
             attachment != null -> open(title, DealAttachment(attachment))
@@ -245,7 +247,7 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
         val row = agreementRow(rowId) ?: return
         val flat = BuilderDocuments.flatten(row)
         if (flat["media"] == null) return
-        open(BuilderDocuments.filename(row).ifEmpty { "Document" }, DealAttachment(flat))
+        open(BuilderDocuments.filename(row).ifEmpty { str(S.document) }, DealAttachment(flat))
     }
 
     private fun agreementRow(rowId: String): JsonObject? =
@@ -254,7 +256,9 @@ internal class BuilderFiles(private val vm: DealMemoViewModel, private val sessi
     private fun open(title: String, attachment: DealAttachment) {
         show(title) {
             val store =
-                vm.store ?: return@show ZillitResult.Failure(ZillitError.Validation("Documents can't be opened here."))
+                vm.store ?: return@show ZillitResult.Failure(
+                    ZillitError.Validation(str(S.desktop_dm_documents_cant_be_opened_here)),
+                )
             when (val fetched = store.fetch(attachment)) {
                 is ZillitResult.Success -> {
                     val pdf = attachment.isPdf || attachment.mime.contains("pdf")

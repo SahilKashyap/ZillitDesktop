@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.IsdCountries
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
 import com.zillit.desktop.feature.accounthub.domain.Vendor
@@ -248,9 +250,9 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
             vm.sendSideEffect(
                 AccountHubEffect.Failed(
                     if (editing == null) {
-                        "You cannot add vendors on this project."
+                        str(S.desktop_hub_you_cannot_add_vendors_on_this_project)
                     } else {
-                        "Only the accounts team or the person who added this vendor can change it."
+                        str(S.desktop_hub_only_the_accounts_team_or_the_person_who_added_this)
                     },
                 ),
             )
@@ -334,7 +336,7 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
         val allowed = if (existing == null) viewer.mayAddVendor else viewer.mayModifyVendor(existing)
         if (!allowed) {
             vm.sendSideEffect(
-                AccountHubEffect.Failed("Only the accounts team or the person who added this vendor can change it."),
+                AccountHubEffect.Failed(str(S.desktop_hub_only_the_accounts_team_or_the_person_who_added_this)),
             )
             return
         }
@@ -347,7 +349,7 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
                     verifyAfterSave(id)
                 } else {
                     postcodeJob?.cancel()
-                    vm.update { copy(vendors = vendors.copy(page = null), notice = "Vendor saved.") }
+                    vm.update { copy(vendors = vendors.copy(page = null), notice = str(S.desktop_vendor_saved)) }
                     load()
                 }
             },
@@ -366,10 +368,12 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
      */
     private fun verifyAfterSave(id: String) {
         vm.runResult({ vm.repo.verifyVendor(id) }, {
-            vm.update { copy(vendors = vendors.copy(page = null), notice = "Vendor saved and verified.") }
+            vm.update {
+                copy(vendors = vendors.copy(page = null), notice = str(S.desktop_hub_vendor_saved_and_verified))
+            }
             load()
         }, { error ->
-            vm.update { copy(vendors = vendors.copy(page = null), notice = "Vendor saved.") }
+            vm.update { copy(vendors = vendors.copy(page = null), notice = str(S.desktop_vendor_saved)) }
             load()
             vm.report(error)
         })
@@ -407,7 +411,7 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
                             deletingBank = false,
                         ),
                     ),
-                    notice = "Bank details deleted.",
+                    notice = str(S.ah_bank_deleted_msg),
                 )
             }
             load()
@@ -423,7 +427,7 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
         if (!vm.mayActAsAccountant()) return
         vm.update { copy(vendors = vendors.copy(verifyingId = id)) }
         vm.runResult({ vm.repo.verifyVendor(id) }, {
-            vm.update { copy(vendors = vendors.copy(verifyingId = null), notice = "Vendor verified.") }
+            vm.update { copy(vendors = vendors.copy(verifyingId = null), notice = str(S.desktop_vendor_verified)) }
             load()
         }, { error ->
             vm.update { copy(vendors = vendors.copy(verifyingId = null)) }
@@ -435,7 +439,7 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
         val vendor = vm.setupState.vendors.rows.firstOrNull { it.id == id } ?: return
         if (!vm.setupState.viewer.mayModifyVendor(vendor)) {
             vm.sendSideEffect(
-                AccountHubEffect.Failed("Only the accounts team or the person who added this vendor can delete it."),
+                AccountHubEffect.Failed(str(S.desktop_hub_only_the_accounts_team_or_the_person_who_added_this_2)),
             )
             return
         }
@@ -444,7 +448,7 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
             vm.update {
                 copy(
                     vendors = vendors.copy(selectedId = null, detailId = null, historyFor = null),
-                    notice = "Vendor removed.",
+                    notice = str(S.desktop_vendor_removed),
                 )
             }
             load()

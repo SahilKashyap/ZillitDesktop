@@ -61,6 +61,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The web's `RichSelect`, as the register's filter bar uses it: a 44dp field
@@ -91,7 +93,7 @@ internal fun <T> AssetSelect(
         selectedKeys.isEmpty() -> null
         !multiple || selectedKeys.size == 1 ->
             options.firstOrNull { key(it) == selectedKeys.first() }?.let(label) ?: if (multiple) "1 selected" else null
-        else -> "${selectedKeys.size} selected"
+        else -> str(S.dd_n_selected, selectedKeys.size)
     }
     Box(modifier) {
         Trigger(
@@ -252,7 +254,11 @@ private fun <T> OptionsPanel(
             )
             if (shown.isEmpty()) {
                 ZillitText(
-                    text = if (options.isEmpty()) "Nothing to choose from" else "No results for “${query.trim()}”",
+                    text = if (options.isEmpty()) {
+                        str(S.desktop_nothing_to_choose_from)
+                    } else {
+                        str(S.desktop_no_results_for, query.trim())
+                    },
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textMuted,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 18.dp),
@@ -356,7 +362,7 @@ private fun SearchRow(value: String, onValueChange: (String) -> Unit, focus: Foc
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) {
                     ZillitText(
-                        text = "Search…",
+                        text = str(S.search),
                         style = ZillitTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
                         color = colors.textMuted,
                         maxLines = 1,
@@ -405,7 +411,8 @@ private fun Footer(count: Int, selected: Int) {
                 text = buildString {
                     append(count)
                     append(if (count == 1) " option" else " options")
-                    if (selected > 0) append(" · $selected selected")
+                    // A key cannot carry the leading separator: the catalogue trims a key's ends.
+                    if (selected > 0) append(" · ").append(str(S.dd_n_selected, selected))
                 },
                 style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textMuted,

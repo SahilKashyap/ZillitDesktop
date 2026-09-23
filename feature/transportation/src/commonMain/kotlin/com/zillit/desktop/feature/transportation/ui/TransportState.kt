@@ -19,6 +19,8 @@ import com.zillit.desktop.feature.transportation.domain.TripRequest
 import com.zillit.desktop.feature.transportation.domain.TripStatus
 import com.zillit.desktop.feature.transportation.domain.Vehicle
 import com.zillit.desktop.feature.transportation.domain.VehicleDraft
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The tool's sections — the web's tile grid, as a side nav. Its ten tiles
@@ -28,36 +30,44 @@ import com.zillit.desktop.feature.transportation.domain.VehicleDraft
  * *Permanent allocations* tiles (coordinator's, everyone else's) are one
  * section that branches on the role; *Fill in details* is a page of its own.
  */
-enum class TransportSection(val label: String) {
-    Requests("Pickup requests"),
-    Vehicles("Vehicle list"),
-    Drivers("Drivers"),
-    Permanent("Allocations"),
-    MyAssignments("My assignments"),
-    MyDetails("Fill in details"),
+enum class TransportSection(private val labelKey: String) {
+    Requests(S.desktop_transport_pickup_requests),
+    Vehicles(S.txt_vehicle_list),
+    Drivers(S.drivers),
+    Permanent(S.allocations),
+    MyAssignments(S.txt_my_assignment),
+    MyDetails(S.txt_fill_in_details),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** The driver list's filters — the web's three tiles and their tabs. */
-enum class DriverFilter(val label: String) {
+enum class DriverFilter(private val labelKey: String) {
     /** `full_driver_list`: every accepted driver. */
-    All("All drivers"),
+    All(S.desktop_transport_all_drivers),
 
     /** Assign driver → *Assigned drivers*: has a vehicle. */
-    WithVehicle("With vehicle"),
+    WithVehicle(S.desktop_transport_with_vehicle),
 
     /** Assign driver → *Unassigned drivers*: no vehicle. */
-    WithoutVehicle("Without vehicle"),
+    WithoutVehicle(S.desktop_transport_without_vehicle),
 
     /** `allocated_driver_list`, split by [AllocationFilter]. */
-    Allocated("Allocated"),
+    Allocated(S.txt_vehicle_status_allocated),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
-enum class AllocationFilter(val label: String) {
-    PermanentFullDay("Permanent allocation"),
-    PermanentForDay("Permanent allocation for the day"),
-    ForJob("Allocation for the job"),
-    Available("Available"),
+enum class AllocationFilter(private val labelKey: String) {
+    PermanentFullDay(S.txt_perm_allocation),
+    PermanentForDay(S.txt_perm_allocation_day),
+    ForJob(S.desktop_transport_allocation_for_job),
+    Available(S.available),
     ;
+
+    val label: String get() = str(labelKey)
 
     /** The web's `CustomDriverListModal` predicate for this tab. */
     fun admits(user: TransportUser): Boolean = when (this) {
@@ -69,9 +79,12 @@ enum class AllocationFilter(val label: String) {
 }
 
 /** Where the temporary-driver candidates come from — the web's radio pair. */
-enum class TempDriverSource(val label: String) {
-    Crew("Crew members"),
-    TransportDepartment("Transport department"),
+enum class TempDriverSource(private val labelKey: String) {
+    Crew(S.desktop_transport_crew_members),
+    TransportDepartment(S.txt_tranportation_department),
+    ;
+
+    val label: String get() = str(labelKey)
 }
 
 /** One passenger under entry — the web's Add passenger modal. */
@@ -554,7 +567,7 @@ data class TransportUiState(
 
     /** A user no longer on the production shows as "Unknown", never as a raw id. */
     fun userName(id: String?): String =
-        user(id)?.fullName ?: if (id.isNullOrBlank()) "—" else "Unknown"
+        user(id)?.fullName ?: if (id.isNullOrBlank()) "—" else str(S.desktop_unknown)
     fun vehicleLabel(id: String?): String = vehicle(id)?.label ?: "—"
 
     /** People whose name or designation matches the query — the film tools' `search`. */

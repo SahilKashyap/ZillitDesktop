@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.email.data
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.domain.BoxSettings
 import com.zillit.desktop.feature.email.domain.StoredFile
@@ -44,7 +46,7 @@ class BoxAttachmentUploader(
         val box = settings()?.takeIf { it.isUsable } ?: return@withContext ZillitResult.Failure(
             ZillitError.Storage(
                 technical = "no Box enterprise id on the open project",
-                userMessage = "Attachments are unavailable — this project has no file storage configured.",
+                userMessage = str(S.desktop_email_attachments_no_project_storage),
             ),
         )
 

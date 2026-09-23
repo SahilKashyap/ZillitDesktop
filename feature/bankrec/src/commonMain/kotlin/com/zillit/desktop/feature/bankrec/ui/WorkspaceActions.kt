@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * The reconciliation workspace: which period is open, how it is filtered, and
  * the two period-wide acts — running the matching rules again, and signing off.
@@ -138,7 +141,7 @@ internal class WorkspaceActions(private val vm: BankRecViewModel) {
         edit { copy(rerunning = true, selectedId = null) }
         vm.runResult({ vm.repo.rerunAutoMatch(periodId) }, {
             edit { copy(rerunning = false) }
-            vm.notify("Auto-match re-run.")
+            vm.notify(str(S.desktop_br_auto_match_rerun_toast))
             load(periodId)
             // A re-run moves counts, can add or remove fraud flags, and clears
             // exceptions a new match now answers.
@@ -166,12 +169,12 @@ internal class WorkspaceActions(private val vm: BankRecViewModel) {
         if (dialog.submitting) return
         val view = vm.ui.workspaceView()
         if (view.hasIssues && dialog.note.isBlank()) {
-            return vm.refuse("Explain why you are signing off with exceptions.")
+            return vm.refuse(str(S.desktop_br_signoff_needs_note))
         }
         edit { copy(signOff = dialog.copy(submitting = true)) }
         vm.runResult({ vm.repo.signOffPeriod(periodId, dialog.note.trim()) }, {
             edit { copy(signOff = null) }
-            vm.notify("Reconciliation signed off.")
+            vm.notify(str(S.desktop_br_signed_off))
             // The period has left "in progress"; the list decides where the
             // workspace goes next, with no page reload.
             vm.loadPeriods()

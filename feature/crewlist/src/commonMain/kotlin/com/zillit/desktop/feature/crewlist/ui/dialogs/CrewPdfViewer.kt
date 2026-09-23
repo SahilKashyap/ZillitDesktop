@@ -52,6 +52,8 @@ import com.zillit.desktop.feature.crewlist.ui.components.CrewCopy
 import com.zillit.desktop.feature.crewlist.ui.components.CrewIcons
 import com.zillit.desktop.feature.crewlist.ui.components.onBackdropTap
 import com.zillit.desktop.feature.crewlist.ui.components.swallowPresses
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 
 /**
  * The generated PDF, in the app — the web's `DocumentViewer` as the crew list
@@ -130,7 +132,7 @@ private fun ViewerBar(
     ) {
         ViewerTitle(viewer, Modifier.weight(1f))
         ZillitButton(
-            text = "Download",
+            text = str(S.download),
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.Download,
@@ -139,14 +141,14 @@ private fun ViewerBar(
         )
         if (!compact) {
             ZillitButton(
-                text = copy.t("publish_to_doc_distribution", "Publish to Doc Distribution"),
+                text = copy.t("publish_to_doc_distribution", str(S.dd_publish_to_distribution)),
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Send,
                 onClick = onDistribute,
             )
             ZillitButton(
-                text = copy.t("PublishCrewList", "Publish {tool_name}"),
+                text = copy.t("PublishCrewList", str(S.desktop_cl_publish_tool)),
                 size = ButtonSize.Small,
                 loading = publishing,
                 enabled = !publishing,
@@ -155,7 +157,7 @@ private fun ViewerBar(
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
-            contentDescription = copy.t("Close", "Close"),
+            contentDescription = copy.t("Close", str(S.close)),
             tint = Color.White,
             onClick = onClose,
         )
@@ -199,7 +201,7 @@ private fun Pages(viewer: PdfViewerState) {
             ) {
                 ZillitSpinner(size = 28.dp, color = Color.White)
                 ZillitText(
-                    "Loading preview…",
+                    str(S.desktop_loading_preview),
                     style = ZillitTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.75f),
                 )
@@ -256,7 +258,12 @@ private fun ZoomControl(zoom: Float, onZoom: (Float) -> Unit, modifier: Modifier
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitIconButton(CrewIcons.Minus, "Zoom out", tint = Color.White, onClick = { onZoom(zoom - ZOOM_STEP) })
+        ZillitIconButton(
+            CrewIcons.Minus,
+            str(S.docusign_zoom_out),
+            tint = Color.White,
+            onClick = { onZoom(zoom - ZOOM_STEP) },
+        )
         ZillitText(
             text = "${(zoom * 100).toInt()}%",
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
@@ -264,7 +271,12 @@ private fun ZoomControl(zoom: Float, onZoom: (Float) -> Unit, modifier: Modifier
             modifier = Modifier.width(44.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        ZillitIconButton(ZillitIcons.Add, "Zoom in", tint = Color.White, onClick = { onZoom(zoom + ZOOM_STEP) })
+        ZillitIconButton(
+            ZillitIcons.Add,
+            str(S.docusign_zoom_in),
+            tint = Color.White,
+            onClick = { onZoom(zoom + ZOOM_STEP) },
+        )
     }
 }
 

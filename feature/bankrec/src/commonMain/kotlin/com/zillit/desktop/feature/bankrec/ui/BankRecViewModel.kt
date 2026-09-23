@@ -5,6 +5,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.bankrec.data.BankRefresh
 import com.zillit.desktop.feature.bankrec.data.bankRefreshes
 import com.zillit.desktop.feature.bankrec.domain.BankRecBadges
@@ -317,7 +319,7 @@ class BankRecViewModel(
     /** Saves an export and opens it, reporting either failure. */
     internal suspend fun deliver(fileName: String, bytes: ZillitResult<ByteArray>): Boolean {
         val target = files ?: run {
-            refuse("This installation cannot save exported files.")
+            refuse(str(S.desktop_cannot_save_exports))
             return false
         }
         return when (bytes) {
@@ -338,7 +340,7 @@ class BankRecViewModel(
                 }
 
                 is ZillitResult.Success -> {
-                    notify("Exported $fileName.")
+                    notify(str(S.desktop_exported_file, fileName))
                     true
                 }
             }

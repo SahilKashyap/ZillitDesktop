@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+
 /**
  * Importing a union agreement's rules into the non-union breakdown — the
  * flow behind the web's `ImportAgreementRulesModal` and the editor's
@@ -98,7 +101,10 @@ internal class RuleImportActions(private val vm: AccountHubViewModel) {
             vm.update {
                 copy(
                     setup = this.setup.copy(nonUnionPay = this.setup.nonUnionPay.committed(saved), ruleImport = null),
-                    notice = "${rules.total} rule${if (rules.total == 1) "" else "s"} imported.",
+                    notice = if (rules.total == 1) str(S.desktop_hub_one_rule_imported) else str(
+                        S.desktop_hub_n_rules_imported,
+                        rules.total,
+                    ),
                 )
             }
         }, { error ->

@@ -32,6 +32,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
 import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
@@ -54,35 +56,35 @@ internal fun FormScopeDialog(state: AccountHubUiState, onEvent: (AccountHubEvent
     val shown = rememberLatestNonNull(scope)
     val close = { onEvent(AccountHubEvent.OpenApproverScope(false)) }
     ZillitDialogShell(
-        title = "Set Approver Level",
+        title = str(S.desktop_set_approver_level),
         icon = ZillitIcons.Shield,
         visible = scope != null,
         onDismiss = close,
         width = DIALOG_WIDTH,
         actions = {
-            ZillitButton(text = "Cancel", onClick = close, variant = ButtonVariant.Tertiary)
+            ZillitButton(text = str(S.cancel), onClick = close, variant = ButtonVariant.Tertiary)
             ZillitButton(
-                text = "Continue",
+                text = str(S.continue_text),
                 onClick = { onEvent(AccountHubEvent.ContinueApproverScope) },
                 enabled = shown?.canContinue == true,
             )
         },
     ) {
         ZillitText(
-            text = "How would you like to configure approvers?",
+            text = str(S.desktop_hub_how_would_you_like_to_configure_approvers),
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
         ScopeOption(
             icon = ZillitIcons.Users,
-            title = "For All Departments",
-            subtitle = "Same approval levels applied to every department",
+            title = str(S.desktop_for_all_departments),
+            subtitle = str(S.desktop_hub_same_approval_levels_applied_to_every_department),
             active = shown?.mode == ApprovalScope.All,
         ) { onEvent(AccountHubEvent.PickApproverScope(ApprovalScope.All)) }
         ScopeOption(
             icon = ZillitIcons.Shield,
-            title = "For One Department",
-            subtitle = "Configure levels for a specific department",
+            title = str(S.desktop_for_one_department),
+            subtitle = str(S.desktop_hub_configure_levels_for_a_specific_department),
             active = shown?.mode == ApprovalScope.Department,
         ) { onEvent(AccountHubEvent.PickApproverScope(ApprovalScope.Department, shown?.departmentId)) }
         if (shown?.mode == ApprovalScope.Department) {
@@ -92,11 +94,11 @@ internal fun FormScopeDialog(state: AccountHubUiState, onEvent: (AccountHubEvent
                 options = options,
                 label = { it.name.localised() },
                 onSelect = { onEvent(AccountHubEvent.PickApproverScope(ApprovalScope.Department, it?.id)) },
-                placeholder = "Choose a department...",
-                fieldLabel = "Select Department",
+                placeholder = str(S.desktop_choose_a_department_prompt),
+                fieldLabel = str(S.select_department),
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (options.isEmpty()) FieldHint("This production has no departments to configure yet.")
+            if (options.isEmpty()) FieldHint(str(S.desktop_hub_this_production_has_no_departments_to_configure_yet))
         }
     }
 }
@@ -156,7 +158,11 @@ internal fun ApproverLoadingView(state: AccountHubUiState, onEvent: (AccountHubE
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                MonoLabel("Forms", modifier = Modifier.clickable(onClick = cancel), color = colors.accentText)
+                MonoLabel(
+                    str(S.desktop_forms),
+                    modifier = Modifier.clickable(onClick = cancel),
+                    color = colors.accentText,
+                )
                 ZillitText(text = "/", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
                 ZillitText(
                     text = state.formConfig.module.label,
@@ -169,8 +175,8 @@ internal fun ApproverLoadingView(state: AccountHubUiState, onEvent: (AccountHubE
                     style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 )
             }
-            ZillitButton(text = "Cancel", onClick = cancel, variant = ButtonVariant.Secondary)
-            ZillitButton(text = "Save changes", onClick = {}, leadingIcon = ZillitIcons.Check, enabled = false)
+            ZillitButton(text = str(S.cancel), onClick = cancel, variant = ButtonVariant.Secondary)
+            ZillitButton(text = str(S.dm_setup_save), onClick = {}, leadingIcon = ZillitIcons.Check, enabled = false)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         ZillitScrollColumn(
@@ -182,7 +188,7 @@ internal fun ApproverLoadingView(state: AccountHubUiState, onEvent: (AccountHubE
                 TipBanner(BuilderChrome.forms(state.formConfig.module.label).tip(scopeLabel.takeIf {
                     load.scope == ApprovalScope.Department
                 }))
-                FormLoadingLine("Loading configuration...")
+                FormLoadingLine(str(S.desktop_loading_configuration))
             }
         }
     }
