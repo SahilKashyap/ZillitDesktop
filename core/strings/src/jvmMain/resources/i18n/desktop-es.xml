@@ -5665,7 +5665,7 @@
     <string name="desktop_hub_tour_tags_body">Añade etiquetas de texto libre.</string>
     <string name="desktop_hub_tour_tax_body">Añade los países y sus tipos de impuesto para el proyecto.</string>
     <string name="desktop_hub_upload_failed_please_try_again">No se pudo subir; inténtalo de nuevo</string>
-    <string name="desktop_hub_x_is_not_available_here">%1$s} no está disponible aquí</string>
+    <string name="desktop_hub_x_is_not_available_here">%1$s no está disponible aquí</string>
     <string name="desktop_hub_x_is_not_in_the_chart_of_accounts">%1$s no está en el plan de cuentas.</string>
     <string name="desktop_inv_search_ref_vendor_description">Buscar por referencia, proveedor o descripción</string>
     <string name="desktop_next_of_kin">Familiar más cercano</string>

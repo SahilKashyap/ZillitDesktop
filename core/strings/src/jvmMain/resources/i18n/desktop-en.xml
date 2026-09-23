@@ -5669,7 +5669,7 @@
     <string name="desktop_hub_tour_tags_body">Add free-form text tags.</string>
     <string name="desktop_hub_tour_tax_body">Add the countries and their tax types for the project.</string>
     <string name="desktop_hub_upload_failed_please_try_again">Upload failed — please try again</string>
-    <string name="desktop_hub_x_is_not_available_here">%1$s} is not available here</string>
+    <string name="desktop_hub_x_is_not_available_here">%1$s is not available here</string>
     <string name="desktop_hub_x_is_not_in_the_chart_of_accounts">%1$s is not in the chart of accounts.</string>
     <string name="desktop_inv_search_ref_vendor_description">Search ref, vendor, description</string>
     <string name="desktop_next_of_kin">Next of Kin</string>
