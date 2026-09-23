@@ -74,9 +74,8 @@ class MapWireTest {
             json(
                 """{"city_id":"c1","location_name":"Base Camp","location_type":"Base Camp","description":"North gate",
                 "location":{"lat":19.16,"long":72.87},"location_address":"Film City Rd","scene_number":"12A",
-                "location_sub_type":[
-                    "Tents",
-                ],"is_studio_zone":false,"miles":0,"center_point_type":"point","distribute":false}""",
+                "location_sub_type":["Tents"],"is_studio_zone":false,"miles":0,
+                "center_point_type":"point","distribute":false}""",
             ),
             locationBody(draft, id = null),
         )
@@ -163,9 +162,8 @@ class MapWireTest {
             json(
                 """{"_id":"l1","city_id":"c1","location_name":"Unit Base","location_type":"Base Camp",
                 "location":{"lat":"19.16","lng":72.87},"location_address":"Film City","scene_number":"4",
-                "location_sub_type":[
-                    "Tents",
-                ],"attachments":[{"media":"k","bucket":"b","region":"r","width":640,"height":480,"name":"a.jpg"}],
+                "location_sub_type":["Tents"],
+                "attachments":[{"media":"k","bucket":"b","region":"r","width":640,"height":480,"name":"a.jpg"}],
                 "is_studio_zone":false}""",
             ),
         )!!
