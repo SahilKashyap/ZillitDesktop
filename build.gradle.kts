@@ -13,8 +13,45 @@ plugins {
 // Static analysis is applied to every module from here rather than from a
 // convention plugin: detekt needs no per-module configuration, and applying it
 // centrally keeps one ruleset and one baseline for the whole build.
+/*
+ * Cross-building the macOS app for the other architecture.
+ *
+ * `compose.desktop.currentOs` pins Skia — the renderer — to the architecture of
+ * the machine running Gradle, decided at configuration time and independent of
+ * the Java toolchain. So an Intel DMG built on Apple silicon comes out with an
+ * arm64 `libskiko`: it packages and signs cleanly, then dies on launch on the
+ * only machines it was built for. Pointing the toolchain at an x64 JDK does not
+ * help, and neither does JAVA_HOME — the constraint is already resolved.
+ *
+ *     ./gradlew :desktopApp:packageDmg -PzillitMacArch=x64 ...
+ *
+ * Absent by default, so an ordinary build resolves exactly as before.
+ */
+val zillitMacArch: String? = providers.gradleProperty("zillitMacArch").orNull
+
 subprojects {
     apply(plugin = "io.gitlab.arturbosch.detekt")
+
+    if (zillitMacArch != null) {
+        val wanted = if (zillitMacArch == "x64") "macos-x64" else "macos-arm64"
+        val unwanted = if (zillitMacArch == "x64") "macos-arm64" else "macos-x64"
+        configurations.configureEach {
+            resolutionStrategy.dependencySubstitution {
+                all {
+                    val requested = requested
+                    if (requested is ModuleComponentSelector &&
+                        requested.group == "org.jetbrains.skiko" &&
+                        requested.module == "skiko-awt-runtime-$unwanted"
+                    ) {
+                        useTarget(
+                            "org.jetbrains.skiko:skiko-awt-runtime-$wanted:${requested.version}",
+                            "building the macOS app for $zillitMacArch",
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     detekt {
         parallel = true
