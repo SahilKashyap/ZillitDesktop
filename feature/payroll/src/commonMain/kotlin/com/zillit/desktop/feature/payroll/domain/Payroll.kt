@@ -48,7 +48,7 @@ enum class TimecardStatus(val wire: String, private val labelKey: String) {
     /** A paid row can be reversed to unpaid. */
     val isUnpayable: Boolean get() = this == Paid
 
-    /** Only a paid timecard is posted to the ledger from the history queue. */
+    /** A paid timecard is ready to post — History counts it; Payroll Run's Journal Ledger posts it. */
     val isPostable: Boolean get() = this == Paid
 
     /** In the approval chain, before payroll has it: what Override Approval skips. */
@@ -73,40 +73,6 @@ enum class TimecardStatus(val wire: String, private val labelKey: String) {
         }
     }
 }
-
-/**
- * A bank account the production settles from.
- *
- * Posting a batch from the history queue requires one: the server rejects a
- * post with no `bank_id`, so this is not an optional refinement of the post
- * dialog — it is the reason the dialog has a picker.
- */
-data class BankAccount(
-    val id: String,
-    val name: String,
-    val accountNumber: String?,
-    val currency: String?,
-    val holderName: String? = null,
-) {
-    /** "Barclays Current ••••4471", or just the name where there is no number. */
-    val display: String
-        get() = accountNumber?.takeLast(ACCOUNT_TAIL)
-            ?.let { "$name ••••$it" }
-            ?: name
-
-    private companion object {
-        const val ACCOUNT_TAIL = 4
-    }
-}
-
-/**
- * What a batch actually moved.
- *
- * The server skips rows in the wrong state rather than failing the call, so a
- * batch can succeed having moved nothing. Both numbers are reported so the
- * screen can say which happened.
- */
-data class PostOutcome(val marked: Int, val skipped: Int)
 
 /**
  * The production's payroll settings as the payroll screens read them — the

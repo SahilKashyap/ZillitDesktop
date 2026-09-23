@@ -4,7 +4,6 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
-import com.zillit.desktop.feature.payroll.domain.BankAccount
 import com.zillit.desktop.feature.payroll.domain.DealCoding
 import com.zillit.desktop.feature.payroll.domain.OverrideFlags
 import com.zillit.desktop.feature.payroll.domain.PayrollCompany
@@ -54,12 +53,6 @@ internal class PayrollSettingsSource(
             )
         }
 
-    // The web's ProductionBanksContext query shape: production accounts, one page.
-    override suspend fun bankAccounts(): ZillitResult<List<BankAccount>> =
-        http.get("$hub/bank-accounts", mapOf("entity_type" to "production", "per_page" to BANK_PAGE)).map { data ->
-            data.rows().mapNotNull { it.toBankAccount() }
-        }
-
     /**
      * The web's `useCrLock`: the lock route and the project settings read the
      * same row stored two ways, and the live route has failed outright on a
@@ -96,8 +89,4 @@ internal class PayrollSettingsSource(
         http.get("$dealMemo/deals/active/$userId").map { data ->
             data.obj()?.let { it.obj("data") ?: it }?.toDealCoding()
         }
-
-    private companion object {
-        const val BANK_PAGE = 200
-    }
 }

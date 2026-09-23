@@ -1,7 +1,5 @@
 package com.zillit.desktop.feature.payroll
 
-import com.zillit.desktop.core.common.ZillitError
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
@@ -35,7 +33,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -124,86 +121,6 @@ class PayrollViewModelTest {
         model.onEvent(HistoryEvent.ShiftWeek(1))
         advanceUntilIdle()
         assertEquals(currentMonday, model.state.value.history.weekStarting)
-    }
-
-    /** The web's `postIds`: nothing ticked posts every paid row. */
-    @Test
-    fun `posting with nothing ticked posts every ready row`() = runTest(dispatcher) {
-        val repository = FakePayrollRepository(
-            paid = listOf(
-                card("a", TimecardStatus.Paid),
-                card("b", TimecardStatus.Paid),
-                card("c", TimecardStatus.Posted),
-            ),
-        )
-        val (model, _) = model(repository, viewer = approver, route = "/film-tools/payroll/accountant-payroll")
-        model.onEvent(HistoryEvent.OpenPost)
-        model.onEvent(HistoryEvent.EditPost(bankId = "bank-1"))
-        model.onEvent(HistoryEvent.ConfirmPost)
-        advanceUntilIdle()
-        val (ids, bank, date) = repository.posted.single()
-        assertEquals(setOf("a", "b"), ids.toSet())
-        assertEquals("bank-1", bank)
-        assertEquals(PayPeriod.startOf(now, 3), date, "defaults to today, midnight UTC")
-    }
-
-    @Test
-    fun `a ticked selection posts only the ticked paid rows, and a posted row cannot be ticked`() =
-        runTest(dispatcher) {
-            val repository = FakePayrollRepository(
-                paid = listOf(
-                    card("a", TimecardStatus.Paid),
-                    card("b", TimecardStatus.Paid),
-                    card("c", TimecardStatus.Posted),
-                ),
-            )
-            val (model, _) = model(repository, viewer = approver, route = "/film-tools/payroll/accountant-payroll")
-            model.onEvent(HistoryEvent.ToggleCheck("b"))
-            model.onEvent(HistoryEvent.ToggleCheck("c"))
-            assertEquals(setOf("b"), model.state.value.history.checked)
-            model.onEvent(HistoryEvent.OpenPost)
-            model.onEvent(HistoryEvent.EditPost(bankId = "bank-1"))
-            model.onEvent(HistoryEvent.ConfirmPost)
-            advanceUntilIdle()
-            assertEquals(listOf("b"), repository.posted.single().first)
-        }
-
-    /** The date may not fall on or before the cost-report lock; the dialog says so and the ticks stay. */
-    @Test
-    fun `a post dated inside the locked period is refused before it is sent`() = runTest(dispatcher) {
-        val repository = FakePayrollRepository(paid = listOf(card("a", TimecardStatus.Paid)), locked = "2026-05-10")
-        val (model, _) = model(repository, viewer = approver, route = "/film-tools/payroll/accountant-payroll")
-        model.onEvent(HistoryEvent.ToggleCheck("a"))
-        model.onEvent(HistoryEvent.OpenPost)
-        assertEquals("2026-05-11", model.state.value.history.post?.effectiveDate, "defaults to the first open day")
-        model.onEvent(HistoryEvent.EditPost(bankId = "bank-1", effectiveDate = "2026-05-09"))
-        model.onEvent(HistoryEvent.ConfirmPost)
-        advanceUntilIdle()
-        assertTrue(repository.posted.isEmpty())
-        assertNotNull(model.state.value.history.post?.error)
-        assertEquals(setOf("a"), model.state.value.history.checked)
-    }
-
-    @Test
-    fun `a refused post keeps the dialog and the ticks`() = runTest(dispatcher) {
-        val repository = FakePayrollRepository(paid = listOf(card("a", TimecardStatus.Paid)))
-        repository.postResult = ZillitResult.Failure(ZillitError.Unknown("nope"))
-        val (model, _) = model(repository, viewer = approver, route = "/film-tools/payroll/accountant-payroll")
-        model.onEvent(HistoryEvent.ToggleCheck("a"))
-        model.onEvent(HistoryEvent.OpenPost)
-        model.onEvent(HistoryEvent.EditPost(bankId = "bank-1"))
-        model.onEvent(HistoryEvent.ConfirmPost)
-        advanceUntilIdle()
-        assertNotNull(model.state.value.history.post?.error)
-        assertEquals(setOf("a"), model.state.value.history.checked)
-    }
-
-    @Test
-    fun `an accountant who is not the approver cannot post from history`() = runTest(dispatcher) {
-        val repository = FakePayrollRepository(paid = listOf(card("a", TimecardStatus.Paid)))
-        val (model, _) = model(repository, viewer = accountant, route = "/film-tools/payroll/accountant-payroll")
-        model.onEvent(HistoryEvent.OpenPost)
-        assertNull(model.state.value.history.post)
     }
 
     // -- run --------------------------------------------------------------------------------

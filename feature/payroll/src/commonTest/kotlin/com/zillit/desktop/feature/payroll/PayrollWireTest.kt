@@ -126,20 +126,6 @@ class PayrollWireTest {
     }
 
     @Test
-    fun `a history post carries the account and the effective date the server requires`() = runTest {
-        val (repo, sent) = repository("""{"status":1,"data":{"marked":2,"skipped":1}}""")
-        val outcome = (repo.markPosted(listOf("a", "b", "c"), "bank-1", 1_785_715_200_000) as ZillitResult.Success).data
-        val body = sent.single().body!!
-        assertTrue(sent.single().url.endsWith("/timecards/weekly/batch/mark-posted"))
-        assertEquals(3, body["ids"]!!.jsonArray.size)
-        assertEquals("bank-1", body["bank_id"]!!.jsonPrimitive.content)
-        assertEquals(1_785_715_200_000, body["effective_date"]!!.jsonPrimitive.long)
-        assertFalse("company_id" in body)
-        assertEquals(2, outcome.marked)
-        assertEquals(1, outcome.skipped)
-    }
-
-    @Test
     fun `the history queue is the week's paid list and the run is the week's processing list`() = runTest {
         val (repo, sent) = repository("""{"status":1,"data":[]}""")
         repo.paidCrew(1_785_715_200_000)
@@ -181,15 +167,6 @@ class PayrollWireTest {
         val (arrayRepo, _) = repository("""{"status":1,"data":[$row]}""")
         val week = (arrayRepo.runQueue(1_785_715_200_000) as ZillitResult.Success).data
         assertEquals("u1", week.single().userId)
-    }
-
-    @Test
-    fun `bank accounts are the production's, one page of two hundred`() = runTest {
-        val (repo, sent) = repository("""{"status":1,"data":[]}""")
-        repo.settings.bankAccounts()
-        val url = sent.single().url
-        assertTrue(url.startsWith("https://accounthub.test/api/v2/account-hub/bank-accounts"))
-        assertTrue("entity_type=production" in url && "per_page=200" in url)
     }
 
     @Test

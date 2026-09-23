@@ -2,11 +2,7 @@ package com.zillit.desktop.feature.payroll.data
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.core.common.currencyCode
 import com.zillit.desktop.core.network.ApiEnvelope
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.feature.payroll.domain.BankAccount
 import com.zillit.desktop.feature.payroll.domain.BatchOutcome
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollAccount
@@ -57,21 +53,6 @@ private fun JsonElement.toPayrollAccount(names: Map<String, String>): PayrollAcc
 
 private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.let {
     it.booleanOrNull ?: it.contentOrNull?.toBooleanStrictOrNull()
-}
-
-/**
- * One settling account. The currency is a code or the whole currency object —
- * decoding it as a string failed the entire list once.
- */
-internal fun JsonObject.toBankAccount(): BankAccount? {
-    val id = identifier() ?: return null
-    return BankAccount(
-        id = id,
-        name = text("name", "account_name") ?: str(S.desktop_unnamed_bank),
-        accountNumber = text("account_number"),
-        currency = this["currency"].currencyCode(),
-        holderName = text("account_holder_name"),
-    )
 }
 
 /** `GET /lock-period` — `lockedDate` on the read route, `last_cr_locked_date` where the write route spells it. */

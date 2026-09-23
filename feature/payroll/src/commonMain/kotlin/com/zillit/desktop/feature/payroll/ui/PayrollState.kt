@@ -5,7 +5,6 @@ import com.zillit.desktop.core.common.orDash
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
-import com.zillit.desktop.feature.payroll.domain.BankAccount
 import com.zillit.desktop.feature.payroll.domain.DealCoding
 import com.zillit.desktop.feature.payroll.domain.Employment
 import com.zillit.desktop.feature.payroll.domain.JournalCoding
@@ -34,7 +33,6 @@ data class PayrollUiState(
     val overrideFlags: OverrideFlags? = null,
     /** The last closed cost-report date, `YYYY-MM-DD`; null for no lock. */
     val lockedDate: String? = null,
-    val bankAccounts: List<BankAccount> = emptyList(),
     val companies: List<PayrollCompany> = emptyList(),
     val people: Map<String, PayrollPerson> = emptyMap(),
     val projectName: String = "",
@@ -89,41 +87,19 @@ data class HistoryState(
     val search: String = "",
     /** The row open on the right. */
     val selectedId: String? = null,
-    /** Paid rows ticked for a batch post. */
-    val checked: Set<String> = emptySet(),
     val detail: PayrollTimecard? = null,
     val detailLoading: Boolean = false,
     val deal: DealCoding? = null,
     val tab: HistoryTab = HistoryTab.PayCode,
     val payslipBusy: Boolean = false,
-    val post: HistoryPost? = null,
 ) {
-    /** Paid rows — what "Post All Ready" would send. */
+    /** Paid rows not yet posted — History's "ready to post" count (posting itself is the Run's Journal Ledger). */
     val readyIds: List<String> get() = rows.filter { it.status.isPostable }.map { it.id }
 
     val postedCount: Int get() = rows.count { it.status.isPosted }
 
-    /**
-     * What a post sends: the ticked paid rows, or every paid row when nothing
-     * is ticked — the web's `postIds` (`AccountantPayrollModule.jsx` 1224-1230).
-     */
-    val postIds: List<String>
-        get() = if (checked.isEmpty()) readyIds else readyIds.filter { it in checked }
-
     val selectedRow: PayrollTimecard? get() = rows.firstOrNull { it.id == selectedId }
 }
-
-/** The post-to-ledger dialog: the settling account and the effective date, both required. */
-data class HistoryPost(
-    val ids: List<String>,
-    /** Posting the ticked rows rather than everything ready. */
-    val fromSelection: Boolean,
-    val bankId: String? = null,
-    /** `YYYY-MM-DD`. */
-    val effectiveDate: String,
-    val error: String? = null,
-    val saving: Boolean = false,
-)
 
 // -- Payroll Run ---------------------------------------------------------------------------
 

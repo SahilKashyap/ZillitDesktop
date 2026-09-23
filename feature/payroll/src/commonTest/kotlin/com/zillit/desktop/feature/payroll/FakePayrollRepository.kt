@@ -1,7 +1,6 @@
 package com.zillit.desktop.feature.payroll
 
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.payroll.domain.BankAccount
 import com.zillit.desktop.feature.payroll.domain.BatchOutcome
 import com.zillit.desktop.feature.payroll.domain.ClaimLine
 import com.zillit.desktop.feature.payroll.domain.DealCoding
@@ -18,7 +17,6 @@ import com.zillit.desktop.feature.payroll.domain.PayrollRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollSettingsRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.PendingClaim
-import com.zillit.desktop.feature.payroll.domain.PostOutcome
 import com.zillit.desktop.feature.payroll.domain.ProcessingQueue
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import kotlinx.coroutines.flow.Flow
@@ -31,15 +29,12 @@ internal class FakePayrollRepository(
     var processing: List<PayrollTimecard> = emptyList(),
     var metadata: PayrollMetadata = PayrollMetadata(),
     var locked: String? = null,
-    var banks: List<BankAccount> = listOf(BankAccount("bank-1", "Barclays", "1234", "GBP")),
     var flags: OverrideFlags = OverrideFlags(isAccountant = true, isApprover = false),
     override val refreshes: Flow<Unit> = emptyFlow(),
 ) : PayrollRepository {
 
     val calls = mutableListOf<String>()
-    val posted = mutableListOf<Triple<List<String>, String, Long>>()
     val submissions = mutableListOf<JournalSubmission>()
-    var postResult: ZillitResult<PostOutcome> = ZillitResult.Success(PostOutcome(marked = 1, skipped = 0))
     var paidWeeks = mutableListOf<Long>()
 
     override val journal: PayrollJournalRepository = object : PayrollJournalRepository {
@@ -71,7 +66,6 @@ internal class FakePayrollRepository(
     override val settings: PayrollSettingsRepository = object : PayrollSettingsRepository {
         override suspend fun metadata() = ZillitResult.Success(metadata)
         override suspend fun overrideFlags() = ZillitResult.Success(flags)
-        override suspend fun bankAccounts() = ZillitResult.Success(banks)
         override suspend fun lockedDate() = ZillitResult.Success(locked)
         override suspend fun companies() = ZillitResult.Success(emptyList<PayrollCompany>())
         override suspend fun activeDealCoding(userId: String) = ZillitResult.Success<DealCoding?>(null)
@@ -99,15 +93,6 @@ internal class FakePayrollRepository(
     override suspend fun override(timecardId: String, reason: String) = single("override:$timecardId:$reason")
     override suspend fun markPaid(timecardId: String) = single("markPaid:$timecardId")
     override suspend fun markUnpaid(timecardId: String) = single("markUnpaid:$timecardId")
-
-    override suspend fun markPosted(
-        timecardIds: List<String>,
-        bankId: String,
-        effectiveDate: Long,
-    ): ZillitResult<PostOutcome> {
-        posted += Triple(timecardIds, bankId, effectiveDate)
-        return postResult
-    }
 
     private fun batch(name: String, ids: List<String>): ZillitResult<BatchOutcome> {
         calls += "$name:${ids.joinToString(",")}"

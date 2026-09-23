@@ -40,15 +40,8 @@ sealed interface HistoryEvent : PayrollEvent {
     data object Refresh : HistoryEvent
     data class Search(val query: String) : HistoryEvent
     data class Select(val timecardId: String) : HistoryEvent
-    data class ToggleCheck(val timecardId: String) : HistoryEvent
-    data object ToggleAllVisible : HistoryEvent
-    data object ClearChecks : HistoryEvent
     data class Tab(val tab: HistoryTab) : HistoryEvent
     data object DownloadPayslip : HistoryEvent
-    data object OpenPost : HistoryEvent
-    data class EditPost(val bankId: String? = null, val effectiveDate: String? = null) : HistoryEvent
-    data object ConfirmPost : HistoryEvent
-    data object DismissPost : HistoryEvent
 }
 
 /** Payroll Run. */

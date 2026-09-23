@@ -21,7 +21,6 @@ import com.zillit.desktop.feature.payroll.domain.TimecardDay
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import com.zillit.desktop.feature.payroll.ui.AdjustmentDialog
 import com.zillit.desktop.feature.payroll.ui.AdjustmentKind
-import com.zillit.desktop.feature.payroll.ui.HistoryPost
 import com.zillit.desktop.feature.payroll.ui.HistoryState
 import com.zillit.desktop.feature.payroll.ui.HistoryTab
 import com.zillit.desktop.feature.payroll.ui.PayrollDestination
@@ -111,7 +110,7 @@ class PayrollScreenRenderTest {
     }
 
     @Test
-    fun `history composes every tab for a paid week, with the post dialog over it`() {
+    fun `history composes every tab for a paid week, and offers no posting`() {
         HistoryTab.entries.forEach { tab ->
             runComposeUiTest {
                 val base = state(destination = PayrollDestination.History)
@@ -126,11 +125,6 @@ class PayrollScreenRenderTest {
                                     selectedId = "a",
                                     detail = paid,
                                     tab = tab,
-                                    post = HistoryPost(
-                                        ids = listOf("a"),
-                                        fromSelection = false,
-                                        effectiveDate = "2026-08-10",
-                                    ),
                                 ),
                             ),
                             onEvent = {},
@@ -138,7 +132,9 @@ class PayrollScreenRenderTest {
                     }
                 }
                 onNodeWithText("Pay Code Breakdown").assertExists()
-                onNodeWithText("Post All Ready — W/E 09 Aug 2026").assertExists()
+                // Posting is the Run's Journal Ledger's now, as on the web.
+                onNodeWithText("Post All Ready", substring = true).assertDoesNotExist()
+                onNodeWithText("Post Selected", substring = true).assertDoesNotExist()
             }
         }
     }

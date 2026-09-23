@@ -122,7 +122,6 @@ class PayrollViewModel(
             setState { copy(overrideFlags = flags) }
         }
         launch { settings.lockedDate().getOrNull().let { setState { copy(lockedDate = it) } } }
-        launch { settings.bankAccounts().getOrNull()?.let { setState { copy(bankAccounts = it) } } }
         launch { settings.companies().getOrNull()?.let { setState { copy(companies = it) } } }
     }
 

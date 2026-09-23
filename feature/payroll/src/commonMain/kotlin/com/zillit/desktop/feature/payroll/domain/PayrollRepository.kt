@@ -71,12 +71,6 @@ interface PayrollRepository {
 
     /** `POST /{id}/mark-unpaid` — a paid row reversed. */
     suspend fun markUnpaid(timecardId: String): ZillitResult<String?>
-
-    /**
-     * `POST /batch/mark-posted` — paid rows to the ledger with a settling
-     * account and an effective date, both of which the server requires.
-     */
-    suspend fun markPosted(timecardIds: List<String>, bankId: String, effectiveDate: Long): ZillitResult<PostOutcome>
 }
 
 /** What the screens are drawn against: settings, rights and reference data from four hosts. */
@@ -91,9 +85,6 @@ interface PayrollSettingsRepository {
      * `is_accountant` and `is_approver`. Fails closed.
      */
     suspend fun overrideFlags(): ZillitResult<OverrideFlags>
-
-    /** The production's settling accounts (`entity_type=production`). */
-    suspend fun bankAccounts(): ZillitResult<List<BankAccount>>
 
     /**
      * The last closed cost-report date as `YYYY-MM-DD`, or null for none — the

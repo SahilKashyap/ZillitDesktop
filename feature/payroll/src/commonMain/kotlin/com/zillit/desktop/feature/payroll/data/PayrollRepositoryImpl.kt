@@ -15,7 +15,6 @@ import com.zillit.desktop.feature.payroll.domain.PayrollJournalRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollSettingsRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
-import com.zillit.desktop.feature.payroll.domain.PostOutcome
 import com.zillit.desktop.feature.payroll.domain.ProcessingQueue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -141,23 +140,6 @@ class PayrollRepositoryImpl(
     override suspend fun markUnpaid(timecardId: String): ZillitResult<String?> =
         http.write("$timecards/$timecardId/mark-unpaid", body = null)
 
-    /**
-     * `bank_id` and `effective_date` are required — the server answers 400
-     * without either and checks the date against the cost-report lock. No
-     * `company_id`: a timecard inherits its legal entity from the deal memo.
-     */
-    override suspend fun markPosted(
-        timecardIds: List<String>,
-        bankId: String,
-        effectiveDate: Long,
-    ): ZillitResult<PostOutcome> =
-        http.post("$timecards/batch/mark-posted", markPostedBody(timecardIds, bankId, effectiveDate)).map { envelope ->
-            val data = envelope.data.obj()
-            PostOutcome(
-                marked = data?.number("marked")?.toInt() ?: data?.array("marked")?.size ?: 0,
-                skipped = data?.number("skipped")?.toInt() ?: data?.array("skipped")?.size ?: 0,
-            )
-        }
 }
 
 /** The three call shapes this module makes, over the signed envelope client. */
@@ -194,9 +176,3 @@ internal fun idsBody(ids: List<String>) = buildJsonObject {
 internal fun overrideBody(reason: String): JsonObject = reason.trim().takeIf { it.isNotEmpty() }
     ?.let { buildJsonObject { put("reason", JsonPrimitive(it)) } }
     ?: JsonObject(emptyMap())
-
-internal fun markPostedBody(ids: List<String>, bankId: String, effectiveDate: Long) = buildJsonObject {
-    put("ids", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } })
-    put("bank_id", JsonPrimitive(bankId))
-    put("effective_date", JsonPrimitive(effectiveDate))
-}

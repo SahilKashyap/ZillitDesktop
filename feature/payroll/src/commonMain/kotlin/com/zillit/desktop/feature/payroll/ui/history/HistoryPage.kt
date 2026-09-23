@@ -20,12 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
-import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorState
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
@@ -48,7 +44,6 @@ import com.zillit.desktop.feature.payroll.ui.HistoryTab
 import com.zillit.desktop.feature.payroll.ui.PayrollDestination
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
-import com.zillit.desktop.feature.payroll.ui.canPostHistory
 import com.zillit.desktop.feature.payroll.ui.components.PayrollTopBar
 import com.zillit.desktop.feature.payroll.ui.components.WeekNavigator
 import com.zillit.desktop.feature.payroll.ui.components.historyTone
@@ -82,8 +77,14 @@ fun HistoryPage(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, modifier
     }
 }
 
-/** The rail: week, the two counts, search, the batch banner, the grouped queue, the post button. */
-@Suppress("LongMethod") // The web's rail is one column of six parts read top to bottom.
+/**
+ * The rail: week, the two counts, search and the grouped queue.
+ *
+ * No post button and no ticks: the web took History's posting out on
+ * 2026-07-09 (1f836cbe7) — the ledger is posted from Payroll Run's Journal
+ * Ledger, line by line. The web still draws row checkboxes here that no
+ * longer lead anywhere; they are not copied.
+ */
 @Composable
 private fun HistoryRail(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, modifier: Modifier) {
     val history = state.history
@@ -110,7 +111,6 @@ private fun HistoryRail(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, 
             modifier = Modifier.fillMaxWidth(),
         )
         val groups = state.historyGroups()
-        if (history.checked.isNotEmpty()) BatchBanner(state, groups, onEvent)
         ZillitScrollColumn(
             modifier = Modifier.weight(1f).fillMaxWidth()
                 .clip(ZillitTheme.shapes.large)
@@ -133,84 +133,23 @@ private fun HistoryRail(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, 
                 }
             }
         }
-        if (state.canPostHistory()) {
-            val count = history.postIds.size
-            ZillitButton(
-                text = if (history.checked.isEmpty()) {
-                    str(S.desktop_payroll_post_all_ready, count)
-                } else {
-                    str(S.desktop_payroll_post_selected, count)
-                },
-                onClick = { onEvent(HistoryEvent.OpenPost) },
-                enabled = count > 0 && history.post == null,
-                trailingIcon = ZillitIcons.ArrowRight,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
     }
 }
 
-/** "N selected", with select-all over what the search leaves visible, and clear. */
-@Composable
-private fun BatchBanner(
-    state: PayrollUiState,
-    groups: List<Pair<String, List<PayrollTimecard>>>,
-    onEvent: (PayrollEvent) -> Unit,
-) {
-    val history = state.history
-    val visibleReady = groups.flatMap { it.second }.filter { it.status.isPostable }.map { it.id }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        ZillitText(
-            text = str(S.av_selected_count, history.postIds.size),
-            style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.weight(1f),
-        )
-        if (visibleReady.isNotEmpty()) {
-            ZillitButton(
-                text = str(if (history.checked.containsAll(visibleReady)) S.dd_deselect_all else S.select_all),
-                onClick = { onEvent(HistoryEvent.ToggleAllVisible) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-            )
-        }
-        ZillitButton(
-            text = str(S.ah_clear),
-            onClick = { onEvent(HistoryEvent.ClearChecks) },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-        )
-    }
-}
-
-/**
- * One crew row. Only a paid row can be ticked for the batch; a posted row is
- * shown for the record and stays inert.
- */
+/** One crew row: name, role and where the timecard stands. */
 @Composable
 private fun QueueRow(state: PayrollUiState, row: PayrollTimecard, onEvent: (PayrollEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val active = state.history.selectedId == row.id
-    val checked = row.id in state.history.checked
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                when {
-                    checked -> colors.accentSoft
-                    active -> colors.surfaceSelected
-                    else -> colors.surface
-                },
-            )
+            .background(if (active) colors.surfaceSelected else colors.surface)
             .clickable { onEvent(HistoryEvent.Select(row.id)) }
             .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitCheckbox(
-            checked = checked,
-            onCheckedChange = { onEvent(HistoryEvent.ToggleCheck(row.id)) },
-            enabled = row.status.isPostable,
-        )
         Column(Modifier.weight(1f)) {
             ZillitText(
                 text = state.nameOf(row.userId),

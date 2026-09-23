@@ -2,11 +2,8 @@ package com.zillit.desktop.feature.payroll.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
-import com.zillit.desktop.feature.payroll.domain.PostOutcome
 import kotlinx.coroutines.Job
 
 /**
@@ -15,9 +12,16 @@ import kotlinx.coroutines.Job
  * ## The queue is the week's paid timecards
  *
  * `/weekly/{ws}/paid` returns the paid rows, and the posted ones so the
- * accountant can see what already went. Only a paid row can be ticked or
- * posted; the week opens on the last completed period, and the navigator
- * walks back as far as it likes but never past the current week.
+ * accountant can see what already went. The week opens on the last completed
+ * period, and the navigator walks back as far as it likes but never past the
+ * current week.
+ *
+ * ## No posting here
+ *
+ * The web took History's Post, Post Selected and Post All Ready out on
+ * 2026-07-09 (1f836cbe7): posting to the ledger happens in Payroll Run's
+ * Journal Ledger, where each line carries its own code and date. This page
+ * reads; it no longer writes to the ledger.
  */
 internal class HistoryActions(private val vm: PayrollViewModel) {
 
@@ -33,15 +37,8 @@ internal class HistoryActions(private val vm: PayrollViewModel) {
             HistoryEvent.Refresh -> reload(silent = false)
             is HistoryEvent.Search -> edit { copy(search = event.query) }
             is HistoryEvent.Select -> select(event.timecardId)
-            is HistoryEvent.ToggleCheck -> toggleCheck(event.timecardId)
-            HistoryEvent.ToggleAllVisible -> toggleAllVisible()
-            HistoryEvent.ClearChecks -> edit { copy(checked = emptySet()) }
             is HistoryEvent.Tab -> edit { copy(tab = event.tab) }
             HistoryEvent.DownloadPayslip -> downloadPayslip()
-            HistoryEvent.OpenPost -> openPost()
-            is HistoryEvent.EditPost -> editPost(event)
-            HistoryEvent.ConfirmPost -> confirmPost()
-            HistoryEvent.DismissPost -> edit { copy(post = null) }
         }
     }
 
@@ -64,7 +61,7 @@ internal class HistoryActions(private val vm: PayrollViewModel) {
     }
 
     private fun openWeek(week: Long) {
-        edit { copy(weekStarting = week, rows = emptyList(), checked = emptySet(), post = null) }
+        edit { copy(weekStarting = week, rows = emptyList()) }
         load(week, silent = false)
     }
 
@@ -84,14 +81,12 @@ internal class HistoryActions(private val vm: PayrollViewModel) {
                         compareBy<PayrollTimecard>({ ui.departmentOf(it.userId) }, { ui.nameOf(it.userId) }),
                     )
                     val keep = state.selectedId?.takeIf { id -> rows.any { it.id == id } }
-                    val alive = rows.map { it.id }.toSet()
                     edit {
                         copy(
                             loading = false,
                             error = null,
                             rows = rows,
                             selectedId = keep ?: rows.firstOrNull()?.id,
-                            checked = checked.filter { it in alive }.toSet(),
                         )
                     }
                     val open = keep ?: rows.firstOrNull()?.id
@@ -133,22 +128,6 @@ internal class HistoryActions(private val vm: PayrollViewModel) {
 
     private fun clearDetail() = edit { copy(detail = null, deal = null, detailLoading = false) }
 
-    /** Posted rows stay visible for the record and cannot be ticked. */
-    private fun toggleCheck(id: String) {
-        val row = state.rows.firstOrNull { it.id == id } ?: return
-        if (!row.status.isPostable) return
-        edit { copy(checked = if (id in checked) checked - id else checked + id) }
-    }
-
-    /** Ticks every paid row the search leaves visible, or clears them all. */
-    private fun toggleAllVisible() {
-        val ui = vm.ui
-        val visible = ui.historyGroups().flatMap { it.second }.filter { it.status.isPostable }.map { it.id }
-        edit {
-            copy(checked = if (visible.isNotEmpty() && checked.containsAll(visible)) emptySet() else visible.toSet())
-        }
-    }
-
     private fun downloadPayslip() {
         val detail = state.detail ?: return
         val week = detail.weekStarting
@@ -167,113 +146,8 @@ internal class HistoryActions(private val vm: PayrollViewModel) {
         }
     }
 
-    /**
-     * Posting to the ledger is irreversible, so the dialog is offered only to
-     * an accountant who is also the production's approver — the rule the
-     * earlier desktop port drew, kept because the web gives this dialog no
-     * gate of its own (see the report: the web no longer opens it at all).
-     */
-    private fun openPost() {
-        val ui = vm.ui
-        if (!ui.canPostHistory()) {
-            vm.fail(str(S.desktop_payroll_no_rights))
-            return
-        }
-        val ids = state.postIds
-        if (ids.isEmpty()) return
-        val earliest = ui.earliestEffectiveDate
-        val today = ui.todayIso
-        edit {
-            copy(
-                post = HistoryPost(
-                    ids = ids,
-                    fromSelection = checked.isNotEmpty(),
-                    effectiveDate = if (earliest != null && today < earliest) earliest else today,
-                ),
-            )
-        }
-    }
-
-    private fun editPost(event: HistoryEvent.EditPost) = edit {
-        val current = post ?: return@edit this
-        copy(
-            post = current.copy(
-                bankId = event.bankId ?: current.bankId,
-                effectiveDate = event.effectiveDate ?: current.effectiveDate,
-                error = null,
-            ),
-        )
-    }
-
-    /**
-     * Posts the batch. The account and the date are the server's requirements,
-     * and a date on or before the cost-report lock is refused there, so all
-     * three are checked first and named in the dialog rather than bounced.
-     */
-    private fun confirmPost() {
-        val post = state.post ?: return
-        if (post.saving) return
-        if (!vm.ui.canPostHistory()) {
-            vm.fail(str(S.desktop_payroll_no_rights))
-            return
-        }
-        // Only rows still paid: a row that moved under us is not sent.
-        val ids = post.ids.filter { it in state.readyIds }
-        val request = postRequest(post, ids)
-        if (request == null) {
-            edit { copy(post = post.copy(error = postRefusal(post))) }
-            return
-        }
-        edit { copy(post = post.copy(saving = true, error = null)) }
-        vm.launchWork {
-            when (val result = vm.repository.markPosted(request.ids, request.bankId, request.effectiveDate)) {
-                is ZillitResult.Success -> {
-                    edit { copy(post = null, checked = emptySet()) }
-                    vm.notify(result.data.describe())
-                    reload(silent = true)
-                }
-
-                is ZillitResult.Failure -> edit {
-                    copy(post = this.post?.copy(saving = false, error = result.error.localised()))
-                }
-            }
-        }
-    }
-
-    /** What the server needs, or null when something it requires is missing. */
-    private fun postRequest(post: HistoryPost, ids: List<String>): PostRequest? {
-        val bankId = post.bankId?.takeIf { it.isNotBlank() } ?: return null
-        val date = PayPeriod.parseIsoDate(post.effectiveDate) ?: return null
-        val earliest = vm.ui.earliestEffectiveDate
-        if (ids.isEmpty() || (earliest != null && post.effectiveDate < earliest)) return null
-        return PostRequest(ids, bankId, date)
-    }
-
-    /** Why [postRequest] said no — named in the dialog rather than bounced by the server. */
-    private fun postRefusal(post: HistoryPost): String {
-        val earliest = vm.ui.earliestEffectiveDate
-        return when {
-            post.bankId.isNullOrBlank() -> str(S.desktop_payroll_choose_account)
-            PayPeriod.parseIsoDate(post.effectiveDate) == null -> str(S.desktop_payroll_choose_effective_date)
-            earliest != null && post.effectiveDate < earliest -> str(S.desktop_payroll_date_in_locked_period, earliest)
-            else -> str(S.desktop_payroll_nothing_ready_to_post)
-        }
-    }
-
-    private data class PostRequest(val ids: List<String>, val bankId: String, val effectiveDate: Long)
-
-    /** What the batch moved, said out loud: the server skips rather than fails. */
-    private fun PostOutcome.describe(): String = when {
-        marked == 0 -> str(S.desktop_payroll_nothing_posted, skipped)
-        skipped > 0 -> str(S.desktop_payroll_posted_skipped, marked, skipped)
-        else -> str(S.desktop_payroll_posted_count, marked)
-    }
-
     private fun edit(reducer: HistoryState.() -> HistoryState) = vm.update { copy(history = history.reducer()) }
 }
-
-/** Posting from the history queue: an accountant approver — see [HistoryActions.openPost]. */
-internal fun PayrollUiState.canPostHistory(): Boolean = viewer.isAccountant && viewer.isFinalApprover
 
 /**
  * The queue grouped by department, alphabetically, after the search — the

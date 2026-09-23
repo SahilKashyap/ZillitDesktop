@@ -11,7 +11,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.feature.payroll.ui.components.AdjustmentsDialog
 import com.zillit.desktop.feature.payroll.ui.components.OverrideDialog
 import com.zillit.desktop.feature.payroll.ui.history.HistoryPage
-import com.zillit.desktop.feature.payroll.ui.history.HistoryPostDialog
 import com.zillit.desktop.feature.payroll.ui.landing.PayrollLandingPage
 import com.zillit.desktop.feature.payroll.ui.processing.OutstandingDetailDialog
 import com.zillit.desktop.feature.payroll.ui.processing.ProcessingExportDialog
@@ -38,7 +37,6 @@ fun PayrollScreen(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, modifi
             PayrollDestination.Run -> RunPage(state, onEvent)
             PayrollDestination.History -> HistoryPage(state, onEvent)
         }
-        HistoryPostDialog(state, onEvent)
         RunConfirmDialog(state, onEvent)
         JournalAlertDialog(state, onEvent)
         JournalPostDialog(state, onEvent)
