@@ -645,6 +645,11 @@ class AccountHubViewModel(
         sendEffect(AccountHubEffect.Failed(error.localised()))
     }
 
+    /** A refusal this client made itself — a validation message, already in the user's words. */
+    internal fun fail(message: String) {
+        sendEffect(AccountHubEffect.Failed(message))
+    }
+
     // -- seams for the collaborators ---------------------------------------
 
     internal val repo: AccountHubRepository get() = repository

@@ -142,6 +142,13 @@ internal class SetupModalActions(private val vm: AccountHubViewModel) {
         if (!vm.mayEdit()) return
         when (modal.modal) {
             SetupModal.PurchaseOrders -> {
+                // An inverted price range never leaves the modal — the same
+                // guard the PO module's Settings page applies before its PATCH.
+                val assetError = vm.setupState.setup.poSetup.edited.assetFilters.error
+                if (assetError != null) {
+                    vm.fail(assetError)
+                    return
+                }
                 if (vm.setupState.setup.poSetup.dirty) vm.onEvent(AccountHubEvent.SaveSection(SetupSection.PoSetup))
                 saveRules(PURCHASE_ORDERS, { poRules }, { copy(setup = setup.copy(poRules = it)) })
             }

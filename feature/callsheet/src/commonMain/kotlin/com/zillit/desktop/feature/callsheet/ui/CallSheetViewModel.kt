@@ -8,9 +8,7 @@ import com.zillit.desktop.feature.callsheet.domain.CallSheetPublishing
 import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
 import com.zillit.desktop.feature.callsheet.domain.CallSheetViewer
 import com.zillit.desktop.feature.callsheet.domain.CompanySeed
-import com.zillit.desktop.feature.callsheet.domain.SavedSignatureSource
 import com.zillit.desktop.feature.callsheet.domain.SheetBadgeSource
-import com.zillit.desktop.feature.callsheet.domain.SheetChatOpener
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
 import com.zillit.desktop.feature.callsheet.domain.SheetTime
 import com.zillit.desktop.feature.callsheet.domain.SheetWeatherSource
@@ -26,9 +24,7 @@ class SheetServices(
     val delivery: CallSheetDelivery,
     val publishing: CallSheetPublishing,
     val badges: SheetBadgeSource = object : SheetBadgeSource {},
-    val chat: SheetChatOpener = SheetChatOpener { _, _ -> false },
     val weather: SheetWeatherSource? = null,
-    val signatures: SavedSignatureSource? = null,
     /** The open production's name and company, for Company Details. */
     val company: () -> CompanySeed = { CompanySeed() },
 )
@@ -70,24 +66,10 @@ class CallSheetViewModel(
     private val nowMillis: () -> Long,
 ) : ZillitViewModel<SheetUiState, SheetEvent, SheetEffect>(SheetUiState()) {
 
-    /** The tool window's "open this person's chat", attached while it is shown. */
-    private var chatTarget: SheetChatOpener? = null
-
-    /** A chat opener that goes through the window when one is attached, else the host's own. */
-    private val hostServices = SheetServices(
-        delivery = services.delivery,
-        publishing = services.publishing,
-        badges = services.badges,
-        chat = SheetChatOpener { userId, fullName -> (chatTarget ?: services.chat).openChat(userId, fullName) },
-        weather = services.weather,
-        signatures = services.signatures,
-        company = services.company,
-    )
-
     private val context: SheetContext = object : SheetContext {
         override val state: SheetUiState get() = currentState
         override val repository: CallSheetRepository get() = this@CallSheetViewModel.repository
-        override val services: SheetServices get() = hostServices
+        override val services: SheetServices get() = this@CallSheetViewModel.services
         override val lists: ListsController get() = this@CallSheetViewModel.lists
         override val editor: EditorController get() = this@CallSheetViewModel.editor
         override fun update(reducer: SheetUiState.() -> SheetUiState) = setState(reducer)
@@ -115,11 +97,6 @@ class CallSheetViewModel(
 
     /** Called each time the tool's window is shown. */
     fun start() = lists.start()
-
-    /** Routes "Chat with …" through the tool's window while it is open; null detaches. */
-    fun attachChat(opener: SheetChatOpener?) {
-        chatTarget = opener
-    }
 
     override fun onEvent(event: SheetEvent) {
         when (event) {
@@ -167,11 +144,6 @@ class CallSheetViewModel(
             (dialog as? SheetDialog.AttachDocument)?.uploading == true ||
             (dialog as? SheetDialog.Approve)?.uploading == true
         if (sending || (currentState.busy && dialog !is SheetDialog.Comments)) return
-        val approve = dialog as? SheetDialog.Approve
-        if (approve?.savedPicker != null) {
-            setState { copy(dialog = approve.copy(savedPicker = null)) }
-            return
-        }
         val picker = dialog as? SheetDialog.SendPicker
         if (picker?.pendingRemoval != null) {
             setState { copy(dialog = picker.copy(pendingRemoval = null)) }
@@ -181,15 +153,29 @@ class CallSheetViewModel(
         setState { copy(dialog = null) }
     }
 
+    /**
+     * A confirm that starts a request stays open, busy, until it settles
+     * (the web's `useInFlight` on `ConfirmModal`); the delete closes it
+     * itself. The rest only route to the editor and close at once.
+     */
     private fun confirm(secondary: Boolean) {
         val dialog = currentState.dialog as? SheetDialog.Confirm ?: return
-        setState { copy(dialog = null) }
+        if (currentState.busy) return
         when (val action = dialog.action) {
             is ConfirmAction.DeleteSheet -> rows.delete(action.sheet)
-            is ConfirmAction.DeleteTemplate -> templates.delete(action.template)
-            ConfirmAction.NoApprovers -> Unit
-            is ConfirmAction.RestartReview -> editor.runSave(action.then)
-            ConfirmAction.LeaveEditor -> if (secondary) editor.saveAndLeave() else editor.discardAndLeave()
+            is ConfirmAction.DeleteTemplate -> {
+                setState { copy(dialog = null) }
+                templates.delete(action.template)
+            }
+            ConfirmAction.NoApprovers -> setState { copy(dialog = null) }
+            is ConfirmAction.RestartReview -> {
+                setState { copy(dialog = null) }
+                editor.runSave(action.then)
+            }
+            ConfirmAction.LeaveEditor -> {
+                setState { copy(dialog = null) }
+                if (secondary) editor.saveAndLeave() else editor.discardAndLeave()
+            }
         }
     }
 }

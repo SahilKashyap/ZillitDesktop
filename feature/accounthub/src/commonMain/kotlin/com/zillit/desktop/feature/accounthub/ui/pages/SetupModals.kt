@@ -74,6 +74,12 @@ import com.zillit.desktop.feature.accounthub.ui.components.SetupModalShell
 import com.zillit.desktop.feature.accounthub.ui.components.SubCard
 import com.zillit.desktop.feature.accounthub.ui.components.ToggleRow
 import com.zillit.desktop.feature.accounthub.ui.components.UserPickerDialog
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.text.input.KeyboardType
+import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
+import com.zillit.desktop.feature.accounthub.domain.AssetExpenditureType
+import com.zillit.desktop.feature.accounthub.domain.AssetFilters
 
 /**
  * The three drill-down modals — the web's `POSetupDetail`, `InvoicesSetupDetail`
@@ -117,14 +123,17 @@ internal fun SetupModals(
 }
 
 private fun sectionsFor(modal: SetupModal, state: AccountHubUiState): List<SetupModalSection> = when (modal) {
-    // The web's three (`POSetupDetail`), with its chips. Assignment rules and
-    // Form Configuration left that modal in the web's 8c4f2b0cc; the rules are
-    // the PO module's own settings page's, the forms editor has its own area.
+    // The web's five (`POSetupDetail`), with its chips. Form Configuration
+    // left that modal in the web's 8c4f2b0cc (the forms editor has its own
+    // area); the asset register rule and the assignment rules came back with
+    // 03f047d47, mirroring the PO module's own Settings page.
     SetupModal.PurchaseOrders -> state.setup.poSetup.edited.let { po ->
         listOf(
             SetupModalSection("format", "Description Format", 1),
             SetupModalSection("rental", "Rental & Split", po.rentalCount),
             SetupModalSection("issuance", "Issuance", po.issuanceCount),
+            SetupModalSection("assets", "Asset Register Rules", po.assetCount),
+            SetupModalSection("rules", "Auto-Assignment Rules", state.setup.poRules.edited.size),
         )
     }
     SetupModal.Invoices -> listOf(
@@ -135,9 +144,9 @@ private fun sectionsFor(modal: SetupModal, state: AccountHubUiState): List<Setup
     )
     SetupModal.Payroll -> listOf(
         SetupModalSection("approvers", "Approvers", state.setup.payrollSettings.edited.approverIds.size),
-        SetupModalSection("pay_period", "Pay Period"),
-        SetupModalSection("journal_description", "Description Format"),
-        SetupModalSection("journal_grouping", "Journal Grouping"),
+        // One pane since the web's 03f047d47: the pay period, then the two
+        // journal choices under dashed dividers.
+        SetupModalSection("pay_period", "Pay Period & Journal"),
         SetupModalSection(
             "payroll_accounts",
             "Payroll Accounts",
@@ -226,6 +235,106 @@ private fun ColumnScope.PoModalBody(
             }
             // Amendments are built but paused behind the web's `AMENDMENTS_ENABLED = false`;
             // the stored flag round-trips untouched and no row is shown.
+        }
+        "assets" -> AssetRegisterRulesSection(state, value, editable, ::update)
+        "rules" -> AssignmentRulesSection(
+            rules = state.setup.poRules.edited,
+            module = "purchase_orders",
+            showVendors = true,
+            state = state,
+            editable = editable,
+            onChange = { onEvent(AccountHubEvent.EditPoRules(it)) },
+        )
+    }
+}
+
+/**
+ * The asset register rule — the web's "Asset Register Rules" pane, the same
+ * `asset_filters` the PO module's Settings page edits: one expenditure type
+ * (or all), an inclusive price range on the line total, and tags.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Suppress("LongMethod") // A form, read top to bottom; the order is the reading order.
+@Composable
+private fun ColumnScope.AssetRegisterRulesSection(
+    state: AccountHubUiState,
+    value: PurchaseOrderSetup,
+    editable: Boolean,
+    update: (PurchaseOrderSetup) -> Unit,
+) {
+    val filters = value.assetFilters
+    val symbol = state.setup.currencies.saved.default?.symbol.orEmpty()
+    fun patch(next: AssetFilters) = update(value.copy(assetFilters = next))
+    SubCard(
+        hint = "Which line items on posted & closed POs qualify as assets. Drives the Asset Register — change " +
+            "this and the register follows.",
+    ) {
+        FieldLabel("Expenditure type")
+        // Single choice: All (every type) · Purchase · Consumables.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitChoiceChip(
+                label = "All",
+                selected = filters.expTypes.isEmpty(),
+                onClick = { if (editable) patch(filters.copy(expTypes = emptyList())) },
+            )
+            AssetExpenditureType.entries.forEach { type ->
+                ZillitChoiceChip(
+                    label = type.label,
+                    selected = filters.expTypes.firstOrNull() == type.wire,
+                    onClick = { if (editable) patch(filters.copy(expTypes = listOf(type.wire))) },
+                )
+            }
+        }
+        FieldHint("All = every expenditure type qualifies.")
+        HairLine()
+        FieldLabel("Price range")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitTextField(
+                value = filters.priceLow,
+                onValueChange = { patch(filters.copy(priceLow = it)) },
+                placeholder = "${symbol}0",
+                keyboardType = KeyboardType.Number,
+                enabled = editable,
+                modifier = Modifier.weight(1f),
+            )
+            FieldHint("to")
+            ZillitTextField(
+                value = filters.priceHigh,
+                onValueChange = { patch(filters.copy(priceHigh = it)) },
+                placeholder = "No max",
+                keyboardType = KeyboardType.Number,
+                enabled = editable,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        FieldHint("Inclusive, on the line total. Either bound can be left empty.")
+        HairLine()
+        // The catalogue is the Asset Tags section's; a stored tag the catalogue
+        // no longer lists stays offered so a save cannot silently drop it.
+        HubMultiSelect(
+            selected = filters.tags,
+            options = (state.setup.assetTags.saved + filters.tags).distinct(),
+            label = { it },
+            onChange = { patch(filters.copy(tags = it)) },
+            placeholder = "Any tag",
+            fieldLabel = "Tags",
+            enabled = editable,
+        )
+        FieldHint("Matches a line carrying any of these. Select none for any tag.")
+        val error = filters.error
+        if (error != null) {
+            ZillitNotice(text = error, tone = StatusTone.Rejected, icon = ZillitIcons.Warning)
+        } else {
+            // Spelled out, so "no constraint" cannot be mistaken for "nothing saved yet".
+            ZillitNotice(
+                text = "Qualifies: ${filters.summary(symbol)}",
+                tone = StatusTone.Neutral,
+                icon = ZillitIcons.Info,
+            )
         }
     }
 }
@@ -564,6 +673,54 @@ private fun InvoiceMemberDialog(state: AccountHubUiState, onEvent: (AccountHubEv
     }
 }
 
+/** The pay-period pair: picking either end moves the other, and a locked period disables both. */
+@Composable
+private fun ColumnScope.PayPeriodFields(
+    value: PayrollSettings,
+    editable: Boolean,
+    update: (PayrollSettings) -> Unit,
+) {
+    val days = (PayrollSettings.MONDAY..PayrollSettings.SUNDAY).toList()
+    val enabled = editable && !value.payPeriodLocked
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSelect(
+            value = value.payPeriodStartDay,
+            options = days,
+            onSelect = { day -> update(value.copy(
+                payPeriodStartDay = day,
+                payPeriodEndDay = PayrollSettings.endFor(day),
+            )) },
+            label = { PayrollSettings.dayName(it) },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitText(text = "→", style = ZillitTheme.typography.bodyMedium)
+        ZillitSelect(
+            value = value.payPeriodEndDay,
+            options = days,
+            onSelect = { day -> update(value.copy(
+                payPeriodEndDay = day,
+                payPeriodStartDay = PayrollSettings.startFor(day),
+            )) },
+            label = { PayrollSettings.dayName(it) },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    if (value.payPeriodLocked) {
+        ZillitNotice(
+            text = "The pay period is fixed — this production already has timecards against it, and the " +
+                "service refuses a change once that is true.",
+            tone = StatusTone.Neutral,
+            icon = ZillitIcons.Info,
+        )
+    }
+}
+
 // -- assignment rules --------------------------------------------------------------
 
 /**
@@ -728,67 +885,33 @@ private fun ColumnScope.PayrollModalBody(
                 }
             }
         }
-        "pay_period" -> SubCard(hint = "The seven days a pay period covers. Picking either end moves the other.") {
-            val days = (PayrollSettings.MONDAY..PayrollSettings.SUNDAY).toList()
-            val enabled = editable && !value.payPeriodLocked
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ZillitSelect(
-                    value = value.payPeriodStartDay,
-                    options = days,
-                    onSelect = { day -> update(value.copy(
-                        payPeriodStartDay = day,
-                        payPeriodEndDay = PayrollSettings.endFor(day),
-                    )) },
-                    label = { PayrollSettings.dayName(it) },
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitText(text = "→", style = ZillitTheme.typography.bodyMedium)
-                ZillitSelect(
-                    value = value.payPeriodEndDay,
-                    options = days,
-                    onSelect = { day -> update(value.copy(
-                        payPeriodEndDay = day,
-                        payPeriodStartDay = PayrollSettings.startFor(day),
-                    )) },
-                    label = { PayrollSettings.dayName(it) },
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f),
-                )
+        "pay_period" -> {
+            SubCard(hint = "The seven days a pay period covers. Picking either end moves the other.") {
+                PayPeriodFields(value, editable, ::update)
             }
-            if (value.payPeriodLocked) {
-                ZillitNotice(
-                    text = "The pay period is fixed — this production already has timecards against it, and the " +
-                        "service refuses a change once that is true.",
-                    tone = StatusTone.Neutral,
-                    icon = ZillitIcons.Info,
-                )
+            // The journal choices ride the same pane, as the web's
+            // "Pay Period & Journal" does — each under its own heading.
+            SubCard(title = "Description Format", hint = "How a payroll journal line's description is cased.") {
+                JournalDescriptionFormat.entries.forEach { format ->
+                    RadioCard(
+                        label = format.label,
+                        sample = "e.g. ${format.sample}",
+                        active = value.journalDescriptionFormat == format,
+                        onClick = { update(value.copy(journalDescriptionFormat = format)) },
+                        enabled = editable,
+                    )
+                }
             }
-        }
-        "journal_description" -> SubCard(hint = "How a payroll journal line's description is cased.") {
-            JournalDescriptionFormat.entries.forEach { format ->
-                RadioCard(
-                    label = format.label,
-                    sample = "e.g. ${format.sample}",
-                    active = value.journalDescriptionFormat == format,
-                    onClick = { update(value.copy(journalDescriptionFormat = format)) },
+            SubCard(title = "Journal Grouping") {
+                ToggleRow(
+                    label = "Group by pay category",
+                    hint = "Group the Journal Ledger rows into OTs, penalties, premiums and turnarounds (under " +
+                        "each company). Off = flat rows.",
+                    checked = value.journalGroupByCategory,
+                    onCheckedChange = { update(value.copy(journalGroupByCategory = it)) },
                     enabled = editable,
                 )
             }
-        }
-        "journal_grouping" -> SubCard {
-            ToggleRow(
-                label = "Group by pay category",
-                hint = "Group the Journal Ledger rows into OTs, penalties, premiums and turnarounds (under each " +
-                    "company). Off = flat rows.",
-                checked = value.journalGroupByCategory,
-                onCheckedChange = { update(value.copy(journalGroupByCategory = it)) },
-                enabled = editable,
-            )
         }
         "payroll_accounts" -> SubCard(
             hint = "The balance-sheet codes payroll posts through. Real chart entries — the server keeps the two " +

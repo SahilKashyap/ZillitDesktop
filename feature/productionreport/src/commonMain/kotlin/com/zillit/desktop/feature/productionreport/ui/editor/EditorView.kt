@@ -122,6 +122,7 @@ internal fun EditorView(state: ReportUiState, editor: EditorState, onEvent: (Rep
 // Header ---------------------------------------------------------------------------------------
 
 @Composable
+@Suppress("CyclomaticComplexMethod") // One gate per header button, in the web's order; splitting them hides that.
 private fun EditorHeader(state: ReportUiState, editor: EditorState, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
     Row(
@@ -161,47 +162,63 @@ private fun EditorHeader(state: ReportUiState, editor: EditorState, onEvent: (Re
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
+        // The web's order: Focus, the template pair, the sends, and the save LAST.
+        val busy = editor.saving || editor.savingTemplate || state.busy
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FocusToggle(editor.focusMode) { onEvent(EditorEvent.ToggleFocus) }
-            ReportButton(
-                if (editor.savingTemplate) "Saving…" else "Save as Template",
-                { onEvent(EditorEvent.SaveAsTemplate) },
-                kind = ButtonKind.Outline,
-                enabled = !editor.savingTemplate,
-                height = 36.dp,
-                trailing = if (editor.savingTemplate) ({ SmallSpinner(colors.accent) }) else null,
-            )
+            // ZL-21539: create-only — a template is made while building one, never off an existing report.
+            if (editor.isNew) {
+                ReportButton(
+                    if (editor.savingTemplate) "Saving…" else "Save as Template",
+                    { onEvent(EditorEvent.SaveAsTemplate) },
+                    kind = ButtonKind.Outline,
+                    enabled = !busy,
+                    height = 36.dp,
+                    trailing = if (editor.savingTemplate) ({ SmallSpinner(colors.accent) }) else null,
+                )
+            }
             editor.template?.let { template ->
                 ZillitTooltip("Overwrites \"${template.name}\"") {
                     ReportButton(
                         "Update Template",
                         { onEvent(EditorEvent.UpdateTemplate) },
                         kind = ButtonKind.Outline,
-                        enabled = !editor.savingTemplate,
+                        enabled = !busy,
                         height = 36.dp,
                     )
                 }
+            }
+            // The shared `sheetSendActions` rule, on a SAVED report only — nothing to send before the first save.
+            val send = editor.sendActions
+            if (!editor.isNew && send.sendForSignature) {
+                ReportButton(
+                    if (state.busy) "Sending…" else "Send for Signature",
+                    { onEvent(EditorEvent.SendForSignature) },
+                    kind = ButtonKind.Outline,
+                    enabled = !busy,
+                    height = 36.dp,
+                )
+            }
+            if (!editor.isNew && send.sendForComments) {
+                ReportButton(
+                    "Send for Comments",
+                    { onEvent(EditorEvent.SendForComments) },
+                    kind = ButtonKind.Outline,
+                    enabled = !busy,
+                    height = 36.dp,
+                )
             }
             if (editor.isNew) {
                 ReportButton(
                     if (editor.saving) "Saving…" else "Save As",
                     { onEvent(EditorEvent.SaveAs) },
                     kind = ButtonKind.Accent,
-                    enabled = !editor.saving,
+                    enabled = !busy,
                     height = 36.dp,
                     horizontalPadding = 20.dp,
                 )
             } else {
                 SaveSplit(editor, onEvent)
-            }
-            if (editor.offersSend) {
-                ReportButton(
-                    "Send for Approval",
-                    { onEvent(EditorEvent.OpenSend) },
-                    kind = ButtonKind.Outline,
-                    enabled = !editor.saving,
-                    height = 36.dp,
-                )
             }
         }
     }

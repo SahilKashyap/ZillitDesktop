@@ -10,11 +10,13 @@ import com.zillit.desktop.feature.callsheet.domain.MetadataUpdate
 import com.zillit.desktop.feature.callsheet.domain.PageCell
 import com.zillit.desktop.feature.callsheet.domain.PageRow
 import com.zillit.desktop.feature.callsheet.domain.AccessPage
+import com.zillit.desktop.feature.callsheet.domain.BadgeKind
+import com.zillit.desktop.feature.callsheet.domain.BadgeSurface
 import com.zillit.desktop.feature.callsheet.domain.PickedDocument
 import com.zillit.desktop.feature.callsheet.domain.ReminderRequest
 import com.zillit.desktop.feature.callsheet.domain.SheetBadgeSource
-import com.zillit.desktop.feature.callsheet.domain.SheetChatOpener
 import com.zillit.desktop.feature.callsheet.domain.SheetComment
+import com.zillit.desktop.feature.callsheet.domain.UnitMessage
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDetail
 import com.zillit.desktop.feature.callsheet.domain.CallSheetPublishing
@@ -102,6 +104,9 @@ internal class FakeSheetRepository : CallSheetRepository {
     override val events: Flow<SheetSyncEvent> get() = liveEvents
 
     var metadata = SheetMetadata()
+
+    /** Set to make the metadata GET FAIL (a settled failure, not "not yet"). */
+    var metadataAnswer: ZillitResult<SheetMetadata>? = null
     var stock: List<StockTemplate> = emptyList()
     var rows: (SheetQuery) -> List<CallSheetSummary> = { emptyList() }
     val details = mutableMapOf<String, CallSheetDetail>()
@@ -129,7 +134,8 @@ internal class FakeSheetRepository : CallSheetRepository {
 
     private val ok = ZillitResult.Success(Unit)
 
-    override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> = ZillitResult.Success(metadata)
+    override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> =
+        metadataAnswer ?: ZillitResult.Success(metadata)
 
     override suspend fun saveMetadata(projectId: String, update: MetadataUpdate): ZillitResult<SheetMetadata?> {
         metadataWrites += update
@@ -282,6 +288,13 @@ internal class FakePublishing : CallSheetPublishing {
     /** File name, replace-previous. */
     val unitPosts = mutableListOf<Pair<String, Boolean>>()
 
+    /** The `replace_chat_id` of each unit post, null when none was sent. */
+    val replaceChatIds = mutableListOf<String?>()
+
+    /** The Home call-sheet unit's messages the Replace picker reads. */
+    var unitMessages: ZillitResult<List<UnitMessage>> = ZillitResult.Success(emptyList())
+    var unitPostAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit)
+
     /** File name, receiver. */
     val chatSends = mutableListOf<Pair<String, String>>()
 
@@ -300,15 +313,19 @@ internal class FakePublishing : CallSheetPublishing {
         return ZillitResult.Success(Unit)
     }
 
+    override suspend fun unitMessages(): ZillitResult<List<UnitMessage>> = unitMessages
+
     override suspend fun postToUnit(
         bytes: ByteArray,
         fileName: String,
         contentType: String,
         caption: String,
         replacePrevious: Boolean,
+        replaceChatId: String?,
     ): ZillitResult<Unit> {
         unitPosts += fileName to replacePrevious
-        return ZillitResult.Success(Unit)
+        replaceChatIds += replaceChatId
+        return unitPostAnswer
     }
 
     override suspend fun pickPdf(): PickedDocument? = picked
@@ -330,28 +347,16 @@ internal class FakeDelivery : CallSheetDelivery {
     override suspend fun savePdf(fileName: String, pdf: ByteArray): ZillitResult<Unit> = ZillitResult.Success(Unit)
 }
 
+/** One read of one sheet's badges of one kind on one surface. */
+internal data class BadgeRead(val surface: BadgeSurface, val kind: BadgeKind, val sheetId: String)
+
 internal class FakeBadges : SheetBadgeSource {
     /** The unread ledger the host would stream; tests seed it so a read has something to clear. */
     override val leaves = MutableStateFlow<List<BadgeLeaf>>(emptyList())
-    val threadsRead = mutableListOf<String>()
-    val unitsRead = mutableListOf<String>()
-    val levelReads = mutableListOf<Pair<String, String>>()
-    val tabsRead = mutableListOf<String>()
+    val reads = mutableListOf<BadgeRead>()
 
-    override fun readUnit(unit: String) {
-        unitsRead += unit
-    }
-
-    override fun readUnitLevel(unit: String, level1: String) {
-        levelReads += unit to level1
-    }
-
-    override fun readCommentThread(sheetId: String) {
-        threadsRead += sheetId
-    }
-
-    override fun readCommentTab(tab: String) {
-        tabsRead += tab
+    override fun read(surface: BadgeSurface, kind: BadgeKind, sheetId: String) {
+        reads += BadgeRead(surface, kind, sheetId)
     }
 }
 
@@ -361,7 +366,6 @@ internal class SheetHarness(private val dispatcher: TestDispatcher) {
     val repository = FakeSheetRepository()
     val publishing = FakePublishing()
     val badges = FakeBadges()
-    val chats = mutableListOf<Pair<String, String>>()
     val toasts = mutableListOf<SheetEffect.Toast>()
 
     fun start(scope: TestScope, viewer: CallSheetViewer = Samples.author): CallSheetViewModel {
@@ -371,10 +375,6 @@ internal class SheetHarness(private val dispatcher: TestDispatcher) {
                 delivery = FakeDelivery(),
                 publishing = publishing,
                 badges = badges,
-                chat = SheetChatOpener { userId, fullName ->
-                    chats += userId to fullName
-                    true
-                },
             ),
             resolveViewer = { viewer },
             projectIdProvider = { Samples.PROJECT },

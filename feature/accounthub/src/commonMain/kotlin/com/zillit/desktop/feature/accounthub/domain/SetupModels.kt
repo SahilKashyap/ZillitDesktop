@@ -1060,12 +1060,22 @@ data class PurchaseOrderSetup(
      * reset a production's stored choice.
      */
     val allowAmendAfterApproval: Boolean = false,
+    /**
+     * Which posted and closed PO lines the Asset Register counts — the web's
+     * `asset_filters`, edited here and on the PO module's own Settings page
+     * through the same document (web 03f047d47 put the section back into
+     * this modal).
+     */
+    val assetFilters: AssetFilters = AssetFilters(),
 ) {
     /**
      * The Rental & Split section's chip: auto-split when on, plus the two
      * always-on rules — what the web's `count` adds up.
      */
     val rentalCount: Int get() = ALWAYS_ON_RULES + if (autoSplitRentals) 1 else 0
+
+    /** The Asset Register Rules chip: each sub-rule that constrains something, as the web counts them. */
+    val assetCount: Int get() = assetFilters.count
 
     /** The Issuance section's chip: a prefix and a terms document, each counted once. */
     val issuanceCount: Int
@@ -1092,6 +1102,92 @@ data class PurchaseOrderSetup(
             raw.uppercase().filter { it.isLetterOrDigit() }.take(PREFIX_MAX)
     }
 }
+
+// -- asset register rule -----------------------------------------------------
+
+/** The expenditure types a PO line can carry — the web's `ASSET_EXP_TYPES`. */
+enum class AssetExpenditureType(val wire: String, val label: String) {
+    Purchase("Purchase", "Purchase"),
+
+    /** The stored value stays the server's enum; only the wording changed. */
+    Consumption("Consumption", "Consumables"),
+    ;
+
+    companion object {
+        fun labelFor(wire: String): String = entries.firstOrNull { it.wire == wire }?.label ?: wire
+    }
+}
+
+/**
+ * Which line items on posted and closed orders qualify as assets — the web's
+ * `asset_filters`, the same rule the PO module's Settings page edits.
+ *
+ * The bounds are kept as typed so the field can hold "1,500" while it is
+ * edited; a blank bound is no bound. Every sub-rule empty is "no constraint",
+ * and the wire collapses that to null.
+ */
+data class AssetFilters(
+    val priceLow: String = "",
+    val priceHigh: String = "",
+    /** The server's enum values; empty means every type. */
+    val expTypes: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+) {
+    val low: Double? get() = priceLow.toAmountOrNull()
+    val high: Double? get() = priceHigh.toAmountOrNull()
+
+    val isEmpty: Boolean get() = low == null && high == null && expTypes.isEmpty() && tags.isEmpty()
+
+    /** How many sub-rules constrain something — the web's section chip. */
+    val count: Int
+        get() = listOf(low != null || high != null, expTypes.isNotEmpty(), tags.isNotEmpty()).count { it }
+
+    /** Why the rule cannot be saved, or null — the web's `assetFilterError`. */
+    val error: String?
+        get() {
+            val lowBound = low
+            val highBound = high
+            return when {
+                lowBound != null && highBound != null && lowBound > highBound ->
+                    "Price low must not exceed price high."
+                lowBound != null && lowBound < 0 -> "Price low must be zero or more."
+                highBound != null && highBound < 0 -> "Price high must be zero or more."
+                else -> null
+            }
+        }
+
+    /** Spells the rule back out, so "no constraint" cannot pass for "nothing saved" — `buildAssetSummary`. */
+    fun summary(symbol: String): String {
+        val lowBound = low
+        val highBound = high
+        val parts = mutableListOf<String>()
+        when {
+            lowBound != null && highBound != null ->
+                parts += "total ${money(symbol, lowBound)}–${money(symbol, highBound)}"
+            lowBound != null -> parts += "total ≥ ${money(symbol, lowBound)}"
+            highBound != null -> parts += "total ≤ ${money(symbol, highBound)}"
+        }
+        if (expTypes.isNotEmpty()) parts += expTypes.joinToString(" or ") { AssetExpenditureType.labelFor(it) }
+        if (tags.isNotEmpty()) parts += "tagged ${tags.joinToString(" or ")}"
+        if (parts.isEmpty()) return "Every line item on a posted or closed PO — no constraint set."
+        return "Lines on a posted or closed PO matching ${parts.joinToString(", and ")}."
+    }
+
+    private fun money(symbol: String, value: Double): String {
+        val whole = value.toLong()
+        val grouped = whole.toString().reversed().chunked(THOUSANDS).joinToString(",").reversed()
+        val cents = ((value - whole) * CENTS).toInt()
+        return if (cents == 0) "$symbol$grouped" else "$symbol$grouped.${cents.toString().padStart(2, '0')}"
+    }
+
+    private companion object {
+        const val THOUSANDS = 3
+        const val CENTS = 100
+    }
+}
+
+/** "1,500" and "1500.50" both parse; blank, or anything else, is no amount. */
+private fun String.toAmountOrNull(): Double? = trim().replace(",", "").takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 
 // -- invoices setup ----------------------------------------------------------
 

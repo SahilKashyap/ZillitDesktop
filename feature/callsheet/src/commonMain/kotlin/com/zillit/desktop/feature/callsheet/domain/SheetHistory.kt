@@ -95,13 +95,16 @@ object SheetHistory {
         }
         return groups.map { group ->
             val head = group.first()
+            // `sentBy` carries the sender's member id; unresolved ids (and the
+            // names older reminders stored there) fall through to being shown verbatim.
+            val sender = reminderSender(members, head)
             HistoryEntry(
                 id = head.id,
-                userId = head.sentById,
+                userId = head.sentById.ifBlank { head.sentBy },
                 stage = "",
                 action = "Reminder Sent",
-                by = name(members, head.sentById, head.sentBy),
-                role = role(members, head.sentById, head.sentByRole.ifBlank { "Unknown" }),
+                by = sender.name.ifBlank { "-" },
+                role = sender.role.ifBlank { "Unknown" },
                 atMillis = head.createdOn,
                 message = head.message,
             )

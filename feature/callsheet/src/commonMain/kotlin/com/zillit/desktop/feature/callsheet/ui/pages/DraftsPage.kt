@@ -47,6 +47,7 @@ import com.zillit.desktop.feature.callsheet.ui.components.CardGrid
 import com.zillit.desktop.feature.callsheet.ui.components.CscIconButton
 import com.zillit.desktop.feature.callsheet.ui.components.DayChip
 import com.zillit.desktop.feature.callsheet.ui.components.FilterChip
+import com.zillit.desktop.feature.callsheet.ui.components.InlineCount
 import com.zillit.desktop.feature.callsheet.ui.components.MetaCell
 import com.zillit.desktop.feature.callsheet.ui.components.NameCell
 import com.zillit.desktop.feature.callsheet.ui.components.PersonCell
@@ -208,7 +209,14 @@ private fun DraftsTable(state: SheetUiState, rows: List<CallSheetSummary>, onEve
     ) { row, column, index ->
         when (column) {
             0 -> Text("${index + 1}", style = sheetText(12.sp), color = SheetTheme.colors.dsTextMuted)
-            1 -> NameCell(row.name, formatDateTime(row.createdOn))
+            // The unread REPORT number beside the name; the comment count sits on the kebab.
+            1 -> Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NameCell(row.name, formatDateTime(row.createdOn))
+                InlineCount(state.unreadReports(row.id))
+            }
             2 -> DayChip(shootDayLabel(row.shared))
             3 -> CreatorCell(state, row, csc = true)
             4 -> MetaCell(row.updatedOn?.let { formatDateTime(it) } ?: "—", csc = true)
@@ -248,8 +256,9 @@ private fun DraftCard(
         creatorDesignation = member?.designation.orEmpty(),
         nowMillis = nowMillis,
         approvals = null,
-        links = cardLinks(entries, listOf("view", "edit", "comment", "comments", "docdist", "chat")),
+        links = cardLinks(entries, listOf("view", "edit", "comment", "comments", "docdist", "sendChat")),
         pills = cardPills(entries, listOf("signature", "delete")),
+        reportBadge = state.unreadReports(row.id),
         modifier = modifier,
     )
 }

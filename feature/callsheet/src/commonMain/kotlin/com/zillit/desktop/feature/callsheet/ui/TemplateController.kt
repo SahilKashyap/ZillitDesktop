@@ -96,10 +96,15 @@ internal class TemplateController(private val ctx: SheetContext) {
         }
     }
 
-    /** "Save as Template": the document shared with the whole project; the server names it. */
+    /**
+     * "Save as Template": the document shared with the whole project; the
+     * server names it. ZL-21539: create-only — on an EXISTING sheet the save
+     * marks the form clean and closes the editor, discarding unsaved edits
+     * with no prompt, so it is neither offered nor honoured there.
+     */
     fun saveAsTemplate() {
         val editor = ctx.state.editor ?: return
-        if (editor.savingTemplate || !ctx.state.isPoster) return
+        if (editor.savingTemplate || !ctx.state.isPoster || !editor.offersSaveAsTemplate) return
         ctx.update { copy(editor = editor.copy(savingTemplate = true)) }
         ctx.launchWork {
             when (val result = ctx.repository.createTemplate(editor.document)) {

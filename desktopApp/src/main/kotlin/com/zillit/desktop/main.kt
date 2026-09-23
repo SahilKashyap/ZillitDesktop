@@ -3469,7 +3469,7 @@ private fun buildRegistry(
             scope.launch { onPicked(pickEsignFile(kind)) }
         }
     }
-    val callSheet = viewModels.callSheet?.let { callSheetToolProvider(it, graph, chatViewModel) }
+    val callSheet = viewModels.callSheet?.let { callSheetToolProvider(it, graph) }
     val sides = viewModels.sides?.let { vm ->
         SidesToolProvider(
             viewModel = vm,
@@ -3492,10 +3492,10 @@ private fun buildRegistry(
         )
     }
     val productionReport = viewModels.productionReport?.let {
-        reportToolProvider(it, graph, chatViewModel, viewModels.productionReportChat, boardContext)
+        reportToolProvider(it, graph, viewModels.productionReportChat, boardContext)
     }
-    val adReport = viewModels.adReport?.let { reportToolProvider(it, graph, chatViewModel) }
-    val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph, chatViewModel) }
+    val adReport = viewModels.adReport?.let { reportToolProvider(it, graph) }
+    val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph) }
     val real = listOfNotNull(
         home, chat, email, mailCompose, mailThread, signatures, mailSettings, mailContacts,
         settings, admin, notifications, sos, help,

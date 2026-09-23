@@ -192,9 +192,11 @@ internal fun ConfirmModal(
     onCancel: () -> Unit,
     secondaryLabel: String? = null,
     onSecondary: () -> Unit = {},
+    /** The request is in flight: the buttons disable and the confirm reads "Working…" until it settles. */
+    busy: Boolean = false,
 ) {
     val colors = ReportTheme.colors
-    ModalScrim(onDismiss = null, onEscape = onCancel) {
+    ModalScrim(onDismiss = null, onEscape = { if (!busy) onCancel() }) {
         Column(
             modifier = Modifier
                 .widthIn(max = 480.dp)
@@ -241,14 +243,22 @@ internal fun ConfirmModal(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                ReportButton("Cancel", onCancel, kind = ButtonKind.Outline, fontSize = 12.sp)
+                ReportButton("Cancel", onCancel, kind = ButtonKind.Outline, fontSize = 12.sp, enabled = !busy)
                 val confirmKind = when {
                     secondaryLabel != null -> ButtonKind.DangerOutline
                     danger -> ButtonKind.Danger
                     else -> ButtonKind.Accent
                 }
-                ReportButton(confirmLabel, onConfirm, kind = confirmKind, fontSize = 12.sp)
-                secondaryLabel?.let { ReportButton(it, onSecondary, kind = ButtonKind.Accent, fontSize = 12.sp) }
+                ReportButton(
+                    if (busy) "Working…" else confirmLabel,
+                    onConfirm,
+                    kind = confirmKind,
+                    fontSize = 12.sp,
+                    enabled = !busy,
+                )
+                secondaryLabel?.let {
+                    ReportButton(it, onSecondary, kind = ButtonKind.Accent, fontSize = 12.sp, enabled = !busy)
+                }
             }
         }
     }

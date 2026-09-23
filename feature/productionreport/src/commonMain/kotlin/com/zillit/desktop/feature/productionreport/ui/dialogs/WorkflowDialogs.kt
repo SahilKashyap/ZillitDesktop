@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -37,6 +38,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
 import com.zillit.desktop.feature.productionreport.ui.PublishDestination
+import com.zillit.desktop.feature.productionreport.ui.PublishType
 import com.zillit.desktop.feature.productionreport.ui.ReportDialog
 import com.zillit.desktop.feature.productionreport.ui.ReportEvent
 import com.zillit.desktop.feature.productionreport.ui.ReportUiState
@@ -97,46 +99,15 @@ internal fun DraftNameDialog(dialog: ReportDialog.DraftName, onEvent: (ReportEve
     }
 }
 
-/** Send for comments: the chooser, the recipient picker, or the removal prompt. */
+/**
+ * Send for comments: the recipient picker, or the removal prompt. The menu
+ * entry (or header button) has already said which kind of send this is, so
+ * there is no type chooser in front of it.
+ */
 @Composable
 internal fun SendPickerDialog(state: ReportUiState, dialog: ReportDialog.SendPicker, onEvent: (ReportEvent) -> Unit) {
     val removal = dialog.pendingRemoval
-    when {
-        removal != null -> RemovalPrompt(removal, onEvent)
-        dialog.choosing -> ReportModal("Send for Approval", { onEvent(DialogEvent.Dismiss) }) {
-            Text(
-                "Choose how to send this production report for approval:",
-                style = reportText(14.sp),
-                color = ReportTheme.colors.textSecondary,
-                modifier = Modifier.padding(bottom = 16.dp),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ReportButton(
-                    "For Comments",
-                    { onEvent(WorkflowEvent.ChooseComments) },
-                    Modifier.weight(1f),
-                    radius = 12.dp,
-                    fontSize = 14.sp,
-                    height = 40.dp,
-                )
-                ReportButton(
-                    "For Signature",
-                    { onEvent(WorkflowEvent.ChooseSignature) },
-                    Modifier.weight(1f),
-                    radius = 12.dp,
-                    fontSize = 14.sp,
-                    height = 40.dp,
-                )
-            }
-            ReportButton(
-                "Cancel",
-                { onEvent(DialogEvent.Dismiss) },
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                kind = ButtonKind.Ghost,
-            )
-        }
-        else -> RecipientPickerDialog(state, dialog, onEvent)
-    }
+    if (removal != null) RemovalPrompt(removal, onEvent) else RecipientPickerDialog(state, dialog, onEvent)
 }
 
 @Composable
@@ -211,8 +182,8 @@ private fun RecipientPickerDialog(
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 ReportButton(
-                    "Back",
-                    { onEvent(if (dialog.fromEditor) WorkflowEvent.BackToChooser else DialogEvent.Dismiss) },
+                    "Cancel",
+                    { onEvent(DialogEvent.Dismiss) },
                     kind = ButtonKind.Ghost,
                     height = 40.dp,
                 )
@@ -328,8 +299,10 @@ private fun RemovalPrompt(removed: List<SheetMember>, onEvent: (ReportEvent) -> 
 
 /**
  * "Publish Production Report": where it goes first; for the app, then
- * Continuation (keeps earlier chat posts) or New (replaces them). The web's
- * card wording said the opposite of what it did — this reads as it acts.
+ * Continuation (keeps earlier chat posts), New (replaces them all) or —
+ * when the unit chat holds a live document — Replace (swaps that one). The
+ * dialog closes the moment the publish call succeeds; the PDF render, upload
+ * and chat post run behind it.
  */
 @Composable
 internal fun PublishDialog(state: ReportUiState, dialog: ReportDialog.Publish, onEvent: (ReportEvent) -> Unit) {
@@ -445,32 +418,72 @@ private fun TypeStep(state: ReportUiState, dialog: ReportDialog.Publish, onEvent
         modifier = Modifier.padding(top = 20.dp, bottom = 24.dp),
     )
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TypeCard(
-            "Continuation",
-            "Keep the existing report in the chat and add this version alongside it.",
-            dialog.continuation == true,
-        ) {
-            onEvent(WorkflowEvent.PickContinuation(true))
+        // Replace is hidden, not disabled, when there is nothing to swap.
+        val offered = PublishType.entries.filter { it != PublishType.Replace || dialog.replaceOptions.isNotEmpty() }
+        offered.forEach { type ->
+            TypeCard(type.label, type.hint, dialog.type == type) { onEvent(WorkflowEvent.PickPublishType(type)) }
         }
-        TypeCard("New", "Replace the existing report in the chat with this version.", dialog.continuation == false) {
-            onEvent(WorkflowEvent.PickContinuation(false))
-        }
+        if (dialog.type == PublishType.Replace) ReplacePicker(dialog, onEvent)
     }
-    val label = when (dialog.continuation) {
-        true -> "Publish as Continuation"
-        false -> "Publish as New"
+    val label = when (dialog.type) {
+        PublishType.Continuation -> "Publish as Continuation"
+        PublishType.New -> "Publish as New"
+        PublishType.Replace -> "Publish and Replace"
         null -> "Select an option to publish"
     }
     ReportButton(
-        text = label,
+        text = if (state.busy) "Publishing…" else label,
         onClick = { onEvent(WorkflowEvent.ConfirmPublish) },
         modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
-        enabled = dialog.continuation != null && !state.busy,
+        enabled = dialog.type != null && !state.busy,
         radius = 12.dp,
         height = 48.dp,
         fontSize = 14.sp,
     )
 }
+
+/** The live documents a Replace can retire, newest first; the newest is pre-picked. */
+@Composable
+private fun ReplacePicker(dialog: ReportDialog.Publish, onEvent: (ReportEvent) -> Unit) {
+    val colors = ReportTheme.colors
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, colors.border, RoundedCornerShape(8.dp)),
+    ) {
+        Text(
+            "Document to replace",
+            style = reportText(12.sp, FontWeight.SemiBold),
+            color = colors.textSecondary,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+        Column(
+            Modifier.fillMaxWidth()
+                .heightIn(max = REPLACE_LIST_MAX_HEIGHT.dp)
+                .zillitVerticalScroll(rememberScrollState()),
+        ) {
+            dialog.replaceOptions.forEach { option ->
+                val selected = option.chatId == dialog.replaceChatId
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(if (selected) colors.accentLight else Color.Transparent)
+                        .plainClick { onEvent(WorkflowEvent.PickReplaceTarget(option.chatId)) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    RadioDot(selected, 16.dp)
+                    Text(
+                        option.label,
+                        style = reportText(13.sp, if (selected) FontWeight.SemiBold else FontWeight.Normal),
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private const val REPLACE_LIST_MAX_HEIGHT = 180
 
 @Composable
 private fun TypeCard(title: String, description: String, selected: Boolean, onClick: () -> Unit) {

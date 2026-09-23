@@ -39,6 +39,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
+import com.zillit.desktop.feature.callsheet.ui.PublishChoice
 import com.zillit.desktop.feature.callsheet.ui.PublishDestination
 import com.zillit.desktop.feature.callsheet.ui.PublishStep
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
@@ -547,15 +548,36 @@ private fun TypeStep(state: SheetUiState, dialog: SheetDialog.Publish, onEvent: 
         TypeCard(
             "Continuation",
             "Post as a continuation — keeps the existing call sheet in the chat and adds this version alongside.",
-            dialog.continuation == true,
-        ) { onEvent(WorkflowEvent.PickContinuation(true)) }
+            dialog.choice == PublishChoice.Continuation,
+        ) { onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.Continuation)) }
         TypeCard(
             "New",
             "Replace the existing call sheet document in Home Callsheet with this new version.",
-            dialog.continuation == false,
-        ) { onEvent(WorkflowEvent.PickContinuation(false)) }
+            dialog.choice == PublishChoice.New,
+        ) { onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.New)) }
+        // Hidden, not disabled, when there is nothing to swap: a first publish has no target.
+        if (dialog.replaceTargets.isNotEmpty()) {
+            TypeCard(
+                "Replace",
+                "Swap one existing document. It moves to History with its comments.",
+                dialog.choice == PublishChoice.Replace,
+            ) { onEvent(WorkflowEvent.PickPublishChoice(PublishChoice.Replace)) }
+        }
     }
-    if (dialog.continuation == true) {
+    if (dialog.choice == PublishChoice.Replace) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            FieldLabel("Document to replace")
+            dialog.replaceTargets.forEach { target ->
+                OptionRow(
+                    label = target.label,
+                    hint = target.label,
+                    selected = dialog.replaceChatId == target.chatId,
+                    blocked = false,
+                ) { onEvent(WorkflowEvent.PickReplaceTarget(target.chatId)) }
+            }
+        }
+    }
+    if (dialog.choice == PublishChoice.Continuation) {
         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             FieldLabel("Publish Notes")
             SheetInput(
@@ -569,16 +591,12 @@ private fun TypeStep(state: SheetUiState, dialog: SheetDialog.Publish, onEvent: 
             )
         }
     }
-    val label = when (dialog.continuation) {
-        true -> "Publish as Continuation"
-        false -> "Publish as New"
-        null -> "Select an option to publish"
-    }
+    val label = dialog.choice?.let { "Publish as ${it.label}" } ?: "Select an option to publish"
     SheetButton(
-        text = label,
+        text = if (state.busy) "Publishing…" else label,
         onClick = { onEvent(WorkflowEvent.ConfirmPublish) },
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        enabled = dialog.continuation != null && !state.busy,
+        enabled = dialog.canConfirm && !state.busy,
         radius = 12.dp,
         height = 46.dp,
         fontSize = 14.sp,

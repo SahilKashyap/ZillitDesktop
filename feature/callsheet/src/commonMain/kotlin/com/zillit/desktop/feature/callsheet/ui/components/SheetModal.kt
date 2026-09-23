@@ -192,9 +192,11 @@ internal fun ConfirmModal(
     onCancel: () -> Unit,
     secondaryLabel: String? = null,
     onSecondary: () -> Unit = {},
+    /** The request the confirm started is in flight: it stays open, its buttons disabled. */
+    busy: Boolean = false,
 ) {
     val colors = SheetTheme.colors
-    ModalScrim(onDismiss = null, onEscape = onCancel) {
+    ModalScrim(onDismiss = null, onEscape = { if (!busy) onCancel() }) {
         Column(
             modifier = Modifier
                 .widthIn(max = 480.dp)
@@ -241,14 +243,22 @@ internal fun ConfirmModal(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                SheetButton("Cancel", onCancel, kind = ButtonKind.Outline, fontSize = 12.sp)
+                SheetButton("Cancel", onCancel, kind = ButtonKind.Outline, enabled = !busy, fontSize = 12.sp)
                 val confirmKind = when {
                     secondaryLabel != null -> ButtonKind.DangerOutline
                     danger -> ButtonKind.Danger
                     else -> ButtonKind.Accent
                 }
-                SheetButton(confirmLabel, onConfirm, kind = confirmKind, fontSize = 12.sp)
-                secondaryLabel?.let { SheetButton(it, onSecondary, kind = ButtonKind.Accent, fontSize = 12.sp) }
+                SheetButton(
+                    if (busy) "Working…" else confirmLabel,
+                    onConfirm,
+                    kind = confirmKind,
+                    enabled = !busy,
+                    fontSize = 12.sp,
+                )
+                secondaryLabel?.let {
+                    SheetButton(it, onSecondary, kind = ButtonKind.Accent, enabled = !busy, fontSize = 12.sp)
+                }
             }
         }
     }

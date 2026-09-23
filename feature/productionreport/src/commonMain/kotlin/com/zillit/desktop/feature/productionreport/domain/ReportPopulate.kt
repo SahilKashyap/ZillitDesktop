@@ -19,10 +19,12 @@ object ReportPopulate {
     private val DESIGNATION_HEADER = Regex("""^(designation|role|field)$""", RegexOption.IGNORE_CASE)
     private val PERSONNEL_NAME_HEADER = Regex("""^(name|value)$""", RegexOption.IGNORE_CASE)
 
+    /** IN times by name, key personnel by designation, and the day's Crew Call into an empty "Crew Call" line. */
     fun fromCallSheet(report: SheetPayload, callSheet: SheetPayload): SheetPayload =
         report
             .withCrewInTimes(callSheet.crewInTimesByName())
             .withKeyPersonnel(callSheet.personnelByDesignation())
+            .withCrewCall(crewCallFromCallSheet(callSheet))
 
     /** `lowercased name → IN value` over the call sheet's employee cells. */
     private fun SheetPayload.crewInTimesByName(): Map<String, String> {

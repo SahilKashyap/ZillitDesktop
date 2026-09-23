@@ -70,7 +70,8 @@ internal object ReportRenderFixtures {
                 id = "m1",
                 approvalRequestId = "q8",
                 assigneeId = "u1",
-                sentBy = "Maya Fernandes",
+                // The sender's member id, resolved to a name and title on render.
+                sentBy = "u2",
                 message = "Please sign before call time",
                 createdOn = NOW - 300_000,
             ),

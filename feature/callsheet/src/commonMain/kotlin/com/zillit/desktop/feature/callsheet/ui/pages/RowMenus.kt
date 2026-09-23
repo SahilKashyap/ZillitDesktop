@@ -5,10 +5,10 @@ import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.canApproveReject
 import com.zillit.desktop.feature.callsheet.domain.canPublish
-import com.zillit.desktop.feature.callsheet.domain.chatAllowed
 import com.zillit.desktop.feature.callsheet.domain.commentAllowed
 import com.zillit.desktop.feature.callsheet.domain.pendingFinalRequest
 import com.zillit.desktop.feature.callsheet.domain.sendActions
+import com.zillit.desktop.feature.callsheet.domain.sendForChatAllowed
 import com.zillit.desktop.feature.callsheet.domain.shouldShowReminderBell
 import com.zillit.desktop.feature.callsheet.ui.ListEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
@@ -25,6 +25,11 @@ import com.zillit.desktop.feature.callsheet.ui.theme.SheetIcons
  * Each list's row actions, one definition for the kebab and the card — the
  * web's `rowActions` (`DraftTab.jsx`) and the three Approvals sub-tabs' menus
  * (`ApprovalsTab.jsx`), with their gates and the `TONE_BY_KEY` tiles.
+ *
+ * Send for Chat (ZL-21415) sits on Drafts, Sent and Received rows for anyone
+ * who can see them, until the sheet locks; the approver "Chat" actions are
+ * gone. Comment is offered to everyone — whether they may WRITE in the
+ * thread is decided when it opens (`canPostComments`).
  */
 
 internal fun draftMenu(
@@ -47,9 +52,7 @@ internal fun draftMenu(
             onEvent(WorkflowEvent.SendForComments(row))
         }.takeIf { canPost && send.sendForComments },
         docDistAction(row, fromDraft = true, onEvent).takeIf { canPost && state.canDistribute && !row.status.locked },
-        MenuEntry.Action("chat", "Send for Chat", ZillitIcons.Chat, MenuTone.Info) {
-            onEvent(WorkflowEvent.OpenSendForChat(row))
-        }.takeIf { canPost },
+        sendForChatAction(row, onEvent).takeIf { sendForChatAllowed(row.status) },
         deleteAction(row, onEvent).takeIf { canPost },
     )
 }
@@ -59,9 +62,7 @@ internal fun sentMenu(state: SheetUiState, row: CallSheetSummary, onEvent: (Shee
     return listOfNotNull(
         viewAction(row, onEvent),
         historyAction(state, row, "Approval History", onEvent),
-        MenuEntry.Action("chat", "Chat", ZillitIcons.Chat, MenuTone.Info) {
-            onEvent(ListEvent.ChatWithApprovers(row))
-        }.takeIf { chatAllowed(row.status) },
+        sendForChatAction(row, onEvent).takeIf { sendForChatAllowed(row.status) },
         commentAction(row, unread, readOnly = false, onEvent).takeIf { commentAllowed(row.status, unread) },
         MenuEntry.Divider,
         approveAction(row, onEvent).takeIf { pendingFinalRequest(row, state.me) != null },
@@ -86,9 +87,7 @@ internal fun receivedMenu(state: SheetUiState, row: CallSheetSummary, onEvent: (
         }.takeIf { shouldShowReminderBell(row, state.me) },
         viewAction(row, onEvent),
         historyAction(state, row, "Approval History", onEvent),
-        MenuEntry.Action("chat", "Chat", ZillitIcons.Chat, MenuTone.Info) {
-            onEvent(ListEvent.ChatWithCreator(row))
-        }.takeIf { chatAllowed(row.status) },
+        sendForChatAction(row, onEvent).takeIf { sendForChatAllowed(row.status) },
         commentAction(row, unread, readOnly = false, onEvent).takeIf { commentAllowed(row.status, unread) },
         MenuEntry.Divider.takeIf { actionable },
         approveAction(row, onEvent).takeIf { actionable },
@@ -124,6 +123,11 @@ private fun approveAction(row: CallSheetSummary, onEvent: (SheetEvent) -> Unit) 
 private fun publishAction(row: CallSheetSummary, onEvent: (SheetEvent) -> Unit) =
     MenuEntry.Action("publish", "Publish", SheetIcons.CloudUpload, MenuTone.Primary) {
         onEvent(WorkflowEvent.OpenPublish(row))
+    }
+
+private fun sendForChatAction(row: CallSheetSummary, onEvent: (SheetEvent) -> Unit) =
+    MenuEntry.Action("sendChat", "Send for Chat", ZillitIcons.Chat, MenuTone.Info) {
+        onEvent(WorkflowEvent.OpenSendForChat(row))
     }
 
 private fun historyAction(
@@ -166,6 +170,7 @@ internal fun cardLinks(entries: List<MenuEntry>, keys: List<String>): List<CardL
             label = when (key) {
                 "history" -> if (action.label == "Loading…") action.label else "History"
                 "reminder" -> "Reminder"
+                "sendChat" -> "Chat"
                 else -> action.label
             },
             icon = action.icon,

@@ -117,8 +117,9 @@ class SheetRepositoryWireTest {
         repo.sendReminder(
             "r1",
             ReminderRequest(
-                sentBy = "Author",
+                sentBy = "u1",
                 sentById = "",
+                sentByRole = "second_ad_label",
                 assigneeIds = listOf("u2"),
                 message = "Please",
             ),
@@ -136,6 +137,8 @@ class SheetRepositoryWireTest {
         assertEquals("Uma", approver["assignee_name"]!!.jsonPrimitive.content)
         assertEquals("Producer", approver["role"]!!.jsonPrimitive.content)
         assertEquals("null", sent[2].body!!["sent_by_id"].toString(), "a blank id goes out as null")
+        assertEquals("u1", sent[2].body!!["sent_by"]!!.jsonPrimitive.content, "sent_by is the member id")
+        assertEquals("second_ad_label", sent[2].body!!["sent_by_role"]!!.jsonPrimitive.content, "the designation KEY")
         assertEquals("Wrong call time", sent[3].body!!["reason"]!!.jsonPrimitive.content)
         assertEquals("CONTINUATION", sent[4].body!!["continuation_type"]!!.jsonPrimitive.content)
         assertEquals("Fixed", sent[4].body!!["publish_notes"]!!.jsonPrimitive.content)

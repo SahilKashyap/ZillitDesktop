@@ -5,14 +5,17 @@ package com.zillit.desktop.feature.productionreport.ui.dialogs
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -21,12 +24,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
+import com.zillit.desktop.feature.productionreport.domain.reminderSender
 import com.zillit.desktop.feature.productionreport.ui.DialogEvent
 import com.zillit.desktop.feature.productionreport.ui.ListEvent
 import com.zillit.desktop.feature.productionreport.ui.ReportDialog
@@ -38,7 +46,10 @@ import com.zillit.desktop.feature.productionreport.ui.components.ConfirmModal
 import com.zillit.desktop.feature.productionreport.ui.components.Face
 import com.zillit.desktop.feature.productionreport.ui.components.ReportButton
 import com.zillit.desktop.feature.productionreport.ui.components.ReportEmptyState
+import com.zillit.desktop.feature.productionreport.ui.components.ReportInput
 import com.zillit.desktop.feature.productionreport.ui.components.ReportModal
+import com.zillit.desktop.feature.productionreport.ui.components.plainClick
+import com.zillit.desktop.feature.productionreport.ui.components.rememberHover
 import com.zillit.desktop.feature.productionreport.ui.components.reportText
 import com.zillit.desktop.feature.productionreport.ui.theme.ReportTheme
 
@@ -57,6 +68,7 @@ internal fun ReportDialogHost(state: ReportUiState, onEvent: (ReportEvent) -> Un
             onCancel = dismiss,
             secondaryLabel = dialog.secondaryLabel,
             onSecondary = { onEvent(DialogEvent.ConfirmSecondary) },
+            busy = dialog.busy,
         )
         is ReportDialog.TemplatePicker -> TemplatePickerDialog(dialog, onEvent)
         is ReportDialog.DraftName -> DraftNameDialog(dialog, onEvent)
@@ -67,8 +79,8 @@ internal fun ReportDialogHost(state: ReportUiState, onEvent: (ReportEvent) -> Un
         is ReportDialog.Approve -> ApproveDialog(state, dialog, onEvent)
         is ReportDialog.Reject -> RejectDialog(state, dialog, onEvent)
         is ReportDialog.ReminderCompose -> ReminderComposeDialog(state, dialog, onEvent)
-        is ReportDialog.Reminders -> RemindersDialog(dialog, dismiss)
-        is ReportDialog.ChatPicker -> ChatPickerDialog(state, dialog, onEvent)
+        is ReportDialog.Reminders -> RemindersDialog(state, dialog, dismiss)
+        is ReportDialog.SendForChat -> SendForChatDialog(state, dialog, onEvent)
         is ReportDialog.DocDistConfirm -> ConfirmModal(
             title = "Publish to Document Distribution",
             message = "Publish \"${dialog.fileName}\" to the Document Distribution library?",
@@ -138,9 +150,14 @@ private fun HistoryDialog(dialog: ReportDialog.History, onClose: () -> Unit) {
     }
 }
 
-/** "Reminder" / "Reminders (n)" — who reminded, when, and what they said. */
+/**
+ * "Reminder" / "Reminders (n)" — who reminded, when, and what they said. The
+ * sender is resolved from the crew by id (`getReminderSender`) so a renamed
+ * or re-titled person reads right on an old reminder; the designation is a
+ * label key, translated for this reader.
+ */
 @Composable
-private fun RemindersDialog(dialog: ReportDialog.Reminders, onClose: () -> Unit) {
+private fun RemindersDialog(state: ReportUiState, dialog: ReportDialog.Reminders, onClose: () -> Unit) {
     val colors = ReportTheme.colors
     val title = if (dialog.reminders.size > 1) "Reminders (${dialog.reminders.size})" else "Reminder"
     ReportModal(title, onClose) {
@@ -149,14 +166,15 @@ private fun RemindersDialog(dialog: ReportDialog.Reminders, onClose: () -> Unit)
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             dialog.reminders.forEach { reminder ->
+                val sender = reminderSender(state.members, reminder)
                 Column {
                     Text(
-                        reminder.sentBy.ifBlank { "-" },
+                        sender.name.ifBlank { "-" },
                         style = reportText(14.sp, FontWeight.Medium),
                         color = colors.textPrimary,
                     )
-                    if (reminder.sentByRole.isNotBlank()) Text(
-                        reminder.sentByRole,
+                    if (sender.role.isNotBlank()) Text(
+                        Labels.translate(sender.role),
                         style = reportText(12.sp),
                         color = colors.textMeta,
                     )
@@ -179,44 +197,117 @@ private fun RemindersDialog(dialog: ReportDialog.Reminders, onClose: () -> Unit)
     }
 }
 
-/** "Chat with Approver" / "Chat with Creator": a Chat button per person. */
+/**
+ * "Send for Chat" (ZL-21415) — `SendForChatModal`: search + single-select
+ * rows, everyone but the sender; the chosen member receives the PDF in a
+ * 1:1 chat. The footer disables while the PDF uploads.
+ */
 @Composable
-private fun ChatPickerDialog(state: ReportUiState, dialog: ReportDialog.ChatPicker, onEvent: (ReportEvent) -> Unit) {
+@Suppress("LongMethod") // The picker reads top to bottom in layout order: helper line, search, list, footer.
+private fun SendForChatDialog(state: ReportUiState, dialog: ReportDialog.SendForChat, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
-    ReportModal(dialog.title, { onEvent(DialogEvent.Dismiss) }) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            dialog.userIds.forEach { id ->
-                val member = state.member(id)
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .border(1.dp, colors.border, RoundedCornerShape(6.dp))
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Face(id, member?.fullName ?: "-", 32.dp)
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            member?.fullName ?: "-",
-                            style = reportText(14.sp, FontWeight.Medium),
-                            color = colors.textPrimary,
-                            maxLines = 1,
-                        )
-                        member?.designation?.takeIf { it.isNotBlank() }?.let {
-                            Text(it, style = reportText(12.sp), color = colors.textMeta, maxLines = 1)
-                        }
+    val candidates = state.members.filter { it.userId.isNotBlank() && it.userId != state.me }
+    val query = dialog.search.trim().lowercase()
+    val filtered = candidates.filter { member ->
+        query.isEmpty() || listOf(member.fullName, member.designation, member.department)
+            .any { it.lowercase().contains(query) }
+    }
+    val close = { if (!dialog.sending) onEvent(DialogEvent.Dismiss) }
+    ReportModal("Send for Chat", close, scrollable = false) {
+        Column(
+            Modifier.fillMaxWidth().height(CHAT_PICKER_HEIGHT.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row {
+                Text(
+                    "Shares this production report as a PDF in a 1:1 chat.",
+                    style = reportText(14.sp),
+                    color = colors.textSecondary,
+                )
+                if (dialog.report.name.isNotBlank()) Text(
+                    " ${dialog.report.name}",
+                    style = reportText(14.sp, FontWeight.Medium),
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                )
+            }
+            ReportInput(
+                value = dialog.search,
+                onChange = { onEvent(ListEvent.SearchChatRecipient(it)) },
+                placeholder = "Search by name, role, department...",
+                leadingIcon = ZillitIcons.Search,
+                autoFocus = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Column(
+                Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp))
+                    .border(1.dp, colors.border, RoundedCornerShape(8.dp))
+                    .zillitVerticalScroll(rememberScrollState()),
+            ) {
+                if (filtered.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
+                        Text("No members found", style = reportText(14.sp), color = colors.textSecondary)
                     }
-                    ReportButton(
-                        "Chat",
-                        { onEvent(ListEvent.ChatWith(id)) },
-                        kind = ButtonKind.Warning,
-                        icon = ZillitIcons.Chat,
-                        fontSize = 12.sp,
-                    )
+                }
+                filtered.forEach { member ->
+                    ChatRecipientRow(member, selected = member.userId == dialog.selected) {
+                        onEvent(ListEvent.PickChatRecipient(member.userId))
+                    }
                 }
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                ReportButton("Cancel", close, kind = ButtonKind.Ghost, height = 40.dp, enabled = !dialog.sending)
+                ReportButton(
+                    if (dialog.sending) "Sending…" else "Send",
+                    { onEvent(ListEvent.ConfirmSendForChat) },
+                    enabled = dialog.selected != null && !dialog.sending,
+                    height = 40.dp,
+                    fontSize = 14.sp,
+                    horizontalPadding = 20.dp,
+                )
+            }
+        }
+    }
+}
+
+private const val CHAT_PICKER_HEIGHT = 520
+
+@Composable
+private fun ChatRecipientRow(member: SheetMember, selected: Boolean, onPick: () -> Unit) {
+    val colors = ReportTheme.colors
+    val (source, hovered) = rememberHover()
+    Row(
+        Modifier.fillMaxWidth()
+            .background(
+                when {
+                    selected -> colors.accent.copy(alpha = 0.08f)
+                    hovered -> colors.elevated
+                    else -> Color.Transparent
+                },
+            )
+            .hoverable(source)
+            .plainClick(source = source, onClick = onPick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Face(member.userId, member.fullName, 36.dp)
+        Column(Modifier.weight(1f)) {
+            Text(
+                member.fullName,
+                style = reportText(14.sp, FontWeight.Medium),
+                color = colors.textPrimary,
+                maxLines = 1,
+            )
+            val sub = listOf(member.designation, member.department).filter { it.isNotBlank() }.joinToString(" · ")
+            if (sub.isNotEmpty()) Text(sub, style = reportText(12.sp), color = colors.textSecondary, maxLines = 1)
+        }
+        Box(
+            Modifier.size(16.dp).clip(CircleShape)
+                .border(2.dp, if (selected) colors.accent else colors.borderStrong, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) Box(Modifier.size(8.dp).clip(CircleShape).background(colors.accent))
         }
     }
 }

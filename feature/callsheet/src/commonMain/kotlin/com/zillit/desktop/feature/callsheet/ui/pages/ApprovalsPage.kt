@@ -38,6 +38,7 @@ import com.zillit.desktop.feature.callsheet.ui.components.CardLink
 import com.zillit.desktop.feature.callsheet.ui.components.CardTabItem
 import com.zillit.desktop.feature.callsheet.ui.components.CardTabs
 import com.zillit.desktop.feature.callsheet.ui.components.CscIconButton
+import com.zillit.desktop.feature.callsheet.ui.components.InlineCount
 import com.zillit.desktop.feature.callsheet.ui.components.MenuEntry
 import com.zillit.desktop.feature.callsheet.ui.components.MetaCell
 import com.zillit.desktop.feature.callsheet.ui.components.SheetEmptyState
@@ -110,8 +111,9 @@ private fun SentSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowM
                     approvals = if (row.approvalsIncluded) CardApprovals(approved, total, null) else null,
                     links = cardLinks(entries, listOf("view", "history")) +
                         statusLink(state, row, onEvent) +
-                        cardLinks(entries, listOf("comment", "chat", "docdist")),
+                        cardLinks(entries, listOf("comment", "sendChat", "docdist")),
                     pills = cardPills(entries, listOf("approve", "edit", "remind", "signature", "delete")),
+                    reportBadge = state.unreadReports(row.id),
                     modifier = modifier,
                 )
             }
@@ -175,8 +177,9 @@ private fun ReceivedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit, 
                     creatorDesignation = state.member(row.createdById)?.designation.orEmpty(),
                     nowMillis = nowMillis,
                     approvals = if (isInternalOnly(row, state.me)) null else CardApprovals(approved, total, null),
-                    links = cardLinks(entries, listOf("view", "history", "comment", "chat", "reminder")),
+                    links = cardLinks(entries, listOf("view", "history", "comment", "sendChat", "reminder")),
                     pills = cardPills(entries, listOf("reject", "approve")),
+                    reportBadge = state.unreadReports(row.id),
                     modifier = modifier,
                 )
             }
@@ -217,6 +220,7 @@ private fun FinalizedSection(state: SheetUiState, onEvent: (SheetEvent) -> Unit,
                     approvals = null,
                     links = cardLinks(entries, listOf("view", "history", "comment")),
                     pills = cardPills(entries, listOf("publish")),
+                    reportBadge = state.unreadReports(row.id),
                     modifier = modifier,
                 )
             }
@@ -252,7 +256,11 @@ private fun approvalColumns(approval: Boolean): List<TableColumn> = listOfNotNul
 @Composable
 private fun CommonCell(state: SheetUiState, row: CallSheetSummary, column: Int) {
     when (column) {
-        0 -> MetaCell(row.serialNo.ifBlank { "-" })
+        // The unread REPORT number beside the serial — a comment count sits on the kebab instead.
+        0 -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            MetaCell(row.serialNo.ifBlank { "-" })
+            InlineCount(state.unreadReports(row.id))
+        }
         1 -> MetaCell(shootDayLabel(row.shared))
         2 -> CreatorCell(state, row)
         3 -> MetaCell(formatDateTime(row.createdOn))

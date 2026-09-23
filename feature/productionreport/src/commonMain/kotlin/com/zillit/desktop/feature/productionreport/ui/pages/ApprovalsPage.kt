@@ -50,6 +50,7 @@ import com.zillit.desktop.feature.productionreport.ui.components.ReportErrorLine
 import com.zillit.desktop.feature.productionreport.ui.components.ReportGridCard
 import com.zillit.desktop.feature.productionreport.ui.components.ReportTable
 import com.zillit.desktop.feature.productionreport.ui.components.StatusBadge
+import com.zillit.desktop.feature.productionreport.ui.components.TabBadge
 import com.zillit.desktop.feature.productionreport.ui.components.TableColumn
 import com.zillit.desktop.feature.productionreport.ui.components.UnderlineTab
 import com.zillit.desktop.feature.productionreport.ui.components.reportText
@@ -137,11 +138,18 @@ private fun SectionTable(
     ReportTable(columns = columns, rows = rows, minWidth = 1000.dp) { row, column, index ->
         val key = columns[column].title
         when (key) {
-            "#" -> Text(
-                "${index + 1}",
-                style = reportText(12.sp, FontWeight.Medium),
-                color = ReportTheme.colors.textTertiary,
-            )
+            // The tables name no report, so the unread REPORT count sits by the serial.
+            "#" -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    "${index + 1}",
+                    style = reportText(12.sp, FontWeight.Medium),
+                    color = ReportTheme.colors.textTertiary,
+                )
+                TabBadge(reportUnreadFor(state, row))
+            }
             "Day" -> MetaCell(shootDayLabel(row.shared))
             "Created By" -> CreatorCell(state, row)
             "Created At" -> MetaCell(formatDateTime(row.createdOn))
@@ -296,5 +304,6 @@ private fun SectionCard(
         links = cardLinks(entries, primary).filterNot { it.label == "Send Reminder" },
         pills = cardPills(entries, primary),
         modifier = modifier,
+        nameBadge = reportUnreadFor(state, row),
     )
 }

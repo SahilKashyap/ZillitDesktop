@@ -4,14 +4,15 @@ import com.zillit.desktop.feature.callsheet.domain.AccessPerson
 import com.zillit.desktop.feature.callsheet.domain.ApprovalRequest
 import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
 import com.zillit.desktop.feature.callsheet.domain.ApprovalStatusEntry
+import com.zillit.desktop.feature.callsheet.domain.BadgeKind
+import com.zillit.desktop.feature.callsheet.domain.BadgeSurface
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.CallSheetViewer
-import com.zillit.desktop.feature.callsheet.domain.CommentScope
 import com.zillit.desktop.feature.callsheet.domain.DraftChip
 import com.zillit.desktop.feature.callsheet.domain.HistoryEntry
 import com.zillit.desktop.feature.callsheet.domain.MissingTitle
 import com.zillit.desktop.feature.callsheet.domain.PickedDocument
-import com.zillit.desktop.feature.callsheet.domain.SavedSignature
+import com.zillit.desktop.feature.callsheet.domain.ReplaceTarget
 import com.zillit.desktop.feature.callsheet.domain.SavedTemplate
 import com.zillit.desktop.feature.callsheet.domain.SheetBadges
 import com.zillit.desktop.feature.callsheet.domain.SheetComment
@@ -23,6 +24,8 @@ import com.zillit.desktop.feature.callsheet.domain.SheetReminder
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
 import com.zillit.desktop.feature.callsheet.domain.StockTemplate
 import com.zillit.desktop.feature.callsheet.domain.approvalSections
+import com.zillit.desktop.feature.callsheet.domain.canPostComments
+import com.zillit.desktop.feature.callsheet.domain.isListedMember
 import com.zillit.desktop.feature.callsheet.domain.memberById
 import com.zillit.desktop.feature.callsheet.domain.resolveSection
 import com.zillit.desktop.feature.callsheet.domain.sheetTabs
@@ -112,6 +115,9 @@ data class SheetUiState(
     val members: List<SheetMember> = emptyList(),
     val metadata: SheetMetadata = SheetMetadata(),
     val metadataLoaded: Boolean = false,
+    /** The metadata read has settled — and, when it failed, a viewer's tabs fail OPEN rather than blank. */
+    val metadataSettled: Boolean = false,
+    val metadataFailed: Boolean = false,
     val tab: SheetTab = SheetTab.Drafts,
     /** The stored section; [activeSection] is what is on screen. */
     val section: ApprovalSection = ApprovalSection.Sent,
@@ -135,22 +141,30 @@ data class SheetUiState(
     /** Document Distribution posting rights (or admin), read when the lists open. */
     val canDistribute: Boolean = false,
     val permission: PermissionState = PermissionState(),
-    /** The host can list the approver's saved signatures. */
-    val canUseSavedSignatures: Boolean = false,
 ) {
     val me: String get() = viewer.userId
 
     /** Posting rights on the call sheet — the web's `is2ndAD`. No admin bypass. */
     val isPoster: Boolean get() = viewer.isPoster
 
-    val isFinalApprover: Boolean get() = me.isNotBlank() && me in metadata.finalApproverIds
+    /** On the project's `final_approver_ids` — the Approvals tab and the Received section hang on it. */
+    val isFinalApprover: Boolean get() = isListedMember(metadata.finalApproverIds, me)
 
-    /** `isApproverForTabs`: a final approver, or someone the Received list already names. */
-    val isApprover: Boolean get() = isFinalApprover || lists.received.rows.isNotEmpty()
+    /** On the project's `internal_distribution_receivers` — Drafts for a viewer, and posting in any thread. */
+    val isInternalReceiver: Boolean get() = isListedMember(metadata.internalReceiverIds, me)
 
-    /** Nothing until the rights have answered — the web holds the bar back to avoid a flicker. */
+    /**
+     * Nothing until the rights have answered — and, for a viewer, until the
+     * metadata has settled: both lists that decide their tabs ride that GET,
+     * so a bar drawn before it lands would flash the empty state. A poster's
+     * answer is complete the moment the rights land.
+     */
     val tabs: List<SheetTab>
-        get() = if (!viewer.ready) emptyList() else sheetTabs(isPoster, viewer.canViewGrid, isApprover)
+        get() = when {
+            !viewer.ready -> emptyList()
+            !isPoster && !metadataSettled -> emptyList()
+            else -> sheetTabs(isPoster, viewer.canViewGrid, isFinalApprover, isInternalReceiver, metadataFailed)
+        }
 
     /** The tab on screen: the stored one when offered, else the first. */
     val activeTab: SheetTab get() = tab.takeIf { it in tabs } ?: tabs.firstOrNull() ?: SheetTab.Drafts
@@ -162,16 +176,16 @@ data class SheetUiState(
     /** "Call Sheet Creation" for posting users, "Drafts Call Sheet" for everyone else. */
     val toolTitle: String get() = sheetToolName(isPoster)
 
-    /** Which comment map the open list reads. */
-    val commentScope: CommentScope?
+    /** The badge surface of the list on screen — what its row badges and reads are keyed on. */
+    val surface: BadgeSurface?
         get() = when (activeTab) {
-            SheetTab.Drafts -> CommentScope.Drafts
-            SheetTab.Published -> CommentScope.Published
+            SheetTab.Drafts -> BadgeSurface.Drafts
+            SheetTab.Published -> BadgeSurface.Published
             SheetTab.Permission -> null
             SheetTab.Approvals -> when (activeSection) {
-                ApprovalSection.Sent -> CommentScope.Sent
-                ApprovalSection.Received -> CommentScope.Received
-                ApprovalSection.Finalized -> CommentScope.Finalized
+                ApprovalSection.Sent -> BadgeSurface.Sent
+                ApprovalSection.Received -> BadgeSurface.Received
+                ApprovalSection.Finalized -> BadgeSurface.Finalized
             }
         }
 
@@ -183,12 +197,20 @@ data class SheetUiState(
 
     fun tabBadge(tab: SheetTab): Int = when (tab) {
         SheetTab.Drafts -> badges.drafts
-        SheetTab.Approvals -> badges.approvals
+        SheetTab.Approvals -> badges.approvals(isPoster, isFinalApprover)
         SheetTab.Published -> badges.published
         SheetTab.Permission -> 0
     }
 
-    fun unreadComments(sheetId: String): Int = badges.commentsFor(commentScope, sheetId)
+    /** Unread comments on a row of the list on screen — the kebab's count. */
+    fun unreadComments(sheetId: String): Int = badges.count(surface, BadgeKind.Comment, sheetId)
+
+    /** Unread report rows on a row of the list on screen — the number beside its name. */
+    fun unreadReports(sheetId: String): Int = badges.count(surface, BadgeKind.Report, sheetId)
+
+    /** May I write in this row's thread — its creator, or an internal-distribution recipient. */
+    fun canPostComments(row: CallSheetSummary): Boolean =
+        canPostComments(row, me, viewer.displayName, isInternalReceiver)
 
     fun member(userId: String?): SheetMember? = members.memberById(userId)
 
@@ -213,11 +235,30 @@ data class PdfOverlay(
     }
 }
 
-/** A drawn or saved signature the approver confirmed, as PNG bytes. */
+/** A drawn signature the approver confirmed, as PNG bytes. */
 class SignatureImage(val png: ByteArray)
 
 /** The publish wizard's two steps. */
 enum class PublishStep { Destination, Type }
+
+/**
+ * How a publish reaches the Home call-sheet unit: Continuation appends, New
+ * archives every live call sheet (`replacePreviousChats`), Replace swaps ONE
+ * document out (`replace_chat_id`). The wipe flag derives from the CHOICE,
+ * never from the presence of a target id — a Replace whose target went
+ * missing appends rather than wiping the unit.
+ */
+enum class PublishChoice(val label: String) {
+    Continuation("Continuation"),
+    New("New"),
+    Replace("Replace"),
+    ;
+
+    /** `continuation_type` on the publish call knows only CONTINUATION or NEW. */
+    val continuation: Boolean get() = this == Continuation
+
+    val replacePrevious: Boolean get() = this == New
+}
 
 /** Every dialog the tool can show; one at a time. */
 sealed interface SheetDialog {
@@ -263,9 +304,17 @@ sealed interface SheetDialog {
         val sheet: CallSheetSummary,
         val step: PublishStep = PublishStep.Destination,
         val destination: PublishDestination = PublishDestination.InApp,
-        val continuation: Boolean? = null,
+        val choice: PublishChoice? = null,
         val notes: String = "",
-    ) : SheetDialog
+        /** The unit's live documents, read on open; empty hides the Replace card. */
+        val replaceTargets: List<ReplaceTarget> = emptyList(),
+        /** The picked target's chat `_id`; seeded with the newest once the list lands. */
+        val replaceChatId: String? = null,
+    ) : SheetDialog {
+        /** Replace is the only choice that can be selected but incomplete. */
+        val canConfirm: Boolean
+            get() = choice != null && (choice != PublishChoice.Replace || !replaceChatId.isNullOrBlank())
+    }
 
     /** A picked PDF with its caption, on its way to the Home call-sheet unit. */
     data class AttachDocument(
@@ -306,14 +355,18 @@ sealed interface SheetDialog {
 
     data class ApprovalStatus(val title: String, val entries: List<ApprovalStatusEntry>) : SheetDialog
 
+    /**
+     * ZL-21512: Approve asks first. [sign] is the step — the chooser (with or
+     * without a signature) until "Approve with Signature" advances it to the
+     * pad, whose one button is locked to that choice.
+     */
     data class Approve(
         val sheet: CallSheetSummary,
         val request: ApprovalRequest,
-        /** The signature confirmed with "Use This Signature" (or picked from the saved ones). */
+        val sign: Boolean = false,
+        /** The signature confirmed with "Use This Signature". */
         val signature: SignatureImage? = null,
         val uploading: Boolean = false,
-        /** The saved-signatures picker over the dialog. */
-        val savedPicker: SavedSignaturesPicker? = null,
     ) : SheetDialog
 
     data class Reject(val sheet: CallSheetSummary, val request: ApprovalRequest, val reason: String = "") : SheetDialog
@@ -322,8 +375,6 @@ sealed interface SheetDialog {
 
     /** "Reminder" — the newest reminder addressed to my pending request. */
     data class ReminderView(val reminder: SheetReminder) : SheetDialog
-
-    data class ChatPicker(val title: String, val userIds: List<String>) : SheetDialog
 
     /** Document Distribution: confirm, then a success note naming the file. */
     data class DocDistConfirm(
@@ -335,16 +386,6 @@ sealed interface SheetDialog {
 
     data class DocDistDone(val fileName: String) : SheetDialog
 }
-
-/** The approver's saved signatures, and the images fetched so far. */
-data class SavedSignaturesPicker(
-    val loading: Boolean = true,
-    val signatures: List<SavedSignature> = emptyList(),
-    val images: Map<String, ByteArray> = emptyMap(),
-    val error: String? = null,
-    /** The one being fetched to confirm. */
-    val picking: String? = null,
-)
 
 /** Where a publish goes. */
 enum class PublishDestination(val label: String, val hint: String, val needsDocDist: Boolean) {

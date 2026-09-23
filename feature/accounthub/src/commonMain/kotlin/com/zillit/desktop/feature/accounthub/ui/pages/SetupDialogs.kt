@@ -116,12 +116,16 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
                 )
                 Box(Modifier.weight(1f))
             }
-            ZillitButton(
-                text = "Cancel",
-                onClick = { onEvent(AccountHubEvent.DismissCompanyDraft) },
-                variant = ButtonVariant.Tertiary,
-                enabled = !saving,
-            )
+            // Edit mode has no Cancel (web 03f047d47): × / Esc still discard,
+            // and Done is the one commit action; create keeps it.
+            if (isNew) {
+                ZillitButton(
+                    text = "Cancel",
+                    onClick = { onEvent(AccountHubEvent.DismissCompanyDraft) },
+                    variant = ButtonVariant.Tertiary,
+                    enabled = !saving,
+                )
+            }
             ZillitButton(
                 text = if (isNew) "Add company" else "Done",
                 onClick = { onEvent(AccountHubEvent.CommitCompanyDraft) },
@@ -495,12 +499,16 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
         icon = ZillitIcons.Bank,
         width = DIALOG_WIDTH,
         actions = {
-            ZillitButton(
-                text = "Cancel",
-                onClick = { onEvent(AccountHubEvent.DismissBankDraft) },
-                variant = ButtonVariant.Tertiary,
-                enabled = !setup.bankSaving,
-            )
+            // Edit mode drops Cancel, the same rule as the company dialog
+            // (web 03f047d47); × / Esc still discard.
+            if (isNew) {
+                ZillitButton(
+                    text = "Cancel",
+                    onClick = { onEvent(AccountHubEvent.DismissBankDraft) },
+                    variant = ButtonVariant.Tertiary,
+                    enabled = !setup.bankSaving,
+                )
+            }
             ZillitButton(
                 text = if (isNew) "Add account" else "Save changes",
                 onClick = { onEvent(AccountHubEvent.CommitBankDraft) },

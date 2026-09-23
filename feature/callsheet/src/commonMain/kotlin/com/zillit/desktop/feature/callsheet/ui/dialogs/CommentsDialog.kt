@@ -267,7 +267,7 @@ private fun CommentItem(
                     Text(formatDateTime(comment.createdOn), style = sheetText(10.sp), color = colors.textMuted)
                     if (edited) {
                         Text(
-                            "(edited)",
+                            "Edited",
                             style = sheetText(10.sp).copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
                             color = colors.textMuted,
                         )

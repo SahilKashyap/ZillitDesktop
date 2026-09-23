@@ -1,11 +1,11 @@
 package com.zillit.desktop
 
-import com.zillit.desktop.core.badges.BadgeDrilldownQuery
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.permissions.ProjectPermissions
@@ -13,38 +13,34 @@ import com.zillit.desktop.core.socket.NotificationReadDto
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.callsheet.data.CallSheetRepositoryImpl
 import com.zillit.desktop.feature.callsheet.domain.ApprovalDecision
+import com.zillit.desktop.feature.callsheet.domain.BadgeKind
 import com.zillit.desktop.feature.callsheet.domain.BadgeLeaf
+import com.zillit.desktop.feature.callsheet.domain.BadgeSurface
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
 import com.zillit.desktop.feature.callsheet.domain.CallSheetPublishing
 import com.zillit.desktop.feature.callsheet.domain.CallSheetViewer
 import com.zillit.desktop.feature.callsheet.domain.CompanySeed
 import com.zillit.desktop.feature.callsheet.domain.PickedDocument
-import com.zillit.desktop.feature.callsheet.domain.SavedSignature
-import com.zillit.desktop.feature.callsheet.domain.SavedSignatureSource
 import com.zillit.desktop.feature.callsheet.domain.SheetBadgeSource
 import com.zillit.desktop.feature.callsheet.domain.SheetBadges
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
 import com.zillit.desktop.feature.callsheet.domain.SheetPdfPage
 import com.zillit.desktop.feature.callsheet.domain.SheetWeatherSource
+import com.zillit.desktop.feature.callsheet.domain.UnitMessage
 import com.zillit.desktop.feature.callsheet.ui.CallSheetToolProvider
 import com.zillit.desktop.feature.callsheet.ui.CallSheetViewModel
 import com.zillit.desktop.feature.callsheet.ui.SheetServices
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
-import com.zillit.desktop.feature.chat.domain.CrewContact
-import com.zillit.desktop.feature.chat.ui.ChatEvent
-import com.zillit.desktop.feature.chat.ui.ChatViewModel
 import com.zillit.desktop.feature.documentdistribution.data.FromToolFile
 import com.zillit.desktop.feature.documentdistribution.data.FromToolPublisher
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
-import com.zillit.desktop.feature.formsignature.data.FormSignatureRepositoryImpl
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
+import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
-import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeKind
 import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
-import com.zillit.desktop.core.workspace.WorkspaceRoute
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
@@ -60,17 +56,23 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Call Sheet Creation — the tool, its host seams, and its window.
  *
  * The seams mirror the production report's (the web builds both tools from
  * the same workflow kit): the raw PDF stream, Document Distribution, the Home
- * call-sheet unit for the publish fan-out, storage for a drawn signature, the
- * badge ledger, OpenWeather, and — call sheet only — a one-to-one chat share
- * and the approver's saved signatures.
+ * call-sheet unit for the publish fan-out (and its live documents for the
+ * Replace picker), storage for a drawn signature, the badge ledger,
+ * OpenWeather, and — call sheet only — a one-to-one chat share.
  */
 internal fun AppGraph.Ready.buildCallSheet(permissions: () -> ProjectPermissions): CallSheetViewModel =
     CallSheetViewModel(
@@ -85,7 +87,6 @@ internal fun AppGraph.Ready.buildCallSheet(permissions: () -> ProjectPermissions
             publishing = callSheetPublishing(permissions),
             badges = callSheetBadges(),
             weather = callSheetWeather(),
-            signatures = callSheetSavedSignatures(),
             company = {
                 val project = projectContext?.context?.value?.project
                 CompanySeed(projectName = project?.name.orEmpty(), companyName = project?.companyName.orEmpty())
@@ -97,19 +98,12 @@ internal fun AppGraph.Ready.buildCallSheet(permissions: () -> ProjectPermissions
         nowMillis = System::currentTimeMillis,
     )
 
-/** The tool window: crew photos on every face, "Chat with …" opening the one-to-one thread. */
-internal fun callSheetToolProvider(
-    viewModel: CallSheetViewModel,
-    graph: AppGraph,
-    chat: ChatViewModel?,
-): CallSheetToolProvider = CallSheetToolProvider(
-    viewModel,
-    loadAvatar = { userId -> (graph as? AppGraph.Ready)?.let { crewFaceLoader(it)(userId) } },
-    openChat = { navigator, userId, fullName ->
-        chat?.onEvent(ChatEvent.OpenThread(CrewContact(userId = userId, fullName = fullName)))
-        navigator.openInNewWindow(WorkspaceRoute.Tool(CHAT_TOOL_PATH))
-    },
-)
+/** The tool window: crew photos on every face. */
+internal fun callSheetToolProvider(viewModel: CallSheetViewModel, graph: AppGraph): CallSheetToolProvider =
+    CallSheetToolProvider(
+        viewModel,
+        loadAvatar = { userId -> (graph as? AppGraph.Ready)?.let { crewFaceLoader(it)(userId) } },
+    )
 
 private fun AppGraph.Ready.callSheetViewer(permissions: ProjectPermissions): CallSheetViewer {
     val context = projectContext?.context?.value
@@ -127,8 +121,8 @@ private fun AppGraph.Ready.callSheetViewer(permissions: ProjectPermissions): Cal
 /**
  * The crew as the sheet's pickers and employee sections need them — with
  * their standing, so pickers leave out anyone who left or has not joined,
- * and with designations and departments as words, keyed by the label the
- * department came from.
+ * with designations and departments as words, keyed by the labels they
+ * came from (a reminder records the designation KEY as `sent_by_role`).
  */
 private fun AppGraph.Ready.callSheetMembers(): List<SheetMember> =
     projectContext?.context?.value?.users.orEmpty().map { user ->
@@ -139,6 +133,7 @@ private fun AppGraph.Ready.callSheetMembers(): List<SheetMember> =
             department = departmentKey.takeIf { it.isNotBlank() }?.let { Labels.translate(it) }.orEmpty(),
             departmentKey = departmentKey,
             designation = user.designationText().orEmpty(),
+            designationKey = user.designation?.takeIf { it.isNotBlank() }.orEmpty(),
             status = user.status,
             isAdmin = user.isAdmin,
             avatarUrl = user.avatarUrl,
@@ -192,9 +187,10 @@ internal fun AppGraph.Ready.callSheetDelivery(): CallSheetDelivery = object : Ca
 /**
  * Where a call sheet goes beyond its own service, as the web sends it:
  * Document Distribution (stored first, then filed under `Call Sheet` or
- * `Draft Call Sheet`), the Home call-sheet unit (a document message, New
- * replacing the posts before it — `replacePreviousChats`), a one-to-one chat
- * (Send for Chat), and storage for a drawn signature.
+ * `Draft Call Sheet`), the Home call-sheet unit (a document message — New
+ * replacing every live post, `replacePreviousChats`; Replace retiring the
+ * one named, `replace_chat_id`), a one-to-one chat (Send for Chat), and
+ * storage for a drawn signature.
  */
 @Suppress("LongMethod") // One object, one method per seam.
 internal fun AppGraph.Ready.callSheetPublishing(permissions: () -> ProjectPermissions): CallSheetPublishing =
@@ -235,6 +231,35 @@ internal fun AppGraph.Ready.callSheetPublishing(permissions: () -> ProjectPermis
             }
         }
 
+        /**
+         * `fetchChatMessageData({limit: 300, page: 0})` on the call-sheet
+         * unit: the same `home/chat/{unit}/{now}/previous` page the board
+         * reads, but 300 deep in one go — the chat's page of 50 would
+         * truncate the list with no error. Read raw: the board's reader drops
+         * deleted rows and never carries `archived`, and the filter
+         * (`replaceTargets`) needs both.
+         */
+        override suspend fun unitMessages(): ZillitResult<List<UnitMessage>> {
+            val unit = when (val found = callSheetUnit()) {
+                is ZillitResult.Failure -> return found
+                is ZillitResult.Success -> found.data
+            }
+            val now = System.currentTimeMillis()
+            val rows = apiClient.request(
+                verb = HttpVerb.Get,
+                url = "${config.apiV2(ZillitService.Units)}home/chat/${unit.id}/$now/previous",
+                serializer = ListSerializer(JsonElement.serializer()),
+                module = RequestModule.ProjectUser,
+                queryParameters = mapOf("limit" to REPLACE_PICKER_LIMIT, "page" to 0),
+            )
+            return when (rows) {
+                is ZillitResult.Failure -> rows
+                is ZillitResult.Success -> ZillitResult.Success(
+                    rows.data.mapNotNull { row -> (row as? JsonObject)?.toUnitMessage() },
+                )
+            }
+        }
+
         /** `sendMSGModal` + `createChatData` into the Home call-sheet unit. */
         override suspend fun postToUnit(
             bytes: ByteArray,
@@ -242,11 +267,12 @@ internal fun AppGraph.Ready.callSheetPublishing(permissions: () -> ProjectPermis
             contentType: String,
             caption: String,
             replacePrevious: Boolean,
+            replaceChatId: String?,
         ): ZillitResult<Unit> {
-            val unit = when (val units = homeFeedRepository.loadUnits()) {
-                is ZillitResult.Failure -> return units
-                is ZillitResult.Success -> units.data.firstOrNull { it.kind == HomeUnitKind.CallSheet }
-            } ?: return ZillitResult.Failure(ZillitError.Validation("Call sheet unit not found."))
+            val unit = when (val found = callSheetUnit()) {
+                is ZillitResult.Failure -> return found
+                is ZillitResult.Success -> found.data
+            }
             val stored = when (val upload = callSheetStorage().upload(fileName, contentType, bytes) {}) {
                 is ZillitResult.Failure -> return upload
                 is ZillitResult.Success -> upload.data
@@ -270,12 +296,19 @@ internal fun AppGraph.Ready.callSheetPublishing(permissions: () -> ProjectPermis
                     ),
                     location = null,
                     replacePrevious = replacePrevious,
-                    replaceChatId = null,
+                    replaceChatId = replaceChatId?.takeIf { it.isNotBlank() },
                 )
             ) {
                 is ZillitResult.Failure -> posted
                 is ZillitResult.Success -> ZillitResult.Success(Unit)
             }
+        }
+
+        private suspend fun callSheetUnit(): ZillitResult<HomeUnit> = when (val units = homeFeedRepository.loadUnits()) {
+            is ZillitResult.Failure -> units
+            is ZillitResult.Success -> units.data.firstOrNull { it.kind == HomeUnitKind.CallSheet }
+                ?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Validation("Call sheet unit not found."))
         }
 
         override suspend fun pickPdf(): PickedDocument? =
@@ -316,6 +349,31 @@ internal fun AppGraph.Ready.callSheetPublishing(permissions: () -> ProjectPermis
         }
     }
 
+/**
+ * One unit-chat row as the Replace picker reads it. `deleted` and `archived`
+ * are timestamps on the wire (a literal flag is read too); the id is the
+ * message's `_id` and never its `unique_id`.
+ */
+private fun JsonObject.toUnitMessage(): UnitMessage? {
+    val id = text("_id") ?: return null
+    val attachment = this["attachment"] as? JsonObject
+    return UnitMessage(
+        id = id,
+        isDocument = text("message_type").equals("document", ignoreCase = true),
+        hasMedia = !attachment?.text("media").isNullOrBlank(),
+        name = attachment?.text("name")?.ifBlank { null } ?: attachment?.text("original_file_name").orEmpty(),
+        deleted = flag("deleted"),
+        archived = flag("archived"),
+        createdMs = (this["created"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() } ?: 0L,
+    )
+}
+
+private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+
+private fun JsonObject.flag(key: String): Boolean = (this[key] as? JsonPrimitive)?.let { value ->
+    value.booleanOrNull ?: ((value.longOrNull ?: value.contentOrNull?.toLongOrNull() ?: 0L) > 0L)
+} ?: false
+
 private fun ymdOf(epochMs: Long): String {
     val date = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(TimeZone.currentSystemDefault()).date
     return "${date.year}-${date.monthNumber.toString().padStart(2, '0')}-${date.dayOfMonth.toString().padStart(2, '0')}"
@@ -342,170 +400,60 @@ private fun AppGraph.Ready.callSheetStorage(): S3AttachmentUploader {
     )
 }
 
-// Saved signatures ---------------------------------------------------------------------------------------
-
-/** The approver's signatures saved in Forms & Signatures — `SignaturesModal`'s "Saved Signatures". */
-private fun AppGraph.Ready.callSheetSavedSignatures(): SavedSignatureSource {
-    val repository = FormSignatureRepositoryImpl(apiClient, config)
-    return object : SavedSignatureSource {
-        private var blocks = emptyMap<String, com.zillit.desktop.feature.formsignature.domain.SignatureBlock>()
-
-        override suspend fun list(): ZillitResult<List<SavedSignature>> =
-            when (val result = repository.signatures()) {
-                is ZillitResult.Failure -> result
-                is ZillitResult.Success -> {
-                    blocks = result.data.associateBy { it.id }
-                    ZillitResult.Success(
-                        result.data.filter { it.image != null }.map { SavedSignature(it.id, it.isSignature, it.name) },
-                    )
-                }
-            }
-
-        override suspend fun image(signature: SavedSignature): ZillitResult<ByteArray> {
-            val stored = blocks[signature.id]?.image
-                ?: return ZillitResult.Failure(ZillitError.Validation("That signature has no image."))
-            return noticeMedia.fetch(
-                NoticeAttachment(
-                    media = stored.media,
-                    fileName = stored.name,
-                    bucket = stored.bucket.takeIf { it.isNotBlank() },
-                    region = stored.region.takeIf { it.isNotBlank() },
-                ),
-                preview = false,
-            )
-        }
-    }
-}
-
 // Badges --------------------------------------------------------------------------------------------
 
 /**
- * The tool's ledger rows as leaves (unit, levels, sheet), and the reads the
- * web emits: an approval unit read whole (`notification:read`), a slice of one
- * by level (`notification:level:read`), a comment thread or tab by level.
+ * Badges v2: the tool's ledger rows as leaves (unit, level_1..3), and the
+ * read the web emits — `notification:level:read` naming one sheet's REPORT
+ * or COMMENT rows on one surface (unit + level_1 on the approval unit +
+ * level_2 + level_3), never unit-wide. Legacy units ride through as leaves
+ * and are dropped where the tree is built ([SheetBadges.from]).
  */
 internal fun AppGraph.Ready.callSheetBadges(): SheetBadgeSource = object : SheetBadgeSource {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override val leaves: Flow<List<BadgeLeaf>> = badgeStore.counts.map { leavesNow() }.distinctUntilChanged()
 
-    private fun split(
-        groupBy: String,
-        unit: String? = null,
-        level1: String? = null,
-        level2: String? = null,
-    ): Map<String, Int> =
-        badgeStore.split(
-            BadgeDrilldownQuery(
-                groupBy = groupBy,
-                tool = SheetBadges.TOOL,
-                unit = unit,
-                level1 = level1,
-                level2 = level2,
-            ),
-        )
+    /** One leaf per unread row — the tree keeps every level, so nothing is folded here. */
+    private fun leavesNow(): List<BadgeLeaf> =
+        badgeStore.unreadRows(TOOLS_SECTION)
+            .filter { it.tool == SheetBadges.TOOL }
+            .map { row -> BadgeLeaf(row.unit, row.level1, row.level2, row.level3, unread = 1) }
 
-    /** Approval units split by level_1 (the approved unit's rows belong to two tabs); comments down to the sheet. */
-    private fun leavesNow(): List<BadgeLeaf> {
-        val units = split("unit")
-        val leaves = mutableListOf<BadgeLeaf>()
-        units.forEach { (unit, total) ->
-            if (unit == SheetBadges.UNIT_COMMENT || total == 0) return@forEach
-            val tabs = split("level_1", unit = unit)
-            tabs.forEach { (tab, count) -> if (count > 0) leaves += BadgeLeaf(unit, level1 = tab, unread = count) }
-            val remainder = total - tabs.values.sum()
-            if (remainder > 0) leaves += BadgeLeaf(unit, unread = remainder)
-        }
-        val comment = SheetBadges.UNIT_COMMENT
-        val commentTotal = units[comment] ?: 0
-        if (commentTotal == 0) return leaves
-        val tabs = split("level_1", unit = comment)
-        tabs.forEach { (tab, tabCount) ->
-            val subs = split("level_2", unit = comment, level1 = tab)
-            subs.forEach { (sub, subCount) ->
-                leaves += threads(
-                    split("level_3", unit = comment, level1 = tab, level2 = sub),
-                    subCount,
-                ) { doc, count ->
-                    BadgeLeaf(comment, tab, sub, doc, count)
+    override fun read(surface: BadgeSurface, kind: BadgeKind, sheetId: String) {
+        val projectId = projectContext?.context?.value?.project?.projectId ?: return
+        if (sheetId.isBlank()) return
+        scope.launch {
+            SheetBadges.readScopes(surface, kind).forEach { (unit, level1) ->
+                val now = System.currentTimeMillis()
+                runCatching {
+                    socketEvents.emit(
+                        ZillitSocketEvents.Badges.NotificationLevelRead,
+                        NotificationReadDto(
+                            projectId = projectId,
+                            tool = SheetBadges.TOOL,
+                            module = SheetBadges.TOOL,
+                            unit = unit,
+                            segment = unit,
+                            level1 = level1,
+                            level2 = kind.wire,
+                            level3 = sheetId,
+                            timestamp = now,
+                            readTime = now,
+                        ),
+                        NotificationReadDto.serializer(),
+                    )
                 }
-            }
-            val tabDocs = split("level_3", unit = comment, level1 = tab)
-            val subDocs = subs.keys.map { split("level_3", unit = comment, level1 = tab, level2 = it) }
-            val loose = tabDocs
-                .mapValues { (doc, count) -> count - subDocs.sumOf { it[doc] ?: 0 } }
-                .filterValues { it > 0 }
-            leaves += threads(
-                loose,
-                tabCount - subs.values.sum(),
-            ) { doc, count -> BadgeLeaf(comment, tab, "", doc, count) }
-        }
-        val remainder = commentTotal - tabs.values.sum()
-        if (remainder > 0) leaves += BadgeLeaf(comment, unread = remainder)
-        return leaves
-    }
-
-    private fun threads(docs: Map<String, Int>, total: Int, leaf: (String, Int) -> BadgeLeaf): List<BadgeLeaf> {
-        val out = docs.map { (doc, count) -> leaf(doc, count) }
-        val missing = total - docs.values.sum()
-        return if (missing > 0) out + leaf("", missing) else out
-    }
-
-    override fun readUnit(unit: String) {
-        val projectId = projectContext?.context?.value?.project?.projectId ?: return
-        if (unit.isBlank()) return
-        scope.launch {
-            val now = System.currentTimeMillis()
-            runCatching {
-                socketEvents.emit(
-                    ZillitSocketEvents.Badges.NotificationRead,
-                    NotificationReadDto(
-                        projectId = projectId,
-                        module = SheetBadges.TOOL,
-                        segment = unit,
-                        timestamp = now,
-                    ),
-                    NotificationReadDto.serializer(),
-                )
-            }
-            badgeStore.markRead(LedgerRead.Levels(tool = SheetBadges.TOOL, unit = unit))
-        }
-    }
-
-    override fun readUnitLevel(unit: String, level1: String) = readLevels(unit, level1 = level1, level3 = null)
-
-    override fun readCommentThread(sheetId: String) = readLevels(
-        SheetBadges.UNIT_COMMENT,
-        level1 = null,
-        level3 = sheetId,
-    )
-
-    override fun readCommentTab(tab: String) = readLevels(SheetBadges.UNIT_COMMENT, level1 = tab, level3 = null)
-
-    private fun readLevels(unit: String, level1: String?, level3: String?) {
-        val projectId = projectContext?.context?.value?.project?.projectId ?: return
-        scope.launch {
-            val now = System.currentTimeMillis()
-            runCatching {
-                socketEvents.emit(
-                    ZillitSocketEvents.Badges.NotificationLevelRead,
-                    NotificationReadDto(
-                        projectId = projectId,
+                badgeStore.markRead(
+                    LedgerRead.Levels(
                         tool = SheetBadges.TOOL,
-                        module = SheetBadges.TOOL,
                         unit = unit,
-                        segment = unit,
                         level1 = level1,
-                        level3 = level3,
-                        timestamp = now,
-                        readTime = now,
+                        level2 = kind.wire,
+                        level3 = sheetId,
                     ),
-                    NotificationReadDto.serializer(),
                 )
             }
-            badgeStore.markRead(
-                LedgerRead.Levels(tool = SheetBadges.TOOL, unit = unit, level1 = level1, level3 = level3),
-            )
         }
     }
 }
@@ -528,7 +476,6 @@ private fun AppGraph.Ready.callSheetWeather(): SheetWeatherSource? {
 }
 
 private const val ONE_CALL_URL = "https://api.openweathermap.org/data/3.0/onecall"
-private const val CHAT_TOOL_PATH = "/cnc"
 private const val SHEET_FOLDER = "Call Sheet"
 private const val DRAFT_SHEET_FOLDER = "Draft Call Sheet"
 private const val DOCUMENT = "document"
@@ -536,6 +483,10 @@ private const val PDF = "pdf"
 private const val PDF_TYPE = "application/pdf"
 private const val SIGNATURE_FILE = "signature.png"
 private const val KEY_SUFFIX = 6
+private const val TOOLS_SECTION = "tools_label"
+
+/** The web's `limit=300` — the unit's documents in one go for the Replace picker. */
+private const val REPLACE_PICKER_LIMIT = 300
 
 /** The placeholder the web stamps on every PDF message it posts (`CallSheetApp:2941`). */
 private const val PDF_THUMBNAIL = "6777b7ede9c303151d721ba9/home/actual/pdf1738063181064.png"

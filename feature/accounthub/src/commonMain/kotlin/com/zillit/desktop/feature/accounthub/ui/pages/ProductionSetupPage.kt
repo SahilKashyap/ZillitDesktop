@@ -245,8 +245,8 @@ private fun ColumnScope.AccountingSections(
     )
     HubModuleCard(
         title = "Purchase Order Entry Setup",
-        description = "Defaults for the PO module — description formatting, rental-split handling, and " +
-            "auto-assignment rules.",
+        description = "Defaults for the PO module — description formatting, rental-split handling, the asset " +
+            "register rule, and auto-assignment rules.",
         icon = ZillitIcons.Receipt,
         onConfigure = { onEvent(AccountHubEvent.OpenSetupModal(SetupModal.PurchaseOrders)) },
     )

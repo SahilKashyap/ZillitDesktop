@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.productionreport.domain.CallSheetForDay
 import com.zillit.desktop.feature.productionreport.domain.ComposeReport
 import com.zillit.desktop.feature.productionreport.domain.ComposeReport.withoutApproverCells
 import com.zillit.desktop.feature.productionreport.domain.EditorSelection
@@ -17,6 +18,7 @@ import com.zillit.desktop.feature.productionreport.domain.normalised
 import com.zillit.desktop.feature.productionreport.domain.restoreCell
 import com.zillit.desktop.feature.productionreport.domain.restoreCellFromRemovedRow
 import com.zillit.desktop.feature.productionreport.domain.restoreRow
+import com.zillit.desktop.feature.productionreport.domain.shouldWriteApproverMeta
 import com.zillit.desktop.feature.productionreport.domain.updateCell
 import com.zillit.desktop.feature.productionreport.domain.withColumnRestored
 import com.zillit.desktop.feature.productionreport.domain.withLineRestored
@@ -76,8 +78,10 @@ internal class EditorController(private val ctx: ReportContext) {
 
     /**
      * A new document from a template (or the local default), opened at once;
-     * the last published call sheet is merged into empty cells behind a
-     * dimmed preview, and the merged document becomes the clean baseline.
+     * the call sheet PUBLISHED for its shoot day is merged into empty cells
+     * behind a dimmed preview, and the merged document becomes the clean
+     * baseline. Every new report starts nameless (the web's one
+     * `setDraftName("")`, ZL-21540) and template-less.
      */
     fun openNew(source: SheetPayload?, fromSavedTemplate: Boolean, template: TemplateRef? = null) {
         val templateRef = template
@@ -113,12 +117,19 @@ internal class EditorController(private val ctx: ReportContext) {
                 ),
             )
         }
-        ctx.projectId()?.let { populate(it, session) }
+        ctx.projectId()?.let { populate(it, session, document.shared.dateYmd) }
     }
 
-    private fun populate(projectId: String, session: Long) {
+    /**
+     * By day, not the latest published: In times, Key Personnel and Crew
+     * Call all belong to one shoot day. Nothing published for that day says
+     * so once ("No Published Call Sheet"); a failed request says nothing
+     * about what is published, so it prompts nothing.
+     */
+    private fun populate(projectId: String, session: Long, dateYmd: String) {
         ctx.launchWork {
-            val callSheet = ctx.services.callSheets.lastPublishedPayload(projectId)
+            val answer = ctx.services.callSheets.publishedForDay(projectId, dateYmd.ifBlank { ctx.todayYmd() })
+            val callSheet = (answer as? CallSheetForDay.Found)?.payload
             ctx.update {
                 val current = editor?.takeIf { it.session == session } ?: return@update this
                 if (callSheet == null) {
@@ -133,6 +144,20 @@ internal class EditorController(private val ctx: ReportContext) {
                             document = merged(current.document),
                             baseline = merged(current.baseline),
                             populating = false,
+                        ),
+                    )
+                }
+            }
+            if (answer == CallSheetForDay.None && ctx.state.editor?.session == session && ctx.state.dialog == null) {
+                ctx.update {
+                    copy(
+                        dialog = ReportDialog.Confirm(
+                            action = ConfirmAction.NoPublishedCallSheet,
+                            title = "No Published Call Sheet",
+                            message = "No published call sheet was found for the shoot day. " +
+                                "You can still fill in and submit the production report.",
+                            confirmLabel = "OK",
+                            danger = false,
                         ),
                     )
                 }
@@ -352,7 +377,10 @@ internal class EditorController(private val ctx: ReportContext) {
     /**
      * Total days as typed; the shoot-day counter only when a NEW report still
      * shows the number it was handed; the approvers, which become the project
-     * default (the web's behaviour, kept).
+     * default (the web's behaviour, kept). An EMPTIED approver list is
+     * written, not omitted — the PUT merges, so dropping the key left the
+     * removed approver in the project default and reopening seeded them back
+     * (ZL-21468); `shouldWriteApproverMeta` holds the one case still omitted.
      */
     private suspend fun writeCounters(project: String, editor: EditorState) {
         val shared = editor.document.shared
@@ -360,7 +388,7 @@ internal class EditorController(private val ctx: ReportContext) {
             totalDays = shared.totalDays.ifBlank { null },
             currentShootDay = editor.currentShootDay
                 .takeIf { it > 0 && shared.shootDayNumber.trim().toIntOrNull() == it },
-            finalApproverIds = shared.approverIds.ifEmpty { null },
+            finalApproverIds = shared.approverIds.takeIf { shouldWriteApproverMeta(it, editor.initialApproverIds) },
         )
         if (update.isEmpty) return
         if (ctx.repository.saveMetadata(project, update) is ZillitResult.Success) {

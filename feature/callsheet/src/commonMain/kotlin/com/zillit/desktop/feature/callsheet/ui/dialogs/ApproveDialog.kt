@@ -15,14 +15,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -36,7 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -51,7 +49,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,31 +56,108 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
-import com.zillit.desktop.feature.callsheet.ui.SavedSignaturesPicker
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetUiState
 import com.zillit.desktop.feature.callsheet.ui.WorkflowEvent
 import com.zillit.desktop.feature.callsheet.ui.components.ButtonKind
-import com.zillit.desktop.feature.callsheet.ui.components.ModalScrim
 import com.zillit.desktop.feature.callsheet.ui.components.SheetButton
 import com.zillit.desktop.feature.callsheet.ui.components.SheetModal
 import com.zillit.desktop.feature.callsheet.ui.components.plainClick
 import com.zillit.desktop.feature.callsheet.ui.components.rememberHover
 import com.zillit.desktop.feature.callsheet.ui.components.sheetText
-import com.zillit.desktop.feature.callsheet.ui.components.swallowClicks
 import com.zillit.desktop.feature.callsheet.ui.decodeImageBitmap
 import com.zillit.desktop.feature.callsheet.ui.renderSignaturePng
 import com.zillit.desktop.feature.callsheet.ui.theme.SheetIcons
 import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
 
 /**
- * "Approve Call Sheet" — `ApproveSignatureModal.jsx`: who is approving, an
- * optional signature (drawn and confirmed with "Use This Signature", or picked
- * from the saved ones), and the two ways to approve.
+ * "Approve Call Sheet" — ZL-21512: the chooser first (`ApproveChoiceModal`:
+ * with a signature, or without, or Cancel), then, for a signature, the pad
+ * (`ApproveSignatureModal`): who is approving, the signature drawn and
+ * confirmed with "Use This Signature", and one button locked to that choice,
+ * disabled until a signature exists. No saved-signature picker here.
  */
 @Composable
 internal fun ApproveDialog(
+    state: SheetUiState,
+    dialog: SheetDialog.Approve,
+    onEvent: (SheetEvent) -> Unit,
+    nowMillis: () -> Long,
+) {
+    if (dialog.sign) {
+        SignatureStep(state, dialog, onEvent, nowMillis)
+    } else {
+        ChoiceStep(state, onEvent)
+    }
+}
+
+/** The two choices as cards, plus Cancel — the production report's step-1 chooser shape. */
+@Composable
+private fun ChoiceStep(state: SheetUiState, onEvent: (SheetEvent) -> Unit) {
+    val colors = SheetTheme.colors
+    SheetModal("Approve Call Sheet", { onEvent(DialogEvent.Dismiss) }, width = 520.dp, closeOnScrim = !state.busy) {
+        Text(
+            "Choose how to approve this call sheet:",
+            style = sheetText(14.sp),
+            color = colors.textSecondary,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            ChoiceCard(
+                title = "Approve with Signature",
+                hint = "Draw your signature on the next screen; it is stamped on the call sheet.",
+                enabled = !state.busy,
+            ) { onEvent(WorkflowEvent.ChooseSignature) }
+            ChoiceCard(
+                title = if (state.busy) "Approving…" else "Approve Without Signature",
+                hint = "Approve straight away, without a signature.",
+                enabled = !state.busy,
+            ) { onEvent(WorkflowEvent.ApproveWithoutSignature) }
+        }
+        Box(Modifier.fillMaxWidth().padding(top = 16.dp).height(1.dp).background(colors.border))
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+            SheetButton(
+                "Cancel",
+                { onEvent(DialogEvent.Dismiss) },
+                kind = ButtonKind.Outline,
+                enabled = !state.busy,
+                height = 36.dp,
+                fontSize = 13.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChoiceCard(title: String, hint: String, enabled: Boolean, onClick: () -> Unit) {
+    val colors = SheetTheme.colors
+    val (source, hovered) = rememberHover()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (hovered && enabled) colors.hover else colors.surface)
+            .border(1.dp, if (hovered && enabled) colors.accent else colors.border, RoundedCornerShape(10.dp))
+            .hoverable(source)
+            .plainClick(enabled = enabled, source = source, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(14.dp).clip(CircleShape)
+                .border(1.dp, if (hovered && enabled) colors.accent else colors.borderStrong, CircleShape),
+        )
+        Column(Modifier.weight(1f)) {
+            Text(title, style = sheetText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
+            Text(hint, style = sheetText(12.sp, lineHeight = 17.sp), color = colors.textTertiary)
+        }
+    }
+}
+
+@Composable
+private fun SignatureStep(
     state: SheetUiState,
     dialog: SheetDialog.Approve,
     onEvent: (SheetEvent) -> Unit,
@@ -123,7 +197,7 @@ internal fun ApproveDialog(
             Text(formatDateTime(openedAt), style = sheetText(12.sp), color = colors.textMuted)
         }
         Text(
-            "SIGNATURE (OPTIONAL)",
+            "SIGNATURE",
             style = sheetText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
             color = colors.textPrimary,
             modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
@@ -138,9 +212,6 @@ internal fun ApproveDialog(
             PadHeader(drawn = strokes.isNotEmpty()) { strokes.clear() }
             SignaturePad(strokes, onSize = { padSize = it })
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (state.canUseSavedSignatures) {
-                    LinkButton("Choose Saved Signature") { onEvent(WorkflowEvent.OpenSavedSignatures) }
-                }
                 Spacer(Modifier.weight(1f))
                 if (strokes.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -182,30 +253,18 @@ internal fun ApproveDialog(
                 height = 42.dp,
                 fontSize = 14.sp,
             )
-            if (confirmed != null) {
-                SheetButton(
-                    if (dialog.uploading || state.busy) "Uploading..." else "Approve with Signature",
-                    { onEvent(WorkflowEvent.ApproveWithSignature) },
-                    Modifier.weight(1f),
-                    kind = ButtonKind.Approve,
-                    enabled = !dialog.uploading && !state.busy,
-                    height = 42.dp,
-                    fontSize = 14.sp,
-                )
-            } else {
-                SheetButton(
-                    "Approve Without Signature",
-                    { onEvent(WorkflowEvent.ApproveWithoutSignature) },
-                    Modifier.weight(1f),
-                    kind = ButtonKind.Navy,
-                    enabled = !state.busy,
-                    height = 42.dp,
-                    fontSize = 14.sp,
-                )
-            }
+            // One button, locked to the choice already made; disabled until a signature exists.
+            SheetButton(
+                if (dialog.uploading || state.busy) "Uploading..." else "Approve with Signature",
+                { onEvent(WorkflowEvent.ApproveWithSignature) },
+                Modifier.weight(1f),
+                kind = ButtonKind.Approve,
+                enabled = confirmed != null && !dialog.uploading && !state.busy,
+                height = 42.dp,
+                fontSize = 14.sp,
+            )
         }
     }
-    dialog.savedPicker?.let { SavedSignaturesDialog(it, onEvent) }
 }
 
 private const val SIGNATURE_STROKE = 3.5f
@@ -353,135 +412,3 @@ private fun ConfirmedSignature(png: ByteArray, enabled: Boolean, onChange: () ->
         }
     }
 }
-
-@Composable
-private fun LinkButton(text: String, onClick: () -> Unit) {
-    val colors = SheetTheme.colors
-    val (source, hovered) = rememberHover()
-    Text(
-        text,
-        style = sheetText(12.sp, FontWeight.Medium),
-        color = if (hovered) colors.accentHover else colors.accent,
-        modifier = Modifier.hoverable(source).plainClick(source = source, onClick = onClick),
-    )
-}
-
-/** The saved signatures and initials, two to a row; picking one confirms it. */
-@Composable
-@Suppress("CyclomaticComplexMethod") // Loading, error, empty, and the picked / fetched states of each thumbnail.
-private fun SavedSignaturesDialog(picker: SavedSignaturesPicker, onEvent: (SheetEvent) -> Unit) {
-    val colors = SheetTheme.colors
-    ModalScrim(
-        onDismiss = { onEvent(WorkflowEvent.CloseSavedSignatures) },
-        onEscape = { onEvent(WorkflowEvent.CloseSavedSignatures) },
-    ) {
-        Column(
-            Modifier
-                .widthIn(max = 600.dp)
-                .fillMaxWidth(0.95f)
-                .shadow(28.dp, RoundedCornerShape(12.dp))
-                .clip(RoundedCornerShape(12.dp))
-                .background(colors.surface)
-                .swallowClicks()
-                .padding(20.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Select Signature",
-                    style = sheetText(16.sp, FontWeight.SemiBold),
-                    color = colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                SheetButton(
-                    "Close",
-                    { onEvent(WorkflowEvent.CloseSavedSignatures) },
-                    kind = ButtonKind.Ghost,
-                    fontSize = 12.sp,
-                )
-            }
-            Text(
-                "Pick one of your saved signatures or initials to sign with.",
-                style = sheetText(12.sp),
-                color = colors.textTertiary,
-                modifier = Modifier.padding(top = 2.dp, bottom = 14.dp),
-            )
-            when {
-                picker.loading -> Text(
-                    "Loading...",
-                    style = sheetText(13.sp),
-                    color = colors.textTertiary,
-                    modifier = Modifier.padding(vertical = 40.dp).fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-                picker.error != null -> Text(
-                    picker.error,
-                    style = sheetText(13.sp),
-                    color = colors.red,
-                    modifier = Modifier.padding(vertical = 24.dp),
-                )
-                picker.signatures.isEmpty() -> Text(
-                    "No saved signatures. Add one in Forms & Signatures.",
-                    style = sheetText(13.sp),
-                    color = colors.textTertiary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(vertical = 40.dp).fillMaxWidth(),
-                )
-                else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    picker.signatures.chunked(2).forEach { pair ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            pair.forEach { signature ->
-                                val image = picker.images[signature.id]
-                                val bitmap = remember(image) { image?.let { decodeImageBitmap(it) } }
-                                val (source, hovered) = rememberHover()
-                                Column(
-                                    Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(Color.White)
-                                        .border(
-                                            if (hovered) 2.dp else 1.dp,
-                                            if (hovered || picker.picking == signature.id) {
-                                                colors.accent
-                                            } else {
-                                                colors.border
-                                            },
-                                            RoundedCornerShape(10.dp),
-                                        )
-                                        .hoverable(source)
-                                        .plainClick(enabled = picker.picking == null, source = source) {
-                                            onEvent(WorkflowEvent.PickSavedSignature(signature))
-                                        }
-                                        .padding(10.dp),
-                                ) {
-                                    Text(
-                                        if (signature.isSignature) "SIGNATURE" else "INITIALS",
-                                        style = sheetText(9.sp, FontWeight.Bold).copy(letterSpacing = 0.5.sp),
-                                        color = if (signature.isSignature) Color(0xFF175CD3) else Color(0xFF067647),
-                                    )
-                                    Box(
-                                        Modifier.fillMaxWidth().aspectRatio(SIGNATURE_RATIO),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        if (bitmap != null) {
-                                            Image(
-                                                bitmap,
-                                                contentDescription = signature.name,
-                                                contentScale = ContentScale.Fit,
-                                                modifier = Modifier.fillMaxSize(),
-                                            )
-                                        } else {
-                                            Text("Loading…", style = sheetText(11.sp), color = Color(0xFF98A2B3))
-                                        }
-                                    }
-                                }
-                            }
-                            if (pair.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private const val SIGNATURE_RATIO = 2.4f

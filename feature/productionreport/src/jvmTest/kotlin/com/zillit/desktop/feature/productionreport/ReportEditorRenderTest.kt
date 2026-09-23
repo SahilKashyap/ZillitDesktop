@@ -117,6 +117,25 @@ class ReportEditorRenderTest {
     }
 
     @Test
+    fun `the header sends a saved report, and Save as Template only shows on a new one`() {
+        render(editor()) {
+            seen("Send for Signature")
+            seen("Send for Comments")
+            assertTrue(
+                onAllNodesWithText("Save as Template").fetchSemanticsNodes().isEmpty(),
+                "ZL-21539: create-only",
+            )
+            onAllNodesWithText("Send for Signature").onLast().performClick()
+            waitForIdle()
+        }
+        assertTrue(EditorEvent.SendForSignature in events, "got $events")
+        render(editor().copy(reportId = null, status = null)) {
+            seen("Save as Template")
+            assertTrue(onAllNodesWithText("Send for Signature").fetchSemanticsNodes().isEmpty(), "nothing to send")
+        }
+    }
+
+    @Test
     fun `the save menu opens and saves the draft`() {
         render(editor(saveMenuOpen = true)) {
             seen("Keep this one and save a copy")

@@ -2,23 +2,40 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
 import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ReportSyncEvent
+import com.zillit.desktop.feature.productionreport.domain.canPostComments
 
 /**
  * One report's comment thread — `CommentsModal.jsx`. Opening reads the
- * thread's badge; another user's add, edit or delete re-reads it quietly
- * (ZL-21388/ZL-21389); a stale read never overwrites a newer one.
+ * thread's COMMENT badge on the list it was opened from; another user's add,
+ * edit or delete re-reads it quietly (ZL-21388/ZL-21389); a stale read never
+ * overwrites a newer one.
  */
 internal class CommentsController(private val ctx: ReportContext) {
 
     private var readSerial = 0L
 
+    /**
+     * Everyone who can see the row may read the thread; only its creator and
+     * the project's comment recipients may post (`canPostComments`) — decided
+     * here, whatever [readOnly] the screen asked for.
+     */
     fun open(report: ReportSummary, readOnly: Boolean) {
-        ctx.services.badges.readCommentThread(report.id)
+        ctx.lists.readRowBadge(report.id, BadgeKind.Comment)
+        val mayPost = canPostComments(report, ctx.state.me, ctx.state.isInternalReceiver)
+        val closedNote = if (!readOnly && !report.status.locked && !mayPost) READ_ONLY_NOTE else LOCKED_NOTE
         ctx.update {
-            copy(dialog = ReportDialog.Comments(reportId = report.id, reportName = report.name, readOnly = readOnly))
+            copy(
+                dialog = ReportDialog.Comments(
+                    reportId = report.id,
+                    reportName = report.name,
+                    readOnly = readOnly || !mayPost,
+                    closedNote = closedNote,
+                ),
+            )
         }
         read(report.id, quiet = false)
     }
@@ -162,5 +179,10 @@ internal class CommentsController(private val ctx: ReportContext) {
 
     private fun update(thread: ReportDialog.Comments) = ctx.update {
         if ((dialog as? ReportDialog.Comments)?.reportId == thread.reportId) copy(dialog = thread) else this
+    }
+
+    private companion object {
+        const val LOCKED_NOTE = "Comments are closed on a report approved for publishing."
+        const val READ_ONLY_NOTE = "Only the report's creator and its comment recipients can post here."
     }
 }

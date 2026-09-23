@@ -51,6 +51,7 @@ import com.zillit.desktop.feature.productionreport.ui.WorkflowEvent
 import com.zillit.desktop.feature.productionreport.ui.components.ButtonKind
 import com.zillit.desktop.feature.productionreport.ui.components.ReportButton
 import com.zillit.desktop.feature.productionreport.ui.components.ReportModal
+import com.zillit.desktop.feature.productionreport.ui.components.plainClick
 import com.zillit.desktop.feature.productionreport.ui.components.reportText
 import com.zillit.desktop.feature.productionreport.ui.decodeImageBitmap
 import com.zillit.desktop.feature.productionreport.ui.renderSignaturePng
@@ -59,12 +60,72 @@ import com.zillit.desktop.feature.productionreport.ui.theme.ReportTheme
 import kotlin.time.Clock
 
 /**
- * "Approve Production Report" — who is approving, an optional drawn
- * signature, and the two ways to approve. A drawing that was not confirmed
- * still counts: the web silently dropped it.
+ * "Approve Production Report" (ZL-21512) — a chooser first: approve with a
+ * signature, or without. Choosing the signature opens the signing screen,
+ * locked to that choice: its one CTA is "Approve with Signature", disabled
+ * until something is drawn; Cancel is the way back. A drawing that was not
+ * confirmed still counts: the web silently dropped it.
  */
 @Composable
 internal fun ApproveDialog(state: ReportUiState, dialog: ReportDialog.Approve, onEvent: (ReportEvent) -> Unit) {
+    if (dialog.sign) {
+        SignAndApproveDialog(state, dialog, onEvent)
+    } else {
+        ApproveChoiceDialog(state, onEvent)
+    }
+}
+
+/** `ApproveChoiceModal`: two choice cards plus Cancel; owns no request. */
+@Composable
+private fun ApproveChoiceDialog(state: ReportUiState, onEvent: (ReportEvent) -> Unit) {
+    val colors = ReportTheme.colors
+    ReportModal("Approve Production Report", { onEvent(DialogEvent.Dismiss) }, width = 520.dp) {
+        Text(
+            "Choose how to approve this production report:",
+            style = reportText(14.sp),
+            color = colors.textSecondary,
+            modifier = Modifier.padding(bottom = 16.dp),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            ApproveChoice(
+                title = "Approve with Signature",
+                hint = "Draw your signature; it is rendered into the report.",
+                enabled = !state.busy,
+            ) { onEvent(WorkflowEvent.ChooseSignedApproval) }
+            ApproveChoice(
+                title = "Approve Without Signature",
+                hint = "Your name and the time are rendered into the report instead.",
+                enabled = !state.busy,
+            ) { onEvent(WorkflowEvent.ApproveWithoutSignature) }
+        }
+        ReportButton(
+            "Cancel",
+            { onEvent(DialogEvent.Dismiss) },
+            Modifier.fillMaxWidth().padding(top = 12.dp),
+            kind = ButtonKind.Ghost,
+            enabled = !state.busy,
+        )
+    }
+}
+
+@Composable
+private fun ApproveChoice(title: String, hint: String, enabled: Boolean, onClick: () -> Unit) {
+    val colors = ReportTheme.colors
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surface)
+            .border(2.dp, colors.border, RoundedCornerShape(12.dp))
+            .plainClick(enabled = enabled, onClick = onClick)
+            .padding(16.dp),
+    ) {
+        Text(title, style = reportText(14.sp, FontWeight.SemiBold), color = colors.textPrimary)
+        Text(hint, style = reportText(12.sp), color = colors.textTertiary, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+@Composable
+private fun SignAndApproveDialog(state: ReportUiState, dialog: ReportDialog.Approve, onEvent: (ReportEvent) -> Unit) {
     val colors = ReportTheme.colors
     val strokes = remember { mutableStateListOf<List<Offset>>() }
     var padSize by remember { mutableStateOf(IntSize.Zero) }
@@ -103,7 +164,7 @@ internal fun ApproveDialog(state: ReportUiState, dialog: ReportDialog.Approve, o
             )
         }
         Text(
-            "SIGNATURE (OPTIONAL)",
+            "SIGNATURE",
             style = reportText(11.sp, FontWeight.SemiBold).copy(letterSpacing = 0.5.sp),
             color = colors.textPrimary,
             modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
@@ -157,28 +218,17 @@ internal fun ApproveDialog(state: ReportUiState, dialog: ReportDialog.Approve, o
                 height = 42.dp,
                 fontSize = 14.sp,
             )
+            // Locked to the choice made on the chooser: no flip to "without" once here.
             val hasSignature = confirmed != null || strokes.isNotEmpty()
-            if (hasSignature) {
-                ReportButton(
-                    if (dialog.uploading) "Uploading..." else "Approve with Signature",
-                    { signaturePng()?.let { onEvent(WorkflowEvent.ApproveWithSignature(it)) } },
-                    Modifier.weight(1f),
-                    kind = ButtonKind.Approve,
-                    enabled = !dialog.uploading && !state.busy,
-                    height = 42.dp,
-                    fontSize = 14.sp,
-                )
-            } else {
-                ReportButton(
-                    "Approve Without Signature",
-                    { onEvent(WorkflowEvent.ApproveWithoutSignature) },
-                    Modifier.weight(1f),
-                    kind = ButtonKind.Navy,
-                    enabled = !state.busy,
-                    height = 42.dp,
-                    fontSize = 14.sp,
-                )
-            }
+            ReportButton(
+                if (dialog.uploading) "Uploading..." else "Approve with Signature",
+                { signaturePng()?.let { onEvent(WorkflowEvent.ApproveWithSignature(it)) } },
+                Modifier.weight(1f),
+                kind = ButtonKind.Approve,
+                enabled = hasSignature && !dialog.uploading && !state.busy,
+                height = 42.dp,
+                fontSize = 14.sp,
+            )
         }
     }
 }

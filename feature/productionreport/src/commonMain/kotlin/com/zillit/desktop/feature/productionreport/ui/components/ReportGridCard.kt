@@ -86,6 +86,8 @@ internal fun ReportGridCard(
     links: List<CardLink>,
     pills: List<CardPill>,
     modifier: Modifier = Modifier,
+    /** The unread REPORT count, drawn beside the name (badges v2). */
+    nameBadge: Int = 0,
 ) {
     val colors = ReportTheme.colors
     val (source, hovered) = rememberHover()
@@ -108,14 +110,21 @@ internal fun ReportGridCard(
                 Eyebrow("Report", modifier = Modifier.weight(1f), strong = true)
                 StatusBadge(row.status, row.statusLabel)
             }
-            Text(
-                row.name.ifBlank { "Untitled" },
-                style = reportText(18.sp, FontWeight.Bold, 22.sp),
-                color = colors.textStrong,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            Row(
+                Modifier.padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    row.name.ifBlank { "Untitled" },
+                    style = reportText(18.sp, FontWeight.Bold, 22.sp),
+                    color = colors.textStrong,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                TabBadge(nameBadge)
+            }
         }
         Row(
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),

@@ -38,11 +38,15 @@ object ReportHistory {
     private const val REMINDER_BATCH_WINDOW_MS = 5_000L
     private const val DEFAULT_MAX = 50
 
-    fun entries(detail: ReportDetail, max: Int = DEFAULT_MAX): List<HistoryEntry> {
+    fun entries(
+        detail: ReportDetail,
+        members: List<SheetMember> = emptyList(),
+        max: Int = DEFAULT_MAX,
+    ): List<HistoryEntry> {
         val versionById = detail.revisions.associate { it.id to it.version }
         val all = decisions(detail.approvals, versionById) +
             sends(detail) +
-            reminders(detail.reminders) +
+            reminders(detail.reminders, members) +
             revisions(detail)
         return all.sortedByDescending { it.atMillis ?: 0L }.take(max)
     }
@@ -78,7 +82,8 @@ object ReportHistory {
                 )
             }
 
-    private fun reminders(reminders: List<ReportReminder>): List<HistoryEntry> {
+    /** One entry per batch; the sender resolved by member id (`getReminderSender`), verbatim when unknown. */
+    private fun reminders(reminders: List<ReportReminder>, members: List<SheetMember>): List<HistoryEntry> {
         val groups = mutableListOf<MutableList<ReportReminder>>()
         reminders.sortedBy { it.createdOn ?: 0L }.forEach { reminder ->
             val at = reminder.createdOn ?: 0L
@@ -90,12 +95,13 @@ object ReportHistory {
         }
         return groups.map { group ->
             val head = group.first()
+            val sender = reminderSender(members, head)
             HistoryEntry(
                 id = head.id,
                 stage = "",
                 action = "Reminder Sent",
-                by = head.sentBy.ifBlank { "-" },
-                role = head.sentByRole.ifBlank { "Unknown" },
+                by = sender.name.ifBlank { "-" },
+                role = sender.role.ifBlank { "Unknown" },
                 atMillis = head.createdOn,
                 message = head.message,
                 recipients = group.map { it.assigneeName.ifBlank { "assignee" } },

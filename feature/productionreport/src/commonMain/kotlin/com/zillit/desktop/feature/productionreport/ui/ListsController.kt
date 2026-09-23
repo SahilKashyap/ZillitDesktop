@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.productionreport.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
+import com.zillit.desktop.feature.productionreport.domain.BadgeSurface
 import com.zillit.desktop.feature.productionreport.domain.ManageTab
 import com.zillit.desktop.feature.productionreport.domain.ReportBadges
 import com.zillit.desktop.feature.productionreport.domain.ReportQuery
@@ -10,7 +12,6 @@ import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ReportSyncEvent
 import com.zillit.desktop.feature.productionreport.domain.SheetMetadata
-import com.zillit.desktop.feature.productionreport.domain.countApprovalAssignments
 import com.zillit.desktop.feature.productionreport.domain.receivedRows
 import com.zillit.desktop.feature.productionreport.domain.resolveSection
 import kotlinx.coroutines.CompletableDeferred
@@ -19,18 +20,19 @@ import kotlinx.coroutines.flow.conflate
 
 /**
  * The workspace, the lists and their live updates — the web's lazy tab
- * loader (`ProductionReportApp.jsx:1325-1340`), its loaders (`:1351-1532`),
- * the one-off approver probe (`:1289-1308`), the socket table (`:1538-1662`)
- * and the badge reads the tabs fire on entry.
+ * loader, its loaders, the socket table (`reportSocketState.js`,
+ * `useCloseOnReportGone`) and the badge reads the rows and tabs fire.
  */
 @Suppress("TooManyFunctions") // One loader per list the web keeps, and the socket and badge plumbing that feeds them.
 internal class ListsController(private val ctx: ReportContext) {
 
     private var lastLoadKey: String? = null
-    private var probed = false
     private var listening = false
     private var waitingForRights = false
     private var metadataRequest: CompletableDeferred<SheetMetadata?>? = null
+
+    /** Published leaves already read (`kind:id:count`) — a leaf is read again only when its count changes. */
+    private var publishedRead: Set<String> = emptySet()
 
     /** Comment frames go to the open thread; the VM sets this. */
     var onCommentEvent: (ReportSyncEvent) -> Unit = {}
@@ -50,7 +52,7 @@ internal class ListsController(private val ctx: ReportContext) {
             listen()
         }
         bootstrap()
-        if (viewer.ready) onRightsReady() else awaitRights()
+        if (viewer.ready) clampWorkspace() else awaitRights()
         lastLoadKey = null
         loadCurrentTab()
     }
@@ -92,7 +94,7 @@ internal class ListsController(private val ctx: ReportContext) {
                 if (viewer.ready) {
                     ctx.update { copy(viewer = viewer) }
                     waitingForRights = false
-                    onRightsReady()
+                    clampWorkspace()
                     lastLoadKey = null
                     loadCurrentTab()
                     return@launchWork
@@ -100,11 +102,6 @@ internal class ListsController(private val ctx: ReportContext) {
             }
             waitingForRights = false
         }
-    }
-
-    private fun onRightsReady() {
-        clampWorkspace()
-        probeApprovals()
     }
 
     /** E1 + E9: never leave a tab or section the user no longer has on screen. */
@@ -118,6 +115,7 @@ internal class ListsController(private val ctx: ReportContext) {
                 section = resolveSection(sections, section),
             )
         }
+        drainPublishedBadges()
     }
 
     private fun bootstrap() {
@@ -138,48 +136,36 @@ internal class ListsController(private val ctx: ReportContext) {
         }
     }
 
-    /** One metadata request at a time — the backend flagged bursts. */
+    /**
+     * One metadata request at a time — the backend flagged bursts. The
+     * answer settles a viewer's tab set; a failure is recorded so the tabs
+     * fail OPEN rather than reading "names nobody".
+     */
     suspend fun refreshMetadata(): SheetMetadata? {
         metadataRequest?.let { return it.await() }
         val project = ctx.projectId() ?: return null
         val request = CompletableDeferred<SheetMetadata?>()
         metadataRequest = request
         val meta = (ctx.repository.metadata(project) as? ZillitResult.Success)?.data
-        if (meta != null) {
-            ctx.update { copy(metadata = meta) }
-            clampWorkspace()
+        ctx.update {
+            copy(
+                metadata = meta ?: metadata,
+                metadataSettled = true,
+                metadataFailed = meta == null,
+            )
         }
+        clampWorkspace()
+        if (meta != null) loadCurrentTab()
         request.complete(meta)
         metadataRequest = null
         return meta
-    }
-
-    /**
-     * E8: a view-only user learns whether the approval flow reaches them.
-     * Once per start, fails OPEN, and never removes a tab it revealed.
-     */
-    private fun probeApprovals() {
-        val state = ctx.state
-        val project = ctx.projectId()
-        val needless = state.isPoster || state.me.isBlank()
-        if (probed || needless || project == null) return
-        probed = true
-        ctx.launchWork {
-            val statuses = ReportStatus.SIGNATURE_PHASE + ReportStatus.PendingInternalApproval
-            when (val rows = ctx.repository.reports(ReportQuery(approverId = ctx.state.me, statuses = statuses))) {
-                is ZillitResult.Success -> ctx.update {
-                    copy(approverReportCount = countApprovalAssignments(rows.data, me), approverProbeFailed = false)
-                }
-                is ZillitResult.Failure -> ctx.update { copy(approverProbeFailed = true) }
-            }
-            clampWorkspace()
-        }
     }
 
     /** E10: load the tab on screen, once per tab + section + rights answer. */
     fun loadCurrentTab() {
         val state = ctx.state
         if (state.workspace != Workspace.Manage || ctx.projectId() == null) return
+        if (state.tab !in state.manageTabs) return
         val key = "${state.tab}_${if (state.tab == ManageTab.Approvals) state.activeSection else ""}:${state.isPoster}"
         if (key == lastLoadKey) return
         lastLoadKey = key
@@ -192,7 +178,7 @@ internal class ListsController(private val ctx: ReportContext) {
             }
             ManageTab.Published -> loadPublished()
         }
-        readVisibleBadges()
+        drainPublishedBadges()
     }
 
     /** Drafts: the whole project for authors, approver-scoped for everyone else. */
@@ -215,11 +201,15 @@ internal class ListsController(private val ctx: ReportContext) {
         }
     }
 
+    /**
+     * Sent is the PROJECT's signature phase, not "reports I made": the
+     * sub-tab is already poster-gated, so a second author sees a colleague's
+     * sent report too (the creator scope hid it).
+     */
     fun loadSent() {
         val project = ctx.projectId() ?: return
-        val me = ctx.state.me.takeIf { it.isNotBlank() } ?: return
         load(
-            ReportQuery(projectId = project, createdById = me, statuses = ReportStatus.SIGNATURE_PHASE),
+            ReportQuery(projectId = project, statuses = ReportStatus.SIGNATURE_PHASE),
             select = { sent },
             store = { list -> copy(sent = list) },
         )
@@ -228,7 +218,7 @@ internal class ListsController(private val ctx: ReportContext) {
     /**
      * The approver-scoped fetch behind Received (and a view-only user's
      * Finalized). Received keeps only signature-phase reports where I hold a
-     * current-round FINAL request, and updates the involvement count.
+     * current-round FINAL request.
      */
     fun loadApproverSheets(received: Boolean) {
         ctx.launchWork { refreshMetadata() }
@@ -241,7 +231,6 @@ internal class ListsController(private val ctx: ReportContext) {
                     } else {
                         lists.copy(finalized = ReportList(loaded = true))
                     },
-                    approverReportCount = 0,
                 )
             }
             return
@@ -252,10 +241,7 @@ internal class ListsController(private val ctx: ReportContext) {
                 ReportQuery(approverId = me, statuses = statuses),
                 select = { this.received },
                 store = { copy(received = it) },
-            ) { fetched, _ ->
-                ctx.update { copy(approverReportCount = countApprovalAssignments(fetched, me)) }
-                receivedRows(fetched, me)
-            }
+            ) { fetched, _ -> receivedRows(fetched, me) }
         } else {
             load(
                 ReportQuery(approverId = me, statuses = statuses),
@@ -312,7 +298,6 @@ internal class ListsController(private val ctx: ReportContext) {
                     )
                 }
             }
-            readVisibleBadges()
         }
     }
 
@@ -323,7 +308,7 @@ internal class ListsController(private val ctx: ReportContext) {
         ctx.launchWork {
             ctx.services.badges.leaves.conflate().collect { leaves ->
                 ctx.update { copy(badges = ReportBadges.from(leaves)) }
-                readVisibleBadges()
+                drainPublishedBadges()
             }
         }
     }
@@ -337,8 +322,11 @@ internal class ListsController(private val ctx: ReportContext) {
             return
         }
         when (event.name) {
-            DELETED -> event.reportId?.let { id -> ctx.update { copy(lists = lists.without(id)) } }
-            VOIDED -> {
+            ReportSyncEvent.DELETED -> event.reportId?.let { id ->
+                ctx.update { copy(lists = lists.without(id)) }
+                closeGone(reportId = id, requestIds = emptyList(), notice = REPORT_DELETED_NOTICE)
+            }
+            ReportSyncEvent.VOIDED -> {
                 event.reportId?.let { id ->
                     ctx.update {
                         copy(
@@ -348,6 +336,7 @@ internal class ListsController(private val ctx: ReportContext) {
                         )
                     }
                 }
+                closeGone(reportId = null, requestIds = event.requestIds, notice = REQUEST_VOIDED_NOTICE)
                 loadDrafts()
                 loadSent()
                 loadApproverSheets(received = true)
@@ -391,41 +380,96 @@ internal class ListsController(private val ctx: ReportContext) {
     }
 
     /**
-     * The reads the tabs fire on entry: Approvals drains unmapped units and
-     * reads the visible section's approval units; Published clears its
-     * comment tab and each published report's unread thread.
+     * `useCloseOnReportGone`: a dialog showing a report deleted elsewhere,
+     * or acting on a superseded request, closes with one notice — and so
+     * does the editor holding that report. A BUSY confirm is this user's own
+     * delete in flight and closes itself when that settles.
      */
-    fun readVisibleBadges() {
+    private fun closeGone(reportId: String?, requestIds: List<String>, notice: String) {
         val state = ctx.state
-        if (state.workspace != Workspace.Manage || state.editor != null) return
-        val badges = state.badges
-        when (state.tab) {
-            ManageTab.Approvals -> {
-                if (badges.unmapped > 0) ctx.services.badges.readUnits(badges.unmappedUnits)
-                val (count, units) = when (state.activeSection) {
-                    ApprovalSection.Sent -> badges.approvalSentUnits to ReportBadges.SENT_UNITS
-                    ApprovalSection.Received -> badges.approvalReceivedUnits to ReportBadges.RECEIVED_UNITS
-                    ApprovalSection.Finalized -> badges.finalized to ReportBadges.FINALIZED_UNITS
-                }
-                if (count > 0) ctx.services.badges.readUnits(units)
-            }
-            ManageTab.Published -> {
-                if (badges.published > 0) ctx.services.badges.readCommentTab("published")
-                state.lists.published.rows
-                    .filter { (badges.commentUnreadByReport[it.id] ?: 0) > 0 }
-                    .forEach { ctx.services.badges.readCommentThread(it.id) }
-            }
-            ManageTab.Drafts -> Unit
+        val gone = state.dialog.isGone(reportId, requestIds) || state.pdf.isGone(reportId) ||
+            (reportId != null && state.editor?.reportId == reportId)
+        if (!gone) return
+        ctx.update {
+            copy(
+                dialog = if (dialog.isGone(reportId, requestIds)) null else dialog,
+                pdf = if (pdf.isGone(reportId)) null else pdf,
+                editor = if (reportId != null && editor?.reportId == reportId) null else editor,
+                busy = if (dialog.isGone(reportId, requestIds)) false else busy,
+            )
+        }
+        ctx.toast(notice, isError = true)
+    }
+
+    private fun PdfOverlay?.isGone(reportId: String?): Boolean =
+        this != null && reportId != null && this.reportId == reportId
+
+    @Suppress("CyclomaticComplexMethod") // One line per dialog that can name a report or a request.
+    private fun ReportDialog?.isGone(reportId: String?, requestIds: List<String>): Boolean = when (this) {
+        null -> false
+        is ReportDialog.Confirm -> !busy && reportId != null && this.reportId == reportId
+        is ReportDialog.Publish -> report.id == reportId
+        is ReportDialog.Approve -> report.id == reportId || request.id in requestIds
+        is ReportDialog.Reject -> report.id == reportId || request.id in requestIds
+        is ReportDialog.ReminderCompose -> report.id == reportId
+        is ReportDialog.Reminders -> this.reportId == reportId
+        is ReportDialog.Comments -> this.reportId == reportId
+        is ReportDialog.SendPicker -> reportId != null && this.reportId == reportId
+        is ReportDialog.SendForChat -> !sending && report.id == reportId
+        is ReportDialog.DocDistConfirm -> report.id == reportId
+        else -> false
+    }
+
+    // Badges --------------------------------------------------------------------------------
+
+    /**
+     * One report's badges of one kind on the open list, read when the row is
+     * opened (View, Edit, History, Approve, Reject, Publish, its comments).
+     * A poster off `final_approver_ids` has no Received section yet can hold
+     * a request on their own report; opening it from Sent clears those
+     * received leaves too, or they stay on the tile for good.
+     */
+    fun readRowBadge(reportId: String, kind: BadgeKind) {
+        val state = ctx.state
+        if (!state.viewer.ready) return
+        val surface = state.badgeSurface ?: return
+        if (state.badges.count(surface, kind, reportId) > 0) {
+            ctx.services.badges.readBadge(surface, kind, reportId)
+        }
+        val receivedHidden = ApprovalSection.Received !in state.sections
+        if (surface == BadgeSurface.Sent && receivedHidden &&
+            state.badges.count(BadgeSurface.Received, kind, reportId) > 0
+        ) {
+            ctx.services.badges.readBadge(BadgeSurface.Received, kind, reportId)
         }
     }
 
+    /**
+     * Published clears whole, keyed on its unread leaves (`useReadBadgesOnEntry`):
+     * while the tab is on screen, and — the app-level drain — whenever the tab
+     * is NOT one this user has, since nothing else could ever clear those rows.
+     */
+    private fun drainPublishedBadges() {
+        val state = ctx.state
+        if (!state.viewer.ready || (!state.isPoster && !state.metadataSettled)) return
+        val onScreen = state.workspace == Workspace.Manage && state.tab == ManageTab.Published && state.editor == null
+        val hidden = ManageTab.Published !in state.manageTabs
+        if (!onScreen && !hidden) return
+        val leaves = state.badges.leaves(BadgeSurface.Published)
+        val keys = leaves.map { "${it.kind.wire}:${it.reportId}:${it.unread}" }.toSet()
+        leaves.zip(keys).forEach { (leaf, key) ->
+            if (key !in publishedRead) ctx.services.badges.readBadge(BadgeSurface.Published, leaf.kind, leaf.reportId)
+        }
+        publishedRead = keys
+    }
+
     private companion object {
-        const val DELETED = "production_report:previous_report:deleted"
-        const val VOIDED = "productionreport:approval:voided"
         const val REMINDER = "productionreport:approval:reminder:sent"
         const val APPROVED = "productionreport:approval:approved"
         const val REJECTED = "productionreport:approval:rejected"
         const val RIGHTS_POLLS = 30
         const val RIGHTS_POLL_MS = 1_000L
+        const val REPORT_DELETED_NOTICE = "This production report was deleted."
+        const val REQUEST_VOIDED_NOTICE = "This approval request is no longer active."
     }
 }

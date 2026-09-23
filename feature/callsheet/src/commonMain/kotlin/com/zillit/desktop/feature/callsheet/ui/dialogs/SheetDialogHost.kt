@@ -43,8 +43,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.callsheet.domain.ApprovalStatusEntry
 import com.zillit.desktop.feature.callsheet.domain.HistoryEntry
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
+import com.zillit.desktop.feature.callsheet.domain.reminderSender
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
-import com.zillit.desktop.feature.callsheet.ui.ListEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetUiState
@@ -77,6 +77,7 @@ internal fun SheetDialogHost(state: SheetUiState, onEvent: (SheetEvent) -> Unit,
             onCancel = dismiss,
             secondaryLabel = dialog.secondaryLabel,
             onSecondary = { onEvent(DialogEvent.ConfirmSecondary) },
+            busy = state.busy,
         )
         is SheetDialog.TemplatePicker -> TemplatePickerDialog(dialog, onEvent)
         is SheetDialog.DraftName -> DraftNameDialog(dialog, onEvent)
@@ -92,7 +93,6 @@ internal fun SheetDialogHost(state: SheetUiState, onEvent: (SheetEvent) -> Unit,
         is SheetDialog.Reject -> RejectDialog(state, dialog, onEvent)
         is SheetDialog.ReminderCompose -> ReminderComposeDialog(state, dialog, onEvent)
         is SheetDialog.ReminderView -> ReminderViewDialog(state, dialog, dismiss)
-        is SheetDialog.ChatPicker -> ChatPickerDialog(state, dialog, onEvent)
         is SheetDialog.DocDistConfirm -> ConfirmModal(
             title = "Publish to Document Distribution",
             message = "Publish \"${dialog.fileName}\" to the Document Distribution library?",
@@ -463,27 +463,33 @@ private fun StatusRow(entry: ApprovalStatusEntry) {
 
 // Reminder, chat, Document Distribution --------------------------------------------------------------------------
 
-/** "Reminder" — who reminded (by id, then name — the web printed the raw id), when, and the message. */
+/**
+ * "Reminder" — who reminded, when, and the message. `sent_by` carries the
+ * sender's member id, resolved to their current name and designation
+ * (`reminderSender`), or shown verbatim when it resolves to nobody — a
+ * departed member, or a reminder written back when the field held a name.
+ */
 @Composable
 private fun ReminderViewDialog(state: SheetUiState, dialog: SheetDialog.ReminderView, onClose: () -> Unit) {
     val colors = SheetTheme.colors
     val reminder = dialog.reminder
-    val member = state.member(reminder.sentById)
+    val sender = reminderSender(state.members, reminder)
     SheetModal("Reminder", onClose) {
         Row(
             Modifier.padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Face(reminder.sentById, member?.fullName ?: reminder.sentBy, 36.dp)
+            Face(reminder.sentById.ifBlank { reminder.sentBy }, sender.name, 36.dp)
             Column {
                 Text(
-                    member?.fullName ?: reminder.sentBy.ifBlank { "-" },
+                    sender.name.ifBlank { "-" },
                     style = sheetText(14.sp, FontWeight.Medium),
                     color = colors.textPrimary,
                 )
-                val role = member?.designation?.ifBlank { null } ?: reminder.sentByRole
-                if (role.isNotBlank()) Text(role.localised(), style = sheetText(12.sp), color = colors.textMeta)
+                if (sender.role.isNotBlank()) {
+                    Text(sender.role.localised(), style = sheetText(12.sp), color = colors.textMeta)
+                }
             }
         }
         Text(
@@ -503,49 +509,6 @@ private fun ReminderViewDialog(state: SheetUiState, dialog: SheetDialog.Reminder
                 .border(1.dp, colors.border, RoundedCornerShape(6.dp))
                 .padding(12.dp),
         )
-    }
-}
-
-/** "Chat with Approver" / "Chat with Creator": a Chat button per person. */
-@Composable
-private fun ChatPickerDialog(state: SheetUiState, dialog: SheetDialog.ChatPicker, onEvent: (SheetEvent) -> Unit) {
-    val colors = SheetTheme.colors
-    SheetModal(dialog.title, { onEvent(DialogEvent.Dismiss) }) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            dialog.userIds.forEach { id ->
-                val member = state.member(id)
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, colors.border, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Face(id, member?.fullName ?: "-", 32.dp)
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            member?.fullName ?: "-",
-                            style = sheetText(14.sp, FontWeight.Medium),
-                            color = colors.textPrimary,
-                            maxLines = 1,
-                        )
-                        member?.designation?.takeIf { it.isNotBlank() }?.let {
-                            Text(it.localised(), style = sheetText(12.sp), color = colors.textMeta, maxLines = 1)
-                        }
-                    }
-                    SheetButton(
-                        "Chat",
-                        { onEvent(ListEvent.ChatWith(id)) },
-                        kind = ButtonKind.Warning,
-                        icon = ZillitIcons.Chat,
-                        fontSize = 12.sp,
-                        height = 30.dp,
-                    )
-                }
-            }
-        }
     }
 }
 

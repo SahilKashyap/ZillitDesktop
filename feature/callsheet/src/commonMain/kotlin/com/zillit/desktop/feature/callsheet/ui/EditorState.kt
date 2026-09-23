@@ -70,6 +70,13 @@ data class EditorState(
 
     val isNew: Boolean get() = sheetId == null
 
+    /**
+     * ZL-21539: "Save as Template" only while CREATING a document (a saved
+     * template opened for editing included) — never on an existing sheet,
+     * where it would force-close the editor over unsaved edits.
+     */
+    val offersSaveAsTemplate: Boolean get() = isNew
+
     /** The header's Send for Signature: a saved, unlocked sheet. */
     val offersSignature: Boolean
         get() = sheetId != null && sendActions(status ?: CallSheetStatus.Draft).sendForSignature

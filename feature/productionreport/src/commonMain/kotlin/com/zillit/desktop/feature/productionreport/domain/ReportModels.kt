@@ -124,6 +124,7 @@ data class ReportReminder(
     val approvalRequestId: String = "",
     val assigneeId: String = "",
     val assigneeName: String = "",
+    /** The sender's MEMBER ID since Sep 2026; a display NAME on older rows — see `reminderSender`. */
     val sentBy: String = "",
     val sentById: String = "",
     /** A designation KEY since ZL-20648 — translated on render, raw when unknown. */
@@ -206,6 +207,12 @@ data class SheetMember(
     val fullName: String,
     val department: String = "",
     val designation: String = "",
+    /**
+     * The designation's untranslated label KEY (`2nd_assistant_director_label`)
+     * — what a reminder's `sent_by_role` carries (ZL-20648), so the reader
+     * translates it in their own locale.
+     */
+    val designationKey: String = "",
     /**
      * Their standing on the production. Null on older cached rows, which is
      * treated as accepted — never a reason to hide someone.

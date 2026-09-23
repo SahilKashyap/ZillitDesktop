@@ -241,7 +241,8 @@ enum class SetupModal(val slug: String, val title: String, val eyebrow: String, 
         "po_setup",
         "Purchase Order Entry Setup",
         "POs",
-        "Defaults for the PO module — description formatting, rental-split handling, and auto-assignment rules.",
+        "Defaults for the PO module — description formatting, rental-split handling, the asset register rule, " +
+            "and auto-assignment rules.",
     ),
     Invoices(
         "invoices_setup",

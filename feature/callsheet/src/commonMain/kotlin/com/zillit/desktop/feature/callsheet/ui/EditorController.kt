@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.callsheet.domain.missingDefaultTitles
 import com.zillit.desktop.feature.callsheet.domain.restoreCell
 import com.zillit.desktop.feature.callsheet.domain.restoreCellFromRemovedRow
 import com.zillit.desktop.feature.callsheet.domain.restoreRow
+import com.zillit.desktop.feature.callsheet.domain.shouldWriteApproverMeta
 import com.zillit.desktop.feature.callsheet.domain.updateCell
 import com.zillit.desktop.feature.callsheet.domain.withColumnRestored
 import com.zillit.desktop.feature.callsheet.domain.withLineRestored
@@ -377,7 +378,10 @@ internal class EditorController(private val ctx: SheetContext) {
     /**
      * Total days as typed; the shoot-day counter only when a NEW sheet still
      * shows the number it was handed; the approvers, which become the project
-     * default — and never an empty list.
+     * default. ZL-21468: an EMPTIED list is written too — the PUT merges, so
+     * omitting the key left the removed approver in the default and reopening
+     * seeded them straight back — but only when the editor opened with
+     * approvers (`shouldWriteApproverMeta`).
      */
     private suspend fun writeCounters(project: String, editor: EditorState) {
         val shared = editor.document.shared
@@ -385,7 +389,8 @@ internal class EditorController(private val ctx: SheetContext) {
             totalDays = shared.totalDays.ifBlank { null },
             currentShootDay = editor.currentShootDay
                 .takeIf { it > 0 && shared.shootDayNumber.trim().toIntOrNull() == it },
-            finalApproverIds = shared.approverIds.ifEmpty { null },
+            finalApproverIds = shared.approverIds
+                .takeIf { shouldWriteApproverMeta(it, editor.initialApproverIds) },
         )
         if (update.isEmpty) return
         if (ctx.repository.saveMetadata(project, update) is ZillitResult.Success) {

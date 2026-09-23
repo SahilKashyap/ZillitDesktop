@@ -16,7 +16,10 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.productionreport.ReportRenderFixtures.NOW
 import com.zillit.desktop.feature.productionreport.ReportRenderFixtures.state
 import com.zillit.desktop.feature.productionreport.domain.ApprovalSection
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
+import com.zillit.desktop.feature.productionreport.domain.BadgeSurface
 import com.zillit.desktop.feature.productionreport.domain.ManageTab
+import com.zillit.desktop.feature.productionreport.domain.ReplaceTarget
 import com.zillit.desktop.feature.productionreport.domain.ReportBadges
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportHistory
@@ -29,6 +32,7 @@ import com.zillit.desktop.feature.productionreport.ui.ListView
 import com.zillit.desktop.feature.productionreport.ui.PdfOverlay
 import com.zillit.desktop.feature.productionreport.ui.ProductionReportScreen
 import com.zillit.desktop.feature.productionreport.ui.PublishDestination
+import com.zillit.desktop.feature.productionreport.ui.PublishType
 import com.zillit.desktop.feature.productionreport.ui.ReportDialog
 import com.zillit.desktop.feature.productionreport.ui.ReportEvent
 import com.zillit.desktop.feature.productionreport.ui.ReportUiState
@@ -159,33 +163,86 @@ class ReportScreenRenderTest {
                 to "Delete Production Report",
             ReportDialog.TemplatePicker(ReportRenderFixtures.templates, 1) to "Feature Film",
             ReportDialog.DraftName("Day 15") to "Draft Name",
-            ReportDialog.SendPicker("PR-014", fromEditor = true, choosing = true, emptySet(), emptySet())
-                to "For Signature",
-            ReportDialog.SendPicker("PR-014", fromEditor = false, choosing = false, setOf("u2"), setOf("u3"))
+            ReportDialog.SendPicker("PR-014", fromEditor = true, emptySet(), emptySet())
                 to "Select Recipients for Comments",
+            ReportDialog.SendPicker("PR-014", fromEditor = false, setOf("u2"), setOf("u3"))
+                to "Previously Selected",
             ReportDialog.SendPicker(
                 reportId = "PR-014",
                 fromEditor = false,
-                choosing = false,
                 selected = setOf("u2"),
                 initial = setOf("u3"),
                 pendingRemoval = listOf(ReportRenderFixtures.members[2]),
             ) to "Remove from comments?",
             ReportDialog.Publish(report) to "Where would you like to publish",
-            ReportDialog.Publish(report, choosingDestination = false, PublishDestination.Both, continuation = true)
+            ReportDialog.Publish(report, choosingDestination = false, PublishDestination.Both, PublishType.Continuation)
                 to "Publish as Continuation",
-            ReportDialog.Comments("PR-013", "Day 13", readOnly = false, ReportRenderFixtures.comments, loading = false)
-                to "Double-check the second unit wrap.",
-            ReportDialog.Comments("PR-013", "Day 13", readOnly = true) to "Day 13",
+            ReportDialog.Publish(
+                report,
+                choosingDestination = false,
+                type = PublishType.Replace,
+                replaceOptions = listOf(ReplaceTarget("c1", "Day0.pdf"), ReplaceTarget("c0", "Older.pdf")),
+                replaceChatId = "c1",
+            ) to "Document to replace",
+            ReportDialog.Comments(
+                "PR-013",
+                "Day 13",
+                readOnly = false,
+                comments = ReportRenderFixtures.comments,
+                loading = false,
+            ) to "Double-check the second unit wrap.",
+            ReportDialog.Comments("PR-013", "Day 13", readOnly = true, closedNote = "Only the creator may post.")
+                to "Only the creator may post.",
             ReportDialog.History("History", history) to "History",
-            ReportDialog.Approve(report, request) to "Approve Production Report",
+            ReportDialog.Approve(report, request) to "Choose how to approve",
+            ReportDialog.Approve(report, request, sign = true) to "Sign here",
             ReportDialog.Reject(report, request, reason = "Wrong call") to "Reject Production Report",
             ReportDialog.ReminderCompose(report) to "Send Reminder",
-            ReportDialog.Reminders(report.reminders) to "Please sign before call time",
-            ReportDialog.ChatPicker("Chat with Approver", listOf("u2", "u3")) to "Oliver Grant",
+            ReportDialog.Reminders(report.id, report.reminders) to "Please sign before call time",
+            ReportDialog.SendForChat(report) to "Shares this production report",
+            ReportDialog.SendForChat(report, selected = "u2", sending = true) to "Sending…",
             ReportDialog.DocDistConfirm(report, "Day 8.pdf", fromDraft = true) to "Publish to Document Distribution",
             ReportDialog.DocDistDone("Day 8.pdf") to "Day 8.pdf",
+            ReportDialog.Confirm(ConfirmAction.DeleteReport(report), "Delete", "Sure?", "Delete", true, busy = true)
+                to "Working…",
         )
+    }
+
+    @Test
+    fun `approve asks first, and the row menus offer Send for Chat`() {
+        val report = ReportRenderFixtures.received
+        render(state.copy(dialog = ReportDialog.Approve(report, report.approvals.single()))) {
+            onAllNodesWithText("Approve Without Signature").onLast().performClick()
+            waitForIdle()
+        }
+        assertTrue(WorkflowEvent.ApproveWithoutSignature in events, "got $events")
+        render(state.copy(dialog = ReportDialog.Approve(report, report.approvals.single()))) {
+            onAllNodesWithText("Approve with Signature").onLast().performClick()
+            waitForIdle()
+        }
+        assertTrue(WorkflowEvent.ChooseSignedApproval in events, "got $events")
+
+        render(approvals.copy(section = ApprovalSection.Received)) { pickFromRowMenu("Send for Chat") }
+        assertTrue(events.single() is ListEvent.SendForChat, "got $events")
+        render(state) { pickFromRowMenu("Send for Chat") }
+        assertTrue(events.single() is ListEvent.SendForChat, "got $events")
+    }
+
+    @Test
+    fun `row badges draw beside the name and on the kebab`() {
+        val badged = state.copy(
+            badges = ReportBadges(
+                drafts = 3,
+                rows = mapOf(
+                    BadgeSurface.Drafts to mapOf(
+                        BadgeKind.Report to mapOf("PR-014" to 2),
+                        BadgeKind.Comment to mapOf("PR-013" to 1),
+                    ),
+                ),
+            ),
+        )
+        render(badged) { seen("Day 14 — Studio 3") }
+        render(badged.copy(draftsView = ListView.Cards)) { seen("Day 13 — Harbour exterior") }
     }
 
     @Test
@@ -197,7 +254,13 @@ class ReportScreenRenderTest {
 
     @Test
     fun `my own comment's actions menu opens and starts an edit`() {
-        val thread = ReportDialog.Comments("PR-013", "Day 13", false, ReportRenderFixtures.comments, loading = false)
+        val thread = ReportDialog.Comments(
+            "PR-013",
+            "Day 13",
+            readOnly = false,
+            comments = ReportRenderFixtures.comments,
+            loading = false,
+        )
         render(state.copy(dialog = thread)) {
             onAllNodesWithContentDescription("Comment actions").onLast().performClick()
             waitForIdle()

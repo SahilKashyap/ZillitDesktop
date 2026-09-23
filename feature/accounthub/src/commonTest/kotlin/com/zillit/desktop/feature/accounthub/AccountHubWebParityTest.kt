@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.accounthub.data.PayrollSettingsDto
 import com.zillit.desktop.feature.accounthub.data.PurchaseOrderSetupDto
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AgreementUploads
+import com.zillit.desktop.feature.accounthub.domain.AssetFilters
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.InvoiceAlert
 import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
@@ -22,7 +23,9 @@ import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.ui.SpendSetup
 import com.zillit.desktop.feature.accounthub.ui.VendorFilter
 import com.zillit.desktop.feature.accounthub.ui.VendorsState
+import com.zillit.desktop.feature.accounthub.data.toJson
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -294,6 +297,63 @@ class AccountHubWebParityTest {
             """{"terms_attachment":{"name":"terms.pdf","media":"k/terms.pdf"}}""",
         ).toDomain()
         assertEquals("terms.pdf", real.termsDocument?.name)
+    }
+
+    /**
+     * The asset register rule reads the way the web's `mapAssetFiltersFromDb`
+     * does: `["*"]` is every type, bounds may arrive as strings, and a list
+     * may arrive JSON-encoded into a string.
+     */
+    @Test
+    fun `asset filters decode leniently`() {
+        val stored = json.decodeFromString(
+            PurchaseOrderSetupDto.serializer(),
+            """{"asset_filters":{"price":{"low":"500","high":null},"exp_type":["*"],"tags":"[\"camera\"]"}}""",
+        ).toDomain().assetFilters
+        assertEquals("500", stored.priceLow)
+        assertEquals("", stored.priceHigh)
+        assertEquals(emptyList(), stored.expTypes, "the every-type sentinel is the same as choosing none")
+        assertEquals(listOf("camera"), stored.tags)
+        val absent = json.decodeFromString(PurchaseOrderSetupDto.serializer(), "{}").toDomain()
+        assertEquals(AssetFilters(), absent.assetFilters)
+        val nulled = json.decodeFromString(PurchaseOrderSetupDto.serializer(), """{"asset_filters":null}""").toDomain()
+        assertEquals(AssetFilters(), nulled.assetFilters)
+    }
+
+    /** Written the way `mapAssetFiltersToDb` writes it: all-empty is null, and each empty sub-rule is null. */
+    @Test
+    fun `asset filters encode to the wire shape`() {
+        assertEquals(JsonNull, AssetFilters().toJson())
+        assertEquals(
+            """{"price":{"low":1500.0,"high":null},"exp_type":null,"tags":["camera","grip"]}""",
+            AssetFilters(priceLow = "1,500", tags = listOf("camera", "grip")).toJson().toString(),
+        )
+        assertEquals(
+            """{"price":null,"exp_type":["Purchase"],"tags":null}""",
+            AssetFilters(expTypes = listOf("Purchase")).toJson().toString(),
+        )
+    }
+
+    /** The web's `assetFilterError`, its chip count, and `buildAssetSummary`. */
+    @Test
+    fun `asset filters validate, count and spell themselves out`() {
+        assertNull(AssetFilters().error)
+        assertEquals("Price low must not exceed price high.", AssetFilters("900", "100").error)
+        assertEquals("Price low must be zero or more.", AssetFilters(priceLow = "-1").error)
+        assertEquals("Price high must be zero or more.", AssetFilters(priceHigh = "-1").error)
+        assertEquals(0, PurchaseOrderSetup().assetCount)
+        val full = AssetFilters("1", "2", listOf("Purchase"), listOf("t"))
+        assertEquals(3, PurchaseOrderSetup(assetFilters = full).assetCount)
+        assertEquals("Every line item on a posted or closed PO — no constraint set.", AssetFilters().summary("£"))
+        assertEquals(
+            "Lines on a posted or closed PO matching total £1,500–£2,000.50, and Consumables, " +
+                "and tagged camera or grip.",
+            AssetFilters("1500", "2000.5", listOf("Consumption"), listOf("camera", "grip")).summary("£"),
+        )
+        assertEquals(
+            "Lines on a posted or closed PO matching total ≤ £10.",
+            AssetFilters(priceHigh = "10").summary("£"),
+        )
     }
 
     // -- payroll settings ---------------------------------------------------

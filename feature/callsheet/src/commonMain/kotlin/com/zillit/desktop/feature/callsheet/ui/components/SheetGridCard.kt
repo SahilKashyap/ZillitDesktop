@@ -86,6 +86,8 @@ internal fun SheetGridCard(
     links: List<CardLink>,
     pills: List<CardPill>,
     modifier: Modifier = Modifier,
+    /** The unread REPORT number beside the title; nothing at zero. */
+    reportBadge: Int = 0,
 ) {
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
@@ -108,14 +110,22 @@ internal fun SheetGridCard(
                 Eyebrow("Call Sheet", modifier = Modifier.weight(1f), strong = true)
                 StatusBadge(row.status, row.statusLabel)
             }
-            Text(
-                row.name.ifBlank { "Untitled" },
-                style = sheetText(18.sp, FontWeight.Bold, 22.sp),
-                color = colors.textStrong,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            Row(
+                Modifier.padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // The name truncates on its own, so a long title never clips the number.
+                Text(
+                    row.name.ifBlank { "Untitled" },
+                    style = sheetText(18.sp, FontWeight.Bold, 22.sp),
+                    color = colors.textStrong,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                InlineCount(reportBadge)
+            }
         }
         Row(
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),

@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ReportTime
 import com.zillit.desktop.feature.productionreport.domain.ReportWeather
+import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.domain.SheetPayload
 import com.zillit.desktop.feature.productionreport.domain.WeatherValue
 import kotlinx.datetime.LocalDate
@@ -35,6 +36,7 @@ class ReportHistoryWeatherTest {
     )
 
     @Test
+    @Suppress("LongMethod") // One fixture, every entry kind, asserted in order.
     fun `history lists decisions, sends, reminder batches and revisions, newest first`() {
         val detail = ReportDetail(
             summary = summary,
@@ -85,7 +87,12 @@ class ReportHistoryWeatherTest {
             listOf("Reminder Sent", "Reminder Sent", "Approved", "Sent for Signature", "Updated", "Created"),
             entries.map { it.action },
         )
+        assertEquals("Author", entries[0].by, "a name in sent_by matches no member and shows verbatim")
         assertEquals(listOf("Uma", "Vic"), entries[1].recipients, "reminders five seconds apart are one batch")
+        val byId = detail.copy(reminders = detail.reminders.map { it.copy(sentBy = "author", sentByRole = "x_label") })
+        val resolved = ReportHistory.entries(byId, listOf(SheetMember("author", "Author Now", designation = "1st AD")))
+        assertEquals("Author Now", resolved[0].by, "an id resolves to the member's current name")
+        assertEquals("1st AD", resolved[0].role)
         assertEquals("v2", entries[2].revisionText)
         assertEquals("tidy", entries[4].message)
         assertEquals("Final Approved on 9000 • v2", entries[2].metaLine { it.toString() })

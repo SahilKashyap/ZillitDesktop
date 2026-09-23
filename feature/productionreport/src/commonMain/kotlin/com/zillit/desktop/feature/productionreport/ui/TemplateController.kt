@@ -82,13 +82,25 @@ internal class TemplateController(private val ctx: ReportContext) {
         }
     }
 
+    /** The confirm stays up (spinning) until the delete settles. A 404 still counts as done. */
     fun delete(template: SavedTemplate) {
+        ctx.update { copy(busy = true, dialog = (dialog as? ReportDialog.Confirm)?.copy(busy = true) ?: dialog) }
         ctx.launchWork {
-            when (val result = ctx.repository.deleteTemplate(template.id)) {
-                is ZillitResult.Success -> ctx.toast("Template deleted.")
-                is ZillitResult.Failure -> if (!result.error.isGone()) {
-                    ctx.toast("Delete failed: ${result.error.localised()}", isError = true)
+            val done = when (val result = ctx.repository.deleteTemplate(template.id)) {
+                is ZillitResult.Success -> {
+                    ctx.toast("Template deleted.")
+                    true
                 }
+                is ZillitResult.Failure -> {
+                    if (!result.error.isGone()) ctx.toast("Delete failed: ${result.error.localised()}", isError = true)
+                    result.error.isGone()
+                }
+            }
+            ctx.update {
+                copy(
+                    busy = false,
+                    dialog = if (done) null else (dialog as? ReportDialog.Confirm)?.copy(busy = false) ?: dialog,
+                )
             }
             ctx.lists.refreshSavedTemplates()
         }
@@ -97,11 +109,14 @@ internal class TemplateController(private val ctx: ReportContext) {
     /**
      * "Save as Template": the document shared with the whole project; the
      * server names it. Not held behind the review-restart prompt — a template
-     * save does not touch the report.
+     * save does not touch the report. Create-only (ZL-21539): a template is a
+     * starting layout, made while building one, never while editing an
+     * EXISTING report — where it would mark the document clean and force-close
+     * the editor, discarding unsaved edits.
      */
     fun saveAsTemplate() {
         val editor = ctx.state.editor ?: return
-        if (editor.savingTemplate || !ctx.state.isPoster) return
+        if (editor.savingTemplate || !ctx.state.isPoster || !editor.isNew) return
         ctx.update { copy(editor = editor.copy(savingTemplate = true)) }
         ctx.launchWork {
             when (val result = ctx.repository.createTemplate(editor.document)) {

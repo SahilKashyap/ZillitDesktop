@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.callsheet.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.callsheet.domain.BadgeKind
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.SheetComment
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
@@ -11,21 +12,24 @@ import com.zillit.desktop.feature.callsheet.domain.normalised
 /**
  * One sheet's comment thread beside its read-only preview — `CommentsModal.jsx`.
  *
- * Opening reads the thread's unread badge (only when it has one); another
- * user's add, edit or delete lands live; a stale read never overwrites a newer
- * one. Divergences, each fixing a web bug: the draft and an open edit never
- * leak into another sheet's thread (the dialog state is per opening); a failed
- * preview says so instead of "Loading preview…" forever; failures toast
- * instead of vanishing.
+ * Opening reads the thread's unread comment badge (only when it has one);
+ * another user's add, edit or delete lands live; a stale read never
+ * overwrites a newer one. Everyone who can see the row reads its thread, but
+ * only the creator and the internal-distribution recipients may post
+ * (`canPostComments`) — re-checked here, not only on screen. Divergences,
+ * each fixing a web bug: the draft and an open edit never leak into another
+ * sheet's thread (the dialog state is per opening); a failed preview says so
+ * instead of "Loading preview…" forever; failures toast instead of vanishing.
  */
 internal class CommentsController(private val ctx: SheetContext) {
 
     private var readSerial = 0L
 
     fun open(sheet: CallSheetSummary, readOnly: Boolean) {
-        if (ctx.state.unreadComments(sheet.id) > 0) ctx.services.badges.readCommentThread(sheet.id)
+        ctx.lists.readRowBadge(sheet.id, BadgeKind.Comment)
+        val locked = readOnly || !ctx.state.canPostComments(sheet)
         ctx.update {
-            copy(dialog = SheetDialog.Comments(sheetId = sheet.id, sheetName = sheet.name, readOnly = readOnly))
+            copy(dialog = SheetDialog.Comments(sheetId = sheet.id, sheetName = sheet.name, readOnly = locked))
         }
         loadPreview(sheet.id)
         read(sheet.id, quiet = false)

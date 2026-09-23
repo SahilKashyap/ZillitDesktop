@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDetail
 import com.zillit.desktop.feature.callsheet.domain.MissingTitle
 import com.zillit.desktop.feature.callsheet.domain.PickedDocument
+import com.zillit.desktop.feature.callsheet.domain.ReplaceTarget
 import com.zillit.desktop.feature.callsheet.domain.SheetBadges
 import com.zillit.desktop.feature.callsheet.domain.SheetHistory
 import com.zillit.desktop.feature.callsheet.domain.SheetPayload
@@ -31,6 +32,7 @@ import com.zillit.desktop.feature.callsheet.ui.ListEvent
 import com.zillit.desktop.feature.callsheet.ui.ListView
 import com.zillit.desktop.feature.callsheet.ui.PdfOverlay
 import com.zillit.desktop.feature.callsheet.ui.PermissionState
+import com.zillit.desktop.feature.callsheet.ui.PublishChoice
 import com.zillit.desktop.feature.callsheet.ui.PublishDestination
 import com.zillit.desktop.feature.callsheet.ui.PublishStep
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
@@ -115,7 +117,7 @@ class SheetScreenRenderTest {
 
     @Test
     fun `the tab bar shows the badges and a viewer without posting rights lands on Approvals`() {
-        render(state.copy(badges = SheetBadges(drafts = 2, approvals = 1))) {
+        render(state.copy(badges = SheetBadges(drafts = 2, sent = 1))) {
             seen("Call Sheet Creation")
             onAllNodesWithText("Published Call sheet").onFirst().performClick()
             waitForIdle()
@@ -172,8 +174,16 @@ class SheetScreenRenderTest {
             ) to "Remove from comments?",
             SheetDialog.ChatSend(sheet, selected = "u3") to "Send for Chat",
             SheetDialog.Publish(sheet) to "Where would you like",
-            SheetDialog.Publish(sheet, PublishStep.Type, PublishDestination.Both, continuation = true)
+            SheetDialog.Publish(sheet, PublishStep.Type, PublishDestination.Both, choice = PublishChoice.Continuation)
                 to "Publish as Continuation",
+            SheetDialog.Publish(
+                sheet,
+                PublishStep.Type,
+                PublishDestination.InApp,
+                choice = PublishChoice.Replace,
+                replaceTargets = listOf(ReplaceTarget("m1", "CallSheet_CS-012.pdf")),
+                replaceChatId = "m1",
+            ) to "Document to replace",
             SheetDialog.AttachDocument(sheet, picked, caption = "Map") to "Attach Document",
             SheetDialog.AttachDocument(sheet, picked, withPublish = true) to "Publish with a Document",
             SheetDialog.Comments("CS-013", "Day 13", readOnly = false, SheetRenderFixtures.comments, loading = false)
@@ -181,11 +191,11 @@ class SheetScreenRenderTest {
             SheetDialog.Comments("CS-013", "Day 13", readOnly = true) to "Day 13",
             SheetDialog.History("History", history) to "History",
             SheetDialog.ApprovalStatus("Approval Status", status) to "Oliver Grant",
-            SheetDialog.Approve(sheet, request) to "Approve Call Sheet",
+            SheetDialog.Approve(sheet, request) to "Choose how to approve this call sheet:",
+            SheetDialog.Approve(sheet, request, sign = true) to "Draw your signature here",
             SheetDialog.Reject(sheet, request, reason = "Wrong call") to "Reject Call Sheet",
             SheetDialog.ReminderCompose(sheet) to "Send Reminder",
             SheetDialog.ReminderView(sheet.reminders.single()) to "Please sign before call time",
-            SheetDialog.ChatPicker("Chat with Approver", listOf("u2", "u3")) to "Oliver Grant",
             SheetDialog.DocDistConfirm(sheet, "Day 8.pdf", fromDraft = true) to "Publish to Document Distribution",
             SheetDialog.DocDistDone("Day 8.pdf") to "Day 8.pdf",
         )

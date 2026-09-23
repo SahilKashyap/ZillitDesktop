@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.productionreport.ui.pages
 
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.canApproveReject
@@ -21,11 +22,9 @@ import com.zillit.desktop.feature.productionreport.ui.theme.ReportIcons
 /**
  * Each list's row actions, one definition for the kebab and the card — the
  * web's `rowActions` (Drafts) and the three Approvals sub-tabs' menus, with
- * their gates (`DraftTab.jsx:158-210`, `ApprovalsTab.jsx:424-498, 1051-1105, 1552-1576`).
+ * their gates. Comment counts ride the kebab; REPORT counts sit beside the
+ * name (`unreadFor` / `reportUnreadFor`).
  */
-
-/** Chat is not offered while a report is a draft, final-approved or published. */
-private val NO_CHAT = setOf(ReportStatus.Draft, ReportStatus.Published, ReportStatus.ApprovedForPublish)
 
 /** Comment needs a thread to exist, unless unread comments are waiting. */
 private val NO_COMMENT = setOf(ReportStatus.Draft, ReportStatus.Published)
@@ -64,6 +63,8 @@ internal fun draftMenu(
             fromDraft = true,
             onEvent,
         ) else null,
+        // Not gated on posting rights: anyone who can see the row may share its PDF.
+        sendForChatAction(row, onEvent),
         if (canPost) deleteAction(row, onEvent) else null,
     )
 }
@@ -73,17 +74,8 @@ internal fun sentMenu(state: ReportUiState, row: ReportSummary, onEvent: (Report
     return listOfNotNull(
         viewAction(row, onEvent),
         historyAction(state, row, "Approval History", onEvent),
-        if (row.status !in NO_CHAT) {
-            MenuEntry.Action(
-                "chat",
-                "Chat",
-                ZillitIcons.Chat,
-                MenuTone.Info,
-            ) { onEvent(ListEvent.ChatWithApprovers(row)) }
-        } else {
-            null
-        },
         if (row.status !in NO_COMMENT || unread > 0) commentAction(row, unread, readOnly = false, onEvent) else null,
+        sendForChatAction(row, onEvent),
         MenuEntry.Divider,
         if (!row.status.locked) MenuEntry.Action(
             "edit",
@@ -100,6 +92,7 @@ internal fun sentMenu(state: ReportUiState, row: ReportSummary, onEvent: (Report
         } else {
             null
         },
+        // Files under the MAIN tool root — a document out for signature had no way into the library otherwise.
         if (state.canDistribute && !row.status.locked) docDistAction(row, fromDraft = false, onEvent) else null,
         if (!row.status.locked) deleteAction(row, onEvent) else null,
     )
@@ -121,17 +114,8 @@ internal fun receivedMenu(state: ReportUiState, row: ReportSummary, onEvent: (Re
         },
         viewAction(row, onEvent),
         historyAction(state, row, "Approval History", onEvent),
-        if (row.status !in NO_CHAT) {
-            MenuEntry.Action(
-                "chat",
-                "Chat",
-                ZillitIcons.Chat,
-                MenuTone.Info,
-            ) { onEvent(ListEvent.ChatWithCreator(row)) }
-        } else {
-            null
-        },
         if (row.status !in NO_COMMENT || unread > 0) commentAction(row, unread, readOnly = false, onEvent) else null,
+        sendForChatAction(row, onEvent),
         if (actionable) MenuEntry.Divider else null,
         if (actionable) MenuEntry.Action(
             "approve",
@@ -193,6 +177,16 @@ private fun commentAction(row: ReportSummary, unread: Int, readOnly: Boolean, on
         onEvent(ListEvent.OpenComments(row, readOnly = readOnly || row.status == ReportStatus.ApprovedForPublish))
     }
 
+/** ZL-21415: the PDF into a 1:1 chat — never once final-approved or published. */
+private fun sendForChatAction(row: ReportSummary, onEvent: (ReportEvent) -> Unit): MenuEntry.Action? =
+    if (row.status.locked) {
+        null
+    } else {
+        MenuEntry.Action("sendChat", "Send for Chat", ZillitIcons.Chat, MenuTone.Info) {
+            onEvent(ListEvent.SendForChat(row))
+        }
+    }
+
 private fun docDistAction(row: ReportSummary, fromDraft: Boolean, onEvent: (ReportEvent) -> Unit) =
     MenuEntry.Action("docdist", "Send to Document Distribution", ZillitIcons.Upload) {
         onEvent(WorkflowEvent.SendToDocDist(row, fromDraft))
@@ -211,9 +205,10 @@ internal fun cardLinks(entries: List<MenuEntry>, primaryKeys: Set<String>): List
                     "history" -> if (action.label == "Loading…") action.label else "History"
                     // The card's link row has a sixth of the width; the menu keeps the full wording.
                     "docdist" -> "Doc Distribution"
+                    "sendChat" -> "Chat"
                     else -> action.label
                 },
-                icon = if (action.key == "chat") ZillitIcons.Chat else null,
+                icon = if (action.key == "sendChat") ZillitIcons.Chat else null,
                 badge = action.badge,
                 enabled = action.enabled,
                 onClick = action.onClick,
@@ -237,3 +232,9 @@ internal fun cardPills(entries: List<MenuEntry>, primaryKeys: Set<String>): List
             }
             CardPill(label, action.icon, kind, tooltip, wide = action.key != "reminder", onClick = action.onClick)
         }
+
+/** A row's unread COMMENT count on the open list — the kebab's badge. */
+internal fun unreadFor(state: ReportUiState, row: ReportSummary): Int = state.rowBadge(row, BadgeKind.Comment)
+
+/** A row's unread REPORT count on the open list — the number beside its name. */
+internal fun reportUnreadFor(state: ReportUiState, row: ReportSummary): Int = state.rowBadge(row, BadgeKind.Report)

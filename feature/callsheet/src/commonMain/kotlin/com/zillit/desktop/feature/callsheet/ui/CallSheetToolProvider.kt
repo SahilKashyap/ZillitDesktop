@@ -1,7 +1,6 @@
 package com.zillit.desktop.feature.callsheet.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,8 +28,6 @@ class CallSheetToolProvider(
     private val viewModel: CallSheetViewModel,
     /** A crew member's photo for the sheet's faces; null draws initials. */
     private val loadAvatar: suspend (String) -> ImageBitmap? = { null },
-    /** Opens a one-to-one chat from this window — "Chat with Approver" / "Chat with Creator". */
-    private val openChat: ((navigator: WindowNavigator, userId: String, fullName: String) -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = CALL_SHEET_PATH
@@ -40,21 +37,22 @@ class CallSheetToolProvider(
     override val hostsOwnRoutes: Boolean = true
     override val defaultSize: DpSize = DpSize(1360.dp, 880.dp)
 
+    /**
+     * The window title by rights — "Call Sheet Creation" for posting users,
+     * "Drafts Call Sheet" for everyone else — once the rights have answered;
+     * the plain name until then.
+     */
+    override fun titleFor(route: WorkspaceRoute): String {
+        val state = viewModel.state.value
+        return if (state.viewer.ready) state.toolTitle else title
+    }
+
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
         var toast by remember { mutableStateOf<SheetEffect.Toast?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
-        DisposableEffect(viewModel, navigator) {
-            openChat?.let { open ->
-                viewModel.attachChat { userId, fullName ->
-                    open(navigator, userId, fullName)
-                    true
-                }
-            }
-            onDispose { viewModel.attachChat(null) }
-        }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

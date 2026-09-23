@@ -2,15 +2,20 @@ package com.zillit.desktop.feature.productionreport.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.productionreport.domain.BadgeKind
+import com.zillit.desktop.feature.productionreport.domain.ManageTab
+import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportHistory
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
-import com.zillit.desktop.feature.productionreport.domain.approverIdsOf
+import com.zillit.desktop.feature.productionreport.domain.SheetPayload
 import com.zillit.desktop.feature.productionreport.domain.deleteQuestion
 
 /**
  * The row actions every list shares: View (the server PDF), Delete, History,
- * Chat, and Published's Attach Document.
+ * Send for Chat, and Published's Attach Document. Opening a report reads its
+ * REPORT badge on the list it was opened from.
  */
+@Suppress("TooManyFunctions") // One function per row action.
 internal class RowActionsController(private val ctx: ReportContext) {
 
     fun onEvent(event: ListEvent) {
@@ -18,7 +23,10 @@ internal class RowActionsController(private val ctx: ReportContext) {
             is ListEvent.View -> view(event.report)
             ListEvent.ClosePdf -> ctx.update { copy(pdf = null) }
             ListEvent.DownloadPdf -> download()
-            is ListEvent.Edit -> ctx.editor.openExisting(event.report)
+            is ListEvent.Edit -> {
+                ctx.lists.readRowBadge(event.report.id, BadgeKind.Report)
+                ctx.editor.openExisting(event.report)
+            }
             is ListEvent.Delete -> ctx.update {
                 copy(
                     dialog = ReportDialog.Confirm(
@@ -27,13 +35,15 @@ internal class RowActionsController(private val ctx: ReportContext) {
                         message = deleteQuestion(event.report),
                         confirmLabel = "Delete",
                         danger = true,
+                        reportId = event.report.id,
                     ),
                 )
             }
             is ListEvent.OpenHistory -> history(event.report, event.title)
-            is ListEvent.ChatWithApprovers -> chatWithApprovers(event.report)
-            is ListEvent.ChatWithCreator -> chatWithCreator(event.report)
-            is ListEvent.ChatWith -> chatWith(event.userId)
+            is ListEvent.SendForChat -> openSendForChat(event.report)
+            is ListEvent.SearchChatRecipient -> updateChat { copy(search = event.query) }
+            is ListEvent.PickChatRecipient -> updateChat { copy(selected = event.userId) }
+            ListEvent.ConfirmSendForChat -> sendForChat()
             ListEvent.AttachDocument -> attach()
             else -> Unit
         }
@@ -41,6 +51,7 @@ internal class RowActionsController(private val ctx: ReportContext) {
 
     /** "Generating PDF", then the viewer — the web's `viewProductionReport`. */
     private fun view(report: ReportSummary) {
+        ctx.lists.readRowBadge(report.id, BadgeKind.Report)
         ctx.update { copy(pdf = PdfOverlay(reportId = report.id, title = report.name.ifBlank { "PDF View" })) }
         ctx.launchWork {
             when (val bytes = ctx.services.delivery.pdf(report.id)) {
@@ -78,17 +89,25 @@ internal class RowActionsController(private val ctx: ReportContext) {
         }
     }
 
-    /** Deletes after the confirm; the row leaves every list at once. */
+    /**
+     * Deletes after the confirm, which stays up (spinning) until the request
+     * settles: closed on success, kept on a refusal so the answer is read
+     * against the question. The row leaves every list at once.
+     */
     fun delete(report: ReportSummary) {
-        ctx.update { copy(busy = true) }
+        ctx.update {
+            copy(busy = true, dialog = (dialog as? ReportDialog.Confirm)?.copy(busy = true) ?: dialog)
+        }
         ctx.launchWork {
             when (val result = ctx.repository.delete(report.id)) {
                 is ZillitResult.Success -> {
-                    ctx.update { copy(busy = false, lists = lists.without(report.id)) }
+                    ctx.update { copy(busy = false, dialog = null, lists = lists.without(report.id)) }
                     ctx.toast("Deleted!")
                 }
                 is ZillitResult.Failure -> {
-                    ctx.update { copy(busy = false) }
+                    ctx.update {
+                        copy(busy = false, dialog = (dialog as? ReportDialog.Confirm)?.copy(busy = false) ?: dialog)
+                    }
                     ctx.toast(result.error.withPrefix("Delete failed: "), isError = true)
                 }
             }
@@ -98,17 +117,14 @@ internal class RowActionsController(private val ctx: ReportContext) {
     /** History needs the detail — list rows carry neither revisions nor reminders. */
     private fun history(report: ReportSummary, title: String) {
         if (ctx.state.historyLoadingId != null) return
+        ctx.lists.readRowBadge(report.id, BadgeKind.Report)
         ctx.update { copy(historyLoadingId = report.id) }
         ctx.launchWork {
             val detail = (ctx.repository.report(report.id) as? ZillitResult.Success)?.data
-            val entries = detail?.let { ReportHistory.entries(it) }
-                ?: ReportHistory.entries(
-                    com.zillit.desktop.feature.productionreport.domain.ReportDetail(
-                        report,
-                        com.zillit.desktop.feature.productionreport.domain.SheetPayload(),
-                    ),
-                )
-            val publishedTab = ctx.state.tab == com.zillit.desktop.feature.productionreport.domain.ManageTab.Published
+            val members = ctx.state.members
+            val entries = detail?.let { ReportHistory.entries(it, members) }
+                ?: ReportHistory.entries(ReportDetail(report, SheetPayload()), members)
+            val publishedTab = ctx.state.tab == ManageTab.Published
             val emptyText = if (title == "History" && publishedTab) {
                 "No history found for this production report."
             } else {
@@ -123,31 +139,49 @@ internal class RowActionsController(private val ctx: ReportContext) {
         }
     }
 
-    /** Sent's Chat: the report's approvers minus me, always through the picker (ZL-20652). */
-    private fun chatWithApprovers(report: ReportSummary) {
-        val ids = approverIdsOf(report).filter { it != ctx.state.me }
-        if (ids.isEmpty()) {
-            ctx.toast("No approver to chat with", isError = true)
-            return
-        }
-        ctx.update { copy(dialog = ReportDialog.ChatPicker("Chat with Approver", ids)) }
+    // Send for Chat (ZL-21415) --------------------------------------------------------
+
+    /** Anyone who can see a row may share its PDF — never once final-approved or published. */
+    private fun openSendForChat(report: ReportSummary) {
+        if (report.status.locked) return
+        ctx.update { copy(dialog = ReportDialog.SendForChat(report)) }
     }
 
-    private fun chatWithCreator(report: ReportSummary) {
-        val creator = report.createdById.trim()
-        if (creator.isEmpty() || creator == ctx.state.me) {
-            ctx.toast("No creator available to chat with", isError = true)
-            return
+    /**
+     * The saved PDF as a document message in a 1:1 chat with the chosen
+     * member. The picker stays up while it sends and on a failure, so the
+     * send can be retried; it closes only once the message is handed over.
+     */
+    private fun sendForChat() {
+        val dialog = ctx.state.dialog as? ReportDialog.SendForChat ?: return
+        val userId = dialog.selected ?: return
+        if (dialog.sending || dialog.report.status.locked || userId == ctx.state.me) return
+        updateChat { copy(sending = true) }
+        ctx.launchWork {
+            val report = dialog.report
+            val fileName = "ProductionReport_${report.name.ifBlank { report.id }}.pdf"
+            val outcome = when (val pdf = ctx.services.delivery.pdf(report.id)) {
+                is ZillitResult.Failure -> pdf
+                is ZillitResult.Success -> ctx.services.publishing.sendPdfToChat(userId, pdf.data, fileName)
+            }
+            when (outcome) {
+                is ZillitResult.Success -> {
+                    ctx.update { copy(dialog = if (dialog.sameAs(this.dialog)) null else this.dialog) }
+                    ctx.toast("Production report PDF sent to chat.")
+                }
+                is ZillitResult.Failure -> {
+                    updateChat { copy(sending = false) }
+                    ctx.toast(outcome.error.withPrefix("Couldn't send the PDF to chat: "), isError = true)
+                }
+            }
         }
-        ctx.update { copy(dialog = ReportDialog.ChatPicker("Chat with Creator", listOf(creator))) }
     }
 
-    private fun chatWith(userId: String) {
-        ctx.update { copy(dialog = null) }
-        val name = ctx.state.member(userId)?.fullName.orEmpty()
-        if (!ctx.services.chat.openChat(userId, name)) {
-            ctx.toast("Unable to open chat — chat integration is not available.", isError = true)
-        }
+    private fun ReportDialog.SendForChat.sameAs(other: ReportDialog?): Boolean =
+        (other as? ReportDialog.SendForChat)?.report?.id == report.id
+
+    private fun updateChat(change: ReportDialog.SendForChat.() -> ReportDialog.SendForChat) = ctx.update {
+        copy(dialog = (dialog as? ReportDialog.SendForChat)?.change() ?: dialog)
     }
 
     /** "Attach Document": PDFs posted into the unit chat alongside the live report. */

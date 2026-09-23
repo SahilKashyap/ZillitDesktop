@@ -202,14 +202,9 @@ fun SetupModalShell(
                             maxLines = 1,
                         )
                     }
+                    // The header keeps the section name, the Unsaved pill and
+                    // ×; Save sits in the footer (web 03f047d47).
                     if (dirty) Pill("Unsaved", tone = StatusTone.Pending, dot = true)
-                    ZillitButton(
-                        text = if (saving) "Saving…" else "Save changes",
-                        onClick = onSave,
-                        size = ButtonSize.Small,
-                        enabled = dirty && !saving,
-                        loading = saving,
-                    )
                     ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Close", onClick = onClose)
                 }
                 HairLine()
@@ -248,6 +243,13 @@ fun SetupModalShell(
                     FieldHint("to save")
                     Fill()
                     FieldHint("Changes apply to new transactions only")
+                    ZillitButton(
+                        text = if (saving) "Saving…" else "Save changes",
+                        onClick = onSave,
+                        size = ButtonSize.Small,
+                        enabled = dirty && !saving,
+                        loading = saving,
+                    )
                 }
             }
         }

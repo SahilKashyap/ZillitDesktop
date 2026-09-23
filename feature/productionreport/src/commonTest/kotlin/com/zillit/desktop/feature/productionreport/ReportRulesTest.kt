@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.productionreport.domain.PageCell
 import com.zillit.desktop.feature.productionreport.domain.PageRow
 import com.zillit.desktop.feature.productionreport.domain.RenderKind
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
+import com.zillit.desktop.feature.productionreport.domain.ReminderSender
 import com.zillit.desktop.feature.productionreport.domain.ReportReminder
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
@@ -18,6 +19,7 @@ import com.zillit.desktop.feature.productionreport.domain.SharedHeader
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.domain.SheetMetadata
 import com.zillit.desktop.feature.productionreport.domain.SheetPayload
+import com.zillit.desktop.feature.productionreport.domain.ViewOnlyTabs
 import com.zillit.desktop.feature.productionreport.domain.actionableRequest
 import com.zillit.desktop.feature.productionreport.domain.approvalCount
 import com.zillit.desktop.feature.productionreport.domain.approvalSections
@@ -25,17 +27,20 @@ import com.zillit.desktop.feature.productionreport.domain.approvalStatusEntries
 import com.zillit.desktop.feature.productionreport.domain.approverCandidates
 import com.zillit.desktop.feature.productionreport.domain.approverIdsFromReport
 import com.zillit.desktop.feature.productionreport.domain.canApproveReject
+import com.zillit.desktop.feature.productionreport.domain.canPostComments
 import com.zillit.desktop.feature.productionreport.domain.canPublish
-import com.zillit.desktop.feature.productionreport.domain.countApprovalAssignments
+import com.zillit.desktop.feature.productionreport.domain.crewCallFromCallSheet
 import com.zillit.desktop.feature.productionreport.domain.deleteQuestion
 import com.zillit.desktop.feature.productionreport.domain.filterDrafts
 import com.zillit.desktop.feature.productionreport.domain.formatDateTime
-import com.zillit.desktop.feature.productionreport.domain.hasApprovalInvolvement
+import com.zillit.desktop.feature.productionreport.domain.hasRequiredCallTimes
+import com.zillit.desktop.feature.productionreport.domain.isListedMember
 import com.zillit.desktop.feature.productionreport.domain.manageTabs
 import com.zillit.desktop.feature.productionreport.domain.receivedRows
 import com.zillit.desktop.feature.productionreport.domain.relativeLong
 import com.zillit.desktop.feature.productionreport.domain.relativeShort
 import com.zillit.desktop.feature.productionreport.domain.reminderAssigneeIds
+import com.zillit.desktop.feature.productionreport.domain.reminderSender
 import com.zillit.desktop.feature.productionreport.domain.resolveApproverIdsForSend
 import com.zillit.desktop.feature.productionreport.domain.resolveSection
 import com.zillit.desktop.feature.productionreport.domain.resolveSharedForTemplate
@@ -43,9 +48,12 @@ import com.zillit.desktop.feature.productionreport.domain.sendActions
 import com.zillit.desktop.feature.productionreport.domain.shootDayLabel
 import com.zillit.desktop.feature.productionreport.domain.shouldRegenerateEmployeeRows
 import com.zillit.desktop.feature.productionreport.domain.shouldShowReminderBell
+import com.zillit.desktop.feature.productionreport.domain.shouldWriteApproverMeta
 import com.zillit.desktop.feature.productionreport.domain.templateSectionTitles
 import com.zillit.desktop.feature.productionreport.domain.userReminders
+import com.zillit.desktop.feature.productionreport.domain.viewOnlyTabAccess
 import com.zillit.desktop.feature.productionreport.domain.visibleBadgeCount
+import com.zillit.desktop.feature.productionreport.domain.withCrewCall
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -92,13 +100,102 @@ class ReportRulesTest {
     )
 
     @Test
-    fun `posting rights open every tab, involvement opens drafts and approvals, anyone else the chat`() {
-        assertEquals(ManageTab.entries, manageTabs(isPoster = true, hasApprovalAccess = false))
+    fun `posting rights open every tab, and a viewer's tabs come from the two project lists alone`() {
+        assertEquals(ManageTab.entries, manageTabs(isPoster = true))
+        assertEquals(listOf(ManageTab.Drafts), manageTabs(isPoster = false, isInternalReceiver = true))
+        assertEquals(listOf(ManageTab.Approvals), manageTabs(isPoster = false, isFinalApprover = true))
         assertEquals(
             listOf(ManageTab.Drafts, ManageTab.Approvals),
-            manageTabs(isPoster = false, hasApprovalAccess = true),
+            manageTabs(isPoster = false, isFinalApprover = true, isInternalReceiver = true),
+            "Published is the authors' archive — never a viewer's",
         )
-        assertTrue(manageTabs(isPoster = false, hasApprovalAccess = false).isEmpty())
+        assertTrue(manageTabs(isPoster = false).isEmpty(), "named by neither list, nothing to do here")
+        assertEquals(
+            ViewOnlyTabs(drafts = true, approvals = true),
+            viewOnlyTabAccess(isFinalApprover = false, isInternalReceiver = false, metadataUnavailable = true),
+            "a FAILED metadata read fails open",
+        )
+        assertEquals(
+            ViewOnlyTabs(drafts = false, approvals = true),
+            viewOnlyTabAccess(isFinalApprover = true, isInternalReceiver = false, metadataUnavailable = false),
+        )
+    }
+
+    @Test
+    fun `list membership is text-compared and trimmed, and a blank id is on no list`() {
+        assertTrue(isListedMember(listOf(" 42 ", "x"), "42"))
+        assertFalse(isListedMember(listOf("42"), "4"))
+        assertFalse(isListedMember(listOf("", " "), ""))
+        assertFalse(isListedMember(emptyList(), null))
+    }
+
+    @Test
+    fun `only the creator and a comment recipient may post in a thread, by id never by name`() {
+        val mine = row(ReportStatus.PendingApproval, createdById = "me")
+        assertTrue(canPostComments(mine, "me", isInternalReceiver = false))
+        assertFalse(canPostComments(mine, "other", isInternalReceiver = false), "an approver reads, never writes")
+        assertTrue(canPostComments(mine, "other", isInternalReceiver = true))
+        assertFalse(canPostComments(mine, null, isInternalReceiver = false), "no id, no name fallback")
+    }
+
+    @Test
+    fun `an emptied approver list is written only when the editor opened with approvers`() {
+        assertTrue(shouldWriteApproverMeta(listOf("a"), emptyList()))
+        assertTrue(shouldWriteApproverMeta(emptyList(), listOf("a")), "a removal must reach the merging PUT")
+        assertFalse(shouldWriteApproverMeta(emptyList(), emptyList()), "a fresh template's [] is no statement")
+    }
+
+    @Test
+    fun `a reminder's sender is resolved by member id, else shown verbatim`() {
+        val members = listOf(SheetMember("u1", "Uma Now", designation = "Producer"), SheetMember("u2", "Vic", ""))
+        val byId = ReportReminder("m1", sentBy = "u1", sentByRole = "old_role_label")
+        assertEquals(ReminderSender("Uma Now", "Producer"), reminderSender(members, byId))
+        val noTitle = ReportReminder("m2", sentBy = "u2", sentByRole = "director_label")
+        assertEquals(ReminderSender("Vic", "director_label"), reminderSender(members, noTitle), "role falls back")
+        val legacy = ReportReminder("m3", sentBy = "Ankit Lava", sentByRole = "1st AD")
+        assertEquals(ReminderSender("Ankit Lava", "1st AD"), reminderSender(members, legacy), "a NAME matches nobody")
+    }
+
+    private fun times(vararg lines: Pair<String, String>) = SheetPayload(
+        rows = listOf(
+            PageRow(
+                0,
+                cells = listOf(
+                    PageCell(
+                        order = 0,
+                        title = "Call Times",
+                        columns = listOf(ColumnSpec(label = "Field"), ColumnSpec(label = "Value")),
+                        rows = lines.mapIndexed { i, (label, value) ->
+                            CellRow(i, listOf(CellValue(label), CellValue(value)))
+                        },
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun `send for signature needs every crew call and unit wrap line filled, when the layout has them`() {
+        assertTrue(hasRequiredCallTimes(times("Crew Call" to "06:30", "Unit Wrap" to "19:00")))
+        assertFalse(hasRequiredCallTimes(times("crew  call" to "", "Unit Wrap" to "19:00")))
+        assertFalse(hasRequiredCallTimes(times("Crew Call" to "06:30", "UNIT WRAP" to "  ")))
+        assertTrue(hasRequiredCallTimes(times("Shooting Call" to "")), "a layout without the lines is not held back")
+        assertTrue(hasRequiredCallTimes(SheetPayload()))
+    }
+
+    @Test
+    fun `the day's crew call is the call sheet's unit call, else its shooting call, into empty crew call lines`() {
+        assertEquals("07:30", crewCallFromCallSheet(times("Shooting Call" to "08:00", "Unit Call" to "7:30")))
+        assertEquals("08:00", crewCallFromCallSheet(times("Unit Call" to "", "Shooting Call" to "08:00")))
+        assertEquals("on set", crewCallFromCallSheet(times("Unit Call" to "on set")), "free text is kept as typed")
+        assertEquals("", crewCallFromCallSheet(times("Lunch" to "13:00")))
+        val filled = times("Crew Call" to "", "Crew Call" to "05:00", "Unit Wrap" to "").withCrewCall("07:30")
+        assertEquals(
+            listOf("07:30", "05:00", ""),
+            filled.rows.single().cells.single().rows.map { it.values[1].value },
+            "only an EMPTY crew call line takes the seed",
+        )
+        assertEquals(times("Crew Call" to ""), times("Crew Call" to "").withCrewCall(""), "no seed, no change")
     }
 
     @Test
@@ -127,44 +224,6 @@ class ReportRulesTest {
         assertEquals(0, visibleBadgeCount(3, rowCount = 0, loaded = true))
         assertEquals(3, visibleBadgeCount(3, rowCount = 2, loaded = true))
         assertEquals(0, visibleBadgeCount(-1, rowCount = 2, loaded = true))
-    }
-
-    @Test
-    fun `involvement is a named approver, a pending assignment, or a failed probe`() {
-        assertTrue(
-            hasApprovalInvolvement(
-                "me",
-                null,
-                false,
-                defaultApproverIds = listOf(" me "),
-                internalReceiverIds = emptyList(),
-            ),
-        )
-        assertTrue(
-            hasApprovalInvolvement(
-                "me",
-                null,
-                false,
-                defaultApproverIds = emptyList(),
-                internalReceiverIds = listOf("me"),
-            ),
-        )
-        assertTrue(hasApprovalInvolvement("me", 2, false, emptyList(), emptyList()))
-        assertFalse(hasApprovalInvolvement("me", 0, false, emptyList(), emptyList()))
-        assertFalse(hasApprovalInvolvement("me", null, false, emptyList(), emptyList()), "still asking is not involved")
-        assertTrue(hasApprovalInvolvement("me", null, true, emptyList(), emptyList()), "a failed probe fails open")
-    }
-
-    @Test
-    fun `only a pending request of the newest round counts as an assignment`() {
-        val reports = listOf(
-            row(ReportStatus.PendingApproval, listOf(request("a", "me", round = 1), request("b", "other", round = 2))),
-            row(ReportStatus.PendingApproval, listOf(request("c", "me", round = 2))),
-            row(ReportStatus.PendingApproval, listOf(request("d", "me", status = "APPROVED"))),
-            row(ReportStatus.PendingInternalApproval, listOf(request("e", "me", stage = "INTERNAL"))),
-        )
-        assertEquals(2, countApprovalAssignments(reports, "me"))
-        assertEquals(0, countApprovalAssignments(reports, ""))
     }
 
     @Test

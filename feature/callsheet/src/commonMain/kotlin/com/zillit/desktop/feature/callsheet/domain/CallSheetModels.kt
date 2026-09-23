@@ -213,6 +213,12 @@ data class SheetMember(
     val department: String = "",
     val departmentKey: String = department,
     val designation: String = "",
+    /**
+     * The designation as the wire names it (`armourer_label`) — what a
+     * reminder records as `sent_by_role`, so the label is resolved in the
+     * READER's locale (ZL-20648). Empty when the crew row carries none.
+     */
+    val designationKey: String = "",
     /** Their standing on the production; null on older cached rows, which counts as accepted. */
     val status: String? = null,
     val isAdmin: Boolean = false,

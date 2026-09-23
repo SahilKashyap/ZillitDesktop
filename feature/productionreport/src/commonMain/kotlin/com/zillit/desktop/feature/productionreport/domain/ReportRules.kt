@@ -25,15 +25,170 @@ enum class DraftChip(val label: String) { All("All"), Drafts("Drafts"), Comments
 /** `productionReportToolDisplayName`: posting users see the creation tool's name. */
 fun reportToolName(isPoster: Boolean): String = if (isPoster) "Production Report Creation" else "Production Report"
 
+/** Which tabs a VIEW-ONLY user gets — `shared/workflow/workflowTabs.js`. */
+data class ViewOnlyTabs(val drafts: Boolean, val approvals: Boolean)
+
 /**
- * `resolveManageTabs` as the shipped app feeds it: posting rights (or admin)
- * open all three; a view-only user the approval flow reaches gets Drafts
- * (read-only) and Approvals; anyone else has the chat alone.
+ * `viewOnlyTabAccess` (client, Sep 2026): a viewer can author nothing, so a
+ * tab shows only when there is something behind it to DO — Drafts iff named
+ * on `internal_distribution_receivers` (the comment surface), Approvals iff
+ * on `final_approver_ids`, Published never. Named by neither → no tabs. A
+ * FAILED metadata read fails OPEN: both lists ride one GET, and reading a
+ * 500 as "names nobody" would blank the module for a real approver.
  */
-fun manageTabs(isPoster: Boolean, hasApprovalAccess: Boolean): List<ManageTab> = when {
-    isPoster -> ManageTab.entries
-    hasApprovalAccess -> listOf(ManageTab.Drafts, ManageTab.Approvals)
-    else -> emptyList()
+fun viewOnlyTabAccess(
+    isFinalApprover: Boolean,
+    isInternalReceiver: Boolean,
+    metadataUnavailable: Boolean,
+): ViewOnlyTabs = if (metadataUnavailable) {
+    ViewOnlyTabs(drafts = true, approvals = true)
+} else {
+    ViewOnlyTabs(drafts = isInternalReceiver, approvals = isFinalApprover)
+}
+
+/**
+ * `resolveManageTabs`: posting rights (or admin) open all three — the crew-
+ * role matrix the web keeps only shapes users WITHOUT posting rights, and the
+ * desktop never took it (ZL-21387); a viewer's tabs come from the two project
+ * lists alone. The old "view-only involvement probe" is gone with the web's.
+ */
+fun manageTabs(
+    isPoster: Boolean,
+    isFinalApprover: Boolean = false,
+    isInternalReceiver: Boolean = false,
+    metadataUnavailable: Boolean = false,
+): List<ManageTab> {
+    if (isPoster) return ManageTab.entries
+    val access = viewOnlyTabAccess(isFinalApprover, isInternalReceiver, metadataUnavailable)
+    return listOfNotNull(
+        ManageTab.Drafts.takeIf { access.drafts },
+        ManageTab.Approvals.takeIf { access.approvals },
+    )
+}
+
+/**
+ * `isListedMember`: is this user on a project member-id list? Both sides
+ * trimmed and compared as text — the web's bare `includes` hid Approvals
+ * from a real approver whose id arrived as a number. A blank id is on no list.
+ */
+fun isListedMember(ids: List<String>, userId: String?): Boolean {
+    val me = userId?.trim().orEmpty()
+    if (me.isEmpty()) return false
+    return ids.any { it.trim() == me }
+}
+
+/**
+ * `canPostComments`: everyone who sees a row may open and read its thread;
+ * only the row's creator and the project's internal-distribution recipients
+ * may write in it. Matched by id only — the web's display-name fallback for a
+ * viewer with no member id is deliberately not taken (people are matched by
+ * id, never by name, throughout this module).
+ */
+fun canPostComments(row: ReportSummary, userId: String?, isInternalReceiver: Boolean): Boolean {
+    if (isInternalReceiver) return true
+    val me = userId?.trim().orEmpty()
+    return me.isNotEmpty() && row.createdById.trim() == me
+}
+
+/**
+ * `shouldWriteApproverMeta` (ZL-21468): the metadata PUT merges, so an
+ * EMPTIED approver list must be written, not omitted — but only when the
+ * editor OPENED with approvers. A fresh document carrying `[]` from its
+ * template must not clear the project default for everyone.
+ */
+fun shouldWriteApproverMeta(approverIds: List<String>, initialApproverIds: List<String>): Boolean =
+    approverIds.isNotEmpty() || initialApproverIds.isNotEmpty()
+
+/** A reminder's sender as the reader should see them — `getReminderSender`. */
+data class ReminderSender(val name: String, val role: String)
+
+/**
+ * `sent_by` holds the sender's MEMBER ID (a name on reminders written before
+ * that change). Found on the crew → their current name and designation, the
+ * designation falling back to the recorded `sent_by_role`; not found → both
+ * fields verbatim, which is how the older name-bearing rows still render.
+ */
+fun reminderSender(members: List<SheetMember>, reminder: ReportReminder): ReminderSender {
+    val member = members.firstOrNull { it.userId.isNotBlank() && it.userId.trim() == reminder.sentBy.trim() }
+        ?: return ReminderSender(reminder.sentBy, reminder.sentByRole)
+    return ReminderSender(
+        name = member.fullName.ifBlank { reminder.sentBy },
+        role = member.designation.ifBlank { reminder.sentByRole },
+    )
+}
+
+// Call times ----------------------------------------------------------------
+
+/** A `[label, value]` line of any section, as both documents keep day-level times. */
+private data class LabelledLine(val label: String, val value: String)
+
+/** Every line with a value column, across all cells; labels trimmed, single-spaced, lower-cased. */
+private fun SheetPayload.labelledLines(): List<LabelledLine> =
+    rows.flatMap { it.cells }
+        .flatMap { it.rows }
+        .filter { it.values.size >= 2 }
+        .map { line ->
+            LabelledLine(
+                label = line.values[0].value.trim().replace(Regex("\\s+"), " ").lowercase(),
+                value = line.values[1].value,
+            )
+        }
+
+private const val CREW_CALL = "crew call"
+private const val UNIT_WRAP = "unit wrap"
+private val CALL_SHEET_CREW_CALL = listOf("unit call", "shooting call")
+
+/**
+ * ZL-21398 — may this report go for signature? Every "Crew Call" and "Unit
+ * Wrap" line it carries must hold a value (payroll reads both). A layout
+ * without those lines has nothing to fill and is not held back.
+ */
+fun hasRequiredCallTimes(payload: SheetPayload): Boolean =
+    payload.labelledLines().all { line ->
+        (line.label != CREW_CALL && line.label != UNIT_WRAP) || line.value.isNotBlank()
+    }
+
+/**
+ * `crewCallFromCallSheet`: the crew call a call sheet states for its day —
+ * the "Unit Call" line's value, else the "Shooting Call" line's. A time cell
+ * stores epoch ms, folded to `HH:mm`; free text is kept as typed.
+ */
+fun crewCallFromCallSheet(callSheet: SheetPayload): String {
+    val lines = callSheet.labelledLines()
+    CALL_SHEET_CREW_CALL.forEach { label ->
+        val raw = lines.firstOrNull { it.label == label && it.value.isNotBlank() }?.value?.trim()
+        if (raw != null) return ReportTime.toWireTime(raw).ifBlank { raw }
+    }
+    return ""
+}
+
+/** `fillEmptyCrewCall`: the day's crew call into every EMPTY "Crew Call" line; a typed value stays. */
+fun SheetPayload.withCrewCall(value: String): SheetPayload {
+    if (value.isBlank()) return this
+    return copy(
+        rows = rows.map { row ->
+            row.copy(
+                cells = row.cells.map { cell ->
+                    cell.copy(
+                        rows = cell.rows.map { line ->
+                            val label = line.values.getOrNull(0)?.value?.trim()?.replace(Regex("\\s+"), " ")
+                            if (line.values.size >= 2 && label.equals(CREW_CALL, ignoreCase = true) &&
+                                line.values[1].value.isBlank()
+                            ) {
+                                line.copy(
+                                    values = line.values.mapIndexed { index, atom ->
+                                        if (index == 1) atom.copy(value = value) else atom
+                                    },
+                                )
+                            } else {
+                                line
+                            }
+                        },
+                    )
+                },
+            )
+        },
+    )
 }
 
 /**
@@ -59,43 +214,6 @@ fun visibleBadgeCount(count: Int, rowCount: Int, loaded: Boolean): Int = when {
     !loaded -> count
     rowCount > 0 -> count
     else -> 0
-}
-
-/**
- * `hasApprovalInvolvement`: listed as a default approver or comment receiver,
- * or holding a pending current-round request. [assignedReportCount] null is
- * "still asking" — not involved yet, so tabs reveal additively. A probe that
- * failed fails OPEN.
- */
-fun hasApprovalInvolvement(
-    userId: String?,
-    assignedReportCount: Int?,
-    probeFailed: Boolean,
-    defaultApproverIds: List<String>,
-    internalReceiverIds: List<String>,
-): Boolean {
-    val me = userId?.trim().orEmpty()
-    val named = me in defaultApproverIds.map { it.trim() } || me in internalReceiverIds.map { it.trim() }
-    if (me.isNotEmpty() && named) {
-        return true
-    }
-    if (assignedReportCount != null && assignedReportCount > 0) return true
-    return probeFailed
-}
-
-/**
- * `countApprovalAssignments`: reports where [userId] holds a CURRENT-round
- * request that is PENDING (a missing status reads as pending), at either stage.
- */
-fun countApprovalAssignments(reports: List<ReportSummary>, userId: String?): Int {
-    val me = userId?.trim().orEmpty()
-    if (me.isEmpty()) return 0
-    return reports.count { report ->
-        listOf("FINAL", "INTERNAL").any { stage ->
-            report.approvals.latestRound(stage)
-                .any { it.assigneeId.trim() == me && (it.isPending || it.status.isBlank()) }
-        }
-    }
 }
 
 /**

@@ -249,6 +249,7 @@ class CallSheetRepositoryImpl(
             body = buildJsonObject {
                 put("sent_by", reminder.sentBy)
                 put("sent_by_id", idOrNull(reminder.sentById))
+                put("sent_by_role", reminder.sentByRole)
                 put("assignee_ids", reminder.assigneeIds.toJson())
                 put("message", reminder.message)
             },

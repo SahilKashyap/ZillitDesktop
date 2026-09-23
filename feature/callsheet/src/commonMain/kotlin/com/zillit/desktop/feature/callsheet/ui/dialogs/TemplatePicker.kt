@@ -51,7 +51,6 @@ import com.zillit.desktop.feature.callsheet.domain.PageCell
 import com.zillit.desktop.feature.callsheet.domain.SheetTime
 import com.zillit.desktop.feature.callsheet.domain.SheetPayload
 import com.zillit.desktop.feature.callsheet.domain.StockTemplate
-import com.zillit.desktop.feature.callsheet.domain.templateSectionTitles
 import com.zillit.desktop.feature.callsheet.ui.DialogEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetDialog
 import com.zillit.desktop.feature.callsheet.ui.SheetEvent
@@ -95,10 +94,8 @@ internal fun TemplatePickerDialog(dialog: SheetDialog.TemplatePicker, onEvent: (
                 )
                 var lastTap by remember { mutableStateOf<Pair<Int, TimeSource.Monotonic.ValueTimeMark>?>(null) }
                 pickable.forEach { index ->
-                    val template = templates[index]
                     TemplateOption(
                         label = labelFor(templates, index),
-                        sections = templateSectionTitles(template.payload).size,
                         selected = index == dialog.selected,
                     ) {
                         val previous = lastTap
@@ -179,8 +176,9 @@ private const val DOUBLE_TAP_MS = 400
 private fun labelFor(templates: List<StockTemplate>, index: Int): String =
     templates.getOrNull(index)?.displayName?.ifBlank { null } ?: "Template ${index + 1}"
 
+/** One layout to pick — its name only; the section count came off the web's picker (Sep 2026). */
 @Composable
-private fun TemplateOption(label: String, sections: Int, selected: Boolean, onClick: () -> Unit) {
+private fun TemplateOption(label: String, selected: Boolean, onClick: () -> Unit) {
     val colors = SheetTheme.colors
     val (source, hovered) = rememberHover()
     val border by animateColorAsState(
@@ -221,21 +219,14 @@ private fun TemplateOption(label: String, sections: Int, selected: Boolean, onCl
         ) {
             if (selected) Box(Modifier.size(5.dp).clip(CircleShape).background(Color.White))
         }
-        Column(Modifier.weight(1f)) {
-            Text(
-                label,
-                style = sheetText(13.sp, FontWeight.SemiBold, 16.sp),
-                color = colors.textPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                if (sections == 1) "1 section" else "$sections sections",
-                style = sheetText(10.sp, lineHeight = 13.sp),
-                color = colors.textMuted,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
+        Text(
+            label,
+            style = sheetText(13.sp, FontWeight.SemiBold, 16.sp),
+            color = colors.textPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

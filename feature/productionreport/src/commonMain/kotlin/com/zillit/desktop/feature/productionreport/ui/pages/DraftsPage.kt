@@ -53,6 +53,7 @@ import com.zillit.desktop.feature.productionreport.ui.components.ReportIconButto
 import com.zillit.desktop.feature.productionreport.ui.components.ReportTable
 import com.zillit.desktop.feature.productionreport.ui.components.Segmented
 import com.zillit.desktop.feature.productionreport.ui.components.StatusBadge
+import com.zillit.desktop.feature.productionreport.ui.components.TabBadge
 import com.zillit.desktop.feature.productionreport.ui.components.TableColumn
 import com.zillit.desktop.feature.productionreport.ui.components.plainClick
 import com.zillit.desktop.feature.productionreport.ui.components.rememberHover
@@ -227,12 +228,20 @@ private fun DraftsTable(state: ReportUiState, rows: List<ReportSummary>, offset:
     ) { row, column, index ->
         when (column) {
             0 -> Text("${offset + index + 1}", style = reportText(12.sp), color = ReportTheme.colors.textTertiary)
-            1 -> Text(
-                row.name.ifBlank { "-" },
-                style = reportText(13.sp, FontWeight.Medium),
-                color = ReportTheme.colors.textPrimary,
-                maxLines = 2,
-            )
+            1 -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    row.name.ifBlank { "-" },
+                    style = reportText(13.sp, FontWeight.Medium),
+                    color = ReportTheme.colors.textPrimary,
+                    maxLines = 2,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // The unread REPORT count beside the name; comments ride the kebab.
+                TabBadge(reportUnreadFor(state, row))
+            }
             2 -> MetaCell(shootDayLabel(row.shared))
             3 -> CreatorCell(state, row)
             4 -> MetaCell(formatDateTime(row.createdOn))
@@ -275,6 +284,7 @@ private fun DraftCard(
         links = cardLinks(entries, primaryKeys = setOf("signature", "delete")),
         pills = cardPills(entries, primaryKeys = setOf("signature", "delete")),
         modifier = modifier,
+        nameBadge = reportUnreadFor(state, row),
     )
 }
 
@@ -380,8 +390,3 @@ internal fun Pager(page: Int, total: Int, noun: String, onPage: (Int) -> Unit) {
         ReportIconButton(ZillitIcons.ChevronRight, "Next page", { onPage(page + 1) }, enabled = page < pages - 1)
     }
 }
-
-internal fun unreadFor(
-    state: ReportUiState,
-    row: ReportSummary,
-): Int = state.badges.commentsFor(state.commentScope, row.id)

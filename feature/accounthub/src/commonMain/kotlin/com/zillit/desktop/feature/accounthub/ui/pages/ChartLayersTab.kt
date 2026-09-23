@@ -39,7 +39,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
@@ -480,7 +479,6 @@ private fun LayerSetDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
                 saveLabel = if (isNew) "Create set" else "Save",
                 savingLabel = if (isNew) "Creating…" else "Saving…",
                 canSave = draft?.set?.name?.isNotBlank() == true,
-                onCancel = { onEvent(AccountHubEvent.DismissLayerSet) },
                 onSave = { onEvent(AccountHubEvent.SaveLayerSet) },
             )
         },
@@ -561,7 +559,6 @@ private fun LayerNodeDialog(state: AccountHubUiState, onEvent: (AccountHubEvent)
                 saveLabel = if (isNew) "Add code" else "Save",
                 savingLabel = if (isNew) "Adding…" else "Saving…",
                 canSave = draft != null && draft.node.code.isNotBlank() && draft.node.name.isNotBlank(),
-                onCancel = { onEvent(AccountHubEvent.DismissLayerNode) },
                 onSave = { onEvent(AccountHubEvent.SaveLayerNode) },
             )
         },
@@ -604,9 +601,10 @@ private fun LayerNodeDialog(state: AccountHubUiState, onEvent: (AccountHubEvent)
 }
 
 /**
- * Cancel and the primary action — the web's `ModalShell` footer. While the call
- * is out both are held: the primary spins with its "…ing" label, and Cancel
- * cannot orphan a request.
+ * The primary action alone — the web's `ModalShell` footer with `hideCancel`
+ * (03f047d47): × and Esc discard, so a Cancel beside Save was a second way to
+ * do the same thing. While the call is out the button spins with its "…ing"
+ * label.
  */
 @Composable
 private fun LayerDialogActions(
@@ -614,10 +612,8 @@ private fun LayerDialogActions(
     saveLabel: String,
     savingLabel: String,
     canSave: Boolean,
-    onCancel: () -> Unit,
     onSave: () -> Unit,
 ) {
-    ZillitButton(text = "Cancel", onClick = onCancel, variant = ButtonVariant.Secondary, enabled = !saving)
     ZillitButton(
         text = if (saving) savingLabel else saveLabel,
         onClick = onSave,

@@ -379,6 +379,9 @@ class AccountHubRepositoryImpl(
             put("default_split_type", JsonPrimitive(setup.splitType.wire))
             put("po_number_prefix", JsonPrimitive(setup.numberPrefix))
             put("terms_attachment", setup.termsDocument?.toJson() ?: JsonNull)
+            // Null clears the rule — the web's `mapAssetFiltersToDb`, and what
+            // the server normalises an all-empty rule to anyway.
+            put("asset_filters", setup.assetFilters.toJson())
         },
     ).map { it.value?.toDomain() ?: setup }
 

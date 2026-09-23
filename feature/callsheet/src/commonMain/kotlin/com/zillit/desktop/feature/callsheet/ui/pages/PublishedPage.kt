@@ -50,6 +50,7 @@ import com.zillit.desktop.feature.callsheet.ui.SheetEvent
 import com.zillit.desktop.feature.callsheet.ui.SheetUiState
 import com.zillit.desktop.feature.callsheet.ui.components.ButtonKind
 import com.zillit.desktop.feature.callsheet.ui.components.Face
+import com.zillit.desktop.feature.callsheet.ui.components.InlineCount
 import com.zillit.desktop.feature.callsheet.ui.components.MetaCell
 import com.zillit.desktop.feature.callsheet.ui.components.SheetButton
 import com.zillit.desktop.feature.callsheet.ui.components.SheetEmptyState
@@ -109,7 +110,7 @@ private fun HeroCard(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Lo
             .background(colors.surface)
             .border(1.dp, colors.border, RoundedCornerShape(12.dp)),
     ) {
-        HeroHeader(sheet, nowMillis)
+        HeroHeader(state, sheet, nowMillis)
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         HeroMeta(state, sheet, nowMillis)
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
@@ -149,7 +150,7 @@ private fun HeroCard(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Lo
 }
 
 @Composable
-private fun HeroHeader(sheet: CallSheetSummary, nowMillis: Long) {
+private fun HeroHeader(state: SheetUiState, sheet: CallSheetSummary, nowMillis: Long) {
     val colors = SheetTheme.colors
     val background = if (colors.isDark) {
         Brush.horizontalGradient(listOf(colors.surface, colors.surface))
@@ -171,6 +172,7 @@ private fun HeroHeader(sheet: CallSheetSummary, nowMillis: Long) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Currently Published", style = sheetText(14.sp, FontWeight.SemiBold), color = colors.textStrong)
                 LivePill()
+                InlineCount(state.unreadReports(sheet.id))
             }
             val subject = sheet.name.ifBlank { "${shootDayLabel(sheet.shared)} call sheet" }
             val published = sheet.publishedOn?.let { " • Published ${relativeLong(it, nowMillis)}" }.orEmpty()
@@ -329,7 +331,13 @@ private fun OlderTable(
         minWidth = 900.dp,
     ) { row, column, _ ->
         when (column) {
-            0 -> MetaCell(row.serialNo.ifBlank { "-" })
+            0 -> Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MetaCell(row.serialNo.ifBlank { "-" })
+                InlineCount(state.unreadReports(row.id))
+            }
             1 -> MetaCell(shootDayLabel(row.shared, fallbackTotal))
             2 -> CreatorCell(state, row)
             3 -> MetaCell(formatDateTime(row.createdOn))

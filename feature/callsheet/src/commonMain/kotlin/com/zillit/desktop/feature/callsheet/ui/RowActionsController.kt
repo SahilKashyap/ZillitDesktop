@@ -7,24 +7,30 @@ import com.zillit.desktop.feature.callsheet.domain.SheetHistory
 import com.zillit.desktop.feature.callsheet.domain.SheetPayload
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
 import com.zillit.desktop.feature.callsheet.domain.approvalStatusEntries
-import com.zillit.desktop.feature.callsheet.domain.chatTargets
 import com.zillit.desktop.feature.callsheet.domain.deleteQuestion
 import com.zillit.desktop.feature.callsheet.domain.latestReminder
 import com.zillit.desktop.feature.callsheet.domain.stageForStatus
 
 /**
  * The row actions every list shares: View (the server PDF), Delete, History,
- * Approval status, Chat, the reminder popup, and Published's Attach Document.
+ * Approval status, the reminder popup, and Published's Attach Document.
+ * Opening a sheet any of these ways reads its report badge (`readReport`).
  */
 internal class RowActionsController(private val ctx: SheetContext) {
 
     @Suppress("CyclomaticComplexMethod") // Event fan-out: one branch per row action.
     fun onEvent(event: ListEvent) {
         when (event) {
-            is ListEvent.View -> view(event.sheet)
+            is ListEvent.View -> {
+                ctx.lists.readReport(event.sheet.id)
+                view(event.sheet)
+            }
             ListEvent.ClosePdf -> ctx.update { copy(pdf = null) }
             ListEvent.DownloadPdf -> download()
-            is ListEvent.Edit -> ctx.editor.openExisting(event.sheet)
+            is ListEvent.Edit -> {
+                ctx.lists.readReport(event.sheet.id)
+                ctx.editor.openExisting(event.sheet)
+            }
             is ListEvent.Delete -> if (ctx.state.isPoster && !event.sheet.status.locked) {
                 ctx.update {
                     copy(
@@ -38,12 +44,13 @@ internal class RowActionsController(private val ctx: SheetContext) {
                     )
                 }
             }
-            is ListEvent.OpenHistory -> history(event.sheet, event.title, event.fromDetail)
+            is ListEvent.OpenHistory -> {
+                ctx.lists.readReport(event.sheet.id)
+                history(event.sheet, event.title, event.fromDetail)
+            }
             is ListEvent.OpenApprovalStatus -> approvalStatus(event.sheet)
-            is ListEvent.ChatWithApprovers -> chatWithApprovers(event.sheet)
-            is ListEvent.ChatWithCreator -> chatWithCreator(event.sheet)
-            is ListEvent.ChatWith -> chatWith(event.userId)
             is ListEvent.ViewReminder -> latestReminder(event.sheet, ctx.state.me)?.let { reminder ->
+                ctx.lists.readReport(event.sheet.id)
                 ctx.update { copy(dialog = SheetDialog.ReminderView(reminder)) }
             }
             is ListEvent.AttachDocument -> attach(event.sheet)
@@ -94,24 +101,31 @@ internal class RowActionsController(private val ctx: SheetContext) {
         }
     }
 
-    /** Deletes after the confirm; the row leaves every list at once, then the list on screen reloads. */
+    /**
+     * Deletes after the confirm. The confirm stays open, its buttons busy,
+     * until the request settles (the web's `useInFlight`); then the row
+     * leaves every list at once and the list on screen reloads.
+     */
     fun delete(sheet: CallSheetSummary) {
-        if (ctx.state.busy) return
+        if (ctx.state.busy || !ctx.state.isPoster || sheet.status.locked) return
         ctx.update { copy(busy = true) }
         ctx.launchWork {
             when (val result = ctx.repository.delete(sheet.id)) {
                 is ZillitResult.Success -> {
-                    ctx.update { copy(busy = false, lists = lists.without(sheet.id)) }
+                    ctx.update { copy(busy = false, dialog = closedConfirm(), lists = lists.without(sheet.id)) }
                     ctx.toast("Deleted!")
                     ctx.lists.refreshCurrent()
                 }
                 is ZillitResult.Failure -> {
-                    ctx.update { copy(busy = false) }
+                    ctx.update { copy(busy = false, dialog = closedConfirm()) }
                     ctx.toast(result.error.withPrefix("Delete failed: "), isError = true)
                 }
             }
         }
     }
+
+    /** The confirm that held the request closes; anything opened over it since stays. */
+    private fun SheetUiState.closedConfirm(): SheetDialog? = if (dialog is SheetDialog.Confirm) null else dialog
 
     /**
      * History needs the detail — list rows carry neither revisions nor
@@ -161,33 +175,6 @@ internal class RowActionsController(private val ctx: SheetContext) {
             ctx.update {
                 copy(statusLoadingId = null, dialog = SheetDialog.ApprovalStatus("Approval Status", entries))
             }
-        }
-    }
-
-    /** Sent's Chat: the sheet's approvers and comment recipients, minus me. */
-    private fun chatWithApprovers(sheet: CallSheetSummary) {
-        val ids = chatTargets(sheet, ctx.state.me)
-        if (ids.isEmpty()) {
-            ctx.toast("No approver selected", isError = true)
-            return
-        }
-        ctx.update { copy(dialog = SheetDialog.ChatPicker("Chat with Approver", ids)) }
-    }
-
-    private fun chatWithCreator(sheet: CallSheetSummary) {
-        val creator = sheet.createdById.trim()
-        if (creator.isEmpty() || creator == ctx.state.me) {
-            ctx.toast("No creator available to chat with", isError = true)
-            return
-        }
-        ctx.update { copy(dialog = SheetDialog.ChatPicker("Chat with Creator", listOf(creator))) }
-    }
-
-    private fun chatWith(userId: String) {
-        ctx.update { copy(dialog = null) }
-        val name = ctx.state.member(userId)?.fullName.orEmpty()
-        if (!ctx.services.chat.openChat(userId, name)) {
-            ctx.toast("Unable to open chat — chat integration is not available.", isError = true)
         }
     }
 

@@ -121,7 +121,7 @@ internal fun CommentsDialog(state: ReportUiState, dialog: ReportDialog.Comments,
                 Composer(dialog, onEvent, Modifier.padding(top = 12.dp))
             } else {
                 Text(
-                    "Comments are closed on a report approved for publishing.",
+                    dialog.closedNote,
                     style = reportText(11.sp),
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 10.dp),

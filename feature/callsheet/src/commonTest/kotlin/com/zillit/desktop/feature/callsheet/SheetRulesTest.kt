@@ -5,11 +5,14 @@ import com.zillit.desktop.feature.callsheet.domain.ApprovalSection
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
 import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.DraftChip
+import com.zillit.desktop.feature.callsheet.domain.ReminderSender
+import com.zillit.desktop.feature.callsheet.domain.ReplaceTarget
 import com.zillit.desktop.feature.callsheet.domain.SharedHeader
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
 import com.zillit.desktop.feature.callsheet.domain.SheetMetadata
 import com.zillit.desktop.feature.callsheet.domain.SheetReminder
 import com.zillit.desktop.feature.callsheet.domain.SheetTab
+import com.zillit.desktop.feature.callsheet.domain.UnitMessage
 import com.zillit.desktop.feature.callsheet.domain.actionableRequest
 import com.zillit.desktop.feature.callsheet.domain.approvalCount
 import com.zillit.desktop.feature.callsheet.domain.approvalSections
@@ -17,14 +20,15 @@ import com.zillit.desktop.feature.callsheet.domain.approvalStatusEntries
 import com.zillit.desktop.feature.callsheet.domain.approverCandidates
 import com.zillit.desktop.feature.callsheet.domain.approverIdsFromSheet
 import com.zillit.desktop.feature.callsheet.domain.canApproveReject
+import com.zillit.desktop.feature.callsheet.domain.canPostComments
 import com.zillit.desktop.feature.callsheet.domain.canPublish
-import com.zillit.desktop.feature.callsheet.domain.chatAllowed
-import com.zillit.desktop.feature.callsheet.domain.chatTargets
 import com.zillit.desktop.feature.callsheet.domain.commentAllowed
 import com.zillit.desktop.feature.callsheet.domain.draftsQuery
 import com.zillit.desktop.feature.callsheet.domain.filterDrafts
 import com.zillit.desktop.feature.callsheet.domain.formatDateTime
+import com.zillit.desktop.feature.callsheet.domain.initialLanding
 import com.zillit.desktop.feature.callsheet.domain.isInternalOnly
+import com.zillit.desktop.feature.callsheet.domain.isListedMember
 import com.zillit.desktop.feature.callsheet.domain.latestReminder
 import com.zillit.desktop.feature.callsheet.domain.mergeApprovalRequests
 import com.zillit.desktop.feature.callsheet.domain.pendingFinalRequest
@@ -32,11 +36,15 @@ import com.zillit.desktop.feature.callsheet.domain.receivedRows
 import com.zillit.desktop.feature.callsheet.domain.relativeLong
 import com.zillit.desktop.feature.callsheet.domain.relativeShort
 import com.zillit.desktop.feature.callsheet.domain.reminderAssigneeIds
+import com.zillit.desktop.feature.callsheet.domain.reminderSender
+import com.zillit.desktop.feature.callsheet.domain.replaceTargets
 import com.zillit.desktop.feature.callsheet.domain.resolveSection
 import com.zillit.desktop.feature.callsheet.domain.resolveSharedForTemplate
 import com.zillit.desktop.feature.callsheet.domain.sanitizeUserIds
 import com.zillit.desktop.feature.callsheet.domain.sendActions
+import com.zillit.desktop.feature.callsheet.domain.sendForChatAllowed
 import com.zillit.desktop.feature.callsheet.domain.sheetTabs
+import com.zillit.desktop.feature.callsheet.domain.shouldWriteApproverMeta
 import com.zillit.desktop.feature.callsheet.domain.sheetToolName
 import com.zillit.desktop.feature.callsheet.domain.shootDayLabel
 import com.zillit.desktop.feature.callsheet.domain.shouldShowReminderBell
@@ -80,22 +88,95 @@ class SheetRulesTest {
     )
 
     @Test
-    fun `tabs by rights - posters get every list and Permission with grid access, viewers Drafts and Published`() {
-        assertEquals(SheetTab.entries, sheetTabs(isPoster = true, canViewGrid = true, isApprover = false))
+    fun `tabs by rights - posters get every list, a viewer only the tabs the metadata lists them on`() {
+        fun tabs(poster: Boolean, grid: Boolean = false, approver: Boolean = false, receiver: Boolean = false) =
+            sheetTabs(poster, grid, isFinalApprover = approver, isInternalReceiver = receiver)
+        assertEquals(SheetTab.entries, tabs(poster = true, grid = true))
+        assertEquals(listOf(SheetTab.Drafts, SheetTab.Approvals, SheetTab.Published), tabs(poster = true))
+        assertEquals(listOf(SheetTab.Approvals), tabs(poster = false, grid = true, approver = true))
+        assertEquals(listOf(SheetTab.Drafts), tabs(poster = false, receiver = true))
         assertEquals(
-            listOf(SheetTab.Drafts, SheetTab.Approvals, SheetTab.Published),
-            sheetTabs(isPoster = true, canViewGrid = false, isApprover = false),
+            listOf(SheetTab.Drafts, SheetTab.Approvals),
+            tabs(poster = false, approver = true, receiver = true),
         )
+        assertEquals(emptyList(), tabs(poster = false), "named by neither list → no tabs, never Published")
         assertEquals(
-            listOf(SheetTab.Drafts, SheetTab.Approvals, SheetTab.Published),
-            sheetTabs(isPoster = false, canViewGrid = true, isApprover = true),
-        )
-        assertEquals(
-            listOf(SheetTab.Drafts, SheetTab.Published),
-            sheetTabs(isPoster = false, canViewGrid = true, isApprover = false),
+            listOf(SheetTab.Drafts, SheetTab.Approvals),
+            sheetTabs(false, false, isFinalApprover = false, isInternalReceiver = false, metadataUnavailable = true),
+            "a FAILED metadata read fails open",
         )
         assertEquals("Call Sheet Creation", sheetToolName(isPoster = true))
         assertEquals("Drafts Call Sheet", sheetToolName(isPoster = false))
+    }
+
+    @Test
+    fun `list membership compares trimmed strings, and a blank id is on no list`() {
+        assertTrue(isListedMember(listOf(" 42 ", "u2"), "42"))
+        assertFalse(isListedMember(listOf("u2"), ""))
+        assertFalse(isListedMember(listOf("u2"), null))
+        assertFalse(isListedMember(emptyList(), "u2"))
+    }
+
+    @Test
+    fun `the first landing stays inside the visible tabs`() {
+        assertNull(initialLanding(isPoster = true, tabs = SheetTab.entries), "a poster needs no move")
+        assertEquals(SheetTab.Approvals, initialLanding(false, listOf(SheetTab.Drafts, SheetTab.Approvals)))
+        assertEquals(SheetTab.Drafts, initialLanding(false, listOf(SheetTab.Drafts)))
+        assertNull(initialLanding(false, emptyList()), "nowhere to go")
+    }
+
+    @Test
+    fun `only the creator and the internal-distribution recipients may post in a thread`() {
+        val mine = row(CallSheetStatus.PendingApproval, createdById = "me")
+        val theirs = row(CallSheetStatus.PendingApproval, createdById = "u2")
+        assertTrue(canPostComments(mine, "me"))
+        assertFalse(canPostComments(theirs, "me"))
+        assertTrue(canPostComments(theirs, "me", isInternalReceiver = true))
+        assertTrue(canPostComments(theirs.copy(createdBy = "Author"), null, userName = "Author"), "no id → the name")
+        assertFalse(canPostComments(theirs, null, userName = ""))
+    }
+
+    @Test
+    fun `an emptied approver list is written only when the editor opened with approvers`() {
+        assertTrue(shouldWriteApproverMeta(listOf("u2"), emptyList()))
+        assertTrue(shouldWriteApproverMeta(emptyList(), listOf("u2")), "a removal must reach the merging PUT")
+        assertFalse(shouldWriteApproverMeta(emptyList(), emptyList()), "a fresh document never clears the default")
+    }
+
+    @Test
+    fun `a reminder's sender resolves by id to who they are today, else reads verbatim`() {
+        val crew = Samples.crew
+        val reminder = SheetReminder("m1", sentBy = "u2", sentById = "u2", sentByRole = "producer_label")
+        assertEquals(ReminderSender("Uma", "Producer"), reminderSender(crew, reminder))
+        val roleless = crew.map { if (it.userId == "u2") it.copy(designation = "") else it }
+        assertEquals("producer_label", reminderSender(roleless, reminder).role, "falls back to the recorded role")
+        val old = SheetReminder("m0", sentBy = "Ankit Lava", sentById = "", sentByRole = "1st AD")
+        assertEquals(ReminderSender("Ankit Lava", "1st AD"), reminderSender(crew, old), "a name matches nobody")
+        val byId = SheetReminder("m2", sentBy = "u3", sentById = "")
+        assertEquals("Vic", reminderSender(crew, byId).name, "sent_by alone carries the id")
+    }
+
+    @Test
+    fun `replace targets are live document messages keyed on their id, newest first`() {
+        val targets = replaceTargets(
+            listOf(
+                UnitMessage("m1", isDocument = true, hasMedia = true, name = "Day 1.pdf", createdMs = 10),
+                UnitMessage("m2", isDocument = true, hasMedia = true, name = "Day 2.pdf", createdMs = 30),
+                UnitMessage("m3", isDocument = true, hasMedia = true, deleted = true, createdMs = 40),
+                UnitMessage("m4", isDocument = true, hasMedia = true, archived = true, createdMs = 50),
+                UnitMessage("m5", isDocument = false, hasMedia = true, name = "photo.jpg", createdMs = 60),
+                UnitMessage("", isDocument = true, hasMedia = true, name = "pending.pdf", createdMs = 70),
+                UnitMessage("m7", isDocument = true, hasMedia = true, createdMs = 20),
+            ),
+        )
+        assertEquals(
+            listOf(
+                ReplaceTarget("m2", "Day 2.pdf"),
+                ReplaceTarget("m7", "Untitled document"),
+                ReplaceTarget("m1", "Day 1.pdf"),
+            ),
+            targets,
+        )
     }
 
     @Test
@@ -266,20 +347,11 @@ class SheetRulesTest {
         assertTrue(out.sendForSignature && !out.sendForComments && out.readComments)
         val locked = sendActions(CallSheetStatus.Published)
         assertFalse(locked.sendForSignature || locked.sendForComments || locked.readComments)
-        assertFalse(chatAllowed(CallSheetStatus.Draft) || chatAllowed(CallSheetStatus.ApprovedForPublish))
-        assertTrue(chatAllowed(CallSheetStatus.PendingApproval))
+        assertTrue(sendForChatAllowed(CallSheetStatus.Draft) && sendForChatAllowed(CallSheetStatus.PendingApproval))
+        assertFalse(sendForChatAllowed(CallSheetStatus.ApprovedForPublish))
+        assertFalse(sendForChatAllowed(CallSheetStatus.Published))
         assertFalse(commentAllowed(CallSheetStatus.Published, 0))
         assertTrue(commentAllowed(CallSheetStatus.Published, 2))
-    }
-
-    @Test
-    fun `chat targets are everyone the sheet names, minus me`() {
-        val sheet = row(
-            CallSheetStatus.PendingApproval,
-            listOf(request("a", "me"), request("b", "u2")),
-            shared = SharedHeader(approverIds = listOf("u3"), internalReceiverIds = listOf("u2", "u4")),
-        )
-        assertEquals(listOf("u2", "u3", "u4"), chatTargets(sheet, "me"))
     }
 
     @Test

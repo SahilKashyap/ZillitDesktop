@@ -134,15 +134,18 @@ private fun EditorHeader(state: SheetUiState, editor: EditorState, onEvent: (She
         }
         val busy = editor.saving || state.busy
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SheetButton(
-                if (editor.savingTemplate) "Saving…" else "Save as Template",
-                { onEvent(EditorEvent.SaveAsTemplate) },
-                kind = ButtonKind.Csc,
-                enabled = !editor.savingTemplate && !busy,
-                radius = 10.dp,
-                height = 36.dp,
-                trailing = if (editor.savingTemplate) ({ SmallSpinner(colors.accent) }) else null,
-            )
+            // ZL-21539: create-only — on an existing sheet the save would close the editor over unsaved edits.
+            if (editor.offersSaveAsTemplate) {
+                SheetButton(
+                    if (editor.savingTemplate) "Saving…" else "Save as Template",
+                    { onEvent(EditorEvent.SaveAsTemplate) },
+                    kind = ButtonKind.Csc,
+                    enabled = !editor.savingTemplate && !busy,
+                    radius = 10.dp,
+                    height = 36.dp,
+                    trailing = if (editor.savingTemplate) ({ SmallSpinner(colors.accent) }) else null,
+                )
+            }
             editor.template?.let { template ->
                 ZillitTooltip("Overwrites \"${template.name}\"") {
                     SheetButton(

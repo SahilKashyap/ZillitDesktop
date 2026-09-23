@@ -7,7 +7,9 @@ import com.zillit.desktop.feature.productionreport.domain.EditorSelection
 import com.zillit.desktop.feature.productionreport.domain.PageCell
 import com.zillit.desktop.feature.productionreport.domain.PageRow
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
+import com.zillit.desktop.feature.productionreport.domain.SendActions
 import com.zillit.desktop.feature.productionreport.domain.SheetPayload
+import com.zillit.desktop.feature.productionreport.domain.sendActions
 
 /**
  * The report editor: the document, the selection shared by preview and
@@ -68,8 +70,13 @@ data class EditorState(
 
     val isNew: Boolean get() = reportId == null
 
-    /** "Send for Approval" in the header: a saved report that has left DRAFT. */
-    val offersSend: Boolean get() = reportId != null && status != null && status != ReportStatus.Draft
+    /**
+     * The header's sends — `sheetSendActions` on the held status, the same
+     * rule as the Drafts row menu: every unlocked report may go for
+     * signature, a draft may go for comments. (The old single "Send for
+     * Approval" showed only on NON-draft reports: the inverse.)
+     */
+    val sendActions: SendActions get() = sendActions(status ?: ReportStatus.Draft)
 
     fun selectedCell(): PageCell? = (selection as? EditorSelection.Cell)?.let { cell ->
         document.rows.getOrNull(cell.row)?.cells?.getOrNull(cell.cell)
