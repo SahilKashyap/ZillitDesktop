@@ -1,3 +1,4 @@
+import java.util.zip.ZipFile
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -341,6 +342,26 @@ if (jbrFrameworks.isDirectory) {
     val notifyHelperSource = project.file("src/main/native/ZillitNotify.swift")
     val swiftCompiler = File("/usr/bin/swiftc")
 
+    /*
+     * The architecture the Swift helpers are built for.
+     *
+     * `swiftc` with no `-target` builds for the machine doing the building, and
+     * that is right for every ordinary build. It is wrong for a cross build: an
+     * Intel DMG produced on Apple silicon would carry arm64 helpers inside an
+     * x86_64 app, so screen sharing and notifications would be missing on the
+     * only machines that DMG is for — and the bundle would not even be signable
+     * as one architecture.
+     *
+     *     -PzillitSwiftTarget=x86_64-apple-macos13.0
+     *
+     * Absent by default, so nothing changes for a native build.
+     */
+    val swiftTarget = providers.gradleProperty("zillitSwiftTarget").orNull
+    val swiftArchArgs = swiftTarget?.let { listOf("-target", it) }.orEmpty()
+    if (swiftTarget != null) {
+        logger.lifecycle("Building the Swift helpers for $swiftTarget")
+    }
+
     val notifyHelper = if (swiftCompiler.canExecute() && notifyHelperSource.isFile) {
         tasks.register<Exec>("compileNotifyHelper") {
             dependsOn("createDistributable")
@@ -358,6 +379,7 @@ if (jbrFrameworks.isDirectory) {
                 "-framework", "UserNotifications",
                 "-framework", "AVFoundation",
                 "-framework", "AppKit",
+                *swiftArchArgs.toTypedArray(),
             )
         }
     } else {
@@ -401,10 +423,62 @@ if (jbrFrameworks.isDirectory) {
                 captureHelperSource.absolutePath,
                 "-framework", "ScreenCaptureKit",
                 "-framework", "AppKit",
+                *swiftArchArgs.toTypedArray(),
             )
         }
     } else {
         logger.lifecycle("No Swift compiler; packaging without the screen-share source helper")
+        null
+    }
+
+    /*
+     * Skia's native library, for a cross build.
+     *
+     * Compose extracts `libskiko-macos-<arch>.dylib` beside the jars and points
+     * the app at it with `-Dskiko.library.path=$APPDIR`. It picks the arch from
+     * the machine running Gradle, so a cross build extracts nothing usable and
+     * the app looks in $APPDIR and nowhere else: the JVM comes up, the config
+     * loads, and then the first Path throws ExceptionInInitializerError. The
+     * launcher reports only "Failed to launch JVM", which says nothing about
+     * Skia — this cost an afternoon, hence the comment.
+     *
+     * The runtime jar carries every architecture, so the fix is to unpack the
+     * one this build is actually for.
+     */
+    val skikoArch = providers.gradleProperty("zillitMacArch").orNull?.let {
+        if (it == "x64") "x64" else "arm64"
+    }
+    val stageSkikoNative = if (skikoArch != null) {
+        tasks.register("stageSkikoNative") {
+            dependsOn("createDistributable")
+            description = "Unpacks the $skikoArch Skia library the packaged app loads at runtime."
+
+            val appDir = layout.buildDirectory
+                .dir("compose/binaries/main/app/$desktopPackageName.app/Contents/app")
+
+            doLast {
+                val dir = appDir.get().asFile
+                val jar = dir.listFiles()
+                    ?.firstOrNull { it.name.startsWith("skiko-awt-runtime-") && it.name.endsWith(".jar") }
+                    ?: error("stageSkikoNative: no skiko runtime jar in ${dir.path}")
+
+                val wanted = listOf(
+                    "libskiko-macos-$skikoArch.dylib",
+                    "libskiko-macos-$skikoArch.dylib.sha256",
+                )
+                ZipFile(jar).use { zip ->
+                    wanted.forEach { name ->
+                        val entry = zip.getEntry(name)
+                            ?: error("stageSkikoNative: $name is not in ${jar.name}")
+                        zip.getInputStream(entry).use { input ->
+                            File(dir, name).outputStream().use { input.copyTo(it) }
+                        }
+                    }
+                }
+                logger.lifecycle("Staged libskiko-macos-$skikoArch.dylib into the app bundle")
+            }
+        }
+    } else {
         null
     }
 
@@ -416,6 +490,8 @@ if (jbrFrameworks.isDirectory) {
             dependsOn(copyCefFrameworks)
             notifyHelper?.let { dependsOn(it) }
             captureHelper?.let { dependsOn(it) }
+            // Before the re-seal, so the staged library is inside the signature.
+            stageSkikoNative?.let { dependsOn(it) }
             description = "Signs what createDistributable missed, then re-seals the bundle."
 
             val app = layout.buildDirectory
