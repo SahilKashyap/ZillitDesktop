@@ -495,9 +495,23 @@
      * already playing. Browsers without setSinkId throw NOT_SUPPORTED, which
      * is a warning rather than a failure: the OS default still plays.
      */
-    function applySpeaker(track) {
-        if (!chosenSpeaker || !track || !track.setPlaybackDevice) { return; }
-        track.setPlaybackDevice(chosenSpeaker).catch(e => warn('setPlaybackDevice', e));
+    function applySpeaker(track, force) {
+        if ((!chosenSpeaker && !force) || !track || !track.setPlaybackDevice) { return; }
+        // 'default' is Chromium's own id for the OS output, so choosing
+        // "System default" mid-call moves the voices back rather than leaving
+        // them on the device picked before.
+        track.setPlaybackDevice(chosenSpeaker || 'default').catch(e => warn('setPlaybackDevice', e));
+    }
+
+    /**
+     * The same routing for the `<audio>` sinks Lines 1 and 3 play through
+     * (`attachRemote`): mediasoup and LiveKit hand this page a bare stream,
+     * so the output is the element's `setSinkId`. An empty id is the OS
+     * default, which is also how "System default" is put back.
+     */
+    function applySink(element, force) {
+        if ((!chosenSpeaker && !force) || !element || !element.setSinkId) { return; }
+        element.setSinkId(chosenSpeaker).catch(e => warn('setSinkId', e));
     }
 
     /** The three lists Kotlin draws its pickers from, plus what is chosen now. */
@@ -974,6 +988,8 @@
                     const sink = document.createElement('audio');
                     sink.autoplay = true;
                     sink.srcObject = stream;
+                    // A voice that joins after the output was chosen goes to it too.
+                    applySink(sink);
                     // Detached from the document on purpose: an audio element
                     // needs no layout, and appending it to the grid would take
                     // space from the picture.
@@ -1236,7 +1252,11 @@
         /** Routes every remote voice — playing and future — to one output. */
         async setSpeakerDevice(deviceId) {
             chosenSpeaker = deviceId || '';
-            remoteAudio.forEach(track => applySpeaker(track));
+            // Line 2 (Agora) routes per track; Lines 1 and 3 per element.
+            remoteAudio.forEach(track => applySpeaker(track, true));
+            line1Media.forEach(entry => {
+                if (entry.kind === 'audio') { applySink(entry.element, true); }
+            });
             reportDevices();
         },
 
