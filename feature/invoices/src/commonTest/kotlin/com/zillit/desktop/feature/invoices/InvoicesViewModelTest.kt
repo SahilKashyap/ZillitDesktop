@@ -165,6 +165,21 @@ class InvoicesViewModelTest {
         assertEquals(1, batch.sentCount)
     }
 
+    /**
+     * The web gates the department's Upload Invoices on nothing
+     * (`DepartmentInvoiceModule.jsx:1050-1054`), so a crew member without the
+     * tool's posting right still gets the picker.
+     */
+    @Test
+    fun `a department upload needs no posting right`() = runTest(dispatcher) {
+        val files = FakeFiles(picked = listOf(PickedInvoiceFile("acme.jpg", "image/jpeg", ByteArray(10))))
+        val vm = viewModel(FakeRepo(), files, viewer = crew.copy(canPost = false))
+        vm.onEvent(InvoicesEvent.UploadInvoice)
+        advanceUntilIdle()
+        assertEquals(1, assertNotNull(vm.state.value.bulkPick).sendable)
+        assertNull(vm.state.value.error)
+    }
+
     @Test
     fun `accountants load the inbox by status and enter invoices with linked amounts`() = runTest(dispatcher) {
         val repo = FakeRepo()

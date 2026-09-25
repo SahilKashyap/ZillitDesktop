@@ -280,7 +280,6 @@ internal fun ColumnScope.SalesInvoicesPage(
             onClick = { onEvent(InvoicesEvent.StartSalesInvoice) },
             leadingIcon = ZillitIcons.Add,
             size = ButtonSize.Small,
-            enabled = state.viewer.mayPost,
         )
     }
     Row(

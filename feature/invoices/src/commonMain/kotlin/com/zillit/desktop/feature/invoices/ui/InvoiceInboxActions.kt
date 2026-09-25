@@ -432,13 +432,12 @@ internal class InvoiceInboxActions(private val vm: InvoicesViewModel) {
 
     // -- bulk upload ----------------------------------------------------------------
 
-    /** The picker, then the checked list. The department's upload needs a posting right. */
+    /**
+     * The picker, then the checked list. Open to everyone, as the web's
+     * "Upload Invoices" is (`DepartmentInvoiceModule.jsx:1050-1054`).
+     */
     private fun startBulk(allowPaid: Boolean) {
         val state = vm.state.value
-        if (!state.isAccountant && !state.viewer.mayPost) {
-            vm.update { copy(error = str(S.desktop_inv_no_posting_rights)) }
-            return
-        }
         // Only a pick left open lets go of its bytes: a failed batch's are kept for its Retry.
         state.bulkPick?.files?.forEach { picked.remove(it.ref) }
         vm.update { copy(bulkPick = BulkPick(allowPaid = allowPaid && state.isAccountant)) }

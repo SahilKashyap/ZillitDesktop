@@ -255,10 +255,9 @@ private fun InvoicesPageHeader(
     )
 }
 
-/** The no-access notice and the page's error banner. */
+/** The page's error banner. */
 @Composable
 private fun InvoicesNotices(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
-    if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_inv_no_access))
     state.error?.let { message ->
         ZillitNotice(
             text = message,
@@ -355,8 +354,7 @@ private fun handleShortcut(
         InvoiceShortcut.New -> when {
             // The accountant enters one; everyone else uploads theirs.
             state.isAccountant -> onEvent(InvoicesEvent.OpenEnter)
-            state.viewer.mayPost -> onEvent(InvoicesEvent.UploadInvoice)
-            else -> return false
+            else -> onEvent(InvoicesEvent.UploadInvoice)
         }
     }
     return true

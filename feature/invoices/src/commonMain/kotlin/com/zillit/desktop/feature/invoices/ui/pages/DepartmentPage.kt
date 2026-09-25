@@ -55,18 +55,15 @@ internal fun ColumnScope.DepartmentPage(state: InvoicesUiState, onEvent: (Invoic
         it != DepartmentTab.RunApproval || state.viewer.isRunApprover || state.departmentTab == it
     }
     // The web's TabBar action (`DepartmentInvoiceModule.jsx:1050-1054`).
-    val upload: (@Composable RowScope.() -> Unit)? = if (state.viewer.mayPost) {
-        {
-            ZillitButton(
-                text = str(S.desktop_inv_upload_invoices),
-                onClick = { onEvent(InvoicesEvent.UploadInvoice) },
-                leadingIcon = ZillitIcons.Upload,
-                size = ButtonSize.Small,
-                enabled = state.bulkPick == null,
-            )
-        }
-    } else {
-        null
+    // Always there — the web gates it on nothing.
+    val upload: @Composable RowScope.() -> Unit = {
+        ZillitButton(
+            text = str(S.desktop_inv_upload_invoices),
+            onClick = { onEvent(InvoicesEvent.UploadInvoice) },
+            leadingIcon = ZillitIcons.Upload,
+            size = ButtonSize.Small,
+            enabled = state.bulkPick == null,
+        )
     }
     ZillitTabStrip(
         // Counts only where the web shows them: the Approval Queue, My Invoices

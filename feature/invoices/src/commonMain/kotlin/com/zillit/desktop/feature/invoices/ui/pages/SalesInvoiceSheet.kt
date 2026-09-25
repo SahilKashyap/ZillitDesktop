@@ -498,7 +498,7 @@ private fun RowScope.SalesPreviewActions(
         size = ButtonSize.Small,
     )
     Spacer(Modifier.weight(1f))
-    if (invoice.status == SalesInvoiceStatus.Draft && state.viewer.mayPost) {
+    if (invoice.status == SalesInvoiceStatus.Draft) {
         ZillitButton(
             text = str(S.edit),
             onClick = { onEvent(SalesEvent.Edit) },

@@ -143,7 +143,7 @@ internal class InvoiceSalesActions(private val vm: InvoicesViewModel) {
     /** Mark Sent — `POST /:id/send`, "Marking…" while it goes; the preview closes when it lands. */
     private fun markSent(invoice: SalesInvoice) {
         val state = vm.state.value
-        if (!invoice.status.canSend || state.sales.markingSent || !state.viewer.mayPost) return
+        if (!invoice.status.canSend || state.sales.markingSent) return
         ui { copy(markingSent = true) }
         vm.run {
             val result = vm.repo.sendSalesInvoiceWithMessage(invoice.id)
@@ -162,7 +162,6 @@ internal class InvoiceSalesActions(private val vm: InvoicesViewModel) {
     private fun delete() {
         val invoice = vm.state.value.confirmSalesDelete ?: return
         vm.update { copy(confirmSalesDelete = null) }
-        if (!vm.state.value.viewer.mayPost) return
         ui { copy(preview = null, deletingId = invoice.id) }
         vm.run {
             val result = vm.repo.deleteSalesInvoiceWithMessage(invoice.id)
@@ -182,7 +181,6 @@ internal class InvoiceSalesActions(private val vm: InvoicesViewModel) {
     /** Create Invoice: dated today, due in thirty days, the project's currency, one empty line — `resetForm`. */
     private fun startSalesInvoice() {
         val state = vm.state.value
-        if (!state.viewer.mayPost) return
         val today = InvoiceFormat.today(vm.now())
         vm.update {
             copy(
@@ -204,7 +202,7 @@ internal class InvoiceSalesActions(private val vm: InvoicesViewModel) {
      */
     private fun startEdit(invoice: SalesInvoice) {
         val state = vm.state.value
-        if (invoice.status != SalesInvoiceStatus.Draft || !state.viewer.mayPost) return
+        if (invoice.status != SalesInvoiceStatus.Draft) return
         val today = InvoiceFormat.today(vm.now())
         vm.update {
             copy(
@@ -309,7 +307,7 @@ internal class InvoiceSalesActions(private val vm: InvoicesViewModel) {
     private fun confirmSalesInvoice() {
         val state = vm.state.value
         val draft = state.salesDraft ?: return
-        if (draft.busy || !state.viewer.mayPost) return
+        if (draft.busy) return
         val errors = buildMap {
             if (draft.clientName.isBlank()) put(SalesField.ClientName, str(S.desktop_inv_client_name_required))
             if (draft.invoiceDateIsWrong) put(SalesField.InvoiceDate, str(S.desktop_inv_invoice_date_required))
