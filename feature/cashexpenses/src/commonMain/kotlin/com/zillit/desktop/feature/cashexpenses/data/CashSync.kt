@@ -91,3 +91,35 @@ internal data class FormFrame(
 
 @Serializable
 internal data class FormFrameData(@SerialName("module") val module: String? = null)
+
+/**
+ * What changes who this viewer is inside the module — the web's
+ * `ah:cash:metadata` refetch (`accountHubListeners.js`): the cash settings,
+ * an approval chain, an assignment rule. Settings always; the other two only
+ * when the frame names this module or no module at all, which the web fans
+ * out to every module.
+ */
+val CASH_METADATA_SYNC_EVENTS: List<SocketEventName> = listOf(
+    "cash:settings:updated",
+    "approval_tier:configured", "approval_tier:updated", "approval_tier:deleted",
+    "assignment_rule:created", "assignment_rule:updated", "assignment_rule:deleted",
+).map(::SocketEventName)
+
+/** Whether a metadata-bearing frame is this module's — see [CASH_METADATA_SYNC_EVENTS]. */
+fun isCashMetadataFrame(event: SocketEventName, module: String?): Boolean =
+    event.value == "cash:settings:updated" || isCashFormFrame(module)
+
+/**
+ * One pulse per burst of metadata traffic, carrying whether it was an
+ * approval-chain change — those move rows between approval queues as well,
+ * so the page on screen reloads with the viewer.
+ */
+internal fun cashMetadataRefreshes(bus: SocketEventBus?): Flow<Boolean> =
+    bus?.onAny(CASH_METADATA_SYNC_EVENTS, FormFrame.serializer())
+        ?.mapNotNull { (event, frame) ->
+            event.value.startsWith(APPROVAL_TIER).takeIf { isCashMetadataFrame(event, frame.formModule) }
+        }
+        ?.conflate()
+        ?: emptyFlow()
+
+private const val APPROVAL_TIER = "approval_tier:"

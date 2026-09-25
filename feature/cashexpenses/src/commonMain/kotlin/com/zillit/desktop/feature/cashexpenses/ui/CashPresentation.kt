@@ -33,7 +33,8 @@ import com.zillit.desktop.feature.cashexpenses.domain.Lifecycle
 /** The pill hue for a batch status. Mirrors the web's `BATCH_STATUS_MAP`. */
 val BatchStatus.tone: StatusTone
     get() = when (this) {
-        BatchStatus.Pending, BatchStatus.Unknown -> StatusTone.Pending
+        // Descalated reads as the web's fallback, amber.
+        BatchStatus.Pending, BatchStatus.Unknown, BatchStatus.Descalated -> StatusTone.Pending
         BatchStatus.Coding -> StatusTone.Escalated
         BatchStatus.Coded, BatchStatus.InAudit, BatchStatus.UnderReview -> StatusTone.Progress
         BatchStatus.AwaitingApproval -> StatusTone.Pending

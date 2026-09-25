@@ -5,6 +5,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
@@ -13,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -47,13 +52,16 @@ fun CallTileView(
     pulse: Float,
     modifier: Modifier = Modifier,
     image: ImageBitmap? = null,
+    pins: TilePins = TilePins(),
 ) {
-    val colors = ZillitTheme.colors
     val ringing = tile.presence == CallStatus.Ringing
     val media = tile.media
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
 
     Box(
         modifier = modifier
+            .hoverable(hover)
             .clip(RoundedCornerShape(TILE_CORNER))
             // The web's tile: #3c4043 at radius 12 with a 2px transparent border
             // the speaking ring paints into (`styles.css:447-457`).
@@ -88,7 +96,51 @@ fun CallTileView(
 
         if (!ringing) {
             TileCornerChips(tile)
+            pins.toggle?.let { toggle ->
+                PinButton(
+                    pinned = tile.key in pins.keys,
+                    visible = hovered,
+                    onClick = { toggle(tile.key) },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(ZillitTheme.spacing.sm),
+                )
+            }
         }
+    }
+}
+
+/**
+ * Which tiles are pinned, and how to pin one — the stage's, handed to each
+ * tile. A null [toggle] draws no pin at all (the pill's thumbnail).
+ */
+data class TilePins(
+    val keys: List<String> = emptyList(),
+    val toggle: ((String) -> Unit)? = null,
+)
+
+/**
+ * The web tile's pin (`Tile.tsx`): shown on hover, and always once pinned
+ * so a pinned tile says why it is big.
+ *
+ * Revealed by alpha, never composed on hover: a control that only exists
+ * while the pointer is over it misses the press that arrives with it.
+ */
+@Composable
+private fun PinButton(pinned: Boolean, visible: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .alpha(if (pinned || visible) 1f else 0f)
+            .size(PIN_SIZE)
+            .clip(CircleShape)
+            .background(if (pinned) CallPalette.green else CallPalette.scrim)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(
+            icon = ZillitIcons.Pin,
+            contentDescription = if (pinned) str(S.desktop_board_unpin) else str(S.desktop_board_pin),
+            tint = Color.White,
+            size = BADGE_ICON + 2.dp,
+        )
     }
 }
 
@@ -249,3 +301,4 @@ private const val HALO_GROWTH = 0.12f
 private const val HALO_ALPHA = 0.32f
 private const val BADGE_INSET = 0.02f
 private val HAND_BELOW_SHARING = 28.dp
+private val PIN_SIZE = 26.dp

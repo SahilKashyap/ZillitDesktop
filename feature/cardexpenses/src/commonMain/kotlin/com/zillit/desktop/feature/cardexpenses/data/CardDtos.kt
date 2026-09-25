@@ -8,7 +8,6 @@ import com.zillit.desktop.feature.cardexpenses.domain.AlertSeverity
 import com.zillit.desktop.feature.cardexpenses.domain.AnalyticsSlice
 import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
 import com.zillit.desktop.feature.cardexpenses.domain.BulkOutcome
-import com.zillit.desktop.feature.cardexpenses.domain.StatementRow
 import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
 import com.zillit.desktop.feature.cardexpenses.domain.CardAnalytics
 import com.zillit.desktop.feature.cardexpenses.domain.CardHistoryEntry
@@ -36,6 +35,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.roundToInt
 import kotlinx.serialization.json.JsonPrimitive
@@ -86,6 +86,13 @@ internal data class CardDto(
     @SerialName("created_at") val createdAt: String? = null,
     /** The chain's sign-offs: an array, or a JSON string of one. */
     @SerialName("approvals") val approvals: JsonElement? = null,
+    @SerialName("digital_card_number") val digitalCardNumber: String? = null,
+    @SerialName("physical_card_number") val physicalCardNumber: String? = null,
+    /** On `/overview` rows only; see `ExpenseCard.spent`. */
+    @SerialName("spent") val spent: String? = null,
+    @SerialName("rejected_at") val rejectedAt: String? = null,
+    /** The issuing bank, joined: `{id, name, …}`. Read for its name only. */
+    @SerialName("bank_account") val bankAccount: JsonElement? = null,
 ) {
     fun toDomain(): ExpenseCard? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -118,6 +125,12 @@ internal data class CardDto(
             rejectionReason = rejectionReason,
             createdAt = createdAt.toEpochMillisOrNull(),
             approvals = approvals.readApprovals(),
+            digitalCardNumber = digitalCardNumber?.takeIf { it.isNotBlank() },
+            physicalCardNumber = physicalCardNumber?.takeIf { it.isNotBlank() },
+            serverSpent = spent.toAmountOrNull(),
+            rejectedAt = rejectedAt.toEpochMillisOrNull(),
+            bankName = ((bankAccount as? JsonObject)?.get("name") as? JsonPrimitive)
+                ?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() },
         )
     }
 }
@@ -143,6 +156,14 @@ internal data class TransactionDto(
     @SerialName("vat_amount") val vatAmount: String? = null,
     @SerialName("match_status") val matchStatus: String? = null,
     @SerialName("receipt_id") val receiptId: String? = null,
+    // The camelCase and raw spellings the web table falls back to
+    // (`TransactionTable.jsx:124,190,230,260,291`): some routes answer them.
+    @SerialName("cardLastFour") val cardLastFourCamel: String? = null,
+    @SerialName("receiptId") val receiptIdCamel: String? = null,
+    @SerialName("userId") val userIdCamel: String? = null,
+    @SerialName("nominalCode") val nominalCodeCamel: String? = null,
+    @SerialName("code") val code: String? = null,
+    @SerialName("merchant_raw") val merchantRaw: String? = null,
 ) {
     fun toDomain(): CardTransaction? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -150,25 +171,29 @@ internal data class TransactionDto(
         return CardTransaction(
             id = identifier,
             cardId = cardId,
-            cardLastFour = cardLastFour,
-            holderId = userId,
+            // The importer's `0000` names no card; the web prints a dash for it.
+            cardLastFour = (cardLastFour ?: cardLastFourCamel)?.takeIf { it.isNotBlank() && it != NO_CARD },
+            holderId = (userId ?: userIdCamel)?.takeIf { it.isNotBlank() },
             holderName = holderName.orEmpty(),
-            merchant = merchant.orEmpty(),
+            merchant = listOf(merchantRaw, merchant, description).firstOrNull { !it.isNullOrBlank() }.orEmpty(),
             description = description,
             amount = amount.toAmount(),
             currency = currency,
-            date = (date ?: transactionDate).toEpochMillisOrNull(),
+            date = (transactionDate ?: date).toEpochMillisOrNull(),
             status = workflow,
-            nominalCode = nominalCode,
+            nominalCode = listOf(code, nominalCode, nominalCodeCamel).firstOrNull { !it.isNullOrBlank() },
             codeDescription = codeDescription,
             episode = episode,
             vatAmount = vatAmount.toAmount(),
             matchStatus = MatchStatus.from(matchStatus),
-            receiptId = receiptId,
+            receiptId = (receiptId ?: receiptIdCamel)?.takeIf { it.isNotBlank() },
             personal = workflow == CardWorkflowStatus.Personal,
         )
     }
 }
+
+/** The importer's placeholder for a line with no card on it. */
+private const val NO_CARD = "0000"
 
 @Serializable
 internal data class ReceiptDto(
@@ -222,9 +247,15 @@ internal data class ReceiptDto(
     @SerialName("effective_date") val effectiveDate: String? = null,
     @SerialName("assigned_to") val assignedTo: String? = null,
     @SerialName("escalation_reason") val escalationReason: String? = null,
+    @SerialName("escalated_by") val escalatedBy: String? = null,
+    @SerialName("escalated_at") val escalatedAt: String? = null,
     @SerialName("department_id") val departmentId: String? = null,
     @SerialName("card_last_four") val cardLastFour: String? = null,
     @SerialName("approvals") val approvals: JsonElement? = null,
+    @SerialName("category") val category: String? = null,
+    @SerialName("rejection_reason") val rejectionReason: String? = null,
+    @SerialName("rejected_by") val rejectedBy: String? = null,
+    @SerialName("rejected_at") val rejectedAt: String? = null,
 ) {
     fun toDomain(): CardReceipt? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -265,17 +296,26 @@ internal data class ReceiptDto(
             // `duplicate` and `personal` into "matched", and the sections
             // need them apart.
             inboxSection = InboxSection.of(matchStatus, status, transactionId),
+            category = category?.takeIf { it.isNotBlank() },
+            rejectionReason = rejectionReason?.takeIf { it.isNotBlank() },
+            rejectedBy = rejectedBy?.takeIf { it.isNotBlank() },
+            rejectedAt = rejectedAt.toEpochMillisOrNull(),
+            attachmentName = attachment.readAttachmentName(),
         )
     }
 
     /** Only a detail read carries `line_items`; a queue row reads as not loaded. */
     private fun processing(): ReceiptProcessing {
-        val (coded, fixed) = lineItems.readLineItems()
+        val read = lineItems.readLineItems()
         return ReceiptProcessing(
             loaded = lineItems != null,
-            lines = coded,
-            fixedLines = fixed,
+            lines = read.coded,
+            fixedLines = read.fixed,
             flags = processingFlags.readFlags(),
+            rules = processingFlags.readFlagRules(),
+            taxLine = read.taxLine,
+            escalatedBy = escalatedBy?.takeIf { it.isNotBlank() },
+            escalatedAt = escalatedAt.toEpochMillisOrNull(),
             cardLimit = cardLimit.toAmountOrNull(),
             cardBalance = cardBalance.toAmountOrNull(),
             requestTopUp = requestTopUp.truthy(),
@@ -300,6 +340,16 @@ internal data class CardTopUpDto(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("card_limit") val cardLimit: String? = null,
     @SerialName("card_balance") val cardBalance: String? = null,
+    @SerialName("upload_type") val uploadType: String? = null,
+    @SerialName("note") val note: String? = null,
+    @SerialName("receipt_merchant") val receiptMerchant: String? = null,
+    @SerialName("receipt_amount") val receiptAmount: String? = null,
+    @SerialName("bs_control_code") val bsControlCode: String? = null,
+    @SerialName("issued_amount") val issuedAmount: String? = null,
+    @SerialName("entity_id") val entityId: String? = null,
+    @SerialName("entity_type") val entityType: String? = null,
+    /** The row's audit trail: a JSON-stringified array, or an array. */
+    @SerialName("history") val history: JsonElement? = null,
 ) {
     fun toDomain(): CardTopUp? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -316,6 +366,15 @@ internal data class CardTopUpDto(
             createdAt = createdAt.toEpochMillisOrNull(),
             cardLimit = cardLimit.toAmountOrNull(),
             cardBalance = cardBalance.toAmountOrNull(),
+            uploadType = uploadType?.takeIf { it.isNotBlank() },
+            note = note?.takeIf { it.isNotBlank() },
+            receiptMerchant = receiptMerchant?.takeIf { it.isNotBlank() },
+            receiptAmount = receiptAmount.toAmountOrNull(),
+            bsControlCode = bsControlCode?.takeIf { it.isNotBlank() },
+            issuedAmount = issuedAmount.toAmountOrNull(),
+            entityId = entityId?.takeIf { it.isNotBlank() },
+            entityType = entityType?.takeIf { it.isNotBlank() },
+            trail = history.readTopUpTrail(),
         )
     }
 }
@@ -331,6 +390,8 @@ internal data class AlertDto(
     @SerialName("savings") val savings: String? = null,
     @SerialName("timestamp") val timestamp: String? = null,
     @SerialName("resolution") val resolution: String? = null,
+    /** `[{merchant, ref, holder, amount}]`, camelCase on the wire (`SmartAlertsPage.jsx:222`). */
+    @SerialName("relatedTxns") val relatedTxns: JsonElement? = null,
 ) {
     fun toDomain(): CardAlert? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -346,6 +407,7 @@ internal data class AlertDto(
             savings = savings.toAmountOrNull(),
             at = timestamp.toEpochMillisOrNull(),
             resolution = resolution?.takeIf { it.isNotBlank() },
+            relatedTxns = relatedTxns.readAlertTxns(),
         )
     }
 }
@@ -353,6 +415,9 @@ internal data class AlertDto(
 @Serializable
 internal data class ImportDto(
     @SerialName("id") val id: String? = null,
+    /** The label is `name || file_name || id` on the web (`AllTransactionsPage.jsx:386`). */
+    @SerialName("name") val name: String? = null,
+    @SerialName("file_name") val fileName: String? = null,
     @SerialName("filename") val filename: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("row_count") val rowCount: Int? = null,
@@ -363,45 +428,11 @@ internal data class ImportDto(
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
         return StatementImport(
             id = identifier,
-            filename = filename,
+            filename = listOf(name, fileName, filename).firstOrNull { !it.isNullOrBlank() },
             status = status?.lowercase().orEmpty(),
             rowCount = rowCount ?: 0,
             matchedCount = matchedCount ?: 0,
             importedAt = createdAt.toEpochMillisOrNull(),
-        )
-    }
-}
-
-@Serializable
-internal data class StatementRowDto(
-    @SerialName("id") val id: String? = null,
-    @SerialName("merchant") val merchant: String? = null,
-    @SerialName("description") val description: String? = null,
-    @SerialName("amount") val amount: String? = null,
-    @Serializable(with = CurrencyCodeSerializer::class)
-    @SerialName("currency") val currency: String? = null,
-    @SerialName("date") val date: String? = null,
-    @SerialName("transaction_date") val transactionDate: String? = null,
-    @SerialName("card_last_four") val cardLastFour: String? = null,
-    @SerialName("user_id") val userId: String? = null,
-    @SerialName("holder_name") val holderName: String? = null,
-    @SerialName("status") val status: String? = null,
-) {
-    fun toDomain(): StatementRow? {
-        val identifier = id?.takeIf { it.isNotBlank() } ?: return null
-        return StatementRow(
-            id = identifier,
-            merchant = merchant.orEmpty(),
-            description = description,
-            amount = amount.toAmount(),
-            currency = currency,
-            date = (date ?: transactionDate).toEpochMillisOrNull(),
-            cardLastFour = cardLastFour,
-            holderId = userId?.takeIf { it.isNotBlank() },
-            holderName = holderName,
-            // An unstated status is a fresh row: that is what an import
-            // produces, and treating it as processed would hide the work.
-            status = status?.lowercase()?.takeIf { it.isNotBlank() } ?: "new",
         )
     }
 }
@@ -469,6 +500,8 @@ internal data class CardMetadataDto(
     @SerialName("approval_tier_configs") val tierConfigs: JsonElement? = null,
     @SerialName("card_override") val cardOverride: JsonElement? = null,
     @SerialName("receipt_override") val receiptOverride: JsonElement? = null,
+    /** The crew's copy of the request ceiling (`CardExpensesModule.jsx:137`). */
+    @SerialName("request_cap") val requestCap: JsonElement? = null,
 ) {
     fun toDomain() = CardMetadata(
         isApprover = isApprover == true,
@@ -480,6 +513,7 @@ internal data class CardMetadataDto(
         tierConfigs = tierConfigs.readTierConfigs(),
         cardOverride = cardOverride.truthy(),
         receiptOverride = receiptOverride.truthy(),
+        requestCap = requestCap?.takeUnless { it is JsonNull }?.readRequestCap(),
     )
 }
 
@@ -555,6 +589,13 @@ internal data class AnalyticsDto(
         byDepartment = byDepartment.orEmpty().map { it.toDomain() },
         activeCards = summary?.activeCards.toAmount().toInt(),
         postedTotal = summary?.postedTotal.toAmount(),
+        totalCards = summary?.totalCards.toAmount().toInt(),
+        topDepartmentId = summary?.topDepartmentId?.takeIf { it.isNotBlank() },
+        avgImportToCoded = summary?.avgImportToCoded.toAmount(),
+        avgCodedToApproved = summary?.avgCodedToApproved.toAmount(),
+        avgApprovedToPosted = summary?.avgApprovedToPosted.toAmount(),
+        receiptsMissingPct = summary?.receiptsMissingPct.toAmount(),
+        autoReconciledPct = summary?.autoReconciledPct.toAmount(),
     )
 }
 
@@ -565,6 +606,13 @@ internal data class AnalyticsSummaryDto(
     @SerialName("avg_transaction") val averageTransaction: String? = null,
     @SerialName("active_cards") val activeCards: String? = null,
     @SerialName("posted_total") val postedTotal: String? = null,
+    @SerialName("total_cards") val totalCards: String? = null,
+    @SerialName("top_department_id") val topDepartmentId: String? = null,
+    @SerialName("avg_import_to_coded") val avgImportToCoded: String? = null,
+    @SerialName("avg_coded_to_approved") val avgCodedToApproved: String? = null,
+    @SerialName("avg_approved_to_posted") val avgApprovedToPosted: String? = null,
+    @SerialName("receipts_missing_pct") val receiptsMissingPct: String? = null,
+    @SerialName("auto_reconciled_pct") val autoReconciledPct: String? = null,
 )
 
 @Serializable
@@ -577,6 +625,10 @@ internal data class SliceDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("department_id") val departmentId: String? = null,
     @SerialName("card_last_four") val cardLastFour: String? = null,
+    @SerialName("card_limit") val cardLimit: String? = null,
+    @SerialName("balance") val balance: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
+    @SerialName("currency") val currency: String? = null,
 ) {
     fun toDomain() = AnalyticsSlice(
         label = label?.takeIf { it.isNotBlank() } ?: name.orEmpty(),
@@ -585,6 +637,9 @@ internal data class SliceDto(
         userId = userId?.takeIf { it.isNotBlank() },
         departmentId = departmentId?.takeIf { it.isNotBlank() },
         cardLastFour = cardLastFour?.takeIf { it.isNotBlank() },
+        cardLimit = cardLimit.toAmountOrNull(),
+        balance = balance.toAmountOrNull(),
+        currency = currency?.takeIf { it.isNotBlank() },
     )
 }
 
@@ -595,12 +650,15 @@ internal data class CardHistoryDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("note") val note: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    /** The top-up trail's spelling (`HistoryPanel.jsx:19-23`). */
+    @SerialName("action_by") val actionBy: String? = null,
+    @SerialName("action_at") val actionAt: String? = null,
 ) {
     fun toDomain() = CardHistoryEntry(
         action = action ?: status.orEmpty(),
-        userId = userId,
+        userId = userId ?: actionBy,
         note = note,
-        at = createdAt.toEpochMillisOrNull(),
+        at = (createdAt ?: actionAt).toEpochMillisOrNull(),
     )
 }
 
@@ -618,6 +676,7 @@ internal data class CardSettingsDto(
      * tolerantly; see [readRequestCap].
      */
     @SerialName("request_cap") val requestCap: JsonElement? = null,
+    @SerialName("assignment_rules") val assignmentRules: JsonElement? = null,
 ) {
     fun toDomain() = CardSettings(
         teamMembers = teamMembers.readList(TeamMemberDto.serializer()).map { it.toDomain() },
@@ -625,6 +684,7 @@ internal data class CardSettingsDto(
         overrides = approvalOverride.readObject(OverridesDto.serializer())?.toDomain() ?: ApprovalOverrides(),
         providers = cardProviders.readProviders(),
         requestCap = requestCap.readRequestCap(),
+        assignmentRules = assignmentRules.readAssignmentRules(),
     )
 }
 
@@ -718,7 +778,9 @@ internal fun JsonElement?.readAttachmentKey(): String? = when {
 
 private fun JsonElement.attachmentKey(): String? {
     val obj = this as? JsonObject ?: return null
-    return listOf("key", "url", "path", "file_name")
+    // `media` first: it is the web's AttachmentModel key (`attachmentUpload.js`),
+    // and every receipt uploaded from the web carries it and nothing else.
+    return listOf("media", "key", "url", "path", "file_name")
         .firstNotNullOfOrNull { field ->
             (obj[field] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
         }

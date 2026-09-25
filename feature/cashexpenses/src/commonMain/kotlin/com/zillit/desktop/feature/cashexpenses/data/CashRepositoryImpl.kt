@@ -27,9 +27,11 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimLineItem
+import com.zillit.desktop.feature.cashexpenses.domain.DepartmentCoordinator
 import com.zillit.desktop.feature.cashexpenses.domain.DepartmentOverview
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.ExportFormat
+import com.zillit.desktop.feature.cashexpenses.domain.FloatDetails
 import com.zillit.desktop.feature.cashexpenses.domain.FundRequest
 import com.zillit.desktop.feature.cashexpenses.domain.MyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.NewClaimBatch
@@ -108,7 +110,13 @@ class CashRepositoryImpl(
         floats("$base/float-requests/my-floats")
 
     override suspend fun activeFloats(): ZillitResult<List<CashFloat>> =
-        floats("$base/float-requests/active-floats")
+        floats("$base/float-requests/active-floats", mapOf("sort" to "created_at", "order" to "desc"))
+
+    override suspend fun floatDetails(floatId: String): ZillitResult<FloatDetails> =
+        get("$base/float-requests/$floatId/details", JsonElement.serializer()).map { it.readFloatDetails() }
+
+    override suspend fun updateFloatBsCode(floatId: String, bsCode: String): ZillitResult<Unit> =
+        patch("$base/float-requests/$floatId", buildJsonObject { put("bs_code", JsonPrimitive(bsCode.trim())) })
 
     override suspend fun floatApprovalQueue(): ZillitResult<List<CashFloat>> =
         floats("$base/float-requests/approval-queue")
@@ -124,8 +132,16 @@ class CashRepositoryImpl(
                 putIfPresent("currency", request.currency)
                 put("purpose", JsonPrimitive(request.purpose))
                 putIfPresent("department_id", request.departmentId)
-                putIfPresent("duration", request.duration)
-                putIfPresent("duration_type", request.durationType)
+                // -- crew parity -- a whole number of days, sent only for `days`
+                // and null otherwise, as the web's request does.
+                request.durationType?.takeIf { it.isNotBlank() }?.let { type ->
+                    put("duration_type", JsonPrimitive(type))
+                    val days = request.duration?.trim()?.toIntOrNull()?.takeIf { type == "days" }
+                    put("duration", days?.let(::JsonPrimitive) ?: JsonNull)
+                }
+                request.collectDate?.let { put("collect_date", JsonPrimitive(it)) }
+                putIfPresent("episode", request.episode)
+                putIfPresent("collection_method", request.collectionMethod)
                 putIfPresent("bs_code", request.bsCode)
                 putIfPresent("company_id", request.companyId)
                 // An accountant raising the float for a crew member — the
@@ -232,8 +248,17 @@ class CashRepositoryImpl(
 
     // -- claim batches -----------------------------------------------------
 
-    override suspend fun myBatches(): ZillitResult<List<ClaimBatch>> =
-        batches("$base/claims/my-batches")
+    override suspend fun myBatches(floatRequestId: String?, expenseType: String?): ZillitResult<List<ClaimBatch>> =
+        batches(
+            "$base/claims/my-batches",
+            listOfNotNull(
+                floatRequestId?.takeIf { it.isNotBlank() }?.let { "float_request_id" to it },
+                expenseType?.takeIf { it.isNotBlank() }?.let { "expense_type" to it },
+            ).toMap(),
+        )
+
+    override suspend fun floatBatches(floatId: String): ZillitResult<List<ClaimBatch>> =
+        batches("$base/claims", mapOf("float_request_id" to floatId))
 
     override suspend fun batch(batchId: String): ZillitResult<ClaimBatch> =
         get("$base/claims/$batchId", BatchDto.serializer()).flatMap { dto ->
@@ -246,34 +271,9 @@ class CashRepositoryImpl(
     override suspend fun batchHistory(batchId: String): ZillitResult<List<CashHistoryEntry>> =
         history("$base/claims/$batchId/history")
 
-    override suspend fun submitReceipts(request: NewClaimBatch): ZillitResult<Unit> = post(
-        "$base/claims",
-        buildJsonObject {
-            put("expense_type", JsonPrimitive(request.expenseType.wire))
-            putIfPresent("float_request_id", request.floatId)
-            putIfPresent("settlement_type", request.settlementType)
-            putIfPresent("notes", request.notes)
-            put(
-                "claims",
-                buildJsonArray {
-                    request.receipts.forEach { receipt ->
-                        add(
-                            buildJsonObject {
-                                put("description", JsonPrimitive(receipt.description))
-                                put("gross_amount", JsonPrimitive(receipt.amount.trim().toDoubleOrNull() ?: 0.0))
-                                putIfPresent("vat_amount", receipt.vat.trim().toDoubleOrNull()?.toString())
-                                putIfPresent("supplier", receipt.supplier)
-                                putIfPresent("category", receipt.category)
-                                putIfPresent("cost_code", receipt.costCode)
-                                receipt.date?.let { put("receipt_date", JsonPrimitive(it)) }
-                                putIfPresent("receipt_url", receipt.attachmentKey)
-                            },
-                        )
-                    }
-                },
-            )
-        },
-    )
+    // -- crew parity -- the web's submit payload; see CrewWire.
+    override suspend fun submitReceipts(request: NewClaimBatch): ZillitResult<Unit> =
+        post("$base/claims", request.toSubmitJson())
 
     override suspend fun resubmitBatch(batchId: String, note: String?): ZillitResult<Unit> =
         post("$base/claims/$batchId/resubmit", noteBody(note))
@@ -328,6 +328,7 @@ class CashRepositoryImpl(
                                                 putIfPresent("account", line.account)
                                                 putIfPresent("tax_type", line.taxType)
                                                 putIfPresent("split_parent_id", line.splitParentId)
+                                                putLineExtras(line)
                                             },
                                         )
                                     }
@@ -440,7 +441,7 @@ class CashRepositoryImpl(
             url = "$base/claims/overview/department",
             serializer = DepartmentOverviewDto.serializer(),
             query = mapOf("department_id" to departmentId),
-        ).map { it.toDomain() }
+        ).map { it.toDomain(departmentId) }
 
     override suspend fun paymentRouting(): ZillitResult<PaymentRouting> =
         get("$base/claims/overview/payment-routing", PaymentRoutingDto.serializer()).map { it.toDomain() }
@@ -542,6 +543,13 @@ class CashRepositoryImpl(
     override suspend fun updateRequestCap(cap: RequestCap): ZillitResult<CashSettings> =
         patchSettings(buildJsonObject { put("request_cap", cap.toJson()) })
 
+    override suspend fun updateDepartmentCoordinators(rows: List<DepartmentCoordinator>): ZillitResult<CashSettings> =
+        patchSettings(
+            buildJsonObject {
+                put("department_coordinators", buildJsonArray { rows.forEach { add(CoordinatorDto.of(it)) } })
+            },
+        )
+
     override suspend fun saveAssignmentRule(rule: CashAssignmentRule): ZillitResult<CashAssignmentRule> =
         hub.saveAssignmentRule(rule)
 
@@ -587,10 +595,17 @@ class CashRepositoryImpl(
         historyOnly: Boolean,
     ): ZillitResult<ByteArray> = hub.exportReceipts(format, expenseType, historyOnly)
 
+    // -- settings parity --
+
+    override suspend fun updateSettingsSection(
+        section: com.zillit.desktop.feature.cashexpenses.domain.CashSettingsSection,
+        settings: CashSettings,
+    ): ZillitResult<CashSettings> = patchSettings(settings.sectionBody(section))
+
     // -- plumbing ----------------------------------------------------------
 
-    private suspend fun floats(url: String) =
-        get(url, ListSerializer(FloatDto.serializer())).map { rows -> rows.mapNotNull { it.toDomain() } }
+    private suspend fun floats(url: String, query: Map<String, Any?> = emptyMap()) =
+        get(url, ListSerializer(FloatDto.serializer()), query).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     private suspend fun batches(url: String, query: Map<String, Any?> = emptyMap()) =
         get(url, ListSerializer(BatchDto.serializer()), query)
@@ -681,6 +696,20 @@ class CashRepositoryImpl(
     private fun List<String>?.toIdArray(): JsonElement =
         this?.let { ids -> JsonArray(ids.map(::JsonPrimitive)) } ?: JsonNull
 
+    // -- batch parity --
+
+    override suspend fun saveClaimsBatch(
+        batchId: String,
+        claims: List<Claim>,
+        effectiveDate: Long?,
+    ): ZillitResult<Unit> = post(
+        "$base/claims/$batchId/save-claims",
+        buildJsonObject {
+            put("claims", claims.toClaimsPayload())
+            effectiveDate?.let { put("effective_date", JsonPrimitive(it)) }
+        },
+    )
+
     private companion object {
         const val APPROVE = "approve"
         const val REJECT = "reject"
@@ -707,6 +736,24 @@ internal fun kotlinx.serialization.json.JsonObjectBuilder.putIfPresent(key: Stri
     val trimmed = value?.trim()
     if (!trimmed.isNullOrEmpty()) put(key, JsonPrimitive(trimmed))
 }
+
+/**
+ * The line keys the editor does not own, sent back as they came so a save
+ * cannot strip a tax line's `is_tax` or a coded line's layers and tags.
+ */
+private fun kotlinx.serialization.json.JsonObjectBuilder.putLineExtras(line: ClaimLineItem) {
+    if (line.isTax) put("is_tax", JsonPrimitive(true))
+    line.taxAmount?.let { put("tax_amount", JsonPrimitive(it)) }
+    line.trackingCodes?.let { put("tracking_codes", it) }
+    line.tags?.let { put("tags", it) }
+    line.rentalStart?.let { put("rental_start", it.asWireScalar()) }
+    line.rentalEnd?.let { put("rental_end", it.asWireScalar()) }
+    line.sortOrder?.let { put("sort_order", JsonPrimitive(it)) }
+    putIfPresent("expenditure_type", line.expenditureType)
+}
+
+/** An epoch as the number it arrived as; anything else as its text. */
+private fun String.asWireScalar(): JsonPrimitive = toLongOrNull()?.let(::JsonPrimitive) ?: JsonPrimitive(this)
 
 /** The float request's custom answers, in the shape this service stores. */
 private fun List<CustomFieldGroup>.toFloatJson(): JsonArray = buildJsonArray {

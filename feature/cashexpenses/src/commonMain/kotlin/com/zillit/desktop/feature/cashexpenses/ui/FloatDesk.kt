@@ -8,6 +8,8 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashDates
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashReturn
 import com.zillit.desktop.feature.cashexpenses.domain.CashRules
+import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
+import com.zillit.desktop.feature.cashexpenses.domain.CashTopUps
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
 import kotlin.math.abs
 
@@ -32,7 +34,143 @@ internal class FloatDesk(private val host: CashHost) {
         val float = float(floatId) ?: return
         if (!CashRules.mayApprove(host.state.viewer, float)) return host.noRights()
         val step = CashRules.approvalStep(host.state.viewer, float.departmentId, float.requestedAmount, float.approvals)
-        host.act(str(S.desktop_ce_float_approved)) { host.repository.approveFloat(floatId, step) }
+        host.act(str(S.desktop_ce_float_approved), after = { readApproval(floatId) }) {
+            host.repository.approveFloat(floatId, step)
+        }
+    }
+
+    /**
+     * A float decided on the approval queue is read — only after the server
+     * agreed, so a failed decision leaves the chip lit (ZL-20775,
+     * `PCApprovalPage.jsx:1080-1095`).
+     */
+    fun readApproval(floatId: String) = host.readEntity(CashBadges.FLOAT_APPROVAL, floatId, CashBadges.KIND_FLOAT)
+
+    // -- float details --------------------------------------------------------------
+
+    /**
+     * Opens the Float Details dialog: reads the float's `pc_float` row and
+     * fetches `/details` (`PreviousFloatDetailModal.jsx:150-175`).
+     */
+    fun openDetail(floatId: String) {
+        host.update { copy(floatDetail = FloatDetailState(floatId = floatId), floatDetailClaims = emptyMap()) }
+        host.readEntity(CashBadges.PC_FLOAT, floatId, CashBadges.KIND_FLOAT)
+        loadDetail(floatId)
+    }
+
+    fun closeDetail() = host.update { copy(floatDetail = null, floatDetailClaims = emptyMap()) }
+
+    /** A posted batch in the details dialog, opened onto its receipts (`PreviousFloatDetailModal.jsx:177-193`). */
+    fun toggleDetailBatch(batchId: String) {
+        val open = host.state.floatDetailClaims
+        if (batchId in open) return host.update { copy(floatDetailClaims = floatDetailClaims - batchId) }
+        host.update { copy(floatDetailClaims = floatDetailClaims + (batchId to null)) }
+        host.work {
+            val claims = (host.repository.batch(batchId) as? ZillitResult.Success)?.data?.claims.orEmpty()
+            host.update {
+                if (batchId !in floatDetailClaims) return@update this
+                copy(floatDetailClaims = floatDetailClaims + (batchId to claims))
+            }
+        }
+    }
+
+    /**
+     * Corrects a float's BS code — `{bs_code}` and nothing else. Refused for
+     * anyone but an accountant, on a float past approval with nothing spent
+     * against it (`canEditFloatBsCode`); a blank code is refused, since the
+     * code is the float's clearing account.
+     */
+    @Suppress("ReturnCount") // One refusal per rule.
+    fun saveBsCode(floatId: String, bsCode: String) {
+        val float = host.state.floatDetail?.details?.float?.takeIf { it.id == floatId } ?: float(floatId)
+        if (float == null || !float.bsCodeEditable(host.state.viewer.isAccountant)) return host.noRights()
+        val code = bsCode.trim()
+        if (code.isEmpty()) return host.refuse(str(S.ah_err_field_required, str(S.desktop_ce_bs_code)))
+        host.update { copy(floatDetail = floatDetail?.copy(savingBsCode = true)) }
+        host.work {
+            val saved = host.repository.updateFloatBsCode(floatId, code)
+            host.update { copy(floatDetail = floatDetail?.copy(savingBsCode = false)) }
+            when (saved) {
+                is ZillitResult.Success -> {
+                    host.update { copy(notice = str(S.ah_saved_toast)) }
+                    if (host.state.floatDetail?.floatId == floatId) loadDetail(floatId)
+                }
+
+                is ZillitResult.Failure -> host.report(saved.error)
+            }
+        }
+    }
+
+    private fun loadDetail(floatId: String) {
+        host.work {
+            val loaded = host.repository.floatDetails(floatId)
+            host.update {
+                val open = floatDetail?.takeIf { it.floatId == floatId } ?: return@update this
+                copy(
+                    floatDetail = when (loaded) {
+                        is ZillitResult.Success -> open.copy(loading = false, details = loaded.data, error = null)
+                        is ZillitResult.Failure -> open.copy(loading = false, error = loaded.error)
+                    },
+                )
+            }
+        }
+    }
+
+    // -- an Active Floats row's batches, and a float's history ------------------------
+
+    /**
+     * Opens a row onto the batches spent against it — `GET /claims?float_request_id=`
+     * — or closes it. Re-opening keeps what was fetched, as the web's row does.
+     */
+    fun toggleBatches(floatId: String) {
+        val open = host.state.floatExpansions[floatId]
+        if (open != null) {
+            host.update { copy(floatExpansions = floatExpansions - floatId) }
+            return
+        }
+        host.update { copy(floatExpansions = floatExpansions + (floatId to FloatExpansion())) }
+        host.work {
+            val rows = (host.repository.floatBatches(floatId) as? ZillitResult.Success)?.data.orEmpty()
+            editExpansion(floatId) { copy(batches = rows) }
+        }
+    }
+
+    /** Picks a batch beside the list and fetches its receipts once; picking it again clears the pick. */
+    fun selectBatch(floatId: String, batchId: String) {
+        val open = host.state.floatExpansions[floatId] ?: return
+        if (open.selectedBatchId == batchId) return editExpansion(floatId) { copy(selectedBatchId = null) }
+        editExpansion(floatId) { copy(selectedBatchId = batchId) }
+        if (batchId in open.claims) return
+        host.work {
+            val claims = (host.repository.batch(batchId) as? ZillitResult.Success)?.data?.claims.orEmpty()
+            editExpansion(floatId) { copy(claims = this.claims + (batchId to claims)) }
+        }
+    }
+
+    /** The float's audit trail in a drawer (`PCFloatsPage.jsx:959-966`); null closes it. */
+    fun showHistory(floatId: String?, reference: String?) {
+        if (floatId == null) return host.update { copy(floatHistory = null) }
+        host.update { copy(floatHistory = FloatHistoryPanel(floatId, reference)) }
+        host.work {
+            when (val loaded = host.repository.floatHistory(floatId)) {
+                is ZillitResult.Success -> host.update {
+                    val open = floatHistory?.takeIf { it.floatId == floatId } ?: return@update this
+                    copy(floatHistory = open.copy(entries = loaded.data))
+                }
+
+                is ZillitResult.Failure -> {
+                    host.update {
+                        copy(floatHistory = floatHistory?.takeIf { it.floatId == floatId }?.copy(entries = emptyList()))
+                    }
+                    host.report(loaded.error)
+                }
+            }
+        }
+    }
+
+    private fun editExpansion(floatId: String, change: FloatExpansion.() -> FloatExpansion) = host.update {
+        val open = floatExpansions[floatId] ?: return@update this
+        copy(floatExpansions = floatExpansions + (floatId to open.change()))
     }
 
     fun collect(floatId: String) = transition(floatId, FloatStatus.ReadyToCollect, S.desktop_ce_collection_recorded) {
@@ -112,23 +250,17 @@ internal class FloatDesk(private val host: CashHost) {
     }
 
     /**
-     * Pays a top-up in full — refused when it would take the float past its
-     * limit; the partial top-up is the way to pay less.
+     * Mark topped up — pays a top-up in full, at once, as the web does. Past the
+     * float's limit it is stopped with the web's alert; a partial top-up is the
+     * way to pay less (`PCTopUpsPage.jsx:239-262`).
      */
     fun completeTopUp(topUpId: String) {
         if (!host.state.viewer.isAccountant) return host.noRights()
         val topUp = host.state.topUps.firstOrNull { it.id == topUpId } ?: return
-        val room = roomOn(topUp)
-        if (topUp.amount > room + PENNY) {
-            return host.refuse(
-                str(
-                    S.desktop_ce_topup_exceeds_room,
-                    Money.format(topUp.amount, topUp.currency),
-                    Money.format(room, topUp.currency),
-                ),
-            )
+        if (CashTopUps.exceedsRoom(topUp, topUp.amount)) {
+            return limitAlert(str(S.ah_topup_exceeds_limit_msg, topUpMoney(topUp, topUp.amount), roomText(topUp)))
         }
-        host.act(str(S.desktop_card_topup_completed)) { host.repository.completeTopUp(topUpId) }
+        host.act(str(S.ah_topup_marked_toast)) { host.repository.completeTopUp(topUpId) }
     }
 
     fun skipTopUp(topUpId: String) {
@@ -136,7 +268,11 @@ internal class FloatDesk(private val host: CashHost) {
         host.act(str(S.ah_topup_skipped_toast)) { host.repository.skipTopUp(topUpId) }
     }
 
-    /** A partial top-up needs the amount and the reason for paying less (`PCTopUpsPage.jsx:280-300`). */
+    /**
+     * A partial top-up needs the amount and the reason for paying less, and
+     * may not take the float past its limit (`PCTopUpsPage.jsx:279-313`). On
+     * success the Partial Top-Up dialog closes.
+     */
     fun partialTopUp(topUpId: String, amount: Double, note: String): Boolean {
         if (!host.state.viewer.isAccountant) {
             host.noRights()
@@ -147,19 +283,24 @@ internal class FloatDesk(private val host: CashHost) {
             return false
         }
         val topUp = host.state.topUps.firstOrNull { it.id == topUpId }
-        if (topUp != null && amount > roomOn(topUp) + PENNY) {
-            host.refuse(
-                str(
-                    S.desktop_ce_topup_exceeds_room,
-                    Money.format(amount, topUp.currency),
-                    Money.format(roomOn(topUp), topUp.currency),
-                ),
-            )
+        if (topUp != null && CashTopUps.exceedsRoom(topUp, amount)) {
+            limitAlert(str(S.desktop_pc_partial_exceeds_room, topUpMoney(topUp, amount), roomText(topUp)))
             return false
         }
-        host.act(str(S.desktop_card_topup_recorded)) { host.repository.partialTopUp(topUpId, amount, note) }
+        host.act(
+            str(S.ah_partial_topup_recorded_toast),
+            onSuccess = { copy(fundsUi = fundsUi.copy(partial = null)) },
+        ) { host.repository.partialTopUp(topUpId, amount, note) }
         return true
     }
+
+    private fun limitAlert(message: String) = host.update {
+        copy(fundsUi = fundsUi.copy(limitAlert = LimitAlert(str(S.ah_topup_exceeds_limit_title), message)))
+    }
+
+    private fun topUpMoney(topUp: CashTopUp, amount: Double): String = host.state.formatMoney(amount, topUp.currency)
+
+    private fun roomText(topUp: CashTopUp): String = topUpMoney(topUp, CashTopUps.room(topUp))
 
     // -- fund requests -------------------------------------------------------------
 
@@ -172,15 +313,22 @@ internal class FloatDesk(private val host: CashHost) {
         loadFunds(refreshCustodian = host.state.settings == null)
     }
 
+    /**
+     * `{fund_account, currency, amount}` — every key, always. The currency is
+     * the one picked, else the project default; with neither the request is
+     * refused, as the web's Request funds stays disabled
+     * (`RequestCashFundsModal.jsx:181-187,273-277`).
+     */
     fun submitFunds() {
         val funds = host.state.funds ?: return
         if (!host.state.viewer.isAccountant) return host.noRights()
-        val amount = funds.amount.trim().toDoubleOrNull()
-        if (funds.fundAccount.isBlank() || amount == null || amount <= 0) {
+        val amount = funds.amount.trim().toDoubleOrNull()?.takeIf { it > 0 }
+        val currency = fundsCurrency(host.state)
+        if (funds.fundAccount.isBlank() || amount == null || currency.isBlank()) {
             return host.refuse(str(S.desktop_ce_funds_need_account_amount))
         }
         runFunds(str(S.desktop_ce_funds_requested), clearAmount = true) {
-            host.repository.createFundRequest(funds.fundAccount, funds.currency.ifBlank { null }, amount)
+            host.repository.createFundRequest(funds.fundAccount, currency, amount)
         }
     }
 
@@ -195,8 +343,11 @@ internal class FloatDesk(private val host: CashHost) {
     }
 
     private fun runFunds(success: String, clearAmount: Boolean = false, block: suspend () -> ZillitResult<Unit>) {
+        host.update { copy(busy = true) }
         host.work {
-            when (val result = block()) {
+            val result = block()
+            host.update { copy(busy = false) }
+            when (result) {
                 is ZillitResult.Success -> {
                     host.update {
                         copy(
@@ -251,9 +402,6 @@ internal class FloatDesk(private val host: CashHost) {
         host.act(str(successKey), block = block)
     }
 
-    /** Limit minus current balance — how much more the float can take (`roomFor`). */
-    private fun roomOn(topUp: com.zillit.desktop.feature.cashexpenses.domain.CashTopUp): Double =
-        (topUp.floatRequestedAmount - topUp.floatBalance).coerceAtLeast(0.0)
 
     companion object {
         /** Floats a return can be recorded against — the web's selector list. */
@@ -268,3 +416,7 @@ internal class FloatDesk(private val host: CashHost) {
         private const val PENNY = 0.005
     }
 }
+
+/** The fund request's currency: the one picked, else the project default; blank when there is neither. */
+internal fun fundsCurrency(state: CashUiState): String =
+    state.funds?.currency?.trim()?.ifBlank { null } ?: state.currencies.defaultCode.orEmpty().trim()

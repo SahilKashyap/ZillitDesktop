@@ -17,6 +17,15 @@ import kotlinx.serialization.Serializable
  * real message.
  */
 
+/** `PUT device` — Android `DeviceUpdateModel`, the fields a desktop has. */
+@Serializable
+internal data class DeviceUpdateDto(
+    @SerialName("device_name") val deviceName: String,
+    @SerialName("device_type") val deviceType: String,
+    @SerialName("os_version") val osVersion: String,
+    @SerialName("app_version") val appVersion: String,
+)
+
 /** `POST device/unlink` — Android `StartProjectVM.logout`: `{"device_id": …}`. */
 @Serializable
 internal data class UnlinkDeviceDto(

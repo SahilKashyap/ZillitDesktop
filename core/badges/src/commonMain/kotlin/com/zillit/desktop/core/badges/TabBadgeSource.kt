@@ -23,6 +23,21 @@ interface TabBadgeSource {
 
     fun read(key: String) {}
 
+    /**
+     * Unread per key, then per entity inside it — `level_1` → `level_3` →
+     * count, the web's `getCashEntityUnread` tree — for the per-row chips.
+     * Empty from a source that cannot drill that far.
+     */
+    val entityCounts: Flow<Map<String, Map<String, Int>>> get() = emptyFlow()
+
+    /**
+     * One entity's rows read — the web's `emitCashLevelRead`: [entityId] is
+     * the row's `level_3`, and [kind], when given, narrows the read to one
+     * `level_2` bucket, so opening a batch leaves its query thread's unread
+     * standing and reading the thread leaves the batch's.
+     */
+    fun readEntity(key: String, entityId: String, kind: String? = null) {}
+
     companion object {
         val None: TabBadgeSource = object : TabBadgeSource {}
     }

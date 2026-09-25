@@ -104,12 +104,15 @@ class DocDistViewModel(
     /**
      * The shared stamp appearance, once per production open. A failure keeps
      * the built-in values, which are what the server answers for a project
-     * that has never saved — so nothing is reported.
+     * that has never saved — so nothing is reported. A stamp opened before
+     * the answer lands moves onto it, unless its user already changed it.
      */
     private fun loadWatermarkDefaults() {
         launch {
             (repository.watermarkSettings() as? ZillitResult.Success)?.let { settings ->
-                setState { copy(watermarkDefaults = settings.data) }
+                setState {
+                    copy(watermarkDefaults = settings.data, watermarkDefaultsLoaded = true).followWatermarkDefaults()
+                }
             }
         }
     }
@@ -128,8 +131,13 @@ class DocDistViewModel(
             }
         }
         launch {
-            // Only the cache: an open wizard keeps the draft its user is editing.
-            repository.watermarkSettingsUpdates.collect { settings -> setState { copy(watermarkDefaults = settings) } }
+            // Another device saved: every stamp nobody has changed by hand
+            // follows. An open wizard's draft is its user's and stays put.
+            repository.watermarkSettingsUpdates.collect { settings ->
+                setState {
+                    copy(watermarkDefaults = settings, watermarkDefaultsLoaded = true).followWatermarkDefaults()
+                }
+            }
         }
     }
 
@@ -278,7 +286,8 @@ class DocDistViewModel(
             DocDistEvent.CloseWatermarkDownload -> setState { copy(watermarkDownload = null) }
             is DocDistEvent.EditWatermarkLine1 -> watermark.editDownload { copy(line1 = event.text) }
             is DocDistEvent.EditWatermarkLine2 -> watermark.editDownload { copy(line2 = event.text) }
-            is DocDistEvent.EditWatermarkDownloadStyle -> watermark.editDownload { copy(style = event.style) }
+            is DocDistEvent.EditWatermarkDownloadStyle ->
+                watermark.editDownload { copy(style = event.style, styleEdited = true) }
             DocDistEvent.ConfirmWatermarkDownload -> watermark.confirmDownload()
             DocDistEvent.OpenWatermarkBatch -> watermark.openBatch()
             DocDistEvent.CloseWatermarkBatch -> setState { copy(watermarkBatch = null) }
@@ -293,6 +302,11 @@ class DocDistViewModel(
             ) }
             is DocDistEvent.AddBatchList -> watermark.addBatchList(event.listId)
             DocDistEvent.ConfirmWatermarkBatch -> watermark.confirmBatch()
+            DocDistEvent.OpenWatermarkSettings -> watermark.openSettings()
+            DocDistEvent.CloseWatermarkSettings -> watermark.closeSettings()
+            is DocDistEvent.EditWatermarkSettings -> watermark.editSettings(event.style)
+            DocDistEvent.ResetWatermarkSettings -> watermark.resetSettings()
+            DocDistEvent.SaveWatermarkSettings -> watermark.saveSettings()
             is DocDistEvent.OpenPicker -> watermark.openPicker(event.purpose)
             DocDistEvent.ClosePicker -> watermark.closePicker()
             is DocDistEvent.PickerFolder -> watermark.pickerFolder(event.folderId)
@@ -399,6 +413,8 @@ class DocDistViewModel(
             DocDistEvent.OpenAddContact -> contacts.openAdd()
             DocDistEvent.OpenEditContact -> contacts.openEdit()
             is DocDistEvent.EditContact -> contacts.edit(event.name, event.email, event.job, event.listIds)
+            DocDistEvent.TouchContactEmail ->
+                setState { copy(contactEditor = contactEditor?.copy(emailTouched = true)) }
             DocDistEvent.CloseContactEditor -> contacts.close()
             DocDistEvent.SaveContactEditor -> contacts.saveEditor()
             is DocDistEvent.ConfirmDeleteContact -> contacts.confirmDelete(event.email)

@@ -36,6 +36,7 @@ import com.zillit.desktop.feature.documentdistribution.ui.pages.LibraryPage
 import com.zillit.desktop.feature.documentdistribution.ui.pages.ListsPage
 import com.zillit.desktop.feature.documentdistribution.ui.pages.TemplateEditorDialog
 import com.zillit.desktop.feature.documentdistribution.ui.pages.TemplatesPage
+import com.zillit.desktop.feature.documentdistribution.ui.pages.WatermarkSettingsDialog
 
 /**
  * The Document Distribution tool.
@@ -83,6 +84,7 @@ fun DocDistScreen(
         // wherever it sits.
         ComposerDialog(state, onEvent)
         TemplateEditorDialog(state, onEvent)
+        WatermarkSettingsDialog(state, onEvent)
         DocDistPromptDialog(state.prompt, onEvent)
 
         ZillitToast(
@@ -91,6 +93,24 @@ fun DocDistScreen(
             tone = ZillitToastTone.Success,
         )
     }
+}
+
+/**
+ * The project-wide defaults every send starts from — the web's toolbar
+ * button, beside the other tool-wide actions. Saving them is a posting
+ * action, so readers never see the entry point (web 303a9fe28); there is
+ * nothing in there for them.
+ */
+@Composable
+private fun WatermarkSettingsButton(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
+    if (!state.viewer.canPost) return
+    ZillitButton(
+        text = str(S.dd_action_watermark_settings),
+        onClick = { onEvent(DocDistEvent.OpenWatermarkSettings) },
+        variant = ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+        leadingIcon = ZillitIcons.Shield,
+    )
 }
 
 // The badge reader takes its units as a vararg, and a destination names at
@@ -110,6 +130,7 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
             title = str(S.dd_title),
             description = str(S.desktop_docdist_description),
             actions = {
+                WatermarkSettingsButton(state, onEvent)
                 ZillitButton(
                     text = str(S.dd_action_refresh),
                     onClick = { onEvent(DocDistEvent.Refresh) },

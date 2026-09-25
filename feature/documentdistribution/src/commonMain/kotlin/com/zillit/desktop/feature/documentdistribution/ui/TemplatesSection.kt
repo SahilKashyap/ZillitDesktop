@@ -5,6 +5,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.HtmlText
+import com.zillit.desktop.feature.documentdistribution.domain.stripInvisibleChars
 
 /** Reusable subject + body pairs, and the editor the composer also opens. */
 internal class TemplatesSection(private val vm: VmScope) {
@@ -60,8 +61,10 @@ internal class TemplatesSection(private val vm: VmScope) {
         val template = EmailTemplate(
             id = editor.templateId,
             name = editor.name.trim(),
-            subject = editor.subject,
-            bodyHtml = HtmlText.plainToHtml(editor.body),
+            // ZL-21475: a template is poured straight back into a live send,
+            // so a pasted invisible character is stripped here too.
+            subject = stripInvisibleChars(editor.subject),
+            bodyHtml = stripInvisibleChars(HtmlText.plainToHtml(editor.body)),
             description = editor.description.trim(),
         )
         vm.update { copy(templateEditor = editor.copy(saving = true)) }

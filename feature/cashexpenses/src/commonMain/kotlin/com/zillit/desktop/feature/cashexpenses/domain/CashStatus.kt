@@ -37,6 +37,12 @@ enum class BatchStatus(val wire: String) {
      */
     AcctOverride("ACCT_OVERRIDE"),
 
+    /**
+     * A senior sent an escalated batch back to accounts ("Return to
+     * Accounts"). It sits on Post & Ledger again and can carry a query thread.
+     */
+    Descalated("DESCALATED"),
+
     Unknown(""),
     ;
 
@@ -62,6 +68,9 @@ enum class BatchStatus(val wire: String) {
         Queried -> str(S.ah_queried)
         Rejected -> str(S.rejected)
         AcctOverride -> if (accountant) str(S.dm_nom_table_override) else str(S.ah_ready_to_post)
+        // The web has no label for it and falls back to "Pending"; what
+        // happened to the batch is more use to the person reading the row.
+        Descalated -> str(S.desktop_ce_returned_to_accounts)
         Unknown -> str(S.pending)
     }
 
@@ -139,6 +148,14 @@ enum class FloatStatus(val wire: String) {
             val value = wire?.trim()?.uppercase().orEmpty()
             return entries.firstOrNull { it.wire == value && it != Unknown } ?: Unknown
         }
+
+        /**
+         * Where a float's BS code may still be corrected — approved and live,
+         * the web's `FLOAT_BS_EDIT_STATUSES` (`lib/floatBsCode.js`).
+         */
+        val BS_EDITABLE: Set<FloatStatus> = setOf(
+            Approved, AcctOverride, ReadyToCollect, Collected, Active, Spending,
+        )
 
         /** The first float in [floats] that receipts may be submitted against. */
         fun submittable(floats: List<CashFloat>): CashFloat? =
@@ -250,6 +267,7 @@ sealed interface Lifecycle {
             BatchStatus.UnderReview,
             BatchStatus.Escalated,
             BatchStatus.AcctOverride,
+            BatchStatus.Descalated,
             -> At(4)
         }
     }

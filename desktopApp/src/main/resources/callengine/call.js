@@ -66,6 +66,10 @@
         send({ type: 'warning', where: context, message: describe(context, error) });
     }
 
+    // ZillitIcons.Pin's outline, so the page's pin and the app's are one glyph.
+    const PIN_SVG =
+        '<svg viewBox="0 0 24 24"><path d="M12 14v7M8 3h8l-1.5 7 2.5 4H7l2.5-4z"/></svg>';
+
     const MUTE_SVG =
         '<svg viewBox="0 0 24 24"><path d="M3 3l18 18-1.4 1.4L3 4.4 4.4 3 3 3zm9 12a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v.9l6 6V12a3 3 0 0 1-3 3zm-7-3a7 7 0 0 0 10.6 6l-1.5-1.5A5 5 0 0 1 7 12H5z"/></svg>';
 
@@ -117,9 +121,12 @@
         root.innerHTML = '';
         cells.clear();
 
-        const list = stage.tiles || [];
+        let list = stage.tiles || [];
         if (!list.length) { return; }
-        const focus = focusUid(list);
+        // The pill's thumbnail shows its first tile only: make that the pin.
+        const firstPin = compact ? pinnedTiles(list)[0] : undefined;
+        if (firstPin) { list = [firstPin].concat(list.filter((t) => t !== firstPin)); }
+        const focus = focusTiles(list);
         if (focus !== null) {
             renderFocus(root, list, focus);
             playingIn.clear();
@@ -169,6 +176,29 @@
      */
     let focusPick = null;
 
+    /**
+     * The tiles that take the stage, or null for the plain grid: whoever is
+     * pinned — the web's `focusedIds`, pins before anything — or else the
+     * presenter, or the other half of a two-person call.
+     */
+    function focusTiles(list) {
+        if (compact || list.length < 2) { return null; }
+        const pinned = pinnedTiles(list);
+        if (pinned.length) { return pinned; }
+        const one = focusUid(list);
+        return one === null ? null : [list.find((t) => t.uid === one)];
+    }
+
+    /**
+     * The pinned tiles on the stage, in pin order. Kotlin keeps the pins
+     * (`stage.pins`, by tile key); this page only asks, through `pin`.
+     */
+    function pinnedTiles(list) {
+        return (stage.pins || [])
+            .map((key) => list.find((t) => t.key === key))
+            .filter(Boolean);
+    }
+
     /** The uid that takes the big slot, or null for the plain grid. */
     function focusUid(list) {
         if (compact || list.length < 2) { return null; }
@@ -193,28 +223,75 @@
         return found;
     }
 
+    /*
+     * One focus tile is the largest 16:9 box the stage holds, the others
+     * floating over its corner. Several — pins — share the stage as a grid
+     * above a band the strip gets to itself, or it would cover the last one.
+     * CallGrid.kt's FocusStage draws the same for a call with no video.
+     */
     function renderFocus(root, list, focus) {
         const width = root.clientWidth || 0;
         const height = root.clientHeight || 0;
         const inset = 8;
-        const mainW = Math.max(1, Math.min(width - inset * 2, (height - inset * 2) * (16 / 9)));
-        const mainH = mainW / (16 / 9);
-        const main = list.find((t) => t.uid === focus);
-        root.appendChild(buildCell(main, mainW, mainH, Math.max(40, Math.min(mainH * 0.3, 150))));
-
-        // The others float bottom-right, 128 px tall at most, as `.duoSelf` does.
+        const gap = 8;
+        const others = list.filter((t) => focus.indexOf(t) < 0);
         const smallH = Math.max(72, Math.min(128, height * 0.22));
         const smallW = smallH * (16 / 9);
-        const fits = Math.max(1, Math.floor((width * 0.9) / (smallW + 8)));
+        const band = focus.length > 1 && others.length ? smallH + 44 : 0;
+        const main = document.createElement('div');
+        main.className = 'focus';
+        main.style.height = Math.max(1, height - band) + 'px';
+        if (focus.length === 1) {
+            const mainW = Math.max(1, Math.min(width - inset * 2, (height - band - inset * 2) * (16 / 9)));
+            const mainH = mainW / (16 / 9);
+            main.appendChild(buildCell(focus[0], mainW, mainH, Math.max(40, Math.min(mainH * 0.3, 150))));
+        } else {
+            // columnsFor() in CallTiles.kt, and the grid's own arithmetic.
+            const n = focus.length;
+            const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4;
+            const rows = Math.ceil(n / cols);
+            const cellW = (width - gap * (cols - 1)) / cols;
+            const cellH = (height - band - gap * (rows - 1)) / rows;
+            const tileW = Math.max(1, Math.min(cellW, cellH * (16 / 9), 560));
+            const tileH = tileW / (16 / 9);
+            const disc = Math.max(28, Math.min(tileH * 0.42, 96));
+            for (let r = 0; r < rows; r++) {
+                const row = document.createElement('div');
+                row.className = 'row';
+                focus.slice(r * cols, r * cols + cols).forEach((model) => {
+                    row.appendChild(buildCell(model, tileW, tileH, disc));
+                });
+                main.appendChild(row);
+            }
+        }
+        root.appendChild(main);
+
+        // The others sit bottom-right, 128 px tall at most, as `.duoSelf` does.
+        const fits = Math.max(1, Math.floor((width * 0.9) / (smallW + gap)));
+        const shown = others.length > fits ? others.slice(0, fits - 1) : others;
         const strip = document.createElement('div');
         strip.className = 'strip';
-        list.filter((t) => t.uid !== focus).slice(0, fits).forEach((model) => {
+        const pinning = (stage.pins || []).length > 0;
+        shown.forEach((model) => {
             const tile = buildCell(model, smallW, smallH, Math.max(28, Math.min(smallH * 0.42, 56)));
             tile.classList.add('mini');
-            // Click to swap into the big slot; the grid tile it leaves takes its place here.
-            tile.addEventListener('click', () => { focusPick = model.uid; render(); });
+            // Click to swap into the big slot — not while something is
+            // pinned: the stage is then what the user pinned, and the tile's
+            // own pin is how it gets there.
+            if (!pinning) {
+                tile.classList.add('swap');
+                tile.addEventListener('click', () => { focusPick = model.uid; render(); });
+            }
             strip.appendChild(tile);
         });
+        if (others.length > shown.length) {
+            const more = document.createElement('div');
+            more.className = 'tile mini more';
+            more.style.width = smallW + 'px';
+            more.style.height = smallH + 'px';
+            more.textContent = '+' + (others.length - shown.length);
+            strip.appendChild(more);
+        }
         root.appendChild(strip);
     }
 
@@ -252,6 +329,25 @@
             hand.className = 'hand';
             hand.textContent = '✋';
             tile.appendChild(hand);
+        }
+
+        // The web tile's pin: on hover, and always once pinned. Only asks —
+        // Kotlin toggles it and pushes the stage back. Not on a lone tile,
+        // which has nothing to be pinned above, nor on a ring still out.
+        const tiles = stage.tiles || [];
+        if (!model.ringing && model.key && tiles.length > 1 && !compact) {
+            const pinned = (stage.pins || []).indexOf(model.key) >= 0;
+            const pin = document.createElement('button');
+            pin.className = 'pin' + (pinned ? ' on' : '');
+            pin.setAttribute('aria-label', pinned ? 'Unpin' : 'Pin');
+            pin.innerHTML = PIN_SVG;
+            pin.addEventListener('click', (event) => {
+                // A strip tile's own click swaps it in; this press is the pin's.
+                event.stopPropagation();
+                send({ type: 'pin', key: model.key });
+            });
+            tile.appendChild(pin);
+            tile.classList.toggle('pinned', pinned);
         }
 
         cells.set(model.uid, { root: tile, mount: mount, model: model });
@@ -772,13 +868,21 @@
             const cell = line1Tile(entry.peerId);
             if (!cell) { report.push('no tile for ' + entry.peerId); return; }
             const held = chosen.get(cell);
-            if (!held || (entry.share && !held.share)) { chosen.set(cell, entry); }
+            // Later entries win ties: the map iterates oldest first, and the
+            // oldest was once a dead track from the previous call, mounted over
+            // the live camera for the whole of the next one (2026-09-24).
+            if (!held || outranks(entry, held)) { chosen.set(cell, entry); }
         });
         chosen.forEach((entry, cell) => {
-            if (entry.element && entry.element.parentNode === cell.mount) { report.push(videoState(entry.peerId, entry.element)); return; }
+            if (entry.element && entry.element.parentNode === cell.mount) {
+                resume(entry.element);
+                report.push(videoState(entry.peerId, entry.element));
+                return;
+            }
             if (!entry.element) { entry.element = line1VideoElement(entry.stream, entry.share); }
             cell.mount.innerHTML = '';
             cell.mount.appendChild(entry.element);
+            resume(entry.element);
             report.push('mounted ' + entry.peerId + (entry.share ? ' (screen)' : ''));
         });
         if (line1Local) {
@@ -800,6 +904,59 @@
             send({ type: 'warning', where: 'call:mount', message: 'cells=' + cells.size + ' ' + report.join('; ') });
             scheduleMountReports();
         }
+    }
+
+    /**
+     * Which of two videos for one tile to show: a live track over an ended
+     * one, then a shared screen over a camera, then the newer of the two.
+     */
+    function outranks(entry, held) {
+        const live = isLive(entry), heldLive = isLive(held);
+        if (live !== heldLive) { return live; }
+        if (!!entry.share !== !!held.share) { return !!entry.share; }
+        return true;
+    }
+
+    function isLive(entry) {
+        const tracks = entry.stream && entry.stream.getVideoTracks ? entry.stream.getVideoTracks() : [];
+        return tracks.some((t) => t.readyState === 'live');
+    }
+
+    /**
+     * Plays a video that is back in the document paused. A media element
+     * taken out of the page is paused by the browser, and `autoplay` does not
+     * start it again when it is put back — a tile that lost its cell for a
+     * moment then showed one frozen frame for the rest of the call.
+     */
+    function resume(video) {
+        if (!video.paused) { return; }
+        const started = video.play();
+        if (started && started.catch) {
+            started.catch(function (e) {
+                send({ type: 'warning', where: 'call:play', message: (e && e.name) + ': ' + (e && e.message) });
+            });
+        }
+    }
+
+    /**
+     * Drops every remote track the page still holds. The end of a call: the
+     * lines release their own as they go, but Line 1's teardown never told
+     * the page, and its dead videos sat in the next call's tiles for the same
+     * people — "other users' video not rendering" on Line 3 (2026-09-24).
+     */
+    function dropRemoteMedia() {
+        line1Media.forEach((entry) => {
+            try {
+                if (entry.element) {
+                    entry.element.srcObject = null;
+                    if (entry.element.parentNode) { entry.element.parentNode.removeChild(entry.element); }
+                }
+            } catch (e) {
+                warn('dropRemoteMedia', e);
+            }
+        });
+        line1Media.clear();
+        focusPick = null;
     }
 
     function videoState(who, video) {
@@ -997,6 +1154,10 @@
                 }
                 clearLocal();
                 videoTracks.clear();
+                // Every line's call ends here — the app runs this last,
+                // whichever line carried it — so the remote tracks of Lines 1
+                // and 3 go with it rather than into the next call's tiles.
+                dropRemoteMedia();
                 playingIn.clear();
                 speaking.clear();
                 render();  // playingIn is cleared again inside; harmless and explicit

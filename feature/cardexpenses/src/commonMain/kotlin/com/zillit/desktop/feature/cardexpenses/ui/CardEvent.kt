@@ -82,11 +82,7 @@ sealed interface CardEvent {
     /** Opens a receipt's stored image or PDF through the host's file layer. */
     data class ViewReceipt(val attachmentKey: String) : CardEvent
 
-    // -- statements ----------------------------------------------------------
-
-    /** Picks a statement file, stores it, and hands the server the pointer. */
-    data object ImportStatement : CardEvent
-    data class EditStatementCurrency(val currency: String) : CardEvent
+    // Importing a statement is an [InboxEvent].
 
     /** Opens (or closes) one top-up's trail in the funding queue. */
     data class OpenTopUpHistory(val topUpId: String?) : CardEvent
@@ -98,19 +94,12 @@ sealed interface CardEvent {
     /** Saves one section of the settings document; see [SettingsSection]. */
     data class SaveSettings(val section: SettingsSection) : CardEvent
     data object DiscardSettings : CardEvent
-    data class SetAnalyticsRange(val range: AnalyticsRange) : CardEvent
 
     // -- bulk processing -----------------------------------------------------
 
     data class EditBulkCoding(val coding: BulkCoding) : CardEvent
     data object SelectAllBulk : CardEvent
     data object BulkPost : CardEvent
-
-    // -- statement review ----------------------------------------------------
-
-    data class OpenImport(val importId: String?) : CardEvent
-    data object ProcessImportRows : CardEvent
-    data object SubmitRowsToHolders : CardEvent
 
     // -- processing (the accountant's editor) --------------------------------
 
@@ -162,4 +151,7 @@ sealed interface CardEvent {
 sealed interface CardEffect {
     data class Failed(val message: String) : CardEffect
     data class OpenAttachment(val key: String) : CardEffect
+
+    /** Leaves the tool for another route — the card detail's "Set Approval Level". */
+    data class Navigate(val path: String) : CardEffect
 }

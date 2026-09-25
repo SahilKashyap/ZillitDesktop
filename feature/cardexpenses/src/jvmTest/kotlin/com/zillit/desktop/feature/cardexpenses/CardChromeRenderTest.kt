@@ -75,7 +75,7 @@ class CardChromeRenderTest {
             }
         }
 
-        onNodeWithText("Your card, your receipts", substring = true).assertExists()
+        onNodeWithText("View your receipts, card details, and approval status", substring = true).assertExists()
         assertTrue(onAllNodesWithText("Card Register").fetchSemanticsNodes().isEmpty(), "no console pages")
     }
 }

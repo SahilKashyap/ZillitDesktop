@@ -91,7 +91,7 @@ internal class CardReceiptActions(
     fun clearAttachment(index: Int) = vm.update {
         copy(
             draft = draft.mapIndexed { position, row ->
-                if (position == index) row.copy(attachmentKey = null, attachmentName = null) else row
+                if (position == index) row.copy(attachmentKey = null, attachmentName = null, attachment = null) else row
             },
         )
     }
@@ -188,7 +188,7 @@ internal class CardReceiptActions(
         copy(
             draft = draft.mapIndexed { position, row ->
                 if (position == index) {
-                    row.copy(attachmentKey = file.key, attachmentName = file.fileName)
+                    row.copy(attachmentKey = file.key, attachmentName = file.fileName, attachment = file)
                 } else {
                     row
                 }

@@ -93,6 +93,7 @@ class CardExpensesToolProvider(
                 when (effect) {
                     is CardEffect.Failed -> failure = effect.message
                     is CardEffect.OpenAttachment -> onOpenAttachment(effect.key)
+                    is CardEffect.Navigate -> navigator.navigate(WorkspaceRoute.Tool(effect.path))
                 }
             }
         }

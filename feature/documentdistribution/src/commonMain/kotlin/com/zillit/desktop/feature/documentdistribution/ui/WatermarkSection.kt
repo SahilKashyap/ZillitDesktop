@@ -7,6 +7,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.FileKind
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
+import com.zillit.desktop.feature.documentdistribution.domain.asSettingsPatch
+import com.zillit.desktop.feature.documentdistribution.domain.sameAppearanceAs
 import com.zillit.desktop.feature.documentdistribution.domain.ZipRecipient
 import com.zillit.desktop.feature.documentdistribution.domain.fileKindOf
 import com.zillit.desktop.feature.documentdistribution.domain.isValidEmail
@@ -16,8 +18,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.withDefaults
 
 /**
  * The two download-side watermark flows — one stamped copy, and a zip of
- * personalised copies — plus the library picker both the zip flow and the
- * composer attach from.
+ * personalised copies — the project's Watermark settings dialog, and the
+ * library picker both the zip flow and the composer attach from.
  *
  * Both flows are downloads under the rights model and gate on download
  * rights; stamping happens on the server, which fetches the source and
@@ -120,11 +122,11 @@ internal class WatermarkSection(
     private inline fun editBatch(crossinline change: WatermarkBatchState.() -> WatermarkBatchState) =
         vm.update { copy(watermarkBatch = watermarkBatch?.change()) }
 
+    fun editBatchStyle(style: WatermarkStyle) = editBatch { copy(style = style, styleEdited = true) }
+
     fun removeBatchDocument(documentId: String) = editBatch { copy(
         documents = documents.filterNot { it.id == documentId },
     ) }
-
-    fun editBatchStyle(style: WatermarkStyle) = editBatch { copy(style = style) }
 
     fun editBatchInput(text: String) = editBatch { copy(recipientInput = text) }
 
@@ -203,6 +205,62 @@ internal class WatermarkSection(
         }
     }
 
+    // -- the project's settings ------------------------------------------------
+
+    /**
+     * The toolbar's "Watermark settings". Saving is a posting action, so the
+     * entry point is only drawn for those who hold the right (web 303a9fe28);
+     * the refusal here covers anything that reaches it regardless.
+     */
+    fun openSettings() {
+        if (vm.refusesWrite()) return
+        vm.update {
+            copy(
+                watermarkSettings = WatermarkSettingsDialogState(
+                    draft = WatermarkStyle().withDefaults(watermarkDefaults),
+                ),
+                // Names "Last changed by".
+                crew = vm.host.crew(),
+            )
+        }
+    }
+
+    fun editSettings(style: WatermarkStyle) =
+        vm.update { copy(watermarkSettings = watermarkSettings?.copy(draft = style, edited = true)) }
+
+    /** "Reset to standard" — the built-in look, as a draft still to be saved. */
+    fun resetSettings() = editSettings(WatermarkStyle())
+
+    fun closeSettings() = vm.update { copy(watermarkSettings = null) }
+
+    /**
+     * Saves the draft for everyone on the project. Every flow that has not
+     * been changed by hand follows the new settings at once; the server's
+     * socket echo to this device is dropped at the repository seam.
+     */
+    fun saveSettings() {
+        val open = vm.state.watermarkSettings ?: return
+        if (open.saving || !vm.state.watermarkDefaultsLoaded) return
+        if (open.draft.sameAppearanceAs(vm.state.watermarkDefaults)) return
+        if (vm.refusesWrite()) return
+        vm.update { copy(watermarkSettings = open.copy(saving = true)) }
+        vm.run {
+            when (val saved = vm.repository.updateWatermarkSettings(open.draft.asSettingsPatch())) {
+                is ZillitResult.Success -> {
+                    vm.update {
+                        copy(watermarkSettings = null, watermarkDefaults = saved.data, watermarkDefaultsLoaded = true)
+                            .followWatermarkDefaults()
+                    }
+                    vm.notice(str(S.dd_watermark_settings_saved))
+                }
+                is ZillitResult.Failure -> {
+                    vm.update { copy(watermarkSettings = watermarkSettings?.copy(saving = false)) }
+                    vm.report(saved.error)
+                }
+            }
+        }
+    }
+
     // -- the library picker ----------------------------------------------------
 
     fun openPicker(purpose: PickerPurpose) {
@@ -271,4 +329,31 @@ internal fun pickerVisible(state: DocDistUiState): List<LibraryDocument> {
         (inFolder == null || document.folderId in inFolder) &&
             (q.isEmpty() || document.name.lowercase().contains(q))
     }
+}
+
+/**
+ * Every open watermark that has not been changed by hand, moved onto the
+ * project's current settings — the web's `useFollowProjectWatermarkStyle`.
+ * Run when the settings load late, when another device saves, and after this
+ * device saves. Only Size / Colour / Opacity move; what a stamp says is the
+ * sender's.
+ */
+internal fun DocDistUiState.followWatermarkDefaults(): DocDistUiState {
+    val defaults = watermarkDefaults
+    return copy(
+        composer = if (composer.open && !composer.watermarkEdited) {
+            composer.copy(watermark = composer.watermark.withDefaults(defaults))
+        } else {
+            composer
+        },
+        watermarkDownload = watermarkDownload?.let { open ->
+            if (open.styleEdited) open else open.copy(style = open.style.withDefaults(defaults))
+        },
+        watermarkBatch = watermarkBatch?.let { open ->
+            if (open.styleEdited) open else open.copy(style = open.style.withDefaults(defaults))
+        },
+        watermarkSettings = watermarkSettings?.let { open ->
+            if (open.edited || open.saving) open else open.copy(draft = open.draft.withDefaults(defaults))
+        },
+    )
 }

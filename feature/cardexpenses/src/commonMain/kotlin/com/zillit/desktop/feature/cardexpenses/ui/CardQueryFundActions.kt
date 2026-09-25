@@ -24,6 +24,8 @@ data class FundsState(
     val requests: List<FundRequest> = emptyList(),
     val loading: Boolean = true,
     val draft: FundRequestDraft = FundRequestDraft(),
+    /** The request a Mark received or Cancel is in flight for ("Working…"). */
+    val acting: String? = null,
 )
 
 /**
@@ -72,6 +74,7 @@ internal class CardQueryFundActions(
         val receipt = state.receipts.firstOrNull { it.id == receiptId } ?: state.process?.receipt
         val title = receipt?.description?.ifBlank { null } ?: str(S.desktop_receipt)
         vm.update { copy(query = QueryDraft(receiptId = receiptId, title = title)) }
+        vm.readRow(CardRowReads.query(state.destination), receiptId)
         vm.run {
             val read = vm.repo.queryThread(ENTITY, receiptId)
             if (vm.current.query?.receiptId != receiptId) return@run
@@ -158,10 +161,11 @@ internal class CardQueryFundActions(
         val state = vm.current
         val open = state.funds?.requests?.any { it.id == requestId && it.open } == true
         if (!state.viewer.isAccountant || !open) return refuse()
+        if (state.funds?.acting != null) return
         vm.run {
-            vm.update { copy(busy = true) }
+            vm.update { copy(funds = funds?.copy(acting = requestId)) }
             val done = if (receive) vm.repo.receiveFundRequest(requestId) else vm.repo.cancelFundRequest(requestId)
-            vm.update { copy(busy = false) }
+            vm.update { copy(funds = funds?.copy(acting = null)) }
             when (done) {
                 is ZillitResult.Success -> {
                     val notice = if (receive) S.desktop_card_fund_received else S.desktop_card_fund_cancelled

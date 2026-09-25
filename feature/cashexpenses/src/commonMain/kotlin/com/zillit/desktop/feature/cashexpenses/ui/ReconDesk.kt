@@ -6,6 +6,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashDates
 import com.zillit.desktop.feature.cashexpenses.domain.ReconDraft
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
 /**
@@ -33,7 +34,9 @@ internal class ReconDesk(private val host: CashHost) {
         }
         val draft = ReconDraft(
             id = null,
-            currency = prompt.currency.trim().ifBlank { null },
+            // The picked currency, else the project default (`newCurrency || defaultCode`).
+            currency = prompt.currency.trim().ifBlank { null }
+                ?: host.state.currencies.defaultCode?.ifBlank { null },
             openingBalance = prompt.openingBalance.trim(),
             year = prompt.year,
             month = prompt.month,
@@ -50,6 +53,8 @@ internal class ReconDesk(private val host: CashHost) {
                             recon = draft.copy(
                                 id = created.data.id,
                                 status = created.data.status.ifBlank { draft.status },
+                                // The server may not echo the currency; the chosen one stands.
+                                saved = created.data.copy(currency = created.data.currency ?: draft.currency),
                             ),
                         )
                     }
@@ -95,7 +100,14 @@ internal class ReconDesk(private val host: CashHost) {
         host.repository.updateReconciliation(draft).let { result ->
             when (result) {
                 is ZillitResult.Success -> {
-                    host.update { copy(recon = recon?.copy(status = result.data.status.ifBlank { draft.status })) }
+                    host.update {
+                        copy(
+                            recon = recon?.copy(
+                                status = result.data.status.ifBlank { draft.status },
+                                saved = result.data.copy(currency = result.data.currency ?: draft.currency),
+                            ),
+                        )
+                    }
                     ZillitResult.Success(Unit)
                 }
 
@@ -129,19 +141,31 @@ internal class ReconDesk(private val host: CashHost) {
         host.act(success, onSuccess = { if (closeAfter) copy(recon = null) else this }) { block(draft) }
     }
 
+    /**
+     * Asks the server for the book balance of the draft's opening balance and
+     * month, half a second after the last change — the web's debounce
+     * (`PCCashReconPage.jsx:336-369`). Until it answers the opening balance
+     * stands in and the summary says it is computing.
+     */
     private fun refreshBook() {
         val draft = host.state.recon ?: return
         bookJob?.cancel()
-        host.update { copy(recon = recon?.copy(computedBook = null)) }
-        if (draft.opening <= 0) return
+        val asking = draft.opening > 0
+        host.update { copy(recon = recon?.copy(computedBook = null, computingBook = asking)) }
+        if (!asking) return
         bookJob = host.work {
+            delay(BOOK_DEBOUNCE_MS)
             val book = (host.repository.computeBookBalance(draft) as? ZillitResult.Success)?.data
             host.update {
                 val open = recon ?: return@update this
                 val same = open.id == draft.id && open.year == draft.year && open.month == draft.month &&
                     open.openingBalance == draft.openingBalance
-                if (same) copy(recon = open.copy(computedBook = book)) else this
+                if (same) copy(recon = open.copy(computedBook = book, computingBook = false)) else this
             }
         }
+    }
+
+    private companion object {
+        const val BOOK_DEBOUNCE_MS = 500L
     }
 }

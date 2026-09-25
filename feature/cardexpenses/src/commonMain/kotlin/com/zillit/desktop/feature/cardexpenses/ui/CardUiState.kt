@@ -26,7 +26,6 @@ import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.domain.InboxSection
 import com.zillit.desktop.feature.cardexpenses.domain.StatementImport
-import com.zillit.desktop.feature.cardexpenses.domain.StatementRow
 import com.zillit.desktop.feature.cardexpenses.domain.UploadHeadroom
 
 /** Everything the card tool is showing. */
@@ -36,6 +35,8 @@ data class CardUiState(
     val destination: CardDestination,
     /** Unread notifications per `level_1` key — the sidebar's red chips. */
     val unread: Map<String, Int> = emptyMap(),
+    /** Unread per `level_1`, then per row (`level_3`) inside it — the rows' own chips. */
+    val rowUnread: Map<String, Map<String, Int>> = emptyMap(),
     val loading: Boolean = false,
     val error: ZillitError? = null,
     val busy: Boolean = false,
@@ -54,7 +55,6 @@ data class CardUiState(
 
     val overview: CardOverview? = null,
     val analytics: CardAnalytics? = null,
-    val analyticsRange: AnalyticsRange = AnalyticsRange(),
     val cards: List<ExpenseCard> = emptyList(),
     val transactions: List<CardTransaction> = emptyList(),
     val receipts: List<CardReceipt> = emptyList(),
@@ -69,16 +69,15 @@ data class CardUiState(
     /** The crew, for the holder picker. Supplied by the host; see the ViewModel. */
     val people: List<CardPerson> = emptyList(),
 
-    /** The statement whose rows are open for review, and those rows. */
-    val openImportId: String? = null,
-    val importRows: List<StatementRow> = emptyList(),
-    /** What the statement being imported is denominated in; blank = project default. */
-    val statementCurrency: String = "",
+    /** Import Statement, the Receipt Inbox and All Transactions; see [InboxState]. */
+    val inbox: InboxState = InboxState(),
 
     /** The accountant's process editor, open over one receipt. */
     val process: ProcessDraft? = null,
     /** Which of the Process page's two queues is showing. */
     val processTab: ProcessTab = ProcessTab.Processing,
+    /** The process pages' references, approval detail and reject dialog; see [ProcessPagesState]. */
+    val processPages: ProcessPagesState = ProcessPagesState(),
     /** The activation form, open over one approved card. */
     val activation: ActivationDraft? = null,
     /** An export is being fetched and saved. */
@@ -117,6 +116,19 @@ data class CardUiState(
     val selection: Set<String> = emptySet(),
     val draft: List<DraftCardReceipt> = listOf(DraftCardReceipt()),
     val prompt: CardPrompt? = null,
+    /** The register's and the Card tab's own state; see [CardsArea]. */
+    val cardsArea: CardsArea = CardsArea(),
+    /**
+     * A cardholder child view has taken over the screen — an upload form, a
+     * card or approval detail — so the header and tab strip step aside
+     * (`CardExpensesModule.jsx:199`). Any page may set it; opening another
+     * page clears it.
+     */
+    val fullScreen: Boolean = false,
+    /** Top-Up To Do, Smart Alerts, Analytics and Settings' page state; see [InsightsState]. */
+    val insights: InsightsState = InsightsState(),
+    /** The cardholder pages' own state; see [CrewState]. */
+    val crew: CrewState = CrewState(),
 ) {
     /** This viewer's own card, for the cardholder screens. */
     val myCard: ExpenseCard?
@@ -241,13 +253,6 @@ data class CardUiState(
             ?: TierVisibility(canApprove = false, nextTier = null, totalTiers = 0)
 }
 
-/** The window Analytics is reporting on. Blank ends mean "all time". */
-data class AnalyticsRange(val from: String = "", val to: String = "") {
-    val fromOrNull: String? get() = from.trim().takeIf { it.isNotEmpty() }
-    val toOrNull: String? get() = to.trim().takeIf { it.isNotEmpty() }
-    val isAllTime: Boolean get() = fromOrNull == null && toOrNull == null
-}
-
 /**
  * One card, opened.
  *
@@ -306,13 +311,18 @@ data class NewCardDraft(
      * with none configured the field cannot be satisfied, and blocking on it
      * would make the form unusable until somebody visits Settings.
      */
-    fun validationError(providersConfigured: Boolean, holderRequired: Boolean): String? = when {
-        holderRequired && holderId.isBlank() -> str(S.desktop_card_choose_holder_error)
-        limitValue <= 0 -> str(S.desktop_card_limit_positive_error)
-        currency.isBlank() -> str(S.desktop_card_choose_currency_error)
-        providersConfigured && providerId.isBlank() -> str(S.desktop_card_choose_provider_error)
-        bsControlCode.isBlank() -> str(S.desktop_card_control_code_required)
-        justification.isBlank() -> str(S.desktop_card_justification_required)
+    fun validationError(
+        providersConfigured: Boolean,
+        holderRequired: Boolean,
+        defaultCurrency: String = "",
+    ): String? = when {
+        // The web's order and wording (`CardRegisterPage.jsx:653-677`).
+        holderRequired && holderId.isBlank() -> str(S.desktop_ce_cards_err_holder)
+        limitValue <= 0 -> str(S.desktop_ce_cards_err_limit)
+        providersConfigured && providerId.isBlank() -> str(S.desktop_ce_cards_err_provider)
+        currency.ifBlank { defaultCurrency }.isBlank() -> str(S.desktop_ce_cards_err_currency)
+        bsControlCode.isBlank() -> str(S.desktop_ce_cards_err_bs)
+        justification.isBlank() -> str(S.desktop_ce_cards_err_justification)
         else -> null
     }
 }
@@ -341,21 +351,27 @@ data class CardEditDraft(
     /** The balance the server will be told to hold, after the limit change. */
     val newBalance: Double get() = (currentBalance + (limitValue - currentLimit)).coerceAtLeast(0.0)
 
-    fun validationError(providersConfigured: Boolean): String? = when {
-        limitValue <= 0 -> str(S.desktop_card_limit_positive_error)
-        currency.isBlank() -> str(S.desktop_card_choose_currency_error)
-        providersConfigured && providerId.isBlank() -> str(S.desktop_card_choose_provider_error)
-        bsControlCode.isBlank() -> str(S.desktop_card_control_code_required)
-        justification.isBlank() -> str(S.desktop_card_justification_required)
+    fun validationError(providersConfigured: Boolean, defaultCurrency: String = ""): String? = when {
+        // `handleSaveDetails`' order and wording (`CardRegisterPage.jsx:538-566`).
+        limitValue <= 0 -> str(S.desktop_ce_cards_err_limit)
+        providersConfigured && providerId.isBlank() -> str(S.desktop_ce_cards_err_provider_edit)
+        currency.ifBlank { defaultCurrency }.isBlank() -> str(S.desktop_ce_cards_err_currency_edit)
+        bsControlCode.isBlank() -> str(S.desktop_ce_cards_err_bs)
+        justification.isBlank() -> str(S.desktop_ce_cards_err_justification)
         else -> null
     }
 
     companion object {
+        /**
+         * Seeded the web's way (`CardRegisterPage.jsx:868, 569-577`): the field
+         * from `monthly_limit`, and the balance arithmetic from `monthly_limit
+         * || card_limit` — the figure the request carries until approval.
+         */
         fun of(card: ExpenseCard): CardEditDraft = CardEditDraft(
             cardId = card.id,
-            currentLimit = card.limit,
+            currentLimit = card.monthlyLimit?.takeIf { it > 0 } ?: card.limit,
             currentBalance = card.balance ?: 0.0,
-            limit = (card.proposedLimit ?: card.limit).takeIf { it > 0 }?.toString().orEmpty(),
+            limit = card.monthlyLimit?.takeIf { it > 0 }?.let(::plainAmount).orEmpty(),
             currency = card.currency.orEmpty(),
             providerId = card.providerId.orEmpty(),
             issuer = card.issuer.orEmpty(),
@@ -461,5 +477,15 @@ enum class CardAmountAction { RequestTopUp, PartialTopUp }
 /** The status filter's "everything" option, on the register and the ledger. */
 const val ALL_STATUSES = "all"
 
+/** `1500` for 1500.0 — a field seeded from a figure reads as typed, not as `1500.0`. */
+internal fun plainAmount(value: Double): String =
+    if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
 /** What a name nobody can resolve reads as. Never the id it was looked up by. */
 private const val EM_DASH = "—"
+
+/**
+ * A row's unread under [key], summed over every action filed against it —
+ * the web's `getCardTotalUnread(badges, level_1, id)`.
+ */
+fun CardUiState.unreadRow(key: String, id: String): Int = rowUnread[key]?.get(id) ?: 0

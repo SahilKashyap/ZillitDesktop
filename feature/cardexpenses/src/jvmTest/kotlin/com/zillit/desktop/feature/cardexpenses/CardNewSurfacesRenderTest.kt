@@ -4,8 +4,11 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -32,7 +35,10 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardDetail
 import com.zillit.desktop.feature.cardexpenses.ui.CardEditDraft
 import com.zillit.desktop.feature.cardexpenses.ui.CardExpensesScreen
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
+import com.zillit.desktop.feature.cardexpenses.ui.CardsArea
+import com.zillit.desktop.feature.cardexpenses.ui.CodeReceiptDraft
 import com.zillit.desktop.feature.cardexpenses.ui.CodingDraft
+import com.zillit.desktop.feature.cardexpenses.ui.CrewState
 import com.zillit.desktop.feature.cardexpenses.ui.NewCardDraft
 import kotlin.test.Test
 
@@ -48,141 +54,145 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class CardNewSurfacesRenderTest {
 
-    // -- the card drilldown ---------------------------------------------------
+    // -- the card detail, full-page --------------------------------------------
 
     @Test
-    fun `opening a card shows its spend, its funding and its trail`() = screen(
+    fun `opening a card takes over the page with its receipts and its history`() = screen(
         state(CardDestination.CardRegister).copy(
-            selectedCardId = "card-1",
+            cardsArea = CardsArea(openCardId = "card-1", historyOpen = true),
             cardDetail = CardDetail(
                 cardId = "card-1",
                 receipts = listOf(receipt()),
-                topUps = listOf(topUp()),
+                receiptsRead = true,
                 history = listOf(CardHistoryEntry("card_approved", "user-1", "Within budget", 1_754_000_000_000)),
                 bsControlCode = "2100",
             ),
         ),
     ) {
-        // The group labels render uppercase; the case is presentation.
-        onNodeWithText("Spend · 1 receipt(s)", ignoreCase = true).assertExists()
-        onNodeWithText("Funding · 1 top-up(s)", ignoreCase = true).assertExists()
+        onNodeWithText("Batteries and gaffer tape").assertExists()
+        onNodeWithText("Card History").assertExists()
         // The wire token is humanised rather than shown raw.
         onNodeWithText("Card approved").assertExists()
+        // The register's own heading steps aside for the card.
+        onAllNodesWithText("Production expense cards with balance sheet", substring = true).assertCountEquals(0)
     }
 
-    /**
-     * The narrow correction is offered; the wide edit is not.
-     *
-     * A live card's details cannot be rewritten — the save would wipe its
-     * approvals — so the drilldown shows the control-code field and no
-     * "Edit details".
-     */
+    /** A completed read that found no receipts is the only licence to re-point the code. */
     @Test
-    fun `a live card offers the control code and not the full edit`() = screen(
+    fun `a live card with no receipts offers the control-code pencil`() = screen(
         state(CardDestination.CardRegister).copy(
-            selectedCardId = "card-1",
-            // A completed read that found no receipts: the only licence to
-            // re-point the card's balance-sheet account (CardDetailModal.jsx).
+            cardsArea = CardsArea(openCardId = "card-1"),
             cardDetail = CardDetail(cardId = "card-1", bsControlCode = "2100", receiptsRead = true),
         ),
     ) {
-        onNodeWithText("Balance-sheet control code").assertIsDisplayed()
-        // Nothing to save until the code is changed.
-        onNodeWithText("Save code").assertIsNotEnabled()
+        onNodeWithContentDescription("Edit BS control code").assertExists()
     }
 
-    /** Spend already points at the code, so it is shown and not offered for change. */
     @Test
     fun `a card with receipts does not offer the control code for change`() = screen(
         state(CardDestination.CardRegister).copy(
-            selectedCardId = "card-1",
-            cardDetail = CardDetail(
-                cardId = "card-1",
-                bsControlCode = "2100",
-                receiptsRead = true,
-                receipts = listOf(receipt()),
-            ),
+            cardsArea = CardsArea(openCardId = "card-1"),
+            cardDetail = CardDetail(cardId = "card-1", receiptsRead = true, receipts = listOf(receipt())),
         ),
     ) {
-        onAllNodesWithText("Save code").assertCountEquals(0)
+        onAllNodesWithContentDescription("Edit BS control code").assertCountEquals(0)
     }
 
-    /** The request's own author may bin it (CardDetailModal.jsx:250); an accountant may still edit. */
+    /** A request's author may bin it; the accountant reviews it from the Action Needed block. */
     @Test
-    fun `a card request offers the full edit and the delete`() = screen(
+    fun `a card request is reviewed and deleted from its detail`() = screen(
         state(CardDestination.CardRegister).copy(
             cards = listOf(card().copy(status = CardStatus.Requested, requestedBy = "user-1")),
-            selectedCardId = "card-1",
+            cardsArea = CardsArea(openCardId = "card-1"),
             cardDetail = CardDetail(cardId = "card-1"),
         ),
     ) {
-        onNodeWithText("Edit Details").assertIsDisplayed()
-        onNodeWithText("Delete request").assertIsDisplayed()
+        onNodeWithText("Action Needed", ignoreCase = true).assertIsDisplayed()
+        onNodeWithText("Review").assertIsDisplayed()
+        onNodeWithText("Delete").assertIsDisplayed()
     }
 
     @Test
     fun `somebody else's card request is not the accountant's to delete`() = screen(
         state(CardDestination.CardRegister).copy(
             cards = listOf(card().copy(status = CardStatus.Requested)),
-            selectedCardId = "card-1",
+            cardsArea = CardsArea(openCardId = "card-1"),
             cardDetail = CardDetail(cardId = "card-1"),
         ),
     ) {
-        onNodeWithText("Edit Details").assertIsDisplayed()
-        onAllNodesWithText("Delete request").assertCountEquals(0)
+        onAllNodesWithText("Delete").assertCountEquals(0)
+    }
+
+    // -- the register ---------------------------------------------------------
+
+    /** Live on its virtual number only: the tile says so and offers the plastic. */
+    @Test
+    fun `a digital-only live card offers Assign Physical Card`() = screen(
+        state(CardDestination.CardRegister).copy(
+            cards = listOf(card().copy(digitalCardNumber = "4000123456789010")),
+        ),
+    ) {
+        onNodeWithText("Digital Active", ignoreCase = true).assertIsDisplayed()
+        onNodeWithText("Assign Physical Card").assertIsDisplayed()
+    }
+
+    /** A card that still blocks a new one hides the request, with no explanation — the web's. */
+    @Test
+    fun `the Card tab hides Request New Card while a card blocks one`() = screen(
+        state(CardDestination.MyCards, crew),
+    ) {
+        onAllNodesWithText("Request New Card").assertCountEquals(0)
     }
 
     // -- the card forms -------------------------------------------------------
 
     @Test
-    fun `the issue-a-card form names the holder picker and the proposed limit`() = screen(
+    fun `the request form names the holder picker and the proposed limit`() = screen(
         state(CardDestination.CardRegister).copy(
             people = listOf(CardPerson("user-3", "Grace Hopper", "Gaffer", "Electrical", "dept-2")),
             newCard = NewCardDraft(),
         ),
     ) {
-        onNodeWithText("Cardholder", ignoreCase = true).assertIsDisplayed()
-        onNodeWithText("Proposed limit").assertIsDisplayed()
+        onNodeWithText("Search user...").assertIsDisplayed()
+        onNodeWithText("Auto-filled from user").assertIsDisplayed()
         // Nothing chosen yet, so the submit is closed.
-        onNodeWithText("Issue card").assertIsNotEnabled()
+        onNodeWithText("Submit Request").assertIsNotEnabled()
     }
 
-    /** The resubmit is spelled out before it happens, not discovered after. */
     @Test
-    fun `the edit form warns that saving clears the approvals`() = screen(
+    fun `the accountant's edit form submits for approval`() = screen(
         state(CardDestination.CardRegister).copy(
             cards = listOf(card().copy(status = CardStatus.Requested)),
             cardEdit = CardEditDraft.of(card().copy(status = CardStatus.Requested)),
         ),
     ) {
-        onNodeWithText("Edit card details").assertIsDisplayed()
-        onNodeWithText("Save and resubmit").assertIsDisplayed()
+        onNodeWithText("Edit Card Details").assertIsDisplayed()
+        onNodeWithText("Submit for Approval").assertIsDisplayed()
     }
 
     // -- the coding queues ----------------------------------------------------
 
+    /** The web's Code Receipt dialog: Save Draft, and Approve & Submit for an approver. */
     @Test
-    fun `the coding queue offers all three commits to a coordinator who approves`() = screen(
+    fun `the coding queue offers save draft and approve and submit to an approver`() = screen(
         state(CardDestination.CodingQueue, crew).copy(
-            selectedReceiptId = "receipt-1",
-            coding = CodingDraft("receipt-1", nominalCode = "4100"),
+            crew = CrewState(code = CodeReceiptDraft.of(receipt()).copy(costCode = "4100")),
         ),
     ) {
         onNodeWithText("Save Draft").assertIsDisplayed()
-        onNodeWithText("Save and send").assertIsDisplayed()
-        onNodeWithText("Code and approve").assertIsDisplayed()
+        onNodeWithText("Approve & Submit").assertIsDisplayed()
+        onAllNodesWithText("Submit for Approval").assertCountEquals(0)
     }
 
     /** Nothing moves on without a code; the draft save still works. */
     @Test
     fun `an uncoded receipt cannot be sent on`() = screen(
         state(CardDestination.CodingQueue, crew).copy(
-            selectedReceiptId = "receipt-1",
-            coding = CodingDraft("receipt-1", nominalCode = ""),
+            crew = CrewState(code = CodeReceiptDraft.of(receipt()).copy(costCode = "")),
         ),
     ) {
-        onNodeWithText("Save and send").assertIsNotEnabled()
-        onNodeWithText("Code and approve").assertIsNotEnabled()
+        onNodeWithText("Approve & Submit").assertIsNotEnabled()
+        onNodeWithText("Save Draft").assertIsEnabled()
     }
 
     /** Pending Coding is the accountant's read-only view; coding is the crew's to do. */
@@ -210,58 +220,71 @@ class CardNewSurfacesRenderTest {
         state(CardDestination.MyTransactions, crew).copy(
             canAttachFiles = false,
             draft = listOf(DraftCardReceipt()),
+            crew = CrewState(uploadOpen = true),
         ),
     ) {
-        onNodeWithText("Upload Receipts").assertIsDisplayed()
+        onNodeWithText("Add Your Receipts").assertIsDisplayed()
+        onNodeWithText("No file picker is available in this build, so receipts cannot be uploaded here.")
+            .assertExists()
     }
 
     // -- settings -------------------------------------------------------------
 
+    /** The web's sections, in the web's order (`SettingsPage.jsx:505-1301`). */
     @Test
-    fun `settings shows the five real sections and no invented ones`() = screen(
+    fun `settings shows the web's sections and no invented ones`() = screen(
         state(CardDestination.Settings).copy(settings = settings(), settingsDraft = settings()),
     ) {
         // The page scrolls, so the lower sections are in the tree rather than
         // on screen — which is what this test is checking for.
-        onNodeWithText("Accounts Team").assertIsDisplayed()
-        onNodeWithText("Department coordinators").assertExists()
-        onNodeWithText("Approval rules").assertExists()
-        onNodeWithText("Card providers").assertExists()
-        onNodeWithText("Request ceiling").assertExists()
+        onNodeWithText("Card Accounts & Custodian").assertIsDisplayed()
+        onNodeWithText("Team & Posting Rights").assertExists()
+        onNodeWithText("Department Coordinator Designations").assertExists()
+        onNodeWithText("Approval & Override Settings").assertExists()
+        onNodeWithText("Request Cap").assertExists()
+        onNodeWithText("Auto-Assignment Rules").assertExists()
+        // Nothing unsaved, so no Save anywhere; the web has no Discard.
+        onAllNodesWithText("Save").assertCountEquals(0)
+        onAllNodesWithText("Discard").assertCountEquals(0)
     }
 
     /** An unlimited poster reads as unlimited, not as zero. */
     @Test
     fun `an unlimited posting limit is named on the row`() = screen(
         state(CardDestination.Settings).copy(
-            settings = settings(),
-            settingsDraft = settings().copy(
-                teamMembers = listOf(CardTeamMember("user-1", postingLimit = null)),
-            ),
+            settings = settings().copy(teamMembers = listOf(CardTeamMember("user-1", postingLimit = null))),
         ),
     ) {
-        // Twice over: the pill that states it and the switch that sets it.
-        onAllNodesWithText("Unlimited").assertCountEquals(2)
+        onAllNodesWithText("Unlimited").assertCountEquals(1)
     }
 
     // -- history --------------------------------------------------------------
 
+    /** One History card, each row Posted — no totals tiles, no detail pane (`HistoryPage.jsx`). */
     @Test
-    fun `history totals what has been posted`() = screen(
+    fun `history lists what has been posted`() = screen(
         state(CardDestination.History).copy(
             receipts = listOf(receipt().copy(status = CardWorkflowStatus.Posted)),
         ),
     ) {
-        onNodeWithText("Posted to date", ignoreCase = true).assertIsDisplayed()
-        onNodeWithText("Average receipt", ignoreCase = true).assertIsDisplayed()
+        onAllNodesWithText("Posted to date", ignoreCase = true).assertCountEquals(0)
+        onNodeWithText("1 receipt", substring = true).assertExists()
+        onNodeWithText("Posted").assertExists()
     }
 
     // -- analytics ------------------------------------------------------------
 
+    /** No period picker — the web reads `/analytics/overview` with no window. */
     @Test
-    fun `analytics offers a period`() = screen(state(CardDestination.Analytics)) {
-        onNodeWithText("Period").assertIsDisplayed()
-        onNodeWithText("From", ignoreCase = true).assertExists()
+    fun `analytics draws the web's cards and no period`() = screen(
+        state(CardDestination.Analytics).copy(
+            analytics = com.zillit.desktop.feature.cardexpenses.domain.CardAnalytics(totalSpend = 1_200.0),
+        ),
+    ) {
+        onNodeWithText("Cash Flow & Forecast").assertExists()
+        onNodeWithText("Cost Report Impact").assertExists()
+        onNodeWithText("Processing Performance").assertExists()
+        onAllNodesWithText("Period").assertCountEquals(0)
     }
 
     // -- alerts ---------------------------------------------------------------
@@ -290,21 +313,22 @@ class CardNewSurfacesRenderTest {
     // -- statement import -----------------------------------------------------
 
     @Test
-    fun `the import screen picks a file rather than asking for a storage key`() = screen(
+    fun `the import screen opens on the drop zone`() = screen(
         state(CardDestination.ImportStatement),
     ) {
-        onNodeWithText("Choose a statement file").assertIsDisplayed()
-        onNodeWithText("Statement currency").assertIsDisplayed()
+        onNodeWithText("Drop CSV, OFX or QIF file here").assertIsDisplayed()
+        onNodeWithText("CSV").assertExists()
     }
 
     // -- transactions ---------------------------------------------------------
 
     @Test
-    fun `a transaction opens with its own actions`() = screen(
-        state(CardDestination.AllTransactions).copy(selectedTransactionId = "txn-1"),
+    fun `all transactions draws the register with its filters and export`() = screen(
+        state(CardDestination.AllTransactions),
     ) {
-        onNodeWithText("Reconciliation", ignoreCase = true).assertExists()
-        onNodeWithText("Delete").assertExists()
+        onNodeWithText("Filters").assertExists()
+        onNodeWithText("Export").assertExists()
+        onNodeWithText("Awaiting Approval").assertExists()
     }
 
     // -- harness --------------------------------------------------------------

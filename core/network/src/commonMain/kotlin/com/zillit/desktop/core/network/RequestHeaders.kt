@@ -136,6 +136,7 @@ object ZillitHeaders {
     /** IANA zone name, e.g. `Europe/London`. Sent by the web client. */
     const val TIMEZONE = "timezone"
     const val AUTHORIZATION = "Authorization"
+    const val USER_AGENT = "User-Agent"
     const val ACCEPT = "Accept"
     const val CONTENT_TYPE = "Content-Type"
 }

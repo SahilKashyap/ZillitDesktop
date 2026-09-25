@@ -12,13 +12,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.SideNavItem
 import com.zillit.desktop.core.designsystem.component.SideNavSection
-import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitErrorState
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSideNav
 import com.zillit.desktop.core.designsystem.component.ZillitTab
@@ -31,22 +29,33 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.ui.pages.AlertsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.AnalyticsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardExtensionPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.CardsForApprovalPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.CodingQueuePage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.CrewDialogs
+import com.zillit.desktop.feature.cardexpenses.ui.pages.MyTransactionsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardOverviewPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardRegisterPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardEditDialog
+import com.zillit.desktop.feature.cardexpenses.ui.pages.CardActionDialogs
+import com.zillit.desktop.feature.cardexpenses.ui.pages.CardDetailPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardSettingsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.HistoryPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.NewCardDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.ActivationDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.BulkProcessPage
-import com.zillit.desktop.feature.cardexpenses.ui.pages.FundsDialog
-import com.zillit.desktop.feature.cardexpenses.ui.pages.ProcessEditorDialog
+import com.zillit.desktop.feature.cardexpenses.ui.pages.FundRequestsPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.ApprovalQueuePage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.PendingCodingPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.ProcessEditorPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.ProcessQueuePage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.QueryDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.StatementReviewPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.MyCardPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.ReceiptQueuePage
-import com.zillit.desktop.feature.cardexpenses.ui.pages.TopUpQueuePage
-import com.zillit.desktop.feature.cardexpenses.ui.pages.TransactionsPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.TopUpToDoPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.AllTransactionsPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.InboxDialogs
+import com.zillit.desktop.feature.cardexpenses.ui.pages.ReceiptInboxPage
 import com.zillit.desktop.feature.cardexpenses.ui.components.CardNavHeader
 
 /**
@@ -90,31 +99,46 @@ fun CardExpensesScreen(
                     },
                 )
                 Column(modifier = Modifier.fillMaxSize()) {
-                    AccountantPageHeader(state.destination)
-                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                        CardBody(state, onEvent)
+                    // The process editor and an open card each take over the
+                    // content column, their own breadcrumb in place of the
+                    // page's heading (`ProcessReceiptModal fullPage`,
+                    // `CardDetailModal`); the sidebar stays.
+                    // Fund Requests takes over the whole column too, as the web's
+                    // does when the register goes full screen (`RequestFundsModal.jsx:336-360`).
+                    if (state.funds != null) {
+                        FundRequestsPage(state, onEvent)
+                    } else {
+                        if (state.process == null && state.openCard == null) AccountantPageHeader(state.destination)
+                        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                            if (state.process != null) ProcessEditorPage(state, onEvent) else CardBody(state, onEvent)
+                        }
                     }
                 }
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                CardholderHeader(state, onEvent)
-                ZillitDivider()
+                // A child view gone full-screen — an upload form, a card or an
+                // approval detail — hides the header and tabs (`CardExpensesModule.jsx:199`).
+                if (!state.fullScreen && !state.crew.fullScreen && state.openCard == null) {
+                    CardholderHeader(state, onEvent, onBack)
+                    ZillitDivider()
+                }
                 CardBody(state, onEvent)
             }
         }
 
-        // Over the page: processing is a focused task and the queue behind
-        // stays where it was, so the next receipt is one click away. The card
-        // forms are over the page for the same reason — the register behind
-        // them is the context for what is being filled in. The confirmation
-        // comes last so it sits on top of whichever of these raised it.
-        ProcessEditorDialog(state, onEvent)
+        // Over the page: the card forms, because the register behind them is
+        // the context for what is being filled in. The confirmation comes last
+        // so it sits on top of whichever of these raised it.
         NewCardDialog(state, onEvent)
         CardEditDialog(state, onEvent)
         ActivationDialog(state, onEvent)
-        FundsDialog(state, onEvent)
+        // Before the query: a Query raised from the receipt detail opens over it.
+        InboxDialogs(state, onEvent)
+        // Under the query thread, which the crew receipt detail opens over itself.
+        CrewDialogs(state, onEvent)
         QueryDialog(state, onEvent)
+        CardActionDialogs(state, onEvent)
         CardPromptDialog(state.prompt, onEvent)
 
         ZillitToast(
@@ -125,8 +149,14 @@ fun CardExpensesScreen(
     }
 }
 
+/**
+ * The cardholder's heading and tabs (`CardExpensesModule.jsx:199-221`): the
+ * way back beside "Production Expense Cards" and its one line, then My
+ * Transactions, Card, Card Extension and the two queues a grant opens. No
+ * Refresh — the pages re-read on their own.
+ */
 @Composable
-private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit, onBack: (() -> Unit)?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -134,21 +164,21 @@ private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitPageHeader(
-            eyebrow = str(S.desktop_finance),
-            title = str(S.ah_card_expenses),
-            description = str(S.desktop_card_holder_subtitle),
-            actions = {
-                ZillitButton(
-                    text = str(S.refresh_text),
-                    onClick = { onEvent(CardEvent.Refresh) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Reload,
-                    loading = state.loading,
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            onBack?.let { back ->
+                ZillitIconButton(
+                    icon = ZillitIcons.ArrowLeft,
+                    contentDescription = str(S.desktop_card_back_to_hub),
+                    onClick = back,
                 )
-            },
-        )
+            }
+            ZillitPageHeader(
+                eyebrow = str(S.ah_card_expenses),
+                title = str(S.ah_card_expenses),
+                description = str(S.desktop_ce_cards_holder_subtitle),
+                modifier = Modifier.weight(1f),
+            )
+        }
         ZillitTabStrip(
             tabs = state.destinations.map { ZillitTab(it.slug, it.label, count = state.unreadFor(it)) },
             activeId = state.destination.slug,
@@ -188,16 +218,30 @@ private fun CardBody(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         return
     }
 
+    // A card opened from the register or the Card tab takes over the page.
+    val open = state.openCard
+    if (open != null && state.destination in CARD_PAGES) {
+        CardDetailPage(state, open, onEvent)
+        return
+    }
+
     when (state.destination) {
         CardDestination.Overview -> CardOverviewPage(state, onEvent)
-        CardDestination.CardRegister, CardDestination.CardsForApproval -> CardRegisterPage(state, onEvent)
+        CardDestination.CardRegister -> CardRegisterPage(state, onEvent)
+        CardDestination.CardsForApproval -> CardsForApprovalPage(state, onEvent)
+        CardDestination.MyTransactions -> MyTransactionsPage(state, onEvent)
+        CardDestination.CodingQueue -> CodingQueuePage(state, onEvent)
         CardDestination.MyCards -> MyCardPage(state, onEvent)
         CardDestination.CardExtension -> CardExtensionPage(state, onEvent)
         CardDestination.ImportStatement -> StatementReviewPage(state, onEvent)
         CardDestination.BulkProcess -> BulkProcessPage(state, onEvent)
-        CardDestination.AllTransactions -> TransactionsPage(state, onEvent)
-        CardDestination.TopUpQueue -> TopUpQueuePage(state, onEvent)
-        CardDestination.Analytics -> AnalyticsPage(state, onEvent)
+        CardDestination.PendingCoding -> PendingCodingPage(state, onEvent)
+        CardDestination.ApprovalQueue -> ApprovalQueuePage(state, onEvent)
+        CardDestination.ProcessQueue -> ProcessQueuePage(state, onEvent)
+        CardDestination.ReceiptInbox -> ReceiptInboxPage(state, onEvent)
+        CardDestination.AllTransactions -> AllTransactionsPage(state, onEvent)
+        CardDestination.TopUpQueue -> TopUpToDoPage(state, onEvent)
+        CardDestination.Analytics -> AnalyticsPage(state)
         CardDestination.Alerts -> AlertsPage(state, onEvent)
         CardDestination.Settings -> CardSettingsPage(state, onEvent)
         CardDestination.History -> HistoryPage(state, onEvent)
@@ -235,6 +279,9 @@ private fun CardUiState.navSections(): List<SideNavSection> =
 
 /** Unread notifications filed under a page — the web's sidebar `Badge` (`card-expenses-badge-helpers.js`). */
 private fun CardUiState.unreadFor(destination: CardDestination): Int = destination.badgeKeys.sumOf { unread[it] ?: 0 }
+
+/** The pages a card opens full-page from. */
+private val CARD_PAGES = setOf(CardDestination.CardRegister, CardDestination.MyCards)
 
 /** The rows the web's sidebar puts a chip on (`BADGE_LEVEL1_BY_KEY`). */
 private val SIDEBAR_CHIPS = setOf(

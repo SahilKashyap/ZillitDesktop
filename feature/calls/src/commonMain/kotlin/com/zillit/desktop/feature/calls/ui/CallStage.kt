@@ -147,14 +147,15 @@ private fun StageBody(
                 .onGloballyPositioned(onSlot),
         ) {
             if (!showsVideo) {
-                if (isDuo(state.tiles)) {
-                    DuoStage(tiles = state.tiles, modifier = Modifier.fillMaxSize(), loadAvatar = loadAvatar)
-                } else {
-                    AvatarGrid(
-                        tiles = state.tiles,
-                        modifier = Modifier.fillMaxSize(),
-                        loadAvatar = loadAvatar,
-                    )
+                // A lone tile has nothing to be pinned above, so it gets no pin.
+                val several = state.tiles.size > 1
+                val pins = TilePins(state.pins, if (several) { key -> onEvent(CallEvent.TogglePin(key)) } else null)
+                val fill = Modifier.fillMaxSize()
+                when {
+                    several && pinnedTiles(state.tiles, state.pins).isNotEmpty() ->
+                        PinnedStage(tiles = state.tiles, pins = pins, modifier = fill, loadAvatar = loadAvatar)
+                    isDuo(state.tiles) -> DuoStage(state.tiles, fill, loadAvatar, pins)
+                    else -> AvatarGrid(tiles = state.tiles, modifier = fill, loadAvatar = loadAvatar, pins = pins)
                 }
                 if (state.tiles.size <= 1) WaitingForOthers()
             }

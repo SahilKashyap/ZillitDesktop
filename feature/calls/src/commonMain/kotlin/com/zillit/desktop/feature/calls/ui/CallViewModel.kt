@@ -191,6 +191,13 @@ data class CallUiState(
     val secondCall: CallSession? = null,
     /** The roster row whose ⋮ menu is open, by user id. */
     val rosterMenuFor: String = "",
+    /**
+     * Pinned tiles, by `CallTile.key`, in the order they were pinned: they
+     * take the stage and everyone else moves to the strip, as the web's pin
+     * does (`CallRoom.tsx` `setPin`). This viewer's choice alone — nobody
+     * else is told — and gone with the call.
+     */
+    val pins: List<String> = emptyList(),
 ) {
     /** Line 3 only: which controls the host's policy has taken from this user. */
     val handsLocked: Boolean get() = !isHost && line3.policy.handsOff
@@ -399,6 +406,9 @@ sealed interface CallEvent {
     /** Opens or closes one roster row's ⋮ menu; blank closes. */
     data class ToggleRosterMenu(val userId: String) : CallEvent
 
+    /** Pins one tile to the stage, or unpins it; [key] is its `CallTile.key`. */
+    data class TogglePin(val key: String) : CallEvent
+
     /** Puts the invite link on the clipboard, and says so. */
     data object CopyInviteLink : CallEvent
 
@@ -409,8 +419,13 @@ sealed interface CallEvent {
 
 class CallViewModel(
     private val coordinator: CallCoordinator,
-    /** The production's crew, for the add-people picker. Host-supplied. */
-    private val crew: () -> List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> = { emptyList() },
+    /**
+     * The crew of the production the CALL belongs to, for the Users panel.
+     * Host-supplied, and suspending because that is not always the open
+     * production: a call rung from a widget, or one that carried on while the
+     * user switched production, has to ask its own production for its people.
+     */
+    private val crew: suspend () -> List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> = { emptyList() },
     /**
      * The screens and windows on this machine. Null on a host that cannot
      * enumerate them, where pressing Share sends the whole desktop — what the
@@ -476,6 +491,8 @@ class CallViewModel(
         launch { coordinator.toasts.collect { text -> setState { copy(endedNotice = text) } } }
         launch { coordinator.inCallData.collect(::receiveInCallData) }
         launch { coordinator.notices.collect { text -> setState { copy(notice = text) } } }
+        // The pin drawn inside the video picture: the page can only ask.
+        launch { coordinator.pinRequests.collect { key -> setState { togglePin(key) } } }
         // One collector, not four: the tile list is a function of all of them
         // together, and projecting on each separately would publish states
         // where the roster and the media picture disagree.
@@ -515,27 +532,19 @@ class CallViewModel(
      * the panel draws, so someone just added moves to Ringing at once.
      */
     private fun toggleUsers(openOnly: Boolean = false) {
-        setState {
-            if (rosterOpen) {
-                if (openOnly) this else copy(rosterOpen = false, rosterMenuFor = "")
-            } else {
-                copy(
-                    rosterOpen = true,
-                    addableCrew = crew()
-                        // A device id is Line 2's addressing. Lines 1 and 3
-                        // ring a person, so someone with no registered device
-                        // is still reachable and filtering them out hides a
-                        // valid invitee.
-                        .filter { entry ->
-                            val provider = session?.provider
-                            if (provider == CallProvider.Mediasoup || provider == CallProvider.LiveKit) {
-                                entry.userId.isNotBlank()
-                            } else {
-                                entry.deviceId.isNotBlank()
-                            }
-                        }
-                        .sortedBy { it.name.lowercase() },
-                )
+        val state = currentState
+        if (state.rosterOpen) {
+            if (!openOnly) setState { copy(rosterOpen = false, rosterMenuFor = "") }
+            return
+        }
+        setState { copy(rosterOpen = true) }
+        val call = state.session?.callUuid
+        val provider = state.session?.provider
+        launch {
+            val listed = crew().ringableOn(provider)
+            setState {
+                // The call ended, or became another one, while its crew loaded.
+                if (session?.callUuid != call) this else copy(addableCrew = listed)
             }
         }
     }
@@ -744,6 +753,7 @@ class CallViewModel(
             is CallEvent.ExpireReaction -> setState {
                 copy(reactions = reactions.filterNot { it.key == event.key })
             }
+            is CallEvent.TogglePin -> setState { togglePin(event.key) }
             else -> onLine3Event(event)
         }
     }
@@ -847,6 +857,9 @@ class CallViewModel(
         hostControlsOpen = false,
         guestsOpen = false,
         rosterMenuFor = "",
+        pins = emptyList(),
+        // The next call may belong to another production, with other people.
+        addableCrew = emptyList(),
     )
 
     /**
@@ -957,3 +970,49 @@ internal fun CallUiState.afterWindowGesture(event: CallEvent): CallUiState = whe
         if (pipOpen) copy(pipCompact = false, windowRaise = windowRaise + 1) else copy(expanded = !expanded)
     else -> this
 }
+
+/**
+ * Pins [key], or unpins it if it already is.
+ *
+ * Pins held by people no longer on the stage are dropped first, so a pin
+ * left behind by someone who hung up neither counts toward the cap nor comes
+ * back to life if they are rung again. Past [MAX_PINS] the oldest goes: the
+ * press always does what it says, which a refusal would not.
+ */
+internal fun CallUiState.togglePin(key: String): CallUiState {
+    if (key.isBlank()) return this
+    val live = pins.filter { pinned -> tiles.any { it.key == pinned } }
+    val next = when {
+        key in live -> live - key
+        tiles.none { it.key == key } -> return this
+        else -> (live + key).takeLast(MAX_PINS)
+    }
+    return copy(
+        pins = next,
+        stageJson = if (tiles.isEmpty()) "" else stageJson(tiles, columnsFor(tiles.size), next),
+    )
+}
+
+/** The pinned tiles present on the stage, in pin order. */
+fun pinnedTiles(tiles: List<CallTile>, pins: List<String>): List<CallTile> =
+    pins.mapNotNull { key -> tiles.firstOrNull { it.key == key } }
+
+/** The web's ceiling on pins (`CallRoom.tsx` `setPin`). */
+const val MAX_PINS = 6
+
+/**
+ * The crew a call on [provider] can ring, by name. A device id is Line 2's
+ * addressing; Lines 1 and 3 ring a person, so someone with no registered
+ * device is still reachable there and filtering them out hides a valid
+ * invitee.
+ */
+internal fun List<com.zillit.desktop.feature.calls.domain.CallCrewEntry>.ringableOn(
+    provider: CallProvider?,
+): List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> =
+    filter { entry ->
+        if (provider == CallProvider.Mediasoup || provider == CallProvider.LiveKit) {
+            entry.userId.isNotBlank()
+        } else {
+            entry.deviceId.isNotBlank()
+        }
+    }.sortedBy { it.name.lowercase() }

@@ -86,6 +86,7 @@ object EngineBridge {
             // lines read it from the roster row. livekit.js always sent this,
             // and nothing here read it, so a Line 3 presenter was never known.
             "peer-screen-share" -> CallEngineEvent.PeerScreenShare(obj.int("uid"), obj.bool("sharing"))
+            "pin" -> CallEngineEvent.PinRequested(obj.str("key")?.takeIf(String::isNotBlank) ?: return null)
             "devices" -> CallEngineEvent.Devices(
                 microphones = obj.devices("microphones"),
                 speakers = obj.devices("speakers"),

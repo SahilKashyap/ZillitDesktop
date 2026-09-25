@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,6 +50,7 @@ fun AvatarGrid(
     tiles: List<CallTile>,
     modifier: Modifier = Modifier,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
+    pins: TilePins = TilePins(),
 ) {
     // One transition for the whole grid: twelve tiles each running their own
     // would be twelve animation nodes drifting out of phase with each other.
@@ -86,6 +89,7 @@ fun AvatarGrid(
                                 pulse = pulse,
                                 modifier = Modifier.size(tileWidth, tileHeight),
                                 image = rememberTileFace(entry.tile.userId, loadAvatar),
+                                pins = pins,
                             )
                             is GridEntry.Overflow -> OverflowCell(
                                 count = entry.count,
@@ -115,44 +119,144 @@ fun DuoStage(
     tiles: List<CallTile>,
     modifier: Modifier = Modifier,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
+    pins: TilePins = TilePins(),
 ) {
     val self = tiles.firstOrNull { it.isSelf } ?: return
     val other = tiles.firstOrNull { !it.isSelf } ?: return
     var selfBig by remember { mutableStateOf(false) }
-    val big = if (selfBig) self else other
-    val small = if (selfBig) other else self
-    val pulse by rememberInfiniteTransition(label = "duo-pulse").animateFloat(
+    FocusStage(
+        focus = listOf(if (selfBig) self else other),
+        others = listOf(if (selfBig) other else self),
+        modifier = modifier,
+        loadAvatar = loadAvatar,
+        pins = pins,
+        onMiniClick = { selfBig = !selfBig },
+    )
+}
+
+/**
+ * Somebody pinned: the pinned tiles take the stage and everyone else moves
+ * to the strip in the corner — the web's pin (`CallRoom.tsx` `focusedIds`).
+ * The strip's tiles carry their own pins; clicking one does not swap it in,
+ * because the stage is what the user pinned, not what they last clicked.
+ */
+@Composable
+fun PinnedStage(
+    tiles: List<CallTile>,
+    pins: TilePins,
+    modifier: Modifier = Modifier,
+    loadAvatar: suspend (String) -> ImageBitmap? = { null },
+) {
+    val pinned = pinnedTiles(tiles, pins.keys)
+    FocusStage(
+        focus = pinned,
+        others = tiles.filterNot { tile -> pinned.any { it.key == tile.key } },
+        modifier = modifier,
+        loadAvatar = loadAvatar,
+        pins = pins,
+        onMiniClick = null,
+    )
+}
+
+/**
+ * The big-and-small stage both layouts above draw.
+ *
+ * One focus tile is the largest 16:9 box the stage holds, with the strip
+ * floating over its corner as the web's `.duoSelf` does. Several share the
+ * stage as a grid above the strip, which gets a band of its own — floated,
+ * it would cover the corner of the last pinned tile.
+ */
+@Composable
+private fun FocusStage(
+    focus: List<CallTile>,
+    others: List<CallTile>,
+    modifier: Modifier,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    pins: TilePins,
+    onMiniClick: ((CallTile) -> Unit)?,
+) {
+    val pulse by rememberInfiniteTransition(label = "focus-pulse").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = LinearEasing), RepeatMode.Restart),
-        label = "duo-pulse-value",
+        label = "focus-pulse-value",
     )
     BoxWithConstraints(modifier = modifier) {
-        val bigWidth = minOf(maxWidth - DUO_INSET * 2, (maxHeight - DUO_INSET * 2) * TILE_ASPECT).coerceAtLeast(1.dp)
-        val bigHeight = bigWidth / TILE_ASPECT
-        CallTileView(
-            tile = big,
-            avatarSize = (bigHeight * DUO_AVATAR_RATIO).coerceIn(AVATAR_MIN, DUO_AVATAR_MAX),
-            showChip = true,
-            pulse = pulse,
-            modifier = Modifier.align(Alignment.Center).size(bigWidth, bigHeight),
-            image = rememberTileFace(big.userId, loadAvatar),
-        )
         val smallHeight = (maxHeight * DUO_SMALL_SHARE).coerceIn(DUO_SMALL_MIN, DUO_SMALL_MAX)
-        val smallWidth = smallHeight * TILE_ASPECT
-        CallTileView(
-            tile = small,
-            avatarSize = (smallHeight * AVATAR_RATIO).coerceIn(DUO_SMALL_AVATAR_MIN, AVATAR_MAX),
-            showChip = smallWidth >= NAME_MIN_WIDTH,
+        val band = if (focus.size > 1 && others.isNotEmpty()) smallHeight + DUO_CORNER_GAP * 2 else 0.dp
+        val main = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(maxHeight - band)
+        if (focus.size == 1) {
+            val big = focus.single()
+            val bigWidth = minOf(maxWidth - DUO_INSET * 2, (maxHeight - band - DUO_INSET * 2) * TILE_ASPECT)
+                .coerceAtLeast(1.dp)
+            val bigHeight = bigWidth / TILE_ASPECT
+            Box(modifier = main, contentAlignment = Alignment.Center) {
+                CallTileView(
+                    tile = big,
+                    avatarSize = (bigHeight * DUO_AVATAR_RATIO).coerceIn(AVATAR_MIN, DUO_AVATAR_MAX),
+                    showChip = true,
+                    pulse = pulse,
+                    modifier = Modifier.size(bigWidth, bigHeight),
+                    image = rememberTileFace(big.userId, loadAvatar),
+                    pins = pins,
+                )
+            }
+        } else {
+            AvatarGrid(tiles = focus, modifier = main, loadAvatar = loadAvatar, pins = pins)
+        }
+        FocusStrip(
+            others = others,
+            smallHeight = smallHeight,
+            maxWidth = maxWidth,
             pulse = pulse,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(DUO_CORNER_GAP)
-                .shadow(DUO_ELEVATION, RoundedCornerShape(CELL_CORNER))
-                .clickable { selfBig = !selfBig }
-                .size(smallWidth, smallHeight),
-            image = rememberTileFace(small.userId, loadAvatar),
+            loadAvatar = loadAvatar,
+            pins = pins,
+            onMiniClick = onMiniClick,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(DUO_CORNER_GAP),
         )
+    }
+}
+
+/** Everyone not on the stage, small, bottom-right; a crowd past the width is a "+N". */
+@Suppress("LongParameterList") // Geometry handed down from the stage's constraints.
+@Composable
+private fun FocusStrip(
+    others: List<CallTile>,
+    smallHeight: Dp,
+    maxWidth: Dp,
+    pulse: Float,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    pins: TilePins,
+    onMiniClick: ((CallTile) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    if (others.isEmpty()) return
+    val smallWidth = smallHeight * TILE_ASPECT
+    val fits = ((maxWidth * STRIP_SHARE) / (smallWidth + GAP)).toInt().coerceAtLeast(1)
+    val shown = if (others.size > fits) others.take(fits - 1) else others
+    val overflow = others.size - shown.size
+    val corner = RoundedCornerShape(CELL_CORNER)
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(GAP)) {
+        shown.forEach { tile ->
+            CallTileView(
+                tile = tile,
+                avatarSize = (smallHeight * AVATAR_RATIO).coerceIn(DUO_SMALL_AVATAR_MIN, AVATAR_MAX),
+                showChip = smallWidth >= NAME_MIN_WIDTH,
+                pulse = pulse,
+                modifier = Modifier
+                    .shadow(DUO_ELEVATION, corner)
+                    .then(if (onMiniClick != null) Modifier.clickable { onMiniClick(tile) } else Modifier)
+                    .size(smallWidth, smallHeight),
+                image = rememberTileFace(tile.userId, loadAvatar),
+                pins = pins,
+            )
+        }
+        if (overflow > 0) {
+            OverflowCell(
+                count = overflow,
+                modifier = Modifier.shadow(DUO_ELEVATION, corner).size(smallWidth, smallHeight),
+            )
+        }
     }
 }
 
@@ -253,6 +357,7 @@ private val DUO_SMALL_AVATAR_MIN = 28.dp
 private val DUO_AVATAR_MAX = 150.dp
 private val DUO_ELEVATION = 12.dp
 private const val DUO_SMALL_SHARE = 0.22f
+private const val STRIP_SHARE = 0.9f
 private const val DUO_AVATAR_RATIO = 0.3f
 private val TILE_MAX_WIDTH = 560.dp
 private val AVATAR_MIN = 40.dp

@@ -1,19 +1,27 @@
+// The accountant's process editor, as a full page — the web's `ProcessReceiptModal fullPage`.
+@file:Suppress("TooManyFunctions")
+
 package com.zillit.desktop.feature.cardexpenses.ui.pages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,8 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -31,7 +41,10 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
@@ -42,8 +55,9 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
-import com.zillit.desktop.feature.cardexpenses.domain.ProcessLine
+import com.zillit.desktop.feature.cardexpenses.domain.ProcessFigures
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessRules
+import com.zillit.desktop.feature.cardexpenses.domain.ProcessingFlag
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptProcessing
 import com.zillit.desktop.feature.cardexpenses.domain.TopUpMethod
 import com.zillit.desktop.feature.cardexpenses.ui.AssignDraft
@@ -51,355 +65,580 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessDraft
 import com.zillit.desktop.feature.cardexpenses.ui.ProcessMode
+import com.zillit.desktop.feature.cardexpenses.ui.ProcessPageEvent
+import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
 import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
 import com.zillit.desktop.feature.cardexpenses.ui.date
+import com.zillit.desktop.feature.cardexpenses.ui.localDay
 import com.zillit.desktop.feature.cardexpenses.ui.money
+import kotlin.math.abs
+import kotlin.time.Clock
 
 /**
- * The accountant's process editor — the web's `ProcessReceiptModal`.
+ * The accountant's process editor — the web's `ProcessReceiptModal`, as the
+ * full page it is there: it takes over the content column, the sidebar stays,
+ * and the back button or the breadcrumb returns to the queue.
  *
- * Top to bottom as the web reads: the receipt's facts, the three header
- * corrections (vendor, cost code, the ledger date posting needs), the rule
- * banners, the coded lines with their running totals against the receipt,
- * and the top-up decision when the holder asked for one. The buttons are the
- * web's header row; which of them show is [ProcessRules]' decision, and the
- * view model checks the same rules again on the way in.
+ * Top to bottom as the web reads: the breadcrumb and the header buttons; the
+ * receipt's facts and the three corrections (vendor, cost code, ledger date)
+ * beside the receipt itself; the banners; the match against the receipt; the
+ * coded lines; the top-up decision when the holder asked for one. Which
+ * buttons show is [ProcessRules]' decision, and the view model checks the same
+ * rules again on the way in. A receipt dated in the closed period is frozen:
+ * every field disabled, and nothing but History and Query offered.
  */
-@Suppress("LongMethod") // One editor, read top to bottom; the order is the web's.
 @Composable
-fun ProcessEditorDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+fun ProcessEditorPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val draft = state.process ?: return
-    val receipt = draft.receipt
-    val processing = receipt.processing
-    val figures = draft.figures
-    val viewer = state.viewer
-    val history = draft.mode == ProcessMode.History
-    val idle = !draft.loading && !state.busy
+    val refs = state.processPages.refs
+    val figures = draft.figures(refs)
+    val locked = draft.periodLocked(refs.lock)
+    var layers by remember { mutableStateOf<LayersTarget?>(null) }
 
-    ZillitDialogShell(
-        title = receipt.description.ifBlank { receipt.merchant ?: str(S.desktop_receipt) },
-        subtitle = listOf(
-            if (history) str(S.history) else str(S.ah_process),
-            state.personName(receipt.holderId, receipt.holderName),
-        ).joinToString(" · "),
-        icon = ZillitIcons.Ledger,
-        visible = true,
-        width = EDITOR_WIDTH,
-        maxHeight = EDITOR_HEIGHT,
-        onDismiss = { onEvent(CardEvent.CloseProcess) },
-        actions = { ProcessActions(state, draft, onEvent) },
-    ) {
-        ReceiptFacts(state, draft)
-
-        if (draft.loading) {
-            Row(Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.lg), Arrangement.Center) {
-                ZillitSpinner()
+    Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+        Column(Modifier.fillMaxSize()) {
+            TopBar(state, draft, figures, locked, onEvent)
+            ZillitDivider()
+            ZillitScrollColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(ZillitTheme.spacing.xl),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
+                    DetailsCard(state, draft, locked, onEvent, Modifier.weight(1f))
+                    PreviewCard(draft, onEvent)
+                }
+                if (draft.loading) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xl),
+                            horizontalArrangement = Arrangement.spacedBy(
+                                ZillitTheme.spacing.sm,
+                                Alignment.CenterHorizontally,
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ZillitSpinner()
+                            ZillitText(
+                                text = str(S.desktop_ce_process_loading_details),
+                                style = ZillitTheme.typography.bodySmall,
+                                color = ZillitTheme.colors.textMuted,
+                            )
+                        }
+                    }
+                } else {
+                    Banners(state, draft, figures)
+                    if (draft.mode == ProcessMode.Process) {
+                        GrossMatchBar(draft.receipt.amount, figures.gross, draft.receipt.currency)
+                    }
+                    Card(Modifier.fillMaxWidth()) {
+                        ProcessLineItems(draft, refs, figures, locked, draft.receipt.currency, onEvent) { layers = it }
+                    }
+                    if (draft.mode == ProcessMode.Process && draft.receipt.processing.requestTopUp) {
+                        Card(Modifier.fillMaxWidth()) { TopUpDecision(draft, figures, onEvent) }
+                    }
+                }
             }
-            return@ZillitDialogShell
         }
+        // Dialogs at the root: a dialog shell is not a popup, and inside the
+        // scrolling column it would draw at the foot of the page.
+        layers?.let { LayersPicker(draft, refs, it, onDismiss = { layers = null }, onEvent = onEvent) }
+        AssignDialog(state, draft, onEvent)
+        EscalateDialog(state, draft, onEvent)
+        HistoryPanel(draft, onEvent)
+    }
+}
 
-        HeaderFields(draft, onEvent)
-        RuleBanners(state, draft)
-
-        ZillitDivider()
-        FieldGroupLabel(str(S.ah_line_items))
-        LineHeader()
-        draft.lines.forEachIndexed { index, line ->
-            LineRow(
-                line = line,
-                currency = receipt.currency,
-                removable = draft.lines.size > 1,
-                onChange = { onEvent(CardEvent.EditProcessLine(index, it)) },
-                onRemove = { onEvent(CardEvent.RemoveProcessLine(index)) },
+/**
+ * Back, the breadcrumb — "Production Expense Cards / Process / {receipt}" —
+ * the status badge, the lock banner, and the header buttons.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Suppress("LongMethod") // The breadcrumb and its buttons are one bar.
+@Composable
+private fun TopBar(
+    state: CardUiState,
+    draft: ProcessDraft,
+    figures: ProcessFigures,
+    locked: Boolean,
+    onEvent: (CardEvent) -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    val history = draft.mode == ProcessMode.History
+    val receipt = draft.receipt
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.surface)
+            .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronLeft,
+            contentDescription = str(S.back),
+            onClick = { onEvent(CardEvent.CloseProcess) },
+        )
+        FlowRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            ZillitText(
+                text = str(S.ah_card_expenses).uppercase(),
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = colors.accentText,
+                modifier = Modifier.clickable { onEvent(CardEvent.CloseProcess) }.align(Alignment.CenterVertically),
             )
+            Crumb("/")
+            Crumb(if (history) str(S.history) else str(S.ah_process))
+            Crumb("/")
+            ZillitText(
+                text = receipt.description.ifBlank { str(S.desktop_receipt) },
+                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = CRUMB_MAX).align(Alignment.CenterVertically),
+            )
+            when {
+                !history -> ZillitStatusPill(label = str(S.ah_ready_to_post), tone = StatusTone.Ready)
+                receipt.status == CardWorkflowStatus.Posted ->
+                    ZillitStatusPill(label = str(S.ah_status_posted), tone = StatusTone.Done)
+
+                else -> ZillitStatusPill(label = receipt.status.label, tone = StatusTone.Neutral)
+            }
+            if (receipt.urgent) UrgentPill()
+            if (locked) {
+                ZillitStatusPill(
+                    label = str(S.desktop_ce_process_locked_receipt, state.processPages.refs.lock.lockedThrough),
+                    tone = StatusTone.Rejected,
+                )
+            }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        HeaderButtons(state, draft, figures, locked, onEvent)
+    }
+}
+
+@Composable
+private fun RowScope.Crumb(text: String) {
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.bodyMedium,
+        color = ZillitTheme.colors.textSecondary,
+        modifier = Modifier.align(Alignment.CenterVertically),
+    )
+}
+
+/**
+ * The web's header row (`ProcessReceiptModal.jsx:503-570`): History always;
+ * Save unless the period is locked; then, in the queue, Assign or Reassign,
+ * Query (red while a query rule is on the receipt), Escalate and Submit for
+ * Review for a non-senior, and Post wherever [ProcessRules.canPost] allows.
+ */
+@Suppress("LongMethod", "CyclomaticComplexMethod") // The web's buttons, in the web's order.
+@Composable
+private fun HeaderButtons(
+    state: CardUiState,
+    draft: ProcessDraft,
+    figures: ProcessFigures,
+    locked: Boolean,
+    onEvent: (CardEvent) -> Unit,
+) {
+    val viewer = state.viewer
+    val idle = !draft.loading && !state.busy
+    val queue = draft.mode == ProcessMode.Process
+    val processing = draft.receipt.processing
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitButton(
+            text = str(S.history),
+            onClick = { onEvent(ProcessPageEvent.ShowHistory(true)) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Clock,
+        )
+        if (!locked) {
             ZillitButton(
-                text = str(S.desktop_po_add_line),
-                onClick = { onEvent(CardEvent.AddProcessLine) },
+                text = str(S.save),
+                onClick = { onEvent(CardEvent.SaveProcess) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Add,
+                leadingIcon = ZillitIcons.Save,
                 enabled = idle,
             )
-            Spacer(Modifier.weight(1f))
-            Totals(figures.net, figures.tax, figures.gross, receipt.amount, receipt.currency, figures.mismatch)
         }
-
-        if (!history && processing.requestTopUp) {
-            ZillitDivider()
-            TopUpDecision(draft, onEvent)
+        if (!queue) return@Row
+        if (viewer.isAccountant && !locked) {
+            ZillitButton(
+                text = if (draft.receipt.assignedTo.isNullOrBlank()) str(S.assign) else str(S.desktop_po_reassign),
+                onClick = { onEvent(CardEvent.EditProcess(draft.copy(assign = AssignDraft()))) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Users,
+                enabled = idle,
+            )
         }
-        val flagged = processing.needsQuery || processing.needsReview
-        if (!viewer.isSenior && !history && flagged) {
-            ZillitText(
-                text = str(S.desktop_card_post_needs_senior),
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textMuted,
+        ZillitButton(
+            text = str(S.ah_query_label),
+            onClick = { onEvent(CardEvent.OpenQuery(draft.receipt.id)) },
+            variant = if (processing.needsQuery) ButtonVariant.Danger else ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Chat,
+            enabled = idle,
+        )
+        if (ProcessRules.canHandUp(viewer) && !locked) {
+            ZillitButton(
+                text = str(S.desktop_ce_escalate),
+                onClick = { onEvent(CardEvent.EditProcess(draft.copy(escalation = ""))) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                enabled = idle,
+            )
+            ZillitButton(
+                text = str(S.desktop_submit_for_review),
+                onClick = { onEvent(CardEvent.SubmitProcessForReview) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                enabled = idle,
+            )
+        }
+        if (!locked && ProcessRules.canPost(viewer, processing, figures.effectiveAmount)) {
+            val topUp = processing.requestTopUp && draft.topUp != TopUpMethod.None
+            ZillitButton(
+                text = if (topUp) str(S.desktop_card_post_and_top_up) else str(S.ah_post_to_ledger),
+                onClick = { onEvent(CardEvent.PostProcess) },
+                leadingIcon = ZillitIcons.Ledger,
+                enabled = idle,
+                loading = state.busy,
             )
         }
     }
-
-    AssignDialog(state, draft, onEvent)
-    EscalateDialog(state, draft, onEvent)
 }
 
-/** Amount, date, holder and card — the facts the coding is checked against. */
+/** A white card on the page's grey, as every block on the web's surface is. */
 @Composable
-private fun ReceiptFacts(state: CardUiState, draft: ProcessDraft) {
+private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val colors = ZillitTheme.colors
+    Box(
+        modifier = modifier
+            .clip(ZillitTheme.shapes.large)
+            .background(colors.surface)
+            .border(1.dp, colors.border, ZillitTheme.shapes.large)
+            .padding(ZillitTheme.spacing.lg),
+    ) { content() }
+}
+
+/**
+ * The receipt's facts — amount, date, holder, card — and, under a rule, the
+ * three fields an accountant may correct before posting: vendor, cost code,
+ * and the ledger date posting needs, bounded by the lock and today.
+ */
+@Suppress("LongMethod") // Two rows of one card.
+@Composable
+private fun DetailsCard(
+    state: CardUiState,
+    draft: ProcessDraft,
+    locked: Boolean,
+    onEvent: (CardEvent) -> Unit,
+    modifier: Modifier,
+) {
     val receipt = draft.receipt
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Fact(str(S.amount), money(receipt.amount, receipt.currency), Modifier.weight(1f))
-        Fact(str(S.date), date(receipt.date), Modifier.weight(1f))
-        Fact(
-            str(S.desktop_card_card_holder),
-            state.personName(receipt.holderId, receipt.holderName),
-            Modifier.weight(1f),
-        )
-        Fact(
-            str(S.ah_my_cards),
-            (receipt.cardLastFour ?: receipt.transactionCardLastFour)?.let { "•••• $it" } ?: "—",
-            Modifier.weight(1f),
-        )
-        StatusBadge(receipt.status, receipt.urgent)
+    val refs = state.processPages.refs
+    val earliest = refs.lock.firstOpenDay
+    val today = remember { localDay(Clock.System.now().toEpochMilliseconds()) }
+    val outOfRange = draft.effectiveDate.isNotBlank() &&
+        ((earliest != null && draft.effectiveDate < earliest) || draft.effectiveDate > today)
+    Card(modifier.heightIn(min = DETAILS_MIN)) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            FieldGroupLabel(str(S.ah_receipt_details))
+            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
+                Fact(str(S.amount), money(receipt.amount, receipt.currency), Modifier.weight(1f), accent = true)
+                Fact(str(S.date), date(receipt.date), Modifier.weight(1f))
+                Fact(
+                    str(S.desktop_card_card_holder),
+                    state.personName(receipt.holderId, receipt.holderName),
+                    Modifier.weight(1f),
+                )
+                Fact(
+                    str(S.ah_my_cards),
+                    receipt.cardLastFour?.takeIf { it.isNotBlank() }?.let { "···· $it" } ?: EM_DASH,
+                    Modifier.weight(1f),
+                )
+            }
+            ZillitDivider()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                verticalAlignment = Alignment.Top,
+            ) {
+                ZillitTextField(
+                    value = draft.description,
+                    onValueChange = { onEvent(CardEvent.EditProcess(draft.copy(description = it))) },
+                    label = str(S.ah_lbl_vendor),
+                    placeholder = str(S.cash_receipt_vendor_hint),
+                    enabled = !locked,
+                    modifier = Modifier.weight(2f),
+                )
+                CoaCodeInput(
+                    value = draft.nominalCode,
+                    onValueChange = { onEvent(CardEvent.EditProcess(draft.copy(nominalCode = it))) },
+                    accounts = refs.accounts,
+                    label = str(S.ah_cost_code_label),
+                    enabled = !locked,
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitDateField(
+                    value = draft.effectiveDate,
+                    onValueChange = { onEvent(CardEvent.EditProcess(draft.copy(effectiveDate = it))) },
+                    label = str(S.ah_lbl_eff_date) + " *",
+                    enabled = !locked,
+                    errorText = if (outOfRange) {
+                        str(S.desktop_ce_process_date_bounds, earliest ?: EM_DASH, today)
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun StatusBadge(status: CardWorkflowStatus, urgent: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs), horizontalAlignment = Alignment.End) {
-        ZillitStatusPill(label = status.label, tone = StatusTone.Ready, dot = true)
-        if (urgent) ZillitStatusPill(label = str(S.ah_topup_filter_urgent), tone = StatusTone.Escalated, dot = true)
-    }
-}
-
-@Composable
-private fun Fact(label: String, value: String, modifier: Modifier = Modifier) {
+private fun Fact(label: String, value: String, modifier: Modifier = Modifier, accent: Boolean = false) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         FieldGroupLabel(label)
-        ZillitText(text = value, style = ZillitTheme.typography.titleSmall, maxLines = 1)
-    }
-}
-
-/** Vendor, cost code and ledger date: intake values an accountant may correct before posting. */
-@Composable
-private fun HeaderFields(draft: ProcessDraft, onEvent: (CardEvent) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.Top,
-    ) {
-        ZillitTextField(
-            value = draft.description,
-            onValueChange = { onEvent(CardEvent.EditProcess(draft.copy(description = it))) },
-            label = str(S.ah_lbl_vendor),
-            placeholder = str(S.cash_receipt_vendor_hint),
-            modifier = Modifier.weight(2f),
-        )
-        ZillitTextField(
-            value = draft.nominalCode,
-            onValueChange = { onEvent(CardEvent.EditProcess(draft.copy(nominalCode = it))) },
-            label = str(S.ah_cost_code_label),
-            placeholder = "4100",
-            modifier = Modifier.weight(1f),
-        )
-        ZillitDateField(
-            value = draft.effectiveDate,
-            onValueChange = { onEvent(CardEvent.EditProcess(draft.copy(effectiveDate = it))) },
-            label = str(S.ah_lbl_eff_date),
-            modifier = Modifier.weight(1f),
+        ZillitText(
+            text = value,
+            style = if (accent) {
+                ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.ExtraBold)
+            } else {
+                ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+            },
+            color = if (accent) ZillitTheme.colors.accentText else ZillitTheme.colors.textPrimary,
+            maxLines = 1,
         )
     }
 }
 
 /**
- * The receipt's standing: escalated (and why), under review, the rules it
- * tripped, and whether the lines add up to it.
+ * The receipt itself, in its own 220-wide card beside the details: the file
+ * and a way to open it, or "No receipt uploaded". The desktop opens the file
+ * through the host rather than drawing it inline.
  */
 @Composable
-private fun RuleBanners(state: CardUiState, draft: ProcessDraft) {
+private fun PreviewCard(draft: ProcessDraft, onEvent: (CardEvent) -> Unit) {
+    val key = draft.receipt.attachmentKey?.takeIf { it.isNotBlank() }
+    Card(Modifier.width(PREVIEW_WIDTH).heightIn(min = DETAILS_MIN)) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.CenterVertically),
+        ) {
+            ZillitIcon(ZillitIcons.File, tint = ZillitTheme.colors.textMuted, size = PREVIEW_ICON)
+            if (key == null) {
+                ZillitText(
+                    text = str(S.desktop_ce_process_no_receipt),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            } else {
+                ZillitText(
+                    text = key.substringAfterLast('/'),
+                    style = ZillitTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                ZillitButton(
+                    text = str(S.drive_btn_open),
+                    onClick = { onEvent(CardEvent.ViewReceipt(key)) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Eye,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The receipt's standing: escalated (why, by whom, when), under review, the
+ * rules it tripped as the web words them, and whether the lines add up to it.
+ */
+@Composable
+private fun Banners(state: CardUiState, draft: ProcessDraft, figures: ProcessFigures) {
+    if (draft.mode == ProcessMode.Process) StandingBanners(state, draft)
+    RuleBanners(draft)
+    MismatchBanner(draft, figures)
+}
+
+/** Escalated — why, by whom, when — or under review; the queue's banners only. */
+@Composable
+private fun StandingBanners(state: CardUiState, draft: ProcessDraft) {
     val receipt = draft.receipt
     val processing = receipt.processing
-    val figures = draft.figures
-    if (draft.mode == ProcessMode.Process && receipt.status.wire == ESCALATED) {
+    val handedUp = processing.escalationReason != null || processing.escalatedBy != null
+    if (receipt.status == CardWorkflowStatus.Escalated && handedUp) {
+        val reason = processing.escalationReason ?: str(S.desktop_inv_no_reason_provided)
         ZillitNotice(
             text = listOfNotNull(
                 str(S.ah_escalated_to_senior_toast),
-                processing.escalationReason?.let { "“$it”" },
-            ).joinToString(" "),
+                "“$reason”",
+                escalationByline(state, processing),
+            ).joinToString("\n"),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Warning,
         )
     }
-    if (draft.mode == ProcessMode.Process && receipt.status.wire == UNDER_REVIEW) {
+    if (receipt.status == CardWorkflowStatus.UnderReview) {
         ZillitNotice(text = str(S.ah_under_review), tone = StatusTone.Progress, icon = ZillitIcons.Info)
     }
-    processing.flags.mapNotNull { it.banner() }.forEach { (text, tone) ->
-        ZillitNotice(text = text, tone = tone, icon = ZillitIcons.Info)
+}
+
+/** One banner per rule the receipt tripped, worded from the rule itself. */
+@Composable
+private fun RuleBanners(draft: ProcessDraft) {
+    val receipt = draft.receipt
+    receipt.processing.rules.forEach { rule ->
+        val tone = when (rule.flag) {
+            ReceiptProcessing.QUERY -> StatusTone.Rejected
+            ReceiptProcessing.REVIEW -> StatusTone.Progress
+            ReceiptProcessing.DEDUCT -> StatusTone.Pending
+            else -> return@forEach
+        }
+        val headline = ruleHeadline(rule) { money(it, receipt.currency) }
+        ZillitNotice(
+            text = listOfNotNull(headline, rule.description?.takeIf { it.isNotBlank() }).joinToString("\n"),
+            tone = tone,
+            icon = ZillitIcons.Info,
+        )
     }
-    if (figures.mismatch) {
+}
+
+/** The lines against the receipt: lower (the post will reduce it) or not matching. */
+@Composable
+private fun MismatchBanner(draft: ProcessDraft, figures: ProcessFigures) {
+    val receipt = draft.receipt
+    val diff = figures.gross - receipt.amount
+    if (abs(diff) > PENNY) {
         val total = money(figures.gross, receipt.currency)
         val amount = money(receipt.amount, receipt.currency)
+        val signed = (if (diff > 0) "+" else "") + money(diff, receipt.currency)
         ZillitNotice(
-            text = if (figures.gross < receipt.amount) {
-                str(S.desktop_card_lines_lower_note, total, amount)
+            text = if (diff < 0) {
+                str(S.desktop_card_lines_lower_note, total, amount) + "  " + signed
             } else {
-                str(S.desktop_card_lines_mismatch_note, total, amount)
+                str(S.desktop_card_lines_mismatch_note, total, amount) + "  " + signed
             },
-            tone = if (figures.gross < receipt.amount) StatusTone.Pending else StatusTone.Rejected,
+            tone = if (diff < 0) StatusTone.Pending else StatusTone.Rejected,
             icon = ZillitIcons.Warning,
         )
     }
-    if (state.viewer.metadata.postingLimit?.let { it < figures.effectiveAmount } == true) {
-        ZillitNotice(text = str(S.desktop_card_above_posting_limit), tone = StatusTone.Pending, icon = ZillitIcons.Info)
-    }
 }
 
-private fun String.banner(): Pair<String, StatusTone>? = when (this) {
-    ReceiptProcessing.QUERY -> str(S.desktop_card_flag_query) to StatusTone.Rejected
-    ReceiptProcessing.REVIEW -> str(S.desktop_card_flag_review) to StatusTone.Progress
-    DEDUCT -> str(S.desktop_card_flag_deduct) to StatusTone.Pending
-    else -> null
-}
-
-@Composable
-private fun LineHeader() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        HeaderCell(str(S.description), Modifier.weight(DESCRIPTION_WEIGHT))
-        HeaderCell(str(S.ah_account_label), Modifier.weight(1f))
-        HeaderCell(str(S.desktop_net), Modifier.weight(1f))
-        HeaderCell(str(S.ah_lbl_tax_rate), Modifier.width(RATE_WIDTH))
-        HeaderCell(str(S.desktop_gross), Modifier.width(GROSS_WIDTH))
-        Spacer(Modifier.width(REMOVE_WIDTH))
-    }
-}
-
-@Composable
-private fun HeaderCell(text: String, modifier: Modifier) {
-    ZillitText(
-        text = text,
-        style = ZillitTheme.typography.columnHeader,
-        color = ZillitTheme.colors.textMuted,
-        modifier = modifier,
-        maxLines = 1,
-    )
-}
-
-/** One coded line: what it covers, where it goes, net, rate — and the gross that follows. */
-@Composable
-private fun LineRow(
-    line: ProcessLine,
-    currency: String?,
-    removable: Boolean,
-    onChange: (ProcessLine) -> Unit,
-    onRemove: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitTextField(
-            value = line.description,
-            onValueChange = { onChange(line.copy(description = it)) },
-            modifier = Modifier.weight(DESCRIPTION_WEIGHT),
-        )
-        ZillitTextField(
-            value = line.account,
-            onValueChange = { onChange(line.copy(account = it)) },
-            placeholder = "4100",
-            modifier = Modifier.weight(1f),
-        )
-        NumberField(
-            value = line.net,
-            onValue = { onChange(line.copy(net = it ?: 0.0)) },
-            modifier = Modifier.weight(1f),
-        )
-        NumberField(
-            value = line.taxRate,
-            onValue = { onChange(line.copy(taxRate = it?.takeIf { rate -> rate != 0.0 })) },
-            placeholder = "0",
-            modifier = Modifier.width(RATE_WIDTH),
-        )
-        ZillitText(
-            text = money(line.gross, currency),
-            style = ZillitTheme.typography.numeric,
-            maxLines = 1,
-            modifier = Modifier.width(GROSS_WIDTH),
-        )
-        if (removable) {
-            ZillitButton(
-                text = "",
-                onClick = onRemove,
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Trash,
-                modifier = Modifier.width(REMOVE_WIDTH),
-            )
-        } else {
-            Spacer(Modifier.width(REMOVE_WIDTH))
-        }
-    }
+/** "By Name (Designation) · 04 Aug 2026 | 4:35 PM" (`ProcessReceiptModal.jsx:686-704`). */
+private fun escalationByline(state: CardUiState, processing: ReceiptProcessing): String? {
+    val by = processing.escalatedBy
+    val at = processing.escalatedAt
+    if (by == null && at == null) return null
+    val person = state.people.firstOrNull { it.id == by }
+    val who = listOfNotNull(
+        person?.name ?: by?.let { EM_DASH } ?: str(S.desktop_unknown),
+        person?.designation?.takeIf { it.isNotBlank() }?.let { "($it)" },
+    ).joinToString(" ")
+    val stamp = at?.let { EpochDate.dateTime(it).replace(",", "") }?.takeIf { it.isNotBlank() }
+    return str(S.desktop_ce_process_escalated_by, listOfNotNull(who, stamp).joinToString(" · "))
 }
 
 /**
- * A figure typed as text.
- *
- * The text is the field's own: parsing on every keystroke and writing the
- * number back would turn "12." into "12.0" under the cursor. The figure
- * outside only re-seeds the text when it changes to something the text does
- * not already say.
+ * A rule's banner sentence, built as the web builds it from the rule's
+ * title and threshold (`ProcessReceiptModal.jsx:724-747`).
+ */
+internal fun ruleHeadline(rule: ProcessingFlag, format: (Double) -> String): String {
+    val title = rule.title?.trim().orEmpty()
+    val name = when {
+        title.isEmpty() -> str(S.desktop_ce_process_rule)
+        title.endsWith("rule", ignoreCase = true) -> title
+        else -> str(S.desktop_ce_process_named_rule, title)
+    }
+    val threshold = rule.thresholdValue
+    return when (rule.flag) {
+        ReceiptProcessing.DEDUCT -> if (threshold == null) {
+            str(S.desktop_ce_process_rule_deduct, name)
+        } else {
+            val figure = if (rule.thresholdType == PERCENTAGE) "${threshold.plainNumber()}%" else format(threshold)
+            str(S.desktop_ce_process_rule_deduct_amount, figure, name)
+        }
+
+        ReceiptProcessing.REVIEW -> if (threshold == null) {
+            str(S.desktop_ce_process_rule_review, name)
+        } else {
+            str(S.desktop_ce_process_rule_review_amount, format(threshold), name)
+        }
+
+        else -> if (threshold == null) {
+            str(S.desktop_ce_process_rule_query, name)
+        } else {
+            str(S.desktop_ce_process_rule_query_amount, format(threshold), name)
+        }
+    }
+}
+
+private fun Double.plainNumber(): String = if (this == kotlin.math.floor(this)) toLong().toString() else toString()
+
+/**
+ * "RECEIPT £120.00 | CODED £120.00 | ✓ Matched" — or what is left to
+ * allocate, or how far over (`GrossMatchBar.jsx`).
  */
 @Composable
-private fun NumberField(
-    value: Double?,
-    onValue: (Double?) -> Unit,
-    modifier: Modifier = Modifier,
-    placeholder: String = "0.00",
-) {
-    var text by remember { mutableStateOf(value.asField()) }
-    LaunchedEffect(value) {
-        if (text.trim().toDoubleOrNull() != value) text = value.asField()
+private fun GrossMatchBar(receipt: Double, coded: Double, currency: String?) {
+    val colors = ZillitTheme.colors
+    val diff = kotlin.math.round((coded - receipt) * CENTS) / CENTS
+    val (tone, soft, text) = when {
+        abs(diff) <= PENNY -> Triple(colors.success, colors.successSoft, "✓ " + str(S.desktop_matched))
+        diff < 0 ->
+            Triple(colors.warning, colors.warningSoft, str(S.desktop_inv_to_allocate, money(abs(diff), currency)))
+        else -> Triple(colors.danger, colors.dangerSoft, str(S.desktop_inv_amount_over, money(diff, currency)))
     }
-    ZillitTextField(
-        value = text,
-        onValueChange = { typed ->
-            val kept = typed.filter { it.isDigit() || it == '.' }
-            text = kept
-            onValue(kept.toDoubleOrNull())
-        },
-        placeholder = placeholder,
-        keyboardType = KeyboardType.Decimal,
-        modifier = modifier,
-    )
-}
-
-private fun Double?.asField(): String = when {
-    this == null || this == 0.0 -> ""
-    this == kotlin.math.floor(this) -> toLong().toString()
-    else -> toString()
-}
-
-@Composable
-private fun Totals(net: Double, tax: Double, gross: Double, receipt: Double, currency: String?, mismatch: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg), verticalAlignment = Alignment.Bottom) {
-        Fact(str(S.desktop_net), money(net, currency))
-        Fact(str(S.desktop_vat), money(tax, currency))
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            FieldGroupLabel(str(S.desktop_gross))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(
+            modifier = Modifier
+                .clip(ZillitTheme.shapes.medium)
+                .background(soft)
+                .border(1.dp, tone.copy(alpha = BAR_ALPHA), ZillitTheme.shapes.medium)
+                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FieldGroupLabel(str(S.desktop_receipt))
+            ZillitText(text = money(receipt, currency), style = ZillitTheme.typography.numeric)
+            ZillitText(text = "|", color = colors.textMuted)
+            FieldGroupLabel(str(S.desktop_ce_coded))
+            ZillitText(text = money(coded, currency), style = ZillitTheme.typography.numeric, color = tone)
+            ZillitText(text = "|", color = colors.textMuted)
             ZillitText(
-                text = "${money(gross, currency)} / ${money(receipt, currency)}",
-                style = ZillitTheme.typography.titleSmall,
-                color = if (mismatch) ZillitTheme.colors.danger else ZillitTheme.colors.success,
+                text = text,
+                style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
+                color = tone,
             )
         }
+    }
+}
+
+/** The receipt's trail, over the editor — the web's `HistoryPanel`. */
+@Composable
+private fun HistoryPanel(draft: ProcessDraft, onEvent: (CardEvent) -> Unit) {
+    val trail = draft.history ?: return
+    ZillitDialogShell(
+        title = str(S.history),
+        subtitle = draft.receipt.description.ifBlank { draft.receipt.id.take(ID_PREFIX) },
+        icon = ZillitIcons.Clock,
+        visible = true,
+        width = SMALL_DIALOG,
+        onDismiss = { onEvent(ProcessPageEvent.ShowHistory(false)) },
+    ) {
+        CardHistoryTrail(entries = trail)
     }
 }
 
@@ -409,8 +648,7 @@ private fun Totals(net: Double, tax: Double, gross: Double, receipt: Double, cur
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TopUpDecision(draft: ProcessDraft, onEvent: (CardEvent) -> Unit) {
-    val figures = draft.figures
+private fun TopUpDecision(draft: ProcessDraft, figures: ProcessFigures, onEvent: (CardEvent) -> Unit) {
     val receipt = draft.receipt
     val currency = receipt.currency
     val processing = receipt.processing
@@ -474,78 +712,6 @@ private fun TopUpOption(label: String, balance: String, note: String, selected: 
     }
 }
 
-/**
- * The web's header buttons, as this viewer may use them.
- *
- * History corrects a posted receipt: Save only. The queue: Save, Assign or
- * Reassign, and — for a non-senior — Escalate and Submit for Review; Post
- * wherever [ProcessRules.canPost] allows it.
- */
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.ProcessActions(
-    state: CardUiState,
-    draft: ProcessDraft,
-    onEvent: (CardEvent) -> Unit,
-) {
-    val viewer = state.viewer
-    val figures = draft.figures
-    val idle = !draft.loading && !state.busy
-    val queue = draft.mode == ProcessMode.Process
-    ZillitButton(
-        text = str(S.close),
-        onClick = { onEvent(CardEvent.CloseProcess) },
-        variant = ButtonVariant.Tertiary,
-    )
-    Spacer(Modifier.weight(1f))
-    if (queue) {
-        // Red while a query rule is on the receipt, as the web pulses it.
-        ZillitButton(
-            text = str(S.ah_query_label),
-            onClick = { onEvent(CardEvent.OpenQuery(draft.receipt.id)) },
-            variant = if (draft.receipt.processing.needsQuery) ButtonVariant.Danger else ButtonVariant.Tertiary,
-            enabled = !draft.loading,
-        )
-    }
-    ZillitButton(
-        text = str(S.save),
-        onClick = { onEvent(CardEvent.SaveProcess) },
-        variant = ButtonVariant.Secondary,
-        enabled = idle,
-    )
-    if (!queue) return
-    if (viewer.isAccountant) {
-        ZillitButton(
-            text = if (draft.receipt.assignedTo.isNullOrBlank()) str(S.assign) else str(S.desktop_po_reassign),
-            onClick = { onEvent(CardEvent.EditProcess(draft.copy(assign = AssignDraft()))) },
-            variant = ButtonVariant.Secondary,
-            enabled = idle,
-        )
-    }
-    if (ProcessRules.canHandUp(viewer)) {
-        ZillitButton(
-            text = str(S.desktop_ce_escalate),
-            onClick = { onEvent(CardEvent.EditProcess(draft.copy(escalation = ""))) },
-            variant = ButtonVariant.Secondary,
-            enabled = idle,
-        )
-        ZillitButton(
-            text = str(S.desktop_submit_for_review),
-            onClick = { onEvent(CardEvent.SubmitProcessForReview) },
-            variant = ButtonVariant.Secondary,
-            enabled = idle,
-        )
-    }
-    if (ProcessRules.canPost(viewer, draft.receipt.processing, figures.effectiveAmount)) {
-        val topUp = draft.receipt.processing.requestTopUp && draft.topUp != TopUpMethod.None
-        ZillitButton(
-            text = if (topUp) str(S.desktop_card_post_and_top_up) else str(S.ah_post_to_ledger),
-            onClick = { onEvent(CardEvent.PostProcess) },
-            leadingIcon = ZillitIcons.Ledger,
-            enabled = idle,
-            loading = state.busy,
-        )
-    }
-}
 
 /** Assigning or reassigning, over the editor. The accounts team, never the current assignee. */
 @Suppress("LongMethod") // One small form; splitting it hides the order.
@@ -661,16 +827,16 @@ private fun EscalateDialog(state: CardUiState, draft: ProcessDraft, onEvent: (Ca
     }
 }
 
-private const val ESCALATED = "escalated"
-private const val UNDER_REVIEW = "under_review"
-private const val DEDUCT = "deduct"
-private const val DESCRIPTION_WEIGHT = 2f
+private const val PERCENTAGE = "percentage"
+private const val PENNY = 0.01
+private const val CENTS = 100.0
+private const val BAR_ALPHA = 0.4f
+private const val ID_PREFIX = 8
 private const val MAX_REASON = 500
-private val EDITOR_WIDTH = 1040.dp
-private val EDITOR_HEIGHT = 880.dp
+private val CRUMB_MAX = 220.dp
+private val DETAILS_MIN = 240.dp
+private val PREVIEW_WIDTH = 220.dp
+private val PREVIEW_ICON = 36.dp
 private val SMALL_DIALOG = 480.dp
-private val RATE_WIDTH = 84.dp
-private val GROSS_WIDTH = 110.dp
-private val REMOVE_WIDTH = 40.dp
 private val OPTION_WIDTH = 220.dp
 private val OPTION_BORDER = 1.5.dp

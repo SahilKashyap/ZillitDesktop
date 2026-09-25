@@ -7,8 +7,8 @@ import com.zillit.desktop.feature.cardexpenses.domain.ExportFormat
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessLine
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessSubmission
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
+import com.zillit.desktop.feature.cardexpenses.domain.TaxLineWire
 import com.zillit.desktop.feature.cardexpenses.domain.round2
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -35,7 +35,9 @@ internal fun ProcessSubmission.body(): JsonObject = buildJsonObject {
         "line_items",
         buildJsonArray {
             lines.forEachIndexed { index, line -> add(line.wire(index)) }
-            fixedLines.forEach { add(it.raw) }
+            val autos = fixedLines.filter { it.countsInTotal }
+            autos.forEach { add(it.raw) }
+            taxLine?.let { add(it.wire(lines.size + autos.size)) }
         },
     )
     put("net_amount", JsonPrimitive(round2(net)))
@@ -53,10 +55,10 @@ internal fun ProcessSubmission.body(): JsonObject = buildJsonObject {
 }
 
 /**
- * One coded line on the wire: `amount` is gross, `unit_price` net per unit,
- * and everything this client does not edit is carried from the line as it
- * arrived — dropping a tracking code or a split parent on save is the kind of
- * loss nobody sees until the cost report disagrees.
+ * One coded line on the wire (`buildPayload`, `ProcessReceiptModal.jsx:382-404`):
+ * `amount` is gross, `unit_price` net per unit, the split parent by id so a
+ * saved split re-opens as a split. Expenditure type and rental dates, which
+ * this editor does not show, are carried from the line as it arrived.
  */
 internal fun ProcessLine.wire(sortOrder: Int): JsonObject = buildJsonObject {
     val original = raw ?: JsonObject(emptyMap())
@@ -66,17 +68,43 @@ internal fun ProcessLine.wire(sortOrder: Int): JsonObject = buildJsonObject {
     put("unit_price", JsonPrimitive(round2(if (quantity > 0) net / quantity else net)))
     put("amount", JsonPrimitive(gross))
     put("account", account.trim().takeIf { it.isNotEmpty() }?.let(::JsonPrimitive) ?: JsonNull)
-    put("tax_type", original.keep("tax_type"))
+    put("tax_type", taxType.takeIf { it.isNotBlank() }?.let(::JsonPrimitive) ?: JsonNull)
     put("tax_rate", taxRate?.let(::JsonPrimitive) ?: JsonNull)
     put("tax_amount", JsonPrimitive(tax))
     put("expenditure_type", original.keep("expenditure_type"))
     put("rental_start", original.keep("rental_start"))
     put("rental_end", original.keep("rental_end"))
-    put("split_parent_id", original["split_parent_id"] ?: original["splitParentId"] ?: JsonNull)
+    put("split_parent_id", splitParentId?.let(::JsonPrimitive) ?: JsonNull)
     put("sort_order", JsonPrimitive(sortOrder))
-    put("tracking_codes", original["tracking_codes"]?.takeUnless { it is JsonNull } ?: JsonObject(emptyMap()))
-    put("tags", original["tags"]?.takeUnless { it is JsonNull } ?: JsonArray(emptyList()))
+    put("tracking_codes", codesJson(trackingCodes))
+    put("tags", buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } })
 }
+
+/**
+ * The reclaimable-tax row as an `is_tax` line (`ProcessReceiptModal.jsx:411-428`):
+ * one unit of the effective amount, no tax of its own, after every other line.
+ */
+internal fun TaxLineWire.wire(sortOrder: Int): JsonObject = buildJsonObject {
+    put("is_tax", JsonPrimitive(true))
+    put("description", JsonPrimitive(""))
+    put("quantity", JsonPrimitive(1))
+    put("unit_price", JsonPrimitive(round2(amount)))
+    put("amount", JsonPrimitive(round2(amount)))
+    put("account", account.trim().takeIf { it.isNotEmpty() }?.let(::JsonPrimitive) ?: JsonNull)
+    put("tax_type", JsonNull)
+    put("tax_rate", JsonNull)
+    put("tax_amount", JsonPrimitive(0))
+    put("expenditure_type", JsonNull)
+    put("rental_start", JsonNull)
+    put("rental_end", JsonNull)
+    put("split_parent_id", JsonNull)
+    put("sort_order", JsonPrimitive(sortOrder))
+    put("tracking_codes", codesJson(trackingCodes))
+    put("tags", buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } })
+}
+
+private fun codesJson(codes: Map<String, String>): JsonObject =
+    JsonObject(codes.mapValues { (_, code) -> JsonPrimitive(code) })
 
 private fun JsonObject.keep(key: String): JsonElement = this[key] ?: JsonNull
 

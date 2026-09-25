@@ -146,10 +146,81 @@ class UpdateBannerTest {
         onNodeWithText("Version 1.2.0 is available.").assertIsDisplayed()
     }
 
+    // --- In-app install -----------------------------------------------------
+
+    /** Where the app can install, it does not send the reader to a page. */
+    @Test
+    fun `an installable notice offers Update now and no download link`() = runComposeUiTest {
+        var installs = 0
+        setShell(
+            notice = UpdateNotice("1.2.0", false, DOWNLOAD_URL, install = UpdateInstall.Offer),
+            onInstall = { installs++ },
+        )
+
+        onAllNodesWithText("Download").assertCountEquals(0)
+        onNodeWithTag(INSTALL_TAG).performClick()
+
+        assertEquals(1, installs)
+    }
+
+    @Test
+    fun `downloading shows the percentage and no buttons`() = runComposeUiTest {
+        setShell(notice = UpdateNotice("1.2.0", false, DOWNLOAD_URL, install = UpdateInstall.Downloading(42)))
+
+        onNodeWithText("Downloading version 1.2.0… 42%").assertIsDisplayed()
+        onAllNodesWithTag(INSTALL_TAG).assertCountEquals(0)
+        onAllNodesWithTag(RESTART_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a staged build offers the restart`() = runComposeUiTest {
+        var restarts = 0
+        setShell(
+            notice = UpdateNotice("1.2.0", true, DOWNLOAD_URL, install = UpdateInstall.Ready),
+            onRestart = { restarts++ },
+        )
+
+        onNodeWithTag(RESTART_TAG).performClick()
+
+        assertEquals(1, restarts)
+    }
+
+    /** A file that failed verification would fail again: no retry, the page instead. */
+    @Test
+    fun `a failed verification falls back to the download page`() = runComposeUiTest {
+        setShell(
+            notice = UpdateNotice(
+                "1.2.0", false, DOWNLOAD_URL,
+                install = UpdateInstall.Failed(retryable = false, verification = true),
+            ),
+        )
+
+        onNodeWithText("Download").assertIsDisplayed()
+        onAllNodesWithText("Try Again").assertCountEquals(0)
+    }
+
+    @Test
+    fun `a broken download can be retried`() = runComposeUiTest {
+        var installs = 0
+        setShell(
+            notice = UpdateNotice(
+                "1.2.0", false, DOWNLOAD_URL,
+                install = UpdateInstall.Failed(retryable = true, verification = false),
+            ),
+            onInstall = { installs++ },
+        )
+
+        onNodeWithText("Try Again").performClick()
+
+        assertEquals(1, installs)
+    }
+
     private fun ComposeUiTest.setShell(
         notice: UpdateNotice?,
         onDownload: (String) -> Unit = {},
         mode: ThemeMode = ThemeMode.System,
+        onInstall: () -> Unit = {},
+        onRestart: () -> Unit = {},
     ) {
         setContent {
             val registry = remember { ToolRegistry(placeholderTools()) }
@@ -170,6 +241,8 @@ class UpdateBannerTest {
                     railItems = railItems,
                     updateNotice = notice,
                     onDownloadUpdate = onDownload,
+                    onInstallUpdate = onInstall,
+                    onRestartToUpdate = onRestart,
                 )
             }
         }

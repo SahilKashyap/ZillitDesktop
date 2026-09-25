@@ -10,6 +10,10 @@ import com.zillit.desktop.core.media.contentTypeFor
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachment
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
+import com.zillit.desktop.feature.cardexpenses.domain.CardCompanyRef
+import com.zillit.desktop.feature.cardexpenses.domain.CardCrewHost
+import com.zillit.desktop.feature.cardexpenses.domain.CardNominal
+import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.PickKind
 import com.zillit.desktop.feature.email.data.AwsCredentials
@@ -19,8 +23,21 @@ import com.zillit.desktop.core.strings.str
 import java.util.UUID
 import com.zillit.desktop.feature.cardexpenses.data.CardBinaryPost
 import com.zillit.desktop.feature.cardexpenses.data.CardRepositoryImpl
+import com.zillit.desktop.core.common.map
+import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
+import com.zillit.desktop.feature.cardexpenses.domain.CardAssignmentRule
 import com.zillit.desktop.feature.cardexpenses.domain.CardBank
+import com.zillit.desktop.feature.cardexpenses.domain.CardCompany
+import com.zillit.desktop.feature.cardexpenses.domain.CardCurrency
+import com.zillit.desktop.feature.cardexpenses.domain.CardReference
+import com.zillit.desktop.feature.cardexpenses.domain.CardDepartment
+import com.zillit.desktop.feature.cardexpenses.domain.CardHubSource
+import com.zillit.desktop.feature.cardexpenses.domain.CardCurrencies
 import com.zillit.desktop.feature.cardexpenses.domain.CardFiles
+import com.zillit.desktop.feature.cardexpenses.domain.CardInboxHost
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptMedia
+import com.zillit.desktop.feature.cardexpenses.domain.StatementFile
+import com.zillit.desktop.feature.cardexpenses.domain.StoredStatement
 import com.zillit.desktop.feature.cardexpenses.domain.CardRepository
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 
@@ -73,8 +90,84 @@ internal fun cardFiles() = CardFiles { fileName, bytes ->
  */
 internal suspend fun AppGraph.Ready.cardBanks(): List<CardBank> =
     accountHubRepository.bankAccounts().getOrNull().orEmpty().map { bank ->
-        CardBank(id = bank.id, name = bank.name, currency = bank.currencyCode.takeIf { it.isNotBlank() })
+        CardBank(
+            id = bank.id,
+            name = bank.name,
+            currency = bank.currencyCode.takeIf { it.isNotBlank() },
+            symbol = bank.currencySymbol.takeIf { it.isNotBlank() },
+        )
     }
+
+/**
+ * The production's money reference for the card forms and the dashboard: its
+ * default currency and selected currencies with their rates (Production Setup
+ * → Project Currencies), the companies whose names ride on the card tiles, and
+ * the banks whose currency a provider pick seeds. Each read settles on its
+ * own — a failing one leaves only its part empty.
+ */
+internal suspend fun AppGraph.Ready.cardReference(): CardReference {
+    val currencies = accountHubRepository.currencies().getOrNull()
+    val companies = accountHubRepository.companies().getOrNull().orEmpty()
+    return CardReference(
+        defaultCurrency = currencies?.defaultCode.orEmpty(),
+        currencies = currencies?.currencies.orEmpty().map { CardCurrency(code = it.code, rate = it.rate) },
+        companies = companies.map { CardCompany(id = it.id, name = it.name, bankIds = it.bankIds) },
+        banks = cardBanks(),
+    )
+}
+
+/**
+ * The hub's lists and routes the card settings page needs: the production's
+ * companies (for the provider's bank → company owner rule), its departments
+ * (the coordinator and rule pickers), and the assignment-rules CRUD — all the
+ * hub repository's already, so the card module asks through this seam rather
+ * than calling the hub's routes a second time.
+ */
+internal fun AppGraph.Ready.cardHub(): CardHubSource = object : CardHubSource {
+    override suspend fun companies(): List<CardCompany> =
+        accountHubRepository.companies().getOrNull().orEmpty()
+            .map { CardCompany(id = it.id, name = it.name, bankIds = it.bankIds) }
+
+    override suspend fun departments(): List<CardDepartment> =
+        hubDepartments().map { CardDepartment(id = it.id, name = it.name) }
+
+    override suspend fun saveAssignmentRule(rule: CardAssignmentRule): ZillitResult<CardAssignmentRule> {
+        val hubRule = AssignmentRule(
+            id = rule.id,
+            module = CARD_RULES_MODULE,
+            departments = rule.departments,
+            nominalCodes = rule.nominalCodes,
+            amountMin = rule.amountMin,
+            assignTo = rule.assignTo,
+            isActive = rule.isActive,
+            priority = rule.priority,
+            persisted = rule.persisted,
+        )
+        val saved = if (rule.persisted) {
+            accountHubRepository.updateAssignmentRule(hubRule)
+        } else {
+            accountHubRepository.createAssignmentRule(hubRule)
+        }
+        return saved.map { back ->
+            CardAssignmentRule(
+                id = back.id,
+                departments = back.departments,
+                nominalCodes = back.nominalCodes,
+                amountMin = back.amountMin,
+                assignTo = back.assignTo,
+                isActive = back.isActive,
+                priority = back.priority,
+                persisted = true,
+            )
+        }
+    }
+
+    override suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit> =
+        accountHubRepository.deleteAssignmentRule(id)
+}
+
+/** The hub files the card tool's rules under this module (`SettingsPage.jsx:374`). */
+private const val CARD_RULES_MODULE = "card_expenses"
 
 /**
  * Picking a receipt or a statement, and putting it in the project's store.
@@ -138,8 +231,19 @@ internal fun AppGraph.Ready.cardAttachmentUploader(): CardAttachmentUploader {
                 )
             ) {
                 is ZillitResult.Failure -> stored
-                is ZillitResult.Success ->
-                    ZillitResult.Success(CardAttachment(key = stored.data.media, fileName = chosen.name))
+                // The whole storage result, not only the key: a receipt is stored
+                // as the web's AttachmentModel, and a bare key reads back on the
+                // web as no attachment at all.
+                is ZillitResult.Success -> ZillitResult.Success(
+                    CardAttachment(
+                        key = stored.data.media,
+                        fileName = chosen.name,
+                        bucket = stored.data.bucket,
+                        region = stored.data.region,
+                        contentType = stored.data.contentType,
+                        contentSubtype = chosen.name.substringAfterLast('.', "").lowercase(),
+                    ),
+                )
             }
         }
     }
@@ -194,3 +298,109 @@ private val RECEIPT_EXTENSIONS = setOf("jpg", "jpeg", "png", "heic", "heif", "we
 private val STATEMENT_EXTENSIONS = setOf("csv", "ofx", "qif")
 private const val RECEIPT_MAX_BYTES = 10L * 1024 * 1024
 private const val STATEMENT_MAX_BYTES = 20L * 1024 * 1024
+
+/**
+ * Import Statement, the Receipt Inbox and All Transactions' host seams.
+ *
+ * The statement is picked and stored in two steps, as the web's page does:
+ * the file is held while the accountant states its currency, and nothing is
+ * uploaded until Import is pressed. What the import route is handed is the
+ * whole attachment model — `{media, bucket, region, name, content_type,
+ * content_subtype}` (`attachmentUpload.js:53-61`) — not a bare key.
+ */
+internal fun AppGraph.Ready.cardInboxHost(): CardInboxHost {
+    val picker = AwtAttachmentPicker()
+    val store = S3AttachmentUploader(
+        httpClient = httpClient,
+        credentials = {
+            val remote = remoteConfigRepository.current()
+            val access = remote?.awsAccessKey?.takeIf { it.isNotBlank() }
+            val secret = remote?.awsSecretKey?.takeIf { it.isNotBlank() }
+            if (access != null && secret != null) AwsCredentials(access, secret) else null
+        },
+        storage = storageTarget,
+        newKey = { fileName -> "card-expenses/${UUID.randomUUID()}/${fileName.safeKeyPart()}" },
+    )
+    val graph = this
+    return object : CardInboxHost {
+        override suspend fun pickStatement(): ZillitResult<StatementFile?> {
+            var refusal: String? = null
+            val chosen = picker.pick(
+                kind = PreviewKind.Document,
+                multiple = false,
+                maxBytes = STATEMENT_MAX_BYTES,
+                onRefused = { why ->
+                    refusal = when (why) {
+                        is PickRefusal.TooLarge -> "${why.name} is over the 20 MB limit."
+                        // The format check itself is the module's, by extension.
+                        is PickRefusal.WrongKind -> str(S.desktop_ce_inbox_only_statement_types)
+                    }
+                },
+            ).firstOrNull()
+            return when {
+                chosen == null && refusal != null -> ZillitResult.Failure(ZillitError.Unknown(refusal.orEmpty()))
+                chosen == null -> ZillitResult.Success(null)
+                else -> ZillitResult.Success(StatementFile(chosen.name, chosen.bytes))
+            }
+        }
+
+        override suspend fun storeStatement(file: StatementFile): ZillitResult<StoredStatement> =
+            when (val stored = store.upload(file.name, contentTypeFor(file.name, null), file.bytes)) {
+                is ZillitResult.Failure -> stored
+                is ZillitResult.Success -> ZillitResult.Success(
+                    StoredStatement(
+                        media = stored.data.media,
+                        bucket = stored.data.bucket.takeIf { it.isNotBlank() },
+                        region = stored.data.region.takeIf { it.isNotBlank() },
+                        name = file.name,
+                        // The web's `media_type` for a statement, and its extension.
+                        contentType = "document",
+                        contentSubtype = file.name.substringAfterLast('.', "").lowercase(),
+                    ),
+                )
+            }
+
+        override suspend fun media(media: ReceiptMedia): ZillitResult<ByteArray> =
+            graph.noticeMedia.fetch(
+                com.zillit.desktop.feature.home.domain.NoticeAttachment(
+                    media = media.key,
+                    fileName = media.fileName,
+                    bucket = media.bucket,
+                    region = media.region,
+                ),
+                preview = false,
+            )
+
+        override suspend fun departments(): List<CardDepartment> =
+            graph.hubDepartments().map { CardDepartment(id = it.id, name = it.name) }
+
+        override suspend fun currencies(): CardCurrencies {
+            val settings = graph.accountHubRepository.currencies().getOrNull() ?: return CardCurrencies()
+            return CardCurrencies(
+                defaultCode = settings.defaultCode?.takeIf { it.isNotBlank() },
+                codes = settings.currencies.map { it.code }.filter { it.isNotBlank() },
+            )
+        }
+    }
+}
+
+/**
+ * What the card tool's crew pages need from the hub and the profile: the
+ * production's companies (the receipt batch's `company_id` fallback, the web's
+ * `resolveCardCompany`), its chart's postable codes (the Cost Code pickers,
+ * `CoaCodeInput`), and whether it is a television production (Episode).
+ */
+internal fun AppGraph.Ready.cardCrewHost(): CardCrewHost = CardCrewHost(
+    companies = {
+        accountHubRepository.companies().getOrNull().orEmpty().map { company ->
+            CardCompanyRef(id = company.id, bankIds = company.bankIds)
+        }
+    },
+    nominals = {
+        ChartOfAccounts.leaves(accountHubRepository.accounts(activeOnly = true).getOrNull().orEmpty())
+            .map { account -> CardNominal(code = account.code, name = account.name) }
+    },
+    isTelevision = {
+        projectContext?.context?.value?.project?.subType?.contains("television", ignoreCase = true) == true
+    },
+)

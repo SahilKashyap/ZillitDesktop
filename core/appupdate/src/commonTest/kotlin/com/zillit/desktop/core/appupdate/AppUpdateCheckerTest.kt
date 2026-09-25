@@ -367,6 +367,33 @@ class AppUpdateCheckerTest {
 
     // -- helpers -------------------------------------------------------------
 
+    /** A Mac gets the .dmg and its digest; a Windows install the .msi; a half-published pair is no installer. */
+    @Test
+    fun `installer keys follow the platform and need their digest`() = runTest {
+        val mac = "a".repeat(64)
+        val win = "b".repeat(64)
+        val entries = """"desktop_latest_version":"1.2.0",""" +
+            """"desktop_installer_url_mac":"https://cdn.example/Z.dmg","desktop_installer_sha256_mac":"$mac",""" +
+            """"desktop_installer_url_windows":"https://cdn.example/Z.msi""""
+
+        assertEquals(
+            UpdateStatus.Available("1.2.0", null, InstallerRef("https://cdn.example/Z.dmg", mac)),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.MacOs),
+        )
+        assertEquals(
+            UpdateStatus.Available("1.2.0", null, null),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.Windows),
+        )
+        assertEquals(
+            UpdateStatus.Available("1.2.0", null, InstallerRef("https://cdn.example/Z.msi", win)),
+            check(
+                installed = "1.1.0",
+                entries = "$entries,\"desktop_installer_sha256_windows\":\"$win\"",
+                os = OperatingSystem.Windows,
+            ),
+        )
+    }
+
     private suspend fun check(
         installed: String?,
         entries: String? = null,

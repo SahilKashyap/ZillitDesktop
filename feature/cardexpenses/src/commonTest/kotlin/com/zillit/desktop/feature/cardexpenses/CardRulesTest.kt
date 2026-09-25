@@ -236,9 +236,19 @@ class ReceiptReconciliationTest {
     fun `a missing match status is unmatched rather than matched-like`() {
         assertEquals(MatchStatus.Unmatched, MatchStatus.from(null))
         assertEquals(MatchStatus.Unmatched, MatchStatus.from(""))
-        // Legacy leftovers behave as matched, per product direction.
-        assertEquals(MatchStatus.Matched, MatchStatus.from("suggested_match"))
+        // A suggestion is its own state — see the badge test below.
+        assertEquals(MatchStatus.Suggested, MatchStatus.from("suggested_match"))
         assertEquals(MatchStatus.Matched, MatchStatus.from("matched"))
+    }
+
+    /**
+     * `receiptReconciliationBadge`: a suggestion outranks the attachment check
+     * — an uploaded document does not make the machine's guess true.
+     */
+    @Test
+    fun `a suggested match reads match suggested with or without a document`() {
+        assertEquals("Match Suggested", receipt(MatchStatus.Suggested, null).reconciliationLabel())
+        assertEquals("Match Suggested", receipt(MatchStatus.Suggested, "receipts/abc.jpg").reconciliationLabel())
     }
 }
 

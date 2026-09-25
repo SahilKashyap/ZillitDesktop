@@ -45,9 +45,33 @@ data class ExpenseCard(
     val createdAt: Long?,
     /** The chain's sign-offs so far; see [ApprovalTiers]. */
     val approvals: List<CardApproval> = emptyList(),
+    /** The sixteen digits of the virtual card, once activated as digital. */
+    val digitalCardNumber: String? = null,
+    /** The sixteen digits of the plastic, once one is assigned. */
+    val physicalCardNumber: String? = null,
+    /**
+     * Spend as the server counts it — `/overview` publishes it per card, and it
+     * is the only figure that accounts for top-ups (`lib/cardSpend.js`).
+     */
+    val serverSpent: Double? = null,
+    val rejectedAt: Long? = null,
+    /** The issuing bank's name (`bank_account.name`), which the export prints as the issuer. */
+    val bankName: String? = null,
 ) {
-    /** Spend so far, as the holder experiences it. */
-    val spent: Double get() = (limit - (balance ?: limit)).coerceAtLeast(0.0)
+    /**
+     * Spend so far: the server's figure where the row carries one, else
+     * `limit − balance`, which under-reports a topped-up card by the top-up —
+     * so it is only the fallback for register rows, which carry no `spent`.
+     */
+    val spent: Double get() = serverSpent?.coerceAtLeast(0.0) ?: (limit - (balance ?: limit)).coerceAtLeast(0.0)
+
+    /**
+     * Live with a virtual number and no plastic yet — the web's "Digital
+     * Active" (`adminUi.jsx:164`), which offers Assign Physical Card. Derived:
+     * the server never stamps a `digital_active` status.
+     */
+    val isDigitalActive: Boolean
+        get() = status == CardStatus.Active && !digitalCardNumber.isNullOrBlank() && physicalCardNumber.isNullOrBlank()
 
     val consumedFraction: Float
         get() = if (limit <= 0) 0f else (spent / limit).toFloat().coerceIn(0f, 1f)
@@ -115,22 +139,20 @@ data class CardReceipt(
     val approvals: List<CardApproval> = emptyList(),
     /** Which of the inbox's four sections the receipt sits in; null for none of them. */
     val inboxSection: InboxSection? = null,
+    /** The upload form's category wire value (`materials`, `fuel`, …); null when never set. */
+    val category: String? = null,
+    /** Why, by whom and when the receipt was last rejected — the Edit & Resubmit banner. */
+    val rejectionReason: String? = null,
+    val rejectedBy: String? = null,
+    val rejectedAt: Long? = null,
+    /** The stored file's own name, from the attachment model's `name`. */
+    val attachmentName: String? = null,
 ) {
     /**
-     * What the Receipt Inbox shows in its status column.
-     *
-     * Reconciliation vocabulary wins over workflow vocabulary when it is the
-     * more meaningful fact: an unmatched row is "Unreconciled" whatever its
-     * approval state, and a matched row with no document yet is "Reconciled"
-     * rather than the noise of "pending receipt". Once a document exists the
-     * workflow state is what matters and this returns null so the caller falls
-     * back to it. Ported from `receiptReconciliationBadge`.
+     * What the Receipt Inbox shows in its status column — the label of
+     * [ReconciliationBadge.inbox], or null to fall back to the workflow badge.
      */
-    fun reconciliationLabel(): String? = when {
-        matchStatus == MatchStatus.Unmatched -> str(S.ah_unreconciled)
-        attachmentKey.isNullOrBlank() -> str(S.desktop_reconciled)
-        else -> null
-    }
+    fun reconciliationLabel(): String? = inboxBadge?.label
 }
 
 /**
@@ -186,7 +208,24 @@ data class CardTopUp(
     /** The card's limit and balance, as the funding queue row carries them. */
     val cardLimit: Double? = null,
     val cardBalance: Double? = null,
+    /** `urgent` when the receipt behind it was uploaded as urgent (`TopUpToDoPage.jsx:49`). */
+    val uploadType: String? = null,
+    /** The part-payment note, or the reason a row was raised. */
+    val note: String? = null,
+    /** The receipt that raised it — the "From:" line and the detail's Source Receipt. */
+    val receiptMerchant: String? = null,
+    val receiptAmount: Double? = null,
+    val bsControlCode: String? = null,
+    /** What was actually paid; the list's Issued column falls back to [amount]. */
+    val issuedAmount: Double? = null,
+    val entityId: String? = null,
+    /** `card` or a cash float; the card page shows only its own (`TopUpToDoPage.jsx:141`). */
+    val entityType: String? = null,
+    /** The row's own audit trail, embedded as `history`; see [TopUpTrailStep]. */
+    val trail: List<TopUpTrailStep> = emptyList(),
 ) {
+    val urgent: Boolean get() = uploadType == "urgent"
+
     /**
      * Whether adding [amount] would carry the card past its limit.
      *
@@ -214,6 +253,8 @@ data class CardAlert(
     val at: Long?,
     /** What the accountant who resolved it found. */
     val resolution: String? = null,
+    /** The statement lines the engine flagged together (`relatedTxns`). */
+    val relatedTxns: List<AlertTxn> = emptyList(),
 ) {
     /** Still somebody's to act on — the web's open set (`SmartAlertsPage.jsx:124`). */
     val isOpen: Boolean get() = status == ACTIVE || status == INVESTIGATING
@@ -223,8 +264,19 @@ data class CardAlert(
     companion object {
         const val ACTIVE = "active"
         const val INVESTIGATING = "investigating"
+        const val RESOLVED = "resolved"
+        const val DISMISSED = "dismissed"
     }
 }
+
+/** One transaction an alert points at: merchant, reference, holder id, amount. */
+data class AlertTxn(
+    val merchant: String?,
+    val ref: String?,
+    val holder: String?,
+    val amount: Double?,
+    val currency: String? = null,
+)
 
 enum class AlertSeverity(val wire: String, private val labelKey: String) {
     High("high", S.desktop_weather_uv_high),
@@ -237,37 +289,6 @@ enum class AlertSeverity(val wire: String, private val labelKey: String) {
     companion object {
         fun from(wire: String?): AlertSeverity =
             entries.firstOrNull { it.wire == wire?.trim()?.lowercase() } ?: Low
-    }
-}
-
-/**
- * One line of an uploaded statement, before it becomes a transaction.
- *
- * Review happens here: a row is checked, assigned to whoever spent it, and
- * only then submitted — after which it is a transaction and this row is
- * history.
- */
-data class StatementRow(
-    val id: String,
-    val merchant: String,
-    val description: String?,
-    val amount: Double,
-    val currency: String?,
-    val date: Long?,
-    val cardLastFour: String?,
-    /** Whom the matcher thinks it belongs to. Null when it could not tell. */
-    val holderId: String?,
-    val holderName: String?,
-    val status: String,
-) {
-    /** Untouched, so still selectable for review. */
-    val isNew: Boolean get() = status.equals(NEW, ignoreCase = true)
-
-    /** Whether this row can be sent to someone for a receipt. */
-    val canSubmit: Boolean get() = isNew && !holderId.isNullOrBlank()
-
-    private companion object {
-        const val NEW = "new"
     }
 }
 
@@ -318,7 +339,10 @@ data class BulkCoding(
     val nominalCode: String? = null,
     val departmentId: String? = null,
     val episode: String? = null,
+    /** A Production Setup tax type's identifier; null keeps each receipt's own. */
     val taxType: String? = null,
+    /** That type's rate, percent — sent with it as `{tax_type, tax_rate}` (`BulkProcessPage.jsx:444-451`). */
+    val taxRate: Double? = null,
     val topUp: TopUpMode = TopUpMode.Keep,
 )
 
@@ -368,6 +392,8 @@ data class CardMetadata(
     /** The production's own switches for overriding a chain — separate from the person's grant. */
     val cardOverride: Boolean = false,
     val receiptOverride: Boolean = false,
+    /** The crew's copy of the request ceiling; an accountant reads `/settings`' (`CardExpensesModule.jsx:137`). */
+    val requestCap: RequestCap? = null,
 )
 
 /**
@@ -415,6 +441,12 @@ data class CardSettings(
     val providers: List<CardProvider> = emptyList(),
     /** The most anyone may ask for on a card request; see [RequestCap]. */
     val requestCap: RequestCap = RequestCap(),
+    /**
+     * The hub's rules filed under `card_expenses`, which `/settings` echoes
+     * (`SettingsPage.jsx:326`). Read here; written through the hub's own
+     * routes, never through the settings PATCH.
+     */
+    val assignmentRules: List<CardAssignmentRule> = emptyList(),
 )
 
 /**
@@ -533,6 +565,14 @@ data class CardAnalytics(
     val byDepartment: List<AnalyticsSlice> = emptyList(),
     val activeCards: Int = 0,
     val postedTotal: Double = 0.0,
+    val totalCards: Int = 0,
+    val topDepartmentId: String? = null,
+    /** Days, as the service averages them; the page prints them with a `d`. */
+    val avgImportToCoded: Double = 0.0,
+    val avgCodedToApproved: Double = 0.0,
+    val avgApprovedToPosted: Double = 0.0,
+    val receiptsMissingPct: Double = 0.0,
+    val autoReconciledPct: Double = 0.0,
 )
 
 /**
@@ -549,6 +589,10 @@ data class AnalyticsSlice(
     val userId: String? = null,
     val departmentId: String? = null,
     val cardLastFour: String? = null,
+    /** A holder slice's card figures — Issued, and what is left (`AnalyticsPage.jsx:250-253`). */
+    val cardLimit: Double? = null,
+    val balance: Double? = null,
+    val currency: String? = null,
 )
 
 /** One line of a card's or receipt's audit trail. */
@@ -619,6 +663,8 @@ data class DraftCardReceipt(
     val codedDescription: String = "",
     val attachmentKey: String? = null,
     val attachmentName: String? = null,
+    /** The stored file whole, sent as the receipt's `AttachmentModel`; see [CardAttachment]. */
+    val attachment: CardAttachment? = null,
 ) {
     val amountValue: Double get() = amount.trim().toDoubleOrNull() ?: 0.0
 }
@@ -690,6 +736,22 @@ data class CardPerson(
         get() = listOf(name.ifBlank { id }, designation).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
-/** A file chosen on this machine and stored, ready to be pointed at. */
-data class CardAttachment(val key: String, val fileName: String)
+/**
+ * A file chosen on this machine and stored, ready to be pointed at.
+ *
+ * The storage fields beyond the key are the web's `AttachmentModel`
+ * (`attachmentUpload.js:53-61`): a receipt is stored as that whole object, and
+ * one sent as a bare key string reads back on the web as no attachment at all.
+ * Defaulted so a host that only knows the key still compiles and still works.
+ */
+data class CardAttachment(
+    val key: String,
+    val fileName: String,
+    val bucket: String = "",
+    val region: String = "",
+    /** `content_type` — the MIME type the store was given. */
+    val contentType: String = "",
+    /** `content_subtype` — the file's extension. */
+    val contentSubtype: String = "",
+)
 

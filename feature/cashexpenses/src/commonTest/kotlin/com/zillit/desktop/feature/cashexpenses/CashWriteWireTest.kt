@@ -8,7 +8,12 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.feature.cashexpenses.data.CashRepositoryImpl
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
+import com.zillit.desktop.feature.cashexpenses.domain.CashAttachment
 import com.zillit.desktop.feature.cashexpenses.domain.CashReturn
+import com.zillit.desktop.feature.cashexpenses.domain.ClaimLineItem
+import com.zillit.desktop.feature.cashexpenses.domain.DraftReceipt
+import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
+import com.zillit.desktop.feature.cashexpenses.domain.NewClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.PostBatchRequest
 import com.zillit.desktop.feature.cashexpenses.domain.ReconDraft
@@ -296,6 +301,93 @@ class CashWriteWireTest {
         assertEquals(-20.0, recon.variance)
         assertEquals("Short", recon.note)
         assertEquals("2", recon.denominations.single().count)
+    }
+
+    // -- the foundation's routes --------------------------------------------------------
+
+    @Test
+    fun `a BS-code correction patches the float with that key and no other`() = runTest {
+        val (repo, sent) = repository()
+        repo.updateFloatBsCode("f1", " 1150 ")
+        val call = sent.single()
+        assertEquals("PATCH", call.method)
+        assertTrue(call.url.endsWith("/api/v2/cash-expenses/float-requests/f1"), call.url)
+        assertEquals(setOf("bs_code"), call.body.keys)
+        assertEquals("1150", call.body["bs_code"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `the list routes send the web's query parameters`() = runTest {
+        val (repo, sent) = repository(response = """{"status":1,"data":[]}""")
+        repo.activeFloats()
+        repo.myBatches(floatRequestId = "f1", expenseType = "pc")
+        repo.floatBatches("f2")
+        repo.floatDetails("f3")
+
+        val urls = sent.map { it.url }
+        assertTrue(urls[0].contains("float-requests/active-floats?sort=created_at&order=desc"), urls[0])
+        assertTrue(urls[1].contains("claims/my-batches?float_request_id=f1&expense_type=pc"), urls[1])
+        assertTrue(urls[2].contains("/claims?float_request_id=f2"), urls[2])
+        assertTrue(urls[3].endsWith("float-requests/f3/details"), urls[3])
+    }
+
+    @Test
+    fun `a receipt with an uploaded file sends the attachment object`() = runTest {
+        val (repo, sent) = repository()
+        val file = CashAttachment(
+            media = "cash-expenses/u/r.pdf", bucket = "b", region = "eu-west-2", name = "r.pdf",
+            contentType = "application", contentSubtype = "pdf",
+        )
+        repo.submitReceipts(
+            NewClaimBatch(
+                expenseType = ExpenseType.PettyCash,
+                floatId = "f1",
+                receipts = listOf(
+                    DraftReceipt(
+                        description = "Tape",
+                        amount = "12",
+                        date = DAY,
+                        attachmentKey = file.media,
+                        attachment = file,
+                    ),
+                ),
+                settlementType = "REDUCE_FLOAT",
+                notes = null,
+            ),
+        )
+
+        val claim = sent.single().body["claims"]!!.jsonArray.single().jsonObject
+        val attachment = claim["attachment"]!!.jsonObject
+        assertEquals("cash-expenses/u/r.pdf", attachment["media"]!!.jsonPrimitive.content)
+        assertEquals("pdf", attachment["content_subtype"]!!.jsonPrimitive.content)
+        assertEquals("", attachment["caption"]!!.jsonPrimitive.content)
+        assertFalse("receipt_url" in claim, "the object replaces the bare key")
+    }
+
+    @Test
+    fun `a coding save keeps the keys the editor does not own`() = runTest {
+        val (repo, sent) = repository()
+        repo.saveClaimLines(
+            "b1",
+            "c1",
+            listOf(
+                ClaimLineItem(
+                    id = "l1", account = "2200", description = "VAT", total = 20.0, taxRate = null,
+                    autoDeduction = false, isTax = true, taxAmount = 20.0,
+                    tags = JsonArray(listOf(JsonPrimitive("x"))),
+                    rentalStart = "1788220800000", sortOrder = 3,
+                ),
+            ),
+        )
+
+        val line = sent.single().body["claims"]!!.jsonArray.single().jsonObject["line_items"]!!.jsonArray
+            .single().jsonObject
+        assertEquals("true", line["is_tax"]!!.jsonPrimitive.content)
+        assertEquals(20.0, line["tax_amount"]!!.jsonPrimitive.content.toDouble())
+        assertEquals("[\"x\"]", line["tags"].toString())
+        assertEquals(1_788_220_800_000L, line["rental_start"]!!.jsonPrimitive.content.toLong())
+        assertTrue(line["rental_start"]!!.jsonPrimitive.isString.not(), "an epoch goes back as a number")
+        assertEquals(3, line["sort_order"]!!.jsonPrimitive.content.toInt())
     }
 
     /** A 200 with `status: 0` is a refusal: "Posted" over it would be a lie about money. */

@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
@@ -55,7 +56,6 @@ import com.zillit.desktop.feature.documentdistribution.domain.HtmlText
 import com.zillit.desktop.feature.documentdistribution.domain.RecipientKind
 import com.zillit.desktop.feature.documentdistribution.domain.SendStatus
 import com.zillit.desktop.feature.documentdistribution.domain.formatBytes
-import com.zillit.desktop.feature.documentdistribution.domain.isValidEmail
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistUiState
 import com.zillit.desktop.feature.documentdistribution.ui.plural
@@ -116,7 +116,8 @@ private fun Sidebar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, modi
         ZillitSearchField(
             value = state.contactsSearch,
             onValueChange = { onEvent(DocDistEvent.SearchContacts(it)) },
-            placeholder = str(S.dd_search_contacts),
+            // Names all four filters without the verb, which overflows the sidebar.
+            placeholder = str(S.desktop_docdist_search_contacts_departments),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitButton(
@@ -189,6 +190,11 @@ private fun Sidebar(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit, modi
                                     maxLines = 1,
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+                                    // Shown so a department search explains its own hits.
+                                    if (contact.jobTitle.isNotBlank()) ZillitStatusPill(
+                                        label = contact.jobTitle,
+                                        tone = StatusTone.Neutral,
+                                    )
                                     if (contact.lists.isNotEmpty()) ZillitStatusPill(
                                         label = plural(contact.lists.size, S.desktop_docdist_one_list, S.dd_n_lists),
                                         tone = StatusTone.Pending,
@@ -444,20 +450,29 @@ private fun ContactEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -
             ZillitButton(
                 text = str(if (editor?.isNew == false) S.dd_action_save_changes else S.dd_add_contact),
                 onClick = { onEvent(DocDistEvent.SaveContactEditor) },
-                enabled = editor != null && isValidEmail(editor.email) && !editor.saving,
+                enabled = editor != null && editor.emailProblem(state.contacts) == null && !editor.saving,
                 loading = editor?.saving == true,
             )
         },
     ) {
         if (editor == null) return@ZillitDialogShell
+        val emailError = editor.shownEmailError(state.contacts)
+        var emailFocused by remember { mutableStateOf(false) }
         FieldLabel(str(S.docusign_add_contact_email_label))
         ZillitTextField(
             value = editor.email,
             onValueChange = { onEvent(DocDistEvent.EditContact(email = it)) },
             placeholder = str(S.docusign_add_contact_email_hint),
+            errorText = emailError,
             onImeAction = { onEvent(DocDistEvent.SaveContactEditor) },
+            // Leaving the field is what lets its error show.
+            modifier = Modifier.onFocusChanged { focus ->
+                if (emailFocused && !focus.hasFocus) onEvent(DocDistEvent.TouchContactEmail)
+                emailFocused = focus.hasFocus
+            },
         )
-        if (editor.emailChanged) {
+        // Guidance, not a problem — it waits until the field is clean.
+        if (emailError == null && editor.emailChanged) {
             ZillitText(
                 text = str(S.desktop_docdist_email_change_hint),
                 style = ZillitTheme.typography.bodySmall,
@@ -471,13 +486,7 @@ private fun ContactEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -
             placeholder = str(S.docusign_add_contact_name_hint),
             onImeAction = { onEvent(DocDistEvent.SaveContactEditor) },
         )
-        FieldLabel(str(S.dd_field_job))
-        ZillitTextField(
-            value = editor.job,
-            onValueChange = { onEvent(DocDistEvent.EditContact(job = it)) },
-            placeholder = str(S.docusign_add_contact_job_hint),
-            onImeAction = { onEvent(DocDistEvent.SaveContactEditor) },
-        )
+        DepartmentField(editor.job, state.departments, onEvent)
         FieldLabel(str(S.desktop_docdist_lists_optional))
         val byId = state.lists.associateBy { it.id }
         ZillitMultiSelect(
@@ -490,6 +499,56 @@ private fun ContactEditorDialog(state: DocDistUiState, onEvent: (DocDistEvent) -
         )
     }
 }
+
+/**
+ * ZL-21622: "Job" became "Department". It suggests the project's departments
+ * as you type but saves whatever is typed — a vendor's department may never
+ * have been set up on the project. `job` stays the wire field.
+ */
+@Composable
+private fun DepartmentField(value: String, departments: List<String>, onEvent: (DocDistEvent) -> Unit) {
+    val c = ZillitTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    FieldLabel(str(S.department))
+    ZillitTextField(
+        value = value,
+        onValueChange = { onEvent(DocDistEvent.EditContact(job = it)) },
+        placeholder = str(S.desktop_docdist_department_placeholder),
+        onImeAction = { onEvent(DocDistEvent.SaveContactEditor) },
+        modifier = Modifier.onFocusChanged { focused = it.hasFocus },
+    )
+    val typed = value.trim().lowercase()
+    val matches = departments
+        .filter { typed.isEmpty() || it.lowercase().contains(typed) }
+        .filterNot { it.lowercase() == typed }
+        .take(DEPARTMENT_SUGGESTIONS)
+    if (focused && matches.isNotEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ZillitTheme.shapes.medium)
+                .background(c.surfaceRaised)
+                .border(0.5.dp, c.border, ZillitTheme.shapes.medium)
+                .padding(ZillitTheme.spacing.xs),
+        ) {
+            matches.forEach { department ->
+                HoverRow(
+                    onClick = { onEvent(DocDistEvent.EditContact(job = department)) },
+                    padding = ZillitTheme.spacing.sm,
+                ) {
+                    ZillitText(text = department, style = ZillitTheme.typography.label, maxLines = 1)
+                }
+            }
+        }
+    }
+    ZillitText(
+        text = str(S.desktop_docdist_department_hint),
+        style = ZillitTheme.typography.bodySmall,
+        color = c.textMuted,
+    )
+}
+
+private const val DEPARTMENT_SUGGESTIONS = 6
 
 /** A sent email read back — subject, recipients, body, attachments — with Duplicate. */
 @Suppress("LongMethod") // One screen section; splitting it separates each control from its state.

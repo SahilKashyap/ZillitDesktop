@@ -56,6 +56,21 @@ import kotlinx.serialization.json.JsonPrimitive
  * else to the plain link. Versions can be split the same way when one
  * platform's build lags.
  *
+ * ### In-app install
+ *
+ * Two more keys let the app download and install the build itself instead of
+ * sending the reader to a page. Both are needed; either alone is ignored, and
+ * the banner falls back to the download page:
+ *
+ * | Key | Value | Meaning |
+ * |---|---|---|
+ * | `desktop_installer_url_mac` | `https://cdn…/Zillit-Desktop-1.2.0.dmg` | the file itself, not a page |
+ * | `desktop_installer_sha256_mac` | `3f0c…` (64 hex) | `shasum -a 256` of that file |
+ *
+ * Use `_windows` with the `.msi`. The digest is what stops a swapped file on
+ * the CDN from being installed; the build's code signature is checked too
+ * (`PlatformInstaller`), but the digest is checked first and needs no OS tool.
+ *
  * `desktop_download_url` is optional: when it is absent the checker falls back
  * to the Zillit configuration's own `app_download_url`
  * (`RemoteCredentials.appDownloadUrl`), which is the value the phones already
@@ -221,16 +236,20 @@ class AppUpdateChecker(
         }
 
         val url = usableUrl(entries.forPlatform(KEY_DOWNLOAD_URL, os)) ?: usableUrl(fallbackDownloadUrl())
+        val installer = installerRef(
+            rawUrl = entries.forPlatform(KEY_INSTALLER_URL, os),
+            rawSha256 = entries.forPlatform(KEY_INSTALLER_SHA256, os),
+        )
         ZillitLog.d(TAG) {
             "installed $installed; latest ${latest.ifEmpty { "-" }}; floor ${floor.ifEmpty { "-" }}"
         }
         if (AppVersions.isMeaningful(floor) && AppVersions.isBelow(installed, floor)) {
             // The floor is the honest thing to name when no separate latest was
             // published — "update to at least this" beats naming nothing.
-            return UpdateStatus.Required(latest.takeIf { AppVersions.isMeaningful(it) } ?: floor, url)
+            return UpdateStatus.Required(latest.takeIf { AppVersions.isMeaningful(it) } ?: floor, url, installer)
         }
         return if (AppVersions.isNewer(latest, installed)) {
-            UpdateStatus.Available(latest, url)
+            UpdateStatus.Available(latest, url, installer)
         } else {
             UpdateStatus.UpToDate
         }
@@ -332,6 +351,21 @@ internal val OperatingSystem.keySuffix: String?
 internal fun usableUrl(raw: String?): String? =
     AppVersions.normalise(raw).takeIf { it.startsWith("https://", ignoreCase = true) }
 
+/**
+ * The installer link and digest as one value, or null unless both are usable.
+ *
+ * The digest is lowercased because `shasum` prints lowercase and `certutil`
+ * prints uppercase, and whoever pastes it should not have to know which.
+ */
+internal fun installerRef(rawUrl: String?, rawSha256: String?): InstallerRef? {
+    val url = usableUrl(rawUrl) ?: return null
+    val sha256 = AppVersions.normalise(rawSha256).lowercase()
+    if (!SHA256_HEX.matches(sha256)) return null
+    return InstallerRef(url, sha256)
+}
+
+private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
+
 /** `https://firebaseremoteconfig.googleapis.com` — no trailing slash. */
 const val FIREBASE_REMOTE_CONFIG_HOST = "https://firebaseremoteconfig.googleapis.com"
 
@@ -343,6 +377,12 @@ const val KEY_MIN_VERSION = "desktop_min_version"
 
 /** Where the Download action sends the reader; falls back to `app_download_url`. */
 const val KEY_DOWNLOAD_URL = "desktop_download_url"
+
+/** The installer file itself — a `.dmg` on macOS, an `.msi` on Windows. */
+const val KEY_INSTALLER_URL = "desktop_installer_url"
+
+/** SHA-256 of [KEY_INSTALLER_URL]'s file, hex. */
+const val KEY_INSTALLER_SHA256 = "desktop_installer_sha256"
 
 /**
  * How often the app re-asks while it is running.

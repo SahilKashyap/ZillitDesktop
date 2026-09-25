@@ -19,6 +19,11 @@ kotlin {
             implementation(project(":core:workspace"))
             implementation(libs.kotlinx.serialization.json)
         }
+        jvmMain.dependencies {
+            // The receipt detail renders a PDF receipt's pages inline; the web
+            // uses an <iframe>, which a Compose window has no equivalent of.
+            implementation(libs.pdfbox)
+        }
         commonTest.dependencies {
             implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)

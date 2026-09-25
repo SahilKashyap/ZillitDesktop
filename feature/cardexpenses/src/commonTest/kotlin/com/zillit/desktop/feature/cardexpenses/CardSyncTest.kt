@@ -39,6 +39,20 @@ class CardSyncTest {
         ).forEach { assertTrue(it in names, "$it must be subscribed") }
     }
 
+    /** The web refetches Top-Up To Do on all five (`accountHubListeners.js:1535-1549`). */
+    @Test
+    fun `every top-up verb the web listens to is here`() {
+        listOf(
+            "card:topup:needed",
+            "card:topup:history",
+            "card:topup:completed",
+            "card:topup:partial",
+            "card:topup:skipped",
+            "card:receipt:awaiting_approval",
+            "card:receipt:escalated",
+        ).forEach { assertTrue(it in names, "$it must be subscribed") }
+    }
+
     @Test
     fun `every name is a card event, spelt once`() {
         assertEquals(names.size, names.toSet().size, "no duplicate subscriptions")

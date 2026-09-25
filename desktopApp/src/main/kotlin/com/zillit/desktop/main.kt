@@ -86,6 +86,11 @@ import com.zillit.desktop.feature.shell.DefaultRailItems
 import com.zillit.desktop.feature.home.data.boardRealtime
 import com.zillit.desktop.core.appupdate.UPDATE_CHECK_INTERVAL_MILLIS
 import com.zillit.desktop.core.appupdate.UpdateStatus
+import com.zillit.desktop.core.appupdate.InAppUpdater
+import com.zillit.desktop.core.appupdate.InstallState
+import com.zillit.desktop.core.appupdate.UpdateFailure
+import com.zillit.desktop.core.appupdate.installer
+import com.zillit.desktop.feature.shell.UpdateInstall
 import com.zillit.desktop.feature.shell.UpdateNotice
 import com.zillit.desktop.feature.shell.railItemsFor
 import com.zillit.desktop.feature.shell.AdminRailItem
@@ -742,6 +747,9 @@ private fun ApplicationScope.ZillitWindows(
                         onLanguageChange = { code ->
                             scope.launch { preferences.set(ZillitPreferences.Language, code) }
                         },
+                        // The in-app update's restart: the ordinary quit, so
+                        // Chromium goes down first and the layout is saved.
+                        onQuit = { quitZillit(windowState) },
                     )
                 }
             }
@@ -1438,6 +1446,7 @@ private fun ZillitContent(
     onThemeModeChange: (ThemeMode) -> Unit,
     language: String,
     onLanguageChange: (String) -> Unit,
+    onQuit: () -> Unit,
 ) {
     if (graph is AppGraph.Unconfigured) {
         UnconfiguredScreen(graph.reason)
@@ -1475,7 +1484,7 @@ private fun ZillitContent(
         if (authState.step == AuthStep.Complete) {
             SignedInShell(
                 ready, registry, viewModels, workspaceViewModel, authViewModel,
-                themeMode, onThemeModeChange, language, onLanguageChange,
+                themeMode, onThemeModeChange, language, onLanguageChange, onQuit,
             )
         } else {
             AuthScreen(
@@ -1516,6 +1525,7 @@ private fun SignedInShell(
     onThemeModeChange: (ThemeMode) -> Unit,
     language: String,
     onLanguageChange: (String) -> Unit,
+    onQuit: () -> Unit,
 ) {
     val authState by authViewModel.state.collectAsState()
     val homeState by (viewModels.home?.state ?: MutableStateFlow(HomeUiState())).collectAsState()
@@ -1525,6 +1535,7 @@ private fun SignedInShell(
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
     val updateStatus = rememberUpdateStatus(ready)
+    val installState by ready.inAppUpdater.state.collectAsState()
 
     // Whether the rail offers Admin at all, and what is waiting behind it.
     // Read from the settings state rather than the project: it is the same
@@ -1551,9 +1562,13 @@ private fun SignedInShell(
         projectName = authState.activeProject?.name,
         statusText = statusText(socketState, syncStatus),
         statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
-        updateNotice = updateStatus.toNotice(installedAppVersion()),
+        updateNotice = updateStatus.toNotice(installedAppVersion(), ready.inAppUpdater, installState),
         // The guarded launcher — https only, as the auth links use.
         onDownloadUpdate = ::openInBrowser,
+        onInstallUpdate = { ready.inAppUpdater.startFor(updateStatus) },
+        // Quits only once the helper is running; if it would not start, the
+        // state turns to Failed and the strip says so.
+        onRestartToUpdate = { if (ready.inAppUpdater.launchInstaller()) onQuit() },
         railItems = railItemsWith(
             badges = badges,
             isAdmin = settingsState.account.isAdmin,
@@ -1611,17 +1626,43 @@ private fun hostPlatformLabel(): String {
  * The update check: once at sign-in, then every six hours. A desktop app
  * stays open for days, so a launch-only check leaves someone on a stale
  * build for a week; six hours is well inside Remote Config's own SDK default.
+ *
+ * The verdict lives in `ready.appUpdateStatus`, which Settings' manual check
+ * writes too, so "Check for updates" puts the strip up at once. A mandatory
+ * update the app can install itself starts downloading straight away: the
+ * restart stays the user's to time, but they should not have to wait for it.
  */
 @Composable
 private fun rememberUpdateStatus(ready: AppGraph.Ready): UpdateStatus {
-    var updateStatus by remember { mutableStateOf<UpdateStatus>(UpdateStatus.Unknown) }
+    val updateStatus by ready.appUpdateStatus.collectAsState()
     LaunchedEffect(Unit) {
         while (true) {
-            updateStatus = ready.appUpdateChecker.check()
+            ready.appUpdateChecker.check().let { if (it != UpdateStatus.Unknown) ready.appUpdateStatus.value = it }
             delay(UPDATE_CHECK_INTERVAL_MILLIS)
         }
     }
+    LaunchedEffect(updateStatus) {
+        if (updateStatus is UpdateStatus.Required) ready.inAppUpdater.startFor(updateStatus)
+    }
     return updateStatus
+}
+
+/**
+ * Settings' "Check for updates": asks now and shares the answer with the
+ * banner. Offline says nothing about the build, so it keeps what the banner knew.
+ */
+private suspend fun AppGraph.Ready.checkForUpdatesNow(): UpdateStatus =
+    appUpdateChecker.check().also { status -> if (status != UpdateStatus.Unknown) appUpdateStatus.value = status }
+
+/** Starts the in-app download for [status], when it names an installer this machine can use. */
+private fun InAppUpdater.startFor(status: UpdateStatus) {
+    val ref = status.installer ?: return
+    val version = when (status) {
+        is UpdateStatus.Available -> status.latestVersion
+        is UpdateStatus.Required -> status.latestVersion
+        UpdateStatus.Unknown, UpdateStatus.UpToDate -> return
+    }
+    start(version, ref)
 }
 
 /**
@@ -2298,6 +2339,9 @@ private fun AppGraph.Ready.cashViewer(): CashViewer {
         userId = context?.profile?.userId.orEmpty(),
         departmentIdentifier = me?.department,
         designationIdentifier = me?.designation,
+        // The id is on the profile only — the crew list names a department
+        // and carries no id; see PoViewer.
+        departmentId = context?.profile?.departmentId,
     )
 }
 
@@ -2333,13 +2377,30 @@ private fun AppGraph.Ready.timecardViewer(): TimecardViewer {
 }
 
 /** `Unknown` and `UpToDate` both mean "render nothing". */
-private fun UpdateStatus.toNotice(installed: String): UpdateNotice? = when (this) {
-    is UpdateStatus.Available ->
-        UpdateNotice(latestVersion, mandatory = false, downloadUrl = downloadUrl, installedVersion = installed)
-    is UpdateStatus.Required ->
-        UpdateNotice(latestVersion, mandatory = true, downloadUrl = downloadUrl, installedVersion = installed)
-    UpdateStatus.Unknown, UpdateStatus.UpToDate -> null
+private fun UpdateStatus.toNotice(installed: String, updater: InAppUpdater, state: InstallState): UpdateNotice? {
+    val (version, mandatory, url) = when (this) {
+        is UpdateStatus.Available -> Triple(latestVersion, false, downloadUrl)
+        is UpdateStatus.Required -> Triple(latestVersion, true, downloadUrl)
+        UpdateStatus.Unknown, UpdateStatus.UpToDate -> return null
+    }
+    val install = if (updater.canInstall(installer)) state.toInstall(version) else null
+    return UpdateNotice(version, mandatory, url, installedVersion = installed, install = install)
 }
+
+/** The updater's state for [version]; a state about another version reads as not started. */
+private fun InstallState.toInstall(version: String): UpdateInstall = when {
+    this.version != version -> UpdateInstall.Offer
+    this is InstallState.Downloading -> UpdateInstall.Downloading(fraction?.let { (it * PERCENT).toInt() })
+    this is InstallState.Preparing -> UpdateInstall.Preparing
+    this is InstallState.Ready -> UpdateInstall.Ready
+    this is InstallState.Failed -> UpdateInstall.Failed(
+        retryable = reason == UpdateFailure.Reason.Network,
+        verification = reason == UpdateFailure.Reason.Checksum || reason == UpdateFailure.Reason.Signature,
+    )
+    else -> UpdateInstall.Offer
+}
+
+private const val PERCENT = 100
 
 /**
  * Monday of the current week, in the machine's own zone.
@@ -2440,6 +2501,8 @@ private fun AppGraph.Ready.cardViewer(): CardViewer {
         userId = context?.profile?.userId.orEmpty(),
         departmentIdentifier = me?.department,
         designationIdentifier = me?.designation,
+        // Episode fields are a television production's (`useIsTelevisionProject`).
+        isTelevision = context?.project?.subType?.contains("television", ignoreCase = true) == true,
     )
 }
 
@@ -2743,15 +2806,15 @@ private fun rememberAppViewModels(
                     // configuration is the account hub's document.
                     formTemplate = graph.formTemplateFor(FormModule.CashExpenses),
                     // An accountant's rows file under the account hub, everyone
-                    // else's under the cash tool (`constants.js:229-246`).
-                    badges = graph.tabBadges("level_1") {
-                        val accountant = cashModel?.state?.value?.viewer?.isAccountant
-                            ?: graph.cashViewer().isAccountant
-                        TabBadgeScope(
-                            tool = if (accountant) "account_hub_label" else "cash_expenses_label",
-                            unit = "cash_expenses_label",
-                        )
+                    // else's under the cash tool (`constants.js:229-246`) — the
+                    // coding queue always the latter; per tab and per row. See
+                    // CashWiring.
+                    badges = graph.cashBadges {
+                        cashModel?.state?.value?.viewer?.isAccountant ?: graph.cashViewer().isAccountant
                     },
+                    // Production Setup's currencies, the hub's departments and
+                    // chart, and the receipt picker — see CashWiring.
+                    reference = graph.cashReferenceSources(),
                 ).also { cashModel = it }
             },
             cardExpenses = ready?.let { graph ->
@@ -2762,21 +2825,24 @@ private fun rememberAppViewModels(
                     repository = graph.cardRepositoryWithExports(),
                     files = cardFiles(),
                     banks = { graph.cardBanks() },
+                    // Currencies, rates, companies and banks — the hub's
+                    // Production Setup documents, for the card forms and the
+                    // dashboard's converted totals.
+                    reference = { graph.cardReference() },
+                    hub = graph.cardHub(),
                     events = graph.socketEvents,
                     // Both host seams: the crew belongs to the production and
                     // the picker to this machine, and the card service offers
                     // neither. See CardExpensesWiring.
                     people = { graph.cardPeople() },
                     uploader = graph.cardAttachmentUploader(),
+                    inboxHost = graph.cardInboxHost(),
+                    // Companies, chart codes and the TV flag for the crew pages.
+                    crewHost = graph.cardCrewHost(),
                     // An accountant's rows file under the account hub, a
                     // cardholder's under the card tool (`constants.js:189-193`).
-                    badges = graph.tabBadges("level_1") {
-                        val accountant = cardModel?.state?.value?.viewer?.isAccountant
-                            ?: graph.cardViewer().isAccountant
-                        TabBadgeScope(
-                            tool = if (accountant) "account_hub_label" else "card_expenses_label",
-                            unit = "card_expenses_label",
-                        )
+                    badges = graph.cardBadges {
+                        cardModel?.state?.value?.viewer?.isAccountant ?: graph.cardViewer().isAccountant
                     },
                     viewer = { graph.cardViewer() },
                 ).also { cardModel = it }
@@ -2977,7 +3043,7 @@ private fun rememberAppViewModels(
                     viewer = { graph.docDistViewer(permissions()) },
                     today = ::today,
                     rights = graph.rightsRequests,
-                    host = AppDocDistHost(graph.signatureRepository),
+                    host = graph.docDistHost(),
                     badges = graph.docDistBadges(),
                 )
             },
@@ -3804,7 +3870,7 @@ private fun buildSettings(
         // The About row's button — the same checker the banner polls, so the
         // two can never disagree about what "latest" is. Null before the
         // graph is ready: there is no client to ask with.
-        checkForUpdates = ready?.let { { it.appUpdateChecker.check() } },
+        checkForUpdates = ready?.let { graph -> { graph.checkForUpdatesNow() } },
         // Follows the loaded production, like the units above. The snapshot in
         // `initial` is taken before the profile has arrived, so read once this
         // was blank forever — and `isAdmin` never became true, which kept the

@@ -27,7 +27,18 @@ interface CashRepository {
 
     suspend fun myFloats(): ZillitResult<List<CashFloat>>
 
+    /** Newest first — `sort=created_at&order=desc`, as the web's Active Floats asks. */
     suspend fun activeFloats(): ZillitResult<List<CashFloat>>
+
+    /** One float with its batches, top-ups, returns and the server's totals. */
+    suspend fun floatDetails(floatId: String): ZillitResult<FloatDetails>
+
+    /**
+     * Corrects a float's BS code — `PATCH /float-requests/{id}` with exactly
+     * `{bs_code}` (`buildFloatBsCodePayload`): any other key risks the
+     * route's unknown-column error. Gate with [CashFloat.bsCodeEditable].
+     */
+    suspend fun updateFloatBsCode(floatId: String, bsCode: String): ZillitResult<Unit>
 
     suspend fun floatApprovalQueue(): ZillitResult<List<CashFloat>>
 
@@ -82,7 +93,11 @@ interface CashRepository {
 
     // -- claim batches -----------------------------------------------------
 
-    suspend fun myBatches(): ZillitResult<List<ClaimBatch>>
+    /** The viewer's own batches, narrowed to one float or one pipeline when given. */
+    suspend fun myBatches(floatRequestId: String? = null, expenseType: String? = null): ZillitResult<List<ClaimBatch>>
+
+    /** Every batch spent against one float — `GET /claims?float_request_id=`. */
+    suspend fun floatBatches(floatId: String): ZillitResult<List<ClaimBatch>>
 
     suspend fun batch(batchId: String): ZillitResult<ClaimBatch>
 
@@ -190,6 +205,9 @@ interface CashRepository {
 
     suspend fun updateRequestCap(cap: RequestCap): ZillitResult<CashSettings>
 
+    /** `{department_coordinators}` on its own, as the web's Coordinators section saves. */
+    suspend fun updateDepartmentCoordinators(rows: List<DepartmentCoordinator>): ZillitResult<CashSettings>
+
     suspend fun saveAssignmentRule(rule: CashAssignmentRule): ZillitResult<CashAssignmentRule>
 
     suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit>
@@ -223,6 +241,24 @@ interface CashRepository {
         expenseType: ExpenseType?,
         historyOnly: Boolean,
     ): ZillitResult<ByteArray>
+
+    // -- settings parity --
+
+    /**
+     * One Settings section on its own — only that section's keys, as the web's
+     * `saveSection` sends them. See [CashSettingsSection].
+     */
+    suspend fun updateSettingsSection(section: CashSettingsSection, settings: CashSettings): ZillitResult<CashSettings>
+
+
+    // -- batch parity --
+
+    /**
+     * The batch view's Save / Save Progress / Save Draft: every receipt as it
+     * now stands, and the ledger date when there is one —
+     * `POST /claims/{id}/save-claims {claims, effective_date?}`.
+     */
+    suspend fun saveClaimsBatch(batchId: String, claims: List<Claim>, effectiveDate: Long?): ZillitResult<Unit>
 }
 
 /**
@@ -254,6 +290,11 @@ data class NewFloatRequest(
     val targetUserId: String? = null,
     /** The extra fields this production added to the float request form. */
     val customFields: List<CustomFieldGroup> = emptyList(),
+    // -- crew parity --
+    /** UTC midnight epoch millis, as the web's `new Date(value).getTime()`. */
+    val collectDate: Long? = null,
+    val episode: String? = null,
+    val collectionMethod: String? = null,
 )
 
 /** A batch of receipts as submitted, before the server assigns it a reference. */
@@ -263,6 +304,12 @@ data class NewClaimBatch(
     val receipts: List<DraftReceipt>,
     val settlementType: String?,
     val notes: String?,
+    // -- crew parity --
+    /** The submitter's department — the web's `currentUser.department_id`. */
+    val departmentId: String? = null,
+    /** The batch's currency, stamped on every claim too: the float's, or the one picked for out of pocket. */
+    val currency: String? = null,
+    val settlementDetails: SettlementDetails? = null,
 ) {
     val total: Double
         get() = receipts.sumOf { it.amount.trim().toDoubleOrNull() ?: 0.0 }

@@ -435,6 +435,9 @@
         leave: function () {
             Object.keys(consumers).forEach(function (id) {
                 try { consumers[id].close(); } catch (e) { /* already gone */ }
+                // closeConsumer tells the page; this path never did, and the
+                // dead videos were mounted into the next call's tiles.
+                detach(id);
             });
             consumers = {};
             [micProducer, camProducer, screenProducer].forEach(function (producer) {

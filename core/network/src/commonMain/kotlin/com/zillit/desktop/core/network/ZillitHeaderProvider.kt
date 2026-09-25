@@ -62,10 +62,8 @@ class ZillitHeaderProvider(
         return buildMap {
             put(ZillitHeaders.MODULE_DATA, encrypted)
             put(ZillitHeaders.TIMEZONE, timeZoneId())
-            put(
-                ZillitHeaders.DEVICE_INFO,
-                json.encodeToString(DeviceInfoPayload.serializer(), deviceDescription.toPayload()),
-            )
+            put(ZillitHeaders.DEVICE_INFO, deviceInfoJson())
+            userAgent()?.let { put(ZillitHeaders.USER_AGENT, it) }
             if (bodyHash is ZillitResult.Success) {
                 put(ZillitHeaders.BODY_HASH, bodyHash.data)
             } else {
@@ -74,10 +72,26 @@ class ZillitHeaderProvider(
         }
     }
 
-    override suspend fun plainHeaders(): Map<String, String> = mapOf(
-        ZillitHeaders.TIMEZONE to timeZoneId(),
-        ZillitHeaders.DEVICE_INFO to json.encodeToString(DeviceInfoPayload.serializer(), deviceDescription.toPayload()),
-    )
+    override suspend fun plainHeaders(): Map<String, String> = buildMap {
+        put(ZillitHeaders.TIMEZONE, timeZoneId())
+        put(ZillitHeaders.DEVICE_INFO, deviceInfoJson())
+        userAgent()?.let { put(ZillitHeaders.USER_AGENT, it) }
+    }
+
+    /**
+     * The `deviceInfo` JSON, ASCII only. A device name is whatever its owner
+     * typed — `Sahil’s MacBook Pro` has a curly apostrophe — and the HTTP
+     * client refuses any header holding a character past `~`, which would
+     * fail every call. `\u2019` is the same JSON to the server.
+     */
+    private fun deviceInfoJson(): String =
+        json.encodeToString(DeviceInfoPayload.serializer(), deviceDescription.toPayload()).asciiJson()
+
+    /** The agent, with anything a header cannot carry replaced; null when unset. */
+    private fun userAgent(): String? = deviceDescription.userAgent
+        .map { if (it in ' '..'~') it else '?' }
+        .joinToString("")
+        .takeIf(String::isNotBlank)
 
     /**
      * The `moduledata` contents for a given call.
@@ -170,6 +184,12 @@ data class DeviceDescription(
     val osVersion: String,
     val deviceName: String,
     val deviceType: String,
+    /**
+     * Sent as `User-Agent` when set. Left to the HTTP library, the agent is
+     * `ktor-client`/`okhttp` — an Android app's — and that is how a desktop
+     * got counted as one.
+     */
+    val userAgent: String = "",
 ) {
     internal fun toPayload() = DeviceInfoPayload(
         network = network,
@@ -223,3 +243,17 @@ internal data class DeviceInfoPayload(
     @SerialName("deviceName") val deviceName: String,
     @SerialName("deviceType") val deviceType: String,
 )
+
+/** Escapes every character outside printable ASCII as `\uXXXX` — still the same JSON. */
+internal fun String.asciiJson(): String = buildString(length) {
+    for (char in this@asciiJson) {
+        if (char in ' '..'~') {
+            append(char)
+        } else {
+            append("\\u").append(char.code.toString(HEX_RADIX).padStart(HEX_DIGITS, '0'))
+        }
+    }
+}
+
+private const val HEX_RADIX = 16
+private const val HEX_DIGITS = 4

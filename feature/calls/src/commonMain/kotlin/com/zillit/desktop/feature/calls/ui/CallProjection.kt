@@ -39,6 +39,6 @@ fun projectCallUi(
         cameraOn = cameraOn,
         tiles = tiles,
         videoSeen = seen,
-        stageJson = if (tiles.isEmpty()) "" else stageJson(tiles, columnsFor(tiles.size)),
+        stageJson = if (tiles.isEmpty()) "" else stageJson(tiles, columnsFor(tiles.size), previous.pins),
     )
 }

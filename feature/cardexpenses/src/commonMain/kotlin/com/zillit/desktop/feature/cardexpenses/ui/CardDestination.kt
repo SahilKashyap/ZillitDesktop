@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.cardexpenses.ui
 
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -24,24 +25,29 @@ enum class CardDestination(
     val group: CardNavGroup,
 ) {
     // -- accountant --------------------------------------------------------
-    Overview("", S.ah_overview, ZillitIcons.Grid, CardNavGroup.Top),
+    //
+    // One glyph per row, the web's (`lib/constants.js:177-213`): Dashboard,
+    // Import, Inbox, list, clock, the approver glyph, the gear, Appstore,
+    // Wallet, History, BarChart, Bell and the tool. The desktop drew Grid,
+    // Ledger and Settings twice each, so three pairs of rows looked the same.
+    Overview("", S.ah_overview, AhIcons.Dashboard, CardNavGroup.Top),
     CardRegister("cards", S.ah_card_register, ZillitIcons.CreditCard, CardNavGroup.Cards),
     ImportStatement("import", S.ah_import_statement, ZillitIcons.Upload, CardNavGroup.Workflow),
-    ReceiptInbox("inbox", S.ah_receipt_inbox, ZillitIcons.Receipt, CardNavGroup.Workflow),
-    AllTransactions("transactions", S.ah_all_transactions, ZillitIcons.Ledger, CardNavGroup.Workflow),
+    ReceiptInbox("inbox", S.ah_receipt_inbox, ZillitIcons.Inbox, CardNavGroup.Workflow),
+    AllTransactions("transactions", S.ah_all_transactions, AhIcons.List, CardNavGroup.Workflow),
     PendingCoding("pending", S.ah_pending_coding, ZillitIcons.Clock, CardNavGroup.Workflow),
-    ApprovalQueue("approval", S.ah_approval_queue, ZillitIcons.Shield, CardNavGroup.Workflow),
+    ApprovalQueue("approval", S.ah_approval_queue, AhIcons.Approver, CardNavGroup.Workflow),
     ProcessQueue("process", S.desktop_card_process_expenses, ZillitIcons.Settings, CardNavGroup.Workflow),
     BulkProcess("bulk", S.ah_bulk_process, ZillitIcons.Grid, CardNavGroup.Workflow),
     TopUpQueue("topups", S.ah_topup_todo, ZillitIcons.Wallet, CardNavGroup.Workflow),
-    History("history", S.history, ZillitIcons.Ledger, CardNavGroup.Workflow),
+    History("history", S.history, AhIcons.Refresh, CardNavGroup.Workflow),
     Analytics("analytics", S.analytics, ZillitIcons.BarChart, CardNavGroup.Management),
     Alerts("alerts", S.desktop_card_smart_alerts, ZillitIcons.Bell, CardNavGroup.Management),
-    Settings("settings", S.settings, ZillitIcons.Settings, CardNavGroup.Management),
+    Settings("settings", S.settings, AhIcons.Sliders, CardNavGroup.Management),
 
     // -- cardholder --------------------------------------------------------
     MyTransactions("my-receipts", S.ah_my_transactions, ZillitIcons.Receipt, CardNavGroup.Mine),
-    MyCards("my-cards", S.desktop_card_my_card, ZillitIcons.CreditCard, CardNavGroup.Mine),
+    MyCards("my-cards", S.ah_my_cards, ZillitIcons.CreditCard, CardNavGroup.Mine),
     CardExtension("extension", S.ah_card_extension, ZillitIcons.Wallet, CardNavGroup.Mine),
     CardsForApproval("card-approval", S.ah_approval_queue, ZillitIcons.Shield, CardNavGroup.Mine),
     CodingQueue("coding", S.ah_coding_queue, ZillitIcons.Clock, CardNavGroup.Mine),
@@ -90,7 +96,9 @@ enum class CardDestination(
             MyCards -> listOf("my_cards")
             CardExtension -> listOf("card_extension")
             CardsForApproval -> listOf("card_approval_queue", "receipt_approval_queue")
-            CodingQueue -> listOf("coding_queue")
+            // Both level_1s a coding notification can arrive under
+            // (`CardExpensesModule.jsx:101-109`, ZL-20779).
+            CodingQueue -> listOf("coding_queue", "pending_coding")
             else -> emptyList()
         }
 

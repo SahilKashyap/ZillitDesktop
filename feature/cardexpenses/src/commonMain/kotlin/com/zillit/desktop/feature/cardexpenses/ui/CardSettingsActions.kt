@@ -5,7 +5,9 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
+import com.zillit.desktop.feature.cardexpenses.domain.RequestCapProblem
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
+import com.zillit.desktop.feature.cardexpenses.domain.problem
 
 /**
  * Saving the production's card configuration, one section at a time.
@@ -32,6 +34,13 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
             return
         }
         val draft = vm.current.settingsDraft ?: return
+        // The coordinators flag their rows inline, as the web does, rather
+        // than raising one toast for the whole list (`SettingsPage.jsx:356-369`).
+        if (section == SettingsSection.Coordinators) {
+            val errors = coordinatorErrors(draft)
+            vm.update { copy(insights = insights.copy(coordinatorErrors = errors)) }
+            if (errors.isNotEmpty()) return
+        }
         val invalid = section.validate(draft)
         if (invalid != null) {
             vm.fail(invalid)
@@ -49,13 +58,20 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
         }
     }
 
+    /**
+     * Takes the stored document back, but only this section into the draft:
+     * the other sections' unsaved edits stay where they were. The assignment
+     * rules are the hub's, written through its own routes, and a settings
+     * PATCH echo is not trusted to carry them.
+     */
     private fun settle(section: SettingsSection, stored: CardSettings, sent: CardSettings) {
         val kept = section.matches(stored, sent)
         vm.update {
+            val merged = stored.copy(assignmentRules = settings?.assignmentRules ?: sent.assignmentRules)
             copy(
                 busy = false,
-                settings = stored,
-                settingsDraft = stored,
+                settings = merged,
+                settingsDraft = (settingsDraft ?: merged).withSection(section, merged),
                 notice = if (kept) str(S.desktop_card_section_saved, section.label) else null,
             )
         }
@@ -66,23 +82,42 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
         }
     }
 
-    /** What each section refuses to be saved without. */
+    /**
+     * What each section refuses to be saved without.
+     *
+     * Providers are not refused for a missing name: the web keeps such a row
+     * (`sanitizeCardProviders` drops only empty ones) and marks the field red,
+     * and so does the page. The request cap's two blocks are the web's
+     * (`RequestCapSection.jsx:76-78`) and are shown inline beside the fields.
+     */
     private fun SettingsSection.validate(draft: CardSettings): String? = when (this) {
         SettingsSection.Team ->
             str(S.desktop_card_team_row_needs_person)
                 .takeIf { draft.teamMembers.any { member -> member.userId.isBlank() } }
 
-        SettingsSection.Coordinators ->
-            str(S.desktop_card_coordinator_row_incomplete)
-                .takeIf { draft.coordinators.any { row -> !row.complete } }
+        SettingsSection.RequestCap -> when (draft.requestCap.problem()) {
+            RequestCapProblem.Multiplier -> str(S.desktop_pc_cap_needs_multiplier)
+            RequestCapProblem.Amount -> str(S.desktop_ce_cap_needs_amount)
+            null -> null
+        }
 
-        // A row with nothing in it is dropped, as the web drops it; one with
-        // codes but no name cannot be picked from any card form.
-        SettingsSection.Providers ->
-            str(S.desktop_card_provider_needs_name)
-                .takeIf { draft.providers.any { provider -> !provider.blank && provider.name.isBlank() } }
+        SettingsSection.Coordinators, SettingsSection.Overrides, SettingsSection.Providers -> null
+    }
 
-        SettingsSection.Overrides, SettingsSection.RequestCap -> null
+    /** The web's per-row keys: `<index>_dept` and `<index>_users`. */
+    private fun coordinatorErrors(draft: CardSettings): Map<String, String> = buildMap {
+        draft.coordinators.forEachIndexed { index, row ->
+            if (row.departmentId.isBlank()) put("${index}_dept", str(S.desktop_select_a_department))
+            if (row.userIds.isEmpty()) put("${index}_users", str(S.desktop_bs_select_at_least_one_user))
+        }
+    }
+
+    private fun CardSettings.withSection(section: SettingsSection, from: CardSettings): CardSettings = when (section) {
+        SettingsSection.Team -> copy(teamMembers = from.teamMembers)
+        SettingsSection.Coordinators -> copy(coordinators = from.coordinators)
+        SettingsSection.Overrides -> copy(overrides = from.overrides)
+        SettingsSection.Providers -> copy(providers = from.providers)
+        SettingsSection.RequestCap -> copy(requestCap = from.requestCap)
     }
 
     /**
@@ -97,7 +132,7 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
         SettingsSection.Coordinators -> stored.coordinators == sent.coordinators
         SettingsSection.Overrides -> stored.overrides == sent.overrides
         SettingsSection.Providers -> {
-            val kept = sent.providers.filter { it.name.isNotBlank() }
+            val kept = sent.providers.filterNot { it.blank }
             stored.providers.map { it.name } == kept.map { it.name.trim() } &&
                 stored.providers.map { it.custodianAccount } == kept.map { it.custodianAccount.trim() }
         }

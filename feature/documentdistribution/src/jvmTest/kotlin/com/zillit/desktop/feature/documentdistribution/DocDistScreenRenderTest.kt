@@ -167,7 +167,9 @@ class DocDistScreenRenderTest {
                 ZillitTheme(darkTheme = false) {
                     DocDistScreen(
                         state = state(DocDistDestination.Library, readOnly)
-                            .copy(selectedDocumentIds = setOf("doc-1")),
+                            .copy(selectedDocumentIds = setOf("doc-1"), infoBannerDismissed = true),
+                        // The four-point banner is taller than this test window can spare
+                        // above the Actions menu; these tests are about the menu.
                         onEvent = { raised += it },
                     )
                 }
@@ -218,7 +220,9 @@ class DocDistScreenRenderTest {
                 ZillitTheme(darkTheme = false) {
                     DocDistScreen(
                         state = state(DocDistDestination.Library)
-                            .copy(selectedDocumentIds = setOf("doc-1", "doc-2")),
+                            .copy(selectedDocumentIds = setOf("doc-1", "doc-2"), infoBannerDismissed = true),
+                        // The four-point banner is taller than this test window can spare
+                        // above the Actions menu; these tests are about the menu.
                         onEvent = { if (it is DocDistEvent.Compose) composed = true },
                     )
                 }

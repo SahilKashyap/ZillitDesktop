@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimLineItem
 import com.zillit.desktop.feature.cashexpenses.domain.DeductionRule
+import com.zillit.desktop.feature.cashexpenses.domain.DepartmentStats
 import com.zillit.desktop.feature.cashexpenses.domain.RuleProcess
 import com.zillit.desktop.feature.cashexpenses.domain.RuleThreshold
 import com.zillit.desktop.feature.cashexpenses.domain.DepartmentOverview
@@ -87,6 +88,20 @@ internal data class FloatDto(
     @SerialName("created_at") val createdAt: String? = null,
     /** An array, or a string holding one — see [readApprovals]. */
     @SerialName("approvals") val approvals: JsonElement? = null,
+    // The record's currency when `currency` is absent — `resolveCashCurrency`.
+    @Serializable(with = CurrencyCodeSerializer::class)
+    @SerialName("transaction_currency") val transactionCurrency: String? = null,
+    @SerialName("collect_date") val collectDate: String? = null,
+    @SerialName("collect_time") val collectTime: String? = null,
+    @SerialName("collection_method") val collectionMethod: String? = null,
+    /** `[{section, fields: [...]}]`, as an array or a string holding one. */
+    @SerialName("custom_fields") val customFields: JsonElement? = null,
+    @SerialName("activated_at") val activatedAt: String? = null,
+    @SerialName("closed_at") val closedAt: String? = null,
+    @SerialName("spent") val spent: String? = null,
+    @SerialName("company_name") val companyName: String? = null,
+    @SerialName("episode") val episode: String? = null,
+    @SerialName("created_by") val createdBy: String? = null,
 ) {
     fun toDomain(): CashFloat? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -97,7 +112,7 @@ internal data class FloatDto(
             holderName = holderName?.takeIf { it.isNotBlank() } ?: fullName.orEmpty(),
             departmentId = departmentId,
             status = FloatStatus.from(status),
-            currency = currency,
+            currency = currency ?: transactionCurrency,
             requestedAmount = reqAmount.toAmount(),
             issuedAmount = issuedFloat.toAmount(),
             balance = balance.toAmount(),
@@ -111,6 +126,16 @@ internal data class FloatDto(
             purpose = purpose,
             createdAt = createdAt.toEpochMillisOrNull(),
             approvals = approvals.readApprovals(),
+            collectDate = collectDate.toEpochMillisOrNull(),
+            collectTime = collectTime?.takeIf { it.isNotBlank() },
+            collectionMethod = collectionMethod?.takeIf { it.isNotBlank() },
+            customFields = customFields.readCustomFields(),
+            activatedAt = activatedAt.toEpochMillisOrNull(),
+            closedAt = closedAt.toEpochMillisOrNull(),
+            reportedSpent = spent.toAmountOrNull(),
+            companyName = companyName?.takeIf { it.isNotBlank() },
+            episode = episode?.takeIf { it.isNotBlank() },
+            createdBy = createdBy?.takeIf { it.isNotBlank() },
         )
     }
 }
@@ -144,6 +169,15 @@ internal data class BatchDto(
     @SerialName("escalation_reason") val escalationReason: String? = null,
     @SerialName("escalated_by") val escalatedBy: String? = null,
     @SerialName("approvals") val approvals: JsonElement? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
+    @SerialName("transaction_currency") val transactionCurrency: String? = null,
+    @SerialName("escalated_at") val escalatedAt: String? = null,
+    @SerialName("posted_at") val postedAt: String? = null,
+    @SerialName("rejection_reason") val rejectionReason: String? = null,
+    @SerialName("rejected_by") val rejectedBy: String? = null,
+    @SerialName("rejected_at") val rejectedAt: String? = null,
+    @SerialName("query_reason") val queryReason: String? = null,
+    @SerialName("float_request_id") val floatRequestId: String? = null,
 ) {
     fun toDomain(): ClaimBatch? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -160,7 +194,7 @@ internal data class BatchDto(
             claimCount = claimCount ?: claims?.size ?: 0,
             totalGross = totalGross.toAmount(),
             reimbursementAmount = reimbursementAmount.toAmount(),
-            currency = currency,
+            currency = currency ?: transactionCurrency,
             settlementType = settlementType,
             paymentMethod = settlementDetails.readObject()?.get(PAYMENT_METHOD)
                 ?.jsonPrimitiveOrNull()?.contentOrNull(),
@@ -174,6 +208,15 @@ internal data class BatchDto(
             escalationReason = escalationReason?.takeIf { it.isNotBlank() },
             escalatedBy = escalatedBy?.takeIf { it.isNotBlank() },
             approvals = approvals.readApprovals(),
+            escalatedAt = escalatedAt.toEpochMillisOrNull(),
+            postedAt = postedAt.toEpochMillisOrNull(),
+            rejectionReason = rejectionReason?.takeIf { it.isNotBlank() },
+            rejectedBy = rejectedBy?.takeIf { it.isNotBlank() },
+            rejectedAt = rejectedAt.toEpochMillisOrNull(),
+            queryReason = queryReason?.takeIf { it.isNotBlank() },
+            floatRequestId = floatRequestId?.takeIf { it.isNotBlank() },
+            followUp = settlementDetails.readObject()?.get(FOLLOW_UP)?.jsonPrimitiveOrNull()?.contentOrNull(),
+            settlementDetails = settlementDetails.readObject(),
         )
     }
 }
@@ -202,6 +245,10 @@ internal data class ClaimDto(
     @SerialName("is_verified") val isVerified: JsonElement? = null,
     /** Strings or `{flag}` objects, in an array or a string holding one. */
     @SerialName("processing_flags") val processingFlags: JsonElement? = null,
+    /** The uploaded file object, or a string holding one — see [readAttachment]. */
+    @SerialName("attachment") val attachment: JsonElement? = null,
+    @SerialName("deduction_amount") val deductionAmount: String? = null,
+    @SerialName("batch_reference") val batchReference: String? = null,
 ) {
     fun toDomain(): Claim? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -227,6 +274,9 @@ internal data class ClaimDto(
             isVerified = isVerified.isTrue(),
             processingFlags = processingFlags.readFlags(),
             rawLines = lineItems.readRawLines(),
+            attachment = attachment.readAttachment(),
+            deductionAmount = deductionAmount.toAmount(),
+            batchReference = batchReference?.takeIf { it.isNotBlank() },
         )
     }
 }
@@ -243,6 +293,14 @@ internal data class LineItemDto(
     @SerialName("tax_type") val taxType: String? = null,
     @SerialName("split_parent_id") val splitParentId: String? = null,
     @SerialName("meta") val meta: JsonElement? = null,
+    @SerialName("is_tax") val isTax: JsonElement? = null,
+    @SerialName("tax_amount") val taxAmount: String? = null,
+    @SerialName("tracking_codes") val trackingCodes: JsonElement? = null,
+    @SerialName("tags") val tags: JsonElement? = null,
+    @SerialName("rental_start") val rentalStart: String? = null,
+    @SerialName("rental_end") val rentalEnd: String? = null,
+    @SerialName("sort_order") val sortOrder: String? = null,
+    @SerialName("expenditure_type") val expenditureType: String? = null,
 ) {
     /**
      * Whether the processing-rules engine owns this row.
@@ -270,6 +328,14 @@ internal data class LineItemDto(
         unitPrice = unitPrice.toAmount(),
         taxType = taxType,
         splitParentId = splitParentId,
+        isTax = isTax.isTrue(),
+        taxAmount = taxAmount.toAmountOrNull(),
+        trackingCodes = trackingCodes?.takeUnless { it is JsonNull },
+        tags = tags?.takeUnless { it is JsonNull },
+        rentalStart = rentalStart?.takeIf { it.isNotBlank() },
+        rentalEnd = rentalEnd?.takeIf { it.isNotBlank() },
+        sortOrder = sortOrder?.toDoubleOrNull()?.toInt(),
+        expenditureType = expenditureType?.takeIf { it.isNotBlank() },
     )
 }
 
@@ -288,6 +354,8 @@ internal data class MetadataDto(
     /** A number, `null` (unlimited), or absent (no grant) — three answers, so read raw. */
     @SerialName("posting_limit") val postingLimit: JsonElement? = null,
     @SerialName("approval_tier_configs") val approvalTierConfigs: JsonElement? = null,
+    /** `{enabled, basis, max_amount, salary_multiplier}`, or a string holding it. */
+    @SerialName("request_cap") val requestCap: JsonElement? = null,
 ) {
     // Every flag defaults to false: a right the server did not mention is one
     // this person does not have.
@@ -306,6 +374,7 @@ internal data class MetadataDto(
         // Whether the limit was stated as null is read off the raw body — see
         // CashRepositoryImpl.metadata; a nullable field cannot say.
         approvalTierConfigs = approvalTierConfigs.readTierConfigs(),
+        requestCap = requestCap.readObject()?.toRequestCap(),
     )
 }
 
@@ -325,6 +394,12 @@ internal data class TopUpDto(
     @SerialName("float_balance") val floatBalance: String? = null,
     @SerialName("float_req_amount") val floatReqAmount: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    /** JSON-stringified on this route (the BE's own note), an array elsewhere. */
+    @SerialName("history") val history: JsonElement? = null,
+    @SerialName("method") val method: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("issued_amount") val issuedAmount: String? = null,
+    @SerialName("float_request_id") val floatRequestId: String? = null,
 ) {
     fun toDomain(): CashTopUp? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -341,6 +416,11 @@ internal data class TopUpDto(
             floatBalance = floatBalance.toAmount(),
             floatRequestedAmount = floatReqAmount.toAmount(),
             createdAt = createdAt.toEpochMillisOrNull(),
+            history = history.readTopUpHistory(),
+            method = method?.takeIf { it.isNotBlank() },
+            updatedAt = updatedAt.toEpochMillisOrNull(),
+            issuedAmount = issuedAmount.toAmountOrNull(),
+            floatRequestId = floatRequestId?.takeIf { it.isNotBlank() },
         )
     }
 }
@@ -497,8 +577,10 @@ internal data class CategorySpendDto(
 
 @Serializable
 internal data class MyOverviewDto(
-    @SerialName("pc_claims") val pettyCashClaims: List<BatchDto>? = null,
-    @SerialName("oop_claims") val outOfPocketClaims: List<BatchDto>? = null,
+    // Receipt rows with their batch's reference and status, not batches —
+    // see RecentClaimDto (`PCCrewOverviewPage.jsx:89-111`).
+    @SerialName("pc_claims") val pettyCashClaims: List<RecentClaimDto>? = null,
+    @SerialName("oop_claims") val outOfPocketClaims: List<RecentClaimDto>? = null,
     @SerialName("floats") val floats: List<FloatDto>? = null,
 ) {
     fun toDomain() = MyCashOverview(
@@ -508,20 +590,20 @@ internal data class MyOverviewDto(
     )
 }
 
+/** `floats`, `oop_batches`, `stats`, `spend_by_category` — the keys the web reads (`PCDeptViewPage.jsx:44`). */
 @Serializable
 internal data class DepartmentOverviewDto(
-    @SerialName("department_id") val departmentId: String? = null,
     @SerialName("floats") val floats: List<FloatDto>? = null,
-    @SerialName("batches") val batches: List<BatchDto>? = null,
-    @SerialName("total_issued") val totalIssued: String? = null,
-    @SerialName("total_spent") val totalSpent: String? = null,
+    @SerialName("oop_batches") val outOfPocketBatches: List<BatchDto>? = null,
+    @SerialName("stats") val stats: DepartmentStatsDto? = null,
+    @SerialName("spend_by_category") val spendByCategory: List<DepartmentCategoryDto>? = null,
 ) {
-    fun toDomain() = DepartmentOverview(
+    fun toDomain(departmentId: String?) = DepartmentOverview(
         departmentId = departmentId,
         floats = floats.orEmpty().mapNotNull { it.toDomain() },
-        batches = batches.orEmpty().mapNotNull { it.toDomain() },
-        totalIssued = totalIssued.toAmount(),
-        totalSpent = totalSpent.toAmount(),
+        outOfPocketBatches = outOfPocketBatches.orEmpty().mapNotNull { it.toDomain() },
+        stats = stats?.toDomain() ?: DepartmentStats(),
+        spendByCategory = spendByCategory.orEmpty().mapNotNull { it.toDomain() },
     )
 }
 
@@ -552,6 +634,13 @@ internal data class ReconciliationDto(
     @SerialName("denominations") val denominations: JsonElement? = null,
     @SerialName("reconciling_items") val reconcilingItems: JsonElement? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("created_by") val createdBy: String? = null,
+    @SerialName("updated_by") val updatedBy: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("submitted_by") val submittedBy: String? = null,
+    @SerialName("submitted_at") val submittedAt: String? = null,
+    @SerialName("signed_by") val signedBy: String? = null,
+    @SerialName("signed_at") val signedAt: String? = null,
 ) {
     fun toDomain(): Reconciliation? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -570,6 +659,13 @@ internal data class ReconciliationDto(
             storedVariance = variance.toAmountOrNull(),
             denominations = denominations.readList(DenominationDto.serializer()).map { it.toDomain() },
             reconcilingItems = reconcilingItems.readList(ReconItemDto.serializer()).map { it.toDomain() },
+            createdBy = createdBy?.takeIf { it.isNotBlank() },
+            updatedBy = updatedBy?.takeIf { it.isNotBlank() },
+            updatedAt = updatedAt.toEpochMillisOrNull(),
+            submittedBy = submittedBy?.takeIf { it.isNotBlank() },
+            submittedAt = submittedAt.toEpochMillisOrNull(),
+            signedBy = signedBy?.takeIf { it.isNotBlank() },
+            signedAt = signedAt.toEpochMillisOrNull(),
         )
     }
 }
@@ -623,6 +719,8 @@ internal data class SettingsDto(
     @SerialName("deduction_rules") val deductionRules: JsonElement? = null,
     @SerialName("request_cap") val requestCap: JsonElement? = null,
     @SerialName("assignment_rules") val assignmentRules: JsonElement? = null,
+    /** An array, or a string holding one — the web's `parseJsonField`. */
+    @SerialName("department_coordinators") val departmentCoordinators: JsonElement? = null,
 ) {
     fun toDomain(): CashSettings {
         val overrides = approvalOverride.readObject()
@@ -640,6 +738,8 @@ internal data class SettingsDto(
             deductionRules = deductionRules.readList(DeductionRuleDto.serializer()).map { it.toDomain() },
             requestCap = requestCap.readObject().toRequestCap(),
             assignmentRules = assignmentRules.readList(CashRuleDto.serializer()).mapNotNull { it.toDomain() },
+            departmentCoordinators = departmentCoordinators.readList(CoordinatorDto.serializer())
+                .mapNotNull { it.toDomain() },
         )
     }
 }
@@ -819,5 +919,6 @@ private fun JsonElement.jsonPrimitiveOrNull(): JsonPrimitive? = runCatching { js
 private fun JsonPrimitive.contentOrNull(): String? = content.takeIf { it.isNotBlank() && it != "null" }
 
 private const val PAYMENT_METHOD = "payment_method"
+private const val FOLLOW_UP = "follow_up"
 private const val AUTO = "auto"
 private const val DEDUCT_ACCOUNT = "DEDUCT"

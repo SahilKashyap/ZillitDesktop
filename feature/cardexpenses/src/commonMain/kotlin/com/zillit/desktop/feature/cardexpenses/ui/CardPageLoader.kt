@@ -21,31 +21,30 @@ internal class CardPageLoader(
         val repository = vm.repo
         return when (destination) {
             CardDestination.Overview -> overview()
-            CardDestination.CardRegister, CardDestination.CardsForApproval ->
+            CardDestination.CardRegister ->
                 repository.cards(mineOnly = false).mapState { copy(cards = it) }
 
-            CardDestination.MyCards, CardDestination.CardExtension -> myCard()
+            CardDestination.CardsForApproval -> CrewLoads.approvals(vm)
+            CardDestination.MyCards -> myCard()
+            CardDestination.CardExtension -> CrewLoads.extension(vm)
             CardDestination.ImportStatement -> statements()
-            CardDestination.BulkProcess -> repository.bulkProcessable().mapState { copy(bulkItems = it) }
             CardDestination.ReceiptInbox -> inbox()
             CardDestination.MyTransactions -> myTransactions()
             CardDestination.AllTransactions -> transactions()
             CardDestination.PendingCoding, CardDestination.CodingQueue ->
                 repository.receipts(ReceiptScope.PendingCoding).mapState { copy(receipts = it) }
 
-            CardDestination.ApprovalQueue -> repository.approvalQueue().mapState { copy(receipts = it) }
-            CardDestination.ProcessQueue ->
-                repository.receipts(ReceiptScope.ProcessQueue).mapState { copy(receipts = it) }
+            // The accountant's process pages read their references with
+            // their rows; see readProcessPage.
+            CardDestination.ApprovalQueue, CardDestination.ProcessQueue, CardDestination.BulkProcess,
+            CardDestination.History,
+            -> vm.readProcessPage(destination)
 
-            CardDestination.History -> repository.receipts(ReceiptScope.Posted).mapState { copy(receipts = it) }
             CardDestination.TopUpQueue -> repository.topUps().mapState { copy(topUps = it) }
-            CardDestination.Analytics -> {
-                val range = vm.current.analyticsRange
-                repository.analytics(range.fromOrNull, range.toOrNull).mapState { copy(analytics = it) }
-            }
+            CardDestination.Analytics -> vm.insights.analyticsPage()
 
             CardDestination.Alerts -> repository.alerts().mapState { copy(alerts = it) }
-            CardDestination.Settings -> repository.settings().mapState { copy(settings = it, settingsDraft = it) }
+            CardDestination.Settings -> vm.insights.settingsPage()
         }
     }
 
@@ -69,7 +68,12 @@ internal class CardPageLoader(
         if (overview is ZillitResult.Failure) return overview
         val dashboard = (overview as ZillitResult.Success).data
         val register = repository.cards(mineOnly = false).getOrNull().orEmpty().associateBy { it.id }
-        val merged = dashboard.cards.map { row -> register[row.id] ?: row }
+        // Limit, balance and currency from the register; `spent` only exists on
+        // the overview row, and it is the one figure that counts top-ups
+        // (`OverviewPage.jsx:165-171`), so it is carried across.
+        val merged = dashboard.cards.map { row ->
+            register[row.id]?.let { card -> card.copy(serverSpent = row.serverSpent ?: card.serverSpent) } ?: row
+        }
         return ZillitResult.Success { copy(overview = dashboard.copy(cards = merged), cards = merged) }
     }
 
@@ -107,22 +111,12 @@ internal class CardPageLoader(
     }
 
     /**
-     * The inbox needs the statement side as well as the receipts.
-     *
-     * Its work is reconciliation, and the transactions are what a receipt is
-     * being reconciled *against* — the screen names the statement line a
-     * receipt is flagged against, and flags personal spend on that line
-     * rather than on the receipt.
+     * The inbox reads `/receipts` and nothing else (`ReceiptInboxPage.jsx:136-145`):
+     * each row carries its linked transaction's merchant, amount, card and
+     * date, so the statement side is not a second and third read.
      */
-    private suspend fun inbox(): ZillitResult<Reducer> {
-        val repository = vm.repo
-        val receipts = repository.receipts(ReceiptScope.All)
-        if (receipts is ZillitResult.Failure) return receipts
-        val rows = (receipts as ZillitResult.Success).data
-        val imports = repository.imports().getOrNull().orEmpty()
-        val transactions = repository.transactions().getOrNull().orEmpty()
-        return ZillitResult.Success { copy(receipts = rows, imports = imports, transactions = transactions) }
-    }
+    private suspend fun inbox(): ZillitResult<Reducer> =
+        vm.repo.receipts(ReceiptScope.All).mapState { copy(receipts = it) }
 
     /**
      * All Transactions, narrowed by the server, with the statements and cards
@@ -136,8 +130,9 @@ internal class CardPageLoader(
         val rows = (read as ZillitResult.Success).data
         val imports = repository.imports().getOrNull()
         val cards = repository.cards(mineOnly = false).getOrNull()
+        val catalogues = vm.inboxActions.ledgerCatalogues()
         return ZillitResult.Success {
-            copy(transactions = rows, imports = imports ?: this.imports, cards = cards ?: this.cards)
+            copy(transactions = rows, imports = imports ?: this.imports, cards = cards ?: this.cards).catalogues()
         }
     }
 

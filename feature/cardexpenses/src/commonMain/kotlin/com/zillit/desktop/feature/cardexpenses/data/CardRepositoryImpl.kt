@@ -14,16 +14,22 @@ import com.zillit.desktop.feature.cardexpenses.domain.BulkAction
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
 import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
 import com.zillit.desktop.feature.cardexpenses.domain.BulkOutcome
+import com.zillit.desktop.feature.cardexpenses.domain.CardAction
 import com.zillit.desktop.feature.cardexpenses.domain.CardActivation
+import com.zillit.desktop.feature.cardexpenses.domain.CardServerNote
 import com.zillit.desktop.feature.cardexpenses.domain.CardExportRow
 import com.zillit.desktop.feature.cardexpenses.domain.ExportFormat
 import com.zillit.desktop.feature.cardexpenses.domain.FundRequest
 import com.zillit.desktop.feature.cardexpenses.domain.FundRequestDraft
 import com.zillit.desktop.feature.cardexpenses.domain.QueryThread
+import com.zillit.desktop.feature.cardexpenses.domain.ProcessRefs
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessSubmission
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptAssignment
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCoding
-import com.zillit.desktop.feature.cardexpenses.domain.StatementRow
+import com.zillit.desktop.feature.cardexpenses.domain.InboxWrite
+import com.zillit.desktop.feature.cardexpenses.domain.StoredStatement
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptEdit
+import com.zillit.desktop.feature.cardexpenses.domain.CardDates
 import com.zillit.desktop.feature.cardexpenses.domain.TierVisibility
 import com.zillit.desktop.feature.cardexpenses.domain.TransactionFilters
 import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
@@ -245,48 +251,16 @@ class CardRepositoryImpl(
             buildJsonObject { put("bs_control_code", JsonPrimitive(code.trim())) },
         )
 
+    /** Every register and Card-tab write, answered with the server's message; see [CardActionCalls]. */
+    override suspend fun cardAction(action: CardAction): ZillitResult<CardServerNote> = actionCalls.send(action)
+
+    private val actionCalls = CardActionCalls(apiClient, config)
+
     // -- statement imports -------------------------------------------------
 
     override suspend fun imports(): ZillitResult<List<StatementImport>> =
         get("$base/imports", ListSerializer(ImportDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
-
-    override suspend fun importStatement(
-        attachmentKey: String,
-        currency: String?,
-    ): ZillitResult<Unit> = post(
-        // The backend ingests via a storage pointer rather than multipart: the
-        // client uploads the file first and hands over the key.
-        "$base/imports/import-statement",
-        buildJsonObject {
-            put("attachment", JsonPrimitive(attachmentKey))
-            // Omitted entirely when there is none to state, so the server
-            // applies the project default. An empty string would be a claim
-            // about the statement rather than the absence of one.
-            putIfPresent("currency", currency)
-        },
-    )
-
-    override suspend fun rerunMatching(statementId: String): ZillitResult<Unit> = post(
-        "$base/receipts/rerun-match",
-        buildJsonObject { put("statementId", JsonPrimitive(statementId)) },
-    )
-
-    override suspend fun importRows(importId: String): ZillitResult<List<StatementRow>> =
-        get("$base/imports/$importId/rows", ListSerializer(StatementRowDto.serializer()))
-            .map { rows -> rows.mapNotNull { it.toDomain() } }
-
-    override suspend fun processImport(importId: String, rowIds: List<String>): ZillitResult<Unit> =
-        post(
-            "$base/imports/$importId/process",
-            buildJsonObject { put("rows", jsonIds(rowIds)) },
-        )
-
-    override suspend fun submitRowsToHolders(transactionIds: List<String>): ZillitResult<Unit> =
-        post(
-            "$base/transactions/submit-to-users",
-            buildJsonObject { put("transactionIds", jsonIds(transactionIds)) },
-        )
 
     // -- transactions ------------------------------------------------------
 
@@ -354,6 +328,24 @@ class CardRepositoryImpl(
         body = buildJsonObject { put("transactionIds", jsonIds(transactionIds)) },
     ).map { it.toDomain() }
 
+    // -- the reconciliation surfaces (see CardInboxCalls) -------------------
+
+    private val inbox = CardInboxCalls(apiClient, config)
+
+    override suspend fun inboxReceiptDetail(receiptId: String) = inbox.receiptDetail(receiptId)
+
+    override suspend fun inboxMatchCandidates(receiptId: String) = inbox.matchCandidates(receiptId)
+
+    override suspend fun inboxWrite(write: InboxWrite) = inbox.write(write)
+
+    override suspend fun bulkDeleteTransactionsCounted(transactionIds: List<String>) =
+        inbox.bulkDelete(transactionIds)
+
+    override suspend fun importStatementFile(attachment: StoredStatement, currency: String?) =
+        inbox.importStatement(attachment, currency)
+
+    override suspend fun submitToCrew(transactionIds: List<String>) = inbox.submitToCrew(transactionIds)
+
     // -- receipts ----------------------------------------------------------
 
     override suspend fun receipts(scope: ReceiptScope): ZillitResult<List<CardReceipt>> =
@@ -396,19 +388,31 @@ class CardRepositoryImpl(
                     receipts.forEach { receipt ->
                         add(
                             buildJsonObject {
-                                putIfPresent("card_id", card?.id)
+                                // The web's batch row, key for key (`UserReceiptsPage.jsx:354-368`):
+                                // card and company explicit null when unknown, the three
+                                // coding keys always present (blank when not given), and
+                                // the date as the form's `YYYY-MM-DD` — not epoch millis.
+                                put("card_id", card?.id?.let(::JsonPrimitive) ?: JsonNull)
                                 putIfPresent("currency", card?.currency)
-                                putIfPresent("company_id", card?.companyId)
+                                val company = card?.companyId?.takeIf { it.isNotBlank() }
+                                put("company_id", company?.let(::JsonPrimitive) ?: JsonNull)
                                 put("description", JsonPrimitive(receipt.description.trim()))
                                 put("amount", JsonPrimitive(receipt.amountValue))
                                 put("category", JsonPrimitive(receipt.category.wire))
-                                receipt.date?.let { put("date", JsonPrimitive(it)) }
+                                receipt.date?.let { put("date", JsonPrimitive(CardDates.toIso(it))) }
                                 put("is_urgent", JsonPrimitive(receipt.urgent))
                                 put("request_top_up", JsonPrimitive(receipt.requestTopUp))
-                                putIfPresent("cost_code", receipt.costCode)
-                                putIfPresent("episode", receipt.episode)
-                                putIfPresent("coded_description", receipt.codedDescription)
-                                putIfPresent("receipt_attachment", receipt.attachmentKey)
+                                put("cost_code", JsonPrimitive(receipt.costCode.trim()))
+                                put("episode", JsonPrimitive(receipt.episode.trim()))
+                                put("coded_description", JsonPrimitive(receipt.codedDescription.trim()))
+                                // The stored file as the web's AttachmentModel; a key on
+                                // its own only where the host could say nothing more.
+                                val file = receipt.attachment
+                                if (file != null) {
+                                    put("receipt_attachment", file.model())
+                                } else {
+                                    putIfPresent("receipt_attachment", receipt.attachmentKey)
+                                }
                             },
                         )
                     }
@@ -499,6 +503,21 @@ class CardRepositoryImpl(
         get("$base/receipts/$receiptId/history", ListSerializer(CardHistoryDto.serializer()))
             .map { rows -> rows.map { it.toDomain() } }
 
+    // -- the cardholder's pages ----------------------------------------------
+
+    override suspend fun cardsForApproval(): ZillitResult<List<ExpenseCard>> =
+        get(
+            url = "$base/cards",
+            serializer = ListSerializer(CardDto.serializer()),
+            query = mapOf("status" to PENDING, "for_approval" to "true"),
+        ).map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    override suspend fun updateReceipt(receiptId: String, edit: ReceiptEdit): ZillitResult<Unit> =
+        patch("$base/receipts/$receiptId", edit.body())
+
+    override suspend fun confirmReceipt(receiptId: String): ZillitResult<Unit> =
+        post("$base/receipts/$receiptId/confirm", null)
+
     // -- bulk processing ---------------------------------------------------
 
     override suspend fun bulkProcessable(): ZillitResult<List<BulkItem>> =
@@ -524,7 +543,17 @@ class CardRepositoryImpl(
                     putOrNull("nominal_code", coding.nominalCode)
                     putOrNull("department_id", coding.departmentId)
                     putOrNull("episode", coding.episode)
-                    putOrNull("tax", coding.taxType)
+                    // `null` or the type with its rate — never a bare string,
+                    // which the server cannot apply.
+                    put(
+                        "tax",
+                        coding.taxType?.takeIf { it.isNotBlank() }?.let { type ->
+                            buildJsonObject {
+                                put("tax_type", JsonPrimitive(type))
+                                put("tax_rate", JsonPrimitive(coding.taxRate ?: 0.0))
+                            }
+                        } ?: JsonNull,
+                    )
                     put("topup", JsonPrimitive(coding.topUp.wire))
                 },
             )
@@ -544,14 +573,15 @@ class CardRepositoryImpl(
     override suspend fun approvalQueue(): ZillitResult<List<CardReceipt>> =
         receiptList("$base/approvals")
 
-    override suspend fun approveReceipt(receiptId: String, note: String?): ZillitResult<Unit> =
-        post("$base/approvals/$receiptId/approve", noteBody(note))
+    override suspend fun approveReceipt(receiptId: String, tierNumber: Int, userId: String): ZillitResult<Unit> =
+        post("$base/approvals/$receiptId/approve", approveBody(tierNumber, userId))
 
-    override suspend fun rejectReceipt(receiptId: String, reason: String): ZillitResult<Unit> =
-        post(
-            "$base/approvals/$receiptId/reject",
-            buildJsonObject { put("reason", JsonPrimitive(reason)) },
-        )
+    override suspend fun rejectReceipt(receiptId: String, reason: String, userId: String): ZillitResult<Unit> =
+        post("$base/approvals/$receiptId/reject", rejectBody(reason, userId))
+
+    private val processCalls = CardProcessCalls(apiClient, config)
+
+    override suspend fun processReferences(): ZillitResult<ProcessRefs> = processCalls.references()
 
     override suspend fun overrideReceipt(receiptId: String, userId: String, reason: String): ZillitResult<Unit> =
         post("$base/approvals/$receiptId/override", actorBody(userId, reason))
@@ -569,7 +599,13 @@ class CardRepositoryImpl(
 
     // -- top-ups -----------------------------------------------------------
 
-    override suspend fun topUps(): ZillitResult<List<CardTopUp>> = topUpList("$base/topups")
+    /**
+     * The funding queue — card top-ups only. `/topups` also carries cash float
+     * top-ups, which live elsewhere; a row with no `entity_type` is a card's
+     * (`TopUpToDoPage.jsx:141`).
+     */
+    override suspend fun topUps(): ZillitResult<List<CardTopUp>> =
+        topUpList("$base/topups").map { rows -> rows.filter { (it.entityType ?: CARD_ENTITY) == CARD_ENTITY } }
 
     override suspend fun cardTopUps(cardId: String): ZillitResult<List<CardTopUp>> =
         topUpList("$base/cards/$cardId/top-ups")
@@ -593,8 +629,9 @@ class CardRepositoryImpl(
         },
     )
 
+    /** An empty object, as the web's `completeTopup(t.id, {})` sends (`TopUpToDoPage.jsx:181`). */
     override suspend fun completeTopUp(topUpId: String): ZillitResult<Unit> =
-        patch("$base/topups/$topUpId/complete", null)
+        patch("$base/topups/$topUpId/complete", JsonObject(emptyMap()))
 
     override suspend fun partialTopUp(topUpId: String, amount: Double?, note: String): ZillitResult<Unit> =
         patch(
@@ -651,8 +688,12 @@ class CardRepositoryImpl(
         get("$base/alerts", ListSerializer(AlertDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
+    /**
+     * Always `{note}`, empty or not — the web's `resolveAlert(id, {note})`
+     * (`SmartAlertsPage.jsx:144-148`), where the note is optional.
+     */
     override suspend fun resolveAlert(alertId: String, note: String?): ZillitResult<Unit> =
-        patch("$base/alerts/$alertId/resolve", noteBody(note))
+        patch("$base/alerts/$alertId/resolve", buildJsonObject { put("note", JsonPrimitive(note.orEmpty())) })
 
     override suspend fun dismissAlert(alertId: String): ZillitResult<Unit> =
         patch("$base/alerts/$alertId/dismiss", null)
@@ -734,12 +775,14 @@ class CardRepositoryImpl(
     }
 
     /**
-     * Every field of every provider, not only the two this screen shows: the
-     * list is replaced whole, and a row sent as `{id, name}` loses its bank
-     * binding, its company and its custodian and float accounts.
+     * Every field of every provider: the list is replaced whole, and a row
+     * sent as `{id, name}` loses its bank binding, its company and its
+     * custodian and float accounts. Only rows with nothing typed at all are
+     * dropped (`sanitizeCardProviders`) — a row with a bank but no name yet
+     * is kept, and flagged on the page instead.
      */
     private fun CardSettings.providersBody() = buildJsonArray {
-        providers.filter { it.name.isNotBlank() }.forEach { provider -> add(provider.body()) }
+        providers.filterNot { it.blank }.forEach { provider -> add(provider.body()) }
     }
 
     // -- plumbing ----------------------------------------------------------
@@ -779,7 +822,10 @@ class CardRepositoryImpl(
      * already knows its own — so they are echoed rather than looked up.
      */
     private fun ReceiptCoding.body(): JsonObject = buildJsonObject {
-        put("nominal_code", JsonPrimitive(nominalCode.trim()))
+        // Left out when blank, as the web's `costCode || undefined`: the
+        // coding queue's Save Draft may go with no code, and a blank string
+        // would overwrite one somebody else had saved.
+        putIfPresent("nominal_code", nominalCode)
         putIfPresent("episode", episode)
         putIfPresent("code_description", codeDescription)
         put("card_id", cardId?.let(::JsonPrimitive) ?: JsonNull)
@@ -789,9 +835,6 @@ class CardRepositoryImpl(
     private fun jsonIds(ids: List<String>) =
         buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } }
 
-    private fun noteBody(note: String?): JsonObject? =
-        note?.takeIf { it.isNotBlank() }?.let { buildJsonObject { put("note", JsonPrimitive(it)) } }
-
     /** Who did it and why — the body every reject and override carries on the web. */
     private fun actorBody(userId: String, reason: String): JsonObject = buildJsonObject {
         put("user_id", JsonPrimitive(userId))
@@ -800,6 +843,7 @@ class CardRepositoryImpl(
 
     private companion object {
         const val PENDING = "pending"
+        const val CARD_ENTITY = "card"
         const val PHYSICAL = "physical"
         const val LAST_FOUR = 4
     }

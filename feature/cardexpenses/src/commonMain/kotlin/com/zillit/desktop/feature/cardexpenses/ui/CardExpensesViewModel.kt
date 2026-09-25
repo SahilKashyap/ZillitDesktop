@@ -10,8 +10,12 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.data.cardRefreshes
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
 import com.zillit.desktop.feature.cardexpenses.domain.CardBank
+import com.zillit.desktop.feature.cardexpenses.domain.CardCrewHost
 import com.zillit.desktop.feature.cardexpenses.domain.CardFiles
+import com.zillit.desktop.feature.cardexpenses.domain.CardHubSource
+import com.zillit.desktop.feature.cardexpenses.domain.CardInboxHost
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
+import com.zillit.desktop.feature.cardexpenses.domain.CardReference
 import com.zillit.desktop.feature.cardexpenses.domain.CardRepository
 import com.zillit.desktop.feature.cardexpenses.domain.CardViewer
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
@@ -31,7 +35,9 @@ import kotlinx.coroutines.Job
  * export lands. Each defaults to doing nothing, which degrades to a form that
  * cannot pick a holder, a file or a destination rather than to a crash.
  */
-@Suppress("TooManyFunctions") // One handler per user action; the alternative is a 300-line when.
+// One handler per user action; the alternative is a 300-line when. The
+// constructor takes each host seam separately, so a host wires only the ones it has.
+@Suppress("TooManyFunctions", "LongParameterList")
 class CardExpensesViewModel(
     private val repository: CardRepository,
     /**
@@ -53,6 +59,19 @@ class CardExpensesViewModel(
     private val today: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     /** The production's bank accounts, for fund requests; they belong to the hub, not this service. */
     banks: suspend () -> List<CardBank> = { emptyList() },
+    /** The production's currencies, rates, companies and banks, for the card forms and the dashboard. */
+    reference: suspend () -> CardReference = { CardReference() },
+    /** The hub's companies, departments and assignment-rule routes; see [CardHubSource]. */
+    hub: CardHubSource = CardHubSource.None,
+    /**
+     * The reconciliation pages' host seams — the statement picker and store,
+     * the receipt document store, the departments and currencies catalogues.
+     * Null leaves Import Statement unable to pick a file and the detail
+     * without an inline preview. See [CardInboxHost].
+     */
+    inboxHost: CardInboxHost? = null,
+    /** The crew pages' companies, chart codes and TV flag; see [CardCrewHost]. */
+    crewHost: CardCrewHost = CardCrewHost(),
     /** Read at start, not at construction — see the cash module's equivalent. */
     private val viewer: () -> CardViewer,
 ) : ZillitViewModel<CardUiState, CardEvent, CardEffect>(
@@ -60,6 +79,7 @@ class CardExpensesViewModel(
         viewer = viewer(),
         destination = CardDestination.landing(viewer()),
         canAttachFiles = uploader != null,
+        inbox = InboxState(canPickStatements = inboxHost != null),
     ),
 ) {
 
@@ -74,9 +94,24 @@ class CardExpensesViewModel(
     /** A page asked for before the rights that allow it had arrived. */
     private var pendingPage: CardDestination? = null
 
-    /** The page on screen is its read — every key it is filed under that has rows. */
+    /**
+     * The page on screen is its read — but only on the three pages the web
+     * reads whole on mount (Smart Alerts, Top-Up To Do, Card Extension).
+     * Everywhere else a row is read as it is opened ([readRow]), so the
+     * other rows keep their chips, as on the web.
+     */
     private fun readPage(destination: CardDestination) {
+        if (destination !in WHOLE_READ_PAGES) return
         destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
+    }
+
+    /**
+     * One row read as it opens — the web's `emitCardLevelRead`: [id] is the
+     * row's `level_3`, [kind] the action label narrowing it to one `level_2`
+     * (`card_receipt`, `query_chat`). Sent only while that row has unread.
+     */
+    internal fun readRow(key: String, id: String, kind: String? = null) {
+        if (currentState.unreadRow(key, id) > 0) badges.readEntity(key, id, kind)
     }
 
     /** The register's own actions; see [CardRegisterActions]. */
@@ -88,8 +123,8 @@ class CardExpensesViewModel(
     /** One receipt: choosing, attaching, uploading, coding. */
     private val receipts = CardReceiptActions(this, uploader)
 
-    /** Importing a statement and reviewing what came off it. */
-    private val statements = CardStatementActions(this, uploader)
+    /** Import Statement, the Receipt Inbox and All Transactions; see [CardInboxActions]. */
+    internal val inboxActions = CardInboxActions(this, inboxHost, banks)
 
     /** Answered confirmations and the bulk bars; see [CardPromptActions]. */
     private val prompts = CardPromptActions(this, deleteCard = register::delete)
@@ -103,8 +138,15 @@ class CardExpensesViewModel(
     /** Query threads and fund requests; see [CardQueryFundActions]. */
     private val extras = CardQueryFundActions(this, banks)
 
+    /** The register, the card detail and the Card tab; see [CardsActions]. */
+    private val cardActions = CardsActions(this, register::select, reference)
+    /** Top-Up To Do, Smart Alerts and the Settings modals; see [CardInsightActions]. */
+    internal val insights = CardInsightActions(this, hub, banks)
+    /** The cardholder pages; see [CardCrewActions]. */
+    private val crewActions = CardCrewActions(this, uploader, crewHost)
+
     /** What each page reads; see [CardPageLoader]. */
-    private val loader = CardPageLoader(this, statements::load)
+    private val loader = CardPageLoader(this, inboxActions::loadImport)
 
     // -- the seams the collaborators work through --------------------------
     //
@@ -119,6 +161,8 @@ class CardExpensesViewModel(
     internal fun update(reducer: CardUiState.() -> CardUiState) = setState(reducer)
 
     internal fun fail(message: String) = sendEffect(CardEffect.Failed(message))
+
+    internal fun emit(effect: CardEffect) = sendEffect(effect)
 
     internal fun run(block: suspend () -> Unit) = launch { block() }
 
@@ -150,10 +194,11 @@ class CardExpensesViewModel(
             launch {
                 badges.counts.collect { counts ->
                     setState { copy(unread = counts) }
-                    // A row landing on the open page is read as it lands.
+                    // A row landing on a page read whole is read as it lands.
                     readPage(currentState.destination)
                 }
             }
+            launch { badges.entityCounts.collect { rows -> setState { copy(rowUnread = rows) } } }
         }
 
         // Somebody else's approval, coding or import. Only the page on screen
@@ -234,10 +279,17 @@ class CardExpensesViewModel(
         // outside the reducer — `setState` takes a plain lambda.
         val crew = people()
         setState { copy(people = crew) }
+        cardActions.start()
         load(currentState.destination)
     }
 
     override fun onEvent(event: CardEvent) {
+        if (event is CardsEvent) return cardActions.handle(event)
+        if (event is InboxEvent) {
+            inboxActions.handle(event)
+            return
+        }
+        if (event is CrewEvent) return crewActions.handle(event)
         if (processing.handle(event) || lifecycle.handle(event) || extras.handle(event)) return
         route(event)
     }
@@ -265,7 +317,9 @@ class CardExpensesViewModel(
             is CardEvent.FilterStatus -> setState { copy(statusFilter = event.status) }
             is CardEvent.FilterInboxSection -> setState { copy(inboxSection = event.section) }
             is CardEvent.SetTransactionFilters -> {
-                setState { copy(transactionFilters = event.filters, selection = emptySet()) }
+                // The selection outlives the filters, as the web's raw set does:
+                // what Delete sends is intersected with the rows on screen.
+                setState { copy(transactionFilters = event.filters) }
                 if (currentState.destination == CardDestination.AllTransactions) reload()
             }
             is CardEvent.SelectReceipt -> receipts.select(event.receiptId)
@@ -344,16 +398,10 @@ class CardExpensesViewModel(
             // figures but never look at the receipt.
             is CardEvent.ViewReceipt -> sendEffect(CardEffect.OpenAttachment(event.attachmentKey))
 
-            CardEvent.ImportStatement -> statements.import()
-            is CardEvent.EditStatementCurrency -> setState { copy(statementCurrency = event.currency) }
-
             is CardEvent.EditSettings -> setState { copy(settingsDraft = event.settings) }
             is CardEvent.SaveSettings -> configuration.save(event.section)
             CardEvent.DiscardSettings -> setState { copy(settingsDraft = settings) }
-            is CardEvent.SetAnalyticsRange -> {
-                setState { copy(analyticsRange = event.range) }
-                load(CardDestination.Analytics)
-            }
+            is InsightsEvent -> insights.handle(event)
 
             is CardEvent.EditBulkCoding -> setState { copy(bulkCoding = event.coding) }
             CardEvent.SelectAllBulk -> setState {
@@ -363,10 +411,6 @@ class CardExpensesViewModel(
             }
 
             CardEvent.BulkPost -> prompts.bulkPost()
-
-            is CardEvent.OpenImport -> statements.open(event.importId)
-            CardEvent.ProcessImportRows -> statements.processRows()
-            CardEvent.SubmitRowsToHolders -> statements.submitRows()
 
             // Owned by the collaborators routed in onEvent.
             else -> Unit
@@ -422,6 +466,12 @@ class CardExpensesViewModel(
                 receiptHistory = emptyList(),
                 process = null,
                 processTab = ProcessTab.Processing,
+                fullScreen = false,
+                cardsArea = cardsArea.copy(openCardId = null, historyOpen = false, bsDraft = null),
+                // The receipt detail and manual match belong to the inbox; the
+                // import's statement stays until New Import, as the web's page does.
+                inbox = inbox.copy(detail = null, manualMatch = null),
+                crew = crew.onPageChange(),
                 // All Transactions opens on the last month of spend, as the
                 // web's does; the filters say so and one press clears them.
                 transactionFilters = if (destination == CardDestination.AllTransactions) {
@@ -492,3 +542,10 @@ class CardExpensesViewModel(
         }
     }
 }
+
+/** The pages the web reads whole on mount; every other page reads row by row. */
+private val WHOLE_READ_PAGES = setOf(
+    CardDestination.Alerts,
+    CardDestination.TopUpQueue,
+    CardDestination.CardExtension,
+)

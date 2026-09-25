@@ -1,12 +1,15 @@
 package com.zillit.desktop.feature.cardexpenses.data
 
 import com.zillit.desktop.core.common.toAmountOrNull
+import com.zillit.desktop.core.common.toEpochMillisOrNull
 import com.zillit.desktop.feature.cardexpenses.domain.ApprovalTier
 import com.zillit.desktop.feature.cardexpenses.domain.CardApproval
 import com.zillit.desktop.feature.cardexpenses.domain.FixedLine
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessLine
+import com.zillit.desktop.feature.cardexpenses.domain.ProcessingFlag
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCapBasis
+import com.zillit.desktop.feature.cardexpenses.domain.TaxLineDraft
 import com.zillit.desktop.feature.cardexpenses.domain.TierConfig
 import com.zillit.desktop.feature.cardexpenses.domain.TierRule
 import com.zillit.desktop.feature.cardexpenses.domain.round2
@@ -65,12 +68,12 @@ internal fun JsonElement?.truthy(): Boolean {
 private fun JsonElement?.unwrappedPrimitive(): JsonPrimitive? =
     (this as? JsonPrimitive)?.takeIf { it !is JsonNull }
 
-/** A card's or receipt's sign-offs: `[{user_id, tier_number}]`, maybe as a string. */
+/** A card's or receipt's sign-offs: `[{user_id, tier_number, approved_at}]`, maybe as a string. */
 internal fun JsonElement?.readApprovals(): List<CardApproval> =
     objects().mapNotNull { row ->
         val user = row.text("user_id") ?: return@mapNotNull null
         val tier = row.number("tier_number")?.toInt() ?: return@mapNotNull null
-        CardApproval(userId = user, tierNumber = tier)
+        CardApproval(userId = user, tierNumber = tier, approvedAt = row.text("approved_at").toEpochMillisOrNull())
     }
 
 /**
@@ -88,25 +91,69 @@ internal fun JsonElement?.readFlags(): Set<String> =
     }.orEmpty().toSet()
 
 /**
- * A receipt's lines, split into the ones the editor codes and the ones the
- * server owns.
+ * The rules a receipt tripped, whole: `{flag, title, description,
+ * threshold_value, threshold_type}` — or a legacy bare name, which reads as a
+ * rule with nothing but its flag.
+ */
+internal fun JsonElement?.readFlagRules(): List<ProcessingFlag> =
+    (unwrapped() as? JsonArray)?.mapNotNull { item ->
+        when (item) {
+            is JsonObject -> item.text("flag")?.let { flag ->
+                ProcessingFlag(
+                    flag = flag,
+                    title = item.text("title"),
+                    description = item.text("description"),
+                    thresholdValue = item.number("threshold_value"),
+                    thresholdType = item.text("threshold_type"),
+                )
+            }
+
+            is JsonPrimitive -> item.takeIf { it !is JsonNull }?.content?.trim()?.takeIf { it.isNotEmpty() }
+                ?.let { ProcessingFlag(flag = it) }
+
+            else -> null
+        }
+    }.orEmpty()
+
+/** What a receipt's `line_items` holds: the coded lines, the auto-deductions, and the saved tax row. */
+internal data class LineItemsRead(
+    val coded: List<ProcessLine>,
+    val fixed: List<FixedLine>,
+    val taxLine: TaxLineDraft?,
+)
+
+/**
+ * A receipt's lines, split into the ones the editor codes, the ones the
+ * server owns, and the reclaimable-tax row.
  *
  * The wire's `amount` is **gross**; the editor's net is backed out of it at the
  * line's rate rather than read off `unit_price`, which legacy and bulk rows
- * wrote tax-inclusive — the web's `toEditorLine` makes the same choice.
+ * wrote tax-inclusive — the web's `toEditorLine` makes the same choice. The
+ * saved `is_tax` row is not a line: it hydrates the tax row as an override,
+ * so what was saved is what reopens (`ProcessReceiptModal.jsx:230-244`).
  */
-internal fun JsonElement?.readLineItems(): Pair<List<ProcessLine>, List<FixedLine>> {
+internal fun JsonElement?.readLineItems(): LineItemsRead {
     val coded = mutableListOf<ProcessLine>()
     val fixed = mutableListOf<FixedLine>()
+    var tax: TaxLineDraft? = null
     objects().forEach { row ->
         val gross = row.number("amount") ?: 0.0
         when {
             row.isAuto() -> fixed += FixedLine(row, gross, row.number("tax_amount") ?: 0.0, countsInTotal = true)
-            row.isTax() -> fixed += FixedLine(row, gross, tax = 0.0, countsInTotal = false)
+            row.isTax() -> if (tax == null) {
+                tax = TaxLineDraft(
+                    account = row.text("account").orEmpty(),
+                    amount = row.number("amount") ?: row.number("unit_price") ?: 0.0,
+                    overridden = true,
+                    trackingCodes = row["tracking_codes"].readCodes(),
+                    tags = row["tags"].readTags(),
+                )
+            }
+
             else -> coded += row.toProcessLine(gross)
         }
     }
-    return coded to fixed
+    return LineItemsRead(coded, fixed, tax)
 }
 
 private fun JsonObject.isAuto(): Boolean {
@@ -128,8 +175,25 @@ private fun JsonObject.toProcessLine(gross: Double): ProcessLine {
         taxRate = rate,
         quantity = quantity,
         raw = this,
+        taxType = text("tax_type").orEmpty(),
+        splitParentId = text("split_parent_id") ?: text("splitParentId"),
+        trackingCodes = this["tracking_codes"].readCodes(),
+        tags = this["tags"].readTags(),
     )
 }
+
+/** Layers picks: `{set_id: code}`, as an object or a JSON string holding one. */
+private fun JsonElement?.readCodes(): Map<String, String> =
+    (unwrapped() as? JsonObject)?.mapNotNull { (set, code) ->
+        (code as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { set to it }
+    }?.toMap().orEmpty()
+
+/** Tags: an array or a JSON string of one — reading only arrays reset saved tags on every reopen. */
+private fun JsonElement?.readTags(): List<String> =
+    (unwrapped() as? JsonArray)?.mapNotNull {
+        (it as? JsonPrimitive)?.takeIf { p -> p !is JsonNull }?.content?.trim()?.takeIf(String::isNotEmpty)
+    }.orEmpty()
 
 /** `approval_tier_configs`: rows of `{scope, department_id, tiers}`. */
 internal fun JsonElement?.readTierConfigs(): List<TierConfig> =

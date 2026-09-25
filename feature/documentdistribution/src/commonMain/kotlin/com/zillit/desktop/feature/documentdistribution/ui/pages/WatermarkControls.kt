@@ -35,22 +35,39 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.media.decodeImageBitmap
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSize
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
+import com.zillit.desktop.feature.documentdistribution.domain.describe
+import com.zillit.desktop.feature.documentdistribution.domain.sameAppearanceAs
+import com.zillit.desktop.feature.documentdistribution.domain.withDefaults
 import kotlin.math.roundToInt
 
 /**
  * Size / colour / opacity — the web's `WatermarkStyleControls`, shared by
- * the composer's wizard, the single download and the batch zip.
+ * the composer's wizard, the single download, the batch zip and the project's
+ * Watermark settings.
+ *
+ * [projectDefault] (the send flows, once the settings have loaded) adds the
+ * web's note comparing this stamp with the project's settings, and a way back
+ * to them. A change made here applies to that one send; the project's settings
+ * are saved only from the Watermark settings dialog.
  */
 @Composable
-internal fun WatermarkStyleControls(value: WatermarkStyle, onChange: (WatermarkStyle) -> Unit) {
+internal fun WatermarkStyleControls(
+    value: WatermarkStyle,
+    projectDefault: WatermarkSettings? = null,
+    onChange: (WatermarkStyle) -> Unit,
+) {
     val c = ZillitTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
@@ -102,6 +119,41 @@ internal fun WatermarkStyleControls(value: WatermarkStyle, onChange: (WatermarkS
                 },
             )
         }
+        projectDefault?.let { settings -> ProjectDefaultNote(value, settings, onChange) }
+    }
+}
+
+/** "Using this project's Watermark settings", or what they still are and a way back to them. */
+@Composable
+private fun ProjectDefaultNote(value: WatermarkStyle, settings: WatermarkSettings, onChange: (WatermarkStyle) -> Unit) {
+    val c = ZillitTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (value.sameAppearanceAs(settings)) {
+            ZillitText(
+                text = str(S.dd_watermark_note_using_project),
+                style = ZillitTheme.typography.bodySmall,
+                color = c.textSecondary,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            ZillitText(
+                // The catalogue's copy carries the web's <b> around the summary.
+                text = str(S.dd_watermark_note_changed_for_send, settings.describe()).replace(BOLD_TAGS, ""),
+                style = ZillitTheme.typography.bodySmall,
+                color = c.textSecondary,
+                modifier = Modifier.weight(1f),
+            )
+            ZillitButton(
+                text = str(S.dd_watermark_use_project_settings),
+                onClick = { onChange(value.withDefaults(settings)) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+        }
     }
 }
 
@@ -143,6 +195,7 @@ private fun OpacitySlider(value: Float, onChange: (Float) -> Unit) {
 private fun fractionAt(x: Float, width: Float): Float =
     OPACITY_MIN + (x / width).coerceIn(0f, 1f) * (OPACITY_MAX - OPACITY_MIN)
 
+private val BOLD_TAGS = Regex("</?b>")
 private val SLIDER_HEIGHT = 24.dp
 private val THUMB_RADIUS = 7.dp
 private const val TRACK_STROKE = 6f

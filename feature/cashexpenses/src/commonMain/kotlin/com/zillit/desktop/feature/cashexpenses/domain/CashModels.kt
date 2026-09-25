@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.cashexpenses.domain
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.forms.CustomFieldGroup
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -47,7 +49,39 @@ data class CashFloat(
     val createdAt: Long?,
     /** Who has signed at which level of the approval chain — see [ApprovalTiers]. */
     val approvals: List<TierApproval> = emptyList(),
+    /** When the crew member collects the cash — UTC epoch millis, as the request form sends it. */
+    val collectDate: Long? = null,
+    /** `HH:mm`, free text on the wire. */
+    val collectTime: String? = null,
+    val collectionMethod: String? = null,
+    /** The extra answers this production's float request form collected. */
+    val customFields: List<CustomFieldGroup> = emptyList(),
+    val activatedAt: Long? = null,
+    val closedAt: Long? = null,
+    /**
+     * `spent` as the server reports it — settled spend. Null when absent;
+     * [spent] is the figure worked out from issued and balance.
+     */
+    val reportedSpent: Double? = null,
+    val companyName: String? = null,
+    val episode: String? = null,
+    val createdBy: String? = null,
 ) {
+    /**
+     * Whether anything has been charged against the float — the web's
+     * `floatHasReceipts`. An unread figure counts as nothing, so a missing
+     * number never freezes a code the accountant needs to fix.
+     */
+    val hasReceipts: Boolean get() = (receiptsCommits ?: 0.0) > 0 || (reportedSpent ?: 0.0) > 0
+
+    /**
+     * May an accountant correct this float's BS code — `canEditFloatBsCode`:
+     * approved and live, nothing yet spent against it. Once a receipt commits,
+     * the code decides where that spend posted.
+     */
+    fun bsCodeEditable(isAccountant: Boolean): Boolean =
+        isAccountant && status in FloatStatus.BS_EDITABLE && !hasReceipts
+
     /** Cash spent so far, as the difference the crew member actually sees. */
     val spent: Double get() = (issuedAmount - balance).coerceAtLeast(0.0)
 
@@ -97,6 +131,18 @@ data class ClaimBatch(
     val escalatedBy: String? = null,
     /** Who has signed at which level of the approval chain — see [ApprovalTiers]. */
     val approvals: List<TierApproval> = emptyList(),
+    val escalatedAt: Long? = null,
+    val postedAt: Long? = null,
+    val rejectionReason: String? = null,
+    val rejectedBy: String? = null,
+    val rejectedAt: Long? = null,
+    val queryReason: String? = null,
+    /** The float the receipts were spent against; null on out-of-pocket. */
+    val floatRequestId: String? = null,
+    /** `settlement_details.follow_up` — `top_up`, `close`… as the submit form chose. */
+    val followUp: String? = null,
+    /** The whole `settlement_details` object, for what the fields above do not name. */
+    val settlementDetails: JsonObject? = null,
 ) {
     val lifecycle: Lifecycle get() = Lifecycle.of(status)
 }
@@ -135,9 +181,22 @@ data class Claim(
      * those.
      */
     val rawLines: List<JsonObject> = emptyList(),
+    /** The stored receipt as the web uploads it; [receiptUrl] is the older flat key. */
+    val attachment: CashAttachment? = null,
+    /** What the processing rules took off this receipt. */
+    val deductionAmount: Double = 0.0,
+    val batchReference: String? = null,
 ) {
+    /**
+     * The key to open — the attachment first, [receiptUrl] when a row has
+     * only that (the web's order).
+     */
+    val receiptKey: String?
+        get() = attachment?.media?.takeIf { it.isNotBlank() } ?: receiptUrl?.takeIf { it.isNotBlank() }
+
     /** Whether the attachment should be shown as a document rather than an image. */
-    val receiptIsPdf: Boolean get() = receiptUrl?.endsWith(".pdf", ignoreCase = true) == true
+    val receiptIsPdf: Boolean
+        get() = attachment?.isPdf ?: (receiptUrl?.endsWith(".pdf", ignoreCase = true) == true)
 }
 
 /**
@@ -162,6 +221,17 @@ data class ClaimLineItem(
     val taxType: String? = null,
     /** The line this was split off. Server ids only — see [LineItemEditor.toWire]. */
     val splitParentId: String? = null,
+    /** The consolidated reclaimable-tax line: its gross is its tax. */
+    val isTax: Boolean = false,
+    val taxAmount: Double? = null,
+    /** Coding layers, as stored — round-tripped, never interpreted here. */
+    val trackingCodes: JsonElement? = null,
+    val tags: JsonElement? = null,
+    /** As stored — a date string or an epoch, sent back as it came. */
+    val rentalStart: String? = null,
+    val rentalEnd: String? = null,
+    val sortOrder: Int? = null,
+    val expenditureType: String? = null,
 )
 
 /** A request to add cash to a float that is running low. */
@@ -178,6 +248,23 @@ data class CashTopUp(
     val floatBalance: Double,
     val floatRequestedAmount: Double,
     val createdAt: Long?,
+    /** What happened to the request, oldest first. */
+    val history: List<TopUpHistoryEntry> = emptyList(),
+    /** How the cash was asked for or paid — free text on the wire. */
+    val method: String? = null,
+    val updatedAt: Long? = null,
+    /** What was actually paid, on a completed or partial top-up. */
+    val issuedAmount: Double? = null,
+    val floatRequestId: String? = null,
+)
+
+/** One step of a top-up's life — `{action, action_by, action_at, reason, amount}`. */
+data class TopUpHistoryEntry(
+    val action: String,
+    val actionBy: String? = null,
+    val actionAt: Long? = null,
+    val reason: String? = null,
+    val amount: Double? = null,
 )
 
 /**
@@ -212,6 +299,12 @@ data class CashMetadata(
     val postingLimitUnlimited: Boolean = false,
     /** The production's approval chains, as `/metadata` hands them over. */
     val approvalTierConfigs: List<ApprovalTierConfig> = emptyList(),
+    /**
+     * The float request ceiling, as crew read it — `/settings` is an
+     * accountant's route, so the request form reads it here
+     * (`PCFloatRequestPage.jsx:270-280`). Null when the server sent none.
+     */
+    val requestCap: RequestCap? = null,
 )
 
 /**
@@ -239,6 +332,18 @@ data class CashSettings(
     val requestCap: RequestCap = RequestCap(),
     /** Who a batch lands with automatically; written through the account hub's own route. */
     val assignmentRules: List<CashAssignmentRule> = emptyList(),
+    /** Who codes and oversees each department's cash. */
+    val departmentCoordinators: List<DepartmentCoordinator> = emptyList(),
+)
+
+/** A department's coordinators — one row of the settings' `department_coordinators`. */
+data class DepartmentCoordinator(
+    val departmentId: String,
+    val userIds: List<String> = emptyList(),
+    /** Receipts from this department are coded by these coordinators before accounts sees them. */
+    val codingRequired: Boolean = false,
+    /** The coordinators see the department's floats on Active Floats. */
+    val viewDepartmentFloats: Boolean = false,
 )
 
 /** Someone on the cash team, with the rights the accountant granted them. */
@@ -385,20 +490,29 @@ data class PaymentRouting(
 
 data class CategorySpend(val category: String, val amount: Double)
 
-/** What one crew member sees about their own cash. */
+/**
+ * What one crew member sees about their own cash — `GET /claims/overview/my`.
+ *
+ * The two claim lists are *receipts* carrying their batch's reference and
+ * status (`PCCrewOverviewPage.jsx:89-111`), not batches. See [RecentClaim].
+ */
 data class MyCashOverview(
-    val pettyCashClaims: List<ClaimBatch> = emptyList(),
-    val outOfPocketClaims: List<ClaimBatch> = emptyList(),
+    val pettyCashClaims: List<RecentClaim> = emptyList(),
+    val outOfPocketClaims: List<RecentClaim> = emptyList(),
     val floats: List<CashFloat> = emptyList(),
 )
 
-/** A coordinator's view of one department's floats and batches. */
+/**
+ * A coordinator's view of one department — `GET /claims/overview/department`:
+ * `floats`, `oop_batches`, `stats` and `spend_by_category`
+ * (`PCDeptViewPage.jsx:44`). [departmentId] is the one asked about.
+ */
 data class DepartmentOverview(
     val departmentId: String?,
     val floats: List<CashFloat> = emptyList(),
-    val batches: List<ClaimBatch> = emptyList(),
-    val totalIssued: Double = 0.0,
-    val totalSpent: Double = 0.0,
+    val outOfPocketBatches: List<ClaimBatch> = emptyList(),
+    val stats: DepartmentStats = DepartmentStats(),
+    val spendByCategory: List<DepartmentCategorySpend> = emptyList(),
 )
 
 /** A period's cash count, reconciled against the book balance. */
@@ -420,6 +534,13 @@ data class Reconciliation(
     val storedVariance: Double? = null,
     val denominations: List<Denomination> = emptyList(),
     val reconcilingItems: List<ReconItem> = emptyList(),
+    val createdBy: String? = null,
+    val updatedBy: String? = null,
+    val updatedAt: Long? = null,
+    val submittedBy: String? = null,
+    val submittedAt: Long? = null,
+    val signedBy: String? = null,
+    val signedAt: Long? = null,
 ) {
     /** Counted minus book, unless the server already worked it out with the reconciling items. */
     val variance: Double get() = storedVariance ?: (countedBalance - bookBalance)
@@ -441,10 +562,56 @@ data class DraftReceipt(
     val supplier: String = "",
     val amount: String = "",
     val vat: String = "",
-    val category: String = ExpenseCategory.Other.wire,
+    // Materials first, as the web's receipt card starts (`ReceiptSubmitForm.jsx`).
+    val category: String = ExpenseCategory.Materials.wire,
     val costCode: String = "",
     val date: Long? = null,
     /** The uploaded attachment's storage key. Null until the upload finishes. */
     val attachmentKey: String? = null,
     val attachmentName: String? = null,
+    /**
+     * The uploaded file as the claim route takes it; when present it is sent
+     * as `attachment`, and [attachmentKey] mirrors its key.
+     */
+    val attachment: CashAttachment? = null,
+    // -- crew parity --
+    /** Budget coding's episode — television productions only. */
+    val episode: String = "",
+    /** Budget coding's description — `coded_description`, not the vendor. */
+    val codedDescription: String = "",
+)
+
+/**
+ * `GET /float-requests/{id}/details` — one float and everything that moved
+ * it: the batches spent against it, its top-ups and its returns.
+ */
+data class FloatDetails(
+    val float: CashFloat?,
+    val totals: FloatTotals = FloatTotals(),
+    val batches: List<ClaimBatch> = emptyList(),
+    val topUps: List<CashTopUp> = emptyList(),
+    val returns: List<FloatReturn> = emptyList(),
+)
+
+/** The detail's `totals` block, as the server worked it out. */
+data class FloatTotals(
+    val requested: Double = 0.0,
+    val issued: Double = 0.0,
+    val spent: Double = 0.0,
+    val toppedUp: Double = 0.0,
+    val returned: Double = 0.0,
+    val finalBalance: Double = 0.0,
+)
+
+/** A cash return recorded against a float. */
+data class FloatReturn(
+    val id: String,
+    val amount: Double,
+    val currency: String?,
+    /** The wire key — see `ReturnReasons`. */
+    val reason: String?,
+    val recordedAt: Long?,
+    val receivedDate: Long?,
+    val notes: String?,
+    val recordedBy: String? = null,
 )

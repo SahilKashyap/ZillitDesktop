@@ -6,7 +6,8 @@ import com.zillit.desktop.core.strings.str
 /** Where a card is in its own lifecycle. */
 enum class CardStatus(val wire: String, private val labelKey: String) {
     Requested("requested", S.av_chip_requested),
-    Pending("pending", S.pending),
+    /** "Pending Approval" on every card surface (`adminUi.jsx:120`, `CardRegisterPage.jsx:83`). */
+    Pending("pending", S.desktop_ce_cards_pending_approval),
     Approved("approved", S.approved),
 
     /**
@@ -67,6 +68,9 @@ enum class CardWorkflowStatus(val wire: String, private val labelKey: String) {
     Queried("queried", S.ah_queried),
     Rejected("rejected", S.rejected),
     Personal("personal", S.personal),
+
+    /** Flagged a duplicate in the inbox (`ReceiptInboxPage.jsx:77`). */
+    Duplicate("duplicate", S.dd_csv_status_duplicate),
     Overridden("overridden", S.desktop_overridden),
     Processing("processing", S.desktop_card_processing),
 
@@ -104,6 +108,13 @@ val CardWorkflowStatus.canDelete: Boolean
 /** Whether a receipt has been tied to a statement line. */
 enum class MatchStatus(val wire: String, private val labelKey: String) {
     Matched("matched", S.desktop_matched),
+
+    /**
+     * The matcher's unconfirmed guess — what `POST /receipts/:id/confirm-match`
+     * exists to clear. Kept apart from [Matched]: folding it in drew a green
+     * "Reconciled" on a row one Attach short of done (`receiptReconciliation.js:28-36`).
+     */
+    Suggested("suggested_match", S.desktop_ce_inbox_match_suggested),
     Unmatched("unmatched", S.desktop_dm_unmatched),
     ;
 
@@ -111,19 +122,21 @@ enum class MatchStatus(val wire: String, private val labelKey: String) {
 
     companion object {
         /**
-         * Reads the wire value, treating anything unexpected as matched.
+         * Reads the wire value.
          *
-         * The backend contract is now only `matched` / `unmatched`, but older
-         * rows carry `suggested_match`. Product direction is that leftovers
-         * behave as matched; a **missing** value is unmatched, because the
-         * inbox groups rows with no status under "no match" and a "Reconciled"
-         * badge inside that section would contradict its own heading.
+         * A **missing** value is unmatched, because the inbox groups rows with
+         * no status under "no match" and a "Reconciled" badge inside that
+         * section would contradict its own heading. `suggested_match` is its
+         * own state; anything else (`matched`, and the `personal` /
+         * `duplicate` a flagged row may carry) reads as matched, as the web's
+         * badge rule does.
          */
         fun from(wire: String?): MatchStatus {
             val value = wire?.trim()?.lowercase()
             return when {
                 value.isNullOrEmpty() -> Unmatched
                 value == Unmatched.wire -> Unmatched
+                value == Suggested.wire -> Suggested
                 else -> Matched
             }
         }
@@ -281,6 +294,11 @@ data class CardViewer(
      * `CardExpensesToolProvider`.
      */
     val enteredAsTool: Boolean = false,
+    /**
+     * A television production — the only kind with episodes, so the Episode
+     * field and the "Ep N" line show only here (`useIsTelevisionProject`).
+     */
+    val isTelevision: Boolean = false,
 ) {
     /** In the accounts department, whichever door they came in by. */
     val isAccountsRole: Boolean
