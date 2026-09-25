@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Everything another client can do to a company card, its receipts or its
- * transactions — the 48 names both phones carry, in four sub-families
+ * transactions — the 48 names both phones carry (53 with the web's five below), in four sub-families
  * (`card:`, `card:receipt:`, `card:transaction:`, `card:alert:`).
  *
  * They are **not** mapped to individual pages, unlike every other sync in
@@ -26,7 +26,10 @@ import kotlinx.coroutines.flow.map
  * shape from the other side — each screen collects the flows for the lists it
  * shows and calls its own `load()`.
  *
- * The module subscribed to nothing at all before 2026-09-09.
+ * The module subscribed to nothing at all before 2026-09-09. The web's
+ * `accountHubListeners.js:1535-1549` also refetches the top-up list on
+ * `card:topup:completed|partial|skipped`, and its receipt family carries
+ * `awaiting_approval` and `escalated`; those five were added 2026-09-24.
  */
 val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
     "card:activated", "card:alert:created",
@@ -36,6 +39,7 @@ val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
     "card:created", "card:deleted",
     "card:import:processed", "card:overridden",
     "card:reactivated", "card:receipt:approved",
+    "card:receipt:awaiting_approval", "card:receipt:escalated",
     "card:receipt:assigned", "card:receipt:coded",
     "card:receipt:coding_submitted", "card:receipt:confirmed",
     "card:receipt:deleted", "card:receipt:disputed",
@@ -47,7 +51,9 @@ val CARD_SYNC_EVENTS: List<SocketEventName> = listOf(
     "card:rejected", "card:requested",
     "card:settings:updated", "card:suspended",
     "card:team:posting_rights_updated", "card:topup:history",
-    "card:topup:needed", "card:transaction:created",
+    "card:topup:needed", "card:topup:completed",
+    "card:topup:partial", "card:topup:skipped",
+    "card:transaction:created",
     "card:transaction:deleted", "card:transaction:posted",
     "card:transaction:queried", "card:transaction:reconciled",
     "card:transaction:rejected", "card:transaction:updated",

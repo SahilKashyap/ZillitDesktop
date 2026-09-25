@@ -43,7 +43,9 @@ internal class PromptDesk(
         when (prompt.action) {
             ConfirmAction.ApproveFloat -> floats.approve(id)
             ConfirmAction.OverrideFloat -> if (viewer.canOverrideFloat()) {
-                host.act(str(S.desktop_ce_float_overridden)) { host.repository.overrideFloat(id) }
+                host.act(str(S.desktop_ce_float_overridden), after = { floats.readApproval(id) }) {
+                    host.repository.overrideFloat(id)
+                }
             } else {
                 host.noRights()
             }
@@ -52,7 +54,9 @@ internal class PromptDesk(
             ConfirmAction.CloseFloat -> floats.close(id)
             ConfirmAction.ApproveBatch -> batches.approve(id)
             ConfirmAction.OverrideBatch -> if (viewer.canOverrideBatch()) {
-                host.act(str(S.desktop_ce_batch_overridden)) { host.repository.overrideBatch(id) }
+                host.act(str(S.desktop_ce_batch_overridden), after = { batches.readApproval(id) }) {
+                    host.repository.overrideBatch(id)
+                }
             } else {
                 host.noRights()
             }
@@ -81,7 +85,9 @@ internal class PromptDesk(
             ReasonedAction.RejectFloat -> {
                 val float = floats.float(prompt.targetId) ?: return true
                 if (CashRules.mayApprove(host.state.viewer, float)) {
-                    host.act(str(S.desktop_ce_float_rejected)) { host.repository.rejectFloat(prompt.targetId, reason) }
+                    host.act(str(S.desktop_ce_float_rejected), after = { floats.readApproval(prompt.targetId) }) {
+                        host.repository.rejectFloat(prompt.targetId, reason)
+                    }
                 } else {
                     host.noRights()
                 }
@@ -122,7 +128,7 @@ internal class PromptDesk(
         val state = host.state
         val batch = state.queueBatches.firstOrNull { it.id == prompt.batchId }
         val allowed = state.viewer.isAccountant && batch != null && !state.selectedLocked &&
-            (!state.destination.isPostLedger || CashRules.canOpenPostRow(state.viewer, batch))
+            (!state.destination.locksToAssignee || CashRules.canOpenPostRow(state.viewer, batch))
         if (!allowed) {
             host.noRights()
             return true
@@ -142,9 +148,10 @@ internal class PromptDesk(
                         } else {
                             str(S.desktop_ce_reassigned)
                         },
-                        // Handing a Post & Ledger batch on closes it for anyone it is no longer theirs.
-                        selectedBatchId = if (state.destination.isPostLedger) null else selectedBatchId,
-                        panel = if (state.destination.isPostLedger) null else panel,
+                        // Handing a Post & Ledger or Audit batch on closes it, as the
+                        // web's batch view closes (`PCAuditPage.jsx:122`).
+                        selectedBatchId = if (state.destination.locksToAssignee) null else selectedBatchId,
+                        panel = if (state.destination.locksToAssignee) null else panel,
                     )
                 }
 

@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallParticipant
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.MediaPeer
@@ -15,8 +16,12 @@ import com.zillit.desktop.feature.calls.ui.CallTile
 import com.zillit.desktop.feature.calls.ui.CallUiState
 import com.zillit.desktop.feature.calls.ui.afterWindowGesture
 import com.zillit.desktop.feature.calls.ui.callUserSections
+import com.zillit.desktop.feature.calls.ui.MAX_PINS
 import com.zillit.desktop.feature.calls.ui.isDuo
+import com.zillit.desktop.feature.calls.ui.pinnedTiles
 import com.zillit.desktop.feature.calls.ui.projectCallUi
+import com.zillit.desktop.feature.calls.ui.ringableOn
+import com.zillit.desktop.feature.calls.ui.togglePin
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -145,5 +150,69 @@ class CallUsersAndLayoutTest {
         val media = CallMedia(selfUid = 1, peers = mapOf(7 to MediaPeer(7, sharing = true)))
         val projected = projectCallUi(CallUiState(), CallSession(callUuid = "a"), media, false, false, "Me")
         assertEquals(CallStageKind.Video, projected.stage)
+    }
+
+    @Test
+    fun `a pin toggles, keeps pin order, and tells the page`() {
+        val pinned = state.togglePin("asha")
+        assertEquals(listOf("asha"), pinned.pins)
+        assertTrue(pinned.stageJson.contains(""""pins":["asha"]"""), pinned.stageJson)
+        assertTrue(pinned.stageJson.contains(""""key":"asha""""), pinned.stageJson)
+
+        val both = pinned.togglePin("me")
+        assertEquals(listOf("Asha", "Me"), pinnedTiles(both.tiles, both.pins).map { it.name })
+
+        val unpinned = both.togglePin("asha")
+        assertEquals(listOf("me"), unpinned.pins)
+        assertTrue(unpinned.stageJson.contains(""""pins":["me"]"""), unpinned.stageJson)
+    }
+
+    @Test
+    fun `a pin names someone on the stage, and past the cap the oldest goes`() {
+        assertEquals(state, state.togglePin("nobody"))
+        assertEquals(state, state.togglePin(""))
+
+        val crowd = (1..MAX_PINS + 1).map { CallTile(key = "p$it", name = "P$it", userId = "p$it") }
+        var full = CallUiState(tiles = crowd)
+        crowd.forEach { full = full.togglePin(it.key) }
+        assertEquals(crowd.drop(1).map { it.key }, full.pins)
+    }
+
+    @Test
+    fun `somebody who left takes their pin with them`() {
+        val pinned = state.togglePin("asha").togglePin("ravi")
+        val gone = pinned.copy(tiles = tiles.filterNot { it.key == "asha" })
+        // Asha is off the stage: she is not drawn big, and toggling someone
+        // else drops her stale pin instead of carrying it.
+        assertEquals(listOf("ravi"), pinnedTiles(gone.tiles, gone.pins).map { it.key })
+        assertEquals(listOf("ravi", "me"), gone.togglePin("me").pins)
+    }
+
+    @Test
+    fun `the page's pin press reaches the call`() {
+        assertEquals(
+            CallEngineEvent.PinRequested("asha"),
+            EngineBridge.parse("""{"type":"pin","key":"asha"}"""),
+        )
+        assertEquals(null, EngineBridge.parse("""{"type":"pin","key":""}"""))
+    }
+
+    @Test
+    fun `a new projection keeps the pins in the page's model`() {
+        val pinned = state.togglePin("asha")
+        val projected = projectCallUi(pinned, session, CallMedia(), false, false, "Me")
+        assertEquals(listOf("asha"), projected.pins)
+        assertTrue(projected.stageJson.contains(""""pins":["asha"]"""), projected.stageJson)
+    }
+
+    @Test
+    fun `Line 2 rings a device, Lines 1 and 3 a person, sorted by name`() {
+        val deviceless = crew + CallCrewEntry(userId = "amy", deviceId = "", name = "amy")
+        assertEquals(
+            listOf("asha", "bea", "me", "noor", "zed"),
+            deviceless.ringableOn(CallProvider.Agora).map { it.userId },
+        )
+        assertEquals("amy", deviceless.ringableOn(CallProvider.LiveKit).first().userId)
+        assertEquals("amy", deviceless.ringableOn(CallProvider.Mediasoup).first().userId)
     }
 }

@@ -39,7 +39,10 @@ class CashFormTemplateTest {
     @Test
     fun `the rendered fields are the ones this form has a control for`() {
         assertEquals(
-            setOf("requested_amount", "purpose", "duration", "duration_type", "department_id"),
+            setOf(
+                "user_id", "requested_amount", "purpose", "duration", "duration_type", "department_id",
+                "collect_date", "episode", "collection_method",
+            ),
             CashFormFields.RENDERED,
         )
         assertEquals("float_request", CashFormFields.FLOAT_REQUEST)
@@ -87,22 +90,22 @@ class CashFormTemplateTest {
     }
 
     /**
-     * A required field this form cannot offer is reported, not enforced.
-     *
-     * The collection date and the on-behalf-of picker belong to the web's
-     * fuller form, and blocking a request on a control that is not on screen
-     * leaves the person with nothing to do about it.
+     * Every float-request field is required but the department, and the start
+     * date and collection time are gone (`REMOVED_FLOAT_FIELDS`).
      */
     @Test
-    fun `a required collection date is reported rather than enforced`() {
+    fun `the request's fields are all required but the department, less the removed two`() {
         val form = layout(
-            FormField(label = "requested_amount", systemDefault = true, required = true),
-            FormField(label = "collect_date", name = "Collection date", systemDefault = true, required = true),
+            FormField(label = "department_id", name = "Department", systemDefault = true, order = 1),
+            FormField(label = "collect_date", name = "Collection date", systemDefault = true, order = 2),
+            FormField(label = "start_date", name = "Start date", systemDefault = true, order = 3, required = true),
+            FormField(label = "collect_time", name = "Collect time", systemDefault = true, order = 4),
         )
 
-        val unanswerable = form.requiredMissing(CashFormFields.FLOAT_REQUEST, CashFormFields.RENDERED)
+        val fields = CashFormFields.requestFields(form.visible(CashFormFields.FLOAT_REQUEST))
 
-        assertEquals(listOf("Collection date"), unanswerable.map { it.name })
+        assertEquals(listOf("department_id", "collect_date"), fields.map { it.label })
+        assertEquals(listOf(false, true), fields.map { it.required })
     }
 
     /** A form-template frame is filtered by module. */

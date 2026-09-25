@@ -33,6 +33,7 @@ import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
 import com.zillit.desktop.feature.cashexpenses.ui.LocalCashPeople
+import com.zillit.desktop.feature.cashexpenses.ui.isBatchWorkPage
 import com.zillit.desktop.feature.cashexpenses.ui.isPostLedger
 import com.zillit.desktop.feature.cashexpenses.ui.money
 
@@ -52,6 +53,8 @@ import com.zillit.desktop.feature.cashexpenses.ui.money
 @Suppress("LongMethod") // Header, queue and detail pane: one screen, read together.
 @Composable
 fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
+    // Post & Ledger, Audit, History and Coding open the web's full batch view.
+    if (state.destination.isBatchWorkPage) return BatchWorkPage(state, onEvent)
     val people = LocalCashPeople.current
     val batches = state.queueBatches.filter { it.matches(state.search, people) }
     val selected = batches.firstOrNull { it.id == state.selectedBatchId }

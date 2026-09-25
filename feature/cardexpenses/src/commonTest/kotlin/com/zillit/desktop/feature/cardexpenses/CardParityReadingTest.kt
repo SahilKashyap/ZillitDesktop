@@ -98,9 +98,14 @@ class CardParityReadingTest {
         assertEquals(100.0, line.net, "net = gross / (1 + rate)")
         assertEquals(20.0, line.taxRate)
         assertEquals(120.0, line.gross)
-        assertEquals(2, processing.fixedLines.size)
-        assertTrue(processing.fixedLines.first().countsInTotal, "an auto-deduction counts")
-        assertFalse(processing.fixedLines.last().countsInTotal, "the tax line does not")
+        assertTrue(processing.fixedLines.single().countsInTotal, "an auto-deduction counts, and goes back verbatim")
+        // The saved is_tax line is the reclaimable-tax row, hydrated as an
+        // override — regenerated on save, never re-sent as it came.
+        val tax = processing.taxLine ?: error("no tax row")
+        assertTrue(tax.overridden)
+        assertEquals("2200", tax.account)
+        assertEquals(mapOf("ep" to "101"), line.trackingCodes)
+        assertEquals("Big spend", processing.rules.first().title)
     }
 
     /** A queue row carries no lines, and must not pass for a loaded detail. */

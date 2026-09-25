@@ -74,22 +74,50 @@ enum class CashDestination(
      */
     val badgeKeys: List<String>
         get() = when (this) {
-            AuditQueue -> listOf("cash_audit_queue")
-            ApprovalQueue -> listOf("receipt_approval", "float_approval")
-            CodingQueue -> listOf("cash_coding_queue")
-            PostLedger -> listOf("pc_post_ledger")
-            ActiveFloats, FloatRequest -> listOf("pc_float")
-            TopUps -> listOf("pc_topups")
-            CashReconciliation -> listOf("pc_recon")
-            PettyCashSignOff -> listOf("pc_signoff")
-            OutOfPocketPost -> listOf("oop_post_ledger")
-            OutOfPocketSignOff -> listOf("oop_signoff")
-            ClaimReview -> listOf("receipt_approval")
-            ReceiptsHistory -> listOf("pc_history")
-            CashExtension -> listOf("cash_extension")
-            OutOfPocketHistory -> listOf("oop_history")
+            AuditQueue -> listOf(CashBadges.AUDIT_QUEUE)
+            ApprovalQueue -> listOf(CashBadges.RECEIPT_APPROVAL, CashBadges.FLOAT_APPROVAL)
+            CodingQueue -> listOf(CashBadges.CODING_QUEUE)
+            PostLedger -> listOf(CashBadges.PC_POST_LEDGER)
+            ActiveFloats, FloatRequest -> listOf(CashBadges.PC_FLOAT)
+            TopUps -> listOf(CashBadges.PC_TOPUPS)
+            CashReconciliation -> listOf(CashBadges.PC_RECON)
+            PettyCashSignOff -> listOf(CashBadges.PC_SIGNOFF)
+            OutOfPocketPost -> listOf(CashBadges.OOP_POST_LEDGER)
+            OutOfPocketSignOff -> listOf(CashBadges.OOP_SIGNOFF)
+            ClaimReview -> listOf(CashBadges.RECEIPT_APPROVAL)
+            ReceiptsHistory -> listOf(CashBadges.PC_HISTORY)
+            CashExtension -> listOf(CashBadges.CASH_EXTENSION)
+            OutOfPocketHistory -> listOf(CashBadges.OOP_HISTORY)
             else -> emptyList()
         }
+
+    /**
+     * The `level_1` a batch opened on this page is read under, or null where
+     * opening one reads nothing — the Approval Queue reads on the decision,
+     * not the open (ZL-20775, `PCApprovalPage.jsx:1080`). The web's
+     * `badgeLevel1` (`PCPostLedgerPage.jsx:555-558`), `PCSeniorPage` and
+     * `PCMyClaimsPage`.
+     */
+    val batchBadgeKey: String?
+        get() = when (this) {
+            CodingQueue -> CashBadges.CODING_QUEUE
+            AuditQueue -> CashBadges.AUDIT_QUEUE
+            PostLedger -> CashBadges.PC_POST_LEDGER
+            OutOfPocketPost -> CashBadges.OOP_POST_LEDGER
+            PettyCashSignOff -> CashBadges.PC_SIGNOFF
+            OutOfPocketSignOff -> CashBadges.OOP_SIGNOFF
+            ReceiptsHistory -> CashBadges.PC_HISTORY
+            OutOfPocketHistory -> CashBadges.OOP_HISTORY
+            else -> null
+        }
+
+    /**
+     * Whether arriving here reads the whole tab — only the two pages the web
+     * reads on mount (`CashExtensionPage.jsx:38-58`, `PCTopUpsPage.jsx:201-224`);
+     * every other page reads one entity as it is opened or acted on.
+     */
+    val readsWholeTab: Boolean
+        get() = this == CashExtension || this == TopUps
 
     /**
      * Whether [viewer] may open this page.
@@ -185,4 +213,46 @@ enum class CashSection(private val labelKey: String, val isOutOfPocket: Boolean 
     ;
 
     val label: String get() = str(labelKey)
+}
+
+/**
+ * The notification service's names for this module's rows — the web's
+ * `BADGE_CONSTANTS` for cash (`cash-expenses-badge-helpers.js`).
+ *
+ * A row sits at `level_1` (the page's area), `level_2` (what kind of thing:
+ * one of the `KIND_` names) and `level_3` (the thing's id). An accountant's
+ * rows file under the Account Hub's tool and everyone else's under this one —
+ * except the coding queue, which is always the crew side's.
+ */
+object CashBadges {
+    const val AUDIT_QUEUE = "cash_audit_queue"
+    const val CODING_QUEUE = "cash_coding_queue"
+    const val RECEIPT_APPROVAL = "receipt_approval"
+    const val FLOAT_APPROVAL = "float_approval"
+    const val PC_POST_LEDGER = "pc_post_ledger"
+    const val OOP_POST_LEDGER = "oop_post_ledger"
+    const val PC_SIGNOFF = "pc_signoff"
+    const val OOP_SIGNOFF = "oop_signoff"
+    const val PC_FLOAT = "pc_float"
+    const val PC_TOPUPS = "pc_topups"
+    const val PC_RECON = "pc_recon"
+    const val PC_HISTORY = "pc_history"
+    const val OOP_HISTORY = "oop_history"
+    const val CASH_EXTENSION = "cash_extension"
+
+    const val KIND_RECEIPT = "cash_receipt"
+    const val KIND_FLOAT = "cash_float"
+    const val KIND_TOPUP = "cash_topup"
+    const val KIND_RECON = "cash_recon"
+    const val KIND_QUERY = "query_chat"
+
+    /** The tool an accountant's rows file under. */
+    const val ACCOUNT_HUB_TOOL = "account_hub_label"
+
+    /** The tool everyone else's rows file under, and the unit every cash row shares. */
+    const val CASH_TOOL = "cash_expenses_label"
+
+    /** Which tool [level1]'s rows are filed under, for a viewer who [isAccountant] or not. */
+    fun toolFor(level1: String, isAccountant: Boolean): String =
+        if (isAccountant && level1 != CODING_QUEUE) ACCOUNT_HUB_TOOL else CASH_TOOL
 }

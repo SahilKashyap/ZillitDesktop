@@ -99,6 +99,8 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.RecordingSaved -> this
     // Our own mute is the coordinator's flag, not a peer's media.
     is CallEngineEvent.SelfMicMuted -> this
+    // Pins are a viewing choice; the view model holds them.
+    is CallEngineEvent.PinRequested -> this
 }
 
 /** Upsert, never ignore: an event for an unseen uid creates that peer. */

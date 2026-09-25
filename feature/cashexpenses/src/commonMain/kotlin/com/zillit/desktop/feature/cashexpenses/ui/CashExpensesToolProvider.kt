@@ -81,6 +81,10 @@ class CashExpensesToolProvider(
                 when (effect) {
                     is CashEffect.Failed -> failure = effect.message
                     is CashEffect.OpenAttachment -> onOpenAttachment(effect.key)
+                    // Inside the Account Hub the hub's navigator takes a
+                    // route below its own path and opens that page; on its
+                    // own the workspace opens the hub there.
+                    is CashEffect.Navigate -> navigator.navigate(WorkspaceRoute.Tool(effect.path))
                 }
             }
         }

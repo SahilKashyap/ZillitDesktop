@@ -36,8 +36,22 @@ internal interface CashHost {
     fun act(
         success: String,
         onSuccess: CashUiState.() -> CashUiState = { this },
+        /** Side effects once the server has said yes — a badge read, a metadata re-pull. */
+        after: () -> Unit = {},
         block: suspend () -> ZillitResult<Unit>,
     ): Job
+
+    /**
+     * Reads one entity's rows — see `TabBadgeSource.readEntity`. [level1] is
+     * one of [CashBadges]' areas and [kind] one of its `KIND_` names.
+     */
+    fun readEntity(level1: String, entityId: String, kind: String)
+
+    /**
+     * Re-pulls `/metadata` and reseats the viewer on it, moving off a page
+     * the new rights close — after a save that changes who may do what.
+     */
+    fun refetchMetadata()
 
     /** Whether the host can save a file — the exports need it. */
     val files: CashFiles?

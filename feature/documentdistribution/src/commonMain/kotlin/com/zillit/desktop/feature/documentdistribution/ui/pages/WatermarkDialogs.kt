@@ -20,6 +20,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.EpochDate
+import com.zillit.desktop.core.designsystem.component.ZillitSpinner
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
+import com.zillit.desktop.feature.documentdistribution.domain.describe
+import com.zillit.desktop.feature.documentdistribution.domain.isStandardAppearance
+import com.zillit.desktop.feature.documentdistribution.domain.sameAppearanceAs
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -116,7 +124,9 @@ internal fun WatermarkDownloadDialog(state: DocDistUiState, onEvent: (DocDistEve
                     size = ButtonSize.Small,
                 )
                 FieldLabel("Appearance")
-                WatermarkStyleControls(open.style) { onEvent(DocDistEvent.EditWatermarkDownloadStyle(it)) }
+                WatermarkStyleControls(open.style, state.loadedWatermarkDefaults) {
+                    onEvent(DocDistEvent.EditWatermarkDownloadStyle(it))
+                }
             }
             WatermarkPreview(
                 style = open.style,
@@ -194,7 +204,9 @@ internal fun WatermarkBatchDialog(state: DocDistUiState, onEvent: (DocDistEvent)
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl)) {
             Column(Modifier.weight(1f)) {
                 WatermarkLinesEditor(batch.style) { onEvent(DocDistEvent.EditBatchStyle(it)) }
-                WatermarkStyleControls(batch.style) { onEvent(DocDistEvent.EditBatchStyle(it)) }
+                WatermarkStyleControls(batch.style, state.loadedWatermarkDefaults) {
+                    onEvent(DocDistEvent.EditBatchStyle(it))
+                }
             }
             WatermarkPreview(
                 style = batch.style,
@@ -256,6 +268,102 @@ internal fun WatermarkBatchDialog(state: DocDistUiState, onEvent: (DocDistEvent)
 }
 
 /** "① Documents · 3 selected" with an optional trailing control. */
+/**
+ * The project's Watermark settings — the web's `WatermarkSettingsModal`, and
+ * the only place the project's Size / Colour / Opacity are saved. Every
+ * watermark starts from them; a change made while sending stays with that send.
+ */
+@Suppress("LongMethod") // One dialog; splitting it separates each control from its state.
+@Composable
+internal fun WatermarkSettingsDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
+    val open = state.watermarkSettings
+    val c = ZillitTheme.colors
+    val canPost = state.viewer.canPost
+    val loaded = state.watermarkDefaultsLoaded
+    val unchanged = open?.draft?.sameAppearanceAs(state.watermarkDefaults) != false
+    ZillitDialogShell(
+        title = str(S.dd_action_watermark_settings),
+        visible = open != null,
+        onDismiss = { onEvent(DocDistEvent.CloseWatermarkSettings) },
+        icon = ZillitIcons.Shield,
+        width = 860.dp,
+        actions = {
+            ZillitButton(
+                text = str(S.dd_watermark_settings_reset),
+                onClick = { onEvent(DocDistEvent.ResetWatermarkSettings) },
+                variant = ButtonVariant.Tertiary,
+                enabled = canPost && open?.draft?.isStandardAppearance == false,
+            )
+            Box(Modifier.weight(1f))
+            ZillitButton(
+                text = str(S.cancel),
+                onClick = { onEvent(DocDistEvent.CloseWatermarkSettings) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = str(S.dd_watermark_settings_save),
+                onClick = { onEvent(DocDistEvent.SaveWatermarkSettings) },
+                enabled = canPost && loaded && !unchanged && open?.saving == false,
+                loading = open?.saving == true,
+            )
+        },
+    ) {
+        if (open == null) return@ZillitDialogShell
+        ZillitText(
+            text = str(S.dd_watermark_settings_explanation),
+            style = ZillitTheme.typography.bodyMedium,
+            color = c.textSecondary,
+        )
+        if (!loaded) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 240.dp), contentAlignment = Alignment.Center) {
+                ZillitSpinner()
+            }
+            return@ZillitDialogShell
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+                FieldLabel("Appearance")
+                WatermarkStyleControls(open.draft) { onEvent(DocDistEvent.EditWatermarkSettings(it)) }
+                ZillitText(
+                    text = settingsStatus(state),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = c.textSecondary,
+                )
+                if (!unchanged) ZillitText(
+                    text = str(S.dd_watermark_settings_unsaved),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = c.warning,
+                )
+                if (!canPost) ZillitText(
+                    text = str(S.dd_watermark_settings_no_rights),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = c.warning,
+                )
+            }
+            WatermarkPreview(
+                style = open.draft,
+                text = str(S.dd_watermark_settings_preview_text),
+                modifier = Modifier.width(PREVIEW_WIDTH.dp),
+            )
+        }
+    }
+}
+
+/** "Saved for this project: Large · #6b7280 · 40%. Last changed by … on …." */
+private fun settingsStatus(state: DocDistUiState): String {
+    val saved = state.watermarkDefaults
+    if (saved.isDefault) {
+        return str(S.dd_watermark_settings_status_standard, WatermarkSettings.BuiltIn.describe())
+    }
+    val status = str(S.dd_watermark_settings_status_saved, saved.describe())
+    if (saved.updated <= 0) return status
+    val at = EpochDate.dateTime(saved.updated)
+    val changed = state.crewName(saved.updatedBy)
+        ?.let { name -> str(S.dd_watermark_settings_last_changed_by, name, at) }
+        ?: str(S.dd_watermark_settings_last_changed, at)
+    return "$status $changed"
+}
+
 @Composable
 internal fun StepHeading(n: Int, title: String, meta: String, trailing: (@Composable () -> Unit)? = null) {
     val c = ZillitTheme.colors

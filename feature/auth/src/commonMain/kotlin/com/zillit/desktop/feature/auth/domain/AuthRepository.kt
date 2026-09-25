@@ -83,6 +83,14 @@ interface AuthRepository {
      * on every launch while the email path resumed cleanly.
      */
     suspend fun rememberDevice(identity: DeviceIdentity): ZillitResult<kotlin.Unit>
+
+    /**
+     * `PUT device` — tells the server what this device is, as the phones do
+     * on every launch (Android `BaseViewModel.updateDevice`, iOS
+     * `FCMTokenManager`). The desktop never did, so its record kept whatever
+     * it was created with and the backend described it as something else.
+     */
+    suspend fun reportDevice(): ZillitResult<kotlin.Unit> = ZillitResult.Success(kotlin.Unit)
 }
 
 /**

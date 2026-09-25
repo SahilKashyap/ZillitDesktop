@@ -54,4 +54,20 @@ class CallableCrewTest {
 
         assertEquals(listOf("a", "b", "c"), context.callableCrew().map { it.userId })
     }
+
+    @Test
+    fun `a call in another production asks that production for its people`() {
+        // Named, and not the open one: that production's crew.
+        assertEquals("p2", crewProductionFor(callProjectId = "p2", openProjectId = "p1"))
+        // The open production's call, or one that names none: the open crew.
+        assertEquals(null, crewProductionFor(callProjectId = "p1", openProjectId = "p1"))
+        assertEquals(null, crewProductionFor(callProjectId = "", openProjectId = "p1"))
+        assertEquals(null, crewProductionFor(callProjectId = null, openProjectId = "p1"))
+    }
+
+    @Test
+    fun `another production's crew is filtered by our id there, as the open one is`() {
+        val crew = listOf(user("me-there", "approved"), user("x", "approved"), user("y", "left"))
+        assertEquals(listOf("x"), crew.callableCrew(self = "me-there").map { it.userId })
+    }
 }

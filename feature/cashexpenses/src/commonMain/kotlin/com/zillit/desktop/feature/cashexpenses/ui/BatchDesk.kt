@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.cashexpenses.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.cashexpenses.domain.BatchEdits
 import com.zillit.desktop.feature.cashexpenses.domain.CashDates
 import com.zillit.desktop.feature.cashexpenses.domain.CashRules
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
@@ -23,6 +24,17 @@ internal class BatchDesk(private val host: CashHost) {
     private var loadJob: Job? = null
     private var queryJob: Job? = null
 
+    /** Editing, saving and splitting the open batch's receipts — see [BatchWorkDesk]. */
+    private val work = BatchWorkDesk(host)
+
+    /** The batch view's own events — see [BatchEvent]. */
+    fun handle(event: BatchEvent) = when (event) {
+        is BatchEvent.SendForApproval -> sendForApproval(event.batchId)
+        is BatchEvent.SubmitForReview -> submitForReview(event.batchId)
+        is BatchEvent.ForwardCoded -> forwardCoded(event.batchId)
+        else -> work.handle(event)
+    }
+
     /**
      * Opens [batchId] in the detail pane and fetches its receipts.
      *
@@ -39,14 +51,21 @@ internal class BatchDesk(private val host: CashHost) {
         val state = host.state
         val batch = state.queueBatches.firstOrNull { it.id == batchId }
             ?: state.myBatches.firstOrNull { it.id == batchId }
-        if (batch != null && state.destination.isPostLedger && !CashRules.canOpenPostRow(state.viewer, batch)) {
+        // The Audit Queue locks its rows the same way (`PCAuditPage.jsx:189-191`).
+        if (batch != null && state.destination.locksToAssignee && !CashRules.canOpenPostRow(state.viewer, batch)) {
             host.refuse(str(S.desktop_ce_batch_locked_to_assignee))
             return
         }
-        val seeded = CashDates.utcYmd(batch?.effectiveDate) ?: CashDates.defaultEffective(state.lockedThrough)
+        // Sign-off takes the batch's own date or none: the senior picks one
+        // before posting (`SeniorBatchItem.jsx:34, 64-67`).
+        val seeded = CashDates.utcYmd(batch?.effectiveDate)
+            ?: if (state.destination.isSignOff) "" else CashDates.defaultEffective(state.lockedThrough)
         host.update {
             copy(selectedBatchId = batchId, panel = BatchPanel(batchId = batchId, effectiveDate = seeded))
         }
+        // Opening a batch reads its receipt rows on this page's key — never
+        // its query thread's, which stay lit until the thread is opened.
+        state.destination.batchBadgeKey?.let { host.readEntity(it, batchId, CashBadges.KIND_RECEIPT) }
         loadJob = host.work {
             when (val fetched = host.repository.batch(batchId)) {
                 is ZillitResult.Success -> host.update {
@@ -77,7 +96,9 @@ internal class BatchDesk(private val host: CashHost) {
             editPanel(batchId) {
                 val kept = selectedClaimIds?.intersect(fetched.claims.map { it.id }.toSet())
                 copy(
-                    claims = fetched.claims,
+                    // Receipts edited and not saved stay as typed — a socket
+                    // refresh must not throw away someone's coding.
+                    claims = if (dirty) claims else fetched.claims,
                     failed = false,
                     selectedClaimIds = kept ?: fetched.claims.map { it.id }.toSet(),
                 )
@@ -107,17 +128,21 @@ internal class BatchDesk(private val host: CashHost) {
         val batch = state.selectedBatch ?: return
         val claims = state.panel?.claims ?: return
         val claim = claims.firstOrNull { it.id == claimId } ?: return
-        if (state.destination != CashDestination.AuditQueue || !state.viewer.isAccountant) return host.noRights()
+        if (state.destination != CashDestination.AuditQueue || !state.mayWorkOn(batch)) return host.noRights()
         if (state.selectedLocked) return host.refuse(lockedMessage())
         val next = !claim.isVerified
         editPanel { copy(verifying = claimId) }
         host.work {
-            val saved = host.repository.saveClaims(batch.id, claims, mapOf(claimId to next))
+            // Every receipt as it stands, as the web's verify sends its whole
+            // payload — so a Verify also keeps what was typed.
+            val wire = BatchEdits.forWire(claims, host.state::wrapNominal)
+            val saved = host.repository.saveClaims(batch.id, wire, mapOf(claimId to next))
             host.update {
                 val open = panel?.takeIf { it.batchId == batch.id } ?: return@update this
                 copy(
                     panel = open.copy(
                         verifying = null,
+                        dirty = open.dirty && saved !is ZillitResult.Success,
                         claims = if (saved is ZillitResult.Success) {
                             open.claims?.map { if (it.id == claimId) it.copy(isVerified = next) else it }
                         } else {
@@ -139,7 +164,8 @@ internal class BatchDesk(private val host: CashHost) {
     @Suppress("ReturnCount") // One refusal per rule, in the web's order.
     fun sendForApproval(batchId: String) {
         val state = host.state
-        if (!state.viewer.isAccountant) return host.noRights()
+        val batch = state.queueBatches.firstOrNull { it.id == batchId } ?: return
+        if (state.destination != CashDestination.AuditQueue || !state.mayWorkOn(batch)) return host.noRights()
         val claims = readyClaims(batchId) ?: return
         if (state.selectedLocked) return host.refuse(lockedMessage())
         if (!CashRules.allVerified(claims)) return host.refuse(str(S.desktop_ce_verify_every_receipt))
@@ -153,7 +179,9 @@ internal class BatchDesk(private val host: CashHost) {
                 },
             )
         }
-        host.act(str(S.ah_verified), onSuccess = { closed() }) { host.repository.saveAndVerify(batchId, claims) }
+        host.act(str(S.ah_verified), onSuccess = { closed() }) {
+            host.repository.saveAndVerify(batchId, BatchEdits.forWire(claims, host.state::wrapNominal))
+        }
     }
 
     /** The coordinator's Forward to Accounts: nothing leaves the coding queue uncoded. */
@@ -162,7 +190,7 @@ internal class BatchDesk(private val host: CashHost) {
         val claims = readyClaims(batchId) ?: return
         if (!CashRules.allCoded(claims)) return host.refuse(str(S.desktop_ce_code_before_forward))
         host.act(str(S.desktop_ce_coding_submitted), onSuccess = { closed() }) {
-            host.repository.saveAndSubmitCoded(batchId, claims)
+            host.repository.saveAndSubmitCoded(batchId, BatchEdits.forWire(claims, host.state::wrapNominal))
         }
     }
 
@@ -196,7 +224,7 @@ internal class BatchDesk(private val host: CashHost) {
             }
             val missing = CashRules.missingNominals(claims)
             if (missing > 0) return host.refuse(str(S.desktop_ce_lines_need_nominal_post, missing))
-            PostBatchRequest(effectiveDate = date, claims = claims)
+            PostBatchRequest(effectiveDate = date, claims = BatchEdits.forWire(claims, host.state::wrapNominal))
         }
         host.act(str(S.desktop_ce_batch_posted), onSuccess = { closed() }) {
             host.repository.postBatch(batchId, request)
@@ -217,7 +245,7 @@ internal class BatchDesk(private val host: CashHost) {
     fun submitForReview(batchId: String) {
         val state = host.state
         val batch = state.queueBatches.firstOrNull { it.id == batchId } ?: return
-        val allowed = state.viewer.isAccountant &&
+        val allowed = state.destination.isPostLedger && state.mayWorkOn(batch) &&
             CashRules.canSubmitForReview(state.viewer, batch, state.panelClaims)
         if (!allowed) return host.noRights()
         if (CashDates.isLocked(batch.effectiveDate, state.lockedThrough)) return host.refuse(lockedMessage())
@@ -229,7 +257,9 @@ internal class BatchDesk(private val host: CashHost) {
     fun escalate(batchId: String, reason: String) {
         val state = host.state
         val batch = state.queueBatches.firstOrNull { it.id == batchId } ?: return
-        if (!state.viewer.isAccountant || !CashRules.canEscalate(state.viewer, batch)) return host.noRights()
+        val allowed = state.destination.isPostLedger && state.mayWorkOn(batch) &&
+            CashRules.canEscalate(state.viewer, batch)
+        if (!allowed) return host.noRights()
         host.act(str(S.ah_escalated), onSuccess = { closed() }) { host.repository.escalateBatch(batchId, reason) }
     }
 
@@ -247,10 +277,17 @@ internal class BatchDesk(private val host: CashHost) {
         if (!CashRules.mayApprove(state.viewer, batch)) return host.noRights()
         val claimIds = chosenClaims(batchId) ?: return
         val step = CashRules.approvalStep(state.viewer, batch.departmentId, batch.totalGross, batch.approvals)
-        host.act(str(S.ah_batch_approved_toast), onSuccess = { closed() }) {
+        host.act(str(S.ah_batch_approved_toast), onSuccess = { closed() }, after = { readApproval(batchId) }) {
             host.repository.approveBatch(batchId, step, claimIds)
         }
     }
+
+    /**
+     * A batch decided on the approval queue is read, once the server agreed —
+     * partial approvals included (`PCApprovalPage.jsx:1097-1110`).
+     */
+    fun readApproval(batchId: String) =
+        host.readEntity(CashBadges.RECEIPT_APPROVAL, batchId, CashBadges.KIND_RECEIPT)
 
     fun reject(batchId: String, reason: String) {
         val state = host.state
@@ -260,7 +297,7 @@ internal class BatchDesk(private val host: CashHost) {
         val allowed = state.destination == CashDestination.ApprovalQueue && CashRules.mayApprove(state.viewer, batch)
         if (!allowed) return host.noRights()
         val claimIds = chosenClaims(batchId) ?: return
-        host.act(str(S.ah_batch_rejected_toast), onSuccess = { closed() }) {
+        host.act(str(S.ah_batch_rejected_toast), onSuccess = { closed() }, after = { readApproval(batchId) }) {
             host.repository.rejectBatch(batchId, reason, claimIds)
         }
     }
@@ -291,6 +328,7 @@ internal class BatchDesk(private val host: CashHost) {
         editPanel { copy(query = QueryPanel()) }
         queryJob = host.work {
             val thread = host.repository.queryThread(batch.id)
+            if (thread is ZillitResult.Success) readQuery(batch.id)
             editPanel(batch.id) {
                 val panelQuery = query ?: return@editPanel this
                 copy(query = panelQuery.copy(loading = false, thread = (thread as? ZillitResult.Success)?.data))
@@ -311,8 +349,13 @@ internal class BatchDesk(private val host: CashHost) {
         editPanel { copy(query = query.copy(sending = true)) }
         host.work {
             when (val sent = host.repository.sendQuery(batch.id, query.thread?.id, text)) {
-                is ZillitResult.Success -> editPanel(batch.id) {
-                    copy(query = this.query?.copy(sending = false, draft = "", thread = sent.data))
+                is ZillitResult.Success -> {
+                    editPanel(batch.id) {
+                        copy(query = this.query?.copy(sending = false, draft = "", thread = sent.data))
+                    }
+                    // The panel is open and the thread just refreshed: what
+                    // landed in it is read (ZL-20548).
+                    readQuery(batch.id)
                 }
 
                 is ZillitResult.Failure -> {
@@ -324,6 +367,12 @@ internal class BatchDesk(private val host: CashHost) {
     }
 
     // -- plumbing -----------------------------------------------------------------
+
+    /** The open thread's `query_chat` rows on this page's key, and only those. */
+    private fun readQuery(batchId: String) {
+        val key = host.state.destination.batchBadgeKey ?: return
+        host.readEntity(key, batchId, CashBadges.KIND_QUERY)
+    }
 
     private fun mayPost(state: CashUiState, batch: ClaimBatch, signOff: Boolean): Boolean = when {
         signOff -> state.viewer.canSeeSignOff

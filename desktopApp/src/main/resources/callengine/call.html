@@ -72,12 +72,66 @@
             z-index: 3;
         }
 
-        .tile.mini {
-            cursor: pointer;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, .55);
+        .tile.mini { box-shadow: 0 4px 16px rgba(0, 0, 0, .55); }
+        .tile.mini.swap { cursor: pointer; }
+        .tile.mini.swap:hover { outline: 2px solid rgba(255, 255, 255, .35); }
+
+        /* The strip's "+N" when more people than fit are off the stage. */
+        .tile.more {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 600;
         }
 
-        .tile.mini:hover { outline: 2px solid rgba(255, 255, 255, .35); }
+        /* The stage's big tile(s), top-aligned so a band is left for the
+           strip under several pins; the strip floats over one. */
+        .focus {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: var(--gap);
+        }
+
+        /* The web tile's pin (`Tile.tsx`): on hover, always once pinned.
+           Opposite the name chip, under the mute badge. */
+        .pin {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, .55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity .12s;
+        }
+
+        .tile:hover .pin, .pin.on { opacity: 1; }
+        .pin.on { background: var(--speaking); }
+        .pin svg {
+            width: 14px;
+            height: 14px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .tile.pinned .chip { max-width: calc(100% - 50px); }
 
         /* Reactions live here rather than on the Compose side: this page is a
            heavyweight native surface, and anything the app draws over it is
@@ -257,7 +311,8 @@
            unreadable and every tile but the first is invisible anyway. */
         body.compact .chip,
         body.compact .hand,
-        body.compact .mute { display: none; }
+        body.compact .mute,
+        body.compact .pin { display: none; }
         body.compact .row:not(:first-child) { display: none; }
         body.compact .tile:not(:first-child) { display: none; }
     </style>

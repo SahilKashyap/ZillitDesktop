@@ -9,6 +9,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.DateGroup
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
+import com.zillit.desktop.feature.documentdistribution.domain.AddressSuggestion
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistCrewMember
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistSignature
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
@@ -26,7 +28,9 @@ import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
+import com.zillit.desktop.feature.documentdistribution.domain.addressSuggestions
 import com.zillit.desktop.feature.documentdistribution.domain.isValidEmail
+import com.zillit.desktop.feature.documentdistribution.domain.sendableCrew
 import kotlinx.datetime.LocalDate
 
 /** How the library draws its rows — the web's list / grid toggle. */
@@ -77,6 +81,14 @@ data class ComposerState(
      */
     val watermarked: Set<String> = emptySet(),
     val watermark: WatermarkStyle = WatermarkStyle(),
+    /**
+     * True once this send's Size / Colour / Opacity are its own — the sender
+     * saved a different look in the wizard, or a duplicated send brought its
+     * stamp. Until then the stamp follows the project's settings, including a
+     * late load or someone else's save (the web's
+     * `useFollowProjectWatermarkStyle`).
+     */
+    val watermarkEdited: Boolean = false,
     /** The wizard's draft while it is open; null when closed. */
     val wizardDraft: WatermarkStyle? = null,
     /** The attachment whose stamped preview is open. */
@@ -190,6 +202,8 @@ data class WatermarkDownloadState(
     val line1: String = "CONFIDENTIAL",
     val line2: String = "",
     val style: WatermarkStyle = WatermarkStyle(),
+    /** True once the user changed the appearance; until then it follows the project's settings. */
+    val styleEdited: Boolean = false,
     /** The file rendered behind the stamp — the first PDF page, or the image itself. */
     val previewImage: ByteArray? = null,
     val previewLoading: Boolean = false,
@@ -201,7 +215,7 @@ data class WatermarkDownloadState(
             .ifBlank { "CONFIDENTIAL" }
 
     override fun equals(other: Any?): Boolean = other is WatermarkDownloadState && other.document.id == document.id &&
-        other.line1 == line1 && other.line2 == line2 && other.style == style &&
+        other.line1 == line1 && other.line2 == line2 && other.style == style && other.styleEdited == styleEdited &&
         other.previewLoading == previewLoading &&
         other.downloading == downloading && (other.previewImage?.size ?: 0) == (previewImage?.size ?: 0)
 
@@ -212,6 +226,8 @@ data class WatermarkDownloadState(
 data class WatermarkBatchState(
     val documents: List<LibraryDocument>,
     val style: WatermarkStyle = WatermarkStyle(),
+    /** True once the user changed the appearance; until then it follows the project's settings. */
+    val styleEdited: Boolean = false,
     val recipients: List<Recipient> = emptyList(),
     val recipientInput: String = "",
     val listMenuOpen: Boolean = false,
@@ -219,6 +235,18 @@ data class WatermarkBatchState(
 ) {
     val canDownload: Boolean get() = documents.isNotEmpty() && recipients.isNotEmpty() && !downloading
 }
+
+/**
+ * The toolbar's "Watermark settings": the one place the project's Size /
+ * Colour / Opacity are saved (web `WatermarkSettingsModal`). Only the
+ * appearance fields of [draft] are used.
+ */
+data class WatermarkSettingsDialogState(
+    val draft: WatermarkStyle = WatermarkStyle(),
+    /** True once the user touched a control; until then the draft follows the saved settings. */
+    val edited: Boolean = false,
+    val saving: Boolean = false,
+)
 
 /** Which flow opened the library picker, so its confirm lands in the right place. */
 enum class PickerPurpose { Composer, Batch }
@@ -290,9 +318,36 @@ data class ContactEditorState(
     val job: String = "",
     val listIds: List<String> = emptyList(),
     val saving: Boolean = false,
+    /**
+     * True once the email field was left or a save attempted. Nobody wants
+     * "invalid email" thrown at them on the first character, so the error
+     * waits until then — and after that follows every keystroke.
+     */
+    val emailTouched: Boolean = false,
 ) {
     val isNew: Boolean get() = originalEmail.isBlank()
     val emailChanged: Boolean get() = !isNew && !email.trim().equals(originalEmail, ignoreCase = true)
+
+    /**
+     * What is wrong with the email right now, or null when it is fine — the
+     * one source the field, the save button and the save itself all read, so
+     * the message and the button can never disagree (web 32950adf2). Only the
+     * contact being edited excuses a clash; on add, nothing does.
+     */
+    fun emailProblem(contacts: List<Contact>): String? {
+        val typed = email.trim().lowercase()
+        val editing = originalEmail.lowercase().takeIf { !isNew }
+        return when {
+            typed.isEmpty() -> str(S.email_required_txt)
+            !isValidEmail(typed) -> str(S.desktop_docdist_contact_email_invalid)
+            contacts.any { it.email.lowercase() == typed && it.email.lowercase() != editing } ->
+                str(S.desktop_docdist_email_already_in_address_book)
+            else -> null
+        }
+    }
+
+    /** The problem, once the user has earned hearing about it. */
+    fun shownEmailError(contacts: List<Contact>): String? = if (emailTouched) emailProblem(contacts) else null
 }
 
 /** The template editor, shared by the Templates page and the composer's "save current". */
@@ -360,8 +415,14 @@ data class DocDistUiState(
      * The production's shared Size / Colour / Opacity, which every new stamp
      * — the composer's, a single download's, a zip's — starts from. Built-in
      * until the server answers, and replaced whole when another device saves.
+     * Saved only from the Watermark settings dialog; a send's own changes
+     * never write back.
      */
     val watermarkDefaults: WatermarkSettings = WatermarkSettings.BuiltIn,
+    /** True once the server answered [watermarkDefaults]; the dialog and the send-flow note wait for it. */
+    val watermarkDefaultsLoaded: Boolean = false,
+    /** Non-null while the Watermark settings dialog is open. */
+    val watermarkSettings: WatermarkSettingsDialogState? = null,
     val picker: DocumentPickerState? = null,
 
     // -- history ----------------------------------------------------------
@@ -389,6 +450,10 @@ data class DocDistUiState(
 
     // -- address book -----------------------------------------------------
     val contacts: List<Contact> = emptyList(),
+    /** The production's crew, read from the host when the composer or a dialog needs names. */
+    val crew: List<DocDistCrewMember> = emptyList(),
+    /** The production's department names — the contact form's Department suggestions. */
+    val departments: List<String> = emptyList(),
     val contactsSearch: String = "",
     val selectedContactEmail: String? = null,
     val contactEditor: ContactEditorState? = null,
@@ -559,13 +624,30 @@ data class DocDistUiState(
             contacts.firstOrNull { it.email.equals(email, ignoreCase = true) }
         }
 
+    /**
+     * What To / Cc / Bcc suggest: saved contacts and the crew who can be sent
+     * to, one row per address (ZL-21622).
+     */
+    val addressSuggestions: List<AddressSuggestion>
+        get() = addressSuggestions(contacts, crew.sendableCrew())
+
+    /** The crew member's name, for "Last changed by"; null when they are not in the crew list. */
+    fun crewName(userId: String?): String? =
+        userId?.let { id -> crew.firstOrNull { it.userId == id }?.name?.takeIf { it.isNotBlank() } }
+
+    /** The project's watermark settings once the server has answered; null before. */
+    val loadedWatermarkDefaults: WatermarkSettings?
+        get() = watermarkDefaults.takeIf { watermarkDefaultsLoaded }
+
     /** Contacts after the search box, by name — the address book's sidebar. */
     val visibleContacts: List<Contact>
         get() {
             val q = contactsSearch.trim().lowercase()
             return contacts.filter { c ->
+                // ZL-21622: department rides the `job` wire field, so "camera"
+                // finds the whole department.
                 q.isEmpty() || c.email.lowercase().contains(q) || c.name.lowercase().contains(q) ||
-                    c.lists.any { it.name.lowercase().contains(q) }
+                    c.jobTitle.lowercase().contains(q) || c.lists.any { it.name.lowercase().contains(q) }
             }.sortedBy { it.displayName.lowercase() }
         }
 

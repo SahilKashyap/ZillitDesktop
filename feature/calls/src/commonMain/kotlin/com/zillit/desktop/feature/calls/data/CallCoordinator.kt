@@ -183,6 +183,10 @@ class CallCoordinator(
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
+    /** Tile keys whose pin was pressed on the video page, for the view model to toggle. */
+    private val _pinRequests = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val pinRequests: SharedFlow<String> = _pinRequests.asSharedFlow()
+
     /**
      * Line 3's in-call extras — the host's policy, who we muted for
      * ourselves, the guests at the door — and the verbs that move them. A
@@ -1462,6 +1466,7 @@ class CallCoordinator(
             // The SFU muted us (the host's "mute everyone"): the button follows.
             is CallEngineEvent.SelfMicMuted -> if (_micMuted.value != event.muted) _micMuted.value = event.muted
             is CallEngineEvent.RecordingSaved -> onRecordingSaved(event)
+            is CallEngineEvent.PinRequested -> _pinRequests.tryEmit(event.key)
             else -> Unit
         }
     }

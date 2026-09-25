@@ -185,6 +185,62 @@ class ZillitHeaderProviderTest {
     }
 
     @Test
+    fun `the desktop names itself as the user agent on every call, token or not`() = runTest {
+        val described = ZillitHeaderProvider(
+            crypto = fakeCrypto,
+            context = { HeaderContext(deviceId = deviceId) },
+            deviceDescription = DeviceDescription(
+                network = "unknown",
+                osVersion = "macOS 26.5.1",
+                deviceName = "Sahil's MacBook Pro",
+                deviceType = "desktop",
+                userAgent = "Zillit-Desktop/1.0.6 (macOS 26.5.1; aarch64; Mac15,3)",
+            ),
+            nowMillis = { clock },
+            timeZoneId = { "Europe/London" },
+        )
+        val agent = "Zillit-Desktop/1.0.6 (macOS 26.5.1; aarch64; Mac15,3)"
+        assertEquals(agent, described.headersFor(RequestModule.Default, null, null)[ZillitHeaders.USER_AGENT])
+        assertEquals(agent, described.plainHeaders()[ZillitHeaders.USER_AGENT])
+
+        // The deviceInfo header keeps the phones' four fields: the agent is its own header.
+        val info = Json.parseToJsonElement(
+            described.headersFor(RequestModule.Default, null, null).getValue("deviceInfo"),
+        ) as JsonObject
+        assertEquals(setOf("network", "osversion", "deviceName", "deviceType"), info.keys)
+        assertEquals("macOS 26.5.1", info["osversion"]?.jsonPrimitive?.content)
+
+        // Unset, the header is left out rather than sent blank.
+        assertNull(provider.headersFor(RequestModule.Default, null, null)[ZillitHeaders.USER_AGENT])
+    }
+
+    @Test
+    fun `a device name the header cannot carry raw is escaped, and reads back the same`() = runTest {
+        // The owner's own name for the machine, curly apostrophe and all. The
+        // HTTP client throws on any header character past `~`, so sent raw
+        // this would fail every single call.
+        val named = ZillitHeaderProvider(
+            crypto = fakeCrypto,
+            context = { HeaderContext(deviceId = deviceId) },
+            deviceDescription = DeviceDescription(
+                network = "unknown",
+                osVersion = "macOS 26.5.1",
+                deviceName = "Sahil\u2019s MacBook Pro — José",
+                deviceType = "desktop",
+                userAgent = "Zillit-Desktop/1.0.6 (macOS 26.5.1; café)",
+            ),
+            nowMillis = { clock },
+            timeZoneId = { "Europe/London" },
+        )
+        val headers = named.headersFor(RequestModule.Default, null, null) + named.plainHeaders()
+        headers.values.forEach { value -> assertTrue(value.all { it in ' '..'~' }, value) }
+
+        val info = Json.parseToJsonElement(headers.getValue("deviceInfo")) as JsonObject
+        assertEquals("Sahil\u2019s MacBook Pro — José", info["deviceName"]?.jsonPrimitive?.content)
+        assertEquals("Zillit-Desktop/1.0.6 (macOS 26.5.1; caf?)", headers[ZillitHeaders.USER_AGENT])
+    }
+
+    @Test
     fun `missing keys produce no headers rather than plaintext ones`() = runTest {
         // Sending an unencrypted moduledata would put the device id on the wire
         // in clear and be rejected anyway. Better an honest 401.

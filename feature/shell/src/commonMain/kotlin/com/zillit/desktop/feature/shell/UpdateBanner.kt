@@ -3,10 +3,13 @@ package com.zillit.desktop.feature.shell
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -14,6 +17,7 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitProgressBar
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -32,12 +36,18 @@ import com.zillit.desktop.core.strings.str
  *
  * ## Why the mandatory case is still a banner
  *
- * This is step one of the update story: the check and the notice. It has no
- * downloader, so a full-screen block would leave someone staring at a wall with
- * a browser link on it and no way back to the work they had open. The mandatory
- * banner is therefore non-dismissible and says plainly that the app must be
- * updated to continue; hard-blocking belongs with the installer that can
- * actually resolve it.
+ * A full-screen block would stop someone mid-edit with nowhere to save to, and
+ * on Linux or a build without a published installer the only way out is a
+ * browser link. The mandatory banner is therefore non-dismissible and says
+ * plainly that the app must be updated; where the app can install itself,
+ * "Update now" is one click and the restart is the user's to time.
+ *
+ * ## The in-app steps
+ *
+ * With [UpdateNotice.install] set the strip walks Update now → a progress bar
+ * → Restart now. A failed download offers Try again; a file that failed its
+ * checksum or signature does not (it would fail the same way) and falls back
+ * to the download page.
  *
  * ## Colour is never the only signal
  *
@@ -52,20 +62,13 @@ internal fun UpdateBanner(
     onDownload: (String) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    onInstall: () -> Unit = {},
+    onRestart: () -> Unit = {},
 ) {
-    val colors = ZillitTheme.colors
-    val tone = if (notice.mandatory) StatusTone.Rejected else StatusTone.Progress
-    val accent = if (notice.mandatory) colors.danger else colors.info
-
-    val installed = notice.installedVersion?.takeIf { it.isNotBlank() }
-        ?.let { " " + str(S.desktop_update_installed, it) }.orEmpty()
+    val accent = if (notice.mandatory) ZillitTheme.colors.danger else ZillitTheme.colors.info
     ZillitNotice(
-        text = if (notice.mandatory) {
-            str(S.desktop_update_required, notice.latestVersion) + installed
-        } else {
-            str(S.desktop_update_available, notice.latestVersion) + installed
-        },
-        tone = tone,
+        text = bannerText(notice),
+        tone = if (notice.mandatory) StatusTone.Rejected else StatusTone.Progress,
         icon = ZillitIcons.Download,
         modifier = modifier
             .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm)
@@ -75,16 +78,21 @@ internal fun UpdateBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                notice.downloadUrl?.let { url ->
-                    // The lambda is the app's guarded launcher — https only.
-                    // The URL came out of a remote console, so nothing here may
-                    // hand it to the OS directly.
-                    ZillitButton(
-                        text = str(S.download),
-                        onClick = { onDownload(url) },
-                        size = ButtonSize.Small,
-                        variant = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Secondary,
-                    )
+                InstallAction(notice, accent, onInstall, onRestart)
+                // The page link stays wherever the app cannot finish the job
+                // itself: no installer, or an install that stopped.
+                if (notice.install == null || notice.install is UpdateInstall.Failed) {
+                    notice.downloadUrl?.let { url ->
+                        // The lambda is the app's guarded launcher — https only.
+                        // The URL came out of a remote console, so nothing here may
+                        // hand it to the OS directly.
+                        ZillitButton(
+                            text = str(S.download),
+                            onClick = { onDownload(url) },
+                            size = ButtonSize.Small,
+                            variant = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Secondary,
+                        )
+                    }
                 }
                 // Absent when mandatory: there is no "later" for a build the
                 // server will stop serving.
@@ -100,6 +108,77 @@ internal fun UpdateBanner(
         },
     )
 }
+
+/** The strip's sentence for where the update has got to. */
+@Composable
+private fun bannerText(notice: UpdateNotice): String {
+    val version = notice.latestVersion
+    return when (val install = notice.install) {
+        is UpdateInstall.Downloading -> install.percent
+            ?.let { str(S.desktop_update_downloading_percent, version, it) }
+            ?: str(S.desktop_update_downloading, version)
+        UpdateInstall.Preparing -> str(S.desktop_update_preparing, version)
+        UpdateInstall.Ready -> str(S.desktop_update_ready, version)
+        is UpdateInstall.Failed -> when {
+            install.retryable -> str(S.desktop_update_failed_network, version)
+            install.verification -> str(S.desktop_update_failed_verify, version)
+            else -> str(S.desktop_update_failed_install, version)
+        }
+        UpdateInstall.Offer, null -> {
+            val installed = notice.installedVersion?.takeIf { it.isNotBlank() }
+                ?.let { " " + str(S.desktop_update_installed, it) }.orEmpty()
+            val headline = if (notice.mandatory) S.desktop_update_required else S.desktop_update_available
+            str(headline, version) + installed
+        }
+    }
+}
+
+/** Update now, the progress bar, Restart now or Try Again — whichever the step calls for. */
+@Composable
+private fun InstallAction(notice: UpdateNotice, accent: Color, onInstall: () -> Unit, onRestart: () -> Unit) {
+    val primary = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Primary
+    when (val install = notice.install) {
+        UpdateInstall.Offer -> ZillitButton(
+            text = str(S.update_now),
+            onClick = onInstall,
+            size = ButtonSize.Small,
+            variant = primary,
+            modifier = Modifier.testTag(INSTALL_TAG),
+        )
+        is UpdateInstall.Downloading -> ZillitProgressBar(
+            // No length from the server: an empty track still says "working"
+            // better than a bar that never moves.
+            fraction = (install.percent ?: 0) / PERCENT,
+            modifier = Modifier.width(PROGRESS_WIDTH),
+            fillColor = accent,
+        )
+        UpdateInstall.Ready -> ZillitButton(
+            text = str(S.desktop_update_restart_now),
+            onClick = onRestart,
+            size = ButtonSize.Small,
+            variant = primary,
+            modifier = Modifier.testTag(RESTART_TAG),
+        )
+        is UpdateInstall.Failed -> if (install.retryable) {
+            ZillitButton(
+                text = str(S.try_again),
+                onClick = onInstall,
+                size = ButtonSize.Small,
+                variant = ButtonVariant.Secondary,
+            )
+        }
+        UpdateInstall.Preparing, null -> Unit
+    }
+}
+
+private const val PERCENT = 100f
+private val PROGRESS_WIDTH = 120.dp
+
+/** "Update now". */
+internal const val INSTALL_TAG = "update-install"
+
+/** "Restart now". */
+internal const val RESTART_TAG = "update-restart"
 
 /** The optional strip, which carries a dismiss control. */
 internal const val DISMISSIBLE_TAG = "update-banner"

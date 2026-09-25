@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cashexpenses
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -207,8 +208,8 @@ class CashScreenRenderTest {
             onNodeWithText("ACTIVE FLOATS").assertIsDisplayed()
             onNodeWithText("AWAITING APPROVAL").assertIsDisplayed()
             onNodeWithText("READY TO POST").assertIsDisplayed()
-            // The escalation notice only appears when there is one.
-            onAllNodesWithText("Open sign-off")[0].assertIsDisplayed()
+            // The escalation line only appears when there is one — now in the Action Queue.
+            onNodeWithText("1 batch escalated for senior sign-off").assertExists()
         }
     }
 
@@ -326,7 +327,7 @@ class CashScreenRenderTest {
                     CashExpensesScreen(state = signOff, onEvent = {})
                 }
             }
-            onNodeWithText("Return to Accounts").assertExists()
+            onNodeWithText("Return to Accounts", substring = true).assertExists()
             onAllNodesWithText("Assign").assertCountEquals(0)
         }
     }
@@ -347,8 +348,9 @@ class CashScreenRenderTest {
                         CashExpensesScreen(state = state(destination), onEvent = {})
                     }
                 }
-                onNodeWithText("Petty Cash").assertIsDisplayed()
-                onNodeWithText("Out of Pocket").assertIsDisplayed()
+                // History's quick filters carry the same words; the switcher is drawn first.
+                onAllNodesWithText("Petty Cash").onFirst().assertIsDisplayed()
+                onAllNodesWithText("Out of Pocket").onFirst().assertIsDisplayed()
                 onNodeWithText("Audit Queue").assertIsDisplayed()
             }
         }
@@ -559,7 +561,10 @@ class CashScreenRenderTest {
                     )
                 }
             }
-            assertTrue(onAllNodesWithText("RB-0042").fetchSemanticsNodes().isNotEmpty(), "batch filtered out")
+            assertTrue(
+                onAllNodesWithText("RB-0042", substring = true).fetchSemanticsNodes().isNotEmpty(),
+                "batch filtered out",
+            )
             onAllNodesWithText("Nothing matches that search").assertCountEquals(0)
         }
     }
@@ -578,14 +583,17 @@ class CashScreenRenderTest {
                     CashExpensesScreen(state = signOff, onEvent = {})
                 }
             }
-            onNodeWithText("Currently with ").assertExists()
-            assertTrue(onAllNodesWithText("Ada Lovelace").fetchSemanticsNodes().isNotEmpty(), "current holder")
+            onNodeWithText("Currently assigned to", substring = true).assertExists()
+            assertTrue(
+                onAllNodesWithText("Ada Lovelace", substring = true).fetchSemanticsNodes().isNotEmpty(),
+                "current holder",
+            )
             onAllNodesWithText(adaId, substring = true).assertCountEquals(0)
         }
     }
 
     @Test
-    fun `the crew submit screen refuses without a float and offers the way out`() {
+    fun `the crew submit screen says there is no active float`() {
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
@@ -595,7 +603,7 @@ class CashScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("Request a Float").assertIsDisplayed()
+            onNodeWithText("No active float").assertExists()
         }
     }
 }

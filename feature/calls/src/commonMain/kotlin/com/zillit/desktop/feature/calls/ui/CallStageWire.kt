@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import com.zillit.desktop.core.designsystem.ZillitColors
 import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.feature.calls.domain.CallStatus
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -20,8 +21,11 @@ import kotlinx.serialization.json.putJsonArray
  * It is told identity and shape only. Who is speaking and who has video it
  * knows first-hand, a frame earlier than Kotlin could tell it.
  */
-fun stageJson(tiles: List<CallTile>, columns: Int): String = buildJsonObject {
+fun stageJson(tiles: List<CallTile>, columns: Int, pins: List<String> = emptyList()): String = buildJsonObject {
     put("cols", columns)
+    // Pinned tile keys, in pin order: the page lays them out big and asks
+    // back through a `pin` event, never deciding for itself.
+    putJsonArray("pins") { pins.forEach { add(JsonPrimitive(it)) } }
     putJsonArray("tiles") {
         tiles.forEach { tile ->
             addJsonObject {
@@ -37,6 +41,9 @@ fun stageJson(tiles: List<CallTile>, columns: Int): String = buildJsonObject {
                 // consumed stream to a tile by the peer id's user half, and a
                 // model without it strands every remote video in "no tile".
                 put("peerId", tile.userId)
+                // What a pin names — the one id every tile has, self and
+                // unclaimed streams included.
+                put("key", tile.key)
             }
         }
     }

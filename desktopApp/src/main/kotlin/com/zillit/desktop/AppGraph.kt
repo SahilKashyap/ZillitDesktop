@@ -106,6 +106,7 @@ import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.InMemoryNotificationLedgerStore
 import com.zillit.desktop.core.badges.SqlNotificationLedgerStore
 import kotlinx.coroutines.CoroutineScope
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.zillit.desktop.core.security.AesCbcCryptoEngine
@@ -184,6 +185,10 @@ import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.ToolsRepository
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.core.appupdate.AppUpdateChecker
+import com.zillit.desktop.core.appupdate.InAppUpdater
+import com.zillit.desktop.core.appupdate.PlatformInstaller
+import com.zillit.desktop.core.appupdate.UpdateDownloader
+import com.zillit.desktop.core.appupdate.UpdateStatus
 import com.zillit.desktop.feature.calls.data.livekit.OkHttpLiveKitSocket
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
@@ -219,19 +224,18 @@ import com.zillit.desktop.feature.auth.domain.QrLoginRepository
 internal fun installedAppVersion(): String =
     System.getProperty("jpackage.app-version")?.trim()?.takeIf { it.isNotEmpty() } ?: BuildInfo.VERSION
 
-/** What the `deviceInfo` header reports about this machine. */
-private fun currentDeviceDescription(): com.zillit.desktop.core.network.DeviceDescription {
-    val platform = currentPlatform()
-    return com.zillit.desktop.core.network.DeviceDescription(
+/** What the `deviceInfo` and `User-Agent` headers report about this machine — see [DesktopDevice]. */
+private fun currentDeviceDescription(): com.zillit.desktop.core.network.DeviceDescription =
+    com.zillit.desktop.core.network.DeviceDescription(
         // The Android client reports the live connection type. Desktop has no
         // cheap cross-platform equivalent and the backend only logs it, so a
         // constant is honest rather than fabricated.
         network = "unknown",
-        osVersion = platform.name,
-        deviceName = System.getProperty("os.name") ?: "Desktop",
-        deviceType = "desktop",
+        osVersion = DesktopDevice.osVersion,
+        deviceName = DesktopDevice.name,
+        deviceType = DesktopDevice.TYPE,
+        userAgent = DesktopDevice.userAgent,
     )
-}
 
 /**
  * The language the OS is set to, as a bare code — `en`, `fr`, `he`.
@@ -262,16 +266,13 @@ private fun CoroutineScope.trackUiLanguage(preferences: PreferenceStore): StateF
 }
 
 /** How this machine names itself in the other device's Linked Devices list. */
-private fun currentDeviceInfo(): DeviceInfo {
-    val platform = currentPlatform()
-    return DeviceInfo(
-        // Shown to the user when they approve the scan, so it has to be
-        // recognisable — "Desktop" alone is useless with three machines.
-        name = System.getProperty("user.name")?.let { "$it's ${platform.os.name}" } ?: "Zillit Desktop",
-        type = "desktop",
-        osVersion = platform.name,
-    )
-}
+private fun currentDeviceInfo(): DeviceInfo = DeviceInfo(
+    // Shown to the user when they approve the scan, so it has to be
+    // recognisable — the machine's own name, as an iPhone gives its own.
+    name = DesktopDevice.name,
+    type = DesktopDevice.TYPE,
+    osVersion = DesktopDevice.osVersion,
+)
 
 /**
  * Whether the developer asked for full request/response bodies in the log.
@@ -560,6 +561,10 @@ sealed interface AppGraph {
         val chatPresence: com.zillit.desktop.feature.chat.data.DevicePresenceSource?,
         /** Whether a newer desktop build exists. Never throws; never nags on doubt. */
         val appUpdateChecker: AppUpdateChecker,
+        /** Downloads, verifies and installs a newer build; installs nothing under `:desktopApp:run`. */
+        val inAppUpdater: InAppUpdater,
+        /** The latest verdict, shared by the banner's poll and Settings' manual check. */
+        val appUpdateStatus: MutableStateFlow<UpdateStatus> = MutableStateFlow(UpdateStatus.Unknown),
         /** The notification list's source — see `NotificationsToolProvider`. */
         val notificationsRepository: NotificationsRepository,
         val homeRealtime: HomeRealtimeSource,
@@ -1044,10 +1049,10 @@ sealed interface AppGraph {
             var lineThreeGate: LineThreeGate? = null
             var primaryDeviceForHandshake: String? = null
             var handshakeRecord: com.zillit.desktop.feature.auth.domain.DeviceIdentity? = null
+            // Folded: this companion sits at detekt's LargeClass line limit.
             val authRepository = AuthRepositoryImpl(
-                apiClient = apiClient,
-                secureStore = secureStore,
-                config = config,
+                apiClient = apiClient, secureStore = secureStore, config = config,
+                deviceReport = DesktopDevice::report, reportScope = appScope,
                 onSignOut = {
                     // Sign-out clears user- and project-scoped preferences but
                     // leaves device settings (theme, window geometry) alone —
@@ -1198,6 +1203,7 @@ sealed interface AppGraph {
             }
 
             val appUpdateChecker = appUpdateChecker(storageClient, config, preferences, remoteConfigRepository)
+            val inAppUpdater = inAppUpdater(appScope)
 
             val chatRepository = ChatRepositoryImpl(
                 apiClient = apiClient,
@@ -1535,6 +1541,7 @@ sealed interface AppGraph {
                 chatRepositoryForProject = chatRepositoryForProject,
                 chatPresence = chatPresence,
                 appUpdateChecker = appUpdateChecker,
+                inAppUpdater = inAppUpdater,
                 homeRealtime = homeRealtime,
                 emailRealtime = EmailRealtimeSource(socketEvents),
                 calendarRepository = calendarRepository,
@@ -1956,6 +1963,28 @@ private fun appUpdateChecker(
     // is never sent a .dmg.
     os = currentPlatform().os,
 )
+
+/**
+ * The in-app updater, working in `~/.zillit/updates`.
+ *
+ * Installers land in `downloads/` — a folder of their own, because the
+ * downloader clears everything else in it once a newer file verifies — and the
+ * staged bundle and helper script sit beside it. `jpackage.app-path` is the
+ * packaged launcher; without it (a Gradle run) there is nothing to replace, so
+ * the updater installs nothing and the banner keeps its download link.
+ */
+private fun inAppUpdater(scope: CoroutineScope): InAppUpdater {
+    val workDir = File(System.getProperty("user.home"), ".zillit/updates")
+    return InAppUpdater(
+        downloader = UpdateDownloader(File(workDir, "downloads")),
+        installer = PlatformInstaller.forCurrent(
+            os = currentPlatform().os,
+            appPath = System.getProperty("jpackage.app-path"),
+            workDir = workDir,
+        ),
+        scope = scope,
+    )
+}
 
 /**
  * A stable per-install id for Firebase Remote Config.

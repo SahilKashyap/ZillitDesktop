@@ -16,7 +16,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.SupportedUploads
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkLine
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
-import com.zillit.desktop.feature.documentdistribution.domain.patchAgainst
+import com.zillit.desktop.feature.documentdistribution.domain.sameAppearanceAs
+import com.zillit.desktop.feature.documentdistribution.domain.stripInvisibleChars
 import com.zillit.desktop.feature.documentdistribution.domain.withDefaults
 import com.zillit.desktop.feature.documentdistribution.domain.summariseFileNames
 
@@ -114,6 +115,8 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
     /** Lists, contacts, templates and signatures — none loaded unless their tabs were visited. */
     @Suppress("CyclomaticComplexMethod") // Four independent primes; one per data set.
     private fun prime() {
+        // The crew come from the project context the app already holds.
+        vm.update { copy(crew = vm.host.crew()) }
         vm.run {
             if (vm.state.lists.isEmpty()) {
                 (vm.repository.lists() as? ZillitResult.Success)?.let { loaded ->
@@ -344,25 +347,12 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
         if (draft.line2 == WatermarkLine.Custom && draft.line2Custom.isBlank()) {
             return vm.fail(str(S.dd_watermark_custom_line2_required))
         }
-        edit { copy(watermark = draft, wizardDraft = null) }
-        shareAppearance(draft)
-    }
-
-    /**
-     * The wizard's Size / Colour / Opacity are the production's, not the
-     * send's: saving them here makes them every crew member's starting point
-     * (`PUT watermark-settings`). Only the fields that changed go, so two
-     * people adjusting different controls at once both land. The send itself
-     * is not held up — a refusal is reported and the stamp stays as drawn.
-     */
-    private fun shareAppearance(draft: WatermarkStyle) {
-        val patch = draft.patchAgainst(vm.state.watermarkDefaults)
-        if (patch.isEmpty) return
-        vm.run {
-            vm.onSuccess(vm.repository.updateWatermarkSettings(patch)) { saved ->
-                vm.update { copy(watermarkDefaults = saved) }
-            }
-        }
+        // A look chosen for this email applies to this email only — it is
+        // never saved back to the project (web 9df4778ee). One that differs
+        // from the project's stays put if the project's settings change while
+        // the composer is open; one that matches keeps following them.
+        val ownLook = !draft.sameAppearanceAs(vm.state.watermarkDefaults)
+        edit { copy(watermark = draft, wizardDraft = null, watermarkEdited = watermarkEdited || ownLook) }
     }
 
     fun openWatermarkPreview(documentId: String?) {
@@ -392,7 +382,9 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
             // the user may have removed some — and a list left with none is dropped.
             val sentTo = built.to.map { it.email.lowercase() }.toSet()
             built.copy(
-                bodyHtml = html,
+                // ZL-21475: pasted invisible characters read as spam to receiving servers.
+                subject = stripInvisibleChars(built.subject),
+                bodyHtml = stripInvisibleChars(html),
                 listsUsed = composer.listsUsed
                     .map { used -> used.copy(emails = used.emails.filter { it.lowercase() in sentTo }) }
                     .filter { it.emails.isNotEmpty() },
@@ -456,6 +448,8 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
                     watermarked = past.attachments.filter { it.watermarked }.map { it.documentId }.toSet()
                         .intersect(rehydrated.filter { it.isWatermarkable }.map { it.id }.toSet()),
                     watermark = past.watermark ?: watermark,
+                    // A duplicated send keeps its own watermark exactly as sent.
+                    watermarkEdited = past.watermark != null,
                 )
             }
             vm.update { copy(destination = DocDistDestination.Library) }

@@ -8,7 +8,6 @@ import com.zillit.desktop.feature.documentdistribution.domain.Csv
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.HISTORY_MAX_LIMIT
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
-import com.zillit.desktop.feature.documentdistribution.domain.isValidEmail
 
 /**
  * The address book: every recipient the production has ever seen, the
@@ -61,6 +60,20 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
     fun openAdd() {
         if (vm.refusesWrite()) return
         vm.update { copy(contactEditor = ContactEditorState()) }
+        primeDepartments()
+    }
+
+    /**
+     * The Department field's suggestions, once per production. The field
+     * stays free text — a vendor's department may not exist on the project —
+     * so a failure only means no suggestions.
+     */
+    private fun primeDepartments() {
+        if (vm.state.departments.isNotEmpty()) return
+        vm.run {
+            val names = vm.host.departments()
+            if (names.isNotEmpty()) vm.update { copy(departments = names) }
+        }
     }
 
     fun openEdit() {
@@ -77,6 +90,7 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
                 ),
             )
         }
+        primeDepartments()
     }
 
     fun edit(name: String?, email: String?, job: String?, listIds: List<String>?) = vm.update {
@@ -95,14 +109,15 @@ internal class ContactsSection(private val vm: VmScope, private val library: Lib
     @Suppress("CyclomaticComplexMethod") // Add, edit and rename are one form on the web too.
     fun saveEditor() {
         val editor = vm.state.contactEditor ?: return
-        val email = editor.email.trim().lowercase()
-        if (!isValidEmail(email)) return vm.fail(str(S.dd_invalid_email))
+        if (editor.saving) return
+        // Enter reaches here even while the button is disabled. The inline
+        // message points at the field that is wrong, where a toast did not.
+        if (editor.emailProblem(vm.state.contacts) != null) {
+            return vm.update { copy(contactEditor = editor.copy(emailTouched = true)) }
+        }
         if (vm.refusesWrite()) return
+        val email = editor.email.trim().lowercase()
         val original = editor.originalEmail.lowercase()
-        val clashes = vm.state.contacts.any { it.email.lowercase() == email && it.email.lowercase() != original }
-        if ((editor.isNew || editor.emailChanged) && clashes) return vm.notice(
-            str(S.desktop_docdist_email_already_in_address_book),
-        )
         val contact = Contact(email = email, name = editor.name.trim(), jobTitle = editor.job.trim())
         vm.update { copy(contactEditor = editor.copy(saving = true)) }
         vm.run {

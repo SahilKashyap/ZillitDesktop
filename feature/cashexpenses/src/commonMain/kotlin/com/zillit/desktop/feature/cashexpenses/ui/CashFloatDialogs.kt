@@ -5,7 +5,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -16,6 +21,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.cashexpenses.domain.CashAccount
 import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
 import com.zillit.desktop.feature.cashexpenses.domain.CashDates
 import com.zillit.desktop.feature.cashexpenses.ui.pages.monthLabel
@@ -32,6 +38,8 @@ internal fun ColumnScope.ReadyToCollectFields(
     prompt: CashPrompt.ReadyToCollect,
     companies: List<CashCompany>,
     onEvent: (CashEvent) -> Unit,
+    /** The chart the BS code is picked from; null reads it, and a bare field stands in meanwhile. */
+    chart: List<CashAccount>? = null,
 ) {
     FieldLabel(str(S.desktop_ce_company_required))
     if (companies.isEmpty()) {
@@ -53,14 +61,65 @@ internal fun ColumnScope.ReadyToCollectFields(
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    ZillitTextField(
+    BsCodePicker(
         value = prompt.bsCode,
         onValueChange = { onEvent(CashEvent.UpdatePrompt(prompt.copy(bsCode = it))) },
+        chart = chart,
+        onEvent = onEvent,
         label = str(S.desktop_ce_bs_code),
         placeholder = str(S.desktop_ce_bs_code_placeholder),
         helperText = str(S.desktop_ce_bs_code_help),
-        modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * The web's `BsCodeInput`: type a code, or pick one of the chart's postable
+ * balance-sheet codes that match what is typed. Reads the chart the first
+ * time it is shown.
+ */
+@Composable
+internal fun BsCodePicker(
+    value: String,
+    onValueChange: (String) -> Unit,
+    chart: List<CashAccount>?,
+    onEvent: (CashEvent) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String = "",
+    helperText: String? = null,
+) {
+    LaunchedEffect(chart == null) { if (chart == null) onEvent(CashEvent.LoadChartAccounts) }
+    val needle = value.trim().lowercase()
+    val matches = remember(needle, chart) {
+        if (needle.isEmpty()) {
+            emptyList()
+        } else {
+            chart.orEmpty()
+                .filter { it.balanceSheet && it.postable && it.leaf }
+                .filter { it.code.lowercase() != needle && it.label.lowercase().contains(needle) }
+                .take(PICKER_SUGGESTIONS)
+        }
+    }
+    Column(modifier = modifier.fillMaxWidth()) {
+        ZillitTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = label,
+            placeholder = placeholder,
+            helperText = helperText,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        matches.forEach { account ->
+            ZillitText(
+                text = account.label,
+                style = ZillitTheme.typography.bodySmall,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onValueChange(account.code) }
+                    .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+            )
+        }
+    }
 }
 
 /**
@@ -81,24 +140,41 @@ internal fun ColumnScope.RecordReturnFields(
     fun update(next: CashPrompt.RecordReturn) = onEvent(CashEvent.UpdatePrompt(next))
 
     FieldLabel(str(S.desktop_ce_crew_member_float))
-    ZillitSelect(
-        value = prompt.floatId.orEmpty(),
-        options = listOf("") + floats.map { it.id },
-        onSelect = { update(prompt.copy(floatId = it.ifBlank { null })) },
-        label = { id ->
-            floats.firstOrNull { it.id == id }?.let { float ->
-                str(
-                    S.desktop_ce_float_option,
-                    people.nameOf(float.userId, float.holderName),
-                    float.requestNumber,
-                    money(float.balance, float.currency),
-                )
-            } ?: str(S.desktop_ce_choose_crew_member_option)
-        },
-        enabled = floats.isNotEmpty(),
-        modifier = Modifier.fillMaxWidth(),
-    )
-    chosen?.let {
+    if (prompt.fixed && chosen != null) {
+        // Opened from the float's own row: shown, not picked (`RecordCashReturnModal.jsx:143-151`).
+        val designation = state?.assignees?.firstOrNull { it.userId == chosen.userId }?.designation
+        ZillitText(
+            text = listOfNotNull(
+                people.nameOf(chosen.userId, chosen.holderName),
+                designation?.takeIf { it.isNotBlank() },
+                str(S.desktop_pc_float_balance_line, chosen.requestNumber, money(chosen.balance, chosen.currency)),
+            ).joinToString(" · "),
+            style = ZillitTheme.typography.bodyMedium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(ZillitTheme.colors.surfaceSunken, ZillitTheme.shapes.medium)
+                .padding(ZillitTheme.spacing.md),
+        )
+    } else {
+        ZillitSelect(
+            value = prompt.floatId.orEmpty(),
+            options = listOf("") + floats.map { it.id },
+            onSelect = { update(prompt.copy(floatId = it.ifBlank { null })) },
+            label = { id ->
+                floats.firstOrNull { it.id == id }?.let { float ->
+                    str(
+                        S.desktop_ce_float_option,
+                        people.nameOf(float.userId, float.holderName),
+                        float.requestNumber,
+                        money(float.balance, float.currency),
+                    )
+                } ?: str(S.desktop_ce_choose_crew_member_option)
+            },
+            enabled = floats.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    chosen?.takeIf { !prompt.fixed }?.let {
         ZillitText(
             text = str(S.desktop_ce_balance_now, money(it.balance, it.currency)),
             style = ZillitTheme.typography.bodySmall,
@@ -111,6 +187,7 @@ internal fun ColumnScope.RecordReturnFields(
             onValueChange = { update(prompt.copy(amount = it)) },
             label = str(S.desktop_ce_amount_returned),
             placeholder = "0.00",
+            helperText = str(S.desktop_pc_cash_physically_received),
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.weight(1f),
         )
@@ -193,6 +270,8 @@ internal fun ColumnScope.NewReconciliationFields(prompt: CashPrompt.NewReconcili
         )
     }
 }
+
+private const val PICKER_SUGGESTIONS = 6
 
 @Composable
 private fun FieldLabel(text: String) {

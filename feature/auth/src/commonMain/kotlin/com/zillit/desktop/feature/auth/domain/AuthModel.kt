@@ -105,6 +105,18 @@ enum class JoinStatus { NotJoined, Pending, Approved, Rejected }
  * requests by the header provider; keeping them in a domain object invites them
  * into logs, crash reports and `toString()` output.
  */
+/**
+ * What this device tells the server it is (`PUT device`) — the phones'
+ * `DeviceUpdateModel`: a name a person recognises, the kind of client, the
+ * OS release and the app version.
+ */
+data class DeviceReport(
+    val name: String,
+    val type: String,
+    val osVersion: String,
+    val appVersion: String,
+)
+
 data class AuthSession(
     val device: DeviceIdentity,
     val activeProject: Project?,

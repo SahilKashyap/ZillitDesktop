@@ -18,6 +18,9 @@ import com.zillit.desktop.core.security.SecureStore
 import com.zillit.desktop.feature.auth.domain.AuthRepository
 import com.zillit.desktop.feature.auth.domain.AuthSession
 import com.zillit.desktop.feature.auth.domain.DeviceIdentity
+import com.zillit.desktop.feature.auth.domain.DeviceReport
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,7 +45,17 @@ class AuthRepositoryImpl(
      * is pushed rather than polled.
      */
     private val onDeviceIdentified: suspend (DeviceIdentity) -> kotlin.Unit = {},
+    /** This machine, for `PUT device`. Null sends nothing. */
+    private val deviceReport: (() -> DeviceReport)? = null,
+    /**
+     * Where that report runs, so signing in never waits on it. Null sends
+     * nothing; a test that wants the call makes it through [reportDevice].
+     */
+    private val reportScope: CoroutineScope? = null,
 ) : AuthRepository {
+
+    /** The device id this launch has already described to the server. */
+    private var reportedFor: String? = null
 
     private val endpoints = AuthEndpoints(config)
     private val _session = MutableStateFlow<AuthSession?>(null)
@@ -138,6 +151,53 @@ class AuthRepositoryImpl(
      * device id in its body and the project-user headers, and both are gone a
      * line later.
      */
+    /**
+     * The device id reaches the headers first — the report is authenticated
+     * by it — and then the server is told what this device is, once a launch.
+     */
+    private suspend fun identified(identity: DeviceIdentity) {
+        onDeviceIdentified(identity)
+        if (reportedFor == identity.deviceId) return
+        val scope = reportScope ?: return
+        reportedFor = identity.deviceId
+        scope.launch { reportDevice() }
+    }
+
+    override suspend fun reportDevice(): ZillitResult<kotlin.Unit> {
+        val report = deviceReport?.invoke() ?: return ZillitResult.Success(kotlin.Unit)
+        val answer = apiClient.envelope(
+            verb = HttpVerb.Put,
+            url = endpoints.device,
+            // `MODELDATA.DEFAULT`, as `CommonApis.updateDevice` sends it.
+            module = RequestModule.Default,
+            body = jsonBody(
+                DeviceUpdateDto(
+                    deviceName = report.name,
+                    deviceType = report.type,
+                    osVersion = report.osVersion,
+                    appVersion = report.appVersion,
+                ),
+            ),
+        )
+        return when (answer) {
+            // A 200 can still say no (`status:0`); say so rather than believe it.
+            is ZillitResult.Success -> {
+                if (answer.data.status == 0) {
+                    ZillitLog.w(TAG) { "device details refused: ${answer.data.message}" }
+                } else {
+                    ZillitLog.i(TAG) {
+                        "device details sent: ${report.type}, ${report.osVersion}, ${report.appVersion}"
+                    }
+                }
+                ZillitResult.Success(kotlin.Unit)
+            }
+            is ZillitResult.Failure -> {
+                ZillitLog.w(TAG) { "device details not sent: ${answer.error.technical}" }
+                answer
+            }
+        }
+    }
+
     override suspend fun signOut(): ZillitResult<kotlin.Unit> {
         val deviceId = _session.value?.device?.deviceId
             ?: runCatching { storedDeviceId() }.getOrNull()
@@ -207,7 +267,7 @@ class AuthRepositoryImpl(
                 ZillitResult.Success(null)
             } else {
                 _session.value = AuthSession(identity, activeProject = null, activeUnit = null)
-                onDeviceIdentified(identity)
+                identified(identity)
                 ZillitResult.Success(_session.value)
             }
         }.also { stored.fill(0) }
@@ -234,7 +294,7 @@ class AuthRepositoryImpl(
         _session.value = AuthSession(identity, activeProject = null, activeUnit = null)
         // Puts the device id back into outgoing headers; nothing authenticated
         // works until it is there.
-        onDeviceIdentified(identity)
+        identified(identity)
         return ZillitResult.Success(identity)
     }
 
@@ -252,7 +312,7 @@ class AuthRepositoryImpl(
     private suspend fun persist(identity: DeviceIdentity) {
         secureStore.put(SecureKey.DeviceKey, identity.deviceId.encodeToByteArray())
         _session.value = AuthSession(identity, activeProject = null, activeUnit = null)
-        onDeviceIdentified(identity)
+        identified(identity)
     }
 
     private companion object {

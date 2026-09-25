@@ -3,18 +3,20 @@ package com.zillit.desktop.feature.cashexpenses.ui
 import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.forms.FormTemplate
-import com.zillit.desktop.core.forms.customValues
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.data.cashFormRefreshes
+import com.zillit.desktop.feature.cashexpenses.data.cashMetadataRefreshes
 import com.zillit.desktop.feature.cashexpenses.data.cashRefreshes
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
-import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
+import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
+import com.zillit.desktop.feature.cashexpenses.domain.CashReferenceSources
+import com.zillit.desktop.feature.cashexpenses.domain.CashDepartments
+import com.zillit.desktop.feature.cashexpenses.domain.CashFloatOrder
 import com.zillit.desktop.feature.cashexpenses.domain.CashQueue
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
 import com.zillit.desktop.feature.cashexpenses.domain.CashRules
@@ -23,8 +25,6 @@ import com.zillit.desktop.feature.cashexpenses.domain.DraftReceipt
 import com.zillit.desktop.feature.cashexpenses.domain.EditorLine
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.LineItemEditor
-import com.zillit.desktop.feature.cashexpenses.domain.NewClaimBatch
-import com.zillit.desktop.feature.cashexpenses.domain.NewFloatRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 
@@ -84,10 +84,20 @@ class CashExpensesViewModel(
     private val formTemplate: suspend () -> ZillitResult<FormTemplate> = {
         ZillitResult.Success(FormTemplate())
     },
-    /** The ledger's rows for this tool per page key, and the page read. */
+    /**
+     * The ledger's rows for this tool: per page key for the tabs, per entity
+     * for the rows, and the reads. The tool is chosen per key by the host —
+     * see [CashBadges.toolFor].
+     */
     private val badges: TabBadgeSource = TabBadgeSource.None,
     /** Where an export is saved; null says the exports cannot save. See [CashFiles]. */
     private val files: CashFiles? = null,
+    /**
+     * The production's currencies, departments and chart, and the receipt
+     * picker — Account Hub documents and a desktop file dialog. See
+     * [CashReferenceSources] and [ReferenceDesk].
+     */
+    reference: CashReferenceSources = CashReferenceSources(),
 ) : ZillitViewModel<CashUiState, CashEvent, CashEffect>(
     CashUiState(
         viewer = viewer(),
@@ -119,8 +129,14 @@ class CashExpensesViewModel(
         override fun act(
             success: String,
             onSuccess: CashUiState.() -> CashUiState,
+            after: () -> Unit,
             block: suspend () -> ZillitResult<Unit>,
-        ): Job = this@CashExpensesViewModel.act(success, onSuccess, block)
+        ): Job = this@CashExpensesViewModel.act(success, onSuccess, after, block)
+
+        override fun readEntity(level1: String, entityId: String, kind: String) =
+            this@CashExpensesViewModel.readEntity(level1, entityId, kind)
+
+        override fun refetchMetadata() = this@CashExpensesViewModel.refetchMetadata(reloadPage = false)
     }
 
     private val batchDesk: BatchDesk = BatchDesk(host)
@@ -128,11 +144,28 @@ class CashExpensesViewModel(
     private val reconDesk: ReconDesk = ReconDesk(host)
     private val settingsDesk: SettingsDesk = SettingsDesk(host)
     private val exportDesk: ExportDesk = ExportDesk(host)
+    private val referenceDesk: ReferenceDesk = ReferenceDesk(host, reference)
     private val promptDesk: PromptDesk = PromptDesk(host, batchDesk, floatDesk, reconDesk)
 
-    /** The page on screen is its read — every key it is filed under that has rows. */
-    private fun readPage(destination: CashDestination) {
+    // -- crew parity -- Submit Receipts, Receipts History and Float Request.
+    private val crewDesk: CrewDesk = CrewDesk(host, navigate = { open(it) })
+    // -- funds parity --
+    private val fundsDesk: FundsDesk = FundsDesk(host, floatDesk, reconDesk)
+
+    /**
+     * Arriving on a page reads nothing — the web marks one entity read as it
+     * is opened or acted on ([readEntity]) — except the two pages it reads
+     * whole on mount; see [CashDestination.readsWholeTab].
+     */
+    private fun readTab(destination: CashDestination) {
+        if (!destination.readsWholeTab) return
         destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
+    }
+
+    /** One entity's rows read, in the bucket [kind] names. */
+    private fun readEntity(level1: String, entityId: String, kind: String) {
+        if (entityId.isBlank()) return
+        badges.readEntity(level1, entityId, kind)
     }
 
     /** The host's viewer, as the composition on screen entered. */
@@ -154,18 +187,29 @@ class CashExpensesViewModel(
         if (started) return
         started = true
         // The production's own: a switch must not carry the last one's companies.
-        setState { copy(companies = emptyList(), lockedThrough = null) }
+        setState {
+            copy(
+                companies = emptyList(),
+                lockedThrough = null,
+                chartAccounts = null,
+                departments = emptyList(),
+                currencies = CashCurrencies(),
+                floatDetail = null,
+            )
+        }
         loadFormTemplate()
         loadLock()
+        referenceDesk.load()
         if (!watchingBadges) {
             watchingBadges = true
             launch {
                 badges.counts.collect { counts ->
                     setState { copy(unread = counts) }
-                    // A row landing on the open page is read as it lands.
-                    readPage(currentState.destination)
+                    // A row landing on a page read whole is read as it lands.
+                    readTab(currentState.destination)
                 }
             }
+            launch { badges.entityCounts.collect { counts -> setState { copy(unreadByEntity = counts) } } }
         }
         launch {
             val identity = identity()
@@ -186,6 +230,26 @@ class CashExpensesViewModel(
             launch { cashRefreshes(bus).collect { load(currentState.destination) } }
             // The accountant changed which fields the float request has.
             launch { cashFormRefreshes(bus).collect { loadFormTemplate() } }
+            // Settings, an approval chain or an assignment rule changed who
+            // this viewer is here; a chain change moves rows between queues too.
+            launch { cashMetadataRefreshes(bus).collect { chain -> refetchMetadata(reloadPage = chain) } }
+        }
+    }
+
+    /**
+     * Re-pulls `/metadata` and reseats the viewer on it — the web's
+     * `ah:cash:metadata` refetch. The tabs follow from the viewer; a page the
+     * new rights close gives way to the landing. [reloadPage] also reloads a
+     * page that stays, which an approval-chain change needs — never Settings,
+     * where it would throw away edits in other sections.
+     */
+    private fun refetchMetadata(reloadPage: Boolean) {
+        launch {
+            val metadata = (repository.metadata() as? ZillitResult.Success)?.data ?: return@launch
+            val before = currentState.destination
+            reseat { it.copy(metadata = metadata) }
+            val stayed = currentState.destination == before
+            if (reloadPage && stayed && before != CashDestination.Settings) load(before)
         }
     }
 
@@ -236,6 +300,11 @@ class CashExpensesViewModel(
             is CashEvent.Search -> setState { copy(search = event.query) }
             is CashEvent.SelectBatch -> batchDesk.open(event.batchId)
             is CashEvent.SelectFloat -> setState { copy(selectedFloatId = event.floatId) }
+            is CashEvent.OpenFloatDetail -> floatDesk.openDetail(event.floatId)
+            CashEvent.CloseFloatDetail -> floatDesk.closeDetail()
+            is CashEvent.SaveFloatBsCode -> floatDesk.saveBsCode(event.floatId, event.bsCode)
+            CashEvent.OpenApprovalLevels -> sendEffect(CashEffect.Navigate(CASH_APPROVERS_ROUTE))
+            CashEvent.LoadChartAccounts -> referenceDesk.loadChart()
             CashEvent.ClearNotice -> setState { copy(notice = null) }
 
             is CashEvent.Ask -> ask(event.prompt)
@@ -265,10 +334,12 @@ class CashExpensesViewModel(
             }
 
             is CashEvent.EditSubmitNotes -> setState { copy(draft = draft.copy(notes = event.notes)) }
-            CashEvent.SubmitReceipts -> submitReceipts()
+            is CashEvent.AttachReceipt -> referenceDesk.attachReceipt(event.index)
+            CashEvent.SubmitReceipts -> crewDesk.submitReceipts()
 
             is CashEvent.EditFloatRequest -> setState { copy(floatDraft = event.draft) }
-            CashEvent.SubmitFloatRequest -> submitFloatRequest()
+            CashEvent.SubmitFloatRequest -> crewDesk.submitFloatRequest()
+            is CrewEvent -> crewDesk.handle(event)
             CashEvent.RaiseFloatForCrew -> open(CashDestination.FloatRequest)
 
             is CashEvent.CodeClaim -> act(str(S.desktop_card_coding_saved)) {
@@ -303,6 +374,8 @@ class CashExpensesViewModel(
             CashEvent.SaveRequestCap -> settingsDesk.saveCap()
             is CashEvent.EditAssignmentRules -> setState { copy(rulesDraft = event.rules) }
             CashEvent.SaveAssignmentRules -> settingsDesk.saveRules()
+            // -- settings parity --
+            is SettingsEvent -> settingsDesk.handle(event)
 
             is CashEvent.EditEffectiveDate -> batchDesk.editDate(event.ymd)
             is CashEvent.EditSeniorNotes -> batchDesk.editNotes(event.text)
@@ -324,6 +397,17 @@ class CashExpensesViewModel(
             CashEvent.SubmitFunds -> floatDesk.submitFunds()
 
             is CashEvent.Export -> exportDesk.export(event.register, event.format)
+
+            // -- batch parity --
+            is BatchEvent -> batchDesk.handle(event)
+            // -- floats parity --
+            is CashEvent.ActNow -> promptDesk.resolve(event.prompt)
+            is CashEvent.ToggleFloatBatches -> floatDesk.toggleBatches(event.floatId)
+            is CashEvent.SelectFloatBatch -> floatDesk.selectBatch(event.floatId, event.batchId)
+            is CashEvent.ShowFloatHistory -> floatDesk.showHistory(event.floatId, event.reference)
+            is CashEvent.ToggleDetailBatch -> floatDesk.toggleDetailBatch(event.batchId)
+            // -- funds parity --
+            is CashEvent.Funds -> fundsDesk.handle(event.action)
         }
     }
 
@@ -379,12 +463,14 @@ class CashExpensesViewModel(
                 panel = null,
                 recon = null,
                 funds = null,
+                floatDetail = null,
                 search = "",
                 error = null,
             )
         }
+        crewDesk.onOpen(destination)
         load(destination)
-        readPage(destination)
+        readTab(destination)
     }
 
     /** Opens a dialog, filling what it needs from what is loaded. */
@@ -407,9 +493,10 @@ class CashExpensesViewModel(
         loadJob?.cancel()
         // The crew is re-read with every page: it belongs to the open
         // production, and every name on these pages is looked up in it.
-        val crew = assignees()
+        val crew = CashDepartments.withIds(assignees(), currentState.departments)
         setState { copy(loading = true, error = null, assignees = crew) }
         if (destination.codes && currentState.settings == null) loadQuickCodes()
+        if (destination.codes) referenceDesk.loadChart()
         loadJob = launch {
             val outcome: ZillitResult<CashUiState.() -> CashUiState> = when (destination) {
                 CashDestination.PettyCashOverview ->
@@ -418,8 +505,10 @@ class CashExpensesViewModel(
                 CashDestination.OutOfPocketOverview ->
                     repository.outOfPocketOverview().mapState { copy(outOfPocketOverview = it) }
 
-                CashDestination.MyOverview ->
-                    repository.myOverview().mapState { copy(myOverview = it, myFloats = it.floats) }
+                // The overview's own `floats` are not the float list: the
+                // web keeps `myFloats` from `listMyFloats`, sorted, for every
+                // crew page, and the overview never overwrites it.
+                CashDestination.MyOverview -> withMyFloats(repository.myOverview().mapState { copy(myOverview = it) })
 
                 CashDestination.ActiveFloats ->
                     repository.activeFloats().mapState { copy(activeFloats = it) }
@@ -427,14 +516,20 @@ class CashExpensesViewModel(
                 CashDestination.TopUps ->
                     repository.topUps().mapState { copy(topUps = it) }
 
-                CashDestination.FloatRequest, CashDestination.CashExtension ->
-                    repository.myFloats().mapState { copy(myFloats = it) }
+                CashDestination.FloatRequest ->
+                    repository.myFloats().mapState { copy(myFloats = CashFloatOrder.oldestFirst(it)) }
+
+                // The floats, then the selected float's top-ups (funds parity).
+                CashDestination.CashExtension -> fundsDesk.loadExtension()
 
                 CashDestination.SubmitReceipts, CashDestination.OutOfPocketSubmit ->
-                    loadSubmitScreen()
+                    crewDesk.loadSubmit(destination.expenseType)
 
                 CashDestination.ReceiptsHistory, CashDestination.OutOfPocketHistory ->
-                    repository.myBatches().mapState { copy(myBatches = it) }
+                    withMyFloats(
+                        repository.myBatches(expenseType = destination.expenseType.wire)
+                            .mapState { copy(myBatches = it) },
+                    )
 
                 CashDestination.ApprovalQueue -> loadApprovalQueue()
 
@@ -465,7 +560,8 @@ class CashExpensesViewModel(
                 CashDestination.DepartmentOverview -> loadDepartmentOverview()
 
                 CashDestination.Settings ->
-                    repository.settings().mapState { copy(settings = it, settingsDraft = it) }
+                    // A socket-driven reload leaves an edit in progress alone.
+                    repository.settings().mapState { settingsReloaded(it) }
             }
 
             when (outcome) {
@@ -492,18 +588,16 @@ class CashExpensesViewModel(
     }
 
     /**
-     * The Submit Receipts screen needs both the float and the pending batches:
-     * the settlement maths floors the headroom with the live pending total —
-     * see `FloatSettlement`.
+     * [page], plus the crew member's floats beside it. The floats are advisory
+     * here: a failed read keeps what was there rather than failing the page.
      */
-    private suspend fun loadSubmitScreen(): ZillitResult<CashUiState.() -> CashUiState> {
-        val floats = repository.myFloats()
-        if (floats is ZillitResult.Failure) return floats
-        val batches = repository.myBatches()
-        if (batches is ZillitResult.Failure) return batches
-        val loadedFloats = (floats as ZillitResult.Success).data
-        val loadedBatches = (batches as ZillitResult.Success).data
-        return ZillitResult.Success { copy(myFloats = loadedFloats, myBatches = loadedBatches) }
+    private suspend fun withMyFloats(
+        page: ZillitResult<CashUiState.() -> CashUiState>,
+    ): ZillitResult<CashUiState.() -> CashUiState> {
+        if (page is ZillitResult.Failure) return page
+        val applyPage = (page as ZillitResult.Success).data
+        val floats = (repository.myFloats() as? ZillitResult.Success)?.data?.let(CashFloatOrder::oldestFirst)
+        return ZillitResult.Success { applyPage().let { if (floats != null) it.copy(myFloats = floats) else it } }
     }
 
     /**
@@ -525,14 +619,16 @@ class CashExpensesViewModel(
         val rows = repository.reconciliations()
         if (rows is ZillitResult.Failure) return rows
         val loadedRows = (rows as ZillitResult.Success).data
-        // The book balance is advisory — it is what the ledger thinks the cash
-        // should be. A failure there must not hide the reconciliation list.
-        val book = (repository.computeBookBalance() as? ZillitResult.Success)?.data
-        return ZillitResult.Success { copy(reconciliations = loadedRows, bookBalance = book) }
+        // funds parity: no bare compute-book here — the web asks for a book
+        // balance only from a period's count, with its opening balance and month.
+        return ZillitResult.Success { copy(reconciliations = loadedRows) }
     }
 
     private suspend fun loadDepartmentOverview(): ZillitResult<CashUiState.() -> CashUiState> {
-        val departmentId = currentState.departmentOverview?.departmentId
+        // The viewer's own department first, as the web asks
+        // (`currentUser.department_id`, `PCDeptViewPage.jsx:31-34`).
+        val departmentId = currentState.viewer.departmentId?.takeIf { it.isNotBlank() }
+            ?: currentState.departmentOverview?.departmentId
             ?: currentState.myFloats.firstNotNullOfOrNull { it.departmentId }
             ?: return ZillitResult.Success { copy(departmentOverview = null) }
         return repository.departmentOverview(departmentId).mapState { copy(departmentOverview = it) }
@@ -574,100 +670,6 @@ class CashExpensesViewModel(
     }
 
     // -- actions -----------------------------------------------------------
-
-    private fun submitReceipts() {
-        val state = currentState
-        val request = NewClaimBatch(
-            expenseType = state.destination.expenseType,
-            floatId = state.submittableFloat?.id,
-            receipts = state.draft.receipts,
-            // The settlement decides itself: whether the batch reduces the float
-            // or is reimbursed is arithmetic, not a choice the submitter makes.
-            settlementType = if (state.destination.expenseType == ExpenseType.OutOfPocket) {
-                REIMBURSE
-            } else if (state.settlement.reimburses) {
-                REIMBURSE
-            } else {
-                REDUCE_FLOAT
-            },
-            notes = state.draft.notes.takeIf { it.isNotBlank() },
-        )
-
-        val invalid = request.validationError()
-        if (invalid != null) {
-            sendEffect(CashEffect.Failed(invalid))
-            return
-        }
-
-        act(str(S.desktop_ce_receipts_submitted), onSuccess = { copy(draft = SubmitDraft()) }) {
-            repository.submitReceipts(request)
-        }
-    }
-
-    @Suppress("ReturnCount") // One refusal per rule.
-    private fun submitFloatRequest() {
-        val draft = currentState.floatDraft
-        val layout = currentState.floatForm
-        val amount = draft.amount.trim().toDoubleOrNull()
-        // An accountant raises a float for someone; the form names who.
-        val onBehalf = currentState.viewer.isAccountant
-        if (onBehalf && draft.targetUserId.isBlank()) {
-            sendEffect(CashEffect.Failed(str(S.desktop_ce_choose_crew_member)))
-            return
-        }
-        if (amount == null || amount <= 0) {
-            sendEffect(CashEffect.Failed(str(S.desktop_ce_enter_cash_amount)))
-            return
-        }
-        if (draft.purpose.isBlank()) {
-            sendEffect(CashEffect.Failed(str(S.desktop_ce_say_what_float_is_for)))
-            return
-        }
-        templateProblem(layout)?.let {
-            sendEffect(CashEffect.Failed(it))
-            return
-        }
-
-        val request = NewFloatRequest(
-            amount = amount,
-            currency = currentState.myFloats.firstOrNull()?.currency,
-            purpose = draft.purpose.trim(),
-            departmentId = draft.departmentId.takeIf { it.isNotBlank() },
-            duration = draft.duration.takeIf { it.isNotBlank() },
-            durationType = draft.durationType,
-            targetUserId = draft.targetUserId.takeIf { onBehalf && it.isNotBlank() },
-            customFields = listOfNotNull(
-                layout.customValues(CashFormFields.FLOAT_REQUEST, draft.customFields),
-            ),
-        )
-        // The form is cleared only when the request lands: clearing it here,
-        // before the answer, threw the amount and purpose away on every
-        // failed save.
-        act(str(S.desktop_ce_float_requested), onSuccess = { copy(floatDraft = FloatRequestDraft()) }) {
-            repository.requestFloat(request)
-        }
-    }
-
-    /**
-     * What the production's own form rules refuse, or null — only for fields
-     * this screen renders; the rest are the server's to judge.
-     */
-    private fun templateProblem(layout: FormLayout): String? {
-        if (!layout.isLoaded) return null
-        val draft = currentState.floatDraft
-        val required = { label: String -> layout.isRequired(CashFormFields.FLOAT_REQUEST, label) }
-        return when {
-            required(CashFormFields.DEPARTMENT) && draft.departmentId.isBlank() ->
-                str(S.desktop_ce_department_required)
-
-            required(CashFormFields.DURATION) && draft.duration.isBlank() ->
-                str(S.desktop_ce_duration_required)
-
-            else -> layout.missingCustom(CashFormFields.FLOAT_REQUEST, draft.customFields)
-                .firstOrNull()
-                ?.let { str(S.desktop_ce_field_required_on_floats, it.name) }
-        }
-    }
 
     /**
      * Opens a receipt's coding, seeded from whatever it already carries — or
@@ -739,13 +741,18 @@ class CashExpensesViewModel(
         launch {
             setState { copy(busy = true) }
             when (val saved = repository.updateSettings(draft)) {
-                is ZillitResult.Success -> setState {
-                    copy(
-                        busy = false,
-                        settings = saved.data,
-                        settingsDraft = saved.data,
-                        notice = str(S.desktop_ce_settings_saved),
-                    )
+                is ZillitResult.Success -> {
+                    setState {
+                        copy(
+                            busy = false,
+                            settings = saved.data,
+                            settingsDraft = saved.data,
+                            notice = str(S.desktop_ce_settings_saved),
+                        )
+                    }
+                    // The save changes the grants `/metadata` reports; the
+                    // saver re-pulls without waiting for the socket's echo.
+                    refetchMetadata(reloadPage = false)
                 }
 
                 is ZillitResult.Failure -> {
@@ -770,12 +777,14 @@ class CashExpensesViewModel(
         // draft here, never before the round trip, so a failed save leaves the
         // typing where the user can retry it.
         onSuccess: CashUiState.() -> CashUiState = { this },
+        after: () -> Unit = {},
         block: suspend () -> ZillitResult<Unit>,
     ): Job = launch {
         setState { copy(busy = true) }
         when (val result = block()) {
             is ZillitResult.Success -> {
                 setState { onSuccess().copy(busy = false, notice = success) }
+                after()
                 load(currentState.destination)
                 // A batch still open re-reads its receipts, so what was just
                 // saved — a coding, a verify — is what it shows.
@@ -797,9 +806,6 @@ class CashExpensesViewModel(
     }
 
     private companion object {
-        const val REIMBURSE = "REIMBURSE"
-        const val REDUCE_FLOAT = "REDUCE_FLOAT"
-
         /**
          * The fallback id source — only ever ids this client keeps to itself,
          * each replaced with a server id on save; see `LineItemEditor.toWire`.

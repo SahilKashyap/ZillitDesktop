@@ -15,6 +15,13 @@ data class AssigneeOption(
      * `ACCOUNTS_TEAM_USERS` does — see [BatchAssignment.accountsTeam].
      */
     val department: String = "",
+    /**
+     * The department's id — what a float or batch's `department_id` holds.
+     *
+     * The crew list carries none; the view model joins it from the
+     * department list by name (see [CashDepartments.withIds]).
+     */
+    val departmentId: String = "",
 )
 
 /**

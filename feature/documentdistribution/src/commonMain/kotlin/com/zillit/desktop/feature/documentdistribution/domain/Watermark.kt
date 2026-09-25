@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.documentdistribution.domain
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import kotlin.math.roundToInt
 
 /** How big the stamp is drawn, relative to the auto-fit size the engine picks. */
 enum class WatermarkSize(val wire: String, val scale: Double) {
@@ -128,9 +129,9 @@ data class WatermarkSettings(
 }
 
 /**
- * A partial save: only the fields sent change on the server, so a save
- * carries what the sender actually touched and two people changing different
- * controls at once do not overwrite each other.
+ * A save of the project's settings. Partial on the wire — only the fields
+ * sent change — but the Watermark settings dialog sends all three, as the
+ * web's `useWatermarkDefaults().save` does.
  */
 data class WatermarkSettingsPatch(
     val size: WatermarkSize? = null,
@@ -144,13 +145,34 @@ data class WatermarkSettingsPatch(
 fun WatermarkStyle.withDefaults(settings: WatermarkSettings): WatermarkStyle =
     copy(size = settings.size, color = settings.color, opacity = settings.opacity)
 
+/** This style's Size / Colour / Opacity as a whole save of the project's settings. */
+fun WatermarkStyle.asSettingsPatch(): WatermarkSettingsPatch =
+    WatermarkSettingsPatch(size = size, color = color.lowercase(), opacity = opacity)
+
 /**
- * The appearance fields of this style that differ from [settings] — what a
- * wizard save sends. Colour compares case-insensitively because the server
- * stores `#RRGGBB` uppercase and the swatches are lowercase.
+ * Same Size / Colour / Opacity as [settings] — the web's
+ * `isSameWatermarkStyle`. Colour ignores case, because the server stores
+ * `#RRGGBB` uppercase and the swatches are lowercase; opacity compares to the
+ * whole percent, so a slider's float noise never reads as a change.
  */
-fun WatermarkStyle.patchAgainst(settings: WatermarkSettings): WatermarkSettingsPatch = WatermarkSettingsPatch(
-    size = size.takeIf { it != settings.size },
-    color = color.takeIf { !it.equals(settings.color, ignoreCase = true) },
-    opacity = opacity.takeIf { it != settings.opacity },
-)
+fun WatermarkStyle.sameAppearanceAs(settings: WatermarkSettings): Boolean =
+    size == settings.size &&
+        color.equals(settings.color, ignoreCase = true) &&
+        (opacity * PERCENT).roundToInt() == (settings.opacity * PERCENT).roundToInt()
+
+/** True when this style is the standard look every project starts with. */
+val WatermarkStyle.isStandardAppearance: Boolean get() = sameAppearanceAs(WatermarkSettings.BuiltIn)
+
+/** "Large · #6b7280 · 40%" — the web's `describeWatermarkStyle`. */
+fun WatermarkSettings.describe(): String {
+    val sizeLabel = str(
+        when (size) {
+            WatermarkSize.Small -> S.dd_watermark_size_small
+            WatermarkSize.Medium -> S.dd_watermark_size_medium
+            WatermarkSize.Large -> S.dd_watermark_size_large
+        },
+    )
+    return str(S.dd_watermark_summary, sizeLabel, color.lowercase(), (opacity * PERCENT).roundToInt())
+}
+
+private const val PERCENT = 100

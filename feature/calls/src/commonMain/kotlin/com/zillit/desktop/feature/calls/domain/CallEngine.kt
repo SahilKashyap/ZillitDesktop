@@ -43,6 +43,14 @@ sealed interface CallEngineEvent {
     data class PeerScreenShare(val uid: Int, val sharing: Boolean) : CallEngineEvent
 
     /**
+     * The pin on a video tile was pressed — the page's own control, drawn
+     * inside the picture because nothing Compose floats over it is painted.
+     * [key] is the tile's `CallTile.key`. Nothing to do with media: the view
+     * model keeps the pins, and the page is told them back with the stage.
+     */
+    data class PinRequested(val key: String) : CallEngineEvent
+
+    /**
      * A remote participant raised or lowered their hand, by USER id.
      *
      * Line 1 only: the SFU broadcasts `peerRaisedHand`/`peerLoweredHand` with

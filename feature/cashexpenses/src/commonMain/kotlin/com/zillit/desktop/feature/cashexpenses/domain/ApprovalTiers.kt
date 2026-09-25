@@ -85,6 +85,20 @@ object ApprovalTiers {
         return TierStep(next, total(resolved))
     }
 
+    /**
+     * An accountant looking at a record no chain covers — the web's
+     * `isAccountant && !hasTier1ApproverForDept(resolved, department_id)`
+     * (`PCApprovalPage.jsx:280, 1291`). Nobody can approve it until a level
+     * is set, so the queue offers "Set Approval Level" in place of the actions.
+     */
+    fun needsApprovalLevel(viewer: CashViewer, departmentId: String?, amount: Double): Boolean =
+        viewer.isAccountant &&
+            resolve(viewer.metadata.approvalTierConfigs, departmentId, amount) == null
+
+    /** How many levels the chain covering this record has; zero when none does. */
+    fun totalFor(viewer: CashViewer, departmentId: String?, amount: Double): Int =
+        total(resolve(viewer.metadata.approvalTierConfigs, departmentId, amount))
+
     private fun usersFor(tier: ApprovalTier, amount: Double?): List<String> {
         if (amount == null) return tier.rules.flatMap { it.userIds }
         val matched = tier.rules

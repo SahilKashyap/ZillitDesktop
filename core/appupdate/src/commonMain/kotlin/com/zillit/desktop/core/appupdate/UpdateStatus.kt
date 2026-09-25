@@ -40,7 +40,11 @@ sealed interface UpdateStatus {
      *   banner still appears (knowing a version exists is worth saying); it
      *   simply has no button.
      */
-    data class Available(val latestVersion: String, val downloadUrl: String?) : UpdateStatus
+    data class Available(
+        val latestVersion: String,
+        val downloadUrl: String?,
+        val installer: InstallerRef? = null,
+    ) : UpdateStatus
 
     /**
      * The installed build is below `desktop_min_version`.
@@ -54,5 +58,32 @@ sealed interface UpdateStatus {
      * version floor forces only the builds that are actually too old, which is
      * what the flag was always being used to approximate.
      */
-    data class Required(val latestVersion: String, val downloadUrl: String?) : UpdateStatus
+    data class Required(
+        val latestVersion: String,
+        val downloadUrl: String?,
+        val installer: InstallerRef? = null,
+    ) : UpdateStatus
 }
+
+/**
+ * A direct link to the installer file, and the digest it must hash to.
+ *
+ * Separate from `downloadUrl` on purpose: that one is a page for a person to
+ * read (prod's is a Google Drive page), while this one must answer the bytes
+ * of a `.dmg` or `.msi` with no page in between. Both halves come from Remote
+ * Config (`desktop_installer_url` and `desktop_installer_sha256`, each with the
+ * usual platform suffixes), and one without the other is no installer at all:
+ * a file nothing vouches for is never run.
+ *
+ * @param url https only — see [usableUrl].
+ * @param sha256 64 lowercase hex characters.
+ */
+data class InstallerRef(val url: String, val sha256: String)
+
+/** The installer, if either status carries one. */
+val UpdateStatus.installer: InstallerRef?
+    get() = when (this) {
+        is UpdateStatus.Available -> installer
+        is UpdateStatus.Required -> installer
+        UpdateStatus.Unknown, UpdateStatus.UpToDate -> null
+    }

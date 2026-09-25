@@ -132,6 +132,13 @@ data class UserSnapshot(
      * present-and-active, never as a reason to hide someone.
      */
     val status: String? = null,
+    /**
+     * Their project mailbox (`mail_box_detail.email_address`) — where
+     * production mail to them should go. Most members set no personal
+     * [email], while every member carries a mailbox. Not cached: an offline
+     * start falls back to [email] until the network answers.
+     */
+    val mailboxAddress: String? = null,
 )
 
 data class ToolSnapshot(

@@ -58,7 +58,8 @@ val CardWorkflowStatus.tone: StatusTone
         CardWorkflowStatus.Imported, CardWorkflowStatus.PendingReceipt, CardWorkflowStatus.New -> StatusTone.Pending
         CardWorkflowStatus.InApproval -> StatusTone.Progress
         CardWorkflowStatus.Queried, CardWorkflowStatus.Rejected, CardWorkflowStatus.Personal -> StatusTone.Rejected
-        CardWorkflowStatus.Overridden, CardWorkflowStatus.Escalated -> StatusTone.Escalated
+        CardWorkflowStatus.Overridden, CardWorkflowStatus.Escalated, CardWorkflowStatus.Duplicate ->
+            StatusTone.Escalated
         CardWorkflowStatus.UnderReview -> StatusTone.Progress
         CardWorkflowStatus.Unknown -> StatusTone.Neutral
     }
@@ -104,6 +105,7 @@ fun ReconciliationPill(
 fun MatchStatusPill(status: MatchStatus, score: Int?, modifier: Modifier = Modifier) {
     ZillitStatusPill(
         label = when {
+            status == MatchStatus.Suggested -> status.label
             status == MatchStatus.Matched && score != null -> str(S.desktop_card_matched_score, score)
             status == MatchStatus.Matched -> str(S.desktop_matched)
             else -> str(S.desktop_no_match)

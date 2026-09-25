@@ -23,6 +23,7 @@ object CashRules {
         BatchStatus.ReadyToPost,
         BatchStatus.UnderReview,
         BatchStatus.Escalated,
+        BatchStatus.Descalated,
     )
 
     fun isReviewing(batch: ClaimBatch): Boolean =
@@ -84,9 +85,9 @@ object CashRules {
     /**
      * The level this viewer signs next, or null when it is not theirs.
      *
-     * A production whose metadata carries no chains at all falls back to the
-     * approver grant, sending no level — the call as it was before chains
-     * existed — rather than leaving every approver with nothing to press.
+     * No chain means nobody signs: the web's `getNextTier` answers null and
+     * the queue offers an accountant "Set Approval Level" instead
+     * ([ApprovalTiers.needsApprovalLevel]). The approver grant alone never approves.
      */
     fun approvalStep(
         viewer: CashViewer,
@@ -102,11 +103,7 @@ object CashRules {
     )
 
     fun mayApprove(viewer: CashViewer, departmentId: String?, amount: Double, approvals: List<TierApproval>): Boolean =
-        if (viewer.metadata.approvalTierConfigs.isEmpty()) {
-            viewer.isApprover
-        } else {
-            approvalStep(viewer, departmentId, amount, approvals) != null
-        }
+        approvalStep(viewer, departmentId, amount, approvals) != null
 
     fun mayApprove(viewer: CashViewer, batch: ClaimBatch): Boolean =
         mayApprove(viewer, batch.departmentId, batch.totalGross, batch.approvals)

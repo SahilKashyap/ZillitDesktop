@@ -39,6 +39,10 @@ class CashPeople(crew: List<AssigneeOption> = emptyList()) {
     /** As [nameOrNull], with [UNKNOWN] in place of nothing. */
     fun nameOf(userId: String?, recorded: String? = null): String = nameOrNull(userId, recorded) ?: UNKNOWN
 
+    /** What [userId] does on the production — the web's `getUserDesignation`; null when unknown. */
+    fun designationOf(userId: String?): String? =
+        userId?.let(byId::get)?.designation?.takeIf { it.isNotBlank() }
+
     private fun listed(userId: String?): String? =
         userId?.let(byId::get)?.fullName?.takeIf { it.isNotBlank() }
 

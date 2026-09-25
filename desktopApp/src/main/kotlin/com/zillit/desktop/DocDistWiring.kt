@@ -14,7 +14,10 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.session.ProjectContextLoader
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
+import com.zillit.desktop.core.database.UserSnapshot
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadgeLeaf
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistCrewMember
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadges
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistHost
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistSignature
@@ -197,13 +200,26 @@ internal class AppDocDistTransfer(
     }
 }
 
+/** The tool's host, over the graph's signatures, crew list and department catalogue. */
+internal fun AppGraph.Ready.docDistHost(): DocDistHost = AppDocDistHost(
+    signatures = signatureRepository,
+    crew = { projectContext?.context?.value?.users.orEmpty() },
+    departments = {
+        (adminRepository.departments() as? ZillitResult.Success)?.data.orEmpty().map { it.name }
+    },
+)
+
 /**
  * What Document Distribution asks the machine for: the OS file dialog,
- * PDFBox for the preview, Downloads for saved copies, the clipboard, and
- * the mail service's signatures.
+ * PDFBox for the preview, Downloads for saved copies, the clipboard, the
+ * mail service's signatures, and the production's crew and departments.
  */
 internal class AppDocDistHost(
     private val signatures: SignatureRepository,
+    /** The project context's crew — already loaded, never fetched here. */
+    private val crew: () -> List<UserSnapshot> = { emptyList() },
+    /** The admin catalogue's department names, as keys. */
+    private val departments: suspend () -> List<String> = { emptyList() },
 ) : DocDistHost {
 
     private val picker = AwtAttachmentPicker()
@@ -230,6 +246,25 @@ internal class AppDocDistHost(
         (signatures.signatures() as? ZillitResult.Success)?.data.orEmpty().map {
             DocDistSignature(id = it.id, title = it.title, bodyHtml = it.body, useForNew = it.useForNew)
         }
+
+    override fun crew(): List<DocDistCrewMember> = crew.invoke().map { user ->
+        DocDistCrewMember(
+            userId = user.userId,
+            name = user.fullName,
+            mailboxAddress = user.mailboxAddress,
+            email = user.email,
+            // Designations arrive as keys (`gaffer_label`, `{designation:…}`).
+            job = user.designation?.localised().orEmpty(),
+            status = user.status,
+        )
+    }
+
+    /** Translated, one per name ignoring case, alphabetical — the web's `useDepartments`. */
+    override suspend fun departments(): List<String> = departments.invoke()
+        .map { it.localised().trim() }
+        .filter { it.isNotEmpty() }
+        .distinctBy { it.lowercase() }
+        .sortedBy { it.lowercase() }
 
     private companion object {
         /** Well past the 25 MB send cap; a picker that admits a 2 GB file hangs before refusing it. */

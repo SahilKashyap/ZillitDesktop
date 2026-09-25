@@ -23,7 +23,7 @@ data class ApprovalTier(val order: Int, val rules: List<TierRule>)
 data class TierRule(val type: String, val amountThreshold: Double?, val userIds: List<String>)
 
 /** One sign-off a card or receipt has collected. */
-data class CardApproval(val userId: String, val tierNumber: Int)
+data class CardApproval(val userId: String, val tierNumber: Int, val approvedAt: Long? = null)
 
 /** Where a record stands in its chain, for one viewer. */
 data class TierVisibility(val canApprove: Boolean, val nextTier: Int?, val totalTiers: Int)

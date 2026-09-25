@@ -20,7 +20,13 @@ import com.zillit.desktop.feature.cashexpenses.domain.OutOfPocketOverview
 import com.zillit.desktop.feature.cashexpenses.domain.PaymentRouting
 import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
+import com.zillit.desktop.feature.cashexpenses.domain.CashAccount
 import com.zillit.desktop.feature.cashexpenses.domain.CashAssignmentRule
+import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
+import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
+import com.zillit.desktop.feature.cashexpenses.domain.CashDepartments
+import com.zillit.desktop.feature.cashexpenses.domain.CashNominals
+import com.zillit.desktop.feature.cashexpenses.domain.FloatDetails
 import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
 import com.zillit.desktop.feature.cashexpenses.domain.CashDates
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
@@ -41,6 +47,11 @@ data class CashUiState(
     val destination: CashDestination,
     /** Unread notifications per `level_1` key — the tabs' red chips. */
     val unread: Map<String, Int> = emptyMap(),
+    /**
+     * Unread per `level_1`, then per entity id (`level_3`) — the rows' chips.
+     * Read through [unreadFor] / [unreadOnPage].
+     */
+    val unreadByEntity: Map<String, Map<String, Int>> = emptyMap(),
     /** Which pipeline the sub-navigation is showing. */
     val pipeline: ExpenseType = ExpenseType.PettyCash,
     val loading: Boolean = false,
@@ -110,7 +121,60 @@ data class CashUiState(
     val rulesDraft: List<CashAssignmentRule>? = null,
     /** An export is on its way down. */
     val exporting: Boolean = false,
+
+    // -- the production's reference data (host seams) ----------------------
+    /** Project Currencies and the default every aggregate is shown in. */
+    val currencies: CashCurrencies = CashCurrencies(),
+    /** The production's departments, for pickers and names. */
+    val departments: List<CashDepartment> = emptyList(),
+    /**
+     * The chart of accounts, for the nominal pickers; null until it is read —
+     * see [CashEvent.LoadChartAccounts]. An unread chart wraps nothing
+     * ([wrapNominal]).
+     */
+    val chartAccounts: List<CashAccount>? = null,
+    /** The float whose detail dialog is open, if any. */
+    val floatDetail: FloatDetailState? = null,
+    /** The Submit form's receipt row whose attachment is uploading. */
+    val attachingReceipt: Int? = null,
+
+    // -- settings parity --
+    /** Settings' per-section saving, coordinator errors and dialogs. */
+    val settingsUi: SettingsUiState = SettingsUiState(),
+    // -- crew parity --
+    /** Submit Receipts' settlement choices, Receipts History's filter, Float Request's landing — see [CrewState]. */
+    val crew: CrewState = CrewState(),
+    // -- floats parity --
+    /** Active Floats rows opened to their batches, by float id — see [FloatExpansion]. */
+    val floatExpansions: Map<String, FloatExpansion> = emptyMap(),
+    /** The float whose history drawer is open, if any. */
+    val floatHistory: FloatHistoryPanel? = null,
+    /** Posted batches opened in the Float Details dialog: id → receipts, null while they load. */
+    val floatDetailClaims: Map<String, List<Claim>?> = emptyMap(),
+    // -- funds parity --
+    /** Top-Ups' and Cash Extension's dialogs and the extension's list — see [FundsDesk]. */
+    val fundsUi: FundsUiState = FundsUiState(),
 ) {
+    /** Unread for one entity under one `level_1` — the web's `getCashEntityUnread`. */
+    fun unreadFor(level1: String, entityId: String): Int = unreadByEntity[level1]?.get(entityId) ?: 0
+
+    /** Unread for one row on the page on screen, across every key the page is filed under. */
+    fun unreadOnPage(entityId: String): Int = destination.badgeKeys.sumOf { unreadFor(it, entityId) }
+
+    /** A record's currency code: its own, else the project default — see [CashCurrencies.codeFor]. */
+    fun currencyOf(recordCurrency: String?): String = currencies.codeFor(recordCurrency)
+
+    /** An amount of one record, in that record's currency. */
+    fun formatMoney(amount: Double?, recordCurrency: String?): String = currencies.format(amount, recordCurrency)
+
+    /** A total with no single record behind it, in the project default. */
+    fun formatAggregate(amount: Double?): String = currencies.formatAggregate(amount)
+
+    /** [code] as a payload sends it: `[[code]]` when the chart does not hold it. See [CashNominals.wrap]. */
+    fun wrapNominal(code: String?): String = CashNominals.wrap(code, chartAccounts.orEmpty())
+
+    fun departmentName(id: String?): String? = CashDepartments.nameOf(id, departments)
+
     /** The float request form's own rules — which fields show, which are required. */
     val floatForm: FormLayout get() = FormLayout(formTemplate)
 
@@ -161,7 +225,8 @@ data class CashUiState(
 
     /** The float receipts may currently be submitted against, if any. */
     val submittableFloat: CashFloat?
-        get() = myFloats.firstOrNull { it.status.isSubmittable }
+        // -- crew parity -- the picked float when several are spendable.
+        get() = CrewRules.submitFloat(myFloats, crew.submitFloatId)
 
     /**
      * Batches the crew member has submitted that are not yet posted.
@@ -171,7 +236,8 @@ data class CashUiState(
      * behind a submission made moments ago in this same window.
      */
     val pendingBatchesTotal: Double
-        get() = myBatches.filterNot { it.status.isPosted }.sumOf { it.totalGross }
+        // -- crew parity -- this float's batches only, and none posted, rejected or closed.
+        get() = CrewRules.pendingAgainst(submittableFloat, myBatches).sumOf { it.totalGross }
 
     val settlement: FloatSettlement
         get() = FloatSettlement.of(
@@ -220,10 +286,18 @@ data class FloatRequestDraft(
     val amount: String = "",
     val purpose: String = "",
     val duration: String = "",
-    val durationType: String = "days",
+    // -- crew parity -- no default: How long is picked (`run_of_show` / `days`).
+    val durationType: String = "",
     val departmentId: String = "",
     /** The extra fields this production added, by their form key. */
     val customFields: Map<String, String> = emptyMap(),
+    /** Blank takes the project default. */
+    val currency: String = "",
+    /** `YYYY-MM-DD`; sent as UTC midnight. */
+    val collectDate: String = "",
+    /** Blank takes the select's first option — see `CashFormFields.defaultSelect`. */
+    val episode: String = "",
+    val collectionMethod: String = "",
 )
 
 /**
@@ -300,6 +374,8 @@ sealed interface CashPrompt {
         /** "Other" splits into close or continue. */
         val otherCloses: Boolean = true,
         val notes: String = "",
+        /** Opened from the float's own row: the float is shown, not picked (`RecordCashReturnModal.jsx:122-152`). */
+        val fixed: Boolean = false,
     ) : CashPrompt
 
     /** Opens a reconciliation period: the safe's opening balance, the month and the currency. */
@@ -358,6 +434,9 @@ data class BatchPanel(
     val query: QueryPanel? = null,
     /** The receipt whose Verify is saving. */
     val verifying: String? = null,
+    // -- batch parity --
+    /** Receipts edited here and not yet saved: a refresh keeps them rather than the server's copy. */
+    val dirty: Boolean = false,
 )
 
 /** A batch's query thread, open beside it. */
@@ -366,6 +445,19 @@ data class QueryPanel(
     val loading: Boolean = true,
     val draft: String = "",
     val sending: Boolean = false,
+)
+
+/**
+ * The Float Details dialog — `GET /float-requests/{id}/details`, fetched on
+ * open. [details] stays null while it loads or when it failed.
+ */
+data class FloatDetailState(
+    val floatId: String,
+    val loading: Boolean = true,
+    val details: FloatDetails? = null,
+    val error: ZillitError? = null,
+    /** A BS-code correction on its way. */
+    val savingBsCode: Boolean = false,
 )
 
 /** The Fund Requests surface: the list, and the new-request form beside it. */
@@ -411,3 +503,24 @@ enum class ConfirmAction {
     ReceiveFunds,
     CancelFunds,
 }
+
+// -- floats parity --
+
+/**
+ * One Active Floats row opened to its batches — `GET /claims?float_request_id=`
+ * — and the batch picked beside them, whose receipts are fetched on pick
+ * (`PCFloatsPage.jsx:520-549`). [batches] is null while it loads.
+ */
+data class FloatExpansion(
+    val batches: List<ClaimBatch>? = null,
+    val selectedBatchId: String? = null,
+    /** Receipts per batch id, once fetched; a failed fetch stores an empty list. */
+    val claims: Map<String, List<Claim>> = emptyMap(),
+)
+
+/** A float's audit trail — `GET /float-requests/{id}/history`. [entries] is null while it loads. */
+data class FloatHistoryPanel(
+    val floatId: String,
+    val reference: String?,
+    val entries: List<com.zillit.desktop.feature.cashexpenses.domain.CashHistoryEntry>? = null,
+)

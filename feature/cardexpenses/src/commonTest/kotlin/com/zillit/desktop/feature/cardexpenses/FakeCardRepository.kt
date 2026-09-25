@@ -29,10 +29,10 @@ import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessSubmission
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptAssignment
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCoding
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptEdit
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptScope
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
 import com.zillit.desktop.feature.cardexpenses.domain.StatementImport
-import com.zillit.desktop.feature.cardexpenses.domain.StatementRow
 import com.zillit.desktop.feature.cardexpenses.domain.TierVisibility
 import com.zillit.desktop.feature.cardexpenses.domain.TransactionFilters
 
@@ -49,6 +49,7 @@ internal class FakeCardRepository(
     var topUps: List<CardTopUp> = emptyList(),
     var settings: CardSettings = CardSettings(),
     var fundRequests: List<FundRequest> = emptyList(),
+    var alerts: List<CardAlert> = emptyList(),
 ) : CardRepository {
 
     val calls = mutableListOf<String>()
@@ -85,11 +86,6 @@ internal class FakeCardRepository(
     override suspend fun assignPhysicalCard(cardId: String, cardNumber: String) = ok("assignPhysicalCard")
     override suspend fun updateBsControlCode(cardId: String, code: String) = ok("updateBsControlCode")
     override suspend fun imports() = read(emptyList<StatementImport>())
-    override suspend fun importStatement(attachmentKey: String, currency: String?) = ok("importStatement")
-    override suspend fun rerunMatching(statementId: String) = ok("rerunMatching")
-    override suspend fun importRows(importId: String) = read(emptyList<StatementRow>())
-    override suspend fun processImport(importId: String, rowIds: List<String>) = ok("processImport")
-    override suspend fun submitRowsToHolders(transactionIds: List<String>) = ok("submitRowsToHolders")
     override suspend fun transactions(filters: TransactionFilters) = read(emptyList<CardTransaction>())
     override suspend fun codeTransaction(transactionId: String, nominalCode: String, description: String?) =
         ok("codeTransaction")
@@ -110,7 +106,10 @@ internal class FakeCardRepository(
     override suspend fun matchReceipt(receiptId: String, transactionId: String) = ok("matchReceipt")
     override suspend fun unmatchReceipt(receiptId: String) = ok("unmatchReceipt")
     override suspend fun confirmReceiptMatch(receiptId: String) = ok("confirmReceiptMatch")
-    override suspend fun submitReceipts(card: ExpenseCard?, receipts: List<DraftCardReceipt>) = ok("submitReceipts")
+    override suspend fun submitReceipts(card: ExpenseCard?, receipts: List<DraftCardReceipt>): ZillitResult<Unit> {
+        batches += card to receipts
+        return ok("submitReceipts")
+    }
     override suspend fun submitReceiptForApproval(receiptId: String, coding: ReceiptCoding?) =
         ok("submitReceiptForApproval")
 
@@ -125,8 +124,14 @@ internal class FakeCardRepository(
         return read(receipts.first { it.id == receiptId })
     }
 
+    /** When set, `save-process` refuses the way the server does — a failure with its message. */
+    var refuseSave: String? = null
+
     override suspend fun saveProcessReceipt(receiptId: String, submission: ProcessSubmission): ZillitResult<Unit> {
         submissions += submission
+        refuseSave?.let {
+            return ZillitResult.Failure(com.zillit.desktop.core.common.ZillitError.Validation(it))
+        }
         return ok("saveProcessReceipt")
     }
 
@@ -138,6 +143,17 @@ internal class FakeCardRepository(
     override suspend fun dismissPersonal(receiptId: String) = ok("dismissPersonal")
     override suspend fun deleteReceipt(receiptId: String) = ok("deleteReceipt")
     override suspend fun receiptHistory(receiptId: String) = read(emptyList<CardHistoryEntry>())
+
+    // -- the cardholder's pages (crew builder) ---------------------------------
+    var approvalCards: List<ExpenseCard> = emptyList()
+    val receiptEdits = mutableListOf<Pair<String, ReceiptEdit>>()
+    val batches = mutableListOf<Pair<ExpenseCard?, List<DraftCardReceipt>>>()
+    override suspend fun cardsForApproval() = read(approvalCards)
+    override suspend fun updateReceipt(receiptId: String, edit: ReceiptEdit): ZillitResult<Unit> {
+        receiptEdits += receiptId to edit
+        return ok("updateReceipt")
+    }
+    override suspend fun confirmReceipt(receiptId: String) = ok("confirmReceipt")
     override suspend fun bulkProcessable() = read(emptyList<BulkItem>())
     override suspend fun bulkProcess(receiptIds: List<String>, coding: BulkCoding): ZillitResult<BulkOutcome> {
         calls += "bulkProcess"
@@ -145,8 +161,13 @@ internal class FakeCardRepository(
     }
 
     override suspend fun approvalQueue() = read(receipts)
-    override suspend fun approveReceipt(receiptId: String, note: String?) = ok("approveReceipt")
-    override suspend fun rejectReceipt(receiptId: String, reason: String) = ok("rejectReceipt")
+    override suspend fun approveReceipt(receiptId: String, tierNumber: Int, userId: String) =
+        ok("approveReceipt:$tierNumber")
+    override suspend fun rejectReceipt(receiptId: String, reason: String, userId: String) = ok("rejectReceipt")
+
+    /** What the process pages read besides the rows; set per test. */
+    var processRefs = com.zillit.desktop.feature.cardexpenses.domain.ProcessRefs(loaded = true)
+    override suspend fun processReferences() = read(processRefs)
     override suspend fun overrideReceipt(receiptId: String, userId: String, reason: String) = ok("overrideReceipt")
     override suspend fun bulkApproval(action: BulkAction, receiptIds: List<String>) = ok("bulk:${action.wire}")
     override suspend fun topUps() = read(topUps)
@@ -186,7 +207,7 @@ internal class FakeCardRepository(
         return read(ByteArray(1))
     }
 
-    override suspend fun alerts() = read(emptyList<CardAlert>())
+    override suspend fun alerts() = read(alerts)
     override suspend fun resolveAlert(alertId: String, note: String?) = ok("resolveAlert")
     override suspend fun dismissAlert(alertId: String) = ok("dismissAlert")
     override suspend fun investigateAlert(alertId: String) = ok("investigateAlert")

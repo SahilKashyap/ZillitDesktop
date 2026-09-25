@@ -105,6 +105,13 @@ sealed interface DocDistEvent {
     data class AddBatchList(val listId: String) : DocDistEvent
     data object ConfirmWatermarkBatch : DocDistEvent
 
+    // -- the project's watermark settings --------------------------------------
+    data object OpenWatermarkSettings : DocDistEvent
+    data object CloseWatermarkSettings : DocDistEvent
+    data class EditWatermarkSettings(val style: WatermarkStyle) : DocDistEvent
+    data object ResetWatermarkSettings : DocDistEvent
+    data object SaveWatermarkSettings : DocDistEvent
+
     // library picker (composer + batch)
     data class OpenPicker(val purpose: PickerPurpose) : DocDistEvent
     data object ClosePicker : DocDistEvent
@@ -217,6 +224,8 @@ sealed interface DocDistEvent {
         val job: String? = null,
         val listIds: List<String>? = null,
     ) : DocDistEvent
+    /** The email field lost focus: its error may show from now on. */
+    data object TouchContactEmail : DocDistEvent
     data object CloseContactEditor : DocDistEvent
     data object SaveContactEditor : DocDistEvent
     data class ConfirmDeleteContact(val email: String) : DocDistEvent

@@ -50,7 +50,8 @@ interface DocDistTransfer {
 
 /**
  * What the view model asks the machine for: a file dialog, a PDF rasteriser,
- * the Downloads folder, the clipboard, and the mail service's signatures.
+ * the Downloads folder, the clipboard, the mail service's signatures, and the
+ * production's crew and departments.
  * Every member has a harmless default so tests need none of it.
  */
 interface DocDistHost {
@@ -73,6 +74,20 @@ interface DocDistHost {
 
     /** The person's saved sign-offs; empty when the mail service has none. */
     suspend fun signatures(): List<DocDistSignature> = emptyList()
+
+    /**
+     * The production's crew, from the project context the app already holds
+     * — the composer suggests them beside saved contacts, and the Watermark
+     * settings dialog names who last saved. Never a request of its own.
+     */
+    fun crew(): List<DocDistCrewMember> = emptyList()
+
+    /**
+     * The production's department names, translated and in display order —
+     * suggestions for the address book's Department field, which stays free
+     * text. Empty when they cannot be read.
+     */
+    suspend fun departments(): List<String> = emptyList()
 
     companion object {
         val None: DocDistHost = object : DocDistHost {}

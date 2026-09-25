@@ -35,6 +35,8 @@ data class EditorLine(
     val splitParentId: String? = null,
     /** Engine-owned deduction rows are shown but never sent back. */
     val autoDeduction: Boolean = false,
+    /** What the line carries that the editor does not edit, kept for the save. */
+    val extras: LineExtras = LineExtras(),
 ) {
     val net: Double get() = round2(quantity * unitPrice)
 
@@ -43,6 +45,38 @@ data class EditorLine(
     val gross: Double get() = round2(net + tax)
 
     val isSplitChild: Boolean get() = splitParentId != null
+}
+
+/**
+ * A line's keys the editor shows nothing for — the tax flag, coding layers,
+ * tags, rental dates, order — carried from the wire to the save untouched.
+ *
+ * The server deletes and reinserts every line on save, so a key the save
+ * leaves out is a key the line loses: a tax line stops being one, a coded
+ * line drops its layers.
+ */
+data class LineExtras(
+    val isTax: Boolean = false,
+    val taxAmount: Double? = null,
+    val trackingCodes: kotlinx.serialization.json.JsonElement? = null,
+    val tags: kotlinx.serialization.json.JsonElement? = null,
+    val rentalStart: String? = null,
+    val rentalEnd: String? = null,
+    val sortOrder: Int? = null,
+    val expenditureType: String? = null,
+) {
+    companion object {
+        fun of(line: ClaimLineItem) = LineExtras(
+            isTax = line.isTax,
+            taxAmount = line.taxAmount,
+            trackingCodes = line.trackingCodes,
+            tags = line.tags,
+            rentalStart = line.rentalStart,
+            rentalEnd = line.rentalEnd,
+            sortOrder = line.sortOrder,
+            expenditureType = line.expenditureType,
+        )
+    }
 }
 
 /**
@@ -88,6 +122,7 @@ object LineItemEditor {
                 taxRatePercent = percent,
                 splitParentId = line.splitParentId,
                 autoDeduction = line.autoDeduction,
+                extras = LineExtras.of(line),
             )
         }
         val known = mapped.mapTo(mutableSetOf()) { it.id }
@@ -131,6 +166,14 @@ object LineItemEditor {
                 // to split off) leaves the child at the top level rather than
                 // pointing at nothing.
                 splitParentId = line.splitParentId?.let { idMap[it] },
+                isTax = line.extras.isTax,
+                taxAmount = line.extras.taxAmount,
+                trackingCodes = line.extras.trackingCodes,
+                tags = line.extras.tags,
+                rentalStart = line.extras.rentalStart,
+                rentalEnd = line.extras.rentalEnd,
+                sortOrder = line.extras.sortOrder,
+                expenditureType = line.extras.expenditureType,
             )
         }
     }
@@ -157,6 +200,9 @@ object LineItemEditor {
                 unitPrice = if (index == 0) round2(share + remainder) else share,
                 splitParentId = parent.id,
                 description = "${parent.description} (${index + 1}/$ways)".trim(),
+                // A child is its own line: the parent's place in the order and
+                // its tax figure belong to the parent.
+                extras = parent.extras.copy(isTax = false, taxAmount = null, sortOrder = null),
             )
         }
         // The parent stays in the list as the thing being split — the totals

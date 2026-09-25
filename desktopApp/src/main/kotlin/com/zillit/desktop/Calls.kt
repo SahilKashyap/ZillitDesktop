@@ -18,6 +18,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.database.UserSnapshot
 import com.zillit.desktop.core.session.ProjectContext
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
@@ -413,12 +415,41 @@ internal fun AppGraph.Ready.callNameDirectory(): Flow<Map<String, String>> =
 
 
 /**
- * The production's crew as the add-people picker wants it: only people a call
- * can actually reach (a registered device), honouring keep-name-private the
- * way the chat directory does, and never ourselves.
+ * The crew of the production the call in progress belongs to, as the Users
+ * panel wants it: only people a call can reach, honouring keep-name-private
+ * the way the chat directory does, and never ourselves.
+ *
+ * It used to be the OPEN production's crew whatever the call — so a call rung
+ * from a widget, or one that carried on while the user switched production,
+ * offered people from a production the call is not in (2026-09-24). A call in
+ * another production asks that production, under our id there, as the chat
+ * widget does ([scopedChatProvider]).
  */
-internal fun AppGraph.Ready.callableCrew(): List<CallCrewEntry> =
-    projectContext?.context?.value?.callableCrew().orEmpty()
+internal suspend fun AppGraph.Ready.callableCrew(): List<CallCrewEntry> {
+    val open = projectContext?.context?.value
+    val session = callCoordinator.session.value
+    val elsewhere = crewProductionFor(session?.projectId, open?.project?.projectId)
+        ?: return open?.callableCrew().orEmpty()
+    val loader = projectContext ?: return emptyList()
+    // Our id there, which is not our id here: ids are per production.
+    val meThere = projectListCache?.let(::CachedProjectList)?.load()
+        ?.firstOrNull { it.id == elsewhere }?.userId?.takeIf(String::isNotBlank)
+        ?: session?.selfUserId?.takeIf(String::isNotBlank)
+        ?: return emptyList()
+    return when (val users = loader.usersOf(elsewhere, meThere)) {
+        is ZillitResult.Success -> users.data.callableCrew(self = meThere)
+        // Nobody rather than the wrong production's people.
+        is ZillitResult.Failure -> emptyList()
+    }
+}
+
+/**
+ * The production whose crew the Users panel must ask for, or null when the
+ * open one is the call's: a call that names no production (every call placed
+ * from the main window before the server answers) is the open one's.
+ */
+internal fun crewProductionFor(callProjectId: String?, openProjectId: String?): String? =
+    callProjectId?.takeIf { it.isNotBlank() && it != openProjectId }
 
 /**
  * [callableCrew], from the production's context — the same people the
@@ -426,9 +457,11 @@ internal fun AppGraph.Ready.callableCrew(): List<CallCrewEntry> =
  * Users section offered crew who had left, been removed, or never accepted
  * their invite, and nameless rows besides.
  */
-internal fun ProjectContext.callableCrew(): List<CallCrewEntry> {
-    val self = profile?.userId
-    return users
+internal fun ProjectContext.callableCrew(): List<CallCrewEntry> = users.callableCrew(self = profile?.userId)
+
+/** [callableCrew] over any production's crew list, [self] being our id in it. */
+internal fun List<UserSnapshot>.callableCrew(self: String?): List<CallCrewEntry> {
+    return this
         .filter { !it.keepNamePrivate && it.userId != self }
         .filter { it.fullName.isNotBlank() && it.isActiveMember() }
         .mapNotNull { user ->

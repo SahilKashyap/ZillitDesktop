@@ -17,9 +17,11 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimLineItem
+import com.zillit.desktop.feature.cashexpenses.domain.DepartmentCoordinator
 import com.zillit.desktop.feature.cashexpenses.domain.DepartmentOverview
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.ExportFormat
+import com.zillit.desktop.feature.cashexpenses.domain.FloatDetails
 import com.zillit.desktop.feature.cashexpenses.domain.FundRequest
 import com.zillit.desktop.feature.cashexpenses.domain.MyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.NewClaimBatch
@@ -70,8 +72,14 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
         return if (writesSucceed) ZillitResult.Success(Unit) else fail()
     }
 
-    override suspend fun metadata(): ZillitResult<CashMetadata> = ZillitResult.Success(metadata)
-    override suspend fun myFloats(): ZillitResult<List<CashFloat>> = ZillitResult.Success(emptyList())
+    override suspend fun metadata(): ZillitResult<CashMetadata> {
+        metadataReads++
+        return ZillitResult.Success(metadata)
+    }
+    var myFloatRows: List<CashFloat> = emptyList()
+    var myOverviewDoc: MyCashOverview? = null
+
+    override suspend fun myFloats(): ZillitResult<List<CashFloat>> = ZillitResult.Success(myFloatRows)
     override suspend fun requestFloat(request: NewFloatRequest): ZillitResult<Unit> {
         floatRequests++
         lastFloatRequest = request
@@ -96,7 +104,9 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
     override suspend fun floatApprovalQueue(): ZillitResult<List<CashFloat>> =
         activeFloatRows?.let { ZillitResult.Success(it) } ?: fail()
 
-    override suspend fun floatHistory(floatId: String): ZillitResult<List<CashHistoryEntry>> = fail()
+    override suspend fun floatHistory(floatId: String): ZillitResult<List<CashHistoryEntry>> =
+        floatHistoryRows?.let { ZillitResult.Success(it) } ?: fail()
+
     override suspend fun approveFloat(floatId: String, tier: TierStep?): ZillitResult<Unit> {
         floatApprovals++
         lastApprovalTier = tier
@@ -134,7 +144,32 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
         write("partialTopUp:$topUpId:$amount:$note")
 
     override suspend fun skipTopUp(topUpId: String): ZillitResult<Unit> = write("skipTopUp:$topUpId")
-    override suspend fun myBatches(): ZillitResult<List<ClaimBatch>> = fail()
+    override suspend fun myBatches(floatRequestId: String?, expenseType: String?): ZillitResult<List<ClaimBatch>> =
+        fail()
+
+    override suspend fun floatBatches(floatId: String): ZillitResult<List<ClaimBatch>> =
+        floatBatchRows?.let { ZillitResult.Success(it) } ?: fail()
+
+    // -- floats parity --
+    /** What `/claims?float_request_id=` answers; null fails the read. */
+    var floatBatchRows: List<ClaimBatch>? = null
+
+    /** What `/float-requests/{id}/history` answers; null fails the read. */
+    var floatHistoryRows: List<CashHistoryEntry>? = null
+
+    /** What `/details` answers; null fails the read. */
+    var details: FloatDetails? = null
+
+    override suspend fun floatDetails(floatId: String): ZillitResult<FloatDetails> {
+        calls += "floatDetails:$floatId"
+        return details?.let { ZillitResult.Success(it) } ?: fail()
+    }
+
+    override suspend fun updateFloatBsCode(floatId: String, bsCode: String): ZillitResult<Unit> =
+        write("bsCode:$floatId:$bsCode")
+
+    /** How many times `/metadata` was read — the refetch tests count them. */
+    var metadataReads = 0
 
     /** The batch as the detail fetch returns it — its receipts included. */
     override suspend fun batch(batchId: String): ZillitResult<ClaimBatch> =
@@ -185,10 +220,29 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
         return write("post:$batchId")
     }
 
+    // -- batch parity --
+    var lastSavedClaims: List<Claim>? = null
+    var lastSaveDate: Long? = null
+
+    override suspend fun saveClaimsBatch(
+        batchId: String,
+        claims: List<Claim>,
+        effectiveDate: Long?,
+    ): ZillitResult<Unit> {
+        lastSavedClaims = claims
+        lastSaveDate = effectiveDate
+        return write("saveBatch:$batchId")
+    }
+
     override suspend fun pettyCashOverview(): ZillitResult<PettyCashOverview> = fail()
     override suspend fun outOfPocketOverview(): ZillitResult<OutOfPocketOverview> = fail()
-    override suspend fun myOverview(): ZillitResult<MyCashOverview> = fail()
-    override suspend fun departmentOverview(departmentId: String): ZillitResult<DepartmentOverview> = fail()
+    override suspend fun myOverview(): ZillitResult<MyCashOverview> =
+        myOverviewDoc?.let { ZillitResult.Success(it) } ?: fail()
+    // -- overview parity --
+    override suspend fun departmentOverview(departmentId: String): ZillitResult<DepartmentOverview> {
+        calls += "departmentOverview:$departmentId"
+        return fail()
+    }
     override suspend fun paymentRouting(): ZillitResult<PaymentRouting> = fail()
     override suspend fun reconciliations(): ZillitResult<List<Reconciliation>> = ZillitResult.Success(emptyList())
     override suspend fun reconciliation(id: String): ZillitResult<Reconciliation> = fail()
@@ -226,8 +280,10 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
     }
 
     override suspend fun updateRequestCap(cap: RequestCap): ZillitResult<CashSettings> = fail()
+    override suspend fun updateDepartmentCoordinators(rows: List<DepartmentCoordinator>): ZillitResult<CashSettings> =
+        fail()
     override suspend fun saveAssignmentRule(rule: CashAssignmentRule): ZillitResult<CashAssignmentRule> = fail()
-    override suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit> = fail()
+    override suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit> = write("deleteRule:$id")
     override suspend fun lockedThrough(): ZillitResult<String?> = ZillitResult.Success(lock)
     override suspend fun companies(): ZillitResult<List<CashCompany>> = ZillitResult.Success(emptyList())
     override suspend fun fundRequests(): ZillitResult<List<FundRequest>> = ZillitResult.Success(emptyList())
@@ -245,6 +301,21 @@ internal class FakeCash(var writesSucceed: Boolean) : CashRepository {
         expenseType: ExpenseType?,
         historyOnly: Boolean,
     ): ZillitResult<ByteArray> = fail()
+
+    // -- settings parity --
+    /** The last section saved and the draft it was saved from. */
+    var lastSection: Pair<com.zillit.desktop.feature.cashexpenses.domain.CashSettingsSection, CashSettings>? = null
+
+    override suspend fun updateSettingsSection(
+        section: com.zillit.desktop.feature.cashexpenses.domain.CashSettingsSection,
+        settings: CashSettings,
+    ): ZillitResult<CashSettings> {
+        calls += "section:$section"
+        lastSection = section to settings
+        val saved = section.merge(settingsDoc ?: CashSettings(), settings)
+        if (writesSucceed) settingsDoc = saved
+        return if (writesSucceed) ZillitResult.Success(saved) else fail()
+    }
 
     /** One receipt awaiting coding, already carrying a cost code so its seeded line balances. */
     fun queuedBatch(

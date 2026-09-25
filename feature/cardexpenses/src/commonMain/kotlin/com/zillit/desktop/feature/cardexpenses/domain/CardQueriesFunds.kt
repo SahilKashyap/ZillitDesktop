@@ -43,7 +43,13 @@ data class FundRequest(
 }
 
 /** A production bank account money can be requested into; supplied by the host. */
-data class CardBank(val id: String, val name: String, val currency: String? = null)
+data class CardBank(
+    val id: String,
+    val name: String,
+    val currency: String? = null,
+    /** The symbol printed after a fund request's amount (`RequestFundsModal.jsx:157`). */
+    val symbol: String? = null,
+)
 
 /** The fund request form. */
 data class FundRequestDraft(val bankId: String = "", val fundAccount: String = "", val amount: String = "") {

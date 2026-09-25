@@ -67,6 +67,10 @@ data class ReconDraft(
     val notes: String = "",
     /** The server's book balance for the opening balance and month, once it answers. */
     val computedBook: Double? = null,
+    /** The book balance is being asked for — the web's "Computing book balance…". */
+    val computingBook: Boolean = false,
+    /** The period as the server last sent it — its stored figures and audit trail. */
+    val saved: Reconciliation? = null,
 ) {
     val opening: Double get() = openingBalance.trim().toDoubleOrNull() ?: 0.0
 
@@ -108,6 +112,7 @@ data class ReconDraft(
                 denominations = recon.denominations,
                 items = recon.reconcilingItems,
                 notes = recon.note.orEmpty(),
+                saved = recon,
             )
         }
 

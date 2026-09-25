@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
@@ -52,7 +51,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSegmented
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
@@ -152,20 +150,45 @@ internal fun FloatingCard(modifier: Modifier = Modifier, content: @Composable Ro
     )
 }
 
+/**
+ * "How to use this module" — the web's banner as of ZL-21622: four points,
+ * the watermark one included, on a quiet surface with the accent kept for the
+ * title and icon. Drawn here rather than as a `ZillitNotice`, which caps its
+ * text at three lines and cut the last point off.
+ */
 @Composable
 private fun InfoBanner(onEvent: (DocDistEvent) -> Unit) {
-    ZillitNotice(
-        text = str(S.desktop_docdist_info_banner, SupportedUploads.LABEL),
-        tone = StatusTone.Progress,
-        icon = ZillitIcons.Upload,
-        action = {
-            ZillitIconButton(
-                icon = ZillitIcons.Close,
-                contentDescription = str(S.sync_action_dismiss),
-                onClick = { onEvent(DocDistEvent.DismissInfoBanner) },
+    val c = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(c.surface)
+            .border(0.5.dp, c.border, ZillitTheme.shapes.large)
+            .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.Top,
+    ) {
+        ZillitIcon(icon = ZillitIcons.Upload, tint = c.accent, size = 18.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitText(text = str(S.dd_help_title), style = ZillitTheme.typography.label, color = c.accent)
+            ZillitText(
+                text = str(S.desktop_docdist_info_banner_points),
+                style = ZillitTheme.typography.bodySmall,
+                color = c.textSecondary,
             )
-        },
-    )
+            ZillitText(
+                text = str(S.desktop_docdist_supported_types, SupportedUploads.LABEL),
+                style = ZillitTheme.typography.bodySmall,
+                color = c.textMuted,
+            )
+        }
+        ZillitIconButton(
+            icon = ZillitIcons.Close,
+            contentDescription = str(S.sync_action_dismiss),
+            onClick = { onEvent(DocDistEvent.DismissInfoBanner) },
+        )
+    }
 }
 
 @Suppress("LongMethod") // One screen section; splitting it separates each control from its state.

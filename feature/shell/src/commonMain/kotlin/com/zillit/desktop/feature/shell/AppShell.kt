@@ -125,6 +125,10 @@ fun AppShell(
      * rather than anything this module could reach.
      */
     onDownloadUpdate: (String) -> Unit = {},
+    /** Starts the in-app download, when [UpdateNotice.install] offers one. */
+    onInstallUpdate: () -> Unit = {},
+    /** Hands the staged build to the installer and quits; the helper reopens Zillit. */
+    onRestartToUpdate: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     // The rail asks; the frame confirms. A dialog composed inside the rail is
@@ -163,6 +167,8 @@ fun AppShell(
                     UpdateBanner(
                         notice = it,
                         onDownload = onDownloadUpdate,
+                        onInstall = onInstallUpdate,
+                        onRestart = onRestartToUpdate,
                         onDismiss = { dismissedVersion = it.latestVersion },
                     )
                 }
@@ -482,12 +488,38 @@ data class StatusAction(
  * @param installedVersion what this build is, named in the strip so "1.0.3 is
  *   available" is read next to "you have 1.0.2" — the two numbers are the
  *   whole message. Null leaves it out.
+ * @param install where the in-app update has got to; null when this build
+ *   cannot install itself (no installer published, Linux, or a Gradle run),
+ *   and the strip then offers [downloadUrl] as before.
  */
 data class UpdateNotice(
     val latestVersion: String,
     val mandatory: Boolean,
     val downloadUrl: String?,
     val installedVersion: String? = null,
+    val install: UpdateInstall? = null,
 )
+
+/** The in-app update's progress, as the strip words it. */
+sealed interface UpdateInstall {
+    /** Nothing started yet: the strip offers "Update now". */
+    data object Offer : UpdateInstall
+
+    /** @param percent null when the server sent no length. */
+    data class Downloading(val percent: Int?) : UpdateInstall
+
+    /** Signature check and staging. */
+    data object Preparing : UpdateInstall
+
+    /** Staged; "Restart now" installs it. */
+    data object Ready : UpdateInstall
+
+    /**
+     * Stopped. [retryable] for a broken download, where trying again may
+     * work; a file that failed its checksum or signature will fail again, so
+     * the strip sends the reader to the download page instead.
+     */
+    data class Failed(val retryable: Boolean, val verification: Boolean) : UpdateInstall
+}
 
 private val SWITCHER_CHEVRON = 14.dp

@@ -29,6 +29,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.EditorLine
+import com.zillit.desktop.feature.cashexpenses.ui.BatchEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
 import com.zillit.desktop.feature.cashexpenses.ui.CodingDraft
@@ -79,7 +80,8 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 quickCodes = state.settings?.quickCodes.orEmpty()
                     .map { it.nominalCode.ifBlank { it.name } }
                     .filter { it.isNotBlank() },
-                removable = draft.lines.size > 1,
+                accounts = state.chartAccounts,
+                removable = draft.lines.size > 1 || line.extras.isTax,
                 onChange = { onEvent(CashEvent.EditCodingLine(index, it)) },
                 onRemove = { onEvent(CashEvent.RemoveCodingLine(line.id)) },
                 onSplit = { ways -> onEvent(CashEvent.SplitCodingLine(line.id, ways)) },
@@ -106,6 +108,15 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 size = ButtonSize.Small,
                 leadingIcon = ZillitIcons.Add,
             )
+            if (draft.lines.none { it.extras.isTax }) {
+                ZillitButton(
+                    text = str(S.desktop_pc_add_tax_line),
+                    onClick = { onEvent(BatchEvent.AddTaxLine) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add,
+                )
+            }
             Spacer(Modifier.weight(1f))
             ZillitButton(
                 text = str(S.cancel),
@@ -113,13 +124,13 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = str(S.desktop_card_save_coding),
-                onClick = { onEvent(CashEvent.SaveCoding) },
-                // Disabled rather than failing on click: the reason is already
-                // on screen in the balance bar, so a refusal here would only
-                // repeat it.
-                enabled = draft.balances && !state.busy,
-                loading = state.busy,
+                // Onto the receipt, in memory, as the web's inline split: the
+                // batch's Save / Post sends it, and a receipt still being
+                // allocated may be applied part-coded — the balance bar says
+                // what is left, and Post refuses a batch that does not add up.
+                text = str(S.desktop_pc_apply_split),
+                onClick = { onEvent(BatchEvent.ApplySplit) },
+                enabled = !state.busy,
             )
         }
     }
@@ -191,6 +202,7 @@ private fun CodingRow(
     line: EditorLine,
     currency: String?,
     quickCodes: List<String>,
+    accounts: List<com.zillit.desktop.feature.cashexpenses.domain.CashAccount>?,
     removable: Boolean,
     onChange: (EditorLine) -> Unit,
     onRemove: () -> Unit,
@@ -198,6 +210,8 @@ private fun CodingRow(
 ) {
     val colors = ZillitTheme.colors
     val locked = line.autoDeduction
+    // The reclaimable-tax line: an amount and a nominal, nothing else to type.
+    val tax = line.extras.isTax
 
     Column(
         modifier = Modifier
@@ -214,20 +228,30 @@ private fun CodingRow(
             verticalAlignment = Alignment.Bottom,
         ) {
             ZillitTextField(
-                value = line.description,
+                value = if (tax) str(S.desktop_po_reclaimable_tax) else line.description,
                 onValueChange = { onChange(line.copy(description = it)) },
                 label = if (index == 0) str(S.desktop_ce_what_this_line_covers) else null,
-                enabled = !locked,
+                enabled = !locked && !tax,
                 modifier = Modifier.weight(DESCRIPTION_WEIGHT),
             )
-            if (quickCodes.isEmpty()) {
-                ZillitTextField(
-                    value = line.account,
-                    onValueChange = { onChange(line.copy(account = it)) },
-                    label = if (index == 0) str(S.desktop_card_cost_code) else null,
-                    enabled = !locked,
-                    modifier = Modifier.weight(1f),
-                )
+            if (quickCodes.isEmpty() || !accounts.isNullOrEmpty()) {
+                // The chart of accounts, searched as typed — the web's
+                // `CoaCodeInput` on every line.
+                Column(modifier = Modifier.weight(1f)) {
+                    if (index == 0) {
+                        ZillitText(
+                            text = str(S.desktop_card_cost_code),
+                            style = ZillitTheme.typography.label,
+                            color = colors.textSecondary,
+                        )
+                    }
+                    CashCoaField(
+                        value = line.account,
+                        onValueChange = { onChange(line.copy(account = it)) },
+                        accounts = accounts,
+                        enabled = !locked,
+                    )
+                }
             } else {
                 Column(modifier = Modifier.weight(1f)) {
                     if (index == 0) {
@@ -255,7 +279,7 @@ private fun CodingRow(
                 label = if (index == 0) str(S.ah_lbl_qty) else null,
                 placeholder = "1",
                 keyboardType = KeyboardType.Decimal,
-                enabled = !locked,
+                enabled = !locked && !tax,
                 modifier = Modifier.width(SMALL_FIELD),
             )
             ZillitTextField(
@@ -275,7 +299,7 @@ private fun CodingRow(
                 label = if (index == 0) str(S.desktop_ce_vat_percent) else null,
                 placeholder = "20",
                 keyboardType = KeyboardType.Decimal,
-                enabled = !locked,
+                enabled = !locked && !tax,
                 modifier = Modifier.width(SMALL_FIELD),
             )
         }
@@ -298,7 +322,7 @@ private fun CodingRow(
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
             )
-            if (!locked && !line.isSplitChild) {
+            if (!locked && !tax && !line.isSplitChild) {
                 ZillitButton(
                     text = str(S.desktop_ce_split_in_two),
                     onClick = { onSplit(2) },

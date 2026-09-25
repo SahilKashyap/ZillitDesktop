@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.cardexpenses.domain.CardAction
 import com.zillit.desktop.feature.cardexpenses.domain.CardActivation
 import com.zillit.desktop.feature.cardexpenses.domain.CardDates
 import com.zillit.desktop.feature.cardexpenses.domain.CardExportRow
@@ -56,8 +57,8 @@ internal class CardLifecycleActions(
                 activation = ActivationDraft(
                     cardId = cardId,
                     needsProvider = needsProvider,
-                    // One provider configured: nothing to choose.
-                    providerId = providers.singleOrNull()?.id.orEmpty().takeIf { needsProvider }.orEmpty(),
+                    // Empty, as the web opens it (`CardRegisterPage.jsx:755`):
+                    // the provider a request is activated on is a choice.
                 ),
             )
         }
@@ -79,8 +80,9 @@ internal class CardLifecycleActions(
             // card's own, then nothing — the server derives one from the bank.
             companyId = provider?.companyId?.ifBlank { null } ?: card.companyId?.ifBlank { null },
         )
-        vm.act(str(S.ah_card_activated_toast)) { vm.repo.activateCard(card.id, activation) }
-        vm.update { copy(activation = null) }
+        vm.cardWrite(CardAction.Activate(card.id, activation), str(S.ah_card_activated_toast)) {
+            copy(activation = null)
+        }
     }
 
     /**
@@ -97,7 +99,8 @@ internal class CardLifecycleActions(
                 last4 = card.lastFour.orEmpty(),
                 holder = holder?.name ?: card.holderName,
                 department = holder?.department.orEmpty(),
-                issuer = state.issuerName(card).orEmpty(),
+                // The issuing bank's name, as the web prints it (`CardRegisterPage.jsx:376`).
+                issuer = card.bankName.orEmpty(),
                 status = card.status.wire,
                 currency = card.currency.orEmpty(),
                 limit = card.limit.takeIf { it > 0 } ?: card.monthlyLimit ?: 0.0,

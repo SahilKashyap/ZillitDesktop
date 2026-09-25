@@ -30,6 +30,8 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.ui.pages.ActiveFloatsPage
+import com.zillit.desktop.feature.cashexpenses.ui.pages.ApprovalQueuePage
+import com.zillit.desktop.feature.cashexpenses.ui.pages.SignOffPage
 import com.zillit.desktop.feature.cashexpenses.ui.pages.ExportButton
 import com.zillit.desktop.feature.cashexpenses.ui.pages.TeamMemberDialog
 import com.zillit.desktop.feature.cashexpenses.ui.pages.CashExtensionPage
@@ -103,10 +105,21 @@ fun CashExpensesScreen(
         // At the root, not inside Settings' scrolling column, where a dialog
         // shell draws inline at the foot of the section.
         TeamMemberDialog(state, onEvent)
+        // -- settings parity --
+        com.zillit.desktop.feature.cashexpenses.ui.pages.CoordinatorPickerDialog(state, onEvent)
+        com.zillit.desktop.feature.cashexpenses.ui.pages.DeductionRuleDialog(state, onEvent)
 
         // Over the page rather than inside it: coding is a focused task, and
         // the queue behind stays where it was so the next row is one click away.
         CodingEditorDialog(state, onEvent)
+
+        // -- crew parity -- Receipts History's "Receipt Details", over the page.
+        com.zillit.desktop.feature.cashexpenses.ui.pages.CrewClaimDialog(state, onEvent)
+        // -- floats parity --
+        // The float's details, then its history over them — both opened from
+        // several pages, so both live here.
+        FloatDetailDialog(state, onEvent)
+        FloatHistoryDialog(state, onEvent)
 
         ZillitToast(
             message = state.notice,
@@ -151,11 +164,8 @@ private fun CashHeader(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             eyebrow = str(S.desktop_finance),
             // The web's page title (`CashExpensesModule.jsx:635`).
             title = str(S.ah_cash_expenses),
-            description = if (state.viewer.isAccountant) {
-                str(S.desktop_ce_accountant_subtitle)
-            } else {
-                str(S.desktop_ce_holder_subtitle)
-            },
+            // One description for every viewer, as the web's (`CashExpensesModule.jsx:636`).
+            description = str(S.desktop_pc_header_desc),
             actions = {
                 ZillitButton(
                     text = str(S.refresh_text),
@@ -258,6 +268,9 @@ private fun CashBody(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         CashDestination.PaymentRouting -> PaymentRoutingPage(state)
         CashDestination.CashReconciliation -> ReconciliationPage(state, onEvent)
         CashDestination.Settings -> CashSettingsPage(state, onEvent)
+        // -- floats parity --
+        CashDestination.ApprovalQueue -> ApprovalQueuePage(state, onEvent)
+        CashDestination.PettyCashSignOff, CashDestination.OutOfPocketSignOff -> SignOffPage(state, onEvent)
 
         // Every remaining destination is a queue of batches; they differ in
         // which rows arrive and which actions a row offers, both of which
@@ -269,10 +282,24 @@ private fun CashBody(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 /** Unread filed under one page — the web's per-tab chip (`CashExpensesModule.jsx:463-471`). */
 private fun CashUiState.unreadFor(destination: CashDestination): Int = destination.badgeKeys.sumOf { unread[it] ?: 0 }
 
-/** A pipeline's chip: its visible pages' keys added up, each key once. */
+/**
+ * A pipeline's chip: the web's fixed `level_1` lists per audience
+ * (`CashExpensesModule.jsx:68-91,487-494`) — not the visible pages, so an
+ * accountant's Petty Cash chip still counts sign-off rows.
+ */
 private fun CashUiState.unreadFor(type: ExpenseType): Int =
-    CashDestination.entries
-        .filter { it.section != CashSection.Shared && it.expenseType == type && it.visibleTo(viewer) }
-        .flatMap { it.badgeKeys }
-        .distinct()
-        .sumOf { unread[it] ?: 0 }
+    parentBadgeKeys(type, viewer.isAccountant).sumOf { unread[it] ?: 0 }
+
+// -- overview parity --
+internal fun parentBadgeKeys(type: ExpenseType, accountant: Boolean): List<String> = when {
+    type == ExpenseType.PettyCash && accountant -> listOf(
+        CashBadges.PC_POST_LEDGER,
+        CashBadges.PC_SIGNOFF,
+        CashBadges.PC_FLOAT,
+        CashBadges.PC_TOPUPS,
+        CashBadges.PC_RECON,
+    )
+    type == ExpenseType.PettyCash -> listOf(CashBadges.PC_HISTORY, CashBadges.PC_FLOAT, CashBadges.CASH_EXTENSION)
+    accountant -> listOf(CashBadges.OOP_POST_LEDGER, CashBadges.OOP_SIGNOFF)
+    else -> listOf(CashBadges.OOP_HISTORY)
+}

@@ -93,18 +93,6 @@ internal fun batchActions(state: CashUiState, batch: ClaimBatch): List<BatchActi
             ),
         ),
     )
-    val reject = BatchAction(
-        str(S.reject),
-        ButtonVariant.Danger,
-        CashEvent.Ask(
-            CashPrompt.WithReason(
-                action = ReasonedAction.RejectBatch,
-                targetId = batch.id,
-                title = str(S.desktop_ce_reject_this_batch),
-                label = str(S.desktop_ce_why_it_is_being_rejected),
-            ),
-        ),
-    )
     fun confirm(action: ConfirmAction, label: String, title: String, message: String, enabled: Boolean = true) =
         BatchAction(
             label = label,
@@ -150,33 +138,26 @@ internal fun batchActions(state: CashUiState, batch: ClaimBatch): List<BatchActi
         }
 
         state.destination == CashDestination.ApprovalQueue -> buildList {
-            if (CashRules.mayApprove(viewer, batch)) {
+            // The web's batch modal: Approve fires at once, Reject asks why, and
+            // Override is for an override-holder who is NOT the next approver
+            // (`PCApprovalPage.jsx:880-935`).
+            val canAct = CashRules.mayApprove(viewer, batch)
+            if (canAct) {
                 add(
-                    confirm(
-                        ConfirmAction.ApproveBatch,
-                        str(S.approve),
-                        str(S.desktop_ce_approve_this_batch),
-                        str(S.desktop_ce_approve_batch_note),
-                        enabled = loaded,
+                    BatchAction(
+                        label = str(S.approve),
+                        variant = ButtonVariant.Primary,
+                        event = CashEvent.ActNow(CashPrompt.Confirm(ConfirmAction.ApproveBatch, batch.id, "", "")),
+                        enabled = state.panel?.selectedClaimIds?.isEmpty() != true && loaded,
                     ),
                 )
-                add(reject)
-            }
-            // An accountant who is not an approver sees the queue read-only —
-            // unless they hold the override right.
-            if (viewer.canOverrideBatch()) {
+                add(approvalReject(state, batch))
+            } else if (viewer.canOverrideBatch()) {
                 add(
                     BatchAction(
                         str(S.dm_nom_table_override),
                         ButtonVariant.Secondary,
-                        CashEvent.Ask(
-                            CashPrompt.Confirm(
-                                ConfirmAction.OverrideBatch,
-                                batch.id,
-                                str(S.desktop_card_override_chain),
-                                str(S.desktop_ce_override_batch_note),
-                            ),
-                        ),
+                        CashEvent.ActNow(CashPrompt.Confirm(ConfirmAction.OverrideBatch, batch.id, "", "")),
                     ),
                 )
             }
@@ -495,3 +476,33 @@ private fun exportLabel(register: ExportRegister, format: ExportFormat, named: B
 
 private val SPINNER = 14.dp
 private val FLOAT_ACTION_COLUMN = 190.dp
+
+/**
+ * The approval queue's Reject: titled for what the ticks will reject — the whole
+ * batch, or the ticked receipts, which the server splits into a rejected batch
+ * of their own (`PCApprovalPage.jsx:941-956`).
+ */
+private fun approvalReject(state: CashUiState, batch: ClaimBatch): BatchAction {
+    val total = state.panelClaims.size
+    val chosen = state.panel?.selectedClaimIds?.size ?: total
+    val title = if (chosen >= total) {
+        str(S.desktop_pc_reject_entire_batch)
+    } else if (chosen == 1) {
+        str(S.desktop_pc_reject_selected_one, chosen)
+    } else {
+        str(S.desktop_pc_reject_selected_other, chosen)
+    }
+    return BatchAction(
+        str(S.reject),
+        ButtonVariant.Danger,
+        CashEvent.Ask(
+            CashPrompt.WithReason(
+                action = ReasonedAction.RejectBatch,
+                targetId = batch.id,
+                title = title,
+                label = str(S.cs_rejection_reason),
+            ),
+        ),
+        enabled = chosen > 0,
+    )
+}

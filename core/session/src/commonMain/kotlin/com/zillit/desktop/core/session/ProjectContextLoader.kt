@@ -391,6 +391,7 @@ internal data class ProjectUserDto(
     // "accepted", "approved", "pending", "left", "removed", "rejected" —
     // Android `JoinProjectResponse.kt:120`. The lists decide who shows by it.
     @SerialName("status") val status: String? = null,
+    @SerialName("mail_box_detail") val mailBoxDetail: MailBoxDetailDto? = null,
 ) {
     fun toSnapshot(): UserSnapshot? {
         val resolved = userId ?: id ?: return null
@@ -411,6 +412,7 @@ internal data class ProjectUserDto(
             // The web's preference order (`UserCard.jsx:357-362`), zeros as absent.
             lastActiveMillis = lastActivity?.takeIf { it > 0 } ?: lastVisitedOn?.takeIf { it > 0 },
             status = status?.takeIf { it.isNotBlank() },
+            mailboxAddress = mailBoxDetail?.emailAddress?.trim()?.takeIf { it.isNotBlank() },
         )
     }
 }

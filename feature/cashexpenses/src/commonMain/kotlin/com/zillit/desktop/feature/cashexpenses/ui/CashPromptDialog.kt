@@ -11,8 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
@@ -20,7 +18,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -30,7 +27,6 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
-import com.zillit.desktop.feature.cashexpenses.domain.BatchAssignment
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 
 /**
@@ -72,14 +68,7 @@ fun CashPromptDialog(
                 color = ZillitTheme.colors.textSecondary,
             )
 
-            is CashPrompt.WithReason -> ZillitTextField(
-                value = shown.reason,
-                onValueChange = { onEvent(CashEvent.UpdatePrompt(shown.copy(reason = it))) },
-                label = shown.label,
-                placeholder = str(S.desktop_ce_say_what_needs_correcting),
-                singleLine = false,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            is CashPrompt.WithReason -> ReasonFields(shown, onEvent)
 
             is CashPrompt.WithAmount -> {
                 ZillitTextField(
@@ -105,9 +94,12 @@ fun CashPromptDialog(
                 )
             }
 
-            is CashPrompt.Assign -> AssignFields(shown, assignees, batch, onEvent)
+            is CashPrompt.Assign -> BatchAssignFields(shown, assignees, batch, onEvent) { person, picked, pick ->
+                AssigneeRow(person, picked, pick)
+            }
 
-            is CashPrompt.ReadyToCollect -> ReadyToCollectFields(shown, state?.companies.orEmpty(), onEvent)
+            is CashPrompt.ReadyToCollect ->
+                ReadyToCollectFields(shown, state?.companies.orEmpty(), onEvent, state?.chartAccounts)
 
             is CashPrompt.RecordReturn -> RecordReturnFields(shown, state, onEvent)
 
@@ -116,12 +108,12 @@ fun CashPromptDialog(
             null -> Unit
         }
 
-        PromptActions(shown, onEvent)
+        PromptActions(shown, onEvent, enabled = shown.canConfirm(batch))
     }
 }
 
 @Composable
-private fun PromptActions(shown: CashPrompt?, onEvent: (CashEvent) -> Unit) {
+private fun PromptActions(shown: CashPrompt?, onEvent: (CashEvent) -> Unit, enabled: Boolean = true) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -136,17 +128,11 @@ private fun PromptActions(shown: CashPrompt?, onEvent: (CashEvent) -> Unit) {
             text = shown.confirmLabel(),
             onClick = { onEvent(CashEvent.ConfirmPrompt) },
             variant = if (shown.isDestructive()) ButtonVariant.Danger else ButtonVariant.Primary,
+            enabled = enabled,
         )
     }
 }
 
-/**
- * The person, then the reason.
- *
- * The reason box appears only on a reassignment — a first assignment has
- * nothing to explain, and the server takes an empty one — so showing it
- * always would read as a required field that is silently optional.
- */
 /** One candidate: their face, their name, what they do, and a tick when chosen. */
 @Composable
 private fun AssigneeRow(person: AssigneeOption, picked: Boolean, onPick: () -> Unit) {
@@ -173,54 +159,6 @@ private fun AssigneeRow(person: AssigneeOption, picked: Boolean, onPick: () -> U
     }
 }
 
-@Composable
-private fun ColumnScope.AssignFields(
-    prompt: CashPrompt.Assign,
-    assignees: List<AssigneeOption>,
-    batch: ClaimBatch?,
-    onEvent: (CashEvent) -> Unit,
-) {
-    val eligible = BatchAssignment.eligible(assignees, batch)
-    if (eligible.isEmpty()) {
-        ZillitText(
-            text = str(S.desktop_ce_nobody_else_can_take),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
-        return
-    }
-    batch?.assignedTo?.takeIf { it.isNotBlank() }?.let { current ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(
-                text = str(S.desktop_ce_currently_with) + " ",
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-            CashPerson(userId = current, size = SMALL_FACE)
-        }
-    }
-    ZillitScrollColumn(
-        modifier = Modifier.fillMaxWidth().height(ASSIGNEE_LIST_HEIGHT.dp),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-    ) {
-        eligible.forEach { person ->
-            AssigneeRow(
-                person = person,
-                picked = prompt.selectedUserId == person.userId,
-                onPick = { onEvent(CashEvent.AssignPickUser(person.userId)) },
-            )
-        }
-    }
-    if (BatchAssignment.isUnassigned(batch)) return
-    ZillitTextField(
-        value = prompt.reason,
-        onValueChange = { onEvent(CashEvent.AssignReason(it)) },
-        label = str(S.desktop_ce_why_it_is_moving),
-        placeholder = str(S.desktop_ce_recorded_on_the_batch),
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
 private fun CashPrompt?.title(): String = when (this) {
     is CashPrompt.Confirm -> title
     is CashPrompt.Assign -> title
@@ -233,7 +171,8 @@ private fun CashPrompt?.title(): String = when (this) {
 }
 
 private fun CashPrompt?.subtitle(): String? = when (this) {
-    is CashPrompt.WithReason -> str(S.desktop_ce_reason_shown_to_submitter)
+    is CashPrompt.WithReason ->
+        if (action == ReasonedAction.EscalateBatch) null else str(S.desktop_ce_reason_shown_to_submitter)
     is CashPrompt.ReadyToCollect -> str(S.desktop_ce_ready_to_collect_note)
     is CashPrompt.RecordReturn -> str(S.desktop_ce_record_return_note)
     else -> null
@@ -242,7 +181,7 @@ private fun CashPrompt?.subtitle(): String? = when (this) {
 private fun CashPrompt?.confirmLabel(): String = when (this) {
     is CashPrompt.WithReason -> when (action) {
         ReasonedAction.RejectFloat, ReasonedAction.RejectBatch -> str(S.reject)
-        ReasonedAction.EscalateBatch -> str(S.desktop_ce_escalate)
+        ReasonedAction.EscalateBatch -> str(S.desktop_pc_confirm_escalation)
     }
 
     is CashPrompt.WithAmount -> str(S.save)
@@ -273,6 +212,21 @@ private fun CashPrompt?.isDestructive(): Boolean = when (this) {
     else -> false
 }
 
-private const val ASSIGNEE_LIST_HEIGHT = 180
 private val PICKED_TICK = 16.dp
-private val SMALL_FACE = 20.dp
+
+/** A reason to give — escalation's own copy, or the plain reason box every other refusal shares. */
+@Composable
+private fun ReasonFields(shown: CashPrompt.WithReason, onEvent: (CashEvent) -> Unit) {
+    if (shown.action == ReasonedAction.EscalateBatch) {
+        EscalateFields(shown, onEvent)
+        return
+    }
+    ZillitTextField(
+        value = shown.reason,
+        onValueChange = { onEvent(CashEvent.UpdatePrompt(shown.copy(reason = it))) },
+        label = shown.label,
+        placeholder = str(S.desktop_ce_say_what_needs_correcting),
+        singleLine = false,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}

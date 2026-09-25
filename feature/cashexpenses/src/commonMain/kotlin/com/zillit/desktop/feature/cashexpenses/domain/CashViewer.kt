@@ -36,6 +36,12 @@ data class CashViewer(
      * from `LocalHostedBy` — see `CashEvent.Enter`.
      */
     val enteredAsTool: Boolean = false,
+    /**
+     * The viewer's own department id — the web's `currentUser.department_id`,
+     * which a float request and the department overview send. From the
+     * production profile; null until it is read.
+     */
+    val departmentId: String? = null,
 ) {
 
     /**
@@ -88,8 +94,15 @@ data class CashViewer(
     val canSeeSignOff: Boolean
         get() = metadata.requireSeniorSignOff && isAccountant && isSenior
 
-    /** Settings is a senior accountant's screen — it rewrites everyone's rights. */
-    val canOpenSettings: Boolean get() = isAccountant && isSenior
+    /**
+     * Settings is a senior accountant's screen — it rewrites everyone's rights.
+     *
+     * Senior by *designation* only, as the web gates it
+     * (`isSeniorAccountantOf(desigId) && !enteredAsTool`,
+     * `CashExpensesModule.jsx:310,520`): the team's `is_senior` flag grants
+     * sign-off, not configuration.
+     */
+    val canOpenSettings: Boolean get() = isSeniorAccountant
 
     /** Whether an approval row offers the accountant's override action. */
     fun canOverrideFloat(): Boolean =

@@ -42,6 +42,20 @@ sealed interface CashEvent {
 
     data class SelectFloat(val floatId: String?) : CashEvent
 
+    /** Opens the Float Details dialog: fetches the float's details and reads its `pc_float` row. */
+    data class OpenFloatDetail(val floatId: String) : CashEvent
+
+    data object CloseFloatDetail : CashEvent
+
+    /** Corrects a float's BS code — an accountant, on a float nothing is spent against yet. */
+    data class SaveFloatBsCode(val floatId: String, val bsCode: String) : CashEvent
+
+    /** "Set Approval Level": the Account Hub's Approvers page, on this module's chain. */
+    data object OpenApprovalLevels : CashEvent
+
+    /** Reads the chart of accounts for the nominal pickers, once; a no-op when it is loaded. */
+    data object LoadChartAccounts : CashEvent
+
     /** Dismisses the confirmation toast. */
     data object ClearNotice : CashEvent
 
@@ -64,6 +78,9 @@ sealed interface CashEvent {
     data class EditReceipt(val index: Int, val receipt: DraftReceipt) : CashEvent
 
     data class EditSubmitNotes(val notes: String) : CashEvent
+
+    /** Picks and uploads the receipt file for the Submit form's row [index]. */
+    data class AttachReceipt(val index: Int) : CashEvent
 
     data object SubmitReceipts : CashEvent
 
@@ -167,6 +184,26 @@ sealed interface CashEvent {
     // -- exports -----------------------------------------------------------------
 
     data class Export(val register: ExportRegister, val format: ExportFormat) : CashEvent
+
+    // -- floats parity --
+
+    /** Runs [prompt] straight away, with no dialog — the web's one-click actions. */
+    data class ActNow(val prompt: CashPrompt) : CashEvent
+
+    /** Opens or closes an Active Floats row onto its batches. */
+    data class ToggleFloatBatches(val floatId: String) : CashEvent
+
+    /** Picks one of an opened float's batches, or clears the pick when it is picked again. */
+    data class SelectFloatBatch(val floatId: String, val batchId: String) : CashEvent
+
+    /** Opens the float's history drawer; null closes it. */
+    data class ShowFloatHistory(val floatId: String?, val reference: String? = null) : CashEvent
+
+    /** Opens or closes one posted batch in the Float Details dialog, fetching its receipts once. */
+    data class ToggleDetailBatch(val batchId: String) : CashEvent
+    // -- funds parity --
+    /** Top-ups, Cash Extension, fund requests and the reconciliation's writes — see [FundsDesk]. */
+    data class Funds(val action: FundsAction) : CashEvent
 }
 
 /** What an export writes out. */
@@ -180,4 +217,10 @@ sealed interface CashEffect {
 
     /** An attachment the user asked to see, as a storage key. */
     data class OpenAttachment(val key: String) : CashEffect
+
+    /** Another page of the workspace — a route the tool's navigator opens. */
+    data class Navigate(val path: String) : CashEffect
 }
+
+/** The web's `/film-tools/account-hub/approvers?module=cash_expenses`. */
+const val CASH_APPROVERS_ROUTE = "/film-tools/account-hub/approvers?module=cash_expenses"

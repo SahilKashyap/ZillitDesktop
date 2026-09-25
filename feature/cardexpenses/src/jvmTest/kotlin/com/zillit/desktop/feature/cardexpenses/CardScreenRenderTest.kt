@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cardexpenses
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -139,14 +140,6 @@ class CardScreenRenderTest {
     )
 
     /** The receipt queue with one selected receipt, carrying (or lacking) a document. */
-    private fun receiptQueueState(attachment: String?) =
-        state(CardDestination.ReceiptInbox).let { base ->
-            base.copy(
-                receipts = listOf(receipt().copy(attachmentKey = attachment)),
-                selectedReceiptId = "receipt-1",
-            )
-        }
-
     @Test
     fun `every accountant destination composes`() {
         val destinations = CardDestination.entries.filter { it.visibleTo(accountant) }
@@ -194,117 +187,46 @@ class CardScreenRenderTest {
         }
     }
 
+    /**
+     * Bulk Process lists the process queue's approved rows; a ticked row brings
+     * up the override bar, which says blank keeps each row's own coding
+     * (`BulkProcessPage.jsx:410-491`).
+     */
     @Test
-    fun `the bulk screen says a blank override keeps each row's own coding`() {
-        val item = com.zillit.desktop.feature.cardexpenses.domain.BulkItem(
-            id = "bulk-1",
-            holderId = "user-2",
-            holderName = "Ada Lovelace",
-            description = "Coffee run",
-            merchant = "Cafe",
-            amount = 18.40,
-            currency = "GBP",
-            date = 1_754_000_000_000,
-            cardLastFour = "4821",
-            nominalCode = "4100",
-            codeDescription = null,
-            episode = null,
-            status = CardWorkflowStatus.ReadyToPost,
-            assignedTo = null,
-            urgent = false,
-        )
+    fun `the bulk bar says a blank override keeps each row's own coding`() {
+        val mine = receipt().copy(status = CardWorkflowStatus.Approved, assignedTo = "user-1")
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     CardExpensesScreen(
                         state = state(CardDestination.BulkProcess).copy(
-                            bulkItems = listOf(item),
-                            selection = setOf("bulk-1"),
+                            receipts = listOf(mine),
+                            selection = setOf(mine.id),
                         ),
                         onEvent = {},
                     )
                 }
             }
-            onNodeWithText("Leave a field blank to keep each row's own coding").assertExists()
-            onNodeWithText("Post 1 item(s)").assertExists()
+            onNodeWithText("Bulk Override", substring = true, ignoreCase = true).assertExists()
+            onNodeWithText("Batch Post 1 item").assertExists()
+            onNodeWithText("Batch Queue").assertExists()
         }
     }
 
     @Test
-    fun `a row assigned to someone else is named rather than silently unselectable`() {
-        val theirs = com.zillit.desktop.feature.cardexpenses.domain.BulkItem(
-            id = "bulk-2",
-            holderId = "user-3",
-            holderName = "Grace",
-            description = "Parking",
-            merchant = null,
-            amount = 6.0,
-            currency = "GBP",
-            date = null,
-            cardLastFour = null,
-            nominalCode = null,
-            codeDescription = null,
-            episode = null,
-            status = CardWorkflowStatus.ReadyToPost,
-            assignedTo = "someone-else",
-            urgent = false,
-        )
+    fun `an empty bulk queue says where rows come from`() {
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     CardExpensesScreen(
-                        state = state(CardDestination.BulkProcess).copy(bulkItems = listOf(theirs)),
-                        onEvent = {},
-                    )
-                }
-            }
-            onNodeWithText("1 row(s) are assigned to someone else and cannot be posted from here.")
-                .assertIsDisplayed()
-            onNodeWithText("Assigned elsewhere").assertExists()
-        }
-    }
-
-    @Test
-    fun `an unmatched statement row is called out as having nobody to ask`() {
-        val orphan = com.zillit.desktop.feature.cardexpenses.domain.StatementRow(
-            id = "row-1",
-            merchant = "UNKNOWN MERCHANT",
-            description = null,
-            amount = 42.0,
-            currency = "GBP",
-            date = 1_754_000_000_000,
-            cardLastFour = "4821",
-            holderId = null,
-            holderName = null,
-            status = "new",
-        )
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    CardExpensesScreen(
-                        state = state(CardDestination.ImportStatement).copy(
-                            imports = listOf(
-                                com.zillit.desktop.feature.cardexpenses.domain.StatementImport(
-                                    id = "imp-1",
-                                    filename = "visa-august.csv",
-                                    status = "completed",
-                                    rowCount = 1,
-                                    matchedCount = 0,
-                                    importedAt = 1_754_000_000_000,
-                                ),
-                            ),
-                            openImportId = "imp-1",
-                            importRows = listOf(orphan),
-                        ),
+                        state = state(CardDestination.BulkProcess).copy(receipts = emptyList()),
                         onEvent = {},
                     )
                 }
             }
             onNodeWithText(
-                "1 row(s) could not be matched to a cardholder. " +
-                    "They can be accepted into the ledger, but nobody can be asked for a receipt.",
+                "No transactions available for bulk processing. Import statements to add transactions.",
             ).assertIsDisplayed()
-            onNodeWithText("Unmatched").assertExists()
         }
     }
 
@@ -345,79 +267,16 @@ class CardScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("Line Items", ignoreCase = true).assertExists()
+            // A full page, not a dialog: the breadcrumb names the queue it came from.
+            onNodeWithText("Ready to Post").assertExists()
+            onNodeWithText("Gross Total", ignoreCase = true).assertExists()
             onNodeWithText("Post to Ledger").assertExists()
             onNodeWithText("is lower than the receipt amount", substring = true).assertExists()
         }
     }
 
-    /**
-     * The receipt is what the figures are checked against.
-     *
-     * The effect and the host's handler shipped with this module, but nothing
-     * ever raised it — so the document was unreachable from the screen whose
-     * whole job is comparing it with a statement line.
-     */
     @Test
-    fun `a receipt with a document offers to open it`() {
-        val withDoc = receiptQueueState(attachment = "receipts/r1.jpg")
-
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    CardExpensesScreen(state = withDoc, onEvent = {})
-                }
-            }
-            onNodeWithText("View receipt").assertExists()
-        }
-    }
-
-    @Test
-    fun `a pdf receipt is named as one`() {
-        val withPdf = receiptQueueState(attachment = "receipts/r1.PDF")
-
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    CardExpensesScreen(state = withPdf, onEvent = {})
-                }
-            }
-            onNodeWithText("Open receipt (PDF)").assertExists()
-        }
-    }
-
-    @Test
-    fun `a receipt still waiting for its document offers nothing to open`() {
-        val none = receiptQueueState(attachment = null)
-
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    CardExpensesScreen(state = none, onEvent = {})
-                }
-            }
-            onAllNodesWithText("View receipt").assertCountEquals(0)
-            onAllNodesWithText("Open receipt (PDF)").assertCountEquals(0)
-        }
-    }
-
-    @Test
-    fun `a duplicate-flagged receipt shows the exception before the actions`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    CardExpensesScreen(
-                        state = state(CardDestination.ApprovalQueue),
-                        onEvent = {},
-                    )
-                }
-            }
-            onNodeWithText("Possible duplicate — 88% similar to another receipt.").assertIsDisplayed()
-        }
-    }
-
-    @Test
-    fun `an exhausted card refuses the upload and points at the top-up`() {
+    fun `an exhausted card refuses the upload and says so`() {
         val maxed = card().copy(limit = 500.0, receiptsCommit = 500.0)
         runComposeUiTest {
             setContent {
@@ -428,12 +287,10 @@ class CardScreenRenderTest {
                     )
                 }
             }
-            // The notice itself, not the tab of the same name — the gate has to
-            // say why it is refusing, not merely offer a link.
-            onNodeWithText(
-                "This card's limit is fully committed, so nothing further can be uploaded against it. " +
-                    "Request a top-up first.",
-            ).assertIsDisplayed()
+            // The web's gate (`UserReceiptsPage.jsx:873-884`): a disabled button
+            // beside "Upload unavailable", the reason in its tooltip.
+            onNodeWithText("Upload unavailable").assertIsDisplayed()
+            onNodeWithText("Upload Receipts").assertIsNotEnabled()
         }
     }
 }

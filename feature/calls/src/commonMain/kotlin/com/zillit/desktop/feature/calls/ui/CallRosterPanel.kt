@@ -238,7 +238,7 @@ private fun RosterRow(tile: CallTile, state: CallUiState?, onEvent: (CallEvent) 
             )
         }
         RosterBadges(tile, state)
-        if (state?.session?.provider == CallProvider.LiveKit && !tile.isSelf) RosterActions(tile, onEvent)
+        if (state != null) RosterActions(tile, state, onEvent)
     }
 }
 
@@ -246,6 +246,14 @@ private fun RosterRow(tile: CallTile, state: CallUiState?, onEvent: (CallEvent) 
 @Composable
 private fun RosterBadges(tile: CallTile, state: CallUiState?) {
     val colors = ZillitTheme.colors
+    if (state != null && tile.key in state.pins) {
+        ZillitIcon(
+            icon = ZillitIcons.Pin,
+            contentDescription = str(S.desktop_board_pinned),
+            tint = colors.accent,
+            size = ROW_ICON,
+        )
+    }
     if (state != null && tile.userId in state.line3.deafened) {
         // Amber, against the grey of their own mute below: the web's local badges are amber too.
         ZillitIcon(
@@ -290,18 +298,22 @@ private fun RosterBadges(tile: CallTile, state: CallUiState?) {
     tile.media?.quality?.takeIf { it.isTrouble }?.let { NetworkPip(quality = it) }
 }
 
-/** Line 3, somebody else: Cancel on a ring still out, ⋮ on someone in the room. */
+/**
+ * Cancel on a Line 3 ring still out; ⋮ on anyone in the room, ourselves
+ * included — Pin is on every line, and it is the menu's first row.
+ */
 @Composable
-private fun RosterActions(tile: CallTile, onEvent: (CallEvent) -> Unit) {
+private fun RosterActions(tile: CallTile, state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
     when {
-        tile.presence == CallStatus.Ringing -> ZillitText(
+        tile.presence == CallStatus.Ringing && tile.hasLine3Menu(state) -> ZillitText(
             text = str(S.cancel),
             style = ZillitTheme.typography.labelSmall,
             color = colors.accent,
             modifier = Modifier.clickable { onEvent(CallEvent.CancelInvite(tile.userId)) },
         )
-        tile.presence == CallStatus.InCall && tile.userId.isNotBlank() ->
+        tile.presence == CallStatus.InCall && tile.userId.isNotBlank() &&
+            (state.tiles.size > 1 || tile.hasLine3Menu(state)) ->
             Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleRosterMenu(tile.userId)) }) {
                 ZillitIcon(
                     icon = ZillitIcons.MoreHorizontal,
@@ -337,9 +349,24 @@ private fun RosterMenu(tile: CallTile, state: CallUiState, onEvent: (CallEvent) 
     }
 }
 
-/** The menu's rows: my own mutes first, then what anyone may do to them, then the host's. */
+/** The menu's rows: Pin, then Line 3's verbs when it is somebody else in a LiveKit room. */
 @Composable
 private fun RosterMenuItems(tile: CallTile, state: CallUiState, pick: (CallEvent) -> Unit) {
+    val id = tile.userId
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Only while there is someone to be pinned above; the web's first row.
+        if (state.tiles.size > 1) {
+            MenuRow(if (tile.key in state.pins) str(S.desktop_board_unpin) else str(S.desktop_board_pin)) {
+                pick(CallEvent.TogglePin(tile.key))
+            }
+        }
+        if (tile.hasLine3Menu(state)) Line3MenuItems(tile, state, pick)
+    }
+}
+
+/** Line 3's rows for somebody else: my own mutes first, then what anyone may do to them, then the host's. */
+@Composable
+private fun Line3MenuItems(tile: CallTile, state: CallUiState, pick: (CallEvent) -> Unit) {
     val id = tile.userId
     Column(modifier = Modifier.fillMaxWidth()) {
         val hidden = id in state.line3.hidden
@@ -380,6 +407,10 @@ private fun MenuRow(label: String, danger: Boolean = false, onClick: () -> Unit)
             .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
     )
 }
+
+/** Line 3's per-person verbs apply to somebody else in a LiveKit room — never to ourselves. */
+private fun CallTile.hasLine3Menu(state: CallUiState): Boolean =
+    state.session?.provider == CallProvider.LiveKit && !isSelf
 
 /** "Sahil (you)" — the web's own-row label — or plain "You" when we have no name for ourselves. */
 private val CallTile.selfLabel: String

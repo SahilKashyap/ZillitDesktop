@@ -19,6 +19,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCoding
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCapBasis
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
+import com.zillit.desktop.feature.cardexpenses.domain.StoredStatement
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.engine.mock.MockEngine
@@ -252,12 +253,20 @@ class CardWriteWireTest {
     @Test
     fun `a statement import omits an unstated currency`() = runTest {
         val (repo, sent) = repository()
+        val stored = StoredStatement(
+            media = "card-expenses/abc/march.csv",
+            bucket = "bucket",
+            region = "eu-west-2",
+            name = "march.csv",
+            contentType = "document",
+            contentSubtype = "csv",
+        )
 
-        repo.importStatement("card-expenses/abc/march.csv", currency = null)
+        repo.importStatementFile(stored, currency = null)
         assertEquals(setOf("attachment"), sent.single().keys)
 
         sent.clear()
-        repo.importStatement("card-expenses/abc/march.csv", currency = "EUR")
+        repo.importStatementFile(stored, currency = "EUR")
         assertEquals("EUR", sent.single()["currency"]?.jsonPrimitive?.content)
     }
 

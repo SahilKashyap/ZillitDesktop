@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cardexpenses.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 
 /**
@@ -9,7 +10,7 @@ import com.zillit.desktop.core.common.ZillitResult
  * screens use it rather than the way the routes are laid out.
  */
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
-interface CardRepository {
+interface CardRepository : CardInboxApi {
 
     suspend fun metadata(): ZillitResult<CardMetadata>
 
@@ -77,34 +78,60 @@ interface CardRepository {
      */
     suspend fun updateBsControlCode(cardId: String, code: String): ZillitResult<Unit>
 
+    /**
+     * One card write, answered with the server's own message for the toast
+     * (the web's `showApiSuccess`) — a `status: 0` inside a 200 is a failure.
+     *
+     * Defaults to the single-purpose calls above with no message, so a
+     * repository that predates it keeps working; the crew's own re-submit has
+     * no such call and is refused by the default.
+     */
+    @Suppress("CyclomaticComplexMethod") // One branch per card write.
+    suspend fun cardAction(action: CardAction): ZillitResult<CardServerNote> {
+        val done: ZillitResult<Unit> = when (action) {
+            is CardAction.Request -> requestCard(action.request)
+            is CardAction.CrewRequest -> requestCard(
+                NewCardRequest(
+                    holderId = action.userId,
+                    proposedLimit = action.proposedLimit,
+                    currency = action.currency,
+                    departmentId = action.departmentId,
+                    companyId = null,
+                    providerId = null,
+                    issuer = null,
+                    bsControlCode = null,
+                    justification = action.justification,
+                ),
+            )
+
+            is CardAction.EditDetails -> updateCardDetails(action.cardId, action.edit)
+            is CardAction.CrewEdit -> ZillitResult.Failure(
+                ZillitError.Unknown("crew card edit is not supported here"),
+            )
+
+            is CardAction.BsCode -> updateBsControlCode(action.cardId, action.code)
+            is CardAction.Delete -> deleteCard(action.cardId)
+            is CardAction.Approve -> approveCard(action.cardId, action.step, action.userId)
+            is CardAction.Reject -> rejectCard(action.cardId, action.reason, action.userId)
+            is CardAction.Override -> overrideCard(action.cardId, action.userId, action.reason)
+            is CardAction.Activate -> activateCard(action.cardId, action.activation)
+            is CardAction.Suspend -> suspendCard(action.cardId)
+            is CardAction.Reactivate -> reactivateCard(action.cardId)
+            is CardAction.AssignPhysical -> assignPhysicalCard(action.cardId, action.number)
+        }
+        return when (done) {
+            is ZillitResult.Success -> ZillitResult.Success(CardServerNote())
+            is ZillitResult.Failure -> done
+        }
+    }
+
     // -- statement imports -------------------------------------------------
 
     suspend fun imports(): ZillitResult<List<StatementImport>>
 
-    /**
-     * Ingests a statement already uploaded to storage, by its attachment key.
-     *
-     * [currency] states what the statement is denominated in; null leaves the
-     * server to apply the project default.
-     */
-    suspend fun importStatement(attachmentKey: String, currency: String?): ZillitResult<Unit>
-
-    suspend fun rerunMatching(statementId: String): ZillitResult<Unit>
-
-    /** The rows of one uploaded statement, for review before they are sent out. */
-    suspend fun importRows(importId: String): ZillitResult<List<StatementRow>>
-
-    /**
-     * Accepts the reviewed rows into the transaction ledger.
-     *
-     * Takes the row ids rather than the whole set: the server holds the rows
-     * and re-sending them invites a client-side edit to overwrite what was
-     * imported.
-     */
-    suspend fun processImport(importId: String, rowIds: List<String>): ZillitResult<Unit>
-
-    /** Sends statement rows to the cardholders they belong to, for receipts. */
-    suspend fun submitRowsToHolders(transactionIds: List<String>): ZillitResult<Unit>
+    // Importing, re-matching and sending rows to crew are in [CardInboxApi]:
+    // the web imports every row itself and has no review-then-accept step
+    // (`processImport` and `getImportRows` are dead there).
 
     // -- transactions ------------------------------------------------------
 
@@ -196,6 +223,20 @@ interface CardRepository {
 
     suspend fun receiptHistory(receiptId: String): ZillitResult<List<CardHistoryEntry>>
 
+    // -- the cardholder's pages ----------------------------------------------
+
+    /**
+     * Card requests waiting on this viewer's signature — the crew Approval
+     * Queue's cards (`CardsForApprovalPage.jsx:87`), filtered by the server.
+     */
+    suspend fun cardsForApproval(): ZillitResult<List<ExpenseCard>>
+
+    /** The Edit Receipt dialog's save — PATCH `/receipts/:id` with [edit]'s body. */
+    suspend fun updateReceipt(receiptId: String, edit: ReceiptEdit): ZillitResult<Unit>
+
+    /** Resubmits a rejected receipt after its edit (`UserReceiptsPage.jsx:1477-1479`). */
+    suspend fun confirmReceipt(receiptId: String): ZillitResult<Unit>
+
     // -- bulk processing ---------------------------------------------------
 
     /** Receipts ready to be coded and posted together. */
@@ -213,14 +254,29 @@ interface CardRepository {
 
     suspend fun approvalQueue(): ZillitResult<List<CardReceipt>>
 
-    suspend fun approveReceipt(receiptId: String, note: String?): ZillitResult<Unit>
+    /**
+     * Signs one step of a receipt's chain: `tier_number` is one past the
+     * sign-offs it already has, and the signer goes with it
+     * (`ApprovalQueuePage.jsx:180-183`).
+     */
+    suspend fun approveReceipt(receiptId: String, tierNumber: Int, userId: String): ZillitResult<Unit>
 
-    suspend fun rejectReceipt(receiptId: String, reason: String): ZillitResult<Unit>
+    /** Sends a receipt back with why, and who said so (`ApprovalQueuePage.jsx:197-200`). */
+    suspend fun rejectReceipt(receiptId: String, reason: String, userId: String): ZillitResult<Unit>
 
     suspend fun overrideReceipt(receiptId: String, userId: String, reason: String): ZillitResult<Unit>
 
     /** Approves or rejects several receipts in one call. */
     suspend fun bulkApproval(action: BulkAction, receiptIds: List<String>): ZillitResult<Unit>
+
+    // -- the process pages' references ----------------------------------------
+
+    /**
+     * The close boundary, tax types, chart, Layers sets and account tags the
+     * process pages work against. Never fails as a whole: a part that could
+     * not be read comes back empty.
+     */
+    suspend fun processReferences(): ZillitResult<ProcessRefs>
 
     // -- top-ups -----------------------------------------------------------
 

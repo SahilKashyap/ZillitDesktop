@@ -28,7 +28,8 @@ function element(tag) {
         parentNode: null,
         dataset: {},
         classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
-        set innerHTML(_) {},
+        // render() empties the stage this way; the pin checks count what is left.
+        set innerHTML(value) { if (value === '') { node.children = []; } },
         get innerHTML() { return ''; },
         set textContent(_) {},
         get textContent() { return ''; },
@@ -39,7 +40,9 @@ function element(tag) {
             return child;
         },
         remove() { if (node.parentNode) { node.parentNode.removeChild(node); } },
-        addEventListener() {},
+        // Kept, so a test can press what the page built.
+        listeners: {},
+        addEventListener(type, fn) { node.listeners[type] = fn; },
         removeEventListener() {},
         setAttribute() {},
         getBoundingClientRect: () => ({ width: 1280, height: 720, top: 0, left: 0 }),
@@ -92,8 +95,8 @@ if (!api) { throw new Error('call.js did not install window.zillitCall'); }
 const model = JSON.stringify({
     cols: 2,
     tiles: [
-        { uid: 0, name: 'Vivek Mishra', self: true, hue: '#5f6368', muted: false, known: true, ringing: false, hand: false, peerId: 'me' },
-        { uid: 7, name: 'Samsung Device', self: false, hue: '#8a5f68', muted: false, known: true, ringing: false, hand: false, peerId: 'them' },
+        { uid: 0, name: 'Vivek Mishra', self: true, hue: '#5f6368', muted: false, known: true, ringing: false, hand: false, peerId: 'me', key: 'self' },
+        { uid: 7, name: 'Samsung Device', self: false, hue: '#8a5f68', muted: false, known: true, ringing: false, hand: false, peerId: 'them', key: 'them' },
     ],
 });
 
@@ -121,9 +124,72 @@ api.setStage(model);
 api.detachRemote('lk:PA:screen_share');
 api.detachRemote('lk:PA:camera');
 
+// A pin: the stage laid out around a pinned tile, and the tile's own pin
+// asking Kotlin (the page never decides) — for the other person and for us.
+const pinnedModel = JSON.stringify(Object.assign(JSON.parse(model), { pins: ['them'] }));
+api.setStage(pinnedModel);
+function find(node, test) {
+    if (test(node)) { return node; }
+    for (const child of node.children || []) {
+        const hit = find(child, test);
+        if (hit) { return hit; }
+    }
+    return null;
+}
+const pins = [];
+(function collect(node) {
+    if (node.className && /\bpin\b/.test(node.className)) { pins.push(node); }
+    (node.children || []).forEach(collect);
+})(stage);
+if (pins.length !== 2) { throw new Error('expected a pin on both tiles, found ' + pins.length); }
+if (!find(stage, (n) => n.className === 'pin on')) { throw new Error('the pinned tile does not show its pin'); }
+if (!find(stage, (n) => n.className === 'focus')) { throw new Error('a pin did not lay out the focus stage'); }
+let stopped = false;
+find(stage, (n) => n.className === 'pin on').listeners.click({ stopPropagation() { stopped = true; } });
+if (!context.sent.some((m) => m === JSON.stringify({ type: 'pin', key: 'them' }))) {
+    throw new Error('pressing the pin did not ask Kotlin: ' + context.sent.slice(-3).join('\n'));
+}
+if (!stopped) { throw new Error('the pin press would also swap the strip tile'); }
+// Compact: no pins drawn in the pill's thumbnail.
+api.setCompact(true);
+if (find(stage, (n) => /\bpin\b/.test(n.className || ''))) { throw new Error('the thumbnail drew a pin'); }
+api.setCompact(false);
+api.setStage(model);
+
 // attachRemote and detachRemote swallow their own errors into a warning, so
 // a throw inside them would otherwise pass this run silently.
 const swallowed = context.sent.filter((m) => /"where":"(attachRemote|detachRemote)"/.test(m));
 if (swallowed.length) { throw new Error('the page warned while mounting media: ' + swallowed.join('\n')); }
 
-process.stdout.write('call.js drove ' + context.sent.length + ' messages without throwing\n');
+// The 2026-09-24 Line 3 report: a Line 1 call's remote video outlived the
+// call, and in the next call with the same person that dead track filled their
+// tile while the live camera was never mounted.
+async function staleVideoAcrossCalls() {
+    const dead = { getVideoTracks: () => [{ readyState: 'ended' }] };
+    const live = { getVideoTracks: () => [{ readyState: 'live' }] };
+    const shownIn = () => {
+        const video = find(stage, (n) => n.tagName === 'video');
+        return video ? video.srcObject : null;
+    };
+    api.setStage(model);
+
+    // Even while the dead one is still held, the live camera wins the tile.
+    api.attachRemote('ms:old', 'them:device_1', 'video', dead, false);
+    api.attachRemote('lk:PB:camera', 'them', 'video', live, false);
+    if (shownIn() !== live) { throw new Error('a dead track kept the tile over the live camera'); }
+    api.detachRemote('lk:PB:camera');
+
+    // And the end of a call lets go of every remote track it held.
+    await api.leave();
+    api.setStage(model);
+    if (shownIn() !== null) { throw new Error('the last call\'s video is still in a tile after leave()'); }
+    api.attachRemote('lk:PC:camera', 'them', 'video', live, false);
+    if (shownIn() !== live) { throw new Error('the next call\'s camera was not mounted'); }
+}
+
+staleVideoAcrossCalls().then(() => {
+    process.stdout.write('call.js drove ' + context.sent.length + ' messages without throwing\n');
+}).catch((e) => {
+    process.stderr.write(String(e && e.stack || e) + '\n');
+    process.exit(1);
+});

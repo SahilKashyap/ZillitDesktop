@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -9,6 +10,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
 import com.zillit.desktop.feature.cardexpenses.domain.BulkOutcome
 import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
+import com.zillit.desktop.feature.cardexpenses.domain.InboxWrite
 import com.zillit.desktop.feature.cardexpenses.domain.canDelete
 
 /**
@@ -111,7 +113,11 @@ internal class CardPromptActions(
             CardConfirmAction.ReactivateCard -> vm.act(str(S.ah_card_reactivated_toast)) { repo.reactivateCard(id) }
             CardConfirmAction.DeleteCard -> deleteCard(id)
             CardConfirmAction.ApproveReceipt ->
-                vm.act(str(S.desktop_card_receipt_approved)) { repo.approveReceipt(id, null) }
+                vm.act(str(S.desktop_card_receipt_approved)) {
+                    // The step being signed: one past the sign-offs already collected.
+                    val tier = (vm.current.receipts.firstOrNull { it.id == id }?.approvals?.size ?: 0) + 1
+                    repo.approveReceipt(id, tier, me)
+                }
 
             CardConfirmAction.OverrideReceipt ->
                 vm.act(str(S.desktop_card_receipt_overridden)) { repo.overrideReceipt(id, me, RECEIPT_OVERRIDE_REASON) }
@@ -152,7 +158,11 @@ internal class CardPromptActions(
             }
 
             CardConfirmAction.BulkDeleteTransactions -> bulkDeleteTransactions()
-            CardConfirmAction.RerunMatching -> vm.act(str(S.desktop_card_matching_rerun)) { repo.rerunMatching(id) }
+            // The web re-runs every statement (`rerunMatch()` sends `{}`); the
+            // inbox page itself now raises `InboxEvent.RerunMatch` instead.
+            CardConfirmAction.RerunMatching -> vm.act(str(S.desktop_card_matching_rerun)) {
+                repo.inboxWrite(InboxWrite.RerunMatch).map { }
+            }
         }
     }
 
@@ -200,7 +210,9 @@ internal class CardPromptActions(
 
             CardReasonAction.RejectReceipt -> {
                 if (!viewer.isApprover) return refuse()
-                vm.act(str(S.desktop_card_receipt_rejected)) { repo.rejectReceipt(prompt.targetId, reason) }
+                vm.act(str(S.desktop_card_receipt_rejected)) {
+                    repo.rejectReceipt(prompt.targetId, reason, viewer.userId)
+                }
             }
 
             CardReasonAction.QueryTransaction ->

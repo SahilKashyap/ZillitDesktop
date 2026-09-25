@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +39,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTokenField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.documentdistribution.domain.AddressSuggestion
 import com.zillit.desktop.feature.documentdistribution.domain.HtmlText
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.MAX_TOTAL_ATTACHMENT_BYTES
@@ -144,7 +148,9 @@ fun ComposerDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
 private fun ColumnScope.AddressSection(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
     val composer = state.composer
     val c = ZillitTheme.colors
-    val names = state.contacts.associate { it.email.lowercase() to it.name }
+    // Saved contacts and the crew (ZL-21622), merged once for all three fields.
+    val suggestions = remember(state.contacts, state.crew) { state.addressSuggestions }
+    val names = suggestions.associate { it.email.lowercase() to it.name }
 
     FieldLabel("To") {
         Box {
@@ -181,14 +187,14 @@ private fun ColumnScope.AddressSection(state: DocDistUiState, onEvent: (DocDistE
             trailingIcon = if (composer.showCcBcc) ZillitIcons.ChevronUp else ZillitIcons.ChevronDown,
         )
     }
-    AddressRow(AddressField.To, composer.to, composer.toInput, names, state, onEvent, "alice@studio.com")
+    AddressRow(AddressField.To, composer.to, composer.toInput, names, suggestions, onEvent, "alice@studio.com")
     InvalidHint(composer.invalidTo)
     if (composer.showCcBcc) {
         FieldLabel("Cc")
-        AddressRow(AddressField.Cc, composer.cc, composer.ccInput, names, state, onEvent, "cc@studio.com")
+        AddressRow(AddressField.Cc, composer.cc, composer.ccInput, names, suggestions, onEvent, "cc@studio.com")
         InvalidHint(composer.invalidCc)
         FieldLabel("Bcc")
-        AddressRow(AddressField.Bcc, composer.bcc, composer.bccInput, names, state, onEvent, "bcc@studio.com")
+        AddressRow(AddressField.Bcc, composer.bcc, composer.bccInput, names, suggestions, onEvent, "bcc@studio.com")
         InvalidHint(composer.invalidBcc)
     }
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
@@ -209,7 +215,7 @@ private fun AddressRow(
     recipients: List<Recipient>,
     input: String,
     names: Map<String, String>,
-    state: DocDistUiState,
+    suggestions: List<AddressSuggestion>,
     onEvent: (DocDistEvent) -> Unit,
     placeholder: String,
 ) {
@@ -222,11 +228,11 @@ private fun AddressRow(
             tokenLabel = { email -> names[email.lowercase()]?.takeIf { it.isNotBlank() } ?: email },
             isTokenValid = ::isValidEmail,
         )
-        // The address book beneath the field as you type — pick one to add it.
+        // The address book and the crew beneath the field as you type — pick one to add it.
         val q = input.trim().lowercase()
         if (q.length >= TYPEAHEAD_MIN) {
             val taken = recipients.map { it.email.lowercase() }.toSet()
-            val matches = state.contacts
+            val matches = suggestions
                 .filter { it.email.lowercase() !in taken && isValidEmail(it.email) }
                 .filter { it.email.lowercase().contains(q) || it.name.lowercase().contains(q) }
                 .sortedBy { it.displayName.lowercase() }
@@ -254,9 +260,13 @@ private fun AddressRow(
                                 size = 22.dp,
                             )
                             ZillitText(text = contact.displayName, style = ZillitTheme.typography.label, maxLines = 1)
+                            // Says where the row came from, so a crew member is
+                            // never mistaken for someone already saved.
+                            if (contact.isCrew) ZillitStatusPill(label = str(S.crew), tone = StatusTone.Progress)
                             if (contact.name.isNotBlank()) {
                                 ZillitText(
-                                    text = contact.email,
+                                    text = listOf(contact.email, contact.job).filter { it.isNotBlank() }
+                                        .joinToString(" · "),
                                     style = ZillitTheme.typography.bodySmall,
                                     color = c.textMuted,
                                     maxLines = 1,
@@ -729,7 +739,7 @@ private fun WatermarkWizardDialog(state: DocDistUiState, onEvent: (DocDistEvent)
             Column(Modifier.weight(1f)) {
                 WatermarkLinesEditor(draft) { onEvent(DocDistEvent.EditWizard(it)) }
                 FieldLabel("Appearance", Modifier.padding(bottom = ZillitTheme.spacing.sm))
-                WatermarkStyleControls(draft) { onEvent(DocDistEvent.EditWizard(it)) }
+                WatermarkStyleControls(draft, state.loadedWatermarkDefaults) { onEvent(DocDistEvent.EditWizard(it)) }
             }
             WatermarkPreview(
                 style = draft,
