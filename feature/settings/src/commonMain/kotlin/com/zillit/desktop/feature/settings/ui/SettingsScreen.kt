@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
@@ -305,7 +309,7 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
 /** What Zillit does on this computer when its window is not in front, or not open at all. */
 @Composable
 private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section(str(S.desktop_section_desktop), ZillitIcons.Monitor) {
+    Section(str(S.desktop_section_desktop), ZillitIcons.Monitor, collapsible = true) {
         NotifyToggle(
             title = str(S.desktop_incoming_call_card),
             detail = str(S.desktop_incoming_call_card_detail),
@@ -444,7 +448,7 @@ private fun NotifyToggle(
 
 @Composable
 private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section(str(S.notifications), ZillitIcons.Bell) {
+    Section(str(S.notifications), ZillitIcons.Bell, collapsible = true) {
         SettingRow(
             title = str(S.desktop_event_reminders),
             // Says what silence costs. "Mute notifications" alone leaves the
@@ -556,10 +560,32 @@ private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent
 private fun Section(
     title: String,
     icon: ImageVector,
+    /**
+     * Lets the group fold behind its heading. Starts open, like every other
+     * group; for the long ones — Desktop and Notifications — which otherwise
+     * push everything below them off the screen. Remembered for as long as
+     * the screen is.
+     */
+    collapsible: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    var expanded by rememberSaveable { mutableStateOf(true) }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Row(
+            // The whole heading is the target, not just the chevron: a 16dp icon
+            // is a hard thing to hit, and the heading is what people aim at.
+            modifier = if (collapsible) {
+                Modifier
+                    .fillMaxWidth()
+                    .clip(ZillitTheme.shapes.medium)
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = if (expanded) str(S.desktop_collapse) else str(S.desktop_expand),
+                    ) { expanded = !expanded }
+                    .testTag(SECTION_HEADING_TAG)
+            } else {
+                Modifier
+            },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
@@ -574,18 +600,32 @@ private fun Section(
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.textMuted,
             )
+            if (collapsible) {
+                Spacer(Modifier.weight(1f))
+                ZillitIcon(
+                    icon = if (expanded) ZillitIcons.ChevronUp else ZillitIcons.ChevronDown,
+                    contentDescription = null,
+                    tint = ZillitTheme.colors.textMuted,
+                    size = SECTION_ICON,
+                )
+            }
         }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(ZillitTheme.shapes.medium)
-                .background(ZillitTheme.colors.surface)
-                .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.medium),
-        ) {
-            content()
+        if (expanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ZillitTheme.shapes.medium)
+                    .background(ZillitTheme.colors.surface)
+                    .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.medium),
+            ) {
+                content()
+            }
         }
     }
 }
+
+/** Marks a foldable section's heading, for tests. */
+internal const val SECTION_HEADING_TAG = "settings-section-heading"
 
 /**
  * One setting: what it is, what it does, and the control.
