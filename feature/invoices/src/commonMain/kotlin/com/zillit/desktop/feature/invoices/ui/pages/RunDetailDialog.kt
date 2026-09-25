@@ -16,10 +16,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -27,6 +29,8 @@ import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.PaymentRun
 import com.zillit.desktop.feature.invoices.domain.PaymentRunStatus
+import com.zillit.desktop.feature.invoices.domain.PaymentRuns
+import com.zillit.desktop.feature.invoices.ui.AccountantPage
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.RunDetailView
@@ -45,21 +49,35 @@ internal fun RunDetailDialog(state: InvoicesUiState, view: RunDetailView, onEven
     val run = view.shown
     val decision = state.runApproval(run)
     val invoices = view.detail?.invoices.orEmpty()
+    // The department approver's modal (`DepartmentInvoiceModule.jsx:1297-1429`)
+    // has no Cancel run, no BACs preview and no rejection banner — only what
+    // the run pays, who built it, and Reject / Approve for the next signer.
+    val department = !state.isAccountant
     ZillitDialogShell(
-        title = listOf(run.number, run.name).filter { it.isNotBlank() }.joinToString(" — ")
-            .ifBlank { str(S.desktop_payment_run_lower) },
-        subtitle = run.status.label,
+        // The accountant's modal is titled "{number} — {name}" once the run is
+        // read, "Loading…" until then, with no status line (`PaymentsPage.jsx:2125-2132`).
+        title = when {
+            department -> listOf(run.number, run.name).filter { it.isNotBlank() }.joinToString(" — ")
+                .ifBlank { str(S.desktop_payment_run_lower) }
+            view.detail == null -> str(S.ah_loading)
+            else -> "${run.number} — ${run.name}"
+        },
+        subtitle = if (department) run.status.label else null,
         visible = true,
         onDismiss = { if (!view.busy) onEvent(InvoicesEvent.CloseRun) },
         icon = ZillitIcons.Wallet,
         width = RUN_DIALOG_WIDTH,
         actions = {
-            ZillitButton(
-                text = str(S.desktop_inv_cancel_run),
-                onClick = { onEvent(InvoicesEvent.RequestCancelRun) },
-                variant = ButtonVariant.Tertiary,
-                enabled = state.viewer.canOperateRuns && !view.busy,
-            )
+            if (!department) {
+                ZillitTooltip(if (state.viewer.canOperateRuns) "" else str(S.desktop_inv_no_run_access_tooltip)) {
+                    ZillitButton(
+                        text = str(S.desktop_inv_cancel_run),
+                        onClick = { onEvent(InvoicesEvent.RequestCancelRun) },
+                        variant = ButtonVariant.Tertiary,
+                        enabled = state.viewer.canOperateRuns && !view.busy,
+                    )
+                }
+            }
             if (decision.canApprove) {
                 ZillitButton(
                     text = str(S.reject),
@@ -68,7 +86,7 @@ internal fun RunDetailDialog(state: InvoicesUiState, view: RunDetailView, onEven
                     enabled = !view.busy,
                 )
                 ZillitButton(
-                    text = str(S.approve),
+                    text = if (view.busy && !department) str(S.ah_run_detail_btn_approving) else str(S.approve),
                     onClick = { onEvent(InvoicesEvent.ApproveRun(run)) },
                     enabled = !view.busy,
                     loading = view.busy,
@@ -77,16 +95,34 @@ internal fun RunDetailDialog(state: InvoicesUiState, view: RunDetailView, onEven
         },
     ) {
         if (view.loading && view.detail == null) {
-            MutedLine(str(S.ah_run_loading))
+            MutedLine(str(S.desktop_inv_loading_run_details))
             return@ZillitDialogShell
         }
-        if (run.status == PaymentRunStatus.Rejected) RejectionBanner(state, run)
-        BacsContents(state, invoices)
+        if (!department && run.status == PaymentRunStatus.Rejected) RejectionBanner(state, run)
+        if (!department) BacsContents(state, invoices)
         ZillitSectionLabel(str(S.ah_run_detail_invoices_header))
         RunInvoiceTable(state, invoices)
+        if (department) CreatedBy(state, run)
     }
     // After the dialog it answers, so it draws over it.
     CancelRunConfirm(view, onEvent)
+}
+
+/**
+ * "Created by": the builder's name (or "System" when nobody the crew list
+ * knows built it) and when — the department modal's footer.
+ */
+@Composable
+private fun CreatedBy(state: InvoicesUiState, run: PaymentRun) {
+    val who = run.createdBy.takeIf { it.isNotBlank() }?.let { state.userNames[it] }
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitSectionLabel(str(S.cs_created_by))
+        ZillitText(
+            text = who ?: str(S.desktop_language_system_short),
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+        )
+        MutedLine(InvoiceFormat.dateTime(run.createdAtMs))
+    }
 }
 
 /** "Cancel payment run?" — cancelling returns every invoice to open items, so it is asked first. */
@@ -131,7 +167,12 @@ private fun RejectionBanner(state: InvoicesUiState, run: PaymentRun) {
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        val stamp = listOfNotNull(who, run.rejectedAtMs?.let(InvoiceFormat::date)).joinToString(" · ")
+        // `DD Mon YYYY | h:mm AM/PM`, the web's `fmtDateTime` (`PaymentsPage.jsx:2158`).
+        // The when rides on the who: with nobody named, the web prints neither.
+        val stamp = who
+            ?.let { name -> listOfNotNull(name, run.rejectedAtMs?.let { at -> PaymentRuns.stamp(at) }) }
+            ?.joinToString(" · ")
+            .orEmpty()
         ZillitText(
             text = if (stamp.isBlank()) str(S.ah_run_rejected_toast) else "${str(S.ah_run_rejected_toast)} · $stamp",
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold),
@@ -158,7 +199,8 @@ private fun BacsContents(state: InvoicesUiState, invoices: List<Invoice>) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         ZillitSectionLabel(str(S.desktop_inv_bacs_file_contents))
-        invoices.groupBy { state.vendorName(it) }.forEach { (vendor, rows) ->
+        MutedLine(str(S.desktop_inv_vol1_header))
+        invoices.groupBy { runVendor(state, it) }.forEach { (vendor, rows) ->
             ZillitText(
                 text = "$vendor · ${sumLabel(state, rows)}",
                 style = ZillitTheme.typography.numeric,
@@ -174,8 +216,13 @@ private fun BacsContents(state: InvoicesUiState, invoices: List<Invoice>) {
             style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
             color = colors.accentText,
         )
+        MutedLine(str(S.desktop_inv_eof1_trailer))
     }
 }
+
+/** A run row's vendor — the web's `vendorMap[vendor_id] || "Unknown"`. */
+private fun runVendor(state: InvoicesUiState, invoice: Invoice): String =
+    state.vendors[invoice.vendorId]?.name?.ifBlank { null } ?: str(S.desktop_unknown)
 
 /** The invoices the run pays — a plain list, because a data table cannot live in a scrolling dialog. */
 @Composable
@@ -198,7 +245,9 @@ private fun RunInvoiceTable(state: InvoicesUiState, invoices: List<Invoice>) {
         invoices.forEach { invoice ->
             RunRow(
                 invoice = invoice.displayNumber,
-                vendor = state.vendorName(invoice),
+                // The accountant's rows carry their unread chip (`renderUnread`, `:2225`).
+                unread = if (state.isAccountant) state.rowUnread(PAYMENTS_KEY, invoice.id) else 0,
+                vendor = runVendor(state, invoice),
                 description = invoice.description.ifBlank { "—" },
                 due = InvoiceFormat.date(invoice.dueDateMs),
                 amount = InvoiceFormat.money(invoice.grossAmount, invoice.currency.ifBlank { state.projectCurrency }),
@@ -223,6 +272,7 @@ private fun RunRow(
     due: String,
     amount: String,
     header: Boolean = false,
+    unread: Int = 0,
 ) {
     val colors = ZillitTheme.colors
     val style = if (header) {
@@ -238,7 +288,14 @@ private fun RunRow(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitText(text = invoice, style = style, maxLines = 1, modifier = Modifier.width(INVOICE_COL))
+        Row(
+            modifier = Modifier.width(INVOICE_COL),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitText(text = invoice, style = style, maxLines = 1)
+            ZillitBadge(count = unread)
+        }
         ZillitText(text = vendor, style = style, maxLines = 1, modifier = Modifier.weight(1f))
         ZillitText(
             text = description,
@@ -257,6 +314,9 @@ private fun sumLabel(state: InvoicesUiState, invoices: List<Invoice>): String {
     val total = state.rates.total(invoices.map { it.grossAmount to it.currency })
     return total.caveat?.let { "${total.text} · $it" } ?: total.text
 }
+
+/** Payment Runs' `level_1`, which a run's invoice chips are filed under. */
+private val PAYMENTS_KEY: String = AccountantPage.Payments.badgeKey.orEmpty()
 
 private val RUN_DIALOG_WIDTH = 900.dp
 private val INVOICE_COL = 120.dp

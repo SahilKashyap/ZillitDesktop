@@ -53,7 +53,9 @@ import com.zillit.desktop.feature.invoices.domain.PendingAction
 import com.zillit.desktop.feature.invoices.domain.PipelineStage
 import com.zillit.desktop.feature.invoices.domain.VendorAlert
 import com.zillit.desktop.feature.invoices.ui.AccountantPage
+import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
+import com.zillit.desktop.feature.invoices.ui.OverviewEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -91,9 +93,10 @@ internal fun OverviewPage(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Un
 // -- the six tiles ------------------------------------------------------------
 
 @Composable
-private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
+private fun StatTiles(data: InvoiceOverview, @Suppress("UNUSED_PARAMETER") onEvent: (InvoicesEvent) -> Unit) {
     val stats = data.stats
-    val open = { page: AccountantPage -> { onEvent(InvoicesEvent.SelectPage(page)) } }
+    // The web's tiles are figures, not links (`OverviewPage.jsx:426-431`).
+    val open = { _: AccountantPage -> null }
     StatGrid(
         columns = STAT_COLUMNS,
         tiles = listOf(
@@ -105,7 +108,7 @@ private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
             },
             {
                 CountTile(
-                    str(S.desktop_awaiting_match), stats.awaitingMatch, stats.awaitingMatchAmount,
+                    str(S.desktop_awaiting_match), stats.awaitingMatch, stats.awaitingMatchAmount.ifBlank { ZERO_MONEY },
                     ZillitIcons.Receipt, StatusTone.Pending, open(AccountantPage.Matching),
                 )
             },
@@ -117,7 +120,7 @@ private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
             },
             {
                 CountTile(
-                    str(S.desktop_ready_to_pay), stats.readyToPay, stats.readyToPayAmount,
+                    str(S.desktop_ready_to_pay), stats.readyToPay, stats.readyToPayAmount.ifBlank { ZERO_MONEY },
                     ZillitIcons.Wallet, StatusTone.Ready, open(AccountantPage.Payments),
                 )
             },
@@ -132,7 +135,7 @@ private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
             {
                 MoneyTile(
                     str(S.desktop_total_ap), stats.totalAP, str(S.ah_run_detail_summary_vendors, stats.vendorCount),
-                    ZillitIcons.Bank, null,
+                    ZillitIcons.Bank, StatusTone.Pending,
                 )
             },
         ),
@@ -147,7 +150,7 @@ private fun RowScope.CountTile(
     sub: String,
     icon: ImageVector,
     tone: StatusTone?,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
 ) {
     ZillitStatTile(
         label = label,
@@ -165,7 +168,7 @@ private fun RowScope.CountTile(
 private fun RowScope.MoneyTile(label: String, value: String, sub: String, icon: ImageVector, tone: StatusTone?) {
     ZillitStatTile(
         label = label,
-        value = value.ifBlank { "—" },
+        value = value.ifBlank { ZERO_MONEY },
         sub = sub,
         tone = tone,
         icon = icon,
@@ -178,9 +181,10 @@ private fun RowScope.MoneyTile(label: String, value: String, sub: String, icon: 
 private fun ColumnScope.AlertBanners(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
     val stats = data.stats
     if (stats.awaitingMatch <= 0 && stats.overdueCount <= 0) return
-    Row(
+    // Stacked, one under the other, as the web's `flex-col` (`OverviewPage.jsx:436`).
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         if (stats.awaitingMatch > 0) {
             Banner(
@@ -188,7 +192,7 @@ private fun ColumnScope.AlertBanners(data: InvoiceOverview, onEvent: (InvoicesEv
                 detail = str(S.desktop_inv_amount_unmatched, stats.awaitingMatchAmount).trim(),
                 action = str(S.desktop_match),
                 onAction = { onEvent(InvoicesEvent.SelectPage(AccountantPage.Matching)) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         if (stats.overdueCount > 0) {
@@ -197,7 +201,7 @@ private fun ColumnScope.AlertBanners(data: InvoiceOverview, onEvent: (InvoicesEv
                 detail = str(S.desktop_inv_n_past_terms, stats.overdueCount),
                 action = str(S.desktop_pay_now),
                 onAction = { onEvent(InvoicesEvent.SelectPage(AccountantPage.Payments)) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -278,10 +282,8 @@ private fun PipelinePanel(stages: List<PipelineStage>, onEvent: (InvoicesEvent) 
             }
         },
     ) {
-        if (stages.isEmpty()) {
-            Hint(str(S.desktop_nothing_in_the_pipeline))
-            return@ZillitSectionCard
-        }
+        // An empty pipeline draws nothing, as the web's does.
+        if (stages.isEmpty()) return@ZillitSectionCard
         val open = { stage: PipelineStage ->
             { onEvent(InvoicesEvent.SelectPage(AccountantPage.forPipelineStage(stage.id))) }
         }
@@ -653,7 +655,8 @@ private fun ColumnScope.CostReportTable(state: InvoicesUiState, impact: CostRepo
             Cell(row.projected, Modifier.weight(1f))
             Box(Modifier.weight(VARIANCE_WEIGHT)) {
                 ZillitStatusPill(
-                    label = (if (row.isOver) "+" else "") + "${row.variance.toInt()}%",
+                    // The server's figure as it is, not cut to a whole number (`{row.variance}%`).
+                    label = (if (row.isOver) "+" else "") + "${plainNumber(row.variance)}%",
                     tone = if (row.isOver) StatusTone.Rejected else StatusTone.Done,
                 )
             }
@@ -688,14 +691,13 @@ private fun VendorAlertsPanel(alerts: List<VendorAlert>, onEvent: (InvoicesEvent
                         color = ZillitTheme.colors.textSecondary,
                     )
                 }
-                AccountantPage.forHref(alert.href)?.let { page ->
-                    ZillitButton(
-                        text = alert.buttonLabel.ifBlank { str(S.recce_open) },
-                        onClick = { onEvent(InvoicesEvent.SelectPage(page)) },
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Small,
-                    )
-                }
+                // Always offered, whatever area the link names (`prefixHref`).
+                ZillitButton(
+                    text = alert.buttonLabel.ifBlank { str(S.recce_open) },
+                    onClick = { onEvent(OverviewEvent.FollowLink(alert.href)) },
+                    variant = ButtonVariant.Primary,
+                    size = ButtonSize.Small,
+                )
             }
         }
     }
@@ -760,6 +762,13 @@ private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, onEvent: (
                 color = ZillitTheme.colors.textSecondary,
             )
         }
+        // Every flag can be looked into on Pre-Approval (`OverviewPage.jsx:552`).
+        ZillitButton(
+            text = str(S.av_review),
+            onClick = { onEvent(InvoicesEvent.SelectPage(AccountantPage.Matching)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+        )
         if (flag.isPending) {
             ZillitButton(
                 text = str(S.confirm),
@@ -773,7 +782,7 @@ private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, onEvent: (
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
-        } else {
+        } else if (flag.isConfirmed) {
             ZillitStatusPill(label = str(S.desktop_confirmed_upper), tone = StatusTone.Rejected)
         }
     }
@@ -782,8 +791,11 @@ private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, onEvent: (
 /** "INV-0012 Panavision £1,200.00 matches INV-0009 (paid 3 Mar) — same vendor, same amount." */
 private fun duplicateSentence(flag: DuplicateFlag, currency: String): String {
     val amount = Money.format(flag.invoiceAmount, currency)
+    // `({duplicate_status} {fmtDate(duplicate_date)})` — the date as "3 Mar", or "—".
+    val day = flag.duplicateDateMs?.takeIf { it > 0 }?.let { InvoiceFormat.date(it).substringBeforeLast(' ') } ?: "—"
     val against = listOfNotNull(
         flag.duplicateStatus.takeIf { it.isNotBlank() },
+        day,
     ).joinToString(" ")
     val reasons = flag.matchReasons.joinToString(", ")
     val subject = flag.invoiceRef.ifBlank { str(S.desktop_this_invoice) } + " " +
@@ -818,8 +830,8 @@ private fun PendingActionsPanel(actions: List<PendingAction>, total: Int, onEven
     ) {
         if (actions.isEmpty()) Hint(str(S.desktop_no_pending_actions))
         actions.forEach { action ->
-            val page = AccountantPage.forHref(action.href)
-            val open = page?.let { Modifier.clickable { onEvent(InvoicesEvent.SelectPage(it)) } } ?: Modifier
+            // Every row is a link, wherever it points (`prefixHref`).
+            val open = Modifier.clickable { onEvent(OverviewEvent.FollowLink(action.href)) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -828,8 +840,9 @@ private fun PendingActionsPanel(actions: List<PendingAction>, total: Int, onEven
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitStatusPill(label = action.count.toString(), tone = StatusTone.Pending)
-                ZillitText(text = action.label, style = ZillitTheme.typography.bodyMedium)
+                ZillitStatusPill(label = action.count.toString(), tone = actionTone(action.variant))
+                ZillitText(text = action.label, style = ZillitTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                ZillitIcon(icon = ZillitIcons.ChevronRight, tint = ZillitTheme.colors.textMuted, size = CHEVRON)
             }
         }
     }
@@ -866,6 +879,17 @@ private fun RecentActivityPanel(rows: List<ActivityRow>) {
 }
 
 /** The server's tag variant, in this app's tones. */
+/** A number as JavaScript prints it: `12`, `12.5` — never `12.0`. */
+private fun plainNumber(value: Double): String =
+    if (value % 1.0 == 0.0 && kotlin.math.abs(value) < WHOLE_LIMIT) value.toLong().toString() else value.toString()
+
+/** `PILL_TONE[action.variant] || "amber"` — an unknown variant reads amber. */
+private fun actionTone(variant: String): StatusTone = when (variant.lowercase()) {
+    "dim" -> StatusTone.Neutral
+    "" -> StatusTone.Pending
+    else -> activityTone(variant).takeIf { it != StatusTone.Neutral } ?: StatusTone.Pending
+}
+
 private fun activityTone(variant: String): StatusTone = when (variant.lowercase()) {
     "green", "teal" -> StatusTone.Done
     "amber", "gold" -> StatusTone.Pending
@@ -901,6 +925,11 @@ private fun Hint(text: String) {
 }
 
 private const val DETAIL_ALPHA = 0.8f
+
+/** What the web's tiles show for a figure the server left out (`s.totalAP || "£0"`). */
+private const val ZERO_MONEY = "£0"
+private const val WHOLE_LIMIT = 1e15
+private val CHEVRON = 15.dp
 private const val WASH_ALPHA = 0.14f
 private const val EMPTY_WEIGHT = 0.55f
 private const val MIN_SHARE = 0.11f

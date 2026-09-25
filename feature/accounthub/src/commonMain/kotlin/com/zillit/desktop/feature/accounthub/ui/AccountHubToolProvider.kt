@@ -180,6 +180,11 @@ internal fun hubRouteEvents(path: String): List<AccountHubEvent> {
         query["setup"]?.takeIf { area == HubArea.ProductionSetup }
             ?.let { key -> SetupModal.entries.firstOrNull { it.slug == key || it.slug.startsWith("${key}_") } }
             ?.let(AccountHubEvent::OpenSetupModal),
+        // `?tab=cash-close` — where the Invoices module's old `/cash-close`
+        // redirects (`InvoicesModule.jsx:534`).
+        query["tab"]?.takeIf { area == HubArea.PeriodClose }
+            ?.let { slug -> PeriodCloseTab.entries.firstOrNull { it.slug == slug } }
+            ?.let(AccountHubEvent::SwitchPeriodCloseTab),
     ) + if (area == HubArea.Vendors) vendorRouteEvents(segments.getOrNull(1), query) else emptyList()
 }
 

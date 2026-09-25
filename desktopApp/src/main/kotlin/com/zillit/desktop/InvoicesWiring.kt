@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.InvoiceDirectory
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceFiles
+import com.zillit.desktop.feature.invoices.domain.InvoiceProjectInfo
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.ui.InvoicesToolProvider
@@ -80,17 +81,26 @@ internal fun AppGraph.Ready.invoiceFiles(): InvoiceFiles = object : InvoiceFiles
         }
     }
 
-    override suspend fun fetch(attachment: InvoiceAttachment): ZillitResult<ByteArray> =
-        noticeMedia.fetch(
+    override suspend fun fetch(attachment: InvoiceAttachment): ZillitResult<ByteArray> {
+        // A wire confirmation is stored without its bucket or region; like the
+        // web's `normalizeWireAttachment`, it is read from the project's own
+        // upload location, which is where it was put.
+        val fallback = if (attachment.bucket.isBlank() || attachment.region.isBlank()) {
+            (storageTarget.target() as? ZillitResult.Success)?.data
+        } else {
+            null
+        }
+        return noticeMedia.fetch(
             NoticeAttachment(
                 media = attachment.media,
                 fileName = attachment.name,
                 thumbnail = attachment.media,
-                bucket = attachment.bucket,
-                region = attachment.region,
+                bucket = attachment.bucket.ifBlank { fallback?.bucket.orEmpty() },
+                region = attachment.region.ifBlank { fallback?.region.orEmpty() },
             ),
             preview = false,
         )
+    }
 
     override suspend fun saveAndOpen(name: String, bytes: ByteArray): ZillitResult<Unit> =
         when (val saved = DownloadsAttachmentStore().save(name, bytes)) {
@@ -100,6 +110,10 @@ internal fun AppGraph.Ready.invoiceFiles(): InvoiceFiles = object : InvoiceFiles
                 ZillitResult.Success(Unit)
             }
         }
+
+    /** A sales invoice rendered as a PDF — a raw GET that answers a file. */
+    override suspend fun salesInvoicePdf(id: String): ZillitResult<ByteArray> =
+        getForBytes("${config.apiV2(ZillitService.Invoices)}invoices/sales-invoices/$id/pdf")
 
     /** The register, accruals and credit-note exports — a raw POST that answers a file. */
     override suspend fun export(
@@ -169,9 +183,12 @@ internal fun AppGraph.Ready.buildInvoices(
             permissions = permissions(),
             userId = profile?.userId.orEmpty(),
             departmentId = profile?.departmentId.orEmpty(),
-            // The untranslated keys ("accounts_department_label"), which is what the web substring-matches.
-            departmentIdentifier = profile?.departmentName.orEmpty(),
-            designationIdentifier = profile?.designationName.orEmpty(),
+            // The identifiers the web reads — profile `department_identifier`
+            // for the accountant view (`AuthContext.jsx:80`), and
+            // `designation_identifier` for seniority. The untranslated names
+            // stand in only when a cached, offline profile has no identifiers.
+            departmentIdentifier = (profile?.departmentIdentifier ?: profile?.departmentName).orEmpty(),
+            designationIdentifier = (profile?.designationIdentifier ?: profile?.designationName).orEmpty(),
             isTelevision = context?.project?.subType?.contains("television", ignoreCase = true) == true,
         )
     }
@@ -212,6 +229,17 @@ internal fun AppGraph.Ready.buildInvoices(
         // tool (`constants.js:164-173`) — or, as Android files them, an
         // `invoices_label` tool of their own. Both are read, so neither sticks.
         badges = invoiceBadges { resolveViewer().isAccountant },
+        // The sales invoice's letterhead — the web's `useProjectInfo`.
+        projectInfoSource = {
+            val project = projectContext?.context?.value?.project
+            InvoiceProjectInfo(
+                projectName = project?.name.orEmpty(),
+                companyName = project?.companyName.orEmpty(),
+                companyAddress = project?.companyAddress.orEmpty(),
+                companyPhone = project?.companyPhone.orEmpty(),
+                companyEmail = project?.companyEmail.orEmpty(),
+            )
+        },
     )
 }
 
@@ -232,6 +260,40 @@ private fun AppGraph.Ready.invoiceBadges(isAccountant: () -> Boolean): TabBadgeS
 
     override fun read(key: String) {
         reads.launch { tools().forEach { tool -> emitLevelRead(tool = tool, unit = INVOICE_UNIT, level1 = key) } }
+    }
+
+    /**
+     * Per row: `level_1` → `level_3` (the invoice or run id) → unread, summed
+     * over every action — the web's `getInvoiceTotalUnread` — and over both
+     * department tools, as [counts] is.
+     */
+    override val entityCounts: Flow<Map<String, Map<String, Int>>> = badgeStore.counts
+        .map {
+            val tools = tools()
+            val keys = tools.flatMap { tool ->
+                badgeStore.split(BadgeDrilldownQuery(groupBy = "level_1", tool = tool, unit = INVOICE_UNIT)).keys
+            }.distinct()
+            keys.associateWith { level1 ->
+                val perTool = tools.map { tool ->
+                    badgeStore.split(
+                        BadgeDrilldownQuery(groupBy = "level_3", tool = tool, unit = INVOICE_UNIT, level1 = level1),
+                    ).filterKeys { it.isNotBlank() }
+                }
+                perTool.flatMap { it.keys }.distinct().associateWith { id -> perTool.sumOf { it[id] ?: 0 } }
+            }.filterValues { it.isNotEmpty() }
+        }
+        .distinctUntilChanged()
+
+    /**
+     * One row read — `emitInvoiceLevelRead`: the entity at `level_3`, its
+     * action bucket (`invoice_label`, or `query_chat`) at `level_2`.
+     */
+    override fun readEntity(key: String, entityId: String, kind: String?) {
+        reads.launch {
+            tools().forEach { tool ->
+                emitLevelRead(tool = tool, unit = INVOICE_UNIT, level1 = key, level2 = kind, level3 = entityId)
+            }
+        }
     }
 }
 

@@ -15,7 +15,7 @@ enum class InvoiceStatus(val wire: String, private val labelKey: String) {
     Entry("entry", S.desktop_in_entry),
     ReadyToPay("ready_to_pay", S.desktop_ready_to_pay),
     Paid("paid", S.desktop_paid),
-    Held("held", S.desktop_call_on_hold),
+    Held("held", S.desktop_on_hold_title),
     Disputed("disputed", S.desktop_disputed),
     Approved("approved", S.approved),
     Rejected("rejected", S.rejected),
@@ -36,18 +36,29 @@ enum class InvoiceStatus(val wire: String, private val labelKey: String) {
     }
 }
 
-/** The separate approval flag; absent on the wire means pending. */
+/**
+ * The separate approval flag; absent on the wire means pending.
+ *
+ * Only an absent (or empty) flag is pending — the web's
+ * `(inv.approval_status || "pending") === "pending"`. A value the client does
+ * not know is [Other]: it is neither pending, approved nor rejected, so the
+ * "Pending" quick filter and the owner-only delete leave it alone.
+ */
 enum class ApprovalStatus(val wire: String, private val labelKey: String) {
     Pending("pending", S.pending),
     Approved("approved", S.approved),
     Rejected("rejected", S.rejected),
+    Other("", S.desktop_unknown),
     ;
 
     val label: String get() = str(labelKey)
 
     companion object {
-        fun from(wire: String?): ApprovalStatus =
-            entries.firstOrNull { it.wire == wire?.trim()?.lowercase() } ?: Pending
+        fun from(wire: String?): ApprovalStatus {
+            val code = wire?.trim()?.lowercase().orEmpty()
+            if (code.isEmpty()) return Pending
+            return entries.firstOrNull { it != Other && it.wire == code } ?: Other
+        }
     }
 }
 
@@ -57,7 +68,7 @@ enum class ApprovalStatus(val wire: String, private val labelKey: String) {
  * as urgent for the override buttons only.
  */
 enum class PayMethod(val wire: String, private val labelKey: String) {
-    Bacs("bacs", S.ah_run_card_method_bacs),
+    Bacs("bacs", S.desktop_inv_method_bacs),
     Wire("wire", S.ah_run_card_method_wire),
     Cheque("cheque", S.ah_run_card_method_cheque),
     Faster("faster", S.desktop_faster_payment),
@@ -94,6 +105,8 @@ data class LinkedPo(
     val poNumber: String = "",
     val poVendorId: String = "",
     val poGrossTotal: Double? = null,
+    /** The match notes stored on this link — the review pre-fills its Match Notes from them. */
+    val notes: List<String> = emptyList(),
 )
 
 /**
@@ -115,9 +128,24 @@ data class LinkedPoDetail(
     val raisedBy: String = "",
     val raisedAtMs: Long? = null,
     val lines: List<PoLine> = emptyList(),
+    /** The ledger's PO details card (`EntryDetailModal.jsx:1539-1767`). */
+    val vendorId: String = "",
+    val departmentId: String = "",
+    val effectiveDateMs: Long? = null,
+    val deliveryDateMs: Long? = null,
+    val deliveryAddress: PoDeliveryAddress? = null,
 ) {
     val label: String get() = poNumber.ifBlank { "PO-" + poId.take(5) }
 }
+
+/** A PO's delivery address — an object on newer orders, a plain string (all in [lines]) on older ones. */
+data class PoDeliveryAddress(
+    val name: String = "",
+    /** Line 1, line 2, city, state and postcode, joined. */
+    val lines: String = "",
+    val email: String = "",
+    val phone: String = "",
+)
 
 /** One line of a linked order. */
 data class PoLine(
@@ -132,6 +160,10 @@ data class PoLine(
     val taxType: String = "",
     val expenditureType: String = "",
     val splitParentId: String? = null,
+    /** Layers, tags and the untouched extras, so a line seeded from the PO keeps them. */
+    val trackingCodes: Map<String, String> = emptyMap(),
+    val tags: List<String> = emptyList(),
+    val carried: CarriedFields? = null,
 )
 
 /**
@@ -226,6 +258,8 @@ data class Vendor(
     /** The linked bank record; blank when the vendor has none on file. */
     val bankId: String = "",
     val contactPerson: String = "",
+    /** The address's city — the vendor detail's City line (`SuppliersPage.jsx:220`). */
+    val city: String = "",
 ) {
     /** `net_30` → "30 days", the SLA column. */
     val slaLabel: String?
@@ -264,12 +298,38 @@ data class InvoiceSettings(
     val runApprovers: Set<String> = emptySet(),
     /** The run authorisation chain itself, tier by tier — who signs a run at each level. */
     val runAuthorisation: List<RunAuthLevel> = emptyList(),
+    /**
+     * Whether the response carried a `me` object at all. The web tests the
+     * object's presence, not its keys, before it falls back to `team_members`
+     * (`InvoicesModule.jsx:293-318`).
+     */
+    val hasMe: Boolean = canOverride != null || isSenior != null,
 ) {
-    fun overrideFor(userId: String): Boolean =
-        canOverride ?: teamMembers.firstOrNull { it.userId == userId }?.overrideAccess ?: false
+    /**
+     * Override rights as the accountant console derives them: with a `me`
+     * block, `can_override || is_senior`; only without one, the legacy
+     * `team_members[me].override_access`.
+     */
+    fun overrideFor(userId: String): Boolean = if (hasMe) {
+        canOverride == true || isSenior == true
+    } else {
+        teamMembers.firstOrNull { it.userId == userId }?.overrideAccess ?: false
+    }
 
-    fun seniorFor(userId: String): Boolean =
-        isSenior ?: teamMembers.firstOrNull { it.userId == userId }?.isSenior ?: false
+    /**
+     * `me.is_senior` and nothing else — the web's `serverIsSenior`. The legacy
+     * `team_members[].is_senior` is never read for seniority: it would unlock
+     * Settings, every entry row and posting for somebody the server does not
+     * call senior.
+     */
+    @Suppress("UNUSED_PARAMETER", "UnusedParameter") // Kept so every rights read takes the same argument.
+    fun seniorFor(userId: String): Boolean = isSenior == true
+
+    /**
+     * The department board's override: `me.can_override || me.is_senior`,
+     * with no fallback of any kind (`DepartmentInvoiceModule.jsx:615`).
+     */
+    val serverOverride: Boolean get() = canOverride == true || isSenior == true
 
     /** Settings → Team gives this person a posting limit — the other half of `canPostToLedger`. */
     fun postingRightFor(userId: String): Boolean = teamMembers.any { it.userId == userId && it.postingRight }
@@ -299,6 +359,8 @@ data class Invoice(
     val dueDateMs: Long? = null,
     val effectiveDateMs: Long? = null,
     val payMethod: PayMethod = PayMethod.Bacs,
+    /** `pay_method` exactly as stored; blank when the list row had none. */
+    val payMethodRaw: String = "",
     val status: InvoiceStatus = InvoiceStatus.Unknown,
     val statusRaw: String = "",
     val approvalStatus: ApprovalStatus = ApprovalStatus.Pending,
@@ -309,6 +371,12 @@ data class Invoice(
     val poId: String = "",
     val poNumber: String = "",
     val linkedPos: List<LinkedPo> = emptyList(),
+    /**
+     * `po_ids` — the ids the server counts as matched. Pre-approval's
+     * Matched / Unmatched tiles count on this and nothing else
+     * (`MatchingPage.jsx:605-607`).
+     */
+    val poIds: List<String> = emptyList(),
     val attachments: List<InvoiceAttachment> = emptyList(),
     val approvals: List<Approval> = emptyList(),
     val rejectionReason: String = "",
@@ -334,11 +402,41 @@ data class Invoice(
      * rental dates) instead of dropping them.
      */
     val lineItemsJson: String = "",
+    /** `nominal_code` — the vendor history's Nominal column; blank on most rows. */
+    val nominalCode: String = "",
+    /**
+     * The pending payment run this invoice already sits in (`active_run_id`);
+     * blank = none. Payment Runs leaves such a row out of Open Items so it
+     * cannot be put in a second run (`PaymentsPage.jsx:1197`).
+     */
+    val activeRunId: String = "",
+    /** When it was marked paid (`paid_at`) — Posted sorts on it first. */
+    val paidAtMs: Long? = null,
+    /** The bank confirmations filed on a paid wire (`wire_attachments`). */
+    val wireAttachments: List<WireAttachment> = emptyList(),
+    /** A CIS supplier's invoice (`cisApplies` / `cis`) — Creditors tags the vendor. */
+    val cis: Boolean = false,
+    /** The terms written on the invoice (`paymentTerms` / `terms`) — Creditors' Terms column. */
+    val paymentTerms: String = "",
 ) {
     val displayNumber: String get() = invoiceNumber.ifBlank { reference }.ifBlank { "—" }
 
+    /**
+     * The canonical pay-method code — the web's `payMethodCode`: the stored
+     * value lower-cased with `faster_payment` folded onto `faster`, BACs when
+     * blank. Unlike [payMethod] a code this client does not know stays itself,
+     * so Payment Runs keeps it out of a BACs run (it is only "Process").
+     */
+    val payCode: String
+        get() = if (payMethodRaw.isBlank()) payMethod.wire else PayMethod.normalise(payMethodRaw)
+
+    /** A status the client does not know reads upper-cased, as the web's `STATUS_MAP` fallback does. */
     val statusLabel: String
-        get() = if (status == InvoiceStatus.Unknown) statusRaw.ifBlank { str(S.desktop_unknown) } else status.label
+        get() = if (status == InvoiceStatus.Unknown) {
+            statusRaw.trim().uppercase().ifBlank { str(S.desktop_unknown) }
+        } else {
+            status.label
+        }
 
     val hasPo: Boolean get() = linkedPos.isNotEmpty() || poId.isNotBlank() || poNumber.isNotBlank()
 
@@ -367,6 +465,48 @@ data class Invoice(
             status == InvoiceStatus.Override
 
     val isRejected: Boolean get() = approvalStatus == ApprovalStatus.Rejected || status == InvoiceStatus.Rejected
+
+    /**
+     * The Approval Queue's `isApproved` — `status === "approved"` and nothing
+     * else (`ApprovalPage.jsx:422`). [isApproved] also counts an approved
+     * flag and an override, which would hide Override & Pay on exactly the
+     * rows it exists for.
+     */
+    val isApprovedStatus: Boolean get() = status == InvoiceStatus.Approved
+
+    /**
+     * The web's `linkedPoLabel`: "N POs", the first linked order's number, or
+     * the typed `po_number`; null when there is none of those
+     * (`RegisterPage.jsx:221-223`, `ApprovalPage.jsx:461-463`).
+     */
+    val linkedPoLabel: String?
+        get() = when {
+            linkedPos.size > 1 -> str(S.desktop_po_count_pos, linkedPos.size)
+            else -> linkedPos.firstOrNull()?.poNumber?.takeIf { it.isNotBlank() }
+                ?: poNumber.takeIf { it.isNotBlank() }
+        }
+
+    /** Wire or cheque as stored — the web's raw `pay_method === "wire" || "cheque"` urgency test. */
+    val isUrgentRaw: Boolean
+        get() {
+            val raw = payMethodRaw.ifBlank { payMethod.wire }
+            return raw == PayMethod.Wire.wire || raw == PayMethod.Cheque.wire
+        }
+
+    /**
+     * The pay method as the web prints it: the known label, or the stored
+     * code humanised when it is one this client does not know
+     * (`lib/payMethod.js` `payMethodLabel`).
+     */
+    val payMethodLabel: String
+        get() {
+            val code = PayMethod.normalise(payMethodRaw)
+            return if (payMethodRaw.isBlank() || PayMethod.entries.any { it.wire == code }) {
+                payMethod.label
+            } else {
+                InvoiceLabels.format(payMethodRaw)
+            }
+        }
 
     val approvedCount: Int get() = approvals.size
 

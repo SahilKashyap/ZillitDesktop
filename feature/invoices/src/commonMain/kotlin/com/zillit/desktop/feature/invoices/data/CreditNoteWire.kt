@@ -37,7 +37,7 @@ internal fun parseCreditNote(row: JsonObject): CreditNote? {
         status = CreditNoteStatus.from(row.text("status")),
         notes = row.text("notes"),
         lineItems = row.arrayField("line_items").mapIndexedNotNull { index, line ->
-            (line as? JsonObject)?.let { parseCodedLine(it, index) }
+            (line as? JsonObject)?.let { parseRecordLine(it, index) }
         },
         attachments = row.arrayField("attachments").mapNotNull { (it as? JsonObject)?.let(::parseCreditAttachment) },
         createdBy = row.text("created_by", "user_id"),
@@ -45,6 +45,11 @@ internal fun parseCreditNote(row: JsonObject): CreditNote? {
         createdAtMs = row.dateMs("created_at"),
         updatedAtMs = row.dateMs("updated_at"),
         lineItemsJson = rawLineItems(row),
+        typeRaw = row.text("type"),
+        lineTaxAmounts = row.arrayField("line_items").mapIndexedNotNull { index, line ->
+            val obj = line as? JsonObject ?: return@mapIndexedNotNull null
+            obj.number("tax_amount")?.let { obj.text("id").ifBlank { "line-$index" } to it }
+        }.toMap(),
     )
 }
 
@@ -129,13 +134,25 @@ internal fun recordLines(lines: List<CodedLine>, savedJson: String): JsonArray {
                     put("rental_start", own?.get("rental_start") ?: JsonNull)
                     put("rental_end", own?.get("rental_end") ?: JsonNull)
                     put("split_parent_id", line.splitParentId.nullIfEmpty())
-                    put("tracking_codes", inherited?.get("tracking_codes") as? JsonObject ?: JsonObject(emptyMap()))
+                    put("tracking_codes", layersOf(line, inherited))
                     put("tags", inherited?.get("tags") as? JsonArray ?: JsonArray(emptyList()))
                     put("sort_order", JsonPrimitive(index))
                 },
             )
         }
     }
+}
+
+/**
+ * A line's Layers: what the picker holds for a line read back from the server
+ * or picked on — a read line's picks stand even when cleared — else the saved
+ * row's own, or for a new split child its parent's, as the web's split copies
+ * them (the same rule as the entry writer's).
+ */
+private fun layersOf(line: CodedLine, inherited: JsonObject?): JsonObject = when {
+    line.carried != null || line.trackingCodes.isNotEmpty() ->
+        JsonObject(line.trackingCodes.mapValues { (_, code) -> JsonPrimitive(code) })
+    else -> inherited?.get("tracking_codes") as? JsonObject ?: JsonObject(emptyMap())
 }
 
 private fun String?.nullIfEmpty(): JsonElement = this?.takeIf { it.isNotBlank() }?.let(::JsonPrimitive) ?: JsonNull

@@ -35,6 +35,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
@@ -49,23 +50,33 @@ import com.zillit.desktop.feature.invoices.ui.pages.DepartmentPage
 import com.zillit.desktop.feature.invoices.ui.pages.EnterInvoiceDialog
 import com.zillit.desktop.feature.invoices.ui.pages.BlockedProcessDialog
 import com.zillit.desktop.feature.invoices.ui.pages.BulkUploadSheet
+import com.zillit.desktop.feature.invoices.ui.pages.InboxDeleteDialog
 import com.zillit.desktop.feature.invoices.ui.pages.CreditDeleteDialog
 import com.zillit.desktop.feature.invoices.ui.pages.CreditHistorySheet
 import com.zillit.desktop.feature.invoices.ui.pages.CreditNotePreviewDialog
 import com.zillit.desktop.feature.invoices.ui.pages.InboxReviewDialog
 import com.zillit.desktop.feature.invoices.ui.pages.InvoiceDetailDialog
 import com.zillit.desktop.feature.invoices.ui.pages.LedgerHistorySheet
+import com.zillit.desktop.feature.invoices.ui.pages.LedgerOverlays
 import com.zillit.desktop.feature.invoices.ui.pages.QueryPanelSheet
 import com.zillit.desktop.feature.invoices.ui.pages.QuickEntrySheet
 import com.zillit.desktop.feature.invoices.ui.pages.PoReviewOverlay
+import com.zillit.desktop.feature.invoices.ui.pages.LinkedPoSheet
+import com.zillit.desktop.feature.invoices.ui.pages.QueueDeleteDialog
 import com.zillit.desktop.feature.invoices.ui.pages.ProcessSheet
 import com.zillit.desktop.feature.invoices.ui.pages.RejectRunSheet
 import com.zillit.desktop.feature.invoices.ui.pages.RunDetailDialog
 import com.zillit.desktop.feature.invoices.ui.pages.RunAuthPickerSheet
 import com.zillit.desktop.feature.invoices.ui.pages.SalesDeleteDialog
-import com.zillit.desktop.feature.invoices.ui.pages.SalesInvoiceSheet
+import com.zillit.desktop.feature.invoices.ui.pages.SalesHistorySheet
+import com.zillit.desktop.feature.invoices.ui.pages.SalesPdfDialog
+import com.zillit.desktop.feature.invoices.ui.pages.SalesPreviewDialog
+import com.zillit.desktop.feature.invoices.ui.pages.VendorDetailDialog
+import com.zillit.desktop.feature.invoices.ui.pages.AccrualDetailDialog
+import com.zillit.desktop.feature.invoices.ui.pages.CreditAttachmentViewer
 import com.zillit.desktop.feature.invoices.ui.pages.SetupConfirmSheets
 import com.zillit.desktop.feature.invoices.ui.pages.TeamMemberSheet
+import com.zillit.desktop.feature.invoices.ui.pages.WireAttachmentsDialog
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -110,17 +121,25 @@ fun InvoicesScreen(
         if (accountant) {
             // The web's shell: the sidebar's cards down the left, and each
             // page — its own header included — in the column beside them.
+            // The coding screen's inline document takes the rail's width, and
+            // only when there is a document to show; the page padding goes
+            // whenever the coding screen is open (`InvoicesModule.jsx:262-268, 399, 409`).
+            val documentPane = state.ledger?.invoice?.firstAttachment != null
             Row(modifier = Modifier.fillMaxSize()) {
-                InvoiceSideRail(state = state, onEvent = onEvent, onBack = onBack)
+                if (!documentPane) InvoiceSideRail(state = state, onEvent = onEvent, onBack = onBack)
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(ZillitTheme.spacing.lg),
+                        .padding(if (state.ledger != null) 0.dp else ZillitTheme.spacing.lg),
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 ) {
                     // The coding screen carries its own top bar in the header's place.
-                    if (state.ledger == null && state.credit.form == null) InvoicesPageHeader(state, onEvent)
+                    // Reports is the web's bare "Coming Soon" — no page header over it.
+                    val headed = state.page != AccountantPage.Reports
+                    if (headed && state.ledger == null && state.credit.form == null && state.salesDraft == null) {
+                        InvoicesPageHeader(state, onEvent)
+                    }
                     InvoicesNotices(state, onEvent)
                     AccountantPageContent(state, onEvent, nowMs, searchFocus)
                 }
@@ -132,36 +151,64 @@ fun InvoicesScreen(
                     .padding(ZillitTheme.spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
-                InvoicesPageHeader(state, onEvent)
+                // The web's `PageHeader` with its `ToolBackButton` on the left (`:1028-1035`).
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    ZillitIconButton(icon = ZillitIcons.ArrowLeft, contentDescription = str(S.back), onClick = onBack)
+                    InvoicesPageHeader(state, onEvent, Modifier.weight(1f))
+                }
                 InvoicesNotices(state, onEvent)
                 DepartmentPage(state, onEvent)
             }
         }
         state.detail?.let { InvoiceDetailDialog(state, it, onEvent) }
         state.enter?.let { EnterInvoiceDialog(state, it, onEvent) }
-        state.confirmDelete?.let { DeleteDialog(state, it, onEvent) }
+        state.confirmDelete?.let {
+            // The accountant queue's delete names the vendor, in its own words (`ApprovalPage.jsx:763-773`).
+            if (accountant && state.page == AccountantPage.ApprovalQueue) {
+                QueueDeleteDialog(state, it, onEvent)
+            } else if (accountant && state.page == AccountantPage.Inbox) {
+                // The Inbox's own words (`InboxPage.jsx:600-623`).
+                InboxDeleteDialog(state, it, onEvent)
+            } else {
+                DeleteDialog(state, it, onEvent)
+            }
+        }
         state.runDraft?.let { ProcessSheet(state, it, onEvent) }
         state.runDetail?.let { RunDetailDialog(state, it, onEvent) }
+        state.pay.wireAttachments?.let { WireAttachmentsDialog(state, it, onEvent) }
         // After the run, not before: rejecting is reached from inside it.
         state.rejectRun?.let { RejectRunSheet(it, onEvent) }
         state.assignFor?.let { AssignSheet(state, it, onEvent) }
-        state.salesDraft?.let { SalesInvoiceSheet(state, it, onEvent) }
+        // Sales: the preview, then its history and PDF, and the delete confirm over it.
+        state.sales.preview?.let { SalesPreviewDialog(state, it, nowMs, onEvent) }
+        SalesHistorySheet(state, onEvent)
+        state.sales.pdf?.let { SalesPdfDialog(it, onEvent) }
         state.confirmSalesDelete?.let { SalesDeleteDialog(it, onEvent) }
+        state.vendorsPage.detail?.let { VendorDetailDialog(state, it, onEvent) }
+        AccrualDetailDialog(state, onEvent)
         state.review?.let { PoReviewOverlay(state, it, onEvent) }
         // After the review, not before: holding is reached from inside it, and
         // a dialog declared earlier would open behind the overlay that raised it.
         state.holdFor?.let { HoldDialog(it, onEvent) }
+        // The coding screen's fullscreen document, over the page.
+        state.ledger?.let { LedgerOverlays(it, onEvent) }
         state.ledger?.takeIf { it.historyOpen }?.let { LedgerHistorySheet(state, it, onEvent) }
         // Credit notes: the preview, then its history and the delete confirmation over it.
         state.credit.preview?.let { CreditNotePreviewDialog(state, it, onEvent) }
         CreditHistorySheet(state, onEvent)
         state.credit.confirmDelete?.let { CreditDeleteDialog(it, onEvent) }
+        state.credit.viewing?.let { CreditAttachmentViewer(it, onEvent) }
         state.inboxReview?.let { InboxReviewDialog(state, it, onEvent) }
         BlockedProcessDialog(state, onEvent)
         // Enter Invoice hosts the upload panel on its own Upload tab; the sheet is the department's.
         state.bulkPick?.takeIf { state.enter == null }?.let { BulkUploadSheet(it, onEvent) }
         state.quickEntry?.let { QuickEntrySheet(state, it, onEvent) }
         // Last of the record's sheets: a query is raised from over any of them.
+        // A linked order opens over the review or the detail it was clicked in.
+        state.linkedPo?.let { LinkedPoSheet(state, it, onEvent) }
         state.query?.let { QueryPanelSheet(state, it, onEvent) }
         TeamMemberSheet(state, onEvent)
         RunAuthPickerSheet(state, onEvent)
@@ -177,15 +224,22 @@ fun InvoicesScreen(
  * sidebar, as each web page renders its own.
  */
 @Composable
-private fun InvoicesPageHeader(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
+private fun InvoicesPageHeader(
+    state: InvoicesUiState,
+    onEvent: (InvoicesEvent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val accountant = state.isAccountant
     ZillitPageHeader(
         title = if (accountant) state.page.heading else str(S.ah_invoices),
-        eyebrow = state.page.eyebrow.takeIf { accountant },
+        modifier = modifier,
+        // The department board's header: "Invoices" over "Invoices", and the
+        // web's own sentence (`DepartmentInvoiceModule.jsx:1028-1035`).
+        eyebrow = if (accountant) state.page.eyebrow else str(S.ah_invoices),
         description = if (accountant) {
             state.page.blurb
         } else {
-            str(S.desktop_inv_department_intro)
+            str(S.desktop_inv_blurb_department)
         },
         // No Refresh: every page re-reads on its own socket stream, as the web's do.
         actions = {
@@ -196,14 +250,7 @@ private fun InvoicesPageHeader(state: InvoicesUiState, onEvent: (InvoicesEvent) 
                     leadingIcon = ZillitIcons.Add,
                 )
             }
-            if (!accountant && state.viewer.mayPost) {
-                ZillitButton(
-                    text = str(S.ah_upload_invoice),
-                    onClick = { onEvent(InvoicesEvent.UploadInvoice) },
-                    leadingIcon = ZillitIcons.Upload,
-                    enabled = state.bulkPick == null,
-                )
-            }
+            // The department's "Upload Invoices" sits beside its tab strip, as the web's TabBar action.
         },
     )
 }
@@ -236,13 +283,14 @@ private fun InvoicesNotices(state: InvoicesUiState, onEvent: (InvoicesEvent) -> 
  */
 @Composable
 private fun HoldDialog(request: HoldRequest, onEvent: (InvoicesEvent) -> Unit) {
+    // `HoldForQueryModal`: "Hold for Query — N invoices", a reason, and notes
+    // only — and required only — for "Other (specify in notes)".
     ZillitDialogShell(
-        title = if (request.invoices.size == 1) {
-            str(S.desktop_inv_hold_for_query)
+        title = if (request.invoices.size > 1) {
+            str(S.desktop_inv_hold_title_n, request.invoices.size)
         } else {
-            str(S.desktop_inv_hold_n_invoices, request.invoices.size)
+            str(S.desktop_inv_hold_for_query_title)
         },
-        subtitle = str(S.desktop_inv_hold_subtitle),
         visible = true,
         onDismiss = { if (!request.busy) onEvent(InvoicesEvent.CancelHold) },
         icon = ZillitIcons.Warning,
@@ -254,33 +302,37 @@ private fun HoldDialog(request: HoldRequest, onEvent: (InvoicesEvent) -> Unit) {
                 enabled = !request.busy,
             )
             ZillitButton(
-                text = str(S.desktop_hold),
+                text = if (request.busy) str(S.desktop_inv_holding) else str(S.desktop_inv_confirm_hold),
                 onClick = { onEvent(InvoicesEvent.ConfirmHold) },
                 enabled = request.isReady && !request.busy,
                 loading = request.busy,
             )
         },
     ) {
+        ZillitText(
+            text = str(S.desktop_inv_hold_reason) + " *",
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
         ZillitSelect(
             value = request.reason,
             options = listOf<HoldReason?>(null) + HoldReason.entries,
             onSelect = { reason -> reason?.let { onEvent(InvoicesEvent.HoldReasonChanged(it)) } },
-            label = { it?.label ?: str(S.desktop_select_reason) },
+            label = { it?.label ?: str(S.desktop_inv_select_reason_dots) },
             enabled = !request.busy,
             modifier = Modifier.fillMaxWidth(),
         )
-        ZillitTextField(
-            value = request.notes,
-            onValueChange = { onEvent(InvoicesEvent.HoldNotesChanged(it)) },
-            label = if (request.reason?.needsNotes() == true) {
-                str(S.desktop_inv_query_notes_required)
-            } else {
-                str(S.desktop_inv_query_notes)
-            },
-            singleLine = false,
-            enabled = !request.busy,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (request.reason?.needsNotes() == true) {
+            ZillitTextField(
+                value = request.notes,
+                onValueChange = { onEvent(InvoicesEvent.HoldNotesChanged(it)) },
+                label = str(S.desktop_inv_query_notes_label) + " *",
+                placeholder = str(S.desktop_inv_details_of_query),
+                singleLine = false,
+                enabled = !request.busy,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

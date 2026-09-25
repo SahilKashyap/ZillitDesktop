@@ -3,77 +3,91 @@
 
 package com.zillit.desktop.feature.invoices.ui.pages
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitCalcField
+import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.invoices.domain.AmountField
+import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.PayMethod
-import com.zillit.desktop.feature.invoices.domain.Vendor
+import com.zillit.desktop.feature.invoices.ui.EnterEvent
+import com.zillit.desktop.feature.invoices.ui.EnterField
 import com.zillit.desktop.feature.invoices.ui.EnterInvoiceForm
 import com.zillit.desktop.feature.invoices.ui.EnterTab
-import com.zillit.desktop.feature.invoices.ui.InboxEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 
+/**
+ * Enter Invoice — the web's `EnterInvoiceModal`: the Upload tab is the bulk
+ * upload with Paid offered; the Manual tab is the form, in the web's rows,
+ * with every missing field named at once and a split that does not add up
+ * confirmed before it is created.
+ */
 @Composable
 internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, onEvent: (InvoicesEvent) -> Unit) {
-    val colors = ZillitTheme.colors
     val change = { updated: EnterInvoiceForm -> onEvent(InvoicesEvent.EnterChanged(updated)) }
+    val close = { if (!form.busy) onEvent(InvoicesEvent.CloseEnter) }
     ZillitDialogShell(
         title = str(S.desktop_enter_invoice),
-        subtitle = str(S.desktop_inv_enter_subtitle),
-        onDismiss = { if (!form.busy) onEvent(InvoicesEvent.CloseEnter) },
+        onDismiss = close,
         visible = true,
         width = ENTER_WIDTH,
         actions = {
-            ZillitButton(
-                text = str(S.cancel),
-                onClick = { onEvent(InvoicesEvent.CloseEnter) },
-                variant = ButtonVariant.Tertiary,
-                enabled = !form.busy,
-            )
             val pick = state.bulkPick
             if (form.tab == EnterTab.Upload) {
                 // The web's Upload tab is the bulk upload; its footer is lifted up here.
-                ZillitButton(
-                    text = str(S.desktop_inv_upload_and_submit),
-                    onClick = { onEvent(InboxEvent.SubmitBulk) },
-                    leadingIcon = ZillitIcons.Upload,
-                    enabled = pick != null && pick.sendable > 0 && !pick.checking,
-                )
+                if (pick != null) BulkActions(pick, onEvent, cancel = close)
             } else {
+                val error = form.error
+                if (error != null) {
+                    ZillitText(
+                        text = error,
+                        style = ZillitTheme.typography.bodySmall,
+                        color = ZillitTheme.colors.danger,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
                 ZillitButton(
-                    text = if (form.mismatchAcknowledged && form.amountsMismatch) {
-                        str(S.desktop_create_anyway)
-                    } else {
-                        str(S.desktop_submit_invoice)
-                    },
-                    onClick = { onEvent(InvoicesEvent.SubmitEnter) },
+                    text = str(S.cancel),
+                    onClick = close,
+                    variant = ButtonVariant.Secondary,
                     enabled = !form.busy,
+                )
+                ZillitButton(
+                    text = if (form.saving) str(S.desktop_inv_creating) else str(S.desktop_inv_create_invoice),
+                    onClick = { onEvent(InvoicesEvent.SubmitEnter) },
+                    leadingIcon = ZillitIcons.Add,
+                    enabled = !form.saving,
                     loading = form.saving,
                 )
             }
@@ -90,249 +104,331 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 state.bulkPick?.let { BulkPanel(it, onEvent) }
                 return@Column
             }
-            form.error?.let { ZillitNotice(text = it, tone = StatusTone.Rejected) }
-            FileRow(form, onEvent)
-            VendorRow(state, form, change)
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
-                    value = form.invoiceNumber,
-                    onValueChange = { change(form.copy(invoiceNumber = it)) },
-                    label = str(S.desktop_invoice_number_required_label),
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(
-                    value = form.description,
-                    onValueChange = { change(form.copy(description = it)) },
-                    label = str(S.description),
-                    modifier = Modifier.weight(2f),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitDateField(
-                    value = form.invoiceDate,
-                    onValueChange = { change(form.copy(invoiceDate = it)) },
-                    label = str(S.desktop_invoice_date_required_label),
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitDateField(
-                    value = form.dueDate,
-                    onValueChange = { change(form.copy(dueDate = it)) },
-                    label = str(S.desktop_due_date_title),
-                    placeholder = "30 days if blank",
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitDateField(
-                    value = form.effectiveDate,
-                    onValueChange = { change(form.copy(effectiveDate = it)) },
-                    label = str(S.desktop_effective_date_required_label),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                LabelledSelect(
-                    label = str(S.dm_step2_department),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    val options = listOf("") + state.departmentNames.keys.sortedBy { state.departmentName(it) }
-                    ZillitSelect(
-                        value = form.departmentId,
-                        options = options,
-                        onSelect = { change(form.copy(departmentId = it)) },
-                        label = { id -> if (id.isBlank()) {
-                            str(S.desktop_pick_a_department)
-                        } else {
-                            state.departmentName(id)
-                        }},
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                LabelledSelect(label = str(S.desktop_payment_method), modifier = Modifier.weight(1f)) {
-                    ZillitSelect(
-                        value = form.payMethod,
-                        options = listOf(PayMethod.Bacs, PayMethod.Wire, PayMethod.Cheque, PayMethod.Faster),
-                        onSelect = { change(form.copy(payMethod = it)) },
-                        label = { it.label },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                LabelledSelect(label = str(S.desktop_bank), modifier = Modifier.weight(1f)) {
-                    ZillitSelect(
-                        value = form.bankId,
-                        options = listOf("") + state.banks.map { it.id },
-                        onSelect = { id ->
-                            // A picked bank brings its account holder, unless a company is already set.
-                            val holder = state.banks.firstOrNull { it.id == id }?.entityId.orEmpty()
-                            change(form.copy(bankId = id, companyId = form.companyId.ifBlank { holder }))
-                        },
-                        label = { id -> state.banks.firstOrNull { it.id == id }?.displayName ?: str(S.none) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                LabelledSelect(label = str(S.company), modifier = Modifier.weight(1f)) {
-                    ZillitSelect(
-                        value = form.companyId,
-                        options = listOf("") + state.companies.map { it.id },
-                        onSelect = { change(form.copy(companyId = it)) },
-                        label = { id -> state.companies.firstOrNull { it.id == id }?.name ?: str(S.ah_select_company) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                LabelledSelect(label = str(S.asset_currency), modifier = Modifier.width(CURRENCY_WIDTH)) {
-                    val currency = form.currency.ifBlank { state.projectCurrency }
-                    ZillitSelect(
-                        value = currency,
-                        options = (state.currencyOptions + currency).distinct(),
-                        onSelect = { change(form.copy(currency = it)) },
-                        label = { it },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                LabelledSelect(label = str(S.desktop_paid), modifier = Modifier.width(PAID_WIDTH)) {
-                    ZillitCheckbox(
-                        checked = form.paid,
-                        onCheckedChange = { change(form.copy(paid = it)) },
-                        label = str(if (form.paid) S.desktop_already_paid else S.desktop_inv_not_paid),
-                    )
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
-                    value = form.poNumber,
-                    onValueChange = { change(form.copy(poNumber = it)) },
-                    label = str(S.desktop_po_reference),
-                    modifier = Modifier.weight(1f),
-                )
-                if (state.viewer.isTelevision) {
-                    ZillitTextField(
-                        value = form.episode,
-                        onValueChange = { change(form.copy(episode = it)) },
-                        label = str(S.episode),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
-                    value = form.net,
-                    onValueChange = { onEvent(InvoicesEvent.EnterNetChanged(it)) },
-                    label = str(S.desktop_net),
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(
-                    value = form.tax,
-                    onValueChange = { onEvent(InvoicesEvent.EnterTaxChanged(it)) },
-                    label = str(S.ah_lbl_vat),
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(
-                    value = form.gross,
-                    onValueChange = { onEvent(InvoicesEvent.EnterGrossChanged(it)) },
-                    label = str(S.desktop_gross_required_label),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            if (form.amountsMismatch) {
-                ZillitNotice(text = str(S.desktop_inv_net_tax_not_equal_gross), tone = StatusTone.Pending)
-            }
-            ZillitText(
-                text = "* required",
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textMuted,
+            ManualForm(state, form, change, onEvent)
+        }
+    }
+    SplitConfirm(state, form, onEvent)
+}
+
+@Composable
+private fun ManualForm(
+    state: InvoicesUiState,
+    form: EnterInvoiceForm,
+    change: (EnterInvoiceForm) -> Unit,
+    onEvent: (InvoicesEvent) -> Unit,
+) {
+    val errors = form.errors
+    val required = { label: String -> "$label *" }
+    FieldRow {
+        LabelledField(str(S.ah_lbl_vendor), Modifier.weight(1f), isError = EnterField.Vendor in errors) {
+            VendorPicker(
+                state = state,
+                vendorId = form.vendorId,
+                pendingName = form.pendingVendorName,
+                onPick = { change(form.copy(vendorId = it, pendingVendorName = null)) },
+                onCreate = { onEvent(EnterEvent.CreateVendor(it)) },
+                isError = EnterField.Vendor in errors,
+            )
+            PendingVendorHint(form.pendingVendorName?.takeIf { form.vendorId.isBlank() })
+        }
+        ZillitTextField(
+            value = form.invoiceNumber,
+            onValueChange = { change(form.copy(invoiceNumber = it)) },
+            label = required(str(S.desktop_inv_invoice_number_label)),
+            placeholder = str(S.desktop_inv_eg_inv_plain),
+            errorText = "".takeIf { EnterField.InvoiceNumber in errors },
+            modifier = Modifier.weight(1f),
+        )
+        ZillitTextField(
+            value = form.description,
+            onValueChange = { change(form.copy(description = it)) },
+            label = str(S.description),
+            placeholder = str(S.desktop_inv_eg_studio_hire),
+            modifier = Modifier.weight(1f),
+        )
+    }
+    FieldRow {
+        ZillitDateField(
+            value = form.invoiceDate,
+            onValueChange = { change(form.copy(invoiceDate = it)) },
+            label = required(str(S.desktop_invoice_date_title)),
+            errorText = "".takeIf { EnterField.InvoiceDate in errors },
+            modifier = Modifier.weight(1f),
+        )
+        ZillitDateField(
+            value = form.dueDate,
+            onValueChange = { change(form.copy(dueDate = it)) },
+            label = str(S.desktop_due_date_title),
+            modifier = Modifier.weight(1f),
+        )
+        ZillitDateField(
+            value = form.effectiveDate,
+            onValueChange = { change(form.copy(effectiveDate = it)) },
+            label = required(str(S.ah_lbl_eff_date)),
+            errorText = "".takeIf { EnterField.EffectiveDate in errors },
+            minDate = state.effectiveMinDate(),
+            modifier = Modifier.weight(1f),
+        )
+    }
+    FieldRow {
+        LabelledField(required(str(S.department)), Modifier.weight(1f), isError = EnterField.Department in errors) {
+            IdPicker(
+                value = form.departmentId,
+                options = state.departmentChoices(),
+                label = { state.departmentName(it) },
+                placeholder = str(S.desktop_inv_select_ellipsis),
+                onSelect = { change(form.copy(departmentId = it)) },
+                isError = EnterField.Department in errors,
             )
         }
-    }
-}
-
-@Composable
-private fun FileRow(form: EnterInvoiceForm, onEvent: (InvoicesEvent) -> Unit) {
-    val colors = ZillitTheme.colors
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitButton(
-            text = if (form.file == null) str(S.desktop_choose_file) else str(S.desktop_replace_file),
-            onClick = { onEvent(InvoicesEvent.EnterPickFile) },
-            variant = ButtonVariant.Secondary,
-            size = ButtonSize.Small,
-            leadingIcon = ZillitIcons.Upload,
-            enabled = !form.busy,
-        )
-        ZillitText(
-            text = form.file?.name ?: "PDF, JPG, PNG, DOC or DOCX, up to 10 MB — required",
-            style = ZillitTheme.typography.bodySmall,
-            color = if (form.file == null) colors.textMuted else colors.textPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        when {
-            form.uploading -> StatusWithSpinner(str(S.ah_uploading))
-            form.attachment != null -> ZillitStatusPill(label = str(S.sides_uploaded), tone = StatusTone.Done)
-        }
-    }
-}
-
-@Composable
-private fun StatusWithSpinner(text: String) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSpinner()
-        ZillitText(text = text, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
-    }
-}
-
-@Composable
-private fun VendorRow(state: InvoicesUiState, form: EnterInvoiceForm, change: (EnterInvoiceForm) -> Unit) {
-    val needle = form.vendorQuery.trim().lowercase()
-    val matches: List<Vendor?> = listOf<Vendor?>(null) + state.vendors.values
-        .filter { needle.isEmpty() || it.name.lowercase().contains(needle) }
-        .sortedBy { it.name.lowercase() }
-        .take(VENDOR_LIMIT)
-    val selected = state.vendors[form.vendorId]
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.Bottom) {
-        ZillitTextField(
-            value = form.vendorQuery,
-            onValueChange = { change(form.copy(vendorQuery = it)) },
-            label = str(S.desktop_vendor_required_label),
-            placeholder = str(S.desktop_type_to_filter_suppliers),
-            modifier = Modifier.weight(1f),
-        )
-        LabelledSelect(
-            label = if (selected == null) {
-                str(S.desktop_pick_from_n_suppliers, state.vendors.size)
-            } else {
-                str(S.selected)
-            },
-            modifier = Modifier.weight(1f),
-        ) {
-            ZillitSelect(
-                value = selected,
-                options = if (selected != null && selected !in matches) listOf(selected) + matches else matches,
-                onSelect = { picked ->
-                    change(form.copy(vendorId = picked?.id.orEmpty(), vendorQuery = picked?.name ?: form.vendorQuery))
+        LabelledField(str(S.company), Modifier.weight(1f)) {
+            IdPicker(
+                value = form.companyId,
+                options = state.companies.map { it.id },
+                label = { id -> state.companies.firstOrNull { it.id == id }?.name.orEmpty() },
+                searchText = { id -> state.companies.firstOrNull { it.id == id }?.let { "${it.name} ${it.country}" }.orEmpty() },
+                placeholder = if (state.companies.isEmpty()) {
+                    str(S.desktop_inv_no_companies_configured)
+                } else {
+                    str(S.desktop_inv_select_company)
                 },
-                label = { it?.name ?: "— none —" },
+                onSelect = { change(form.copy(companyId = it)) },
+                enabled = state.companies.isNotEmpty(),
+            )
+        }
+        LabelledField(str(S.desktop_payment_method), Modifier.weight(1f)) {
+            ZillitSelect(
+                value = form.payMethod,
+                options = ENTER_PAY_METHODS,
+                onSelect = { change(form.copy(payMethod = it)) },
+                label = { it.label },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
-}
-
-@Composable
-private fun LabelledSelect(label: String, modifier: Modifier, content: @Composable () -> Unit) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        ZillitText(text = label, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
-        content()
+    FieldRow {
+        LabelledField(str(S.desktop_bank), Modifier.weight(1f)) {
+            IdPicker(
+                value = form.bankId,
+                options = state.banks.map { it.id },
+                label = { id -> state.banks.firstOrNull { it.id == id }?.displayName.orEmpty() },
+                searchText = { id -> state.banks.firstOrNull { it.id == id }?.let { "${it.name} ${it.bankName}" }.orEmpty() },
+                placeholder = if (state.banks.isEmpty()) str(S.desktop_inv_no_bank_accounts) else str(S.desktop_inv_select_bank),
+                onSelect = { change(form.copy(bankId = it)) },
+                enabled = state.banks.isNotEmpty(),
+            )
+        }
+        if (state.viewer.isTelevision) {
+            ZillitTextField(
+                value = form.episode,
+                onValueChange = { change(form.copy(episode = it)) },
+                label = str(S.episode),
+                placeholder = str(S.desktop_inv_eg_ep_101),
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        Spacer(Modifier.weight(1f))
+    }
+    FieldRow {
+        LabelledField(str(S.asset_currency), Modifier.weight(1f)) {
+            val currency = form.currency.ifBlank { state.projectCurrency }
+            IdPicker(
+                value = currency,
+                options = (state.currencyOptions + currency).distinct(),
+                label = { state.currencyLabel(it) },
+                placeholder = str(S.desktop_ce_cards_select_currency),
+                onSelect = { change(form.copy(currency = it)) },
+            )
+        }
+        ZillitTextField(
+            value = form.poNumber,
+            onValueChange = { change(form.copy(poNumber = it)) },
+            label = str(S.desktop_inv_po_reference_title),
+            placeholder = str(S.desktop_inv_eg_po_0087),
+            modifier = Modifier.weight(1f),
+        )
+        LabelledField(str(S.desktop_paid), Modifier.weight(1f)) {
+            PaidSwitch(form, change)
+        }
+    }
+    FieldRow {
+        ZillitCalcField(
+            value = form.net,
+            onCommit = { onEvent(EnterEvent.Amount(AmountField.Net, it)) },
+            label = str(S.desktop_inv_net_amount),
+            modifier = Modifier.weight(1f),
+        )
+        ZillitCalcField(
+            value = form.tax,
+            onCommit = { onEvent(EnterEvent.Amount(AmountField.Tax, it)) },
+            label = str(S.ah_lbl_tax_amt),
+            modifier = Modifier.weight(1f),
+        )
+        ZillitCalcField(
+            value = form.gross,
+            onCommit = { onEvent(EnterEvent.Amount(AmountField.Gross, it)) },
+            label = required(str(S.desktop_inv_gross_amount)),
+            errorText = "".takeIf { EnterField.GrossAmount in errors },
+            modifier = Modifier.weight(1f),
+        )
+    }
+    SplitStrip(form.amounts, form.currency.ifBlank { state.projectCurrency })
+    LabelledField(required(str(S.attachment)), isError = EnterField.Attachment in errors) {
+        AttachmentRow(form, onEvent)
+    }
+    if (errors.isNotEmpty()) {
+        ZillitText(
+            text = EnterField.entries.mapNotNull { errors[it] }.joinToString(" · "),
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.danger,
+        )
     }
 }
 
-private const val VENDOR_LIMIT = 40
-private val ENTER_WIDTH = 960.dp
-private val CURRENCY_WIDTH = 120.dp
-private val PAID_WIDTH = 150.dp
+/** "Already paid" / "Not paid" beside a switch — a field of the form, not a stray control. */
+@Composable
+private fun PaidSwitch(form: EnterInvoiceForm, change: (EnterInvoiceForm) -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.border, ZillitTheme.shapes.medium)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(
+            text = if (form.paid) str(S.desktop_inv_already_paid_lower) else str(S.desktop_inv_not_paid),
+            style = ZillitTheme.typography.bodyMedium,
+            color = if (form.paid) colors.textPrimary else colors.textMuted,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitSwitch(checked = form.paid, onCheckedChange = { change(form.copy(paid = it)) })
+    }
+}
+
+/**
+ * The attachment: its name and size with a ✕ once picked ("Uploading..."
+ * while it goes up), or the dashed "Attach document (PDF, JPG, PNG)" —
+ * red while the form is missing it.
+ */
+@Composable
+private fun AttachmentRow(form: EnterInvoiceForm, onEvent: (InvoicesEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    val file = form.file
+    if (file == null) {
+        val missing = EnterField.Attachment in form.errors
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, if (missing) colors.danger else colors.border, ZillitTheme.shapes.medium)
+                .clickable(enabled = !form.busy) { onEvent(InvoicesEvent.EnterPickFile) }
+                .padding(vertical = ZillitTheme.spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitIcon(icon = ZillitIcons.File, tint = if (missing) colors.danger else colors.textMuted, size = FILE_ICON)
+            ZillitText(
+                text = str(S.desktop_inv_attach_document),
+                style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                color = if (missing) colors.danger else colors.textMuted,
+            )
+        }
+        return
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.surfaceSunken, ZillitTheme.shapes.medium)
+            .border(1.dp, colors.border, ZillitTheme.shapes.medium)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (form.uploading) {
+            ZillitSpinner(size = FILE_ICON)
+            ZillitText(
+                text = str(S.desktop_inv_uploading_dots),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            ZillitIcon(icon = ZillitIcons.File, tint = colors.accent, size = FILE_ICON)
+            Column(Modifier.weight(1f)) {
+                ZillitText(
+                    text = file.name,
+                    style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                ZillitText(
+                    text = str(S.desktop_size_kb, kilobytes(file.bytes.size.toLong())),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
+            }
+        }
+        ZillitIconButton(
+            icon = ZillitIcons.Close,
+            contentDescription = str(S.remove),
+            onClick = { onEvent(EnterEvent.ClearFile) },
+            enabled = !form.saving,
+        )
+    }
+}
+
+/** `(size / 1024).toFixed(1)`. */
+private fun kilobytes(bytes: Long): String {
+    val tenths = kotlin.math.round(bytes * TENTHS / KB).toLong()
+    return "${tenths / TENTHS.toLong()}.${tenths % TENTHS.toLong()}"
+}
+
+/** "Amounts don't match" — Create anyway, or Go back; never created silently. */
+@Composable
+private fun SplitConfirm(state: InvoicesUiState, form: EnterInvoiceForm, onEvent: (InvoicesEvent) -> Unit) {
+    ZillitDialogShell(
+        title = str(S.desktop_inv_amounts_dont_match),
+        visible = form.confirmSplit,
+        onDismiss = { if (!form.saving) onEvent(EnterEvent.CancelSplit) },
+        icon = ZillitIcons.Warning,
+        scrollable = false,
+        actions = {
+            ZillitButton(
+                text = str(S.dm_nda_go_back),
+                onClick = { onEvent(EnterEvent.CancelSplit) },
+                variant = ButtonVariant.Tertiary,
+                enabled = !form.saving,
+            )
+            ZillitButton(
+                text = if (form.saving) str(S.desktop_inv_creating) else str(S.desktop_create_anyway),
+                onClick = { onEvent(EnterEvent.ConfirmSplit) },
+                loading = form.saving,
+            )
+        },
+    ) {
+        val currency = form.currency.ifBlank { state.projectCurrency }
+        val figures = SplitFigures.of(form.amounts)
+        val money = { value: Double -> InvoiceFormat.money(value, currency) }
+        ZillitText(
+            text = str(
+                S.desktop_inv_split_create_confirm,
+                money(figures.net),
+                money(figures.tax),
+                money(figures.sum),
+                money(figures.gross),
+                money(kotlin.math.abs(figures.diff)),
+                figures.overUnder(),
+            ),
+            style = ZillitTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/** The web's four pay methods on this form, in its order. */
+private val ENTER_PAY_METHODS = listOf(PayMethod.Bacs, PayMethod.Wire, PayMethod.Cheque, PayMethod.Faster)
+
+private val ENTER_WIDTH = 1040.dp
+private val FILE_ICON = 16.dp
+private const val KB = 1024.0
+private const val TENTHS = 10.0

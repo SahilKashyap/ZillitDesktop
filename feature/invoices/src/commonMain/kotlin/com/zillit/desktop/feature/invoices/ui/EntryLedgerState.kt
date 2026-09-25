@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.invoices.domain.EntryHeader
 import com.zillit.desktop.feature.invoices.domain.EntryTotals
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
 import com.zillit.desktop.feature.invoices.domain.Invoice
+import com.zillit.desktop.feature.invoices.domain.InvoiceNominal
 import com.zillit.desktop.feature.invoices.domain.LinkedPoDetail
 import com.zillit.desktop.feature.invoices.domain.QueryThread
 import com.zillit.desktop.feature.invoices.domain.TaxLine
@@ -41,6 +42,12 @@ data class EntryLedger(
     val historyLoading: Boolean = false,
     /** Opened from Posted: nothing on it may change. */
     val readOnly: Boolean = false,
+    /** The linked orders are still being read — the grid's "Loading PO line items...". */
+    val ordersLoading: Boolean = false,
+    /** Which linked order the PO details card shows (`selectedPoIdx`). */
+    val poIndex: Int = 0,
+    /** The document opened over everything — the web's Fullscreen viewer. */
+    val fullscreen: Boolean = false,
 ) {
     val busy: Boolean get() = action != null
 
@@ -53,7 +60,30 @@ data class EntryLedger(
     val canSplit: Boolean get() = selectedLine?.isSplit == false
 
     fun hasSplits(id: String): Boolean = lines.any { it.splitParentId == id }
+
+    /**
+     * Recoded in another currency than the invoice was entered in: the stored
+     * amounts no longer apply, nothing is matched to them, and a save writes
+     * the coded totals as the new ones (`currencyChanged`).
+     */
+    fun currencyChanged(defaultCurrency: String): Boolean =
+        EntryCoding.isCurrencyChanged(header.currency, invoice.currency, defaultCurrency)
+
+    /** The order the PO details card shows. */
+    val shownOrder: LinkedPoDetail? get() = orders.getOrNull(poIndex) ?: orders.firstOrNull()
 }
+
+/**
+ * What the ledger's and Quick Entry's pickers offer beyond Production Setup's
+ * companies and tax types: the chart with its names (`CoaCodeInput`) and the
+ * account tags (`TagMultiSelect`, project settings' `asset_tags`). Read the
+ * first time either opens.
+ */
+data class EntryRefs(
+    val accounts: List<InvoiceNominal> = emptyList(),
+    val assetTags: List<String> = emptyList(),
+    val loaded: Boolean = false,
+)
 
 /**
  * A record's query thread, open in its side panel — the hub's `QueryPanel`.
@@ -66,6 +96,8 @@ data class QueryView(
     val loading: Boolean = true,
     val draft: String = "",
     val sending: Boolean = false,
+    /** User id → designation, shown beside an author's name as the web's panel does. */
+    val roles: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -83,6 +115,13 @@ data class QuickEntryDraft(
     /** `YYYY-MM-DD`; blank = none. */
     val effectiveDate: String = "",
     val busy: Boolean = false,
+    /** The classification tags (`quickTags`). */
+    val tags: List<String> = emptyList(),
+    /**
+     * A vendor typed that does not exist yet — `usePendingVendor`: created on
+     * Post, just before the invoice, so an abandoned entry leaves none behind.
+     */
+    val pendingVendorName: String? = null,
 ) {
     val netValue: Double? get() = net.trim().replace(",", "").toDoubleOrNull()
 
@@ -95,6 +134,9 @@ sealed interface EntryEvent : InvoicesEvent {
     data class Open(val invoice: Invoice, val readOnly: Boolean = false) : EntryEvent
     data object Close : EntryEvent
     data class EditHeader(val header: EntryHeader) : EntryEvent
+
+    /** Banks or companies landed after the view opened: the auto-fill runs again (`:512-517`). */
+    data object AutoFill : EntryEvent
     data class SelectLine(val id: String?) : EntryEvent
 
     /** A parent line's fields; an amount change re-cuts its split. */
@@ -107,6 +149,17 @@ sealed interface EntryEvent : InvoicesEvent {
     data object SplitLine : EntryEvent
     data class RemoveLine(val id: String) : EntryEvent
     data class EditTaxAccount(val account: String) : EntryEvent
+
+    /** The tax row's own Layers and tags. */
+    data class EditTaxLayers(val codes: Map<String, String>) : EntryEvent
+    data class EditTaxTags(val tags: List<String>) : EntryEvent
+
+    /** Which linked order the PO details card shows. */
+    data class SelectPo(val index: Int) : EntryEvent
+
+    /** The document, fullscreen over everything; and back. */
+    data object ShowFullscreen : EntryEvent
+    data object HideFullscreen : EntryEvent
 
     /** A typed tax amount overrides the derived one until reset. */
     data class EditTaxAmount(val amount: Double) : EntryEvent

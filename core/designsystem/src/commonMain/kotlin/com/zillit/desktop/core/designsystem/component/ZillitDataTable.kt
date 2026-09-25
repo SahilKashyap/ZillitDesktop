@@ -144,6 +144,11 @@ fun <T> ZillitDataTable(
      * sideways under a rail. Set it to zero to go back to squeezing.
      */
     minColumnWidth: Dp = MIN_COLUMN_WIDTH,
+    /**
+     * A row's own wash, under hover and selection — a held invoice's amber, an
+     * approved one's green. Null (or a null answer) keeps the plain stripes.
+     */
+    rowTint: ((T) -> Color?)? = null,
 ) {
     // A duplicate key would take the whole window down inside a LazyColumn.
     // Ids come from a server, and a server that repeats one is a bug worth a
@@ -185,6 +190,7 @@ fun <T> ZillitDataTable(
                     emptyMessage = emptyMessage,
                     loading = loading,
                     virtualised = virtualised,
+                    rowTint = rowTint,
                 )
             }
             if (wide) ZillitHorizontalScrollRail(across)
@@ -212,6 +218,7 @@ private fun <T> ColumnScope.TableBody(
     emptyMessage: String?,
     loading: Boolean,
     virtualised: Boolean,
+    rowTint: ((T) -> Color?)?,
 ) {
     run {
         TableHeader(columns)
@@ -235,6 +242,7 @@ private fun <T> ColumnScope.TableBody(
                             striped = index % 2 == 1,
                             selected = isSelected?.invoke(row) == true,
                             onClick = onRowClick?.let { click -> { click(row) } },
+                            tint = rowTint?.invoke(row),
                         )
                         ZillitDivider()
                     }
@@ -249,6 +257,7 @@ private fun <T> ColumnScope.TableBody(
                         striped = index % 2 == 1,
                         selected = isSelected?.invoke(row) == true,
                         onClick = onRowClick?.let { click -> { click(row) } },
+                        tint = rowTint?.invoke(row),
                     )
                     ZillitDivider()
                 }
@@ -294,6 +303,7 @@ private fun <T> TableRow(
     striped: Boolean,
     selected: Boolean,
     onClick: (() -> Unit)?,
+    tint: Color? = null,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -302,6 +312,7 @@ private fun <T> TableRow(
     val background = when {
         selected -> colors.surfaceSelected
         hovered && onClick != null -> colors.surfaceHover
+        tint != null -> tint
         striped -> colors.surfaceSunken
         else -> Color.Transparent
     }

@@ -36,8 +36,6 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -48,18 +46,54 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceRules
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.ResolvedTier
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.invoices.ui.AccountantPage
+import com.zillit.desktop.feature.invoices.ui.DepartmentTab
 import com.zillit.desktop.feature.invoices.ui.InvoiceDetail
+import com.zillit.desktop.feature.invoices.ui.QueryEvent
+import com.zillit.desktop.feature.invoices.ui.PaymentsEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.decodeImageBitmap
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
+import com.zillit.desktop.feature.invoices.domain.ApprovalChain
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.feature.invoices.domain.PoPills
+import com.zillit.desktop.feature.invoices.domain.InvoiceLabels
 
 @Composable
 internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
     val invoice = detail.invoice
     val tiers = state.tiersOf(invoice)
     val viewer = state.viewer
+    // A closed cost-report period drops every mutating action (`InvoiceDetailModal.jsx:871-874`).
+    val locked = state.isLocked(invoice)
+    val department = !state.isAccountant
+    // Query is not an Approval Queue action, on either side (ZL-20913, `allowQuery`).
+    val allowQuery = if (department) {
+        state.departmentTab != DepartmentTab.ApprovalQueue
+    } else {
+        state.page != AccountantPage.ApprovalQueue
+    }
+    // The department board hands its modal a Delete only when the row may be
+    // deleted (`onDelete={detailRow.canDelete ? … }`), and never in a locked period.
+    // The accountant Approval Queue hands it one too, on its own gate
+    // (`ApprovalPage.jsx:754`); the Register and Payments never do.
+    val canDelete = !locked && if (department) {
+        state.departmentCanDelete(invoice)
+    } else {
+        state.page == AccountantPage.ApprovalQueue && queueCanDelete(state, invoice)
+    }
+    // …and no Override or Override & Pay at all (`DepartmentInvoiceModule.jsx:1246-1277`).
+    val decisions = detail.decisions && !locked
     ZillitDialogShell(
         title = str(S.desktop_invoice_named, invoice.displayNumber),
         subtitle = state.vendorName(invoice),
@@ -72,7 +106,24 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
                 onClick = { onEvent(InvoicesEvent.ShowHistory) },
                 variant = ButtonVariant.Tertiary,
             )
-            if (detail.decisions && InvoiceRules.showApproveReject(invoice, tiers, viewer)) {
+            if (allowQuery) {
+                ZillitButton(
+                    text = str(S.ah_query_label),
+                    onClick = { onEvent(QueryEvent.Open(invoice)) },
+                    variant = ButtonVariant.Tertiary,
+                    leadingIcon = ZillitIcons.Chat,
+                )
+            }
+            // Kept to the left, away from Approve: destructive and irreversible.
+            if (canDelete) {
+                ZillitButton(
+                    text = str(S.delete),
+                    onClick = { onEvent(InvoicesEvent.RequestDelete(invoice)) },
+                    variant = ButtonVariant.Danger,
+                    enabled = !detail.acting,
+                )
+            }
+            if (decisions && InvoiceRules.showApproveReject(invoice, tiers, viewer)) {
                 ZillitButton(
                     text = str(S.reject),
                     onClick = { onEvent(InvoicesEvent.StartReject) },
@@ -80,24 +131,37 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
                     enabled = !detail.acting,
                 )
                 ZillitButton(
-                    text = str(S.approve),
+                    text = if (detail.acting) str(S.desktop_inv_approving) else str(S.approve),
                     onClick = { onEvent(InvoicesEvent.Approve(invoice)) },
                     loading = detail.acting,
                 )
             }
-            if (detail.decisions && InvoiceRules.showOverride(invoice, tiers, viewer)) {
+            if (decisions && !department && InvoiceRules.showOverride(invoice, tiers, viewer)) {
                 ZillitButton(
-                    text = str(S.dm_nom_table_override),
+                    text = if (detail.acting) str(S.desktop_ce_cards_overriding) else str(S.dm_nom_table_override),
                     onClick = { onEvent(InvoicesEvent.Override(invoice)) },
-                    variant = ButtonVariant.Secondary,
                     loading = detail.acting,
                 )
             }
-            if (detail.decisions && InvoiceRules.showOverrideAndPay(invoice, viewer) && !invoice.isApproved) {
+            // `showOverrideAndPay` alone — no "not approved" test here (`InvoiceDetailModal.jsx:910`).
+            if (decisions && !department && InvoiceRules.showOverrideAndPay(invoice, viewer)) {
                 ZillitButton(
-                    text = str(S.desktop_override_and_pay),
+                    text = if (detail.acting) str(S.txt_processing) else str(S.desktop_override_and_pay),
                     onClick = { onEvent(InvoicesEvent.OverrideAndPay(invoice)) },
+                    variant = ButtonVariant.Danger,
                     loading = detail.acting,
+                )
+            }
+            // Payment Runs' wire or faster payment: its own Mark Paid, until it is
+            // paid (`InvoiceDetailModal.jsx:927-936`, `PaymentsPage.jsx:2399-2403`).
+            if (detail.markPaid && !locked && invoice.status != InvoiceStatus.Paid) {
+                val marking = invoice.id in state.pay.markingPaid
+                ZillitButton(
+                    text = if (marking) str(S.desktop_payroll_marking) else str(S.desktop_mark_paid_title),
+                    onClick = { onEvent(PaymentsEvent.MarkPaidFromDetail(invoice)) },
+                    variant = ButtonVariant.Danger,
+                    enabled = state.viewer.canOperateRuns && !marking,
+                    loading = marking,
                 )
             }
             ZillitButton(
@@ -109,7 +173,7 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
             AttachmentPane(detail, onEvent, Modifier.weight(1f))
-            DetailPane(state, detail, tiers, Modifier.width(DETAIL_PANE_WIDTH))
+            DetailPane(state, detail, tiers, onEvent, Modifier.width(DETAIL_PANE_WIDTH))
         }
     }
     if (detail.historyOpen) HistoryDialog(detail, onEvent)
@@ -213,252 +277,271 @@ private fun AttachmentPane(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Un
     }
 }
 
+/**
+ * The right pane, section for section as the web's `InvoiceDetailModal` lays
+ * it out (`InvoiceDetailModal.jsx:564-766`): number, description and badges;
+ * the vendor; then — under the period-lock banner when the invoice is in a
+ * closed period — the hold banner, the facts, the linked orders, the approval
+ * chain, the rejection, and who created and last changed it.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailPane(state: InvoicesUiState, detail: InvoiceDetail, tiers: List<ResolvedTier>, modifier: Modifier) {
+private fun DetailPane(
+    state: InvoicesUiState,
+    detail: InvoiceDetail,
+    tiers: List<ResolvedTier>,
+    onEvent: (InvoicesEvent) -> Unit,
+    modifier: Modifier,
+) {
     val invoice = detail.invoice
     val colors = ZillitTheme.colors
-    val currency = invoice.currency.ifBlank { state.projectCurrency }
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitText(text = invoice.displayNumber, style = ZillitTheme.typography.titleLarge, color = colors.gold)
-        if (invoice.description.isNotBlank()) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             ZillitText(
-                text = invoice.description,
-                style = ZillitTheme.typography.bodyMedium,
+                text = invoice.invoiceNumber.ifBlank { "—" },
+                style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.accentText,
+            )
+            ZillitText(
+                text = invoice.description.ifBlank { str(S.desktop_no_description) },
+                style = ZillitTheme.typography.titleMedium,
+                color = colors.textPrimary,
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            Badges(invoice, tiers)
+        }
+        ZillitDivider()
+        RecordVendor(state, invoice)
+        ZillitDivider()
+        if (state.isLocked(invoice)) InvoiceLockBanner(state)
+        if (invoice.status == InvoiceStatus.Held) HeldBanner(state, detail)
+        RecordFacts(state, invoice)
+        LinkedPoCards(state, invoice, selected = null) { _, po, number ->
+            onEvent(InvoicesEvent.OpenLinkedPo(po.poId, number))
+        }
+        if (InvoiceRules.showChain(invoice, tiers)) {
+            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+                RecordCaption(str(S.ah_approval_chain))
+                ApprovalChainPanel(detail, tiers)
+            }
+        }
+        if (invoice.rejectionReason.isNotBlank()) RejectionBlock(detail)
+        ZillitDivider()
+        AuditFooter(
+            invoice = invoice,
+            nameOf = { detail.names[it] },
+            designationOf = { detail.designations[it] },
+            showUpdated = invoice.updatedBy.isNotBlank(),
+        )
+    }
+}
+
+/**
+ * The header's badges, in the web's three shapes (`InvoiceDetailModal.jsx:585-607`):
+ *
+ * - a wire or cheque: the request ("No PO · " when nothing is linked), the
+ *   linked POs, and "Approved" once approved or overridden;
+ * - a chain in progress: "Pending x/y", the linked POs, or the typed number;
+ * - anything else: the status, the linked POs, or "No PO".
+ */
+@Composable
+private fun Badges(invoice: Invoice, tiers: List<ResolvedTier>) {
+    val linked = @Composable {
+        invoice.linkedPos.forEach { po ->
+            ZillitStatusPill(label = po.poNumber.ifBlank { po.poId }, tone = StatusTone.Progress)
+        }
+    }
+    when {
+        invoice.isUrgentRaw -> {
+            BadgePill(PoPills.registerUrgentStatus(invoice))
+            linked()
+            if (invoice.approvalStatus == ApprovalStatus.Approved || invoice.status == InvoiceStatus.Override) {
+                ZillitStatusPill(label = str(S.approved), tone = StatusTone.Ready)
+            }
+        }
+        invoice.status == InvoiceStatus.Approval && tiers.isNotEmpty() -> {
+            ZillitStatusPill(
+                label = str(S.desktop_inv_pending_of, invoice.approvedCount, tiers.size),
+                tone = StatusTone.Pending,
+            )
+            linked()
+            if (invoice.linkedPos.isEmpty() && invoice.poNumber.isNotBlank()) {
+                ZillitStatusPill(label = invoice.poNumber, tone = StatusTone.Progress)
+            }
+        }
+        else -> {
+            ZillitStatusPill(label = invoice.statusLabel, tone = invoice.status.statusTone())
+            linked()
+            if (!invoice.hasMatchedPo) ZillitStatusPill(label = str(S.desktop_no_po), tone = StatusTone.Rejected)
+        }
+    }
+}
+
+/**
+ * "On Hold", the reason (or "No reason provided"), and the note with any user
+ * id the directory knows swapped for the name (`InvoiceDetailModal.jsx:614-620`).
+ */
+@Composable
+private fun HeldBanner(state: InvoicesUiState, detail: InvoiceDetail) {
+    val invoice = detail.invoice
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.warningSoft, ZillitTheme.shapes.medium)
+            .border(1.dp, colors.warning.copy(alpha = HELD_BORDER_ALPHA), ZillitTheme.shapes.medium)
+            .padding(ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        ZillitText(
+            text = str(S.desktop_on_hold_title).uppercase(),
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = colors.warning,
+        )
+        ZillitText(
+            text = invoice.holdReason.takeIf { it.isNotBlank() }?.let(InvoiceLabels::format)
+                ?: str(S.desktop_inv_no_hold_reason),
+            style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.textPrimary,
+        )
+        if (invoice.holdNote.isNotBlank()) {
+            ZillitText(
+                text = InvoiceLabels.resolveUserIds(invoice.holdNote) { detail.names[it] ?: state.userNames[it] },
+                style = ZillitTheme.typography.labelSmall,
                 color = colors.textSecondary,
             )
         }
-        Badges(state, invoice, tiers)
-        VendorBlock(state, invoice)
-        if (invoice.status == InvoiceStatus.Held) {
-            ZillitNotice(
-                text = str(S.desktop_call_on_hold) + invoice.holdReason.humanised().let { if (it.isBlank()) {
-                    ""
-                } else {
-                    " — $it"
-                }} +
-                    invoice.holdNote.let { if (it.isBlank()) "" else ": $it" },
-                tone = StatusTone.Escalated,
-            )
-        }
-        ZillitDivider()
-        val bank = state.banks.firstOrNull { it.id == invoice.bankId }?.displayName ?: invoice.bankId.ifBlank { "—" }
-        val episode = if (state.viewer.isTelevision) {
-            listOf(str(S.episode) to invoice.episode.ifBlank { "—" })
-        } else {
-            emptyList()
-        }
-        FieldGrid(
-            listOf(
-                str(S.department) to state.departmentName(invoice.departmentId),
-                str(S.asset_currency) to currency,
-                str(S.desktop_payment_method) to invoice.payMethod.label,
-                str(S.desktop_bank) to bank,
-            ) + episode,
+    }
+}
+
+/** "Rejection Reason", the reason, and who rejected it when (`InvoiceDetailModal.jsx:797-808`). */
+@Composable
+private fun RejectionBlock(detail: InvoiceDetail) {
+    val invoice = detail.invoice
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.dangerSoft, ZillitTheme.shapes.medium)
+            .padding(ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        ZillitText(
+            text = str(S.cs_rejection_reason).uppercase(),
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = colors.danger,
         )
-        ZillitDivider()
-        FieldGrid(
-            listOf(
-                str(S.desktop_net) to InvoiceFormat.money(invoice.netAmount, currency),
-                str(S.ah_lbl_vat) to InvoiceFormat.money(invoice.taxAmount, currency),
-                str(S.desktop_gross) to InvoiceFormat.money(invoice.grossAmount, currency),
-            ),
-        )
-        FieldGrid(
-            listOf(
-                str(S.desktop_invoice_date_title) to InvoiceFormat.date(invoice.invoiceDateMs),
-                str(S.desktop_due_date_title) to InvoiceFormat.date(invoice.dueDateMs),
-                str(S.ah_lbl_eff_date) to InvoiceFormat.date(invoice.effectiveDateMs),
-            ),
-        )
-        if (invoice.linkedPos.isNotEmpty()) {
-            ZillitDivider()
-            ZillitSectionLabel(str(S.desktop_inv_linked_purchase_orders))
-            invoice.linkedPos.forEach { po ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(colors.surfaceSunken, ZillitTheme.shapes.medium)
-                        .padding(ZillitTheme.spacing.sm),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
-                    ZillitText(
-                        text = po.poNumber.ifBlank { "PO-" + po.poId.take(PO_ID_CHARS) },
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textPrimary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ZillitText(
-                        text = state.vendors[po.poVendorId]?.name ?: "",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                    )
-                    ZillitText(
-                        text = InvoiceFormat.money(po.poGrossTotal, currency),
-                        style = ZillitTheme.typography.numeric,
-                        color = colors.textPrimary,
-                    )
-                }
-            }
-        }
-        if (InvoiceRules.showChain(invoice, tiers)) {
-            ZillitDivider()
-            ZillitSectionLabel(str(S.ah_run_approval_chain))
-            ApprovalChainPanel(detail, tiers)
-        }
-        if (invoice.isRejected && invoice.rejectionReason.isNotBlank()) {
-            ZillitNotice(
+        ZillitText(text = invoice.rejectionReason, style = ZillitTheme.typography.bodySmall, color = colors.textPrimary)
+        if (invoice.rejectedBy.isNotBlank()) {
+            ZillitText(
                 text = str(
-                    S.desktop_inv_rejected_by_at,
+                    S.desktop_inv_by_at,
                     detail.nameOf(invoice.rejectedBy),
                     InvoiceFormat.dateTime(invoice.rejectedAtMs),
-                ) +
-                    "\n${invoice.rejectionReason}",
-                tone = StatusTone.Rejected,
-            )
-        }
-        ZillitDivider()
-        FieldGrid(
-            listOf(
-                str(S.cs_created_by) to
-                    "${detail.nameOf(invoice.userId)} · ${InvoiceFormat.dateTime(invoice.createdAtMs)}",
-                str(S.desktop_updated_by) to if (invoice.updatedBy.isBlank()) {
-                    "—"
-                } else {
-                    "${detail.nameOf(invoice.updatedBy)} · ${InvoiceFormat.dateTime(invoice.updatedAtMs)}"
-                },
-            ),
-        )
-    }
-}
-
-@Composable
-private fun Badges(state: InvoicesUiState, invoice: Invoice, tiers: List<ResolvedTier>) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        when {
-            invoice.payMethod.isUrgent -> BadgePill(InvoiceRules.urgentBadge(invoice))
-            invoice.isApproved -> ZillitStatusPill(label = str(S.approved), tone = StatusTone.Done)
-            invoice.status == InvoiceStatus.Approval && tiers.isNotEmpty() ->
-                ZillitStatusPill(
-                    label = str(S.desktop_inv_pending_of, invoice.approvedCount, tiers.size),
-                    tone = StatusTone.Pending,
-                )
-            else -> ZillitStatusPill(label = invoice.statusLabel, tone = invoice.status.statusTone())
-        }
-        if (!invoice.payMethod.isUrgent) PoCell(invoice)
-        if (invoice.ocrConfidence != null) ZillitStatusPill(label = str(S.desktop_ocr), tone = StatusTone.Escalated)
-        if (state.viewer.isAccountant && invoice.approvalStatus.label != invoice.statusLabel) {
-            ZillitStatusPill(label = invoice.approvalStatus.label, tone = StatusTone.Neutral)
-        }
-    }
-}
-
-@Composable
-private fun VendorBlock(state: InvoicesUiState, invoice: Invoice) {
-    val colors = ZillitTheme.colors
-    val vendor = state.vendors[invoice.vendorId]
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        ZillitText(
-            text = state.vendorName(invoice),
-            style = ZillitTheme.typography.titleSmall,
-            color = colors.textPrimary,
-        )
-        vendor?.address?.takeIf { it.isNotBlank() }?.let {
-            ZillitText(text = it, style = ZillitTheme.typography.bodySmall, color = colors.textMuted, maxLines = 2)
-        }
-        val contact = listOfNotNull(
-            vendor?.phone?.takeIf { it.isNotBlank() },
-            vendor?.email?.takeIf { it.isNotBlank() },
-        )
-        if (contact.isNotEmpty()) {
-            ZillitText(
-                text = contact.joinToString(" | "),
-                style = ZillitTheme.typography.bodySmall,
+                ),
+                style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
         }
     }
 }
 
-@Composable
-private fun FieldGrid(fields: List<Pair<String, String>>) {
-    val colors = ZillitTheme.colors
-    fields.chunked(FIELDS_PER_ROW).forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            row.forEach { (label, value) ->
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-                ) {
-                    ZillitText(text = label, style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
-                    ZillitText(
-                        text = value,
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textPrimary,
-                        maxLines = 2,
-                    )
-                }
-            }
-            repeat(FIELDS_PER_ROW - row.size) { Box(Modifier.weight(1f)) }
-        }
-    }
-}
-
+/**
+ * The chain laid across, as the web draws it (`InvoiceDetailModal.jsx:746-797`):
+ * a green tick for each signed tier with who signed and their designation, an
+ * amber dot for the tier waiting now, grey for the rest, joined by lines —
+ * green after a signed tier.
+ *
+ * A waiting tier names the people who can sign it, with the first one's
+ * designation. The web means to do the same but reads a shape its tier
+ * resolver never returns, so it always prints "Awaiting"; that is kept only
+ * for a tier nobody is configured on.
+ */
 @Composable
 private fun ApprovalChainPanel(detail: InvoiceDetail, tiers: List<ResolvedTier>) {
     val colors = ZillitTheme.colors
     val invoice = detail.invoice
     val done = invoice.approvals.associateBy { it.tierNumber }
-    val current = tiers.map { it.number }.firstOrNull { it !in done }
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        tiers.forEach { tier ->
+    val next = ApprovalChain.nextTier(tiers, invoice.approvals)
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.Top,
+    ) {
+        tiers.forEachIndexed { index, tier ->
             val approval = done[tier.number]
-            val (fill, ring) = when {
-                approval != null -> colors.success to colors.success
-                tier.number == current && invoice.status == InvoiceStatus.Approval -> colors.warning to colors.warning
-                else -> colors.surfaceSunken to colors.border
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
+            val current = approval == null && tier.number == next
+            Column(
+                modifier = Modifier.widthIn(min = TIER_MIN_WIDTH),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
             ) {
                 Box(
-                    modifier = Modifier.size(TIER_DOT).background(fill, CircleShape).border(2.dp, ring, CircleShape),
+                    modifier = Modifier
+                        .size(TIER_DOT)
+                        .background(
+                            when {
+                                approval != null -> colors.success
+                                current -> colors.warning
+                                else -> colors.surfaceSunken
+                            },
+                            CircleShape,
+                        )
+                        .then(
+                            if (approval == null && !current) {
+                                Modifier.border(2.dp, colors.border, CircleShape)
+                            } else {
+                                Modifier
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
+                    when {
+                        approval != null ->
+                            ZillitIcon(icon = ZillitIcons.Check, tint = colors.textOnAccent, size = TIER_GLYPH)
+                        current -> Box(Modifier.size(CURRENT_DOT).background(colors.textOnAccent, CircleShape))
+                    }
+                }
+                val (who, designation) = when {
+                    approval != null ->
+                        detail.nameOf(approval.userId) to detail.designations[approval.userId]
+                    else -> tier.userIds.map { detail.nameOf(it) }.joinToString(", ")
+                        .ifBlank { str(S.ds_sent_filter_awaiting) } to
+                        tier.userIds.firstOrNull()?.let { detail.designations[it] }.takeIf { current }
+                }
+                val tone = when {
+                    approval != null -> colors.success
+                    current -> colors.warning
+                    else -> colors.textMuted
+                }
+                ZillitText(
+                    text = who,
+                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = tone,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+                designation?.takeIf { it.isNotBlank() }?.let {
                     ZillitText(
-                        text = tier.number.toString(),
+                        text = it,
                         style = ZillitTheme.typography.labelSmall,
-                        color = if (approval != null || tier.number == current) {
-                            colors.textOnAccent
-                        } else {
-                            colors.textMuted
-                        },
+                        color = tone,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
                     )
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    ZillitText(
-                        text = if (approval != null) {
-                            "${detail.nameOf(approval.userId)} · ${InvoiceFormat.dateTime(approval.approvedAtMs)}"
-                        } else {
-                            tier.userIds.joinToString(", ") { detail.nameOf(it) }
-                        },
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textPrimary,
-                        maxLines = 2,
-                    )
-                    ZillitText(
-                        text = when {
-                            approval != null -> str(S.approved)
-                            tier.number == current -> str(S.av_subtab_awaiting_approval)
-                            else -> str(S.pending)
-                        },
-                        style = ZillitTheme.typography.labelSmall,
-                        color = colors.textMuted,
-                    )
-                }
+            }
+            if (index < tiers.lastIndex) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = TIER_DOT / 2)
+                        .width(CONNECTOR_WIDTH)
+                        .height(2.dp)
+                        .background(if (approval != null) colors.success else colors.border),
+                )
             }
         }
     }
@@ -535,11 +618,15 @@ internal fun HistorySheet(
     }
 }
 
+/**
+ * The reject sub-dialog, in the web's words (`InvoiceDetailModal.jsx:108-154`):
+ * "Reject `ref`", why a reason is needed, the reason — required, and said so
+ * in red until there is one — and "Reject Invoice" ("Rejecting..." while it runs).
+ */
 @Composable
 private fun RejectDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
     ZillitDialogShell(
-        title = str(S.ah_reject_invoice),
-        subtitle = str(S.desktop_invoice_named, detail.invoice.displayNumber),
+        title = str(S.desktop_reject_named, detail.invoice.displayNumber),
         onDismiss = { onEvent(InvoicesEvent.CancelReject) },
         visible = true,
         actions = {
@@ -549,22 +636,33 @@ private fun RejectDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = str(S.reject),
+                text = if (detail.acting) str(S.desktop_ce_cards_rejecting) else str(S.ah_reject_invoice),
                 onClick = { onEvent(InvoicesEvent.ConfirmReject) },
                 variant = ButtonVariant.Danger,
-                enabled = detail.rejectReason.isNotBlank(),
+                enabled = detail.rejectReason.isNotBlank() && !detail.acting,
                 loading = detail.acting,
             )
         },
     ) {
+        ZillitText(
+            text = str(S.desktop_inv_reject_prompt),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textSecondary,
+        )
         ZillitTextField(
             value = detail.rejectReason,
             onValueChange = { onEvent(InvoicesEvent.RejectReasonChanged(it)) },
-            label = str(S.docusign_decline_reason_label),
-            placeholder = str(S.desktop_inv_why_rejected_placeholder),
+            placeholder = str(S.desktop_inv_rejection_reason_placeholder),
             singleLine = false,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (detail.rejectReason.isBlank()) {
+            ZillitText(
+                text = str(S.desktop_inv_rejection_reason_required),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.danger,
+            )
+        }
     }
 }
 
@@ -572,9 +670,12 @@ private fun RejectDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit
 internal fun String.humanised(): String =
     trim().replace('_', ' ').replace('-', ' ').lowercase().replaceFirstChar { it.uppercase() }
 
-private const val FIELDS_PER_ROW = 3
-private const val PO_ID_CHARS = 5
 private val DETAIL_WIDTH = 1180.dp
 private val DETAIL_PANE_WIDTH = 480.dp
 private val PREVIEW_HEIGHT = 560.dp
 private val TIER_DOT = 28.dp
+private val TIER_MIN_WIDTH = 80.dp
+private val TIER_GLYPH = 14.dp
+private val CURRENT_DOT = 10.dp
+private val CONNECTOR_WIDTH = 32.dp
+private const val HELD_BORDER_ALPHA = 0.5f

@@ -3,7 +3,12 @@ package com.zillit.desktop.feature.invoices
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.data.creditNoteBody
 import com.zillit.desktop.feature.invoices.data.parseCreditNote
+import com.zillit.desktop.feature.invoices.data.parseSalesInvoices
 import com.zillit.desktop.feature.invoices.data.salesInvoiceBody
+import com.zillit.desktop.feature.invoices.domain.ClientAddress
+import com.zillit.desktop.feature.invoices.domain.SalesTerms
+import com.zillit.desktop.feature.invoices.ui.SalesEvent
+import com.zillit.desktop.feature.invoices.ui.SalesField
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
 import com.zillit.desktop.feature.invoices.domain.CodedLine
@@ -182,7 +187,7 @@ class CreditAndSalesFlowTest {
             SalesInvoiceWrite(
                 reference = "SI-1",
                 clientName = "Channel 4",
-                description = "",
+                clientAddress = ClientAddress(line1 = "1 High St", city = "London", postalCode = "W1", country = "UK"),
                 currency = "GBP",
                 invoiceDate = "2026-09-23",
                 dueDate = "2026-10-23",
@@ -193,6 +198,42 @@ class CreditAndSalesFlowTest {
         assertEquals("2026-09-23", body["invoice_date"]!!.jsonPrimitive.content)
         assertEquals(120.0, body["gross_amount"]!!.jsonPrimitive.content.toDouble())
         assertEquals(1, body["line_items"]!!.jsonArray.size)
+        assertEquals("SI-1", body["reference"]!!.jsonPrimitive.content)
+        // `client_address` as the web's form builds it; no description and no pay_terms.
+        val address = body["client_address"]!!.jsonObject
+        assertEquals(
+            listOf("line1", "line2", "city", "state", "country", "postal_code"),
+            address.keys.toList(),
+        )
+        assertEquals("London", address["city"]!!.jsonPrimitive.content)
+        assertEquals("W1", address["postal_code"]!!.jsonPrimitive.content)
+        assertEquals("", address["line2"]!!.jsonPrimitive.content)
+        assertFalse("description" in body)
+        assertFalse("pay_terms" in body)
+    }
+
+    @Test
+    fun `an update sends no reference, and a stored address reads back from an object or a string`() {
+        val update = salesInvoiceBody(
+            SalesInvoiceWrite(
+                clientName = "Channel 4",
+                clientAddress = ClientAddress(),
+                currency = "GBP",
+                invoiceDate = "2026-09-23",
+                dueDate = "2026-10-23",
+                lines = emptyList(),
+            ),
+        )
+        assertFalse("reference" in update)
+        val stored = parseSalesInvoices(
+            Json.parseToJsonElement(
+                """[{"id":"s1","client_address":"{\"line1\":\"1 High St\",\"city\":\"London\"}","pay_terms":""},
+                   {"id":"s2","client_address":{"line1":"2 Low Rd","postal_code":"E1"}}]""",
+            ),
+        )
+        assertEquals("1 High St, London", stored.first().addressLine)
+        assertEquals("30 days", stored.first().termsLabel)
+        assertEquals("2 Low Rd, E1", stored.last().addressLine)
     }
 
     @Test
@@ -312,7 +353,7 @@ class CreditAndSalesFlowTest {
             vm.onEvent(InvoicesEvent.ConfirmSalesInvoice)
             advanceUntilIdle()
             val sent = repo.sales.single()
-            assertTrue(sent.reference.startsWith("SI-"))
+            assertTrue(sent.reference.orEmpty().startsWith("SI-"))
             assertEquals(TODAY, sent.invoiceDate)
             assertEquals("2026-10-23", sent.dueDate, "a blank due date is today plus 30 days")
             assertNull(vm.state.value.salesDraft)
@@ -332,6 +373,68 @@ class CreditAndSalesFlowTest {
         vm.onEvent(InvoicesEvent.ConfirmDeleteSales)
         advanceUntilIdle()
         assertEquals(listOf("s1"), repo.salesDeleted)
+    }
+
+    @Test
+    fun `the due date follows the invoice date and the terms`() = runTest(dispatcher) {
+        val vm = credits(Repo())
+        vm.onEvent(InvoicesEvent.StartSalesInvoice)
+        val draft = assertNotNull(vm.state.value.salesDraft)
+        assertEquals("2026-10-23", draft.dueDate, "today plus the thirty-day default")
+        vm.onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(invoiceDate = "2026-11-01")))
+        assertEquals("2026-12-01", vm.state.value.salesDraft?.dueDate)
+        vm.onEvent(InvoicesEvent.EditSalesInvoice(vm.state.value.salesDraft!!.copy(payTerms = SalesTerms.Days14)))
+        assertEquals("2026-11-15", vm.state.value.salesDraft?.dueDate)
+        vm.onEvent(InvoicesEvent.EditSalesInvoice(vm.state.value.salesDraft!!.copy(payTerms = SalesTerms.OnReceipt)))
+        assertEquals("2026-11-01", vm.state.value.salesDraft?.dueDate)
+        // A typed due date stands until the date or the terms move again.
+        vm.onEvent(InvoicesEvent.EditSalesInvoice(vm.state.value.salesDraft!!.copy(dueDate = "2027-01-05")))
+        assertEquals("2027-01-05", vm.state.value.salesDraft?.dueDate)
+    }
+
+    @Test
+    fun `a sales invoice without a client or lines is refused with the web's messages`() = runTest(dispatcher) {
+        val repo = Repo()
+        val vm = credits(repo)
+        vm.onEvent(InvoicesEvent.StartSalesInvoice)
+        vm.onEvent(InvoicesEvent.ConfirmSalesInvoice)
+        val draft = assertNotNull(vm.state.value.salesDraft)
+        assertEquals("Client name is required", draft.errors[SalesField.ClientName])
+        assertNotNull(draft.lineError)
+        assertTrue(repo.sales.isEmpty())
+    }
+
+    @Test
+    fun `a draft opened from its preview is edited and updated in place`() = runTest(dispatcher) {
+        val stored = SalesInvoice(
+            "s1",
+            reference = "SI-7",
+            clientName = "Channel 4",
+            status = SalesInvoiceStatus.Draft,
+            invoiceDateMs = NOW,
+            dueDateMs = NOW,
+            clientAddress = ClientAddress(city = "London"),
+            lineItems = listOf(CodedLine("l1", description = "Fees", account = "4000", amount = 100.0)),
+            lineItemsJson = """[{"id":"l1","tracking_codes":{"set1":"LOC-LON"},"tags":["a"]}]""",
+        )
+        val repo = Repo(salesRecord = stored)
+        val vm = credits(repo)
+        vm.onEvent(SalesEvent.Preview(stored.copy(clientName = "stale")))
+        advanceUntilIdle()
+        assertEquals("Channel 4", vm.state.value.sales.preview?.clientName, "the preview reads GET /:id")
+        vm.onEvent(SalesEvent.Edit)
+        val draft = assertNotNull(vm.state.value.salesDraft)
+        assertEquals("s1", draft.editingId)
+        assertEquals("London", draft.address.city)
+        assertNull(vm.state.value.sales.preview)
+        vm.onEvent(InvoicesEvent.ConfirmSalesInvoice)
+        advanceUntilIdle()
+        val (id, write) = repo.salesUpdates.single()
+        assertEquals("s1", id)
+        assertNull(write.reference, "an update keeps the stored reference")
+        val line = salesInvoiceBody(write)["line_items"]!!.jsonArray.single().jsonObject
+        assertEquals("LOC-LON", line["tracking_codes"]!!.jsonObject["set1"]!!.jsonPrimitive.content)
+        assertTrue(repo.sales.isEmpty())
     }
 
     // -- harness ---------------------------------------------------------------------------
@@ -354,7 +457,18 @@ class CreditAndSalesFlowTest {
     private class Repo(
         private val notes: List<CreditNote> = emptyList(),
         private val lock: PeriodLock = PeriodLock(),
+        private val salesRecord: SalesInvoice? = null,
     ) : InvoicesRepository {
+        val salesUpdates = mutableListOf<Pair<String, SalesInvoiceWrite>>()
+
+        override suspend fun salesInvoice(id: String): ZillitResult<SalesInvoice> =
+            salesRecord?.let { ZillitResult.Success(it) } ?: ZillitResult.Success(SalesInvoice(id))
+
+        override suspend fun updateSalesInvoice(id: String, invoice: SalesInvoiceWrite): ZillitResult<Unit> {
+            salesUpdates += id to invoice
+            return ZillitResult.Success(Unit)
+        }
+
         val writes = mutableListOf<Pair<String, CreditNoteWrite>>()
         val deleted = mutableListOf<String>()
         val applied = mutableListOf<String>()

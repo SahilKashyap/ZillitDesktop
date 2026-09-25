@@ -82,7 +82,8 @@ internal fun approveBody(tierNumber: Int, totalTiers: Int): JsonObject = buildJs
     put("total_tiers", JsonPrimitive(totalTiers.coerceAtLeast(1)))
 }
 
-internal fun rejectBody(reason: String): JsonObject = buildJsonObject { put("reason", JsonPrimitive(reason.trim())) }
+/** The reason as typed — the web sends it untrimmed (`ApprovalPage.jsx` `rejectOne`). */
+internal fun rejectBody(reason: String): JsonObject = buildJsonObject { put("reason", JsonPrimitive(reason)) }
 
 private fun String?.orNull(): JsonElement = this?.takeIf { it.isNotBlank() }?.let(::JsonPrimitive) ?: JsonNull
 
@@ -117,6 +118,7 @@ internal fun parseInvoice(obj: JsonObject?): Invoice? {
         dueDateMs = obj.dateMs("due_date"),
         effectiveDateMs = obj.dateMs("effective_date"),
         payMethod = PayMethod.from(obj.text("pay_method")),
+        payMethodRaw = obj.text("pay_method"),
         status = InvoiceStatus.from(obj.text("status")),
         statusRaw = obj.text("status"),
         approvalStatus = ApprovalStatus.from(obj.text("approval_status")),
@@ -127,6 +129,7 @@ internal fun parseInvoice(obj: JsonObject?): Invoice? {
         poId = obj.text("po_id"),
         poNumber = obj.text("po_number"),
         linkedPos = parseLinkedPos(obj),
+        poIds = obj.arrayField("po_ids").mapNotNull(::poIdOf),
         attachments = obj.arrayField("attachments").mapNotNull { parseAttachment(it as? JsonObject) },
         approvals = parseApprovals(obj),
         rejectionReason = obj.text("rejection_reason"),
@@ -143,13 +146,50 @@ internal fun parseInvoice(obj: JsonObject?): Invoice? {
         lineItems = lines,
         taxLine = taxLine,
         lineItemsJson = rawLineItems(obj),
+        nominalCode = obj.text("nominal_code"),
+        activeRunId = obj.text("active_run_id"),
+        paidAtMs = obj.dateMs("paid_at"),
+        wireAttachments = parseWireAttachments(obj),
+        cis = obj.flag("cisApplies") == true || obj.flag("cis") == true,
+        paymentTerms = obj.text("paymentTerms", "terms"),
     )
 }
 
 private fun parseLinkedPos(obj: JsonObject): List<LinkedPo> = obj.arrayField("linked_pos").mapNotNull { row ->
     val o = row as? JsonObject ?: return@mapNotNull null
     val poId = o.text("po_id", "id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
-    LinkedPo(poId, o.text("po_number"), o.text("po_vendor_id", "vendor_id"), o.number("po_gross_total", "gross_total"))
+    LinkedPo(
+        poId,
+        o.text("po_number"),
+        o.text("po_vendor_id", "vendor_id"),
+        o.number("po_gross_total", "gross_total"),
+        notes = linkNotes(o["notes"]),
+    )
+}
+
+/**
+ * A link's `notes` as the review reads them: an array, a JSON string holding
+ * one, or a plain string — trimmed, blanks dropped (`InboxReviewModal`).
+ */
+internal fun linkNotes(element: JsonElement?): List<String> {
+    val raw: List<JsonElement> = when (element) {
+        is JsonArray -> element
+        is JsonPrimitive -> if (!element.isString || element.content.isBlank()) {
+            emptyList()
+        } else {
+            (runCatching { invoicesJson.parseToJsonElement(element.content) }.getOrNull() as? JsonArray)
+                ?: listOf(element)
+        }
+        else -> emptyList()
+    }
+    return raw.mapNotNull { (it as? JsonPrimitive)?.content?.trim()?.takeIf(String::isNotEmpty) }
+}
+
+/** One `po_ids` entry: a bare id, or an object carrying one. */
+private fun poIdOf(e: JsonElement): String? = when (e) {
+    is JsonPrimitive -> e.content.trim().takeIf { it.isNotBlank() && e !is JsonNull }
+    is JsonObject -> e.text("po_id", "id", "_id").takeIf { it.isNotBlank() }
+    else -> null
 }
 
 private fun parseApprovals(obj: JsonObject): List<Approval> = obj.arrayField("approvals").mapNotNull { row ->
@@ -219,6 +259,7 @@ internal fun parseSettings(data: JsonElement?): InvoiceSettings {
         teamMembers = members,
         runApprovers = chain.flatMap { it.userIds }.toSet(),
         runAuthorisation = chain,
+        hasMe = me != null,
     )
 }
 
@@ -230,7 +271,8 @@ private fun JsonObject.hasPostingRight(): Boolean {
     return text.equals("unlimited", ignoreCase = true) || (text.toDoubleOrNull() ?: 0.0) > 0.0
 }
 
-internal fun parseTierConfigs(data: JsonElement?): List<ApprovalTierConfig> = rowsOf(data).map { row ->
+internal fun parseTierConfigs(data: JsonElement?): List<ApprovalTierConfig> =
+    legacyTierConfig(data)?.let(::listOf) ?: rowsOf(data).map { row ->
     ApprovalTierConfig(
         id = row.text("id", "_id"),
         scope = TierScope.from(row.text("scope")),
@@ -242,20 +284,47 @@ internal fun parseTierConfigs(data: JsonElement?): List<ApprovalTierConfig> = ro
                 rules = t.arrayField("rules").mapNotNull { rule ->
                     (rule as? JsonObject)?.let {
                         TierRule(
-                            type = it.text("type").ifBlank { TierRule.DEFAULT },
+                            // As stored: a rule with no type is neither default nor amount on the web.
+                            type = it.text("type"),
                             amountThreshold = it.number("amount_threshold", "threshold"),
                             userIds = it.arrayField("user_ids", "users").mapNotNull(::userIdOf),
                         )
                     }
                 },
             )
-        }.sortedBy { it.order },
+        },
     )
 }
 
+/**
+ * The legacy shape the web still accepts (`resolveConfigForDepartment`,
+ * `approval-helpers.js:132-138`): `{ "1": [{ user_id, … }], "2": […] }`, one
+ * chain for everybody, each numbered tier a default rule.
+ */
+private fun legacyTierConfig(data: JsonElement?): ApprovalTierConfig? {
+    val obj = data as? JsonObject ?: return null
+    if (obj.isEmpty() || !obj.keys.all { key -> key.isNotEmpty() && key.all(Char::isDigit) }) return null
+    return ApprovalTierConfig(
+        scope = TierScope.All,
+        tiers = obj.entries.sortedBy { it.key.toInt() }.map { (key, users) ->
+            TierLevel(
+                order = key.toInt(),
+                rules = listOf(
+                    TierRule(
+                        type = TierRule.DEFAULT,
+                        userIds = ((users as? JsonArray) ?: JsonArray(emptyList())).mapNotNull(::userIdOf),
+                    ),
+                ),
+            )
+        },
+    )
+}
+
+/** An id as the server stored it — the web keeps even a blank one (`r.user_ids || []`). */
 private fun userIdOf(e: JsonElement): String? = when (e) {
-    is JsonPrimitive -> e.content.takeIf { it.isNotBlank() }
-    is JsonObject -> e.text("user_id", "id", "_id").takeIf { it.isNotBlank() }
+    is JsonNull -> null
+    is JsonPrimitive -> e.content
+    is JsonObject -> e.text("user_id", "id", "_id")
     else -> null
 }
 
@@ -276,6 +345,7 @@ internal fun parseVendors(data: JsonElement?): List<Vendor> = rowsOf(data).mapNo
         currency = row.text("currency"),
         bankId = row.text("bank_id", "bankId"),
         contactPerson = row.text("contact_person", "contactPerson"),
+        city = (row["address"] as? JsonObject)?.text("city").orEmpty(),
     )
 }
 

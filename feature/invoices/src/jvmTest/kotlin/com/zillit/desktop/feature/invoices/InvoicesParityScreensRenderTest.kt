@@ -168,7 +168,7 @@ class InvoicesParityScreensRenderTest {
                 page = AccountantPage.Inbox,
                 enter = EnterInvoiceForm(tab = EnterTab.Manual, companyId = "co1", paid = true),
             ),
-            listOf("Already Paid", "Prod Co"),
+            listOf("Already paid", "Prod Co"),
         ),
     )
 

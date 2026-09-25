@@ -110,11 +110,11 @@ class InvoiceP2ParityTest {
         val headers = vm.state.value.openItemRows.filterIsInstance<OpenItemRow.Header>()
         assertEquals(listOf("v1|GBP", "v1|USD"), headers.map { it.group.key })
         // Payment Runs opens with everything ticked, as the web does.
-        assertEquals(setOf("a", "b", "c"), vm.state.value.selected)
+        assertEquals(setOf("a", "b", "c"), vm.state.value.pay.openItemsSelected)
         vm.onEvent(InvoicesEvent.SelectGroup(listOf("a", "b")))
-        assertEquals(setOf("c"), vm.state.value.selected)
+        assertEquals(setOf("c"), vm.state.value.pay.openItemsSelected)
         vm.onEvent(InvoicesEvent.SelectGroup(listOf("a", "b")))
-        assertEquals(setOf("a", "b", "c"), vm.state.value.selected)
+        assertEquals(setOf("a", "b", "c"), vm.state.value.pay.openItemsSelected)
         vm.onEvent(InvoicesEvent.ToggleGroupOpen("v1|GBP"))
         assertEquals(3, vm.state.value.openItemRows.size, "a shut group keeps only its header")
     }

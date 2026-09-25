@@ -39,6 +39,14 @@ data class ProfileSnapshot(
     val departmentName: String? = null,
     val designationId: String? = null,
     val designationName: String? = null,
+    /**
+     * The identifiers behind the two names (`department_accounts`,
+     * `designation_financial_controller_accounts`) — what role checks
+     * should compare. Not cached: null on an offline start, when readers
+     * fall back to the names.
+     */
+    val departmentIdentifier: String? = null,
+    val designationIdentifier: String? = null,
     /** Producers and main cast may withhold their name from the crew list. */
     val keepNamePrivate: Boolean = false,
     /**
@@ -102,6 +110,14 @@ data class ProjectSnapshot(
      * web's `getProjectLanguage` does.
      */
     val languageCode: String? = null,
+    /**
+     * The company's contact block — `company_address`, `company_phone`,
+     * `company_email` — for documents the production issues (a sales
+     * invoice's header). Not cached: null until the details are read.
+     */
+    val companyAddress: String? = null,
+    val companyPhone: String? = null,
+    val companyEmail: String? = null,
 )
 
 data class UserSnapshot(

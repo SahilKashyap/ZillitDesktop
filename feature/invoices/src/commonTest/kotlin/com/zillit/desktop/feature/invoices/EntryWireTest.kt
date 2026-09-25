@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.invoices
 
+import com.zillit.desktop.feature.invoices.data.assignBody
 import com.zillit.desktop.feature.invoices.data.entryUpdateBody
 import com.zillit.desktop.feature.invoices.data.normaliseLockedDate
 import com.zillit.desktop.feature.invoices.data.parseInvoice
@@ -10,7 +11,9 @@ import com.zillit.desktop.feature.invoices.data.parseSettings
 import com.zillit.desktop.feature.invoices.data.quickEntryBody
 import com.zillit.desktop.feature.invoices.domain.QuickEntry
 import com.zillit.desktop.feature.invoices.domain.CodedLine
+import com.zillit.desktop.feature.invoices.domain.EntryCoding
 import com.zillit.desktop.feature.invoices.domain.EntryHeader
+import com.zillit.desktop.feature.invoices.domain.EntryTotals
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.TaxLine
 import kotlinx.serialization.json.Json
@@ -81,7 +84,7 @@ class EntryWireTest {
         val body = entryUpdateBody(
             header = EntryHeader(),
             lines = lines,
-            tax = TaxLine(account = "2200"),
+            tax = TaxLine(account = "2200", tags = listOf("t")),
             taxAmount = 12.0,
             savedLinesJson = saved,
             chart = setOf("2200"),
@@ -107,6 +110,95 @@ class EntryWireTest {
         assertEquals("2200", tax["account"]?.jsonPrimitive?.content)
         assertEquals("t", tax["tags"]!!.jsonArray.single().jsonPrimitive.content)
         assertEquals("under_review", body["status"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a changed currency writes the coded totals as the invoice's own amounts, rounded`() {
+        val body = entryUpdateBody(
+            header = EntryHeader(currency = "USD"),
+            lines = emptyList(),
+            amounts = EntryTotals(net = 100.004, tax = 20.0049, gross = 120.0089),
+        )
+        assertEquals(100.0, body["net_amount"]?.jsonPrimitive?.content?.toDouble())
+        assertEquals(20.0, body["tax_amount"]?.jsonPrimitive?.content?.toDouble())
+        assertEquals(120.01, body["gross_amount"]?.jsonPrimitive?.content?.toDouble())
+        assertEquals("USD", body["currency"]?.jsonPrimitive?.content)
+        // Without a change the entered split is left as it is.
+        val plain = entryUpdateBody(header = EntryHeader(), lines = emptyList())
+        assertFalse("net_amount" in plain || "tax_amount" in plain || "gross_amount" in plain)
+    }
+
+    @Test
+    fun `a line seeded from a PO keeps its layers, tags, custom fields and rental dates on the first save`() {
+        val order = com.zillit.desktop.feature.invoices.data.parseLinkedPos(
+            Json.parseToJsonElement(
+                """[{"po_id":"po1","po_number":"PO-1","line_items":[{"id":"pl1","description":"Lamps",""" +
+                    """"total":100,"account":"2400","tracking_codes":{"set":"LOC"},"tags":["prep"],""" +
+                    """"custom_fields":[{"name":"Set","value":"A"}],"rental_start":1789257600000,"rental_end":null}]}]""",
+            ),
+        )
+        var n = 0
+        val lines = EntryCoding.poLines(order, { "x${++n}" })
+        // An uncoded invoice has no saved lines to fall back on.
+        val row = entryUpdateBody(EntryHeader(), lines, savedLinesJson = "")["line_items"]!!.jsonArray.single().jsonObject
+        assertEquals("LOC", row["tracking_codes"]!!.jsonObject["set"]?.jsonPrimitive?.content)
+        assertEquals("prep", row["tags"]!!.jsonArray.single().jsonPrimitive.content)
+        assertEquals("Set", row["custom_fields"]!!.jsonArray.single().jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals(1_789_257_600_000L, row["rental_start"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(JsonNull, row["rental_end"])
+    }
+
+    @Test
+    fun `a saved line without an id keeps its extras on save`() {
+        val invoice = parseInvoice(
+            obj(
+                """{"_id":"i1","line_items":[{"description":"Lamps","total":100,"account":"2400",""" +
+                    """"tracking_codes":{"set":"LOC"},"tags":["prep"],"custom_fields":[{"fields":[{"name":"Set","value":"B"}]}],""" +
+                    """"rental_start":"2026-09-01"}]}""",
+            ),
+        )!!
+        val line = invoice.lineItems.single()
+        assertEquals("line-0", line.id)
+        assertEquals(listOf("Set" to "B"), line.carried?.customFields)
+        val row = entryUpdateBody(EntryHeader(), invoice.lineItems, savedLinesJson = invoice.lineItemsJson)["line_items"]!!
+            .jsonArray.single().jsonObject
+        assertEquals("LOC", row["tracking_codes"]!!.jsonObject["set"]?.jsonPrimitive?.content)
+        assertEquals("prep", row["tags"]!!.jsonArray.single().jsonPrimitive.content)
+        assertEquals(1, row["custom_fields"]!!.jsonArray.size)
+        assertEquals("2026-09-01", row["rental_start"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `layers and tags edited here are what is written, cleared ones included`() {
+        val invoice = parseInvoice(
+            obj("""{"_id":"i1","line_items":[{"id":"l1","total":10,"tracking_codes":{"set":"LOC"},"tags":["prep"]}]}"""),
+        )!!
+        val cleared = invoice.lineItems.map { it.copy(trackingCodes = emptyMap(), tags = listOf("wrap")) }
+        val row = entryUpdateBody(EntryHeader(), cleared, savedLinesJson = invoice.lineItemsJson)["line_items"]!!
+            .jsonArray.single().jsonObject
+        assertTrue(row["tracking_codes"]!!.jsonObject.isEmpty())
+        assertEquals("wrap", row["tags"]!!.jsonArray.single().jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a pay method this client does not know is written back as it was stored`() {
+        val invoice = parseInvoice(obj("""{"_id":"i1","pay_method":"direct_credit"}"""))!!
+        val header = EntryHeader.of(invoice)
+        assertEquals("direct_credit", header.payMethodCode)
+        assertEquals("direct_credit", entryUpdateBody(header, null)["pay_method"]?.jsonPrimitive?.content)
+        // Picking a method replaces it.
+        val picked = header.copy(payMethod = PayMethod.Wire, payMethodCode = "")
+        assertEquals("wire", entryUpdateBody(picked, null)["pay_method"]?.jsonPrimitive?.content)
+        // A known one, or the legacy spelling of one, is not kept raw.
+        assertEquals("", EntryHeader.of(parseInvoice(obj("""{"_id":"i2","pay_method":"faster_payment"}"""))!!).payMethodCode)
+    }
+
+    @Test
+    fun `assigning sends who, why and when, as the web does`() {
+        val body = assignBody("u2", "Workload Balancing", 1_789_257_600_000L)
+        assertEquals("u2", body["assigned_to"]?.jsonPrimitive?.content)
+        assertEquals("Workload Balancing", body["assignment_reason"]?.jsonPrimitive?.content)
+        assertEquals(1_789_257_600_000L, body["updated_at"]?.jsonPrimitive?.content?.toLong())
     }
 
     @Test
@@ -174,6 +266,7 @@ class EntryWireTest {
                 taxRate = 20.0,
                 effectiveDate = "",
                 today = "2026-09-23",
+                tags = listOf("prep"),
             ),
         )
         assertEquals("INV-7", body["reference"]?.jsonPrimitive?.content)
@@ -183,5 +276,6 @@ class EntryWireTest {
         assertEquals("bacs", body["pay_method"]?.jsonPrimitive?.content)
         assertEquals("2026-09-23", body["invoice_date"]?.jsonPrimitive?.content)
         assertEquals(JsonNull, body["effective_date"])
+        assertEquals("prep", body["tags"]!!.jsonArray.single().jsonPrimitive.content)
     }
 }

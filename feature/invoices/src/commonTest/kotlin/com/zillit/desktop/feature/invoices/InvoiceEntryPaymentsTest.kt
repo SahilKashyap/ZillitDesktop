@@ -32,6 +32,7 @@ import com.zillit.desktop.feature.invoices.domain.canAccessEntryRow
 import com.zillit.desktop.feature.invoices.ui.AccountantPage
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
+import com.zillit.desktop.feature.invoices.ui.PaymentsEvent
 import com.zillit.desktop.feature.invoices.ui.SalesInvoiceDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -221,7 +222,7 @@ class InvoiceEntryPaymentsTest {
     fun `the payment queue opens with everything ticked`() = runTest(dispatcher) {
         val vm = open(PayRepo(), AccountantPage.Payments, senior())
         advanceUntilIdle()
-        assertEquals(setOf("bacs-1", "bacs-2", "wire-1"), vm.state.value.selected)
+        assertEquals(setOf("bacs-1", "bacs-2", "wire-1"), vm.state.value.pay.openItemsSelected)
     }
 
     @Test
@@ -229,7 +230,7 @@ class InvoiceEntryPaymentsTest {
         val repo = PayRepo()
         val vm = open(repo, AccountantPage.Payments, senior())
         advanceUntilIdle()
-        vm.onEvent(InvoicesEvent.ToggleSelect("wire-1"))
+        vm.onEvent(PaymentsEvent.ToggleOpenItem("wire-1"))
         assertEquals(PayMethod.Bacs, vm.state.value.selectedPayMethod)
 
         vm.onEvent(InvoicesEvent.ProcessSelected(null))
@@ -317,7 +318,7 @@ class InvoiceEntryPaymentsTest {
     @Test
     fun `vendor spend adds up their invoices, biggest first`() {
         val vendors = listOf(
-            Vendor(id = "v1", name = "Acme Lighting", taxNumber = "GB1", bankName = "Barclays"),
+            Vendor(id = "v1", name = "Acme Lighting", taxNumber = "GB1", bankName = "Barclays", bankId = "b1"),
             Vendor(id = "v2", name = "Zed Trucks"),
         )
         val invoices = listOf(
@@ -329,8 +330,44 @@ class InvoiceEntryPaymentsTest {
         assertEquals(listOf("Zed Trucks", "Acme Lighting"), rows.map { it.vendor.name })
         assertEquals(350.0, rows.last().totalSpend)
         assertEquals(2, rows.last().invoiceCount)
-        assertTrue(rows.last().isCompliant)
-        assertEquals("No tax ID or bank", rows.first().complianceLabel)
+        // The web's fixed labels: every master vendor is "Pending"; the bank is the linked bank_id.
+        assertEquals("Pending", rows.first().complianceLabel)
+        assertTrue(rows.last().hasBank)
+        assertFalse(rows.first().hasBank)
+        assertEquals("UK", rows.first().country, "no stored country reads as the web's default")
+    }
+
+    /**
+     * `fetchSuppliers`: a vendor with no invoice by id is matched by the
+     * supplier name, mixed currencies convert to the default, a net-only
+     * invoice counts its net, and a supplier only named on invoices gets a row
+     * of its own, compliance "Unknown".
+     */
+    @Test
+    fun `vendor spend falls back to the name, converts currencies and keeps invoice-only suppliers`() {
+        val vendors = listOf(Vendor(id = "v1", name = "Acme Lighting"), Vendor(id = "v2", name = "Zed Trucks"))
+        val invoices = listOf(
+            row("a", vendorId = "v1", gross = 100.0, currency = "GBP"),
+            row("b", vendorId = "v1", gross = 200.0, currency = "USD"),
+            row("c", vendorId = "").copy(supplierName = " zed trucks ", grossAmount = 0.0, netAmount = 40.0),
+            row("d", vendorId = "").copy(supplierName = "Grip House", grossAmount = 75.0),
+            row("e", vendorId = "").copy(supplierName = "grip house", grossAmount = 25.0),
+        )
+        val rates = CurrencyRates("GBP", mapOf("USD" to 2.0))
+        val rows = VendorSpendReport.rows(vendors, invoices, rates).associateBy { it.vendor.name }
+
+        val acme = rows.getValue("Acme Lighting")
+        assertEquals(200.0, acme.totalSpend, "£100 + $200 at 2 to the pound")
+        assertEquals("GBP", acme.currency)
+        assertTrue(acme.mixedCurrency)
+
+        assertEquals(40.0, rows.getValue("Zed Trucks").totalSpend, "matched by name, the net standing in for gross")
+
+        val grip = rows.getValue("Grip House")
+        assertEquals(100.0, grip.totalSpend)
+        assertFalse(grip.fromMaster)
+        assertEquals("Unknown", grip.complianceLabel)
+        assertEquals(3, rows.size, "one row per supplier, however it is spelled")
     }
 
     // -- Sales Invoices -----------------------------------------------------
@@ -362,8 +399,9 @@ class InvoiceEntryPaymentsTest {
 
     // -- the wire -----------------------------------------------------------
 
+    /** `run.total_amount || run.computed_total || 0` — the stored figure first (`PaymentsPage.jsx:2100`). */
     @Test
-    fun `a run's computed total wins over the stored one`() {
+    fun `a run's stored total wins over the computed one`() {
         val json = Json.parseToJsonElement(
             """
             {"data":[{"_id":"r1","number":"PR-001","name":"BACs Run",
@@ -372,7 +410,7 @@ class InvoiceEntryPaymentsTest {
             """.trimIndent(),
         )
         val run = parseRuns(json).single()
-        assertEquals(250.5, run.total)
+        assertEquals(900.0, run.total)
         assertEquals(PaymentRunStatus.Pending, run.status)
         assertEquals(PayMethod.Bacs, run.payMethod)
         assertEquals(2, run.invoiceCount)

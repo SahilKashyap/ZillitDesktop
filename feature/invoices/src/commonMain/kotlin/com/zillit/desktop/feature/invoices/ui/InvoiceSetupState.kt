@@ -38,6 +38,8 @@ data class InvoiceSetupState(
     /** The level whose user picker is open, or null. */
     val pickingForTier: Int? = null,
     val pickerSearch: String = "",
+    /** People ticked in the open picker, not yet added — the web's `picked` (`SettingsPage.jsx:242-314`). */
+    val pickerStaged: List<String> = emptyList(),
 ) {
     /** Whether [section] differs from what the server holds — the web's per-card dirty flags. */
     fun isDirty(section: InvoiceSetupSection): Boolean = when (section) {
@@ -87,4 +89,10 @@ data class TeamMemberDraft(
             isNew = isNew,
         )
     }
+}
+
+/** The Settings page's own events beyond [InvoicesEvent]'s, routed to [InvoiceSetupActions]. */
+sealed interface SetupEvent : InvoicesEvent {
+    /** The picker's "Add N users": every ticked person onto the level, and the picker shuts. */
+    data object AddStagedRunAuthUsers : SetupEvent
 }

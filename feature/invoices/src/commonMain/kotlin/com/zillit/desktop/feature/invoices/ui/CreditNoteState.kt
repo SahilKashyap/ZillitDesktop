@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.invoices.domain.CreditNoteSort
 import com.zillit.desktop.feature.invoices.domain.CreditNoteType
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
 import com.zillit.desktop.feature.invoices.domain.Invoice
+import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.LineDraft
 import com.zillit.desktop.feature.invoices.domain.LineEdit
 
@@ -28,6 +29,18 @@ data class CreditNotesUi(
     val applyingId: String? = null,
     /** The row being deleted — dimmed until the list comes back. */
     val deletingId: String? = null,
+    /** An attachment open in the in-app viewer — the web's `CreditAttachmentViewer`. */
+    val viewing: AttachmentView? = null,
+    /** Who raised and last changed the note open in the preview — name and designation. */
+    val people: Map<String, InvoiceAssignee> = emptyMap(),
+)
+
+/** One attachment being looked at: loading, its bytes, or the failure. */
+data class AttachmentView(
+    val attachment: CreditAttachment,
+    val bytes: AttachmentBytes? = null,
+    val loading: Boolean = true,
+    val failed: Boolean = false,
 )
 
 data class CreditHistory(val note: CreditNote, val rows: List<HistoryEntry>? = null, val loading: Boolean = true)
@@ -63,6 +76,8 @@ data class CreditNoteForm(
     val locked: Boolean = false,
     /** The saved `line_items`, so an edit keeps the layers and tags this form does not show. */
     val savedLinesJson: String = "",
+    /** The Against Invoice list is open — on focus, even with nothing typed (`CreditsPage.jsx:526`). */
+    val pickerOpen: Boolean = false,
 ) {
     val isDispute: Boolean get() = type == CreditNoteType.Dispute
     val frozen: Boolean get() = locked || saving
@@ -79,9 +94,21 @@ sealed interface CreditEvent : InvoicesEvent {
     data object AddAttachment : CreditEvent
     data class RemoveAttachment(val index: Int) : CreditEvent
     data class OpenAttachment(val attachment: CreditAttachment) : CreditEvent
+    data object CloseAttachment : CreditEvent
+    data object DownloadAttachment : CreditEvent
+
+    /** The Against Invoice list: opened as the box takes focus, shut by a click outside. */
+    data object OpenInvoicePicker : CreditEvent
+    data object CloseInvoicePicker : CreditEvent
     data object Save : CreditEvent
     data object CloseForm : CreditEvent
-    data class Preview(val note: CreditNote) : CreditEvent
+
+    /**
+     * The preview. [fromRow] is a click on the row itself, which reads the
+     * note's unread first (`CreditsPage.jsx:862`); the row's View button opens
+     * the same preview and reads nothing (`CreditsPage.jsx:884-887`).
+     */
+    data class Preview(val note: CreditNote, val fromRow: Boolean = false) : CreditEvent
     data object ClosePreview : CreditEvent
     data object ShowHistory : CreditEvent
     data object HideHistory : CreditEvent

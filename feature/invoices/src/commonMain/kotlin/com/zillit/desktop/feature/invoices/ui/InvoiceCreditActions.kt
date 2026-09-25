@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.invoices.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.CodedLine
@@ -39,7 +40,11 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
             is InvoicesEvent.ActOnCreditNote -> apply(event.note)
             is CreditEvent.New -> startNew(event.type)
             is CreditEvent.Edit -> startEdit(event.note)
-            is CreditEvent.Change -> editForm { old -> event.form.copy(errors = old.errors - fixed(old, event.form)) }
+            is CreditEvent.Change -> editForm { old ->
+                // Typing in the Against box opens its list, as the web's onChange does.
+                val typed = old.invoiceQuery != event.form.invoiceQuery
+                event.form.copy(errors = old.errors - fixed(old, event.form), pickerOpen = event.form.pickerOpen || typed)
+            }
             is CreditEvent.Lines -> editForm { it.copy(lines = LineItems.apply(it.lines, event.edit, ::newId)) }
             is CreditEvent.PickInvoice -> editForm { pickInvoice(it, event.invoice) }
             CreditEvent.ClearInvoice -> editForm { it.copy(invoiceRef = "", invoiceId = "", invoiceQuery = "") }
@@ -48,11 +53,18 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
                 it.copy(attachments = it.attachments.filterIndexed { index, _ -> index != event.index })
             }
             is CreditEvent.OpenAttachment -> openAttachment(event.attachment)
+            CreditEvent.CloseAttachment -> ui { copy(viewing = null) }
+            CreditEvent.DownloadAttachment -> downloadAttachment()
+            CreditEvent.OpenInvoicePicker -> editForm { it.copy(pickerOpen = true) }
+            CreditEvent.CloseInvoicePicker -> editForm { it.copy(pickerOpen = false) }
             CreditEvent.Save -> save()
             CreditEvent.CloseForm -> ui { copy(form = form?.takeIf { it.saving }) }
             is CreditEvent.Preview -> {
-                vm.rememberNames(listOf(event.note.createdBy, event.note.updatedBy))
-                ui { copy(preview = event.note) }
+                if (event.fromRow) vm.readPageRow(AccountantPage.Credits, event.note.id)
+                val audit = listOf(event.note.createdBy, event.note.updatedBy).filter { it.isNotBlank() }
+                vm.rememberNames(audit)
+                val people = vm.people().filter { it.id in audit }.associateBy { it.id }
+                ui { copy(preview = event.note, people = people) }
             }
             CreditEvent.ClosePreview -> ui { copy(preview = null) }
             CreditEvent.ShowHistory -> showHistory()
@@ -93,12 +105,12 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
         if (state.periodLock.isLocked(note.effectiveDateMs)) return
         ui { copy(applyingId = note.id) }
         vm.run {
-            val result = vm.repo.applyCreditNote(note.id)
+            val result = vm.repo.applyCreditNoteWithMessage(note.id)
             vm.update { copy(error = (result as? ZillitResult.Failure)?.error?.localised()) }
             ui { copy(applyingId = null, preview = preview?.takeUnless { result is ZillitResult.Success }) }
             if (result is ZillitResult.Success) {
                 vm.notice(
-                    if (note.status == CreditNoteStatus.Disputed) {
+                    result.data?.localisedMessage() ?: if (note.status == CreditNoteStatus.Disputed) {
                         str(S.desktop_inv_dispute_resolved)
                     } else {
                         str(S.desktop_credit_note_applied)
@@ -116,6 +128,7 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
         val lines = if (type == CreditNoteType.Dispute) LineDraft() else LineDraft(listOf(CodedLine(newId())))
         ui { copy(form = CreditNoteForm(type = type, lines = lines), preview = null) }
         loadInvoices()
+        vm.loadLineReference()
     }
 
     /** Edit — or, in a closed period, View: the same form, frozen. Only an open note has it. */
@@ -141,6 +154,7 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
         )
         ui { copy(form = form, preview = null) }
         loadInvoices()
+        vm.loadLineReference()
     }
 
     private fun loadInvoices() {
@@ -158,15 +172,25 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
         ui { copy(form = this.form?.let(change)) }
     }
 
-    /** Picking an invoice brings its currency and, when it has one on file, its vendor. */
+    /**
+     * Picking an invoice brings its currency and its vendor when it has one on
+     * file; an invoice naming only a supplier clears the vendor, as the web's
+     * `setSelectedVendor(null)` does (`CreditsPage.jsx:540-542`). The list shuts.
+     */
     private fun pickInvoice(form: CreditNoteForm, invoice: Invoice): CreditNoteForm {
-        val vendor = invoice.vendorId.takeIf { it in vm.state.value.vendors }
+        val vendor = invoice.vendorId.takeIf { it.isNotBlank() && it in vm.state.value.vendors }
+        val vendorId = when {
+            vendor != null -> vendor
+            invoice.vendorId.isBlank() && invoice.supplierName.isNotBlank() -> ""
+            else -> form.vendorId
+        }
         return form.copy(
             invoiceRef = invoice.invoiceNumber,
             invoiceId = invoice.id,
             invoiceQuery = invoice.invoiceNumber,
             currency = invoice.currency,
-            vendorId = vendor ?: form.vendorId,
+            vendorId = vendorId,
+            pickerOpen = false,
             errors = form.errors - setOfNotNull(CreditField.InvoiceRef, CreditField.Vendor.takeIf { vendor != null }),
         )
     }
@@ -186,16 +210,35 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
         }
     }
 
+    /**
+     * View — the web's in-app `CreditAttachmentViewer`: "Loading attachment…",
+     * then the picture or the PDF's pages, or "Failed to load attachment".
+     */
     private fun openAttachment(attachment: CreditAttachment) {
         val stored = attachment.stored ?: return
+        ui { copy(viewing = AttachmentView(attachment)) }
         vm.run {
-            when (val bytes = vm.fetchAttachment(stored)) {
-                is ZillitResult.Failure -> vm.fail(bytes.error.localised())
-                is ZillitResult.Success -> {
-                    val opened = vm.saveAndOpen(attachment.name.ifBlank { stored.name }, bytes.data)
-                    if (opened is ZillitResult.Failure) vm.fail(opened.error.localised())
-                }
+            val bytes = vm.fetchAttachment(stored)
+            ui {
+                val open = viewing?.takeIf { it.attachment == attachment } ?: return@ui this
+                copy(
+                    viewing = when (bytes) {
+                        is ZillitResult.Success -> open.copy(bytes = AttachmentBytes(bytes.data), loading = false)
+                        is ZillitResult.Failure -> open.copy(loading = false, failed = true)
+                    },
+                )
             }
+        }
+    }
+
+    /** The viewer's Download: the fetched file to Downloads, opened. */
+    private fun downloadAttachment() {
+        val view = vm.state.value.credit.viewing ?: return
+        val bytes = view.bytes?.bytes ?: return
+        val name = view.attachment.name.ifBlank { view.attachment.stored?.name.orEmpty() }
+        vm.run {
+            val opened = vm.saveAndOpen(name, bytes)
+            if (opened is ZillitResult.Failure) vm.fail(opened.error.localised())
         }
     }
 
@@ -221,11 +264,14 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
             } else {
                 val write = write(form, attachments)
                 val id = form.editingId
-                if (id == null) vm.repo.createCreditNote(write) else vm.repo.updateCreditNote(id, write)
+                if (id == null) vm.repo.createCreditNoteWithMessage(write) else vm.repo.updateCreditNoteWithMessage(id, write)
             }
             if (result is ZillitResult.Success) {
                 ui { copy(form = null) }
-                vm.notice(str(if (form.editingId == null) S.desktop_inv_credit_saved else S.desktop_inv_credit_updated))
+                vm.notice(
+                    result.data?.localisedMessage()
+                        ?: str(if (form.editingId == null) S.desktop_inv_credit_saved else S.desktop_inv_credit_updated),
+                )
                 load()
             } else {
                 ui { copy(form = this.form?.copy(saving = false)) }
@@ -313,12 +359,12 @@ internal class InvoiceCreditActions(private val vm: InvoicesViewModel) {
         if (!vm.state.value.isAccountant || !deletable(note)) return
         ui { copy(confirmDelete = null, preview = null, deletingId = note.id) }
         vm.run {
-            val result = vm.repo.deleteCreditNote(note.id)
+            val result = vm.repo.deleteCreditNoteWithMessage(note.id)
             ui { copy(deletingId = null) }
             when (result) {
                 is ZillitResult.Failure -> vm.fail(result.error.localised())
                 is ZillitResult.Success -> {
-                    vm.notice(str(S.desktop_inv_credit_deleted))
+                    vm.notice(result.data?.localisedMessage() ?: str(S.desktop_inv_credit_deleted))
                     load()
                 }
             }

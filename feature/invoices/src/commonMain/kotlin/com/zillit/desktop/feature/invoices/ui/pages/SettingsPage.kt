@@ -5,6 +5,10 @@ package com.zillit.desktop.feature.invoices.ui.pages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import com.zillit.desktop.feature.invoices.ui.SetupEvent
+import androidx.compose.foundation.clickable
+import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
+import com.zillit.desktop.core.designsystem.component.ZillitCalcField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -38,20 +41,18 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitErrorState
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitMultiSelect
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
-import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.invoices.domain.InvoiceAlert
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignmentRule
@@ -78,20 +79,9 @@ import com.zillit.desktop.core.strings.str
 @Composable
 internal fun ColumnScope.SettingsPage(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     val setup = state.setup
-    val loadError = setup.loadError
+    // A failed read shows the cards empty, as the web's does — its catch only logs.
     when {
-        setup.loading -> Box(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentAlignment = Alignment.Center,
-        ) {
-            ZillitSpinner()
-        }
-
-        loadError != null -> ZillitErrorState(
-            message = loadError.localised(),
-            onRetry = { onEvent(InvoicesEvent.Refresh) },
-            title = str(S.desktop_inv_settings_load_failed),
-        )
+        setup.loading -> SettingsSkeleton()
 
         else -> ZillitScrollColumn(
             modifier = Modifier.fillMaxSize(),
@@ -101,6 +91,27 @@ internal fun ColumnScope.SettingsPage(state: InvoicesUiState, onEvent: (Invoices
             AlertsCard(setup, onEvent)
             RunAuthorisationCard(state, onEvent)
             RulesCard(state, onEvent)
+        }
+    }
+}
+
+/** The web's skeleton panels while the settings load (`SettingsPage.jsx:630-709`). */
+@Composable
+private fun ColumnScope.SettingsSkeleton() {
+    Column(
+        modifier = Modifier.fillMaxWidth().weight(1f),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        listOf(
+            str(S.ah_settings_team_posting) to ZillitIcons.Users,
+            str(S.desktop_alert_preferences) to ZillitIcons.Bell,
+            str(S.desktop_run_authorization) to ZillitIcons.Shield,
+        ).forEach { (title, icon) ->
+            ZillitSectionCard(title = title, icon = icon) {
+                repeat(SKELETON_ROWS) {
+                    ZillitSkeletonBar(modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs))
+                }
+            }
         }
     }
 }
@@ -167,11 +178,18 @@ private fun TeamRow(state: InvoicesUiState, row: InvoiceTeamRow, onEvent: (Invoi
                 maxLines = 1,
             )
             if (!row.isUnlimited) {
-                Hint(if (row.isSubmitOnly) str(S.desktop_no_direct_posting) else str(S.desktop_up_to_this_value))
+                Hint(
+                    if (row.isSubmitOnly) {
+                        str(S.desktop_no_direct_posting)
+                    } else {
+                        str(S.desktop_card_up_to_amount, row.limitLabel(state.projectCurrency))
+                    },
+                )
             }
         }
-        YesNo(row.isSenior || row.runAccess, Modifier.weight(1f))
-        YesNo(row.isSenior || row.overrideAccess, Modifier.weight(1f))
+        // The stored flags as they are — the web prints `run_access` / `override_access` raw.
+        YesNo(row.runAccess, Modifier.weight(1f))
+        YesNo(row.overrideAccess, Modifier.weight(1f))
         Box(modifier = Modifier.weight(TEAM_FLAG_WEIGHT)) {
             if (row.isSenior) {
                 ZillitStatusPill(label = str(S.desktop_senior), tone = StatusTone.Done)
@@ -183,16 +201,16 @@ private fun TeamRow(state: InvoicesUiState, row: InvoiceTeamRow, onEvent: (Invoi
             modifier = Modifier.width(TEAM_ACTIONS_WIDTH),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
         ) {
-            ZillitIconButton(
-                icon = ZillitIcons.Edit,
-                contentDescription = str(S.desktop_edit_named, name),
+            ZillitButton(
+                text = str(S.edit),
                 onClick = { onEvent(InvoicesEvent.EditTeamMember(row)) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
             )
             ZillitIconButton(
-                icon = ZillitIcons.Close,
+                icon = ZillitIcons.Trash,
                 contentDescription = str(S.bs_chip_remove, name),
                 onClick = { onEvent(InvoicesEvent.RequestRemoveTeamMember(row.userId)) },
-                tint = colors.danger,
             )
         }
     }
@@ -272,7 +290,8 @@ private fun RunAuthorisationCard(state: InvoicesUiState, onEvent: (InvoicesEvent
     ) {
         CardIntro(str(S.desktop_inv_run_authorization_intro))
         if (levels.isEmpty()) {
-            Hint(str(S.desktop_inv_no_authorization_levels))
+            Hint(str(S.desktop_inv_no_auth_levels_line1))
+            Hint(str(S.desktop_inv_no_auth_levels_line2))
         }
         InsertLevelRow(index = 0, onEvent = onEvent)
         levels.forEachIndexed { index, level ->
@@ -413,7 +432,7 @@ private fun RulesCard(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) 
         when {
             setup.rulesLoading -> Hint(str(S.desktop_loading_rules))
             setup.rules.isEmpty() -> Hint(str(S.desktop_inv_no_rules_configured))
-            else -> setup.rules.forEach { rule -> RuleCard(state, rule, onEvent) }
+            else -> setup.rules.forEachIndexed { index, rule -> RuleCard(state, rule, index + 1, onEvent) }
         }
     }
 }
@@ -425,7 +444,12 @@ private fun RulesCard(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) 
  */
 @Suppress("LongMethod") // Read top to bottom; the order is the reading order.
 @Composable
-private fun RuleCard(state: InvoicesUiState, rule: InvoiceAssignmentRule, onEvent: (InvoicesEvent) -> Unit) {
+private fun RuleCard(
+    state: InvoicesUiState,
+    rule: InvoiceAssignmentRule,
+    number: Int,
+    onEvent: (InvoicesEvent) -> Unit,
+) {
     val setup = state.setup
     val colors = ZillitTheme.colors
     val update = { next: InvoiceAssignmentRule -> onEvent(InvoicesEvent.EditAssignmentRule(next)) }
@@ -449,31 +473,32 @@ private fun RuleCard(state: InvoicesUiState, rule: InvoiceAssignmentRule, onEven
             modifier = Modifier.weight(1f).padding(ZillitTheme.spacing.md),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
+            // Row one: Rule N · toggle · delete chip; row two: Assign to, full width (`SettingsPage.jsx:171-194`).
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
+                FieldCaption(str(S.desktop_pc_rule_n, number))
+                Spacer(Modifier.weight(1f))
                 ZillitSwitch(
                     checked = rule.isActive,
                     onCheckedChange = { update(rule.copy(isActive = it)) },
                 )
-                FieldCaption(str(S.desktop_assign_to))
-                ZillitSelect<InvoiceAssignee?>(
-                    value = state.assignees.firstOrNull { it.id == rule.assignTo },
-                    options = state.assignees,
-                    onSelect = { person -> person?.let { update(rule.copy(assignTo = it.id)) } },
-                    label = { it?.label ?: str(S.desktop_pick_assignee) },
-                    modifier = Modifier.width(ASSIGNEE_WIDTH),
-                )
-                Spacer(Modifier.weight(1f))
                 ZillitIconButton(
-                    icon = ZillitIcons.Close,
+                    icon = ZillitIcons.Trash,
                     contentDescription = str(S.desktop_remove_rule),
                     onClick = { onEvent(InvoicesEvent.RequestRemoveRule(rule.id)) },
-                    tint = colors.danger,
                 )
             }
+            FieldCaption(str(S.desktop_assign_to))
+            ZillitSelect<InvoiceAssignee?>(
+                value = state.assignees.firstOrNull { it.id == rule.assignTo },
+                options = state.assignees,
+                onSelect = { person -> person?.let { update(rule.copy(assignTo = it.id)) } },
+                label = { it?.label ?: str(S.desktop_pick_assignee) },
+                modifier = Modifier.fillMaxWidth(),
+            )
             FieldCaption(str(S.desktop_if_any_condition_matches))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -486,7 +511,7 @@ private fun RuleCard(state: InvoicesUiState, rule: InvoiceAssignmentRule, onEven
                         options = (state.departmentNames.keys.toList() + rule.departments).distinct(),
                         label = { id -> state.departmentName(id) },
                         onChange = { update(rule.copy(departments = it)) },
-                        placeholder = str(S.desktop_any_department),
+                        placeholder = str(S.desktop_pc_select_departments),
                     )
                 }
                 ConditionColumn(str(S.ah_vendors), Modifier.weight(1f)) {
@@ -495,7 +520,7 @@ private fun RuleCard(state: InvoicesUiState, rule: InvoiceAssignmentRule, onEven
                         options = (state.vendors.keys.toList() + rule.vendors).distinct(),
                         label = { id -> state.vendors[id]?.name ?: id },
                         onChange = { update(rule.copy(vendors = it)) },
-                        placeholder = str(S.desktop_any_vendor),
+                        placeholder = str(S.desktop_inv_select_vendors_ellipsis),
                     )
                 }
             }
@@ -510,15 +535,19 @@ private fun RuleCard(state: InvoicesUiState, rule: InvoiceAssignmentRule, onEven
                         options = (setup.nominals.map { it.code } + rule.nominalCodes).distinct(),
                         label = { code -> setup.nominals.firstOrNull { it.code == code }?.label ?: code },
                         onChange = { update(rule.copy(nominalCodes = it)) },
-                        placeholder = str(S.desktop_any_nominal),
+                        placeholder = str(S.desktop_pc_select_nominals),
                     )
                 }
                 ConditionColumn(str(S.desktop_amount_min), Modifier.weight(1f)) {
-                    ZillitTextField(
+                    // The web's `CalcInput min={0}`: arithmetic resolves as the field is left, and
+                    // nothing below nought is kept.
+                    ZillitCalcField(
                         value = rule.amountMin,
-                        onValueChange = { update(rule.copy(amountMin = it)) },
-                        placeholder = "${Money.symbol(state.projectCurrency)}0",
-                        keyboardType = KeyboardType.Number,
+                        onCommit = { typed ->
+                            val clamped = typed.toDoubleOrNull()?.takeIf { it < 0 }?.let { "0" } ?: typed
+                            update(rule.copy(amountMin = clamped))
+                        },
+                        placeholder = str(S.desktop_pc_amount_placeholder, Money.symbol(state.projectCurrency)),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -648,23 +677,25 @@ private fun PostingLimitField(draft: TeamMemberDraft, update: (TeamMemberDraft) 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        FieldCaption(str(S.desktop_posting_limit), Modifier.weight(1f))
+        FieldCaption(str(S.desktop_inv_posting_limit_all_curr), Modifier.weight(1f))
         ZillitCheckbox(
             checked = off,
-            onCheckedChange = { update(draft.copy(unlimited = it)) },
+            // Unticking starts the limit at nought, as the web's does.
+            onCheckedChange = { update(draft.copy(unlimited = it, limitText = if (it) "" else "0")) },
             enabled = !row.isSenior,
             label = str(S.drive_link_views_unlimited),
         )
     }
-    ZillitTextField(
+    ZillitCalcField(
         value = if (off) "" else draft.limitText,
-        onValueChange = { update(draft.copy(limitText = it)) },
+        onCommit = { typed ->
+            val clamped = typed.toDoubleOrNull()?.takeIf { it < 0 }?.let { "0" } ?: typed
+            update(draft.copy(limitText = clamped))
+        },
         placeholder = if (off) str(S.drive_link_views_unlimited) else "0",
-        keyboardType = KeyboardType.Number,
         enabled = !off,
         modifier = Modifier.fillMaxWidth(),
     )
-    Hint(str(S.desktop_applies_across_every_currency))
 }
 
 /** The three rights, two of which a senior holds whether they are ticked or not. */
@@ -673,21 +704,21 @@ private fun MemberRights(draft: TeamMemberDraft, update: (TeamMemberDraft) -> Un
     val row = draft.row
     SheetToggle(
         title = str(S.desktop_can_authorise_payment_runs),
-        hint = str(S.desktop_inv_run_access_hint),
+        hint = str(S.desktop_inv_run_access_desc),
         checked = row.isSenior || row.runAccess,
         enabled = !row.isSenior,
         onChange = { update(draft.copy(row = row.copy(runAccess = it))) },
     )
     SheetToggle(
         title = str(S.desktop_can_override_approvals),
-        hint = str(S.desktop_inv_override_access_hint),
+        hint = str(S.desktop_inv_override_access_desc),
         checked = row.isSenior || row.overrideAccess,
         enabled = !row.isSenior,
         onChange = { update(draft.copy(row = row.copy(overrideAccess = it))) },
     )
     SheetToggle(
         title = str(S.desktop_is_senior),
-        hint = str(S.desktop_inv_senior_hint),
+        hint = str(S.desktop_inv_senior_desc),
         checked = row.isSenior,
         enabled = true,
         onChange = { senior ->
@@ -717,35 +748,88 @@ private fun SheetToggle(
     }
 }
 
-/** The user picker one sign-off level opens — the web's `RunAuthUserPicker`. */
+/**
+ * The user picker one sign-off level opens — the web's `RunAuthUserPicker`
+ * (`SettingsPage.jsx:242-314`): search, tick several (each ticked person a
+ * removable chip at the top), anyone already on a level shown "Added", and
+ * "Add N users" to put them all on the level at once.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RunAuthPickerSheet(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     val tier = state.setup.pickingForTier ?: return
     val already = state.setup.edited.allApprovers.toSet()
+    val staged = state.setup.pickerStaged
     val needle = state.setup.pickerSearch.trim().lowercase()
-    val people = state.setup.people.ifEmpty { state.assignees }.filter {
+    val everyone = state.setup.people.ifEmpty { state.assignees }
+    val people = everyone.filter {
         needle.isEmpty() || it.name.lowercase().contains(needle) || it.role.lowercase().contains(needle)
     }
-    SetupSheet(
+    ZillitDialogShell(
         title = str(S.desktop_add_users_level_n, tier),
-        onDismiss = { onEvent(InvoicesEvent.CloseRunAuthPicker) },
-        confirmText = str(S.ah_done),
-        confirmEnabled = true,
-        busy = false,
+        visible = true,
         scrollable = true,
-        onConfirm = { onEvent(InvoicesEvent.CloseRunAuthPicker) },
+        onDismiss = { onEvent(InvoicesEvent.CloseRunAuthPicker) },
+        actions = if (staged.isEmpty()) {
+            null
+        } else {
+            {
+                ZillitButton(
+                    text = str(if (staged.size == 1) S.desktop_inv_add_n_users_one else S.desktop_inv_add_n_users_other, staged.size),
+                    onClick = { onEvent(SetupEvent.AddStagedRunAuthUsers) },
+                )
+            }
+        },
     ) {
         ZillitTextField(
             value = state.setup.pickerSearch,
             onValueChange = { onEvent(InvoicesEvent.SearchRunAuthPicker(it)) },
             placeholder = str(S.invitees_search_users),
+            leadingIcon = ZillitIcons.Search,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (people.isEmpty()) Hint(str(S.no_user_found))
+        if (staged.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                staged.forEach { id ->
+                    val name = everyone.firstOrNull { it.id == id }?.name ?: id
+                    Row(
+                        modifier = Modifier
+                            .clip(ZillitTheme.shapes.pill)
+                            .background(ZillitTheme.colors.accentSoft)
+                            .padding(start = ZillitTheme.spacing.sm, end = ZillitTheme.spacing.xxs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ZillitText(
+                            text = name.substringBefore(' '),
+                            style = ZillitTheme.typography.labelSmall,
+                            color = ZillitTheme.colors.accentText,
+                        )
+                        ZillitIconButton(
+                            icon = ZillitIcons.Close,
+                            contentDescription = str(S.bs_chip_remove, name),
+                            onClick = { onEvent(InvoicesEvent.PickRunAuthUser(id)) },
+                            size = CHIP_AVATAR,
+                        )
+                    }
+                }
+            }
+        }
+        if (people.isEmpty()) Hint(str(S.desktop_inv_no_users_found))
         people.forEach { person ->
+            val picked = person.id in staged
             val onChain = person.id in already
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.xs),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ZillitTheme.shapes.medium)
+                    .background(if (picked) ZillitTheme.colors.accentSoft else ZillitTheme.colors.surface)
+                    .alpha(if (onChain) INACTIVE_ALPHA else 1f)
+                    .clickable(enabled = !onChain) { onEvent(InvoicesEvent.PickRunAuthUser(person.id)) }
+                    .padding(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
@@ -754,15 +838,9 @@ internal fun RunAuthPickerSheet(state: InvoicesUiState, onEvent: (InvoicesEvent)
                     ZillitText(text = person.name, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
                     Hint(person.role)
                 }
-                if (onChain) {
-                    ZillitStatusPill(label = str(S.history_added), tone = StatusTone.Done)
-                } else {
-                    ZillitButton(
-                        text = str(S.add),
-                        onClick = { onEvent(InvoicesEvent.PickRunAuthUser(person.id)) },
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Small,
-                    )
+                when {
+                    picked -> ZillitIcon(icon = AhIcons.CheckCircle, tint = ZillitTheme.colors.accentText)
+                    onChain -> ZillitStatusPill(label = str(S.history_added), tone = StatusTone.Done)
                 }
             }
         }
@@ -859,8 +937,8 @@ private fun SetupSheet(
 private val AVATAR = 28.dp
 private val CHIP_AVATAR = 18.dp
 private val TIER_BADGE = 24.dp
-private val ASSIGNEE_WIDTH = 280.dp
-private val TEAM_ACTIONS_WIDTH = 72.dp
+private val TEAM_ACTIONS_WIDTH = 110.dp
+private const val SKELETON_ROWS = 3
 private val RULE_BAR = 4.dp
 private const val TEAM_NAME_WEIGHT = 2.2f
 private const val TEAM_FLAG_WEIGHT = 0.8f

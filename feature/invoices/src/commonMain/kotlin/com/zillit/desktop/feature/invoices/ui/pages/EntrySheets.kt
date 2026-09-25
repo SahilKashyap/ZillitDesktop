@@ -18,12 +18,14 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
+import com.zillit.desktop.feature.invoices.domain.InvoiceLabels
 import com.zillit.desktop.feature.invoices.ui.EntryEvent
 import com.zillit.desktop.feature.invoices.ui.EntryLedger
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
@@ -34,7 +36,9 @@ import com.zillit.desktop.feature.invoices.ui.QuickEntryDraft
 
 /**
  * Quick Entry — the web's floating panel on Invoice Entry: a reference, a
- * vendor, a nominal, a cost centre, a net and a tax, straight to ready-to-pay.
+ * vendor (picked, or typed and created on Post), a nominal off the chart, a
+ * cost centre, a net, a tax, an effective date and tags, straight to
+ * ready-to-pay (`EntryPage.jsx:640-720`).
  */
 @Composable
 internal fun QuickEntrySheet(state: InvoicesUiState, draft: QuickEntryDraft, onEvent: (InvoicesEvent) -> Unit) {
@@ -69,22 +73,19 @@ internal fun QuickEntrySheet(state: InvoicesUiState, draft: QuickEntryDraft, onE
                 enabled = !draft.busy,
                 modifier = Modifier.weight(1f),
             )
-            LabelledPicker(
-                label = str(S.ah_lbl_vendor),
-                value = draft.vendorId,
-                options = listOf("") + state.vendors.values.sortedBy { it.name.lowercase() }.map { it.id },
-                text = { id -> state.vendors[id]?.name ?: str(S.desktop_inv_select_vendor) },
-                enabled = !draft.busy,
-            ) { edit(draft.copy(vendorId = it)) }
+            QuickVendor(state, draft, edit, Modifier.weight(1f))
         }
         FieldRow {
-            ZillitTextField(
-                value = draft.nominal,
-                onValueChange = { edit(draft.copy(nominal = it)) },
-                label = str(S.dm_rule_nominal),
-                enabled = !draft.busy,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+                FieldLabel(str(S.dm_rule_nominal))
+                EntryNominalField(
+                    accounts = state.entryRefs.accounts,
+                    chart = state.chart,
+                    code = draft.nominal,
+                    enabled = !draft.busy,
+                    placeholder = str(S.desktop_pc_enter_code),
+                ) { edit(draft.copy(nominal = it)) }
+            }
             ZillitTextField(
                 value = draft.costCentre,
                 onValueChange = { edit(draft.copy(costCentre = it)) },
@@ -94,7 +95,63 @@ internal fun QuickEntrySheet(state: InvoicesUiState, draft: QuickEntryDraft, onE
             )
         }
         QuickAmounts(state, draft, edit)
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            FieldLabel(str(S.drive_tags))
+            EntryTagsField(
+                options = state.entryRefs.assetTags,
+                selected = draft.tags,
+                enabled = !draft.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { edit(draft.copy(tags = it)) }
+        }
     }
+}
+
+/**
+ * The vendor — searched, or typed and offered as "Create …": a new one is
+ * only a pending name until Post creates it (`usePendingVendor`).
+ */
+@Composable
+private fun QuickVendor(
+    state: InvoicesUiState,
+    draft: QuickEntryDraft,
+    edit: (QuickEntryDraft) -> Unit,
+    modifier: Modifier,
+) {
+    val pending = draft.pendingVendorName?.let { PENDING_PREFIX + it }
+    val options = state.vendors.values.sortedBy { it.name.lowercase() }.map { it.id } + listOfNotNull(pending)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        FieldLabel(str(S.ah_lbl_vendor))
+        ZillitSearchSelect(
+            value = pending ?: draft.vendorId.ifBlank { null },
+            options = options,
+            onSelect = { id ->
+                if (id == pending) return@ZillitSearchSelect
+                edit(draft.copy(vendorId = id, pendingVendorName = null))
+            },
+            label = { id ->
+                if (id == pending) {
+                    str(S.desktop_inv_vendor_new, draft.pendingVendorName.orEmpty())
+                } else {
+                    state.vendors[id]?.name ?: id
+                }
+            },
+            placeholder = str(S.desktop_inv_search_or_add_vendor),
+            enabled = !draft.busy,
+            searchText = { id ->
+                val vendor = state.vendors[id]
+                listOfNotNull(vendor?.name ?: draft.pendingVendorName, vendor?.email, vendor?.contactPerson)
+                    .joinToString(" ")
+            },
+            onCreate = { name -> edit(draft.copy(vendorId = "", pendingVendorName = name)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun FieldLabel(text: String) {
+    ZillitText(text = text, style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
 }
 
 @Composable
@@ -122,8 +179,10 @@ private fun QuickAmounts(state: InvoicesUiState, draft: QuickEntryDraft, edit: (
             onValueChange = { edit(draft.copy(effectiveDate = it)) },
             label = str(S.ah_lbl_eff_date),
             enabled = !draft.busy,
+            // `min={effMin}` (`EntryPage.jsx:700`): the closed period cannot be picked.
+            minDate = lockMinDate(state.periodLock),
             errorText = str(S.desktop_inv_locked_period, state.periodLock.lockedThrough)
-                .takeIf { state.periodLock.isLocked(draft.effectiveDate) },
+                .takeIf { draft.effectiveDate.length == DATE_LENGTH && state.periodLock.isLocked(draft.effectiveDate) },
             modifier = Modifier.weight(1f),
         )
     }
@@ -131,7 +190,9 @@ private fun QuickAmounts(state: InvoicesUiState, draft: QuickEntryDraft, edit: (
 
 /**
  * An invoice's query thread — the hub's `QueryPanel`: the messages, each with
- * who asked and when, mine on the right, and a box to send the next one.
+ * who asked (and their designation) and when, mine on the right, and a box
+ * to send the next one. It re-reads itself while open when someone else
+ * writes on it.
  */
 @Composable
 internal fun QueryPanelSheet(state: InvoicesUiState, view: QueryView, onEvent: (InvoicesEvent) -> Unit) {
@@ -167,6 +228,7 @@ internal fun QueryPanelSheet(state: InvoicesUiState, view: QueryView, onEvent: (
                 QueryBubble(
                     text = message.text,
                     who = state.userNames[message.by] ?: message.by.ifBlank { str(S.desktop_unknown) },
+                    role = view.roles[message.by].orEmpty(),
                     at = InvoiceFormat.dateTime(message.atMs),
                     mine = message.by == state.viewer.userId,
                 )
@@ -176,14 +238,22 @@ internal fun QueryPanelSheet(state: InvoicesUiState, view: QueryView, onEvent: (
 }
 
 @Composable
-private fun QueryBubble(text: String, who: String, at: String, mine: Boolean) {
+private fun QueryBubble(text: String, who: String, role: String, at: String, mine: Boolean) {
     val colors = ZillitTheme.colors
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        ZillitText(text = who, style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitText(text = who, style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold))
+            if (role.isNotBlank()) {
+                ZillitText(text = role, style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            }
+        }
         Row(
             modifier = Modifier
                 .widthIn(max = BUBBLE_MAX)
@@ -200,17 +270,33 @@ private fun QueryBubble(text: String, who: String, at: String, mine: Boolean) {
     }
 }
 
-/** The coding screen's history — the shared sheet, with names from the production's directory. */
+/**
+ * The coding screen's history — the shared sheet, read afresh each time it
+ * opens. Who did it reads "Name (Designation)" when the team list knows
+ * their role, and a system transition reads "System" (`HistoryPanel.jsx:49-58`).
+ */
 @Composable
 internal fun LedgerHistorySheet(state: InvoicesUiState, ledger: EntryLedger, onEvent: (InvoicesEvent) -> Unit) {
     HistorySheet(
         invoiceNumber = ledger.invoice.displayNumber,
         rows = ledger.history,
         loading = ledger.historyLoading,
-        nameOf = { id -> state.userNames[id] ?: id.ifBlank { str(S.desktop_unknown) } },
+        nameOf = { id -> historyActor(state, id) },
         onClose = { onEvent(EntryEvent.HideHistory) },
     )
 }
 
+private fun historyActor(state: InvoicesUiState, id: String): String {
+    if (id.isBlank() || id == SYSTEM_ACTOR) return str(S.desktop_language_system_short)
+    val name = state.userNames[id] ?: return id
+    val role = state.assignees.firstOrNull { it.id == id }?.role?.takeIf { it.isNotBlank() }
+        ?: return name
+    return str(S.desktop_inv_name_with_designation, name, InvoiceLabels.format(role))
+}
+
+/** The pending vendor's slot in the vendor list — the web's `pending-vendor:` id. */
+private const val PENDING_PREFIX = "pending-vendor:"
+private const val SYSTEM_ACTOR = "system"
+private const val DATE_LENGTH = 10
 private val QUERY_WIDTH = 560.dp
 private val BUBBLE_MAX = 420.dp

@@ -15,8 +15,11 @@ data class LineDraft(
     /** Line ids the last save refused; each clears as it is edited. */
     val flagged: Set<String> = emptySet(),
 ) {
-    /** Only a parent line can be split — the web's `canSplit`. */
-    val canSplit: Boolean get() = lines.firstOrNull { it.id == selectedId }?.isSplit == false
+    /**
+     * Any picked line can be split — a picked child splits its parent again
+     * (`LineItemsEditor.jsx:255-260`, disabled only with nothing picked).
+     */
+    val canSplit: Boolean get() = lines.any { it.id == selectedId }
 
     /** Net, tax and gross of the parents; children are a breakdown of them. */
     val totals: EntryTotals get() = EntryCoding.totals(lines)
@@ -45,9 +48,11 @@ data class LineCheck(val noDescription: Boolean = false, val problems: List<Line
 object LineItems {
 
     fun apply(draft: LineDraft, edit: LineEdit, newId: () -> String): LineDraft = when (edit) {
-        is LineEdit.Select -> draft.copy(selectedId = edit.id)
+        // A second click on the picked line lets it go, as the web's row toggle does.
+        is LineEdit.Select -> draft.copy(selectedId = edit.id.takeUnless { it == draft.selectedId })
         is LineEdit.Change -> draft.copy(
-            lines = EntryCoding.update(draft.lines, edit.line.id) { edit.line },
+            // Nominal, expenditure type, Layers, tags and tax reach the children (`:160-199`).
+            lines = EntryCoding.update(draft.lines, edit.line.id, cascadeCoding = true) { edit.line },
             flagged = draft.flagged - edit.line.id,
         )
         is LineEdit.SplitAmount -> draft.copy(lines = EntryCoding.redistribute(draft.lines, edit.id, edit.amount))

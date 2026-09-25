@@ -29,20 +29,7 @@ import kotlinx.serialization.json.buildJsonObject
 internal fun parseSetup(data: JsonElement?): InvoiceSetupBundle {
     val obj = data as? JsonObject ?: return InvoiceSetupBundle()
     val setup = InvoiceSetup(
-        teamMembers = obj.arrayOrEncoded("team_members").mapNotNull { row ->
-            (row as? JsonObject)?.let {
-                val id = it.text("user_id", "id")
-                if (id.isBlank()) return@let null
-                val senior = it.flag("is_senior") ?: false
-                InvoiceTeamRow(
-                    userId = id,
-                    postingLimit = it.postingLimit(senior),
-                    runAccess = it.flag("run_access") ?: false,
-                    overrideAccess = it.flag("override_access") ?: false,
-                    isSenior = senior,
-                )
-            }
-        },
+        teamMembers = obj.arrayOrEncoded("team_members").mapNotNull { row -> (row as? JsonObject)?.let(::parseTeamRow) },
         alerts = obj.arrayOrEncoded("alerts")
             .mapNotNull { (it as? JsonPrimitive)?.content?.takeIf(String::isNotBlank) }
             .toSet(),
@@ -56,6 +43,21 @@ internal fun parseSetup(data: JsonElement?): InvoiceSetupBundle {
         },
     )
     return InvoiceSetupBundle(setup, obj.arrayField("assignment_rules").mapNotNull(::parseRule))
+}
+
+/** One `team_members` entry, keeping the stored JSON so an untouched save sends it back as it was. */
+private fun parseTeamRow(row: JsonObject): InvoiceTeamRow? {
+    val id = row.text("user_id", "id")
+    if (id.isBlank()) return null
+    val senior = row.flag("is_senior") ?: false
+    return InvoiceTeamRow(
+        userId = id,
+        postingLimit = row.postingLimit(senior),
+        runAccess = row.flag("run_access") ?: false,
+        overrideAccess = row.flag("override_access") ?: false,
+        isSenior = senior,
+        storedJson = row.toString(),
+    )
 }
 
 /** `unlimited`, a blank, an absent key and a senior all mean no ceiling. */
@@ -93,25 +95,29 @@ private val LEAF_TYPES = setOf("category", "sub_category")
 
 // -- writes ------------------------------------------------------------------
 
+/**
+ * The whole team, as the web's `persistTeam` sends it (`SettingsPage.jsx:524-535`):
+ * a member nobody touched goes back exactly as stored, extra keys and all; an
+ * edited one keeps its stored keys with the five this page edits written over them.
+ */
 internal fun teamBody(rows: List<InvoiceTeamRow>): JsonObject = buildJsonObject {
-    put(
-        "team_members",
-        buildJsonArray {
-            rows.forEach { row ->
-                add(
-                    buildJsonObject {
-                        put("user_id", JsonPrimitive(row.userId))
-                        // Null, not the string "unlimited": the web sends null
-                        // for a senior and for an unlimited member alike.
-                        put("posting_limit", row.postingLimit?.let(::JsonPrimitive) ?: JsonNull)
-                        put("run_access", JsonPrimitive(row.isSenior || row.runAccess))
-                        put("override_access", JsonPrimitive(row.isSenior || row.overrideAccess))
-                        put("is_senior", JsonPrimitive(row.isSenior))
-                    },
-                )
-            }
-        },
-    )
+    put("team_members", buildJsonArray { rows.forEach { add(teamMemberWire(it)) } })
+}
+
+private fun teamMemberWire(row: InvoiceTeamRow): JsonObject {
+    val stored = row.storedJson.takeIf { it.isNotBlank() }
+        ?.let { runCatching { invoicesJson.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+    if (stored != null && parseTeamRow(stored) == row) return stored
+    return buildJsonObject {
+        stored?.forEach { (key, value) -> put(key, value) }
+        put("user_id", JsonPrimitive(row.userId))
+        // Null, not the string "unlimited": the web sends null
+        // for a senior and for an unlimited member alike.
+        put("posting_limit", row.postingLimit?.let(::JsonPrimitive) ?: JsonNull)
+        put("run_access", JsonPrimitive(row.isSenior || row.runAccess))
+        put("override_access", JsonPrimitive(row.isSenior || row.overrideAccess))
+        put("is_senior", JsonPrimitive(row.isSenior))
+    }
 }
 
 internal fun alertsBody(alerts: Set<String>): JsonObject = buildJsonObject {
@@ -139,7 +145,8 @@ internal fun ruleBody(rule: InvoiceAssignmentRule, module: String? = null): Json
     put("departments", buildJsonArray { rule.departments.forEach { add(JsonPrimitive(it)) } })
     put("vendors", buildJsonArray { rule.vendors.forEach { add(JsonPrimitive(it)) } })
     put("nominal_codes", buildJsonArray { rule.nominalCodes.forEach { add(JsonPrimitive(it)) } })
-    put("amount_min", rule.amountMinValue?.let(::JsonPrimitive) ?: JsonNull)
+    // `amountMin || null` — a nought is no minimum, as the web sends it.
+    put("amount_min", rule.amountMinValue?.takeIf { it != 0.0 }?.let(::JsonPrimitive) ?: JsonNull)
     put("target_user_id", JsonPrimitive(rule.assignTo))
     put("is_active", JsonPrimitive(rule.isActive))
     put("priority", JsonPrimitive(rule.priority))
@@ -209,6 +216,11 @@ internal fun parseLinkedPos(data: JsonElement?): List<LinkedPoDetail> = rowsOf(d
         netTotal = row.number("net_total", "net_amount"),
         raisedBy = row.text("user_id", "created_by", "raised_by"),
         raisedAtMs = row.number("created_at", "createdAt")?.toLong(),
+        vendorId = row.text("vendor_id"),
+        departmentId = row.text("department_id"),
+        effectiveDateMs = row.dateMs("effective_date", "effectiveDate"),
+        deliveryDateMs = row.dateMs("delivery_date", "deliveryDate"),
+        deliveryAddress = parseDeliveryAddress(row["delivery_address"] ?: row["deliveryAddress"]),
         lines = row.arrayField("line_items", "lines").mapNotNull { line ->
             (line as? JsonObject)?.let {
                 PoLine(
@@ -222,6 +234,9 @@ internal fun parseLinkedPos(data: JsonElement?): List<LinkedPoDetail> = rowsOf(d
                     taxType = it.text("tax_type", "taxType"),
                     expenditureType = it.text("expenditure_type", "expenditureType"),
                     splitParentId = it.text("split_parent_id", "splitParentId").ifBlank { null },
+                    trackingCodes = parseTrackingCodes(it["tracking_codes"]),
+                    tags = parseTags(it["tags"]),
+                    carried = parseCarried(it),
                 )
             }
         },

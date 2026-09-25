@@ -120,7 +120,11 @@ class InvoiceRulesParityTest {
         assertEquals(AccountantPage.Register, AccountantPage.forRoute("/film-tools/invoices/register"))
         assertEquals(AccountantPage.Payments, AccountantPage.forRoute("/film-tools/invoices/payments/r1"))
         assertEquals(AccountantPage.Vendors, AccountantPage.forRoute("/film-tools/invoices/suppliers"))
+        // `/cash-close` names no page here: the view model sends it on to the Account
+        // Hub's Period Close, Cash & Close tab (`InvoicesModule.jsx:534`) — see
+        // PaymentsCreditorsParityTest — so the page itself never changes to it.
         assertEquals(AccountantPage.Overview, AccountantPage.forRoute("/film-tools/invoices/cash-close"))
+        assertEquals(AccountantPage.Posted, AccountantPage.forRoute("/film-tools/invoices/posted/i1"))
         assertEquals(AccountantPage.Overview, AccountantPage.forRoute("/film-tools/invoices/nothing"))
     }
 

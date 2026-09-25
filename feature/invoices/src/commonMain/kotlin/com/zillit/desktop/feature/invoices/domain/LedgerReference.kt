@@ -59,6 +59,8 @@ data class InvoiceProjectSettings(
     val companies: List<Company> = emptyList(),
     val taxTypes: List<TaxType> = emptyList(),
     val lock: PeriodLock? = null,
+    /** The account tags lines may carry — `asset_tags` (`useProjectAssetTags`). */
+    val assetTags: List<String> = emptyList(),
 )
 
 /**

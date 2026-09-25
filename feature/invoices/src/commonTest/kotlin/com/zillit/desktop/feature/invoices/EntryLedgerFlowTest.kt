@@ -96,7 +96,8 @@ class EntryLedgerFlowTest {
         vm.onEvent(EntryEvent.Post)
         advanceUntilIdle()
         assertTrue(repo.writes.isEmpty())
-        assertEquals("Line 1 needs a nominal code before you can post", vm.state.value.ledger?.problem)
+        // The web says "need" for one line as for several.
+        assertEquals("Line 1 need a nominal code before you can post", vm.state.value.ledger?.problem)
     }
 
     @Test
@@ -198,6 +199,74 @@ class EntryLedgerFlowTest {
         assertEquals(setOf("i1"), vm.state.value.selected, "a locked row cannot be ticked")
     }
 
+    @Test
+    fun `a changed currency drops the match and saves the coded totals as the invoice's amounts`() = runTest(dispatcher) {
+        val repo = Repo()
+        val vm = open(repo, senior())
+        vm.onEvent(EntryEvent.EditLine(LINE.withAmount(90.0)))
+        vm.onEvent(EntryEvent.EditHeader(vm.state.value.ledger!!.header.copy(currency = "USD")))
+        vm.onEvent(EntryEvent.Save)
+        advanceUntilIdle()
+        assertNull(vm.state.value.ledger?.problem)
+        assertEquals(listOf("save:i1"), repo.writes)
+        val amounts = assertNotNull(repo.saved.single().amounts)
+        assertEquals(90.0, amounts.gross, 0.001)
+        assertEquals("USD", repo.saved.single().header.currency)
+    }
+
+    @Test
+    fun `without a currency change nothing but the coding is written`() = runTest(dispatcher) {
+        val repo = Repo()
+        val vm = open(repo, senior())
+        vm.onEvent(EntryEvent.Save)
+        advanceUntilIdle()
+        assertNull(repo.saved.single().amounts)
+    }
+
+    @Test
+    fun `an effective date inside the closed period is refused as it is picked`() = runTest(dispatcher) {
+        val repo = Repo(lock = PeriodLock(lockedThrough = "2026-09-13"), row = ROW.copy(effectiveDateMs = NOW))
+        val vm = open(repo, senior())
+        val header = vm.state.value.ledger!!.header
+        vm.onEvent(EntryEvent.EditHeader(header.copy(effectiveDate = "2026-09-10")))
+        assertEquals(header.effectiveDate, vm.state.value.ledger?.header?.effectiveDate)
+        // A date still being typed is let be, and an open day is taken.
+        vm.onEvent(EntryEvent.EditHeader(header.copy(effectiveDate = "2026-09")))
+        assertEquals("2026-09", vm.state.value.ledger?.header?.effectiveDate)
+        vm.onEvent(EntryEvent.EditHeader(header.copy(effectiveDate = "2026-09-20")))
+        assertEquals("2026-09-20", vm.state.value.ledger?.header?.effectiveDate)
+    }
+
+    @Test
+    fun `history is read again every time it opens`() = runTest(dispatcher) {
+        val repo = Repo()
+        val vm = open(repo, senior())
+        vm.onEvent(EntryEvent.ShowHistory)
+        advanceUntilIdle()
+        vm.onEvent(EntryEvent.HideHistory)
+        vm.onEvent(EntryEvent.ShowHistory)
+        advanceUntilIdle()
+        assertEquals(2, repo.historyReads)
+    }
+
+    @Test
+    fun `an open query thread re-reads itself when someone else writes on it`() = runTest(dispatcher) {
+        val repo = Repo()
+        val vm = open(repo, senior())
+        vm.onEvent(QueryEvent.Open(ROW))
+        advanceUntilIdle()
+        assertEquals(0, vm.state.value.query?.thread?.messages?.size)
+        repo.reply("Which PO?", by = "someone")
+        repo.updates.emit("other-invoice")
+        advanceUntilIdle()
+        assertEquals(0, vm.state.value.query?.thread?.messages?.size, "another invoice's thread is not this one")
+        repo.updates.emit("i1")
+        advanceUntilIdle()
+        assertEquals("Which PO?", vm.state.value.query?.thread?.messages?.single()?.text)
+        vm.onEvent(QueryEvent.Close)
+        advanceUntilIdle()
+    }
+
     // -- harness -------------------------------------------------------------------
 
     private fun senior() = InvoiceViewer(
@@ -240,6 +309,13 @@ class EntryLedgerFlowTest {
         val quick = mutableListOf<QuickEntry>()
         val queries = mutableListOf<String>()
         private var thread = QueryThread()
+        var historyReads = 0
+        val updates = kotlinx.coroutines.flow.MutableSharedFlow<String>()
+        override val queryUpdates: kotlinx.coroutines.flow.Flow<String> get() = updates
+
+        fun reply(text: String, by: String) {
+            thread = QueryThread("q1", thread.messages + QueryMessage(text, by))
+        }
 
         override suspend fun saveEntry(id: String, write: EntryWrite): ZillitResult<Unit> {
             writes += "save:$id"
@@ -287,7 +363,10 @@ class EntryLedgerFlowTest {
             ZillitResult.Success(null)
         override suspend fun reject(id: String, reason: String): ZillitResult<Invoice?> = ZillitResult.Success(null)
         override suspend fun chase(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
-        override suspend fun history(id: String): ZillitResult<List<HistoryEntry>> = ZillitResult.Success(emptyList())
+        override suspend fun history(id: String): ZillitResult<List<HistoryEntry>> {
+            historyReads++
+            return ZillitResult.Success(emptyList())
+        }
         override suspend fun settings(): ZillitResult<InvoiceSettings> = ZillitResult.Success(settings)
         override suspend fun approvalTiers(): ZillitResult<List<ApprovalTierConfig>> =
             ZillitResult.Success(emptyList())

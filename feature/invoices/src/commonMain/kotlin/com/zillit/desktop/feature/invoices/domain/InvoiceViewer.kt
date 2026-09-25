@@ -30,6 +30,13 @@ data class InvoiceViewer(
     val runAccessFlag: Boolean = false,
     /** Settings → Team gives this person a posting limit; false until read. */
     val postingRightFlag: Boolean = false,
+    /**
+     * The department board's override right — `me.can_override || me.is_senior`
+     * and nothing else: no designation, no legacy `team_members` row
+     * (`DepartmentInvoiceModule.jsx:615`). It widens the Approval Queue's delete;
+     * the department board offers no Override button at all.
+     */
+    val serverOverride: Boolean = false,
 ) {
     /** The accounts department, matched loosely because productions name it differently. */
     val isAccountant: Boolean get() = departmentIdentifier.contains(ACCOUNTS, ignoreCase = true)
@@ -89,6 +96,7 @@ data class InvoiceViewer(
         isRunApprover = userId in settings.runApprovers,
         runAccessFlag = settings.runAccessFor(userId),
         postingRightFlag = settings.postingRightFor(userId),
+        serverOverride = settings.serverOverride,
     )
 
     companion object {

@@ -64,6 +64,13 @@ fun ZillitDateField(
     enabled: Boolean = true,
     today: LocalDate = Clock.System.todayIn(TimeZone.currentSystemDefault()),
     weekStart: DayOfWeek = DayOfWeek.MONDAY,
+    /**
+     * The earliest day the calendar offers — `<input type="date" min>`. Days
+     * before it are drawn but cannot be picked; typing is left alone, as the
+     * browser's own field leaves it, so the caller's validation still decides.
+     * Null (the default) offers every day.
+     */
+    minDate: LocalDate? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     // Which month the grid shows. Seeded from the field, and kept while the
@@ -95,6 +102,7 @@ fun ZillitDateField(
                 selected = value.asDate(),
                 today = today,
                 weekStart = weekStart,
+                minDate = minDate,
                 onMonth = { visibleMonth = it },
                 onPick = { date ->
                     onValueChange(date.iso())
@@ -116,6 +124,7 @@ private fun MonthGrid(
     selected: LocalDate?,
     today: LocalDate,
     weekStart: DayOfWeek,
+    minDate: LocalDate?,
     onMonth: (LocalDate) -> Unit,
     onPick: (LocalDate) -> Unit,
 ) {
@@ -161,6 +170,7 @@ private fun MonthGrid(
                         inMonth = date.month == month.month,
                         isSelected = date == selected,
                         isToday = date == today,
+                        pickable = minDate == null || date >= minDate,
                         onPick = onPick,
                         modifier = Modifier.weight(1f),
                     )
@@ -188,6 +198,7 @@ private fun DayCell(
     inMonth: Boolean,
     isSelected: Boolean,
     isToday: Boolean,
+    pickable: Boolean,
     onPick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -202,7 +213,7 @@ private fun DayCell(
                 .background(
                     when {
                         isSelected -> colors.accent
-                        hovered -> colors.surfaceHover
+                        hovered && pickable -> colors.surfaceHover
                         else -> colors.surface
                     },
                 )
@@ -210,7 +221,7 @@ private fun DayCell(
                 // Days from the neighbouring months are pickable, not just
                 // decoration: the 1st of next month is often exactly what
                 // someone scrolling to the end of a month wants.
-                .clickable { onPick(date) },
+                .clickable(enabled = pickable) { onPick(date) },
             contentAlignment = Alignment.Center,
         ) {
             ZillitText(
@@ -220,6 +231,7 @@ private fun DayCell(
                 ),
                 color = when {
                     isSelected -> colors.textOnAccent
+                    !pickable -> colors.textDisabled
                     !inMonth -> colors.textMuted
                     isToday -> colors.accentText
                     else -> colors.textPrimary

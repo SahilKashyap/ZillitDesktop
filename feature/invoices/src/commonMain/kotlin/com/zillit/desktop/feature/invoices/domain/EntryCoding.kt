@@ -8,9 +8,10 @@ import kotlin.math.floor
  * line shape.
  *
  * [amount] is the line's net. A split child carries [splitParentId]; the
- * parent keeps its own amount and its children must add up to it. Anything
- * the desktop does not edit (layers, tags, custom fields, rental dates) rides
- * along untouched on the wire, keyed by [id].
+ * parent keeps its own amount and its children must add up to it. Layers
+ * ([trackingCodes]) and [tags] are edited here; what is only shown — custom
+ * fields — or not shown at all — rental dates — rides along in [carried],
+ * exactly as it was read (`EntryDetailModal.jsx:630-647`, `:674-692`).
  */
 data class CodedLine(
     val id: String,
@@ -28,6 +29,16 @@ data class CodedLine(
     val splitParentId: String? = null,
     /** The order this line was seeded from, when it came off a linked PO. */
     val sourcePo: String = "",
+    /** Layers — Layers set id → the picked code (`tracking_codes`). */
+    val trackingCodes: Map<String, String> = emptyMap(),
+    /** Account tags (`tags`). */
+    val tags: List<String> = emptyList(),
+    /**
+     * What this client carries but never edits, as read off the saved row or
+     * the PO line it came from. Null only for a line built without one (the
+     * wire then falls back to the saved row with the same id).
+     */
+    val carried: CarriedFields? = null,
 ) {
     val isSplit: Boolean get() = splitParentId != null
 
@@ -37,6 +48,19 @@ data class CodedLine(
     /** Amount entered directly: the web pins quantity 1 and unit price = amount. */
     fun withAmount(value: Double): CodedLine = copy(amount = value, quantity = 1.0, unitPrice = value)
 }
+
+/**
+ * A line's fields this client never edits — `custom_fields` and the rental
+ * dates — as raw JSON text, so a save writes back exactly what was read.
+ * [customFields] is the name → value view of `custom_fields` for the grid's
+ * read-only columns.
+ */
+data class CarriedFields(
+    val customFieldsJson: String = "[]",
+    val rentalStartJson: String = "null",
+    val rentalEndJson: String = "null",
+    val customFields: List<Pair<String, String>> = emptyList(),
+)
 
 /**
  * The persisted reclaimable-tax line (`is_tax`) — kept apart from the coded
@@ -50,6 +74,9 @@ data class TaxLine(
     val account: String = "",
     val amount: Double? = null,
     val overridden: Boolean = false,
+    /** The tax row's own Layers and tags (`taxLineMeta.trackingCodes` / `tags`). */
+    val trackingCodes: Map<String, String> = emptyMap(),
+    val tags: List<String> = emptyList(),
 )
 
 /** A tax type from Production Setup — what the line's Tax select offers. */
@@ -83,7 +110,16 @@ data class EntryHeader(
     val companyId: String = "",
     val bankId: String = "",
     val episode: String = "",
+    /**
+     * A stored pay method this client has no entry for, kept as its code so a
+     * save writes it back rather than BACS (`payMethodCode`, `payMethod.js:147-150`).
+     * Blank once a method is picked.
+     */
+    val payMethodCode: String = "",
 ) {
+    /** What goes on the wire as `pay_method`. */
+    val payWire: String get() = payMethodCode.ifBlank { payMethod.wire }
+
     companion object {
         fun of(invoice: Invoice): EntryHeader = EntryHeader(
             invoiceNumber = invoice.invoiceNumber,
@@ -95,14 +131,22 @@ data class EntryHeader(
             companyId = invoice.companyId,
             bankId = invoice.bankId,
             episode = invoice.episode,
+            payMethodCode = unknownPayCode(invoice.payMethodRaw),
         )
+
+        /** The stored code when no [PayMethod] carries it; blank for a known one. */
+        fun unknownPayCode(raw: String): String {
+            val code = PayMethod.normalise(raw)
+            return code.takeIf { known -> PayMethod.entries.none { it.wire == known } }.orEmpty()
+        }
     }
 }
 
 /**
  * Why Post to Ledger is refused, in the web's order: the bank first (the
  * server rejects a post without one), then the period lock, the coded total,
- * the effective date and finally the nominal on every line.
+ * the effective date, the nominal on every line and finally an amount on
+ * every described line (`EntryDetailModal.jsx:950-976`).
  */
 sealed interface EntryBlock {
     data object NoBank : EntryBlock
@@ -112,6 +156,9 @@ sealed interface EntryBlock {
 
     /** 1-based line numbers, as the web's alert names them. */
     data class MissingNominal(val rows: List<Int>) : EntryBlock
+
+    /** 1-based line numbers of described parent lines left at zero (`missingAmountLines`). */
+    data class MissingAmount(val rows: List<Int>) : EntryBlock
 }
 
 /**
@@ -128,6 +175,12 @@ data class EntryWrite(
     val savedLinesJson: String = "",
     val chart: Set<String> = emptySet(),
     val status: String? = null,
+    /**
+     * The coded totals, written as the invoice's own net / tax / gross — only
+     * when the currency was changed, and so the old figures no longer apply
+     * (`amountsPayload`, `EntryDetailModal.jsx:1104-1110`).
+     */
+    val amounts: EntryTotals? = null,
 )
 
 /** A single-code invoice posted straight to ready-to-pay — the web's Quick Entry. */
@@ -142,6 +195,8 @@ data class QuickEntry(
     val effectiveDate: String,
     /** Today, `YYYY-MM-DD` — the invoice and due date. */
     val today: String,
+    /** The classification tags picked (`quickTags`). */
+    val tags: List<String> = emptyList(),
 )
 
 /** One line of the data-validation checklist. */
@@ -189,6 +244,10 @@ object EntryCoding {
                 expenditureType = line.expenditureType,
                 splitParentId = line.splitParentId,
                 sourcePo = order.poNumber,
+                // The PO's own coding comes across whole, or the first save wipes it (ZL parity H2).
+                trackingCodes = line.trackingCodes,
+                tags = line.tags,
+                carried = line.carried ?: CarriedFields(),
             )
         }
     }
@@ -240,6 +299,29 @@ object EntryCoding {
     }
 
     /**
+     * The invoice is being recoded in another currency — `isCurrencyChanged`
+     * (`lib/invoicePayload.js:56-58`): a picked currency that is not the
+     * stored one (or, with none stored, the project's). A blank pick is never
+     * a change; nor is a pick that only differs in case.
+     */
+    fun isCurrencyChanged(formCurrency: String, invoiceCurrency: String, defaultCurrency: String): Boolean {
+        val picked = formCurrency.trim()
+        if (picked.isEmpty()) return false
+        val stored = invoiceCurrency.trim().ifEmpty { defaultCurrency.trim() }
+        return !picked.equals(stored, ignoreCase = true)
+    }
+
+    /**
+     * Described parent lines with no figure — 1-based over every line, as
+     * `missingAmountLines` (`lib/coa.js:665-676`) counts them. Split children
+     * are skipped (they never move the total) and a negative is real money.
+     */
+    fun missingAmountRows(lines: List<CodedLine>): List<Int> =
+        lines.mapIndexedNotNull { index, line ->
+            (index + 1).takeIf { !line.isBlank && !line.isSplit && line.amount == 0.0 }
+        }
+
+    /**
      * Lines that would post without a nominal — 1-based, over every line that
      * is posted. A blank placeholder line never counts.
      */
@@ -252,6 +334,7 @@ object EntryCoding {
      * The first reason Post to Ledger is refused, or null when it may go.
      * The tax line is checked only when it is actually sent.
      */
+    @Suppress("LongParameterList") // The web's handlePost reads each of these.
     fun postBlock(
         header: EntryHeader,
         lines: List<CodedLine>,
@@ -260,18 +343,65 @@ object EntryCoding {
         taxTypesKnown: Boolean,
         invoiceGross: Double,
         locked: Boolean,
+        /** Recoded in another currency: the old gross no longer applies, so nothing is matched to it. */
+        currencyChanged: Boolean = false,
     ): EntryBlock? {
         val totals = totals(lines, tax, taxTypes, taxTypesKnown)
         val sendsTax = effectiveTax(tax, lines, taxTypes) > 0.0 || tax.overridden
-        val checked = if (sendsTax) lines + CodedLine(id = TAX_LINE_ID, account = tax.account, amount = 1.0) else lines
+        // The web appends `{ id: "__tax", account }` — no description, no amount —
+        // which its own `isBlankLine` then skips, so the tax row never blocks.
+        val checked = if (sendsTax) lines + CodedLine(id = TAX_LINE_ID, account = tax.account, amount = 0.0) else lines
         val missing = missingNominalRows(checked)
+        val unpriced = missingAmountRows(lines)
         return when {
             header.bankId.isBlank() -> EntryBlock.NoBank
             locked -> EntryBlock.Locked
-            amountMismatch(totals.gross, invoiceGross) -> EntryBlock.Mismatch
+            !currencyChanged && amountMismatch(totals.gross, invoiceGross) -> EntryBlock.Mismatch
             header.effectiveDate.isBlank() -> EntryBlock.NoEffectiveDate
             missing.isNotEmpty() -> EntryBlock.MissingNominal(missing)
+            unpriced.isNotEmpty() -> EntryBlock.MissingAmount(unpriced)
             else -> null
+        }
+    }
+
+    /**
+     * The bank / company auto-fill (`resolveAutoFill`, `lib/companyBankAutoFill.js`):
+     * a lone bank is picked; an empty company follows the picked bank's entity,
+     * else the only company there is. Each rule only fills a blank, so a pick
+     * is never overwritten, and a field cleared by hand is filled again. Run
+     * to its fixed point — the web re-runs it on the next render, once the
+     * bank it just picked has landed.
+     */
+    fun autoFill(header: EntryHeader, banks: List<BankAccount>, companies: List<Company>): EntryHeader {
+        var next = header
+        repeat(AUTO_FILL_PASSES) {
+            val bank = next.bankId.ifBlank { banks.singleOrNull()?.id.orEmpty() }
+            val company = next.companyId.ifBlank {
+                val picked = next.bankId.takeIf { it.isNotBlank() }?.let { id -> banks.firstOrNull { it.id == id } }
+                picked?.entityId?.takeIf { it.isNotBlank() } ?: companies.singleOrNull()?.id.orEmpty()
+            }
+            next = next.copy(bankId = bank, companyId = company)
+        }
+        return next
+    }
+
+    /**
+     * A line after its Tax select moved to [picked]: none, a Production Setup
+     * type (its rate comes with it), or Other.
+     *
+     * On the ledger ([keepRateOnOther] false) Other keeps the rate only when
+     * the line was already Other — a 20% VAT line switched to Other has no
+     * rate until one is typed (`EntryDetailModal.jsx:2076-2089`, ZL-20656).
+     * The Credits / Sales editor keeps whatever rate the line had
+     * (`LineItemsEditor.jsx:458-464`).
+     */
+    fun pickTax(line: CodedLine, picked: String, taxTypes: List<TaxType>, keepRateOnOther: Boolean): CodedLine {
+        val type = taxTypes.firstOrNull { it.identifier == picked }
+        return when {
+            picked.isBlank() -> line.copy(taxType = "", taxRate = null)
+            type != null -> line.copy(taxType = type.identifier, taxRate = type.rate)
+            keepRateOnOther -> line.copy(taxType = OTHER_TAX, taxRate = line.taxRate ?: 0.0)
+            else -> line.copy(taxType = OTHER_TAX, taxRate = line.taxRate.takeIf { line.taxType == OTHER_TAX })
         }
     }
 
@@ -303,20 +433,49 @@ object EntryCoding {
      * A parent whose amount moved has its children rescaled so they still add
      * up to it; a parent whose tax changed passes the tax down, because the
      * children inherited it when they were cut.
+     *
+     * With [cascadeCoding] — the Credits / Sales editor (`LineItemsEditor.jsx:160-199`)
+     * — the nominal, expenditure type, Layers and tags pass down too, and
+     * every one of them (tax included) only reaches a child still holding the
+     * parent's old value or nothing: a child coded on its own keeps its own.
      */
-    fun update(lines: List<CodedLine>, id: String, change: (CodedLine) -> CodedLine): List<CodedLine> {
+    fun update(
+        lines: List<CodedLine>,
+        id: String,
+        cascadeCoding: Boolean = false,
+        change: (CodedLine) -> CodedLine,
+    ): List<CodedLine> {
         val before = lines.firstOrNull { it.id == id } ?: return lines
         val after = change(before)
         var next = lines.map { if (it.id == id) after else it }
         if (!after.isSplit) {
-            if (after.taxRate != before.taxRate || after.taxType != before.taxType) {
-                next = next.map {
-                    if (it.splitParentId == id) it.copy(taxRate = after.taxRate, taxType = after.taxType) else it
-                }
+            next = next.map { child ->
+                if (child.splitParentId != id) child else cascade(child, before, after, cascadeCoding)
             }
             if (after.amount != before.amount) next = rescale(next, id)
         }
         return next
+    }
+
+    /** What a parent's edit passes to one of its children. */
+    private fun cascade(child: CodedLine, before: CodedLine, after: CodedLine, coding: Boolean): CodedLine {
+        if (!coding) {
+            // The ledger (`EntryDetailModal.jsx:778-786`): tax always follows the parent.
+            val taxMoved = after.taxRate != before.taxRate || after.taxType != before.taxType
+            return if (taxMoved) child.copy(taxRate = after.taxRate, taxType = after.taxType) else child
+        }
+        fun <T> follow(mine: T, old: T, new: T, empty: (T) -> Boolean): T =
+            if (old != new && (empty(mine) || mine == old)) new else mine
+        return child.copy(
+            account = follow(child.account, before.account, after.account) { it.isBlank() },
+            expenditureType = follow(child.expenditureType, before.expenditureType, after.expenditureType) {
+                it.isBlank()
+            },
+            trackingCodes = follow(child.trackingCodes, before.trackingCodes, after.trackingCodes) { it.isEmpty() },
+            tags = follow(child.tags, before.tags, after.tags) { it.isEmpty() },
+            taxType = follow(child.taxType, before.taxType, after.taxType) { it.isBlank() },
+            taxRate = follow(child.taxRate, before.taxRate, after.taxRate) { it == null },
+        )
     }
 
     /** A child's own amount changed: the rest of its siblings share what is left. */
@@ -376,6 +535,10 @@ object EntryCoding {
             taxType = parent.taxType,
             expenditureType = parent.expenditureType,
             splitParentId = parentId,
+            // `makeChild` copies the parent's Layers and tags, never its custom fields.
+            trackingCodes = parent.trackingCodes,
+            tags = parent.tags,
+            carried = CarriedFields(),
         ).withAmount(amount)
         val at = lines.indexOfFirst { it.id == source.id } + 1
         if (existing.isEmpty()) {
@@ -403,7 +566,7 @@ object EntryCoding {
 
     /** A new empty line at the end. */
     fun add(lines: List<CodedLine>, newId: () -> String): Pair<List<CodedLine>, String> {
-        val line = CodedLine(id = newId())
+        val line = CodedLine(id = newId(), carried = CarriedFields())
         return lines + line to line.id
     }
 
@@ -446,6 +609,10 @@ object EntryCoding {
     fun round2(value: Double): Double = floor(value * CENTS + HALF) / CENTS
 
     const val TAX_LINE_ID = "__tax"
+
+    /** The web's `OTHER_TAX_OPTION` value — a rate typed in, not a Production Setup type. */
+    const val OTHER_TAX = "other"
+    private const val AUTO_FILL_PASSES = 2
     private const val DEFAULT_DESCRIPTION = "Invoice"
     private const val PERCENT = 100.0
     private const val CENTS = 100.0

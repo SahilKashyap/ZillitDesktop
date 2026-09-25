@@ -25,6 +25,7 @@ import com.zillit.desktop.feature.invoices.domain.Vendor
 import com.zillit.desktop.feature.invoices.ui.AccountantPage
 import com.zillit.desktop.feature.invoices.ui.InboxEvent
 import com.zillit.desktop.feature.invoices.ui.DepartmentTab
+import com.zillit.desktop.feature.invoices.ui.EnterField
 import com.zillit.desktop.feature.invoices.ui.EnterTab
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
@@ -122,13 +123,14 @@ class InvoicesViewModelTest {
         vm.onEvent(InvoicesEvent.ConfirmReject)
         advanceUntilIdle()
         assertEquals(listOf("i-pending" to "Wrong PO"), repo.rejections)
-        assertEquals(false, vm.state.value.detail?.rejecting)
+        // The web's reject closes the detail once it lands (`InvoiceDetailModal.jsx:948`).
+        assertNull(vm.state.value.detail)
     }
 
     /**
      * The department's Upload Invoices is the web's bulk upload: every file is
-     * checked, the ones that pass go to storage and are handed over under one
-     * batch id, and a refused file never leaves the machine.
+     * checked, a refused one holds the whole batch back until it is removed,
+     * and the rest go to storage and are handed over under one batch id.
      */
     @Test
     fun `a department upload is a bulk batch, and a refused file never reaches storage`() = runTest(dispatcher) {
@@ -146,6 +148,10 @@ class InvoicesViewModelTest {
         assertEquals(1, pick.sendable)
         assertFalse(pick.allowPaid, "only the accountant's upload offers Paid")
 
+        vm.onEvent(InboxEvent.SubmitBulk)
+        advanceUntilIdle()
+        assertEquals(0, files.uploaded, "nothing is sent while a file is refused")
+        vm.onEvent(InboxEvent.RemoveBulkFile(pick.files.first { it.problem != null }.ref))
         vm.onEvent(InboxEvent.SubmitBulk)
         advanceUntilIdle()
         assertEquals(1, files.uploaded)
@@ -185,19 +191,33 @@ class InvoicesViewModelTest {
 
         vm.onEvent(InvoicesEvent.EnterNetChanged("1000"))
         vm.onEvent(InvoicesEvent.EnterTaxChanged("200"))
-        assertEquals("1200.00", vm.state.value.enter?.gross, "gross follows net + tax")
+        assertEquals("1200", vm.state.value.enter?.gross, "gross follows net + tax, in natural decimals")
         vm.onEvent(InvoicesEvent.EnterGrossChanged("1300"))
         vm.onEvent(InvoicesEvent.EnterNetChanged("1000"))
-        assertEquals("300.00", vm.state.value.enter?.tax, "after a typed gross, tax follows gross − net")
+        assertEquals("300", vm.state.value.enter?.tax, "after a typed gross, tax follows gross − net")
 
+        // The dates start empty and are required: every missing field is named at once.
+        vm.onEvent(InvoicesEvent.SubmitEnter)
+        assertEquals(
+            setOf(EnterField.Vendor, EnterField.InvoiceNumber, EnterField.InvoiceDate, EnterField.EffectiveDate, EnterField.Department),
+            vm.state.value.enter?.errors?.keys,
+        )
         vm.onEvent(
             InvoicesEvent.EnterChanged(
-                vm.state.value.enter!!.copy(vendorId = "v1", invoiceNumber = "INV-1", departmentId = "d-cam"),
+                vm.state.value.enter!!.copy(
+                    vendorId = "v1",
+                    invoiceNumber = "INV-1",
+                    departmentId = "d-cam",
+                    invoiceDate = "2026-09-01",
+                    effectiveDate = "2026-09-01",
+                ),
             ),
         )
+        assertTrue(vm.state.value.enter?.errors.orEmpty().isEmpty(), "filled fields clear their errors")
         vm.onEvent(InvoicesEvent.SubmitEnter)
         advanceUntilIdle()
         val entered = repo.entered.single()
+        assertEquals("Invoice", entered.description, "a blank description is sent as the web sends it")
         assertEquals(1300.0, entered.grossAmount)
         assertEquals(1000.0, entered.netAmount)
         assertEquals(300.0, entered.taxAmount)

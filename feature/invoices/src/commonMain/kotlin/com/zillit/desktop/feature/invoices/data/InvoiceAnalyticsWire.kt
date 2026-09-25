@@ -50,7 +50,8 @@ internal fun parseAnalytics(data: JsonElement?): InvoiceAnalytics {
                 unknown = row.text("unknown"),
                 projected = row.text("projected"),
                 variance = row.text("variance"),
-                isOver = row.flag("over") == true || row.flag("highlight") == true,
+                // `over` alone — the web never reads `highlight` (`AnalyticsPage.jsx:236`).
+                isOver = row.flag("over") == true,
             )
         },
         vendors = parseShares(root.firstOf("suppliers", "vendors")),

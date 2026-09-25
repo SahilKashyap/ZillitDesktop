@@ -254,6 +254,13 @@ internal data class ProfileDto(
     @SerialName("department_name") val departmentName: String? = null,
     @SerialName("designation_id") val designationId: String? = null,
     @SerialName("designation_name") val designationName: String? = null,
+    /**
+     * The stable identifiers behind those names (`department_accounts`,
+     * `designation_production_accountant_accounts`) — what the web's role
+     * checks read (`AuthContext.jsx:75-80`, `po-permissions.js`).
+     */
+    @SerialName("department_identifier") val departmentIdentifier: String? = null,
+    @SerialName("designation_identifier") val designationIdentifier: String? = null,
     @SerialName("keep_name_private") val keepNamePrivate: Boolean? = null,
     /** ZL-21078: show the Zillit mailbox address on the crew list. Absent means the server default, ON. */
     @SerialName("zillit_email_enable") val zillitEmailEnable: Boolean? = null,
@@ -275,6 +282,8 @@ internal data class ProfileDto(
             departmentName = departmentName?.takeIf { it.isNotBlank() },
             designationId = designationId?.takeIf { it.isNotBlank() },
             designationName = designationName?.takeIf { it.isNotBlank() },
+            departmentIdentifier = departmentIdentifier?.takeIf { it.isNotBlank() },
+            designationIdentifier = designationIdentifier?.takeIf { it.isNotBlank() },
             keepNamePrivate = keepNamePrivate == true,
             showMailboxInCrewList = zillitEmailEnable,
             mailboxAddress = mailBoxDetail?.emailAddress?.takeIf { it.isNotBlank() },
@@ -300,6 +309,14 @@ internal data class ProjectDetailDto(
     @SerialName("project_type") val type: String? = null,
     @SerialName("project_sub_type") val subType: String? = null,
     @SerialName("company_name") val companyName: String? = null,
+    /**
+     * The company's contact block — the invoices tool prints it on a sales
+     * invoice (the web's `useProjectInfo`). Read tolerantly, like the
+     * storage folders: a shape nobody expected must not fail the decode.
+     */
+    @SerialName("company_address") val companyAddress: JsonElement? = null,
+    @SerialName("company_phone") val companyPhone: JsonElement? = null,
+    @SerialName("company_email") val companyEmail: JsonElement? = null,
     /** `BOX` for productions on Box storage; anything else means AWS. */
     @SerialName("storage_type") val storageType: String? = null,
     @SerialName("enterprise_client_id") val enterpriseClientId: String? = null,
@@ -331,6 +348,9 @@ internal data class ProjectDetailDto(
         type = type,
         subType = subType,
         companyName = companyName?.takeIf { it.isNotBlank() },
+        companyAddress = plainText(companyAddress),
+        companyPhone = plainText(companyPhone),
+        companyEmail = plainText(companyEmail),
         storageType = storageType?.takeIf { it.isNotBlank() },
         enterpriseClientId = enterpriseClientId?.takeIf { it.isNotBlank() },
         storageFolders = readStorageFolders(storageFolders),
@@ -338,6 +358,16 @@ internal data class ProjectDetailDto(
         markedForDeletion = markDeleted == true,
         languageCode = (languageCode ?: projectLanguage)?.takeIf { it.isNotBlank() },
     )
+}
+
+/** A string value, or an object's parts joined (an address, `{country_code, number}`); null when there is none. */
+private fun plainText(element: JsonElement?): String? = when (element) {
+    is JsonPrimitive -> element.content.takeIf { element !is kotlinx.serialization.json.JsonNull && it.isNotBlank() }
+    is JsonObject -> element.values.mapNotNull { (it as? JsonPrimitive)?.content?.takeIf(String::isNotBlank) }
+        .filter { it != "null" }
+        .joinToString(", ")
+        .takeIf { it.isNotBlank() }
+    else -> null
 }
 
 /**

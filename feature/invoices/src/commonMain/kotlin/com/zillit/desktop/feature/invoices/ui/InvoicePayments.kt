@@ -3,11 +3,16 @@ package com.zillit.desktop.feature.invoices.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.feature.invoices.domain.Invoice
+import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.PaymentRun
 import com.zillit.desktop.feature.invoices.domain.PaymentRuns
+import com.zillit.desktop.feature.invoices.domain.PaymentTab
+import com.zillit.desktop.feature.invoices.domain.RunAuthLevel
+import com.zillit.desktop.feature.invoices.domain.RunCreated
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -15,73 +20,161 @@ import com.zillit.desktop.core.strings.str
  * Paying and handing on — the Payment Runs and assignment mutations, split
  * out of the ViewModel so it stays a router.
  *
- * They share one shape: the server owns the transition, so every one of them
- * reloads what it changed rather than editing the list in place.
+ * The server owns every transition. Where the web moves rows itself rather
+ * than refetching — marking paid, building runs (`PaymentsPage.jsx:1078-1352`)
+ * — so does this; the socket's refetch settles anything else.
  */
 internal class InvoicePayments(private val vm: InvoicesViewModel) {
 
-    /** The Payments page needs its batches as well as its open items. */
-    fun loadPaymentRuns() {
-        vm.run {
-            vm.repo.paymentRuns().getOrNull()?.let { runs -> vm.update { copy(paymentRuns = runs) } }
-        }
-    }
+    private val wires = InvoiceWireAttachments(vm)
 
-    /** The header tick: everything on the tab, or nothing. */
-    fun toggleSelectAll() {
-        val ids = vm.state.value.paymentRows.map { it.id }.toSet()
-        vm.update { copy(selected = if (selected.containsAll(ids) && ids.isNotEmpty()) emptySet() else ids) }
+    /** Payment Runs' and Creditors' own events; false for everything else. */
+    fun onEvent(event: InvoicesEvent): Boolean {
+        when (event) {
+            is PaymentsEvent.ToggleOpenItem -> vm.update {
+                copy(pay = pay.copy(openItemsSelected = pay.openItemsSelected.toggled(event.id)))
+            }
+            is PaymentsEvent.ToggleWire -> vm.update {
+                copy(pay = pay.copy(wiresSelected = pay.wiresSelected.toggled(event.id)))
+            }
+            is PaymentsEvent.ToggleCheque -> vm.update {
+                copy(pay = pay.copy(chequesSelected = pay.chequesSelected.toggled(event.id)))
+            }
+            PaymentsEvent.ClearWires -> vm.update { copy(pay = pay.copy(wiresSelected = emptySet())) }
+            PaymentsEvent.MarkWiresPaid -> {
+                val state = vm.state.value
+                markPaid(state.wireInvoices.map { it.id }.filter { it in state.pay.wiresSelected })
+            }
+            is PaymentsEvent.ClickRow -> clickRow(event.invoice)
+            is PaymentsEvent.MarkPaidFromDetail -> markPaidOne(event.invoice)
+            is PaymentsEvent.SelectCreditorFilter -> vm.update {
+                copy(creditors = creditors.copy(filter = event.filter))
+            }
+            is PaymentsEvent.SelectCreditorSort -> vm.update { copy(creditors = creditors.copy(sort = event.sort)) }
+            is PaymentsEvent.SelectCreditorAgeing -> vm.update {
+                copy(creditors = creditors.copy(ageing = event.ageing))
+            }
+            else -> return wires.onEvent(event)
+        }
+        return true
     }
 
     /**
-     * Processes what is ticked.
+     * The Payments page needs its batches as well as its open items.
      *
-     * A selection that shares one method acts at once; a mixed one opens the
-     * sheet, because each method leaves the queue a different way and a single
-     * button would have to guess which.
+     * Only the first read shows "Loading runs…"; a refetch (socket, a
+     * decision, a new run) swaps the list silently, and a failed read empties
+     * it, as the web's `fetchActiveRuns` does.
      */
-    fun processSelected(method: PayMethod?) {
-        // The buttons are disabled without run access; so is the handler.
-        if (!vm.state.value.viewer.canOperateRuns) return
-        val rows = vm.state.value.selectedPaymentRows
-        if (rows.isEmpty()) {
-            vm.update { copy(error = str(S.desktop_inv_tick_to_pay_first)) }
-            return
+    fun loadPaymentRuns() {
+        val first = vm.state.value.paymentRuns.isEmpty()
+        if (first) vm.update { copy(pay = pay.copy(runsLoading = true)) }
+        vm.run {
+            val runs = vm.repo.paymentRuns().getOrNull().orEmpty()
+            vm.update { copy(paymentRuns = runs, pay = pay.copy(runsLoading = false)) }
         }
-        val chosen = method ?: vm.state.value.selectedPayMethod
+    }
+
+    /**
+     * "Recently Marked as Paid": the paid invoices, wires and faster payments
+     * only — `list({status: "paid", perPage: 100})` (`PaymentsPage.jsx:1195-1203`).
+     */
+    fun loadRecentlyPaid() {
+        vm.run {
+            vm.repo.list(InvoiceQuery(statuses = listOf(InvoiceStatus.Paid), perPage = RECENTLY_PAID_PAGE))
+                .getOrNull()
+                ?.let { rows ->
+                    val paid = rows.filter { it.payCode in PaymentRuns.WIRE_CODES }
+                    vm.update { copy(pay = pay.copy(recentlyPaid = paid)) }
+                }
+        }
+    }
+
+    /**
+     * The run authorisation bar's names — `full_name (formatLabel(designation))`,
+     * or the bare id for somebody the directory does not know (`:1603-1612`).
+     */
+    fun authLabels(chain: List<RunAuthLevel>): Map<String, String> {
+        val people = vm.people().associateBy { it.id }
+        return chain.flatMap { it.userIds }.distinct().associateWith { id ->
+            val person = people[id]
+            val name = person?.name?.takeIf { it.isNotBlank() } ?: id
+            val designation = person?.role?.takeIf { it.isNotBlank() }?.localised()
+            if (designation.isNullOrBlank()) name else str(S.desktop_inv_name_with_designation, name, designation)
+        }
+    }
+
+    /** Every open item ticked, or none — kept for the keyboard; the page has no Select All. */
+    fun toggleSelectAll() {
+        val ids = vm.state.value.invoices.map { it.id }.toSet()
+        vm.update {
+            val all = ids.isNotEmpty() && pay.openItemsSelected.containsAll(ids)
+            copy(pay = pay.copy(openItemsSelected = if (all) emptySet() else ids))
+        }
+    }
+
+    /**
+     * A Wires or Cheques row: while anything on that tab is ticked a click
+     * ticks it too; otherwise it opens the detail (`PaymentsPage.jsx:1845, 2011`).
+     */
+    private fun clickRow(invoice: Invoice) {
+        val state = vm.state.value
+        when {
+            state.paymentTab == PaymentTab.Wires && state.pay.wiresSelected.isNotEmpty() ->
+                onEvent(PaymentsEvent.ToggleWire(invoice.id))
+            state.paymentTab == PaymentTab.Cheques && state.pay.chequesSelected.isNotEmpty() ->
+                onEvent(PaymentsEvent.ToggleCheque(invoice.id))
+            else -> vm.openInvoice(invoice)
+        }
+    }
+
+    /**
+     * Processes the ticked open items — the web's `handleProcessGroupAction`.
+     *
+     * [code] is a Process-sheet card's method; null is the header button,
+     * which acts only when every tick shares one method and otherwise opens
+     * the sheet. BACs becomes runs; wire and faster are marked paid; a cheque
+     * and any other method have no action yet ("Cheque printing isn't
+     * available yet", "Process").
+     */
+    fun processSelected(code: String?) {
+        val state = vm.state.value
+        // The buttons are disabled without run access; so is the handler.
+        if (!state.viewer.canOperateRuns) return
+        val rows = state.selectedPaymentRows
+        if (rows.isEmpty()) return
+        val chosen = code ?: state.selectedPayCode
         if (chosen == null) {
             vm.update { copy(runDraft = ProcessRequest(rows)) }
             return
         }
-        when {
-            chosen == PayMethod.Bacs -> createBacsRuns()
-            chosen in PaymentRuns.WIRE_METHODS -> markPaid(rows.filter { it.payMethod == chosen }.map { it.id })
-            // A cheque is not paid from here: it is printed, which is the
-            // detail dialog. The web opens the first of the selection too.
-            chosen == PayMethod.Cheque -> rows.firstOrNull { it.payMethod == chosen }?.let { vm.openInvoice(it) }
-            else -> vm.update { copy(error = str(S.desktop_inv_not_processed_here, chosen.label)) }
+        when (chosen) {
+            PayMethod.Bacs.wire -> createBacsRuns()
+            in PaymentRuns.WIRE_CODES -> markPaid(rows.filter { it.payCode == chosen }.map { it.id }, chosen)
+            else -> Unit
         }
     }
 
     /**
-     * One run per vendor and currency, numbered on from the runs already there.
+     * One BACs run per vendor and currency, numbered on from the runs already
+     * there — then the Active Runs tab, on the last run made (`:1294-1352`).
      *
      * The runs that land stay landed: a failure half way through stops the
      * rest and is reported, rather than being retried into duplicates.
      */
     fun createBacsRuns() {
-        val groups = vm.state.value.bacsGroups
-        if (groups.isEmpty()) {
-            vm.update { copy(error = str(S.desktop_inv_nothing_ticked_bacs)) }
-            return
-        }
-        vm.update { copy(runDraft = runDraft?.copy(busy = PayMethod.Bacs), busy = true) }
+        val state = vm.state.value
+        if (!state.viewer.canOperateRuns || state.pay.creatingRun) return
+        val groups = state.bacsGroups
+        if (groups.isEmpty()) return
+        vm.update { copy(runDraft = runDraft?.copy(busy = PayMethod.Bacs.wire), pay = pay.copy(creatingRun = true)) }
         vm.run {
             val existing = vm.state.value.paymentRuns
             var failure: ZillitError? = null
+            var last: RunCreated? = null
             val done = mutableSetOf<String>()
             for ((index, group) in groups.withIndex()) {
-                val result = vm.repo.createPaymentRun(
+                val result = vm.repo.createPaymentRunWithMessage(
                     name = group.runName,
                     number = PaymentRuns.nextNumber(existing, index),
                     payMethod = PayMethod.Bacs,
@@ -91,46 +184,92 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                     failure = result.error
                     break
                 }
+                last = (result as? ZillitResult.Success)?.data
                 done += group.ids
             }
-            vm.update {
-                copy(
-                    busy = false,
-                    runDraft = if (failure == null) null else runDraft?.copy(busy = null),
-                    selected = selected - done,
-                    error = failure?.localised(),
-                )
+            val error = failure
+            if (error != null) {
+                vm.update {
+                    copy(
+                        runDraft = runDraft?.copy(busy = null),
+                        pay = pay.copy(creatingRun = false),
+                        error = error.localised(),
+                    )
+                }
+                loadPaymentRuns()
+                vm.refresh()
+            } else {
+                landOnNewRun(done, last, groups.size)
             }
-            if (failure == null) vm.notice(str(S.desktop_inv_payment_run_created_n, groups.size))
-            loadPaymentRuns()
-            vm.refresh()
         }
     }
 
-    /** The Wires tab's own row button: one wire or faster payment, settled at the bank. */
-    fun markPaidOne(invoice: Invoice) {
-        val state = vm.state.value
-        if (!state.viewer.canOperateRuns || state.busy) return
-        if (invoice.payMethod !in PaymentRuns.WIRE_METHODS || invoice.status != InvoiceStatus.ReadyToPay) return
-        markPaid(listOf(invoice.id))
+    /** After the runs are made: their invoices leave Open Items, and the last run opens on Active Runs. */
+    private suspend fun landOnNewRun(done: Set<String>, last: RunCreated?, made: Int) {
+        vm.update { withoutOpenItems(done).let { it.copy(runDraft = null, pay = it.pay.copy(creatingRun = false)) } }
+        vm.notice(last?.message?.localisedMessage() ?: str(S.desktop_inv_payment_run_created_n, made))
+        val runs = vm.repo.paymentRuns().getOrNull() ?: vm.state.value.paymentRuns
+        vm.update { copy(paymentRuns = runs, paymentTab = PaymentTab.Runs) }
+        val id = last?.id?.takeIf { it.isNotBlank() } ?: return
+        openRun(runs.firstOrNull { it.id == id } ?: PaymentRun(id = id))
     }
 
-    fun markPaid(ids: List<String>) {
-        if (ids.isEmpty()) return
-        vm.update { copy(busy = true, runDraft = runDraft?.copy(busy = PayMethod.Wire)) }
+    /**
+     * One wire or faster payment settled at the bank — the Wires row's and the
+     * detail's Mark Paid (`handleMarkPaid`, `:1078-1115`). It moves to
+     * "Recently Marked as Paid" and the detail closes if it was this one.
+     */
+    fun markPaidOne(invoice: Invoice) {
+        val state = vm.state.value
+        if (!state.viewer.canOperateRuns || invoice.id in state.pay.markingPaid) return
+        if (invoice.payCode !in PaymentRuns.WIRE_CODES || invoice.status == InvoiceStatus.Paid) return
+        vm.update { copy(pay = pay.copy(markingPaid = pay.markingPaid + invoice.id)) }
         vm.run {
-            val result = vm.repo.markPaid(ids)
+            val result = vm.repo.markPaidWithMessage(listOf(invoice.id))
             vm.update {
-                copy(
-                    busy = false,
-                    runDraft = if (result is ZillitResult.Success) null else runDraft?.copy(busy = null),
-                    selected = if (result is ZillitResult.Success) selected - ids.toSet() else selected,
-                    error = (result as? ZillitResult.Failure)?.error?.localised(),
-                )
+                val done = copy(pay = pay.copy(markingPaid = pay.markingPaid - invoice.id))
+                when (result) {
+                    is ZillitResult.Failure -> done.copy(error = result.error.localised())
+                    is ZillitResult.Success -> done.markedPaid(setOf(invoice.id), vm.now()).let {
+                        it.copy(
+                            pay = it.pay.copy(wiresSelected = it.pay.wiresSelected - invoice.id),
+                            detail = it.detail?.takeIf { open -> open.invoice.id != invoice.id },
+                        )
+                    }
+                }
             }
             if (result is ZillitResult.Success) {
-                vm.notice(str(S.desktop_inv_marked_paid_n, ids.size))
-                vm.refresh()
+                vm.notice(result.data?.localisedMessage() ?: str(S.desktop_inv_marked_paid_n, 1))
+            }
+        }
+    }
+
+    /**
+     * Several at once in one call — the Open Items header, a Process-sheet
+     * card, or the Wires bulk bar, which marks every ticked wire whether wire
+     * or faster (`handleBulkMarkPaid`, `:1121-1147`). [code] names the sheet
+     * card whose button spins.
+     */
+    fun markPaid(ids: List<String>, code: String? = null) {
+        val state = vm.state.value
+        if (ids.isEmpty() || !state.viewer.canOperateRuns || state.pay.bulkMarking) return
+        vm.update { copy(pay = pay.copy(bulkMarking = true), runDraft = runDraft?.copy(busy = code)) }
+        vm.run {
+            val result = vm.repo.markPaidWithMessage(ids)
+            vm.update {
+                val done = copy(pay = pay.copy(bulkMarking = false))
+                when (result) {
+                    is ZillitResult.Failure -> done.copy(
+                        runDraft = runDraft?.copy(busy = null),
+                        error = result.error.localised(),
+                    )
+                    is ZillitResult.Success -> done.markedPaid(ids.toSet(), vm.now()).let {
+                        it.copy(runDraft = null, pay = it.pay.copy(wiresSelected = emptySet()))
+                    }
+                }
+            }
+            if (result is ZillitResult.Success) {
+                vm.notice(result.data?.localisedMessage() ?: str(S.desktop_inv_marked_paid_n, ids.size))
             }
         }
     }
@@ -177,7 +316,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         if (!decision.canApprove || tier == null || vm.state.value.busy) return
         vm.update { copy(busy = true, runDetail = runDetail?.copy(busy = true)) }
         vm.run {
-            val result = vm.repo.approvePaymentRun(current.id, tier, decision.totalTiers)
+            val result = vm.repo.approvePaymentRunWithMessage(current.id, tier, decision.totalTiers)
             vm.update {
                 copy(
                     busy = false,
@@ -186,7 +325,10 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                 )
             }
             if (result is ZillitResult.Success) {
-                vm.notice(str(S.ah_run_approved_toast))
+                // The run's unread is read by the decision, never by opening it (ZL-21219).
+                vm.readDepartmentRow(current.id)
+                vm.readPaymentRunRow(current.id)
+                vm.notice(result.data?.localisedMessage() ?: str(S.ah_run_approved_toast))
                 // The web re-reads the run, so the next tier's signer sees it move on.
                 reloadRun(current.id)
                 loadPaymentRuns()
@@ -205,7 +347,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         if (!request.isReady || request.busy) return
         vm.update { copy(rejectRun = rejectRun?.copy(busy = true)) }
         vm.run {
-            val result = vm.repo.rejectPaymentRun(request.run.id, request.reason)
+            val result = vm.repo.rejectPaymentRunWithMessage(request.run.id, request.reason)
             vm.update {
                 val landed = result is ZillitResult.Success
                 copy(
@@ -216,7 +358,9 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                 )
             }
             if (result is ZillitResult.Success) {
-                vm.notice(str(S.ah_run_rejected_toast))
+                vm.readDepartmentRow(request.run.id)
+                vm.readPaymentRunRow(request.run.id)
+                vm.notice(result.data?.localisedMessage() ?: str(S.ah_run_rejected_toast))
                 loadPaymentRuns()
                 vm.refresh()
             }
@@ -235,7 +379,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         if (!vm.state.value.viewer.canOperateRuns || open.busy) return
         vm.update { copy(runDetail = runDetail?.copy(busy = true)) }
         vm.run {
-            val result = vm.repo.deletePaymentRun(open.run.id)
+            val result = vm.repo.deletePaymentRunWithMessage(open.run.id)
             vm.update {
                 copy(
                     runDetail = if (result is ZillitResult.Success) {
@@ -247,7 +391,7 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
                 )
             }
             if (result is ZillitResult.Success) {
-                vm.notice(str(S.desktop_run_deleted))
+                vm.notice(result.data?.localisedMessage() ?: str(S.desktop_run_deleted))
                 loadPaymentRuns()
                 vm.refresh()
             }
@@ -299,4 +443,35 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
             }
         }
     }
+
+    companion object {
+        /** Open Items reads `perPage: 500` (`PaymentsPage.jsx:1194`). */
+        const val OPEN_ITEMS_PAGE = 500
+
+        /** "Recently Marked as Paid" reads `perPage: 100`. */
+        private const val RECENTLY_PAID_PAGE = 100
+    }
+}
+
+private fun Set<String>.toggled(id: String): Set<String> = if (id in this) this - id else this + id
+
+/**
+ * [ids] leave Open Items; the rest are ticked again, as the web re-ticks the
+ * whole list whenever its rows change (`PaymentsPage.jsx:1394-1396`).
+ */
+private fun InvoicesUiState.withoutOpenItems(ids: Set<String>): InvoicesUiState {
+    val left = invoices.filterNot { it.id in ids }
+    return copy(invoices = left, pay = pay.copy(openItemsSelected = left.map { it.id }.toSet()))
+}
+
+/**
+ * [ids] were marked paid: out of Open Items, and — wires and faster payments
+ * — onto the top of "Recently Marked as Paid", stamped now, unless already there.
+ */
+private fun InvoicesUiState.markedPaid(ids: Set<String>, nowMs: Long): InvoicesUiState {
+    val moved = invoices
+        .filter { it.id in ids && it.payCode in PaymentRuns.WIRE_CODES }
+        .filter { row -> pay.recentlyPaid.none { it.id == row.id } }
+        .map { it.copy(status = InvoiceStatus.Paid, paidAtMs = nowMs) }
+    return withoutOpenItems(ids).let { it.copy(pay = it.pay.copy(recentlyPaid = moved + it.pay.recentlyPaid)) }
 }
