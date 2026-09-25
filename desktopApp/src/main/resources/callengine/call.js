@@ -829,7 +829,7 @@
         return null;
     }
 
-    function line1VideoElement(stream, share) {
+    function line1VideoElement(stream, share, lk) {
         const video = document.createElement('video');
         video.autoplay = true;
         video.playsInline = true;
@@ -840,7 +840,15 @@
         // A shared screen is shown whole: cropped to the tile like a face, the
         // edges of a document or a spreadsheet's columns were simply cut off.
         video.style.objectFit = share ? 'contain' : 'cover';
-        video.srcObject = stream;
+        // A LiveKit video is attached through the SDK, as the web's Tile does:
+        // adaptiveStream then watches THIS element's size and visibility and
+        // asks for the layer to match — a small tile on a slow link gets a
+        // picture that fits the link, rather than a 720p one that never comes.
+        if (lk && lk.attach) {
+            try { lk.attach(video); } catch (e) { video.srcObject = stream; warn('lk.attach', e); }
+        } else {
+            video.srcObject = stream;
+        }
         // Asked explicitly, not left to `autoplay`: an element that stays
         // paused is a black tile with a live track behind it, and the
         // refusal's name is the only clue to why.
@@ -893,7 +901,7 @@
                 report.push(videoState(entry.peerId, entry.element));
                 return;
             }
-            if (!entry.element) { entry.element = line1VideoElement(entry.stream, entry.share); }
+            if (!entry.element) { entry.element = line1VideoElement(entry.stream, entry.share, entry.lk); }
             cell.mount.innerHTML = '';
             cell.mount.appendChild(entry.element);
             resume(entry.element);
@@ -962,6 +970,7 @@
         line1Media.forEach((entry) => {
             try {
                 if (entry.element) {
+                    if (entry.lk && entry.lk.detach) { entry.lk.detach(entry.element); }
                     entry.element.srcObject = null;
                     if (entry.element.parentNode) { entry.element.parentNode.removeChild(entry.element); }
                 }
@@ -981,7 +990,7 @@
     window.zillitCall = {
 
         /** Binds one consumed remote track so it is actually heard or seen. */
-        attachRemote(consumerId, peerId, kind, stream, share) {
+        attachRemote(consumerId, peerId, kind, stream, share, lk) {
             try {
                 this.detachRemote(consumerId);
                 if (kind === 'audio') {
@@ -999,7 +1008,9 @@
                     recorderAdd(stream);
                     return;
                 }
-                line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: null, share: !!share });
+                line1Media.set(consumerId, {
+                    peerId: peerId, kind: kind, stream: stream, element: null, share: !!share, lk: lk || null,
+                });
                 // A share arriving or leaving changes the layout, not just one
                 // cell: the presenter takes the big slot, then gives it back.
                 if (share) { render(); } else { line1Mount(); }
@@ -1015,6 +1026,8 @@
             line1Media.delete(consumerId);
             try {
                 if (entry.element) {
+                    // Stops adaptiveStream watching an element that is going away.
+                    if (entry.lk && entry.lk.detach) { entry.lk.detach(entry.element); }
                     entry.element.srcObject = null;
                     if (entry.element.parentNode) { entry.element.parentNode.removeChild(entry.element); }
                 }

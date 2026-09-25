@@ -17,8 +17,9 @@
  * land on the same tile.
  *
  * Remote media is rendered through the page's own sink (`zillitCall.attachRemote`),
- * not LiveKit's `track.attach`, so tiles, names and speaking rings are the
- * same chrome on every line.
+ * so tiles, names and speaking rings are the same chrome on every line — but a
+ * remote VIDEO is handed over with its LiveKit track, which the page attaches
+ * with `track.attach` so adaptiveStream can see the tile it plays in (below).
  */
 (function () {
     'use strict';
@@ -45,6 +46,130 @@
     var hidden = {};
     var onHold = false;
     var mediaBeforeHold = { mic: true, cam: false };
+    /** What the last join was given — replayed by a rejoin after the link died. */
+    var creds = null;
+    var rejoining = false;
+    var netOffline = false;
+    var reconnectPoll = null;
+
+    /**
+     * The Room, with the options every connection shares — the web's
+     * `buildRoom` (`LivekitEngine.ts:463-469`). adaptiveStream asks the SFU for
+     * the simulcast layer that fits the tile each video actually plays in, and
+     * dynacast stops the layers nobody watches; together they are what keeps a
+     * remote picture coming on a slow link. With adaptiveStream off every
+     * viewer asked for the full 720p layer, which a slow downlink cannot carry,
+     * and the tile stayed black where the web's showed a smaller picture.
+     *
+     * `pauseVideoInBackground` is off because this page is drawn off-screen
+     * into the app's window: the document can read as hidden while the call
+     * is on screen, and LiveKit would pause every video for it.
+     */
+    function buildRoom() {
+        return new LK.Room({
+            adaptiveStream: { pauseVideoInBackground: false },
+            dynacast: true,
+            videoCaptureDefaults: { resolution: LK.VideoPresets.h720.resolution },
+        });
+    }
+
+    function sendConnection(word) {
+        send({ type: 'connection', state: word, reason: '' });
+    }
+
+    /*
+     * Reconnection — the web's (`LivekitEngine.ts:221-900`). LiveKit's own
+     * reconnect misses a device network drop: an outage can leave the room
+     * "connected" while media is dead, and a resume that stalls on a slow link
+     * never restarts itself. So the device's own online/offline events count
+     * too, and a room that stays down while the network is up is dropped and
+     * joined again with the same token — LiveKit replaces the participant in
+     * place, so the others see a rejoin, not a new party.
+     */
+    function onOnline() { netOffline = false; ensureReconnectPoll(); }
+    function onOffline() {
+        netOffline = true;
+        if (room) { sendConnection('RECONNECTING'); }
+        ensureReconnectPoll();
+    }
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    function isConnected() {
+        return !!room && room.state === LK.ConnectionState.Connected;
+    }
+
+    /** Polls while the link is down: clears once the room proves itself, rejoins when it is stuck, to a deadline. */
+    function ensureReconnectPoll() {
+        if (reconnectPoll || !room) { return; }
+        var POLL = 1000, RETRY_AFTER = 4000, DEADLINE = 30000;
+        var stuck = 0, spent = 0;
+        reconnectPoll = setInterval(function () {
+            spent += POLL;
+            if (!room) { stopReconnectPoll(); return; }
+            var connected = isConnected();
+            if (!netOffline && connected && !rejoining) {
+                stopReconnectPoll();
+                sendConnection('CONNECTED');
+                return;
+            }
+            // A rejoin in flight is the recovery, not a stuck room.
+            if (!netOffline && !connected && !rejoining) { stuck += POLL; } else { stuck = 0; }
+            if (stuck >= RETRY_AFTER && spent < DEADLINE) { stuck = 0; rejoin(); }
+            if (spent >= DEADLINE) { stopReconnectPoll(); }
+        }, POLL);
+    }
+
+    function stopReconnectPoll() {
+        if (reconnectPoll) { clearInterval(reconnectPoll); reconnectPoll = null; }
+    }
+
+    /**
+     * Drops the dead room without ending the call — its listeners go first,
+     * so its disconnect cannot reach Kotlin as `left` — then joins again with
+     * the same credentials and puts back what was being sent.
+     */
+    async function rejoin() {
+        if (rejoining || !creds || !room) { return; }
+        rejoining = true;
+        var gen = joinGeneration;
+        try {
+            sendConnection('RECONNECTING');
+            var dead = room;
+            try { dead.removeAllListeners(); } catch (e) { /* not an emitter */ }
+            dead.remoteParticipants.forEach(function (p) {
+                p.trackPublications.forEach(function (pub) { detachRemote(p, pub); });
+            });
+            // Capped: a disconnect that hangs on a dead link must not block recovery.
+            await Promise.race([
+                dead.disconnect().catch(function () { /* already gone */ }),
+                new Promise(function (resolve) { setTimeout(resolve, 1500); }),
+            ]);
+            if (gen !== joinGeneration) { return; }
+            var r = buildRoom();
+            room = r;
+            wire(r);
+            await r.connect(creds.url, creds.token);
+            if (gen !== joinGeneration) { await r.disconnect(); return; }
+            trace('rejoined after the link died');
+            r.remoteParticipants.forEach(function (p) { peerJoined(p); });
+            if (r.metadata) { reportRecording(r.metadata); }
+            if (desiredMic && !onHold) {
+                try {
+                    await r.localParticipant.setMicrophoneEnabled(true, chosenMic ? { deviceId: chosenMic } : undefined);
+                } catch (e) { warn('rejoin:microphone', e); }
+            }
+            if (desiredCam && !onHold) {
+                try { await r.localParticipant.setCameraEnabled(true); } catch (e) { warn('rejoin:camera', e); }
+            }
+            showLocalPreview();
+            sendConnection('CONNECTED');
+        } catch (e) {
+            warn('rejoin', e);   // the poll retries to its deadline
+        } finally {
+            rejoining = false;
+        }
+    }
 
     function send(event) {
         try {
@@ -104,8 +229,12 @@
             // The last argument says "this is a shared screen": the page shows
             // it in the presenter's tile in place of their camera, uncropped,
             // rather than the two tracks taking turns in one cell.
+            // The LiveKit track rides along for videos: the page attaches it to
+            // the tile's element, which is what adaptiveStream sizes against.
+            var kind = kindOf(track);
             window.zillitCall.attachRemote(
-                key, user, kindOf(track), stream, publication.source === LK.Track.Source.ScreenShare);
+                key, user, kind, stream, publication.source === LK.Track.Source.ScreenShare,
+                kind === 'video' ? track : null);
         }
         if (publication.source === LK.Track.Source.ScreenShare) {
             send({ type: 'peer-screen-share', uid: uid, sharing: true });
@@ -261,7 +390,8 @@
             var word = state === S.Connected ? 'CONNECTED'
                 : state === S.Reconnecting ? 'RECONNECTING'
                 : state === S.Disconnected ? 'DISCONNECTED' : 'CONNECTING';
-            send({ type: 'connection', state: word, reason: '' });
+            sendConnection(word);
+            if (state === S.Reconnecting) { ensureReconnectPoll(); }
         });
         r.on(E.Disconnected, function () {
             if (room === r) {
@@ -327,12 +457,9 @@
             chosenMic = microphoneId || '';
             var r = null;
             try {
-                r = new LK.Room({
-                    adaptiveStream: false,
-                    dynacast: true,
-                    videoCaptureDefaults: { resolution: LK.VideoPresets.h720.resolution },
-                });
+                r = buildRoom();
                 room = r;
+                creds = { url: url, token: token };
                 wire(r);
                 await r.connect(url, token);
                 if (gen !== joinGeneration) { await r.disconnect(); return; }
@@ -366,6 +493,8 @@
             var r = room;
             room = null;
             joinGeneration++;
+            creds = null;
+            stopReconnectPoll();
             screenPub = null;
             onHold = false;
             deafened = {};
