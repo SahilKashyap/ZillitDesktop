@@ -57,6 +57,15 @@ enum class WindowState { Normal, Minimized, Maximized, Detached }
 @Serializable
 enum class LayoutMode { Tabs, Cascade }
 
+/**
+ * The web's sidebar switch (`SideMenu.jsx` `toggleViewMode`, persisted as
+ * `mdi_view_mode`): `Windowed` is the multi-window workspace with its tab
+ * strip; `Classic` is full-page navigation — one tool at a time, and opening
+ * another replaces it.
+ */
+@Serializable
+enum class ViewMode { Windowed, Classic }
+
 /** How a tool asks to open, mirroring the web registry's `openMode`. */
 @Serializable
 enum class OpenMode { Window, Maximized }
@@ -117,6 +126,7 @@ data class ToolWindow(
 data class WorkspaceState(
     val windows: List<ToolWindow> = emptyList(),
     val layoutMode: LayoutMode = LayoutMode.Tabs,
+    val viewMode: ViewMode = ViewMode.Windowed,
     val mdiEnabled: Boolean = true,
     val recentlyClosed: List<WorkspaceRoute> = emptyList(),
 ) {

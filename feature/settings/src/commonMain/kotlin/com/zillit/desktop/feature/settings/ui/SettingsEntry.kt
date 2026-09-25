@@ -434,12 +434,15 @@ fun adminSettingsEntries(
                 detail = str(S.desktop_sos_receivers_detail),
                 icon = ZillitIcons.Phone,
             ),
+            // Hidden on "other" productions, as the web's hub does
+            // (`AdminSetting.jsx` `isOtherProject()`): the notes walk a film
+            // production's setup.
             SettingsEntry(
                 destination = SettingsDestination.SetupNotes,
                 title = str(S.project_set_up_notes),
                 detail = str(S.desktop_setup_notes_detail),
                 icon = ZillitIcons.Info,
-            ),
+            ).takeUnless { production.isOtherType },
         ),
     ),
     SettingsGroup(

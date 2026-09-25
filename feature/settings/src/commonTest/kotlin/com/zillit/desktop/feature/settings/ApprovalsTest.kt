@@ -97,22 +97,101 @@ class ApprovalsTest {
         known: (String) -> KnownCrewMember? = { null },
     ) = ApprovalsViewModel(repository, knownCrew = known, nowMillis = { NOW })
 
+    // -- deciding several at once --------------------------------------------
+
+    @Test
+    fun `select all ticks every visible request`() = runTest {
+        val repository = FakeRepository(ZillitResult.Success(listOf(request("a"), request("b"))))
+        val approvals = viewModel(repository)
+        approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+
+        approvals.onEvent(ApprovalsEvent.SelectAll(ApprovalQueue.NewCrew, on = true))
+        assertTrue(approvals.state.value.crew.allVisibleSelected)
+
+        approvals.onEvent(ApprovalsEvent.SelectAll(ApprovalQueue.NewCrew, on = false))
+        assertTrue(approvals.state.value.crew.selected.isEmpty())
+    }
+
+    @Test
+    fun `approving the selection decides each ticked request, and only those`() = runTest {
+        val repository = FakeRepository(ZillitResult.Success(listOf(request("a"), request("b"), request("c"))))
+        val approvals = viewModel(repository)
+        approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+
+        approvals.onEvent(ApprovalsEvent.ToggleSelected(ApprovalQueue.NewCrew, "a"))
+        approvals.onEvent(ApprovalsEvent.ToggleSelected(ApprovalQueue.NewCrew, "c"))
+        approvals.onEvent(ApprovalsEvent.ApproveSelected(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(Triple(ApprovalQueue.NewCrew, "a", true), Triple(ApprovalQueue.NewCrew, "c", true)),
+            repository.decisions,
+        )
+        val crew = approvals.state.value.crew
+        assertEquals(listOf("b"), crew.items.map { it.id })
+        assertTrue(crew.selected.isEmpty())
+        assertFalse(crew.isDecidingSelected)
+    }
+
+    @Test
+    fun `declining the selection asks first`() = runTest {
+        val repository = FakeRepository(ZillitResult.Success(listOf(request("a"), request("b"))))
+        val approvals = viewModel(repository)
+        approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+
+        approvals.onEvent(ApprovalsEvent.SelectAll(ApprovalQueue.NewCrew, on = true))
+        approvals.onEvent(ApprovalsEvent.AskDeclineSelected(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+        assertTrue(approvals.state.value.crew.confirmingSelected)
+        assertTrue(repository.decisions.isEmpty())
+
+        approvals.onEvent(ApprovalsEvent.ConfirmDeclineSelected(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+        assertEquals(listOf(false, false), repository.decisions.map { it.third })
+        assertTrue(approvals.state.value.crew.items.isEmpty())
+    }
+
+    @Test
+    fun `a failed request in a selection stays ticked for another try`() = runTest {
+        val repository = FakeRepository(
+            ZillitResult.Success(listOf(request("a"))),
+            decision = ZillitResult.Failure(ZillitError.Validation("refused")),
+        )
+        val approvals = viewModel(repository)
+        approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+
+        approvals.onEvent(ApprovalsEvent.SelectAll(ApprovalQueue.NewCrew, on = true))
+        approvals.onEvent(ApprovalsEvent.ApproveSelected(ApprovalQueue.NewCrew))
+        advanceUntilIdle()
+
+        val crew = approvals.state.value.crew
+        assertEquals(setOf("a"), crew.selected)
+        assertEquals(listOf("a"), crew.items.map { it.id })
+    }
+
     // -- reading the queue -------------------------------------------------
 
     @Test
-    fun `opening a queue reads it once`() = runTest {
-        // Coming back to a page must not re-read a list the admin is part-way
-        // through deciding.
+    fun `every visit reads the queue again`() = runTest {
+        // A request can arrive while the admin is on another page; coming back
+        // must show it, not the list from the first visit. (What the old
+        // read-once rule protected — a decision part-way through — is covered
+        // in ApprovalsSyncTest.)
         val repository = FakeRepository(ZillitResult.Success(listOf(request("a"))))
         val approvals = viewModel(repository)
 
         approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
         advanceUntilIdle()
+        repository.listing = ZillitResult.Success(listOf(request("a"), request("b", "Sam Reed")))
         approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
         advanceUntilIdle()
 
-        assertEquals(1, repository.listReads)
-        assertEquals(1, approvals.state.value.crew.items.size)
+        assertEquals(2, repository.listReads)
+        assertEquals(2, approvals.state.value.crew.items.size)
     }
 
     @Test

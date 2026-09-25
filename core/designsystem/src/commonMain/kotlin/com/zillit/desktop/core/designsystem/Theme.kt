@@ -9,8 +9,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import com.zillit.desktop.core.strings.Strings
 
@@ -24,6 +29,20 @@ enum class ThemeMode { Light, Dark, System;
             entries.firstOrNull { it.name.equals(id, ignoreCase = true) } ?: System
     }
 }
+
+/**
+ * Settings' Interface size, as a percentage.
+ *
+ * Global rather than a theme parameter, like `Strings.language`: every window
+ * — main, torn-off, widgets, calls — wraps itself in [ZillitTheme], so setting
+ * it once here resizes all of them without each call site passing it along.
+ */
+object ZillitUiScale {
+    var percent: Int by mutableIntStateOf(100)
+}
+
+/** Whether an enclosing [ZillitTheme] has already scaled — so a nested one does not scale twice. */
+private val LocalZillitScaled = staticCompositionLocalOf { false }
 
 /**
  * Root theme.
@@ -51,7 +70,20 @@ fun ZillitTheme(
     // widgets — gets it from the one theme they all wrap themselves in.
     val direction = if (Strings.language.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 
+    // Scaling density grows dp and sp alike — text, spacing, icons and hit
+    // targets together — which is what "larger or smaller" means to a reader.
+    val baseDensity = LocalDensity.current
+    val alreadyScaled = LocalZillitScaled.current
+    val density = if (alreadyScaled) {
+        baseDensity
+    } else {
+        val factor = ZillitUiScale.percent / PERCENT
+        Density(baseDensity.density * factor, baseDensity.fontScale)
+    }
+
     CompositionLocalProvider(
+        LocalDensity provides density,
+        LocalZillitScaled provides true,
         LocalZillitColors provides colors,
         LocalZillitSpacing provides ZillitSpacing(),
         LocalZillitFonts provides fonts,
@@ -159,3 +191,5 @@ private fun ZillitColors.toMaterialScheme() = if (isDark) {
 }
 
 private const val THEME_TRANSITION_MILLIS = 220
+
+private const val PERCENT = 100f

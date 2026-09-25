@@ -46,6 +46,9 @@ sealed interface WorkspaceEvent {
      */
     data object CloseAllForProjectSwitch : WorkspaceEvent
     data object ToggleLayoutMode : WorkspaceEvent
+
+    /** Classic ⇄ windowed; the app feeds this from the stored preference. */
+    data class SetViewMode(val mode: ViewMode) : WorkspaceEvent
     data object ReopenLastClosed : WorkspaceEvent
     data object FocusNext : WorkspaceEvent
     data object FocusPrevious : WorkspaceEvent
@@ -114,6 +117,7 @@ class WorkspaceViewModel(
                 reduce { WorkspaceLayoutReducer.reorder(it, event.from, event.to) }
 
             WorkspaceEvent.ToggleLayoutMode -> reduce { WorkspaceLayoutReducer.toggleLayoutMode(it) }
+            is WorkspaceEvent.SetViewMode -> reduce { WorkspaceLayoutReducer.setViewMode(it, event.mode) }
             WorkspaceEvent.ReopenLastClosed -> reopenLastClosed()
             WorkspaceEvent.FocusNext -> cycleFocus(offset = 1)
             WorkspaceEvent.FocusPrevious -> cycleFocus(offset = -1)

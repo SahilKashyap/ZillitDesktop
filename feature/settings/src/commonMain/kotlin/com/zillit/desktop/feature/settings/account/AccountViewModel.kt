@@ -109,6 +109,11 @@ data class RecoveryEmailState(
     val isSaving: Boolean = false,
     val error: String? = null,
     val isSaved: Boolean = false,
+    /** The recovery key, read-only, as the web's Recovery dialog shows it. Blank until loaded. */
+    val key: String = "",
+    val isLoadingKey: Boolean = false,
+    /** Why the key could not be read; the email field still works without it. */
+    val keyError: String? = null,
 ) {
     /**
      * Checked here rather than by the server.
@@ -176,6 +181,9 @@ sealed interface AccountEvent {
 
     data class RecoveryEmailChanged(val value: String) : AccountEvent
     data object SaveRecoveryEmail : AccountEvent
+    /** Puts the recovery key on the clipboard — the web's "Copy Recovery Code". */
+    data object CopyRecoveryKey : AccountEvent
+    data object ReloadRecoveryKey : AccountEvent
 
     data object ReloadDevices : AccountEvent
     data class AskUnlink(val device: LinkedDevice) : AccountEvent
@@ -309,6 +317,11 @@ class AccountViewModel(
                 copy(recovery = recovery.copy(email = event.value, error = null, isSaved = false))
             }
             AccountEvent.SaveRecoveryEmail -> saveRecoveryEmail()
+            AccountEvent.CopyRecoveryKey -> currentState.recovery.key.takeIf { it.isNotBlank() }?.let { key ->
+                sendEffect(AccountEffect.CopyToClipboard(key))
+                announce(str(S.desktop_recovery_key_copied))
+            }
+            AccountEvent.ReloadRecoveryKey -> loadRecovery()
 
             AccountEvent.ReloadDevices -> loadDevices()
             is AccountEvent.AskUnlink -> setState { copy(devices = devices.copy(confirming = event.device)) }
@@ -342,7 +355,7 @@ class AccountViewModel(
                 loadDepartments()
             }
 
-            AccountPage.RecoveryEmail -> Unit
+            AccountPage.RecoveryEmail -> loadRecovery()
             AccountPage.LinkedDevices -> loadDevices()
             AccountPage.InviteCrew -> Unit
         }
@@ -400,6 +413,40 @@ class AccountViewModel(
                         profile = profile.copy(
                             isSaving = false,
                             error = str(S.desktop_could_not_save_profile, saved.error.localised()),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * The key and the address on file, as the web reads them on opening.
+     *
+     * The address fills the field only while it is empty, so a reload never
+     * overwrites something the person is part-way through typing.
+     */
+    private fun loadRecovery() {
+        if (currentState.recovery.isLoadingKey) return
+
+        setState { copy(recovery = recovery.copy(isLoadingKey = true, keyError = null)) }
+        launch {
+            when (val loaded = repository.recoveryDetails()) {
+                is ZillitResult.Success -> setState {
+                    copy(
+                        recovery = recovery.copy(
+                            isLoadingKey = false,
+                            key = loaded.data.key,
+                            email = recovery.email.ifBlank { loaded.data.email },
+                        ),
+                    )
+                }
+
+                is ZillitResult.Failure -> setState {
+                    copy(
+                        recovery = recovery.copy(
+                            isLoadingKey = false,
+                            keyError = str(S.desktop_could_not_load_recovery_key, loaded.error.localised()),
                         ),
                     )
                 }

@@ -34,6 +34,23 @@ object WorkspaceReducer {
             return state.reuse(existing, route)
         }
 
+        // Classic is a page, not a desktop: the new tool takes the old one's
+        // place, full size — the web's full-page `navigate`.
+        if (state.viewMode == ViewMode.Classic) {
+            val page = ToolWindow(
+                id = id,
+                title = title,
+                iconKey = iconKey,
+                state = WindowState.Maximized,
+                rect = rect,
+                history = listOf(route),
+            )
+            return state.copy(
+                windows = listOf(page),
+                recentlyClosed = state.remember(state.windows.map { it.rootRoute }),
+            )
+        }
+
         val window = ToolWindow(
             id = id,
             title = title,

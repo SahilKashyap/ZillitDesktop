@@ -117,6 +117,7 @@ class ZillitHeaderProvider(
             RequestModule.LiveKit,
             RequestModule.Configuration,
             RequestModule.ProjectUser,
+            RequestModule.Telemetry,
             -> HeaderPayload(
                 deviceId = current.deviceId,
                 projectId = current.projectId.orEmpty(),

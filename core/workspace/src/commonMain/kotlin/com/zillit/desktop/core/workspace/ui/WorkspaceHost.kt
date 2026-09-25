@@ -19,6 +19,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.LayoutMode
 import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.ToolWindow
+import com.zillit.desktop.core.workspace.ViewMode
 import com.zillit.desktop.core.workspace.WindowId
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceEvent
@@ -39,9 +40,11 @@ fun Workspace(
     onEvent: (WorkspaceEvent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    when (state.layoutMode) {
-        LayoutMode.Tabs -> WorkspaceHost(state, registry, onEvent, modifier)
-        LayoutMode.Cascade -> CascadeWorkspace(state, registry, onEvent, modifier)
+    // Classic is one full-size page whatever the windowed layout was.
+    when {
+        state.viewMode == ViewMode.Classic -> WorkspaceHost(state, registry, onEvent, modifier)
+        state.layoutMode == LayoutMode.Tabs -> WorkspaceHost(state, registry, onEvent, modifier)
+        else -> CascadeWorkspace(state, registry, onEvent, modifier)
     }
 }
 

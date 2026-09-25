@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">Görüşmeye dön</string>
     <string name="desktop_chat_drop_hint">Her dosya gönderilmeden önce önizlemede açılır.</string>
     <string name="desktop_screen_share_restart_needed">Ekran Kaydı artık Zillit için izinli. Ekranınızı paylaşmak için Zillit\'ten çıkıp yeniden açın — macOS bu değişikliği yalnızca yeniden başlatmadan sonra uygular.</string>
+    <string name="desktop_workspace_cascade">Basamaklı</string>
+    <string name="desktop_workspace_tabs">Sekmeler</string>
+    <string name="desktop_classic_view">Klasik görünüm</string>
+    <string name="desktop_windowed_view">Pencereli görünüm</string>
 </resources>

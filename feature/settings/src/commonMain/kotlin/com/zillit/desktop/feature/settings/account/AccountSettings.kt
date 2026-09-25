@@ -131,6 +131,21 @@ private fun kindLabel(kind: String): String = when (kind.trim().lowercase()) {
 }
 
 /**
+ * What `GET device` knows about getting back into this account.
+ *
+ * Either may be blank: a device registered before recovery keys existed has
+ * none, and most people never set an address.
+ */
+data class RecoveryDetails(
+    /** `projects_recovery_code` — typed on a new device to restore the productions. */
+    val key: String = "",
+    val email: String = "",
+) {
+    /** Never prints the key: this ends up in logs. */
+    override fun toString(): String = "RecoveryDetails(hasKey=${key.isNotBlank()}, hasEmail=${email.isNotBlank()})"
+}
+
+/**
  * Everything the account pages read and write.
  *
  * An interface because two of these five calls are irreversible from the user's
@@ -152,6 +167,12 @@ interface AccountRepository {
 
     /** Where a recovery code is sent if this person loses their devices. */
     suspend fun setRecoveryEmail(email: String): ZillitResult<Unit>
+
+    /**
+     * This person's recovery key and the address already on file — the web's
+     * Recovery dialog reads both from `GET device`'s `device_setting`.
+     */
+    suspend fun recoveryDetails(): ZillitResult<RecoveryDetails>
 
     suspend fun linkedDevices(): ZillitResult<List<LinkedDevice>>
 

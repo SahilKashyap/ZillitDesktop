@@ -62,6 +62,9 @@ object ZillitPreferences {
 
     val RestoreWorkspaceOnLaunch = PreferenceKey.BooleanKey("workspace.restore", true, PreferenceScope.Device)
 
+    /** `Windowed` | `Classic` — the rail's view switch, per device as the web's `mdi_view_mode`. */
+    val WorkspaceViewMode = PreferenceKey.StringKey("workspace.view_mode", "Windowed", PreferenceScope.Device)
+
     // -- the Drive widget (device-scoped: a window, not an account) --------
 
     /** Whether the always-on-top Drive widget was open when the app last quit. */
@@ -261,7 +264,7 @@ object ZillitPreferences {
     val all: List<PreferenceKey<*>> = listOf(
         ThemeMode, UiScalePercent, Language,
         WindowWidth, WindowHeight, WindowX, WindowY, WindowMaximized,
-        WorkspaceLayoutMode, RestoreWorkspaceOnLaunch,
+        WorkspaceLayoutMode, RestoreWorkspaceOnLaunch, WorkspaceViewMode,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,

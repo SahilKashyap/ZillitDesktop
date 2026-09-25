@@ -14,7 +14,8 @@ package com.zillit.desktop.core.badges
  * - **C&C**: missed calls plus every chat row that can be placed in a
  *   conversation (a room id or a sender); the rest are dropped (10133-10137,
  *   8126-8130).
- * - **Settings**: only the three approval/onboarding units (2432-2445).
+ * - **Settings**: only the approval/onboarding units (2432-2445), also keyed
+ *   by unit so each approval queue's row can wear its own count.
  * - Everything else (`sos_label`, `global_label`, `email_label`…): one per row.
  */
 fun tallyBadges(rows: Collection<NotificationRecord>): BadgeCounts {
@@ -34,7 +35,11 @@ private class Tally {
             BadgeSections.HOME -> home(row)
             BadgeSections.TOOLS -> tool(row)
             BadgeSections.CNC -> if (row.tool == NotificationRecord.CALL_TOOL || row.conversationKey != null) count(row)
-            BadgeSections.SETTINGS -> if (row.unit in BadgeSections.settingsUnits) count(row)
+            BadgeSections.SETTINGS -> if (row.unit in BadgeSections.settingsUnits) {
+                count(row)
+                // By unit too, so each approval row can wear its own count.
+                units.add(row.unit)
+            }
             else -> if (row.section.isNotBlank()) count(row)
         }
     }

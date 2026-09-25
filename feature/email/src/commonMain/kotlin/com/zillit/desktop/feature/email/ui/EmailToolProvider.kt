@@ -62,13 +62,6 @@ data class EmailHost(
     val isPending: () -> Boolean = { false },
     /** Whether files can be attached — false on a build with no storage. */
     val canAttach: Boolean = true,
-    /**
-     * A message another screen asked us to start, taken once when the mailbox
-     * opens. Claimed rather than pushed: the composer is raised by an effect,
-     * and an effect emitted before this window exists has nobody collecting
-     * it and is simply lost.
-     */
-    val claimPendingCompose: () -> Pair<String, String>? = { null },
 )
 
 /**
@@ -110,6 +103,20 @@ class EmailToolProvider(
 
     /** The conversations popped out of the pane, each snapshotted as it was. */
     val poppedThreads: PoppedThreads = PoppedThreads()
+
+    /**
+     * Starts a new message in a window of its own, with no mailbox behind it —
+     * the web's compose modal, for screens outside mail (Help's "Write to us").
+     * Answers the route of the window to open.
+     */
+    fun composeInWindow(addressedTo: String, about: String = ""): String =
+        composers.open(
+            ComposeMode.New,
+            replyTo = null,
+            addressedTo = addressedTo,
+            about = about,
+            window = ComposerWindow.PoppedOut,
+        ).routePath
 
     private fun draftById(id: String): EmailDraft? = viewModel.state.value.draft(id)
 
@@ -180,9 +187,6 @@ class EmailToolProvider(
         // fresh open, and syncs behind them.
         LaunchedEffect(viewModel) {
             viewModel.onEvent(EmailEvent.Load)
-            host.claimPendingCompose()?.let { (address, subject) ->
-                composers.open(ComposeMode.New, replyTo = null, addressedTo = address, about = subject)
-            }
         }
 
         // Messages other screens ask for — the crew list's "write to", the

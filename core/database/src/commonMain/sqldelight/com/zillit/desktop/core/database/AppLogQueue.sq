@@ -1,0 +1,30 @@
+-- Error-log events waiting for `location/log` (iOS Realm
+-- `ApiErrorPendingEventTaskModel`). Kept until the server acknowledges them,
+-- so an event from a failed send is not lost; the envelope is stored as the
+-- JSON the server will receive.
+--
+-- A cache-file table: rebuilt on schema change and gone with the key on
+-- sign-out, which costs at most a few unsent diagnostics.
+
+CREATE TABLE appLogQueue (
+    uniqueId  TEXT    NOT NULL PRIMARY KEY,
+    payload   TEXT    NOT NULL,
+    queuedAt  INTEGER NOT NULL
+);
+
+insert:
+INSERT OR REPLACE INTO appLogQueue(uniqueId, payload, queuedAt) VALUES (?, ?, ?);
+
+oldest:
+SELECT uniqueId, payload FROM appLogQueue ORDER BY queuedAt ASC, rowid ASC LIMIT ?;
+
+countAll:
+SELECT count(*) FROM appLogQueue;
+
+deleteByIds:
+DELETE FROM appLogQueue WHERE uniqueId IN ?;
+
+keepNewest:
+DELETE FROM appLogQueue WHERE uniqueId NOT IN (
+    SELECT uniqueId FROM appLogQueue ORDER BY queuedAt DESC, rowid DESC LIMIT ?
+);

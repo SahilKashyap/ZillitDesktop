@@ -164,6 +164,48 @@ class WorkspaceReducerTest {
     }
 
     @Test
+    fun `going classic keeps only the window in front, full size`() {
+        // The web's toggleViewMode: land full-page on the active window's tool.
+        var state = open(WorkspaceState(), "w1", budget)
+        state = open(state, "w2", callsheet)
+
+        state = WorkspaceLayoutReducer.setViewMode(state, ViewMode.Classic)
+
+        assertEquals(ViewMode.Classic, state.viewMode)
+        assertEquals(listOf(WindowId("w2")), state.windows.map { it.id })
+        assertEquals(WindowState.Maximized, state.activeWindow?.state)
+        assertEquals(listOf(budget), state.recentlyClosed)
+    }
+
+    @Test
+    fun `in classic view opening another tool replaces the page`() {
+        var state = WorkspaceLayoutReducer.setViewMode(open(WorkspaceState(), "w1", budget), ViewMode.Classic)
+
+        state = open(state, "w2", callsheet)
+
+        assertEquals(listOf(WindowId("w2")), state.windows.map { it.id })
+        assertEquals(WindowState.Maximized, state.activeWindow?.state)
+    }
+
+    @Test
+    fun `going windowed keeps the classic page as the first tab`() {
+        var state = WorkspaceLayoutReducer.setViewMode(open(WorkspaceState(), "w1", budget), ViewMode.Classic)
+
+        state = WorkspaceLayoutReducer.setViewMode(state, ViewMode.Windowed)
+        state = open(state, "w2", callsheet)
+
+        assertEquals(ViewMode.Windowed, state.viewMode)
+        assertEquals(listOf(WindowId("w1"), WindowId("w2")), state.windows.map { it.id })
+    }
+
+    @Test
+    fun `classic view has no layout to toggle`() {
+        val state = WorkspaceLayoutReducer.setViewMode(open(WorkspaceState(), "w1", budget), ViewMode.Classic)
+
+        assertSame(state, WorkspaceLayoutReducer.toggleLayoutMode(state))
+    }
+
+    @Test
     fun `close all keeps pinned windows`() {
         var state = open(WorkspaceState(), "w1", budget)
         state = open(state, "w2", callsheet)

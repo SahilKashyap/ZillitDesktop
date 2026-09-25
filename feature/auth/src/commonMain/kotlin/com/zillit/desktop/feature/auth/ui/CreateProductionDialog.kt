@@ -21,7 +21,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
@@ -126,12 +125,17 @@ private fun ColumnScope.ProductionForm(
     state: CreateProductionUiState,
     onEvent: (CreateProductionEvent) -> Unit,
 ) {
-    val draft = state.draft
+    // Sends the edit, never a finished draft — see CreateProductionEvent.DraftEdited.
     fun update(block: NewProductionDraft.() -> NewProductionDraft) =
-        onEvent(CreateProductionEvent.DraftChanged(draft.block()))
+        onEvent(CreateProductionEvent.DraftEdited(block))
 
+    // A plain Column: ZillitDialogShell's body already scrolls. A second scroll
+    // with a `weight` inside it measured the form under an infinite height,
+    // where the weight resolves to zero — so the form was never placed. The
+    // dialog opened as a card with a title and a Continue button and no fields,
+    // which is the "Start Project does nothing" report; Continue looked dead
+    // too, since its validation errors render inside the same missing form.
     Column(
-        modifier = Modifier.zillitVerticalScroll().weight(1f, fill = false),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         SectionLabel(str(S.desktop_section_who_you_are))

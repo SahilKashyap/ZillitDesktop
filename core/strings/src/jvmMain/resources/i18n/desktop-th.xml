@@ -8317,4 +8317,8 @@
     <string name="desktop_sides_n_scenes_selected">เลือกแล้ว %1$d ฉาก</string>
     <string name="desktop_choose_a_department_prompt">เลือกแผนก...</string>
     <string name="desktop_screen_share_restart_needed">อนุญาตการบันทึกหน้าจอสำหรับ Zillit แล้ว ออกจาก Zillit แล้วเปิดใหม่เพื่อแชร์หน้าจอ — macOS จะใช้การเปลี่ยนแปลงนี้หลังจากรีสตาร์ทเท่านั้น</string>
+    <string name="desktop_workspace_cascade">ซ้อนเหลื่อม</string>
+    <string name="desktop_workspace_tabs">แท็บ</string>
+    <string name="desktop_classic_view">มุมมองแบบคลาสสิก</string>
+    <string name="desktop_windowed_view">มุมมองแบบหน้าต่าง</string>
 </resources>

@@ -806,6 +806,9 @@ sealed interface AppGraph {
                 nowMillis = System::currentTimeMillis,
             )
 
+            // The error log sends through this client and this client reports
+            // into it, so it is built after and reached through this slot.
+            var appLog: com.zillit.desktop.core.network.applog.AppLogger? = null
             val apiClient = ApiClient(
                 httpClient = HttpClientFactory.create(
                     engineFactory = OkHttpEngineProvider(),
@@ -829,6 +832,16 @@ sealed interface AppGraph {
                 },
                 nowMillis = System::currentTimeMillis,
                 authenticator = tokenSession,
+                onFailure = { failure -> appLog?.log(failure.toLogEvent()) },
+            )
+            appLog = appLogger(
+                apiClient = { apiClient },
+                config = config,
+                database = database,
+                encryptToHex = cryptoEngine::encryptToHex,
+                deviceId = { headerContext.value.deviceId },
+                online = connectivity.online,
+                scope = appScope,
             )
 
             // Before the repositories that reference it in their callbacks.

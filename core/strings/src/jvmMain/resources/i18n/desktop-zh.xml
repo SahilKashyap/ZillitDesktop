@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">返回通话</string>
     <string name="desktop_chat_drop_hint">每个文件在发送前都会在预览中打开。</string>
     <string name="desktop_screen_share_restart_needed">已允许 Zillit 进行屏幕录制。请退出并重新打开 Zillit 以共享屏幕——macOS 仅在重新启动后才会应用此更改。</string>
+    <string name="desktop_workspace_cascade">层叠</string>
+    <string name="desktop_workspace_tabs">标签页</string>
+    <string name="desktop_classic_view">经典视图</string>
+    <string name="desktop_windowed_view">窗口视图</string>
 </resources>

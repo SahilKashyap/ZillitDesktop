@@ -5,12 +5,14 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.settings.account.AccountEvent
 import com.zillit.desktop.feature.settings.account.AccountPage
 import com.zillit.desktop.feature.settings.account.AccountRepository
+import com.zillit.desktop.feature.settings.account.AccountEffect
 import com.zillit.desktop.feature.settings.account.AccountViewModel
 import com.zillit.desktop.feature.settings.account.LinkedDevice
 import com.zillit.desktop.feature.settings.account.LinkedDeviceDto
 import com.zillit.desktop.feature.settings.account.ProfileEdit
 import com.zillit.desktop.feature.settings.account.ProfileSaveOutcome
 import com.zillit.desktop.feature.settings.account.ProfileSeed
+import com.zillit.desktop.feature.settings.account.RecoveryDetails
 import com.zillit.desktop.feature.settings.account.allowsPrivateName
 import com.zillit.desktop.feature.settings.account.inviteText
 import com.zillit.desktop.feature.settings.approvals.ApprovalPresets
@@ -20,6 +22,7 @@ import com.zillit.desktop.feature.settings.approvals.CrewRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -53,6 +56,46 @@ class AccountSettingsTest {
 
     @AfterTest
     fun tearDown() = Dispatchers.resetMain()
+
+    // -- recovery ------------------------------------------------------------
+
+    @Test
+    fun `the recovery page shows the key and the address on file`() = runTest(dispatcher) {
+        val model = viewModel(FakeAccount(), seed(isAdmin = false))
+        model.onEvent(AccountEvent.Opened(AccountPage.RecoveryEmail))
+        advanceUntilIdle()
+
+        assertEquals("ABCD-1234", model.currentState.recovery.key)
+        assertEquals("backup@example.com", model.currentState.recovery.email)
+    }
+
+    @Test
+    fun `a reload never overwrites an address being typed`() = runTest(dispatcher) {
+        val model = viewModel(FakeAccount(), seed(isAdmin = false))
+        model.onEvent(AccountEvent.RecoveryEmailChanged("new@exa"))
+        model.onEvent(AccountEvent.Opened(AccountPage.RecoveryEmail))
+        advanceUntilIdle()
+
+        assertEquals("new@exa", model.currentState.recovery.email)
+        assertEquals("ABCD-1234", model.currentState.recovery.key)
+    }
+
+    @Test
+    fun `copying the key puts it on the clipboard`() = runTest(dispatcher) {
+        val model = viewModel(FakeAccount(), seed(isAdmin = false))
+        model.onEvent(AccountEvent.Opened(AccountPage.RecoveryEmail))
+        advanceUntilIdle()
+
+        val copied = mutableListOf<String>()
+        val job = launch {
+            model.effects.collect { (it as? AccountEffect.CopyToClipboard)?.let { e -> copied += e.text } }
+        }
+        model.onEvent(AccountEvent.CopyRecoveryKey)
+        advanceUntilIdle()
+        job.cancel()
+
+        assertEquals(listOf("ABCD-1234"), copied)
+    }
 
     // -- the two save paths --------------------------------------------------
 
@@ -348,6 +391,10 @@ private class FakeAccount(
 
     override suspend fun setRecoveryEmail(email: String): ZillitResult<Unit> =
         ZillitResult.Success(Unit)
+
+    var recovery = RecoveryDetails(key = "ABCD-1234", email = "backup@example.com")
+
+    override suspend fun recoveryDetails(): ZillitResult<RecoveryDetails> = ZillitResult.Success(recovery)
 
     override suspend fun linkedDevices(): ZillitResult<List<LinkedDevice>> = ZillitResult.Success(
         listOf(

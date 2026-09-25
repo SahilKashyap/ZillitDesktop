@@ -80,9 +80,23 @@ object BadgeSections {
     const val EMAIL = "email_label"
     val all: Set<String> = setOf(CNC, TOOLS, HOME, SETTINGS, SOS, GLOBAL, EMAIL)
 
-    /** The three settings units Android sums (`CommonBadgesHandler.kt:2432-2445`). */
+    /** A join request waiting on an admin — the Approve New User Requests row. */
+    const val JOIN_REQUEST_UNIT = "project_join_user_request_label"
+
+    /**
+     * A profile change waiting on an admin — the Approve User Profile row.
+     *
+     * The name the server files these under, and the one the web
+     * (`BADGE_CONSTANTS`) and iOS (`ProjectObserver`) read. Android's
+     * `project_approve_profile_user_request_label` is kept beside it; with only
+     * that one here, every profile-change notification went uncounted.
+     */
+    const val PROFILE_CHANGE_UNIT = "project_user_profile_change_request_label"
+
+    /** The settings units Android sums (`CommonBadgesHandler.kt:2432-2445`), plus the server's profile-change name. */
     val settingsUnits: Set<String> = setOf(
-        "project_join_user_request_label",
+        JOIN_REQUEST_UNIT,
+        PROFILE_CHANGE_UNIT,
         "project_approve_profile_user_request_label",
         "deal_memo_label",
     )

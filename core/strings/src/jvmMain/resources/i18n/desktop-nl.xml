@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">Terug naar gesprek</string>
     <string name="desktop_chat_drop_hint">Elk bestand opent in een voorbeeld voordat het wordt verzonden.</string>
     <string name="desktop_screen_share_restart_needed">Schermopname is nu toegestaan voor Zillit. Stop Zillit en open het opnieuw om je scherm te delen — macOS past dit pas toe na een herstart.</string>
+    <string name="desktop_workspace_cascade">Trapsgewijs</string>
+    <string name="desktop_workspace_tabs">Tabbladen</string>
+    <string name="desktop_classic_view">Klassieke weergave</string>
+    <string name="desktop_windowed_view">Vensterweergave</string>
 </resources>

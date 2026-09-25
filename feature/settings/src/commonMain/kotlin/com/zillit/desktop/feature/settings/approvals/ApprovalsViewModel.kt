@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.settings.approvals
 
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -29,8 +30,20 @@ data class ApprovalQueueState(
     val hasLoaded: Boolean = false,
     /** When the list was read, so ages are measured against it. */
     val loadedAtMillis: Long = 0,
+    /** Ids ticked for a decision on several at once — the web's select-and-approve. */
+    val selected: Set<String> = emptySet(),
+    /** True while "Decline selected" is waiting for its confirmation. */
+    val confirmingSelected: Boolean = false,
+    /** True while a decision on the ticked requests is going through, one by one. */
+    val isDecidingSelected: Boolean = false,
 ) {
     val visible: List<PendingApproval> get() = items.filter { it.matches(query) }
+
+    /** The ticked requests still in the queue, in list order. */
+    val selectedItems: List<PendingApproval> get() = items.filter { it.id in selected }
+
+    /** Every visible row ticked — what the Select all box shows. */
+    val allVisibleSelected: Boolean get() = visible.isNotEmpty() && visible.all { it.id in selected }
 
     val isFilteredEmpty: Boolean get() = items.isNotEmpty() && visible.isEmpty()
 }
@@ -140,6 +153,20 @@ sealed interface ApprovalsEvent {
 
     data class DismissOutcome(val queue: ApprovalQueue) : ApprovalsEvent
 
+    /** Ticks or unticks one row. */
+    data class ToggleSelected(val queue: ApprovalQueue, val id: String) : ApprovalsEvent
+
+    /** Ticks every visible row, or clears the ticks. */
+    data class SelectAll(val queue: ApprovalQueue, val on: Boolean) : ApprovalsEvent
+
+    /** Approves every ticked request, one after another, as the web does. */
+    data class ApproveSelected(val queue: ApprovalQueue) : ApprovalsEvent
+
+    /** Declining several asks first, like declining one. */
+    data class AskDeclineSelected(val queue: ApprovalQueue) : ApprovalsEvent
+    data class ConfirmDeclineSelected(val queue: ApprovalQueue) : ApprovalsEvent
+    data class DismissDeclineSelected(val queue: ApprovalQueue) : ApprovalsEvent
+
     /**
      * Everything the review form does.
      *
@@ -208,13 +235,22 @@ class ApprovalsViewModel(
      */
     private val presets: ApprovalPresets? = null,
     private val nowMillis: () -> Long = { 0 },
+    /**
+     * The live feed. A join request or profile change arriving — or decided by
+     * another admin — re-reads that queue. Null where nothing needs it.
+     */
+    private val events: SocketEventBus? = null,
 ) : ZillitViewModel<ApprovalsUiState, ApprovalsEvent, ApprovalsEffect>(ApprovalsUiState()) {
+
+    init {
+        listenForChanges()
+    }
 
     override fun onEvent(event: ApprovalsEvent) {
         when (event) {
             is ApprovalsEvent.Review -> onReview(event)
 
-            is ApprovalsEvent.Opened -> if (!currentState[event.queue].hasLoaded) load(event.queue)
+            is ApprovalsEvent.Opened -> refresh(event.queue)
             is ApprovalsEvent.Refresh -> load(event.queue)
 
             is ApprovalsEvent.SearchChanged ->
@@ -234,6 +270,49 @@ class ApprovalsViewModel(
             is ApprovalsEvent.DismissDecline -> update(event.queue) { copy(confirming = null) }
 
             is ApprovalsEvent.DismissOutcome -> update(event.queue) { copy(outcome = null) }
+
+            is ApprovalsEvent.ToggleSelected -> update(event.queue) {
+                copy(selected = if (event.id in selected) selected - event.id else selected + event.id)
+            }
+            is ApprovalsEvent.SelectAll -> update(event.queue) {
+                copy(selected = if (event.on) selected + visible.map { it.id } else emptySet())
+            }
+            is ApprovalsEvent.ApproveSelected -> decideSelected(event.queue, approved = true)
+            is ApprovalsEvent.AskDeclineSelected -> update(event.queue) {
+                copy(confirmingSelected = selectedItems.isNotEmpty())
+            }
+            is ApprovalsEvent.ConfirmDeclineSelected -> {
+                update(event.queue) { copy(confirmingSelected = false) }
+                decideSelected(event.queue, approved = false)
+            }
+            is ApprovalsEvent.DismissDeclineSelected -> update(event.queue) { copy(confirmingSelected = false) }
+        }
+    }
+
+    /**
+     * Decides every ticked request, one call at a time.
+     *
+     * Sequential, as the web's `handleUniversalApprove` is: a burst of parallel
+     * admissions is what the join endpoint has not been asked to take, and one
+     * at a time means a failure stops nothing but its own row. Each request
+     * goes through the same path a single decision does, so its row, its
+     * spinner and its error behave the same.
+     */
+    private fun decideSelected(queue: ApprovalQueue, approved: Boolean) {
+        val picked = currentState[queue].selectedItems
+        if (picked.isEmpty() || currentState[queue].isDecidingSelected) return
+
+        update(queue) { copy(isDecidingSelected = true) }
+        launch {
+            var done = 0
+            picked.forEach { request -> if (decideNow(queue, request, approved)) done++ }
+            update(queue) {
+                copy(
+                    isDecidingSelected = false,
+                    selected = selected.filterTo(mutableSetOf()) { id -> items.any { it.id == id } },
+                    outcome = str(S.desktop_bulk_decided, done, picked.size),
+                )
+            }
         }
     }
 
@@ -346,6 +425,40 @@ class ApprovalsViewModel(
     private fun find(queue: ApprovalQueue, id: String): PendingApproval? =
         currentState[queue].items.firstOrNull { it.id == id }
 
+    /**
+     * Re-reads a queue, unless a decision in it is still going through.
+     *
+     * Every visit reads again: an admin coming back must see the requests that
+     * arrived while they were away, not the list from their first visit. What
+     * the old read-once rule protected — an admin part-way through deciding —
+     * is protected here instead. [load] replaces only the rows, so the search,
+     * an open confirmation and the ticked rows all survive it; and it is
+     * skipped outright while a decision is in flight, because a read that
+     * raced the server could put an approved request back on screen. The
+     * server announces every decision on the socket, which re-reads straight
+     * after, so nothing skipped here stays stale for long.
+     */
+    private fun refresh(queue: ApprovalQueue) {
+        val state = currentState[queue]
+        // Both, because a batch decides one request at a time: between two of
+        // them `deciding` is empty while the batch is still running.
+        if (state.deciding.isNotEmpty() || state.isDecidingSelected) return
+        load(queue)
+    }
+
+    /** Requests arriving, or decided by another admin, while the page is open. */
+    private fun listenForChanges() {
+        val bus = events ?: return
+        launch {
+            bus.onAny(APPROVAL_SYNC_EVENTS).collect { message ->
+                val queue = APPROVAL_SYNC_QUEUES[message.event] ?: return@collect
+                // A queue nobody has opened is read when it is. Fetching it now
+                // would be a request for a page nobody is looking at.
+                if (currentState[queue].hasLoaded) refresh(queue)
+            }
+        }
+    }
+
     private fun load(queue: ApprovalQueue) {
         update(queue) { copy(isLoading = true, error = null) }
         launch {
@@ -375,16 +488,33 @@ class ApprovalsViewModel(
     }
 
     private fun decide(queue: ApprovalQueue, request: PendingApproval, approved: Boolean) {
-        if (request.id in currentState[queue].deciding) return
+        // Claimed here, before the coroutine: a second click arriving while the
+        // first is still queued must find the row already taken.
+        if (!claim(queue, request)) return
+        launch { send(queue, request, approved) }
+    }
 
+    /** One decision, start to finish. True when the server took it. */
+    private suspend fun decideNow(queue: ApprovalQueue, request: PendingApproval, approved: Boolean): Boolean =
+        claim(queue, request) && send(queue, request, approved)
+
+    /** Marks [request] as in flight. False when it already was. */
+    private fun claim(queue: ApprovalQueue, request: PendingApproval): Boolean {
+        if (request.id in currentState[queue].deciding) return false
         update(queue) { copy(deciding = deciding + request.id, error = null) }
-        launch {
+        return true
+    }
+
+    /** Sends a claimed decision and applies the answer. True when the server took it. */
+    private suspend fun send(queue: ApprovalQueue, request: PendingApproval, approved: Boolean): Boolean {
+        run {
             when (val result = repository.decide(queue, request, approved)) {
                 is ZillitResult.Success -> {
                     update(queue) {
                         copy(
                             items = items.filterNot { it.id == request.id },
                             deciding = deciding - request.id,
+                            selected = selected - request.id,
                             outcome = outcomeFor(request, approved),
                         )
                     }
@@ -393,6 +523,7 @@ class ApprovalsViewModel(
                     // the queue behind it.
                     setState { copy(review = review?.takeIf { it.request.id != request.id }) }
                     sendEffect(ApprovalsEffect.Decided(queue, approved))
+                    return true
                 }
 
                 is ZillitResult.Failure -> {
@@ -418,6 +549,7 @@ class ApprovalsViewModel(
                 }
             }
         }
+        return false
     }
 
     /** Names the person, because an admin decides several in a row. */

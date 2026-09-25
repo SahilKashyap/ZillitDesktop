@@ -18,6 +18,13 @@ import com.zillit.desktop.feature.settings.account.AccountPage
 import com.zillit.desktop.feature.settings.account.AccountScreen
 import com.zillit.desktop.feature.settings.account.AccountViewModel
 import com.zillit.desktop.feature.settings.account.LeaveProductionDialog
+import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
+import com.zillit.desktop.feature.settings.admin.ui.AdminScreen
+import com.zillit.desktop.feature.settings.admin.ui.AdminViewModel
+import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
+import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
+import com.zillit.desktop.feature.settings.approvals.ApprovalsScreen
+import com.zillit.desktop.feature.settings.approvals.ApprovalsViewModel
 
 /**
  * Settings as a workspace window.
@@ -26,12 +33,19 @@ import com.zillit.desktop.feature.settings.account.LeaveProductionDialog
  * adjusting the interface size wants to see the rest of the app change while
  * they do it, which a modal over everything would prevent.
  *
- * ## The listing, and the account pages under it
+ * ## Two tabs, as on the web
  *
- * Administration is a rail destination of its own — see
- * [AdminSettingsToolProvider] for why — leaving this window with the reader's
- * own preferences and the four pages behind the "Your account" rows: their
- * profile, their recovery email, their devices, and the invite code.
+ * The web's Settings page (`SettingsTabs.jsx`) is two tabs: Profile Settings
+ * and, for admins, Admin Settings. This window is the same — [SettingsTab]
+ * picks which from the route, `/settings` or `/settings/admin`, so a deep link
+ * or a restored window opens on the right one. Everything the desktop adds to
+ * a person's own settings (appearance, notifications, desktop widgets, the
+ * build) lives on the Profile tab.
+ *
+ * Below each tab are its pages. Profile's are the four behind the "Your
+ * account" rows: their profile, their recovery email, their devices, and the
+ * invite code. Admin's are the administration pages and the two approval
+ * queues, under `/settings/admin/…`.
  *
  * Those four are routes rather than dialogs because each is a page with a form
  * on it, and because a torn-off Settings window should be able to sit open on
@@ -61,6 +75,21 @@ class SettingsToolProvider(
      * common code, and the clipboard is the frame's.
      */
     private val onCopy: (String) -> Unit = {},
+    /**
+     * The approval queues, when there is a session to read them with.
+     *
+     * Null before sign-in and between productions — there is nothing to approve
+     * without one.
+     */
+    private val approvals: ApprovalsViewModel? = null,
+    /**
+     * The administration pages, when there is a session to read them with.
+     *
+     * Null before sign-in and between productions. The tab still renders
+     * without it — the rows are plain data — and clicking one lands on a page
+     * that says it has nothing to show rather than on a crash.
+     */
+    private val admin: AdminViewModel? = null,
 ) : ToolProvider {
 
     override val path: String = SETTINGS_PATH
@@ -69,8 +98,20 @@ class SettingsToolProvider(
 
     override val defaultSize: DpSize = DpSize(760.dp, 720.dp)
 
-    /** The account pages live under this path; the host hands us the window. */
+    /** The account and admin pages live under this path; the host hands us the window. */
     override val hostsOwnRoutes: Boolean = true
+
+    /**
+     * What is waiting to be approved on the Admin Settings tab.
+     *
+     * Only for admins: a badge on a tab whose page has nothing actionable on it
+     * is a number the reader cannot clear.
+     */
+    @Composable
+    override fun badge(): Int? {
+        val state by viewModel.state.collectAsState()
+        return state.admin.pendingTotal.takeIf { it > 0 && state.account.isAdmin }
+    }
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
@@ -100,37 +141,122 @@ class SettingsToolProvider(
                     // to the sign-in screen, and this window goes with it.
                     SettingsEffect.SignedOut -> Unit
 
-                    // Raised on the administration page, in its own window. The
-                    // view model is shared and its effects are a broadcast, so
-                    // they arrive here too — and are not ours to act on.
-                    is SettingsEffect.OpenApprovals,
-                    is SettingsEffect.OpenAdminPage,
-                    is SettingsEffect.OpenTool,
-                    -> Unit
+                    is SettingsEffect.OpenApprovals ->
+                        navigator.navigate(WorkspaceRoute.Tool(effect.queue.path))
+
+                    is SettingsEffect.OpenAdminPage ->
+                        navigator.navigate(WorkspaceRoute.Tool(effect.page.path))
+
+                    // A different tool's window, not this one: taking Settings
+                    // over would mean the way back is to close the page you
+                    // just opened.
+                    is SettingsEffect.OpenTool ->
+                        navigator.openInNewWindow(WorkspaceRoute.Tool(effect.path))
                 }
             }
         }
 
-        val page = AccountPage.fromPath(route.path)
+        val path = route.path
+        // The admin tree first: its queues and pages share a prefix, and an
+        // account page's slug must never shadow one of them.
+        val queue = ApprovalQueue.entries.firstOrNull { path.startsWith(it.path) }
+        val adminPage = if (queue == null) AdminDestination.entries.firstOrNull { path == it.path } else null
+        val onAdminTree = path.startsWith(ADMIN_SETTINGS_PATH)
+        val accountPage = if (onAdminTree) null else AccountPage.fromPath(path)
+        val tab = SettingsTab.forPath(path, state.account.isAdmin)
 
         // The tab says which page it is on. Two identically-titled tabs are the
         // reason tearing one off stops being useful.
-        LaunchedEffect(page) { navigator.setTitle(page?.tabTitle ?: title) }
+        LaunchedEffect(queue, adminPage, accountPage, tab) {
+            navigator.setTitle(
+                queue?.tabTitle ?: adminPage?.title ?: accountPage?.tabTitle
+                    ?: if (tab == SettingsTab.Admin) SettingsTab.Admin.label else title,
+            )
+        }
 
-        if (page == null) {
-            SettingsScreen(state = state, onEvent = viewModel::onEvent)
-            // Composed with the listing, because the row that opens it is
-            // there — leaving is a decision, not a page.
-            LeaveDialog(state)
-        } else {
-            AccountPage(page) {
-                // A restored session can open straight onto one of these, and
-                // then there is no history to go back through — so back *means*
-                // the listing rather than "whatever came before".
-                if (navigator.canGoBack) navigator.back()
-                else navigator.navigate(WorkspaceRoute.Tool(SETTINGS_PATH))
+        // Back always means the tab the page hangs off, never history alone: a
+        // restored window can open straight onto a page, and then there is
+        // nothing behind it.
+        fun backTo(tabPath: String) {
+            if (navigator.canGoBack) navigator.back()
+            else navigator.navigate(WorkspaceRoute.Tool(tabPath))
+        }
+
+        when {
+            queue != null -> ApprovalsPage(queue) { backTo(ADMIN_SETTINGS_PATH) }
+
+            adminPage != null -> AdminPage(adminPage, state) { backTo(ADMIN_SETTINGS_PATH) }
+
+            accountPage != null -> AccountPage(accountPage) { backTo(SETTINGS_PATH) }
+
+            else -> {
+                SettingsTabsFrame(
+                    active = tab,
+                    state = state,
+                    onSelect = { chosen ->
+                        if (chosen != tab) navigator.navigate(WorkspaceRoute.Tool(chosen.path))
+                    },
+                ) {
+                    when (tab) {
+                        SettingsTab.Profile ->
+                            SettingsScreen(state = state, onEvent = viewModel::onEvent, showTitle = false)
+                        SettingsTab.Admin ->
+                            AdminSettingsScreen(state = state, onEvent = viewModel::onEvent, showHeader = false)
+                    }
+                }
+                // Composed with the listing, because the row that opens it is
+                // there — leaving is a decision, not a page.
+                LeaveDialog(state)
             }
         }
+    }
+
+    /**
+     * One administration page.
+     *
+     * Refuses rather than renders when the session is gone: every page here
+     * reads the production, and one with no session would show an empty list
+     * that reads as a production with no departments.
+     */
+    @Composable
+    private fun AdminPage(page: AdminDestination, state: SettingsUiState, onBack: () -> Unit) {
+        val admin = admin ?: return
+        val adminState by admin.state.collectAsState()
+
+        AdminScreen(
+            destination = page,
+            state = adminState,
+            onEvent = admin::onEvent,
+            onBack = onBack,
+            // Which pages this production has at all. The listing filters on
+            // the same facts, so the two cannot disagree.
+            production = state.admin.production,
+        )
+    }
+
+    /**
+     * An approval queue, or nothing when there is no session to read it with.
+     *
+     * The row that leads here is absent in that state, so this is a deep link
+     * into a signed-out window rather than something a reader can click to.
+     */
+    @Composable
+    private fun ApprovalsPage(queue: ApprovalQueue, onBack: () -> Unit) {
+        val approvals = approvals ?: return
+        val approvalState by approvals.state.collectAsState()
+
+        // Loads on arrival, and again on the way back from the other queue —
+        // `Opened` is a no-op once a queue has answered, so returning to a page
+        // does not re-read a list the admin is part-way through.
+        LaunchedEffect(queue) { approvals.onEvent(ApprovalsEvent.Opened(queue)) }
+
+        ApprovalsScreen(
+            queue = queue,
+            state = approvalState,
+            onEvent = approvals::onEvent,
+            onBack = onBack,
+            known = approvals::known,
+        )
     }
 
     /**

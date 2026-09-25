@@ -33,24 +33,29 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.component.zillitHorizontalScroll
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
+import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.workspace.LayoutMode
 import com.zillit.desktop.core.workspace.ToolWindow
 import com.zillit.desktop.core.workspace.WindowState
 import com.zillit.desktop.core.workspace.WorkspaceEvent
 import com.zillit.desktop.core.workspace.WorkspaceState
 
 /**
- * The tab strip: one chip per open window, plus the Close-all control.
+ * The tab strip: one chip per open window, plus the Cascade/Tabs switch and
+ * the Close-all control.
  *
  * Ported from the web `ToolTabStrip.jsx`, including the "N open" counter and the
- * per-tab badge — so the two clients read as the same product. The layout-mode
- * toggle is keyboard-only (see `WorkspaceShortcuts`) rather than a strip button.
+ * per-tab badge — so the two clients read as the same product. The layout
+ * switch is also on the keyboard (see `WorkspaceShortcuts`).
  */
 @Composable
 fun WorkspaceTabStrip(
@@ -173,6 +178,15 @@ private fun LayoutControls(state: WorkspaceState, onEvent: (WorkspaceEvent) -> U
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
+        // Named for the layout it switches TO, as the web's button is.
+        val toCascade = state.layoutMode == LayoutMode.Tabs
+        ZillitButton(
+            text = str(if (toCascade) S.desktop_workspace_cascade else S.desktop_workspace_tabs),
+            leadingIcon = if (toCascade) ZillitIcons.LayoutCascade else ZillitIcons.LayoutTabs,
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            onClick = { onEvent(WorkspaceEvent.ToggleLayoutMode) },
+        )
         ZillitIconButton(
             icon = ZillitIcons.Close,
             contentDescription = str(S.desktop_workspace_close_all_tools),

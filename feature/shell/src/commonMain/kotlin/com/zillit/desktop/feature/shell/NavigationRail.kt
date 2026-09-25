@@ -42,7 +42,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitRailIcons
-import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.WorkspaceRoute
@@ -91,7 +90,7 @@ val DefaultRailItems: List<RailItem> = listOf(
 )
 
 /**
- * The two app pages, below the production's sections and below Admin.
+ * The two app pages, below the production's sections.
  *
  * They sit in the run rather than at the rail's foot: the foot is for Logout
  * alone, and an entry parked down there on its own reads as an afterthought
@@ -104,31 +103,15 @@ val AppRailItems: List<RailItem> = listOf(
 )
 
 /**
- * Administration, for this production's coordinators.
- *
- * Out here rather than inside Settings because the two are different jobs:
- * Settings is the reader's own preferences, this changes the production for
- * everybody on it. A coordinator uses it constantly and it was two clicks and a
- * scroll behind a theme switch.
- *
- * Paths are literals here, as they are for every other entry — the rail is
- * `feature:shell` and deliberately does not depend on the feature modules whose
- * windows it opens.
- */
-val AdminRailItem: RailItem =
-    RailItem("admin", S.admin_settings, ZillitToolIcons.Production, WorkspaceRoute.Tool("/settings/admin"))
-
-/**
  * The rail for this reader.
  *
- * Admin is **absent** for non-admins rather than present and disabled: the rail
- * is the app's statement of what exists, and advertising a room someone may not
- * enter is worse than not mentioning it. Rights change mid-session — they are
- * granted and revoked while people are signed in — so this is read per
- * composition rather than fixed at sign-in.
+ * Administration is not an entry of its own: it is the Admin Settings tab of
+ * the Settings window, as it is on the web (`SettingsTabs.jsx`), and that tab
+ * is offered only to admins. [isAdmin] is kept so the frame's call site reads
+ * the same if the rail ever varies by rights again.
  */
-fun railItemsFor(isAdmin: Boolean): List<RailItem> =
-    if (isAdmin) DefaultRailItems + AdminRailItem + AppRailItems else DefaultRailItems + AppRailItems
+@Suppress("UNUSED_PARAMETER")
+fun railItemsFor(isAdmin: Boolean): List<RailItem> = DefaultRailItems + AppRailItems
 
 /**
  * The left rail, collapsed to icons until the pointer enters it.
@@ -158,6 +141,13 @@ fun NavigationRail(
      * why it cannot be drawn here).
      */
     onSignOut: (() -> Unit)? = null,
+    /**
+     * Whether the workspace is in classic full-page view; null hides the
+     * switch. As the web's sidebar item, it is named for the view it switches
+     * TO — "Classic view" while windowed, "Windowed view" while classic.
+     */
+    classicView: Boolean? = null,
+    onToggleViewMode: () -> Unit = {},
     footer: @Composable ColumnFooterScope.() -> Unit = {},
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -182,7 +172,7 @@ fun NavigationRail(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         // Longest prefix wins, rather than every entry the path starts with:
-        // `/settings/admin` also starts with `/settings`, and two lit entries
+        // `/settings/help` also starts with `/settings`, and two lit entries
         // tell the reader they are in two places at once.
         val activeId = remember(items, activePath) {
             activePath?.let { path ->
@@ -200,9 +190,22 @@ fun NavigationRail(
                 onClick = { onOpen(item.route) },
             )
         }
-        // Logout alone below the spacer: it ends the session rather than going
-        // anywhere, and nothing else should share that corner with it.
+        // Below the spacer: the view switch, then Logout — the web's order.
+        // Neither goes anywhere; they change how, or whether, the app runs.
         Box(Modifier.weight(1f))
+        classicView?.let { classic ->
+            RailButton(
+                item = RailItem(
+                    id = "view-mode",
+                    labelKey = if (classic) S.desktop_windowed_view else S.desktop_classic_view,
+                    icon = if (classic) ZillitIcons.LayoutTabs else ZillitIcons.Maximize,
+                    route = WorkspaceRoute.Tool("/toggle-view-mode"),
+                ),
+                isActive = false,
+                expanded = expanded,
+                onClick = onToggleViewMode,
+            )
+        }
         onSignOut?.let { requestSignOut ->
             RailButton(
                 item = RailItem("logout", S.logout, ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),

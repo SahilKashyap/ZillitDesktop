@@ -54,14 +54,11 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 class HelpToolProvider(
     private val onOpenExternal: (String) -> Unit,
     /**
-     * Opens a mail to support. Returns why it could not, or null when it did.
-     *
-     * A return value rather than a bare callback because there is no other
-     * way for this screen to know: a machine with no mail client set up takes
-     * the request and does nothing with it, and a button that silently does
-     * nothing is indistinguishable from a broken one.
+     * Starts a message to support and answers the route of the composer
+     * window it is written in — only the composer, as the web's compose
+     * modal, not the whole mailbox. Null where this build has no mailbox.
      */
-    private val onContactSupport: suspend () -> String?,
+    private val writeToSupport: (() -> String)? = null,
     /**
      * Rings the 24x7 support team, answering why it could not.
      *
@@ -71,13 +68,6 @@ class HelpToolProvider(
      * not loaded yet. Null only where calling is unavailable at all.
      */
     private val onCallSupport: (suspend () -> String?)? = null,
-    /**
-     * Where writing to support goes, once [onContactSupport] has queued it.
-     *
-     * A route rather than a call into mail: this module knows nothing about
-     * the mailbox, and the frame owns which window that is.
-     */
-    private val supportComposeRoute: String? = null,
 ) : ToolProvider {
 
     override val path: String = HELP_PATH
@@ -92,18 +82,8 @@ class HelpToolProvider(
 
         HelpScreen(
             onOpenExternal = onOpenExternal,
-            // Both run off the click: asking the OS to open a mail means
-            // waiting on a process, and blocking the frame to do it would
-            // freeze the window for as long as the mail app takes to wake up.
-            onContactSupport = {
-                scope.launch {
-                    notice = onContactSupport()
-                    // Only on success: a failure has a message to read, and
-                    // moving the window out from under it would hide it.
-                    if (notice == null) {
-                        supportComposeRoute?.let { navigator.navigate(WorkspaceRoute.Tool(it)) }
-                    }
-                }.let { }
+            onContactSupport = writeToSupport?.let { write ->
+                { navigator.openInNewWindow(WorkspaceRoute.Tool(write())) }
             },
             onCallSupport = onCallSupport?.let { call ->
                 { scope.launch { notice = call() }.let { } }
@@ -153,7 +133,7 @@ internal val HELP_ENTRIES: List<HelpEntry> = listOf(
 @Composable
 internal fun HelpScreen(
     onOpenExternal: (String) -> Unit,
-    onContactSupport: () -> Unit,
+    onContactSupport: (() -> Unit)?,
     onCallSupport: (() -> Unit)? = null,
 ) {
     ZillitScrollColumn(
@@ -182,12 +162,15 @@ internal fun HelpScreen(
                                 onClick = onCallSupport,
                             )
                         }
-                        ZillitButton(
-                            text = if (entry.url == null) str(S.desktop_write_to_us) else str(S.recce_open),
-                            variant = ButtonVariant.Secondary,
-                            size = ButtonSize.Small,
-                            onClick = { entry.url?.let(onOpenExternal) ?: onContactSupport() },
-                        )
+                        val open = entry.url?.let { url -> { onOpenExternal(url) } } ?: onContactSupport
+                        if (open != null) {
+                            ZillitButton(
+                                text = if (entry.url == null) str(S.desktop_write_to_us) else str(S.recce_open),
+                                variant = ButtonVariant.Secondary,
+                                size = ButtonSize.Small,
+                                onClick = open,
+                            )
+                        }
                     }
                 },
             ) {

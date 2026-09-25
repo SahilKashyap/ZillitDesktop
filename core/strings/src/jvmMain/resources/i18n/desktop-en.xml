@@ -159,6 +159,10 @@
     <string name="desktop_qr_code_could_not_display">Could not display the sign-in code.</string>
     <string name="desktop_recording_clock">Recording %1$s</string>
     <string name="desktop_workspace_n_open">%1$d open</string>
+    <string name="desktop_workspace_cascade">Cascade</string>
+    <string name="desktop_workspace_tabs">Tabs</string>
+    <string name="desktop_classic_view">Classic view</string>
+    <string name="desktop_windowed_view">Windowed view</string>
     <string name="desktop_workspace_close_window">Close %1$s</string>
     <string name="desktop_workspace_maximize_or_restore_window">Maximize or restore %1$s</string>
     <string name="desktop_multiselect_option_count_one">%1$d option · %2$d selected</string>
@@ -8955,4 +8959,11 @@
     <string name="desktop_inv_select_per_vendor">Select invoices per vendor. Multiple invoices batch into one payment.</string>
     <string name="desktop_inv_wires_manual">Wires are paid manually from the bank. Mark as paid here once the transfer is confirmed.</string>
     <string name="desktop_inv_invoice_accepted">Invoice accepted</string>
+    <string name="desktop_profile_settings">Profile Settings</string>
+    <string name="desktop_recovery_key">Recovery Key</string>
+    <string name="desktop_recovery_key_copied">Recovery key copied</string>
+    <string name="desktop_could_not_load_recovery_key">Could not load your recovery key: %1$s</string>
+    <string name="desktop_decline_selected">Decline selected</string>
+    <string name="desktop_decline_selected_title">Decline %1$d requests?</string>
+    <string name="desktop_bulk_decided">Done: %1$d of %2$d.</string>
 </resources>

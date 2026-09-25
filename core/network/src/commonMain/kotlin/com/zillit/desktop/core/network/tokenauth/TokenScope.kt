@@ -22,7 +22,8 @@ sealed interface TokenScope {
  * QR link — and what has no session to ride: the pre-auth device calls, the
  * session bootstrap itself (it would recurse), the map-route lookup, the
  * socket handshake (its own path), and Line 3's calling backend, which
- * signs with `moduledata` on the phones as well. Sending `moduledata`
+ * signs with `moduledata` on the phones as well, and the error log, whose
+ * handler reads identity out of the blob. Sending `moduledata`
  * alongside a token does not work — the token path never decrypts it — so
  * a request carries one or the other, never both.
  *
@@ -46,5 +47,6 @@ fun RequestModule.tokenScope(projectId: String?): TokenScope? = when (this) {
     RequestModule.SocketHandshake,
     RequestModule.LiveKit,
     RequestModule.SessionBootstrap,
+    RequestModule.Telemetry,
     -> null
 }

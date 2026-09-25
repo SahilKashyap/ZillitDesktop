@@ -25,6 +25,9 @@ import com.zillit.desktop.feature.email.data.MailboxProfileSource
 import com.zillit.desktop.feature.email.ui.MailFolderSync
 import com.zillit.desktop.feature.email.ui.MailRead
 import com.zillit.desktop.feature.notifications.domain.NotificationsRepository
+import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
+import com.zillit.desktop.feature.settings.approvals.ApprovalsRepository
+import com.zillit.desktop.feature.settings.approvals.PendingApproval
 import com.zillit.desktop.feature.sos.domain.SosRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +58,36 @@ internal fun ledgerReadFor(segment: String, referenceId: String?): LedgerRead = 
     segment == NotificationRecord.CALL_TOOL -> LedgerRead.Tool(segment)
     else -> LedgerRead.Board(segment)
 }
+
+/**
+ * An approval decided clears its notification, here and on the server.
+ *
+ * The web's `RequestList.jsx` / `ApproveProfile.jsx` emit `notification:read`
+ * for the queue's segment, naming the person, on every approve or decline.
+ * Without it the row stayed unread in the ledger after the request was gone,
+ * so the app's count kept a number nobody could clear.
+ */
+internal fun ApprovalsRepository.readingLedger(ready: AppGraph.Ready): ApprovalsRepository =
+    object : ApprovalsRepository by this {
+        override suspend fun decide(
+            queue: ApprovalQueue,
+            request: PendingApproval,
+            approved: Boolean,
+        ): ZillitResult<Unit> = this@readingLedger.decide(queue, request, approved).also { result ->
+            if (result is ZillitResult.Success) {
+                val segment = queue.badgeSegment
+                runCatching { emitSegmentRead(ready, segment = segment, module = segment, referenceId = request.userId) }
+                    .onFailure { ZillitLog.w("Approvals") { "could not clear the approval's badge: ${it.message}" } }
+            }
+        }
+    }
+
+/** The ledger unit each queue's notifications are filed under (web `BADGE_CONSTANTS`). */
+private val ApprovalQueue.badgeSegment: String
+    get() = when (this) {
+        ApprovalQueue.NewCrew -> "project_join_user_request_label"
+        ApprovalQueue.ProfileChanges -> "project_user_profile_change_request_label"
+    }
 
 /**
  * The SOS feed's reads, applied to the ledger too.

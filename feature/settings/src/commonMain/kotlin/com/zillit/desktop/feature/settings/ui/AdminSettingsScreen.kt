@@ -37,13 +37,13 @@ import com.zillit.desktop.core.strings.str
  * only one of them belongs to the person reading it; folding that into their
  * own preferences would bury the theme switch under the crew list.
  *
- * Reached from the rail, and only by admins — [SettingsUiState.account] decides,
- * and a non-admin who arrives by deep link is told rather than shown an empty
- * page.
+ * The Admin Settings tab of Settings, offered only to admins —
+ * [SettingsUiState.account] decides, and a non-admin who arrives by deep link
+ * is told rather than shown an empty page.
  *
- * @param onBack null when this is the top of its window, which it is when
- *   opened from the rail. A chevron that goes nowhere in particular is worse
- *   than no chevron, and Settings is no longer "above" this page to return to.
+ * @param onBack null when this is the top of its window. A chevron that goes
+ *   nowhere in particular is worse than no chevron.
+ * @param showHeader false under [SettingsTabsFrame], which carries the title.
  */
 @Composable
 fun AdminSettingsScreen(
@@ -51,6 +51,7 @@ fun AdminSettingsScreen(
     onEvent: (SettingsEvent) -> Unit,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    showHeader: Boolean = true,
 ) {
     val admin = state.admin
 
@@ -64,7 +65,7 @@ fun AdminSettingsScreen(
                 modifier = Modifier.widthIn(max = CONTENT_MAX_WIDTH).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             ) {
-                Header(admin.production, onBack)
+                if (showHeader) Header(admin.production, onBack)
 
                 if (!state.account.isAdmin) {
                     NotAnAdmin()
@@ -138,17 +139,22 @@ private fun Header(production: ProductionFacts, onBack: (() -> Unit)?) {
         Column {
             ZillitText(text = str(S.admin_settings), style = ZillitTheme.typography.displayLarge)
             ZillitText(
-                // Names the production, because an admin on three of them needs
-                // to know which one they are about to change.
-                text = production.name.takeIf { it.isNotBlank() }
-                    ?.let { str(S.desktop_admin_what_coordinators_control_named, it) }
-                    ?: str(S.desktop_admin_what_coordinators_control),
+                text = adminSubtitle(production),
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
         }
     }
 }
+
+/**
+ * What the page controls. Names the production, because an admin on three of
+ * them needs to know which one they are about to change.
+ */
+internal fun adminSubtitle(production: ProductionFacts): String =
+    production.name.takeIf { it.isNotBlank() }
+        ?.let { str(S.desktop_admin_what_coordinators_control_named, it) }
+        ?: str(S.desktop_admin_what_coordinators_control)
 
 /**
  * For someone who reached the page without the rights for it.

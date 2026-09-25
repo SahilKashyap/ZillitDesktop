@@ -50,6 +50,7 @@ import com.zillit.desktop.core.datastore.saveWindowGeometry
 import kotlinx.coroutines.delay
 import com.zillit.desktop.core.datastore.observeAs
 import com.zillit.desktop.core.designsystem.ThemeMode
+import com.zillit.desktop.core.designsystem.ZillitUiScale
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.workspace.FileWorkspaceSessionStore
 import com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider
@@ -62,6 +63,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.home.domain.ToolPresentation
 import com.zillit.desktop.feature.home.ui.ToolSection
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
+import com.zillit.desktop.core.workspace.ViewMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,13 +90,11 @@ import com.zillit.desktop.core.appupdate.UPDATE_CHECK_INTERVAL_MILLIS
 import com.zillit.desktop.core.appupdate.UpdateStatus
 import com.zillit.desktop.feature.shell.UpdateNotice
 import com.zillit.desktop.feature.shell.railItemsFor
-import com.zillit.desktop.feature.shell.AdminRailItem
 import com.zillit.desktop.feature.sos.data.SosRepositoryImpl
 import com.zillit.desktop.feature.sos.domain.SosCrewMember
 import com.zillit.desktop.feature.sos.domain.SosViewer
 import com.zillit.desktop.feature.sos.ui.SosToolProvider
 import com.zillit.desktop.feature.sos.ui.SosViewModel
-import com.zillit.desktop.feature.settings.ui.AdminSettingsToolProvider
 import com.zillit.desktop.feature.notifications.ui.NotificationsViewModel
 import com.zillit.desktop.feature.notifications.ui.NOTIFICATIONS_PATH
 import com.zillit.desktop.feature.notifications.ui.NotificationsToolProvider
@@ -140,6 +140,7 @@ import com.zillit.desktop.feature.settings.admin.ui.AdminViewModel
 import com.zillit.desktop.feature.settings.ui.path
 import com.zillit.desktop.feature.settings.approvals.ApprovalPresets
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
+import com.zillit.desktop.feature.settings.approvals.ApprovalQueueState
 import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
 import com.zillit.desktop.feature.settings.approvals.ApprovalsViewModel
 import com.zillit.desktop.feature.settings.approvals.KnownCrewMember
@@ -182,6 +183,8 @@ import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.home.ui.HomeViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import com.zillit.desktop.feature.home.ui.HomeUiState
@@ -687,6 +690,11 @@ private fun ApplicationScope.ZillitWindows(
     // the bar only needs to know which row to tick.
     val language by preferences.observe(ZillitPreferences.Language).collectAsState(initial = "")
 
+    // Settings' Interface size, applied by ZillitTheme to every window.
+    LaunchedEffect(preferences) {
+        preferences.observe(ZillitPreferences.UiScalePercent).collect { ZillitUiScale.percent = it }
+    }
+
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
         ThemeMode.Light -> false
@@ -874,12 +882,11 @@ private fun ApplicationScope.ZillitWindows(
  * The rail, with live counts.
  *
  * The entries themselves are fixed — see [DefaultRailItems] for why they are not
- * derived from `project/tools` — except Admin, which only coordinators are
- * offered (`railItemsFor`).
+ * derived from `project/tools`.
  *
  * Two sources of number, because they count different things. Most badges are
- * unread counts from the server. Admin's is how many people are waiting to be
- * approved, which the unread endpoint has nothing to say about: it is asked with
+ * unread counts from the server. Settings' is how many people are waiting to be
+ * approved on its Admin Settings tab — shown to admins only — which the unread endpoint has nothing to say about: it is asked with
  * `section=tools_label`, so the approval queues report their own length back
  * through the settings state.
  */
@@ -892,7 +899,7 @@ private fun railItemsWith(
 ): List<RailItem> = railItemsFor(isAdmin).map { item ->
     item.copy(
         badge = when (item.id) {
-            ADMIN_RAIL_ID -> pendingApprovals
+            "settings" -> if (isAdmin) pendingApprovals else 0
             "cnc" -> cncBadge
             else -> badges.section(item.badgeKey())
         },
@@ -910,9 +917,9 @@ private fun RailItem.badgeKey(): String = when (id) {
     "email" -> "email_label"
     "home" -> "home_label"
     // The settings section's server rows are the admin approval queues and
-    // nothing else (web `getSettingsBadges`, `badgeUtils.js:413-437`). This
-    // rail counts those on its own Admin Settings entry, so counting the
-    // section here too showed the same event twice — once per entry.
+    // nothing else (web `getSettingsBadges`, `badgeUtils.js:413-437`). The
+    // queues count themselves (see railItemsWith), so counting the section
+    // here too would show the same event twice.
     "settings" -> ""
     // The SOS feed counts its own segment, as the web's side menu does
     // (`SideMenu.jsx`'s `sosBadges`). Help has nothing to count and must not
@@ -921,8 +928,6 @@ private fun RailItem.badgeKey(): String = when (id) {
     "help" -> ""
     else -> "tools_label"
 }
-
-private val ADMIN_RAIL_ID = AdminRailItem.id
 
 /**
  * Which tool identifier a route belongs to.
@@ -1113,15 +1118,17 @@ private val SELF_READING_TOOLS: Set<String> = setOf(
 )
 
 /**
- * The Admin rail badge, counted before anyone opens Admin.
+ * The approval counts — on the Settings rail entry, the Admin Settings tab and
+ * its two queue rows — kept current before anyone opens Settings.
  *
- * The approval queues are what that number means, and they were only asked
- * once the Admin page mounted — so a coordinator saw 0 waiting until they
- * went to look, which is the trip the badge exists to save. Asked here, for
- * admins only, once the production is open; the pages keep it current after.
+ * Asked once the production is open, for admins only, and asked again whenever
+ * the ledger's settings count moves: a join request or a profile change arriving
+ * while the app is open lands there as a `notification:save`, which is how the
+ * web's badges update live. Reading the queues only at start-up left a request
+ * that came in later uncounted until the next launch.
  */
 @Composable
-private fun ApprovalCounts(viewModels: AppViewModels) {
+private fun ApprovalCounts(ready: AppGraph.Ready, viewModels: AppViewModels) {
     val approvals = viewModels.approvals ?: return
     val settingsState by viewModels.settings.state.collectAsState()
     if (!settingsState.account.isAdmin) return
@@ -1130,11 +1137,47 @@ private fun ApprovalCounts(viewModels: AppViewModels) {
         approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
         approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.ProfileChanges))
     }
+    LaunchedEffect(approvals, ready) {
+        ready.badgeStore.counts
+            .map { it.section(BadgeSections.SETTINGS) }
+            .distinctUntilChanged()
+            .drop(1)
+            .collect {
+                approvals.onEvent(ApprovalsEvent.Refresh(ApprovalQueue.NewCrew))
+                approvals.onEvent(ApprovalsEvent.Refresh(ApprovalQueue.ProfileChanges))
+            }
+    }
     val approvalState by approvals.state.collectAsState()
-    val waitingCrew = approvalState.crew.items.size
-    val waitingChanges = approvalState.profiles.items.size
+    val ledger by ready.badgeStore.counts.collectAsState()
+    // The web's row badges are the unread approval notifications
+    // (`getSettingsBadges`); ours were the queue lengths. Either can run ahead
+    // of the other — a notification lands before the list is re-read, or a
+    // request is pending with its notification already read elsewhere — so
+    // the row shows whichever says more is waiting.
+    val waitingCrew = maxOf(approvalState.crew.items.size, ledger.unit(BadgeSections.JOIN_REQUEST_UNIT))
+    val waitingChanges = maxOf(approvalState.profiles.items.size, ledger.unit(BadgeSections.PROFILE_CHANGE_UNIT))
     LaunchedEffect(waitingCrew, waitingChanges) {
         viewModels.settings.onEvent(SettingsEvent.ApprovalsCounted(waitingCrew, waitingChanges))
+    }
+    // A notification can outlive its request — decided on a phone, or
+    // withdrawn — and then the row would wear a number nothing can clear.
+    // Once a queue has answered, cleanly, with nobody in it, its unread rows
+    // are read.
+    StaleApprovalNotifications(ready, approvalState.crew, ledger.unit(BadgeSections.JOIN_REQUEST_UNIT), BadgeSections.JOIN_REQUEST_UNIT)
+    StaleApprovalNotifications(ready, approvalState.profiles, ledger.unit(BadgeSections.PROFILE_CHANGE_UNIT), BadgeSections.PROFILE_CHANGE_UNIT)
+}
+
+@Composable
+private fun StaleApprovalNotifications(ready: AppGraph.Ready, queue: ApprovalQueueState, unread: Int, unit: String) {
+    // When the unread count last rose. A list read before then cannot speak
+    // for the notification that raised it — the refresh that notification
+    // triggers is still on its way — so only a later, empty read clears it.
+    var unreadSince by remember { mutableStateOf(0L) }
+    LaunchedEffect(unread) { if (unread > 0) unreadSince = System.currentTimeMillis() }
+    val stale = unread > 0 && queue.hasLoaded && !queue.isLoading && queue.error == null &&
+        queue.items.isEmpty() && queue.loadedAtMillis > unreadSince && unreadSince > 0
+    LaunchedEffect(stale) {
+        if (stale) runCatching { emitSegmentRead(ready, segment = unit, module = unit) }
     }
 }
 
@@ -1363,7 +1406,7 @@ private fun BackgroundWork(
     BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
     ToolsRefresh(ready, viewModels.home)
     DockBadge(ready, viewModels)
-    ApprovalCounts(viewModels)
+    ApprovalCounts(ready, viewModels)
     ToolReadOnFocus(ready, viewModels, workspace)
     HomeRealtime(ready, viewModels.homeFeed)
     CalendarRealtime(ready, viewModels.calendar)
@@ -1540,6 +1583,15 @@ private fun SignedInShell(
         ?: MutableStateFlow(com.zillit.desktop.feature.chat.ui.ChatUiState())).collectAsState()
     val cncBadge = chatBadgeState.chatsBadge + chatBadgeState.callsBadge
 
+    // Classic or windowed, as the rail's switch last left it on this device —
+    // the web keeps the same choice in `mdi_view_mode`.
+    LaunchedEffect(workspaceViewModel, ready.preferences) {
+        ready.preferences.observe(ZillitPreferences.WorkspaceViewMode).collect { stored ->
+            val mode = ViewMode.entries.firstOrNull { it.name == stored } ?: ViewMode.Windowed
+            workspaceViewModel.onEvent(WorkspaceEvent.SetViewMode(mode))
+        }
+    }
+
     Box {
         AppShell(
         viewModel = workspaceViewModel,
@@ -1569,6 +1621,9 @@ private fun SignedInShell(
         // then the local wipe); the auth view model watches the session and
         // takes the frame back to the QR screen.
         onSignOut = { scope.launch { ready.authRepository.signOut() } },
+        onViewModeChange = { mode ->
+            scope.launch { ready.preferences.set(ZillitPreferences.WorkspaceViewMode, mode.name) }
+        },
         // Behind the Zillit mark in the top bar, as on the phones.
         notificationsRoute = WorkspaceRoute.Tool(NOTIFICATIONS_PATH),
         notificationBadge = badges.section(GLOBAL_BADGE_SEGMENT),
@@ -1928,8 +1983,6 @@ private fun mailProvider(
         readBy = { messageId -> readByForSentMail(ready, messageId) },
         isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
         canAttach = true,
-        // A message another screen queued — "write to us" on the help page.
-        claimPendingCompose = ::claimPendingSupportCompose,
     ),
 )
 
@@ -2677,7 +2730,9 @@ private fun rememberAppViewModels(
             settings = settings,
             approvals = ready?.let { graph ->
                 ApprovalsViewModel(
-                    repository = graph.approvalsRepository,
+                    repository = graph.approvalsRepository.readingLedger(graph),
+                    // New requests and other admins' decisions, live.
+                    events = graph.socketEvents,
                     // The crew list the session already holds. Without it the
                     // profile-change queue cannot say what is changing — the
                     // server sends only the requested values.
@@ -3282,15 +3337,15 @@ private fun buildRegistry(
         }
     }
     // openInBrowser is the guarded launcher — https only, as the auth links use.
+    // Profile Settings and Admin Settings, as the web's two tabs in one window.
     val settings = SettingsToolProvider(
         viewModel = settingsViewModel,
         onOpenExternal = ::openInBrowser,
         account = viewModels.account,
         onCopy = ::copyToClipboard,
+        approvals = viewModels.approvals,
+        admin = viewModels.admin,
     )
-    // Its own window, off the rail. Shares the settings view model, which holds
-    // the admin state — see AdminSettingsToolProvider.
-    val admin = AdminSettingsToolProvider(settingsViewModel, viewModels.approvals, viewModels.admin)
     // The mail drawer's other two windows — Settings and Contacts.
     val mailSettings = (graph as? AppGraph.Ready)?.let { ready ->
         EmailSettingsToolProvider(
@@ -3374,10 +3429,9 @@ private fun buildRegistry(
     }
     val help = HelpToolProvider(
         onOpenExternal = ::openInBrowser,
-        onContactSupport = ::queueSupportMessage,
-        // Where it lands once queued: Zillit's own mailbox, not the OS's idea
-        // of a mail client.
-        supportComposeRoute = "/email",
+        // Zillit's own mail, not the OS's idea of a mail client — and only its
+        // composer, in a window of its own, as the web's compose modal.
+        writeToSupport = email?.let { mail -> { mail.composeInWindow(SUPPORT_ADDRESS, SUPPORT_SUBJECT) } },
         // A support call is a self-dial: it goes to this account's PRIMARY
         // device and the backend routes it to whichever agent is free.
         // Deliberately NOT this machine's device id — on a QR-linked desktop
@@ -3528,7 +3582,7 @@ private fun buildRegistry(
     val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph) }
     val real = listOfNotNull(
         home, chat, email, mailCompose, mailThread, signatures, mailSettings, mailContacts,
-        settings, admin, notifications, sos, help,
+        settings, notifications, sos, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, taxFiling, bankRec, budgetBuilder, formSignature, esignature,
         callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
@@ -3776,9 +3830,12 @@ private fun buildSettings(
 
     return SettingsViewModel(
         setTheme = { mode -> scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) } },
+        // The same preference the top bar's toggle writes, so both agree.
+        themeMode = preferences.observeAs(ZillitPreferences.ThemeMode, ThemeMode::fromId),
         setScale = { percent ->
             scope.launch { preferences.set(ZillitPreferences.UiScalePercent, percent) }
         },
+        uiScalePercent = preferences.observe(ZillitPreferences.UiScalePercent),
         // The same preference the bar's globe writes; the graph's string
         // store and the label refresh both follow it.
         setLanguage = { code -> scope.launch { preferences.set(ZillitPreferences.Language, code) } },
@@ -3959,53 +4016,19 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
 )
 
 /**
- * Zillit Help › Contact Us: a mail to support in the person's own mail
- * client, as the web falls back to (`Help.jsx` `mailto:support@zillit.com`
- * with subject "Zillit Issue"); the in-app compose is the richer route but
- * needs a mailbox on this production, which the frame cannot assume.
- */
-/**
- * Queues a message to support in Zillit's own mail.
+ * Zillit Help › Contact Us: a message to support written in Zillit's own mail
+ * (the web's `Help.jsx`, subject "Zillit Issue").
  *
  * Not `mailto:`. A `mailto:` is only as good as whatever the OS registered for
  * it, and here that is a *browser*, which accepts the URL, reports success and
  * then does nothing unless it has separately been told which webmail to hand
- * it to. Every layer reported success and no compose window ever appeared —
- * `open` exits 0, `Desktop.mail` returns normally, and nothing anywhere
- * signals that the message was dropped.
- *
- * The app has a mailbox of its own, which is what the web client uses for this
- * row too. Left here for the mail window to claim when it opens, because the
- * composer is raised by an effect and an effect emitted before that window
- * exists has nobody collecting it.
+ * it to — nothing anywhere signals that the message was dropped.
  */
-private fun queueSupportMessage(): String? {
-    ZillitLog.i(SUPPORT_TAG) { "write to us pressed" }
-    pendingSupportCompose = SUPPORT_ADDRESS to SUPPORT_SUBJECT
-    return null
-}
-
-/**
- * The message waiting for the mail window, if any.
- *
- * Read once and cleared, so re-opening mail later does not raise a composer
- * the user never asked for a second time.
- */
-@Volatile
-private var pendingSupportCompose: Pair<String, String>? = null
-
-private fun claimPendingSupportCompose(): Pair<String, String>? {
-    val pending = pendingSupportCompose
-    pendingSupportCompose = null
-    if (pending != null) ZillitLog.i(SUPPORT_TAG) { "mail opened; starting the message to support" }
-    return pending
-}
+private const val SUPPORT_ADDRESS = "support@zillit.com"
 
 private const val SUPPORT_SUBJECT = "Zillit Issue"
 
 private const val SUPPORT_TAG = "Support"
-
-private const val SUPPORT_ADDRESS = "support@zillit.com"
 
 /** The segment the phones count the bell against (`GLOBAL_LABEL` on Android). */
 private const val GLOBAL_BADGE_SEGMENT = "global_label"

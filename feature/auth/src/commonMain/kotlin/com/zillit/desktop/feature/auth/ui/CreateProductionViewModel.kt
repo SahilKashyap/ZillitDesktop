@@ -69,7 +69,17 @@ sealed interface CreateProductionEvent {
     /** The dialog opened — fetch the reference lists it needs. */
     data object Opened : CreateProductionEvent
 
-    data class DraftChanged(val draft: NewProductionDraft) : CreateProductionEvent
+    /**
+     * One edit to the form — "set the type to X" — rather than a finished draft.
+     *
+     * The dialog used to build the whole new draft itself from the `draft` it
+     * had captured when it last composed, and send that. The dropdowns held on
+     * to a stale copy of that callback, so picking a type submitted the draft
+     * as it was when the dialog opened: everything typed before it was wiped,
+     * and picking a language then wiped the type. An edit applied to the state
+     * as it is NOW cannot be stale, whichever callback carries it.
+     */
+    data class DraftEdited(val edit: NewProductionDraft.() -> NewProductionDraft) : CreateProductionEvent
     data class OtpChanged(val value: String) : CreateProductionEvent
 
     /** Validate, then send the verification code. */
@@ -107,11 +117,11 @@ class CreateProductionViewModel(
 
     override fun onEvent(event: CreateProductionEvent) {
         when (event) {
-            is CreateProductionEvent.DraftChanged -> setState {
+            is CreateProductionEvent.DraftEdited -> setState {
                 // Errors clear as the user types rather than persisting until
                 // the next submit, which would leave a red field they have
                 // already fixed.
-                copy(draft = event.draft, fieldErrors = emptyMap(), error = null)
+                copy(draft = draft.(event.edit)(), fieldErrors = emptyMap(), error = null)
             }
             is CreateProductionEvent.OtpChanged -> setState {
                 copy(otp = event.value.filter(Char::isDigit), error = null)

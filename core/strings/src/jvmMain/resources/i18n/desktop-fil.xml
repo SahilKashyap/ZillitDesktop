@@ -8317,4 +8317,8 @@
     <string name="desktop_sides_n_scenes_selected">%1$d eksena ang napili</string>
     <string name="desktop_choose_a_department_prompt">Pumili ng departamento...</string>
     <string name="desktop_screen_share_restart_needed">Pinapayagan na ang Screen Recording para sa Zillit. Isara at buksan muli ang Zillit para maibahagi ang iyong screen — inilalapat lang ito ng macOS pagkatapos mag-restart.</string>
+    <string name="desktop_workspace_cascade">Cascade</string>
+    <string name="desktop_workspace_tabs">Mga tab</string>
+    <string name="desktop_classic_view">Klasikong view</string>
+    <string name="desktop_windowed_view">Naka-window na view</string>
 </resources>

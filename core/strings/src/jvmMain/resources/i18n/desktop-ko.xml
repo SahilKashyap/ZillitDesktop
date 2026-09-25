@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">통화로 돌아가기</string>
     <string name="desktop_chat_drop_hint">각 파일은 보내기 전에 미리보기로 열립니다.</string>
     <string name="desktop_screen_share_restart_needed">이제 Zillit의 화면 기록이 허용되었습니다. 화면을 공유하려면 Zillit을 종료한 후 다시 여세요. macOS는 재시작한 후에만 이 변경 사항을 적용합니다.</string>
+    <string name="desktop_workspace_cascade">계단식</string>
+    <string name="desktop_workspace_tabs">탭</string>
+    <string name="desktop_classic_view">클래식 보기</string>
+    <string name="desktop_windowed_view">창 보기</string>
 </resources>

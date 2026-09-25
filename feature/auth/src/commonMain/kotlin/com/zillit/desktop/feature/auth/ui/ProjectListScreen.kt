@@ -311,11 +311,13 @@ private fun FilterBar(state: AuthUiState, onEvent: (AuthEvent) -> Unit) {
             placeholder = str(S.desktop_search_projects_placeholder),
             modifier = Modifier.widthIn(max = SEARCH_MAX_WIDTH).weight(1f),
         )
-        ZillitButton(
-            text = str(S.desktop_join_a_project),
-            onClick = { onEvent(AuthEvent.StartJoin) },
-            variant = ButtonVariant.Secondary,
-        )
+        if (JOIN_PROJECT_ENABLED) {
+            ZillitButton(
+                text = str(S.desktop_join_a_project),
+                onClick = { onEvent(AuthEvent.StartJoin) },
+                variant = ButtonVariant.Secondary,
+            )
+        }
         ZillitButton(
             text = str(S.desktop_start_a_project),
             onClick = { onEvent(AuthEvent.StartNewProject) },
@@ -669,6 +671,12 @@ private val ICON_SIZE = 28.dp
 // left to animate itself.
 private val ENTRANCE_RISE = 16.dp
 /** How long a just-shown picker ignores opens — a double-click's echo dies here. */
+/**
+ * Join a Project is hidden for now; the flow behind it (`JoinProductionDialog`)
+ * is kept intact, so turning this back on is the whole change.
+ */
+private const val JOIN_PROJECT_ENABLED = false
+
 private const val OPEN_ARM_DELAY_MS = 350L
 
 private const val CARD_EXIT_MS = 140

@@ -95,6 +95,7 @@ class ComposerDeck(
         about: String = "",
         bodyHtml: String = "",
         attachments: List<StoredFile> = emptyList(),
+        window: ComposerWindow = ComposerWindow.Inline,
     ): OpenComposer =
         place(
             OpenComposer(
@@ -105,6 +106,7 @@ class ComposerDeck(
                 about = about,
                 bodyHtml = bodyHtml,
                 attachments = attachments,
+                window = window,
             ),
         )
 
@@ -120,9 +122,12 @@ class ComposerDeck(
         return place(OpenComposer(id = newId(), draftId = draftId))
     }
 
-    /** Puts [composer] in the pane, closing — and saving — whatever was there. */
+    /**
+     * Puts [composer] in the pane, closing — and saving — whatever was there.
+     * One opened straight into a window of its own leaves the pane alone.
+     */
     private fun place(composer: OpenComposer): OpenComposer {
-        inline?.let { close(it.id) }
+        if (composer.window == ComposerWindow.Inline) inline?.let { close(it.id) }
         viewModels[composer.id] = factory(composer)
         _state.value = _state.value + composer
         return composer

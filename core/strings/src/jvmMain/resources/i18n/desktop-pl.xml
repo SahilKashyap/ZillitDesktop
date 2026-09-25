@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">Wróć do rozmowy</string>
     <string name="desktop_chat_drop_hint">Każdy plik otwiera się w podglądzie przed wysłaniem.</string>
     <string name="desktop_screen_share_restart_needed">Nagrywanie ekranu jest teraz dozwolone dla Zillit. Zamknij i ponownie otwórz Zillit, aby udostępnić ekran — macOS stosuje tę zmianę dopiero po ponownym uruchomieniu.</string>
+    <string name="desktop_workspace_cascade">Kaskada</string>
+    <string name="desktop_workspace_tabs">Karty</string>
+    <string name="desktop_classic_view">Widok klasyczny</string>
+    <string name="desktop_windowed_view">Widok okienkowy</string>
 </resources>

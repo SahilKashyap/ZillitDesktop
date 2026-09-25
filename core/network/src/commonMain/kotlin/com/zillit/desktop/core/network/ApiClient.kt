@@ -124,6 +124,11 @@ class ApiClient(
      * for every call — see [RequestAuthenticator].
      */
     private val authenticator: RequestAuthenticator? = null,
+    /**
+     * Told about every call that failed — the error log (`location/log`)
+     * records these, as the phones do from their own network layer.
+     */
+    private val onFailure: (ApiFailure) -> Unit = {},
 ) {
 
     /**
@@ -191,6 +196,7 @@ class ApiClient(
     ): ZillitResult<ApiEnvelope> {
         val outcome = send(verb, url, module, body, queryParameters, options)
         onOutcome((outcome as? ZillitResult.Failure)?.error)
+        (outcome as? ZillitResult.Failure)?.let { onFailure(ApiFailure(verb.wire, url, it.error)) }
         return remembered(outcome, verb, url, module, queryParameters, options)
     }
 
@@ -382,6 +388,8 @@ class ApiClient(
         is ZillitResult.Failure -> this
     }
 
+    private val HttpVerb.wire: String get() = toKtor().value
+
     private fun HttpVerb.toKtor(): HttpMethod = when (this) {
         HttpVerb.Get -> HttpMethod.Get
         HttpVerb.Post -> HttpMethod.Post
@@ -414,6 +422,25 @@ class ApiClient(
         /** Bigger than any list a screen draws; guards the store against a runaway payload. */
         private const val MAX_CACHED_BODY_CHARS = 4 * 1024 * 1024
     }
+}
+
+/** A call that did not succeed, as the error log records it. */
+data class ApiFailure(val method: String, val url: String, val error: ZillitError) {
+    /** The HTTP status, when the server answered at all. */
+    val status: Int?
+        get() = when (error) {
+            is ZillitError.Http -> error.status
+            is ZillitError.Unauthorized -> 401
+            is ZillitError.Forbidden -> 403
+            else -> null
+        }
+
+    /** What went wrong, in the server's words where it gave any. */
+    val message: String
+        get() = (error as? ZillitError.Http)?.serverMessage
+            ?: error.technical
+            ?: status?.let { "HTTP $it" }
+            ?: error::class.simpleName.orEmpty()
 }
 
 /**

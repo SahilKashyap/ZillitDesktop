@@ -21,6 +21,7 @@ import kotlinx.serialization.json.put
  * |---|---|
  * | Profile, as an admin | `PUT user/profile` |
  * | Profile, as anyone else | `POST user/profile/change-requests` |
+ * | Recovery key and email, read | `GET device` |
  * | Recovery email | `POST device/recovery-email` |
  * | Linked devices | `GET device/linked` |
  * | Unlink one | `POST device/unlink` |
@@ -84,6 +85,19 @@ class AccountRepositoryImpl(
             body = buildJsonObject { put("email", email.trim()) },
         ).map { }
 
+    override suspend fun recoveryDetails(): ZillitResult<RecoveryDetails> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${core}device",
+            serializer = RecoveryDeviceDto.serializer(),
+            module = RequestModule.Device,
+        ).map { dto ->
+            RecoveryDetails(
+                key = dto.setting?.recoveryCode?.trim().orEmpty(),
+                email = dto.setting?.recoveryEmail?.trim().orEmpty(),
+            )
+        }
+
     override suspend fun linkedDevices(): ZillitResult<List<LinkedDevice>> {
         val here = thisDeviceId()
         return apiClient.request(
@@ -139,6 +153,18 @@ class AccountRepositoryImpl(
         const val TAG = "Account"
     }
 }
+
+/** The part of `GET device` the Recovery page reads (web `WebrecoveryMail.jsx`). */
+@Serializable
+internal data class RecoveryDeviceDto(
+    @SerialName("device_setting") val setting: RecoverySettingDto? = null,
+)
+
+@Serializable
+internal data class RecoverySettingDto(
+    @SerialName("projects_recovery_code") val recoveryCode: String? = null,
+    @SerialName("recovery_email") val recoveryEmail: String? = null,
+)
 
 /**
  * One row from `device/linked`.

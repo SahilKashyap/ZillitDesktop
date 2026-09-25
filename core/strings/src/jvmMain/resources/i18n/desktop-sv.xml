@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">Tillbaka till samtalet</string>
     <string name="desktop_chat_drop_hint">Varje fil öppnas i en förhandsgranskning innan den skickas.</string>
     <string name="desktop_screen_share_restart_needed">Skärminspelning är nu tillåten för Zillit. Avsluta och öppna Zillit igen för att dela skärmen — macOS tillämpar ändringen först efter en omstart.</string>
+    <string name="desktop_workspace_cascade">Överlappande</string>
+    <string name="desktop_workspace_tabs">Flikar</string>
+    <string name="desktop_classic_view">Klassisk vy</string>
+    <string name="desktop_windowed_view">Fönstervy</string>
 </resources>

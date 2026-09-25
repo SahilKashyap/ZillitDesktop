@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">Torna alla chiamata</string>
     <string name="desktop_chat_drop_hint">Ogni file si apre in anteprima prima dell\'invio.</string>
     <string name="desktop_screen_share_restart_needed">La registrazione schermo è ora consentita per Zillit. Esci e riapri Zillit per condividere lo schermo: macOS applica la modifica solo dopo un riavvio.</string>
+    <string name="desktop_workspace_cascade">Cascata</string>
+    <string name="desktop_workspace_tabs">Schede</string>
+    <string name="desktop_classic_view">Vista classica</string>
+    <string name="desktop_windowed_view">Vista a finestre</string>
 </resources>

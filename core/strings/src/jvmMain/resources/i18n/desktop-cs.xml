@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">Zpět do hovoru</string>
     <string name="desktop_chat_drop_hint">Každý soubor se před odesláním otevře v náhledu.</string>
     <string name="desktop_screen_share_restart_needed">Nahrávání obrazovky je nyní pro Zillit povoleno. Ukončete Zillit a znovu jej otevřete, abyste mohli sdílet obrazovku — macOS změnu použije až po restartu.</string>
+    <string name="desktop_workspace_cascade">Kaskáda</string>
+    <string name="desktop_workspace_tabs">Karty</string>
+    <string name="desktop_classic_view">Klasické zobrazení</string>
+    <string name="desktop_windowed_view">Zobrazení v oknech</string>
 </resources>

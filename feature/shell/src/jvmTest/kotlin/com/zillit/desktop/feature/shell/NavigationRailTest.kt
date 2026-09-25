@@ -24,35 +24,15 @@ class NavigationRailTest {
     }
 
     @Test
-    fun `administration is on the rail only for coordinators`() {
-        // It used to be a row inside Settings. Out here it must still be absent
-        // for everyone else — the rail is the app's statement of what exists,
-        // and advertising a room someone may not enter is worse than silence.
-        assertTrue(railItemsFor(isAdmin = true).any { it.id == AdminRailItem.id })
-        assertTrue(railItemsFor(isAdmin = false).none { it.id == AdminRailItem.id })
-    }
-
-    @Test
-    fun `admin does not displace anything that was already on the rail`() {
-        assertEquals(
-            DefaultRailItems.map { it.id } + AdminRailItem.id + AppRailItems.map { it.id },
-            railItemsFor(isAdmin = true).map { it.id },
-        )
+    fun `administration is a tab of Settings, not a rail entry`() {
+        // As on the web: one Settings page, Profile Settings and Admin Settings
+        // as its two tabs. The rail is the same list whoever is reading it.
+        assertTrue(railItemsFor(isAdmin = true).none { it.id == "admin" })
         assertEquals(
             DefaultRailItems.map { it.id } + AppRailItems.map { it.id },
-            railItemsFor(isAdmin = false).map { it.id },
+            railItemsFor(isAdmin = true).map { it.id },
         )
-    }
-
-    @Test
-    fun `admin and settings are told apart at a glance`() {
-        // Collapsed is how the rail sits most of the time, and collapsed it is
-        // only icons. Two entries sharing a glyph are two entries nobody can
-        // tell apart.
-        val settings = DefaultRailItems.first { it.id == "settings" }
-
-        assertTrue(AdminRailItem.icon != settings.icon)
-        assertTrue(AdminRailItem.label != settings.label)
+        assertEquals(railItemsFor(isAdmin = true), railItemsFor(isAdmin = false))
     }
 
     @Test
@@ -80,15 +60,15 @@ class NavigationRailTest {
     }
 
     /**
-     * SOS and Zillit Help are the app's own pages, and they follow Admin in
+     * SOS and Zillit Help are the app's own pages, and they follow Settings in
      * the run rather than sitting at the foot. Pin to Start is gone: the web
      * page behind it exists to install the app, and a desktop build is the
      * installed app.
      */
     @Test
-    fun `SOS and Help follow Admin, with Pin to Start gone`() {
+    fun `SOS and Help follow Settings, with Pin to Start gone`() {
         assertEquals(listOf("sos", "help"), AppRailItems.map { it.id })
-        assertEquals(listOf("admin", "sos", "help"), railItemsFor(isAdmin = true).map { it.id }.takeLast(3))
+        assertEquals(listOf("settings", "sos", "help"), railItemsFor(isAdmin = true).map { it.id }.takeLast(3))
         assertTrue(railItemsFor(isAdmin = true).none { it.id == "pin" })
     }
 

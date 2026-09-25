@@ -29,7 +29,14 @@ import kotlinx.coroutines.flow.flowOf
 @Suppress("LongParameterList") // One seam per thing the screen changes; each is a test hook, and all default.
 class SettingsViewModel(
     private val setTheme: (ThemeMode) -> Unit,
+    /**
+     * The stored theme preference, mirrored so the Theme row ticks what is in
+     * force — the top bar's toggle writes the same preference.
+     */
+    themeMode: Flow<ThemeMode>? = null,
     private val setScale: (Int) -> Unit,
+    /** The stored Interface size, mirrored so the row shows what is in force after a restart. */
+    uiScalePercent: Flow<Int>? = null,
     /** Writes the language preference; the store that loads the words follows it. */
     private val setLanguage: (String) -> Unit = {},
     /** The stored language preference, mirrored so the row ticks what is actually in force. */
@@ -87,6 +94,10 @@ class SettingsViewModel(
         setState { copy(startAtLoginAvailable = notifications.startAtLoginAvailable) }
         launch { unitContext.collect(::onUnitContext) }
         launch { language.collect { code -> setState { copy(language = code) } } }
+        themeMode?.let { modes -> launch { modes.collect { mode -> setState { copy(themeMode = mode) } } } }
+        uiScalePercent?.let { sizes ->
+            launch { sizes.collect { percent -> setState { copy(uiScalePercent = percent) } } }
+        }
         // Only once there is something to show. The profile loads after the
         // window does, and an empty summary arriving first would blank a card
         // that a project switch is about to repopulate.

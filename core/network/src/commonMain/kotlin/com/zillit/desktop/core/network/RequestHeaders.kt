@@ -60,6 +60,15 @@ enum class RequestModule {
      * Never rides a token itself, or it would recurse.
      */
     SessionBootstrap,
+
+    /**
+     * `POST lcwapi/api/v2/location/log` — device + project + user, and
+     * always `moduledata`, never a Bearer. iOS pins the route the same way
+     * (`FCURLRequest.requiresModuledataCredential`): the handler reads the
+     * caller's identity out of the blob, and Bearer calls to it failed
+     * 346/346 in QA (2026-09-10) while `moduledata` calls passed.
+     */
+    Telemetry,
     ;
 
     /** Calls that must not carry session headers (pre-auth endpoints). */

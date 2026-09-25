@@ -36,6 +36,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
@@ -115,11 +116,16 @@ fun ApprovalsScreen(
                     )
                 }
 
+                if (queue.decidesSeveral && queueState.visible.isNotEmpty()) {
+                    SelectionBar(queue, queueState, onEvent)
+                }
+
                 Body(queue, queueState, onEvent, known)
             }
         }
 
         DeclineDialog(queue, queueState, onEvent)
+        DeclineSelectedDialog(queue, queueState, onEvent)
         ApprovalReviewDialog(state = state, onEvent = onEvent, known = known)
     }
 }
@@ -203,6 +209,8 @@ private fun Body(
                         queue = queue,
                         request = request,
                         known = known(request.userId),
+                        selected = (request.id in state.selected).takeIf { queue.decidesSeveral },
+                        onToggleSelected = { onEvent(ApprovalsEvent.ToggleSelected(queue, request.id)) },
                         isDeciding = request.id in state.deciding,
                         loadedAtMillis = state.loadedAtMillis,
                         onReview = { onEvent(ApprovalsEvent.Review.Open(queue, request.id)) },
@@ -232,6 +240,9 @@ private fun ApprovalCard(
     queue: ApprovalQueue,
     request: PendingApproval,
     known: KnownCrewMember?,
+    /** Null on a queue that decides one at a time. */
+    selected: Boolean?,
+    onToggleSelected: () -> Unit,
     isDeciding: Boolean,
     loadedAtMillis: Long,
     onReview: () -> Unit,
@@ -257,6 +268,9 @@ private fun ApprovalCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
+        if (selected != null) {
+            ZillitCheckbox(checked = selected, onCheckedChange = { onToggleSelected() }, enabled = !isDeciding)
+        }
         ZillitAvatar(name = request.displayName, userId = request.userId, size = AVATAR)
 
         Column(
@@ -444,6 +458,87 @@ private fun DeclineDialog(
         }
     }
 }
+
+/**
+ * Select all, how many are ticked, and the two decisions on all of them.
+ *
+ * The web's join queue offers the same (`RequestList.jsx`'s universal
+ * approve/reject): an admin letting in a whole crew on the first day should
+ * not click through each person.
+ */
+@Composable
+private fun SelectionBar(queue: ApprovalQueue, state: ApprovalQueueState, onEvent: (ApprovalsEvent) -> Unit) {
+    val count = state.selectedItems.size
+    val busy = state.isDecidingSelected
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitCheckbox(
+            checked = state.allVisibleSelected,
+            onCheckedChange = { onEvent(ApprovalsEvent.SelectAll(queue, it)) },
+            label = if (count > 0) str(S.selected_count, count) else str(S.select_all),
+            enabled = !busy,
+        )
+        Box(Modifier.weight(1f))
+        ZillitButton(
+            text = str(S.desktop_decline_selected),
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = count > 0 && !busy,
+            onClick = { onEvent(ApprovalsEvent.AskDeclineSelected(queue)) },
+        )
+        ZillitButton(
+            text = str(S.desktop_approve_selected),
+            size = ButtonSize.Small,
+            enabled = count > 0,
+            loading = busy,
+            onClick = { onEvent(ApprovalsEvent.ApproveSelected(queue)) },
+        )
+    }
+}
+
+@Composable
+private fun DeclineSelectedDialog(
+    queue: ApprovalQueue,
+    state: ApprovalQueueState,
+    onEvent: (ApprovalsEvent) -> Unit,
+) {
+    val count = state.selectedItems.size
+    ZillitDialogShell(
+        title = str(S.desktop_decline_selected_title, count),
+        subtitle = state.selectedItems.joinToString(", ") { it.displayName },
+        icon = ZillitIcons.User,
+        visible = state.confirmingSelected,
+        onDismiss = { onEvent(ApprovalsEvent.DismissDeclineSelected(queue)) },
+        width = DIALOG_WIDTH,
+    ) {
+        ZillitText(
+            text = str(S.desktop_decline_new_crew_body),
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+        ) {
+            ZillitButton(
+                text = str(S.cancel),
+                variant = ButtonVariant.Tertiary,
+                onClick = { onEvent(ApprovalsEvent.DismissDeclineSelected(queue)) },
+            )
+            ZillitButton(
+                text = str(S.decline),
+                variant = ButtonVariant.Danger,
+                onClick = { onEvent(ApprovalsEvent.ConfirmDeclineSelected(queue)) },
+            )
+        }
+    }
+}
+
+/** Only the join queue decides several at once, as on the web. */
+private val ApprovalQueue.decidesSeveral: Boolean get() = this == ApprovalQueue.NewCrew
 
 @Composable
 private fun EmptyQueue(queue: ApprovalQueue, failed: Boolean) {

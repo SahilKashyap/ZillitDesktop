@@ -8317,4 +8317,8 @@
     <string name="desktop_sides_n_scenes_selected">%1$d adegan dipilih</string>
     <string name="desktop_choose_a_department_prompt">Pilih departemen...</string>
     <string name="desktop_screen_share_restart_needed">Rekaman Layar kini diizinkan untuk Zillit. Keluar lalu buka kembali Zillit untuk berbagi layar — macOS hanya menerapkannya setelah mulai ulang.</string>
+    <string name="desktop_workspace_cascade">Bertumpuk</string>
+    <string name="desktop_workspace_tabs">Tab</string>
+    <string name="desktop_classic_view">Tampilan klasik</string>
+    <string name="desktop_windowed_view">Tampilan jendela</string>
 </resources>

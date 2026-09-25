@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.settings.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,17 +50,24 @@ import com.zillit.desktop.core.strings.Strings
 import com.zillit.desktop.core.strings.str
 
 /**
- * Application settings.
+ * Profile Settings — the reader's own preferences.
  *
  * One scrolling column of sections rather than a sidebar of categories: there
  * are three sections, and a navigation pane for three destinations is furniture.
  * It grows into one when there is something to navigate.
+ *
+ * Holds the web's profile tab (account, recovery email, invite, leave) and the
+ * desktop's own additions to it: appearance, notifications, the desktop
+ * widgets and the build.
+ *
+ * @param showTitle false under [SettingsTabsFrame], which carries the title.
  */
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
     onEvent: (SettingsEvent) -> Unit,
     modifier: Modifier = Modifier,
+    showTitle: Boolean = true,
 ) {
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         ZillitScrollColumn(
@@ -70,7 +79,7 @@ fun SettingsScreen(
                 modifier = Modifier.widthIn(max = CONTENT_MAX_WIDTH).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             ) {
-                Row(
+                if (showTitle) Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 ) {
@@ -173,7 +182,7 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
  * the whole page in this order.
  *
  * Takes no state: administration was the only part that varied by who was
- * reading, and it has its own rail destination now.
+ * reading, and it is the Admin Settings tab now.
  */
 @Composable
 private fun Destinations(onEvent: (SettingsEvent) -> Unit) {
@@ -544,7 +553,11 @@ private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent
  * own, at its top (see [SettingRow]).
  */
 @Composable
-private fun Section(title: String, icon: ImageVector, content: @Composable () -> Unit) {
+private fun Section(
+    title: String,
+    icon: ImageVector,
+    content: @Composable () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -672,7 +685,7 @@ private fun LanguageSelect(selected: String, onSelect: (String) -> Unit) {
 
 private val DIALOG_WIDTH = 420.dp
 private val HAIRLINE = 1.dp
-private val CONTENT_MAX_WIDTH = 720.dp
+private val CONTENT_MAX_WIDTH = 780.dp
 private val TITLE_ACCENT_WIDTH = 4.dp
 private val TITLE_ACCENT_HEIGHT = 40.dp
 private val ACCOUNT_AVATAR = 48.dp

@@ -109,6 +109,23 @@ class BadgeTallyTest {
     }
 
     @Test
+    fun `each approval queue is counted by the unit the server files it under`() {
+        // The server, the web and iOS all file profile changes under
+        // `project_user_profile_change_request_label`; counting only Android's
+        // name left the Approve User Profile row without a badge.
+        val counts = tallyBadges(
+            listOf(
+                row("join", BadgeSections.SETTINGS, unit = BadgeSections.JOIN_REQUEST_UNIT),
+                row("change1", BadgeSections.SETTINGS, unit = BadgeSections.PROFILE_CHANGE_UNIT),
+                row("change2", BadgeSections.SETTINGS, unit = BadgeSections.PROFILE_CHANGE_UNIT),
+            ),
+        )
+        assertEquals(3, counts.section(BadgeSections.SETTINGS))
+        assertEquals(1, counts.unit(BadgeSections.JOIN_REQUEST_UNIT))
+        assertEquals(2, counts.unit(BadgeSections.PROFILE_CHANGE_UNIT))
+    }
+
+    @Test
     fun `every other section is one per row`() {
         val counts = tallyBadges(
             listOf(

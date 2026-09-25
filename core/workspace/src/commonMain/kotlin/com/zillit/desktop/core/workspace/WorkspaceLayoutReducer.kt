@@ -53,12 +53,34 @@ object WorkspaceLayoutReducer {
      * the workspace in cascade mode and simply overlap — which reads as "the
      * button did nothing".
      */
-    fun toggleLayoutMode(state: WorkspaceState): WorkspaceState = state.copy(
-        layoutMode = if (state.layoutMode == LayoutMode.Tabs) LayoutMode.Cascade else LayoutMode.Tabs,
-        windows = state.windows.map { window ->
-            if (window.state == WindowState.Maximized) window.copy(state = WindowState.Normal) else window
-        },
-    )
+    fun toggleLayoutMode(state: WorkspaceState): WorkspaceState {
+        // Classic has no tabs or floating windows to switch between.
+        if (state.viewMode == ViewMode.Classic) return state
+        return state.copy(
+            layoutMode = if (state.layoutMode == LayoutMode.Tabs) LayoutMode.Cascade else LayoutMode.Tabs,
+            windows = state.windows.map { window ->
+                if (window.state == WindowState.Maximized) window.copy(state = WindowState.Normal) else window
+            },
+        )
+    }
+
+    /**
+     * Switches between the windowed workspace and classic full-page view.
+     *
+     * As the web's `toggleViewMode`: going classic keeps the tool in front —
+     * full size, so the user stays where they were — and drops the rest.
+     * Going windowed keeps that page as the first tab.
+     */
+    fun setViewMode(state: WorkspaceState, mode: ViewMode): WorkspaceState {
+        if (state.viewMode == mode) return state
+        if (mode == ViewMode.Windowed) return state.copy(viewMode = mode)
+        val front = state.activeWindow
+        return state.copy(
+            viewMode = mode,
+            windows = listOfNotNull(front?.copy(state = WindowState.Maximized, previousState = null, zIndex = 0)),
+            recentlyClosed = state.remember(state.windows.filter { it.id != front?.id }.map { it.rootRoute }),
+        )
+    }
 
     fun reorder(state: WorkspaceState, from: Int, to: Int): WorkspaceState {
         val ordered = state.orderedWindows

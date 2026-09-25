@@ -51,6 +51,8 @@ fun RecoveryEmailPage(state: RecoveryEmailState, onEvent: (AccountEvent) -> Unit
             icon = ZillitIcons.Info,
         )
 
+        RecoveryKeyCard(state, onEvent)
+
         ZillitSectionCard(title = str(S.recovery_email), icon = ZillitIcons.Mail) {
             ZillitTextField(
                 value = state.email,
@@ -90,6 +92,58 @@ fun RecoveryEmailPage(state: RecoveryEmailState, onEvent: (AccountEvent) -> Unit
                     onClick = { onEvent(AccountEvent.SaveRecoveryEmail) },
                 )
             }
+        }
+    }
+}
+
+/**
+ * The recovery key, read-only, with a way to keep it.
+ *
+ * The web's Recovery dialog opens with it above the address; typed on a new
+ * device, it brings every production back without an email round trip.
+ */
+@Composable
+private fun RecoveryKeyCard(state: RecoveryEmailState, onEvent: (AccountEvent) -> Unit) {
+    ZillitSectionCard(title = str(S.desktop_recovery_key), icon = ZillitIcons.Lock) {
+        when {
+            state.isLoadingKey && state.key.isBlank() -> ZillitSkeletonBar(Modifier.fillMaxWidth())
+
+            state.keyError != null && state.key.isBlank() -> Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitNotice(
+                    text = state.keyError,
+                    tone = StatusTone.Rejected,
+                    icon = ZillitIcons.Info,
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitButton(
+                    text = str(S.retry),
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    onClick = { onEvent(AccountEvent.ReloadRecoveryKey) },
+                )
+            }
+
+            else -> ZillitTextField(
+                value = state.key.ifBlank { "—" },
+                onValueChange = {},
+                readOnly = true,
+                helperText = str(S.recovery_code_alert),
+                modifier = Modifier.fillMaxWidth(),
+                trailingContent = {
+                    ZillitButton(
+                        text = str(S.copy),
+                        variant = ButtonVariant.Tertiary,
+                        size = ButtonSize.Small,
+                        leadingIcon = ZillitIcons.Copy,
+                        enabled = state.key.isNotBlank(),
+                        onClick = { onEvent(AccountEvent.CopyRecoveryKey) },
+                    )
+                },
+            )
         }
     }
 }

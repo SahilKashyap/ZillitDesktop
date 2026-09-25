@@ -8317,4 +8317,8 @@
     <string name="desktop_call_back_to_call">Вернуться к звонку</string>
     <string name="desktop_chat_drop_hint">Перед отправкой каждый файл открывается для предпросмотра.</string>
     <string name="desktop_screen_share_restart_needed">Запись экрана теперь разрешена для Zillit. Закройте и снова откройте Zillit, чтобы показать экран: macOS применяет это изменение только после перезапуска.</string>
+    <string name="desktop_workspace_cascade">Каскадом</string>
+    <string name="desktop_workspace_tabs">Вкладки</string>
+    <string name="desktop_classic_view">Классический вид</string>
+    <string name="desktop_windowed_view">Оконный вид</string>
 </resources>

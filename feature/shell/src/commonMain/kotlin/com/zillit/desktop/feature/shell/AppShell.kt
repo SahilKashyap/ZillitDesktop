@@ -41,6 +41,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.workspace.ToolRegistry
+import com.zillit.desktop.core.workspace.ViewMode
 import com.zillit.desktop.core.workspace.WorkspaceEvent
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
@@ -71,6 +72,12 @@ fun AppShell(
     railItems: List<RailItem> = DefaultRailItems,
     /** Logout at the rail's foot; null hides it. The frame confirms before this fires. */
     onSignOut: (() -> Unit)? = null,
+    /**
+     * Where the rail's Classic/Windowed switch sends the new view — the app
+     * stores it and feeds it back as `WorkspaceEvent.SetViewMode`. Null hides
+     * the switch.
+     */
+    onViewModeChange: ((ViewMode) -> Unit)? = null,
     /**
      * Where the Zillit mark leads; null makes it plain text.
      *
@@ -165,6 +172,7 @@ fun AppShell(
                     registry = registry,
                     railItems = railItems,
                     onRequestSignOut = onSignOut?.let { { confirmingSignOut = true } },
+                    onViewModeChange = onViewModeChange,
                     badgeFor = badgeFor,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -200,27 +208,37 @@ private fun RailAndWorkspace(
     registry: ToolRegistry,
     railItems: List<RailItem>,
     onRequestSignOut: (() -> Unit)?,
+    onViewModeChange: ((ViewMode) -> Unit)?,
     badgeFor: (WorkspaceRoute) -> Int,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
+    val classic = state.viewMode == ViewMode.Classic
     Row(modifier) {
         NavigationRail(
             items = railItems,
             activePath = state.activeWindow?.route?.path,
             onOpen = { route -> viewModel.onEvent(WorkspaceEvent.Open(route)) },
             onSignOut = onRequestSignOut,
+            classicView = classic.takeIf { onViewModeChange != null },
+            onToggleViewMode = {
+                onViewModeChange?.invoke(if (classic) ViewMode.Windowed else ViewMode.Classic)
+            },
         )
         VerticalDivider(color = ZillitTheme.colors.divider)
 
         Column(Modifier.weight(1f)) {
-            WorkspaceTabStrip(
-                state = state,
-                onEvent = viewModel::onEvent,
-                iconFor = { window -> registry.resolve(window.route)?.iconFor(window.route) ?: ZillitIcons.Tools },
-                badgeFor = { window -> badgeFor(window.rootRoute) },
-            )
-            HorizontalDivider(color = ZillitTheme.colors.divider)
+            // Classic is full-page navigation, as on the web: no tab strip,
+            // the rail alone moves between tools.
+            if (!classic) {
+                WorkspaceTabStrip(
+                    state = state,
+                    onEvent = viewModel::onEvent,
+                    iconFor = { window -> registry.resolve(window.route)?.iconFor(window.route) ?: ZillitIcons.Tools },
+                    badgeFor = { window -> badgeFor(window.rootRoute) },
+                )
+                HorizontalDivider(color = ZillitTheme.colors.divider)
+            }
             // Switches between the tab workspace and free-floating cascade
             // windows; a tool cannot tell which it is in.
             Workspace(
