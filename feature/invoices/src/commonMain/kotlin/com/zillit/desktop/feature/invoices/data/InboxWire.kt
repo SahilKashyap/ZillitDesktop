@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.invoices.domain.InboxTriage
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.ServerBatch
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -29,9 +30,10 @@ private fun acceptWire(a: InboxAccept): JsonObject = buildJsonObject {
     a.invoiceNumber.trim().takeIf { it.isNotEmpty() }?.let { put("invoice_number", JsonPrimitive(it)) }
     a.vendorId.takeIf { it.isNotBlank() }?.let { put("vendor_id", JsonPrimitive(it)) }
     put("description", JsonPrimitive(a.description))
-    InvoiceFormat.parseDateInput(a.invoiceDate)?.let { put("invoice_date", JsonPrimitive(it)) }
-    InvoiceFormat.parseDateInput(a.dueDate)?.let { put("due_date", JsonPrimitive(it)) }
-    InvoiceFormat.parseDateInput(a.effectiveDate)?.let { put("effective_date", JsonPrimitive(it)) }
+    // Local midnight, as the review's `new Date(v + "T00:00:00")` sends.
+    InvoiceFormat.parseDateInputLocal(a.invoiceDate)?.let { put("invoice_date", JsonPrimitive(it)) }
+    InvoiceFormat.parseDateInputLocal(a.dueDate)?.let { put("due_date", JsonPrimitive(it)) }
+    InvoiceFormat.parseDateInputLocal(a.effectiveDate)?.let { put("effective_date", JsonPrimitive(it)) }
     if (a.net.isNotBlank()) put("net_amount", JsonPrimitive(InboxTriage.amount(a.net)))
     if (a.tax.isNotBlank()) put("tax_amount", JsonPrimitive(InboxTriage.amount(a.tax)))
     put("gross_amount", JsonPrimitive(InboxTriage.amount(a.gross)))
@@ -71,8 +73,12 @@ internal fun bulkUploadBody(batchId: String, attachment: InvoiceAttachment, size
         )
     }
 
-/** `GET /invoices/bulk-upload/batches` — every batch the server is still tracking. */
-internal fun parseBulkBatches(data: JsonElement?): List<ServerBatch> = rowsOf(data).mapNotNull { row ->
+/**
+ * `GET /invoices/bulk-upload/batches` — every batch the server is still
+ * tracking. The server wraps the list as `{batches: [...]}`
+ * (`bulkUploadStore.js`); a bare array is still read.
+ */
+internal fun parseBulkBatches(data: JsonElement?): List<ServerBatch> = batchRows(data).mapNotNull { row ->
     val id = row.text("batch_id", "id").ifBlank { return@mapNotNull null }
     ServerBatch(
         batchId = id,
@@ -85,3 +91,6 @@ internal fun parseBulkBatches(data: JsonElement?): List<ServerBatch> = rowsOf(da
         createdAtMs = row.dateMs("created_at"),
     )
 }
+
+private fun batchRows(data: JsonElement?): List<JsonObject> =
+    ((data as? JsonObject)?.get("batches") as? JsonArray)?.mapNotNull { it as? JsonObject } ?: rowsOf(data)

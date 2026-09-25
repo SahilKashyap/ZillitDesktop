@@ -79,7 +79,6 @@ object InvoiceFormat {
         return "${d.year}-${d.month.number.pad()}-${d.day.pad()}"
     }
 
-    /** `YYYY-MM-DD` → epoch ms at UTC midnight; null when it is not a date. */
     /** `YYYY-MM-DD_HHMM` — the web's `exportTs`, so two exports never collide. */
     fun fileStamp(millis: Long): String {
         val moment = Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.currentSystemDefault())
@@ -88,11 +87,18 @@ object InvoiceFormat {
             "_${pad(moment.hour)}${pad(moment.minute)}"
     }
 
-    fun parseDateInput(text: String): Long? {
+    /** `YYYY-MM-DD` → epoch ms at UTC midnight; null when it is not a date. */
+    fun parseDateInput(text: String): Long? = parseDateInputIn(text, TimeZone.UTC)
+
+    /** `YYYY-MM-DD` → epoch ms at midnight in [zone] — the web's `new Date(v + "T00:00:00")`. */
+    fun parseDateInputLocal(text: String, zone: TimeZone = TimeZone.currentSystemDefault()): Long? =
+        parseDateInputIn(text, zone)
+
+    private fun parseDateInputIn(text: String, zone: TimeZone): Long? {
         val trimmed = text.trim()
         if (trimmed.length < DATE_LENGTH) return null
         return runCatching { LocalDate.parse(trimmed.take(DATE_LENGTH)) }.getOrNull()
-            ?.atStartOfDayIn(TimeZone.UTC)?.toEpochMilliseconds()
+            ?.atStartOfDayIn(zone)?.toEpochMilliseconds()
     }
 
     /** Today's `YYYY-MM-DD` in the local zone. */
