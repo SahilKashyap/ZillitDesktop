@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
 import com.zillit.desktop.core.forms.FormLayout
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
@@ -173,7 +174,15 @@ data class CashUiState(
     /** [code] as a payload sends it: `[[code]]` when the chart does not hold it. See [CashNominals.wrap]. */
     fun wrapNominal(code: String?): String = CashNominals.wrap(code, chartAccounts.orEmpty())
 
-    fun departmentName(id: String?): String? = CashDepartments.nameOf(id, departments)
+    /**
+     * A department's display name, translated. Some productions' departments
+     * carry their untranslated key as `name` (`accounts_department_label`
+     * instead of "Accounts") — the web translates before it shows one, so
+     * every call site here (the approval queue's role line, the department
+     * overview header, the float request form…) must too, in one place
+     * rather than each remembering to.
+     */
+    fun departmentName(id: String?): String? = CashDepartments.nameOf(id, departments)?.localised()
 
     /** The float request form's own rules — which fields show, which are required. */
     val floatForm: FormLayout get() = FormLayout(formTemplate)

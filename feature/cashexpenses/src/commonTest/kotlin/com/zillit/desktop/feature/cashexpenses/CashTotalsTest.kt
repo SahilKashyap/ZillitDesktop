@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cashexpenses
 
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrencies
 import com.zillit.desktop.feature.cashexpenses.domain.CashCurrency
+import com.zillit.desktop.feature.cashexpenses.domain.CashDepartment
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
@@ -72,5 +73,28 @@ class CashTotalsTest {
     fun `no records at all reads as zero in the default currency`() {
         val currencies = CashCurrencies(defaultCode = "GBP")
         assertEquals(state(currencies).formatMoney(0.0, "GBP"), state(currencies).describeTotal(emptyList()))
+    }
+
+    // -- department names -------------------------------------------------------------------
+
+    @Test
+    fun `a department name that is really a label key never shows raw`() {
+        // Some productions never renamed a default department, so the admin
+        // list's own `name` field is still its untranslated key — the web
+        // translates it to "Accounts" before showing one; this module must too.
+        val withRawKey = CashUiState(
+            viewer = viewer,
+            destination = CashDestination.PettyCashOverview,
+            departments = listOf(CashDepartment(id = "d1", name = "accounts_department_label")),
+        )
+        val shown = withRawKey.departmentName("d1")
+        assertEquals(false, shown?.contains("_"))
+        assertEquals(false, shown?.endsWith("_label"))
+    }
+
+    @Test
+    fun `an id with no matching department is null, not the id itself`() {
+        val state = CashUiState(viewer = viewer, destination = CashDestination.PettyCashOverview)
+        assertEquals(null, state.departmentName("no-such-department"))
     }
 }
