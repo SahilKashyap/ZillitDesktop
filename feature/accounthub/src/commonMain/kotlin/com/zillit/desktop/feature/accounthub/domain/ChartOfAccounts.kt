@@ -452,7 +452,38 @@ object ChartOfAccounts {
         return (starts + contains).take(limit)
     }
 
+    /**
+     * A search by description — the code picker's other mode once a letter is
+     * typed (`CoaCodeField`). A whole-string match on code or name ranks first,
+     * as [suggest] already gives; a query of several words then falls back to
+     * matching every word somewhere in the code and name TOGETHER, in any
+     * order and with punctuation ignored, so "diesel fuel" or a pasted
+     * "5125 — Fuel — Diesel" still finds the row.
+     *
+     * Named apart from [search] (the tree/table's own filter, unrelated rules,
+     * not `leaves()`-restricted) — same two-arg shape would otherwise resolve
+     * to that one at every call site here instead of this one.
+     */
+    fun searchLeaves(rows: List<CoaAccount>, term: String, limit: Int = SUGGEST_LIMIT): List<CoaAccount> {
+        val needle = term.trim()
+        val pool = leaves(rows)
+        if (needle.isEmpty()) return pool.take(limit)
+        val contiguous = pool.filter { it.code.contains(needle, true) || it.name.contains(needle, true) }
+        val words = needle.split(WORD_SPLIT).filter { it.isNotBlank() }
+        // A query with no letters is code-shaped and never gets the word fallback —
+        // "1100-10" would otherwise split into "1100" + "10" and match account 1100.
+        val byWord = if (words.size > 1 && needle.any { it.isLetter() }) {
+            pool.filter { row ->
+                row !in contiguous && words.all { "${row.code} ${row.name}".contains(it, ignoreCase = true) }
+            }
+        } else {
+            emptyList()
+        }
+        return (contiguous + byWord).take(limit)
+    }
+
     private const val SUGGEST_LIMIT = 8
+    private val WORD_SPLIT = Regex("""[^\p{L}\p{N}]+""")
     private val DECIMAL = Regex("""[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?""")
     private val HYPHENATED = Regex("""(\d+)[\d-]*""")
     private val CHUNK = Regex("""\d+|\D+""")

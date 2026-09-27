@@ -290,7 +290,6 @@ class AccountHubViewModel(
             is AccountHubEvent.CreatePurchaseOrder -> show(PURCHASE_ORDER_NEW_PATH, str(S.ah_purchase_orders))
             AccountHubEvent.Refresh -> currentState.area?.let(::load)
             AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
-            is AccountHubEvent.SwitchSetupTab -> setState { copy(setup = setup.copy(tab = event.tab)) }
             else -> return false
         }
         return true

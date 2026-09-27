@@ -2157,7 +2157,7 @@
     <string name="desktop_hub_back_to_film_tools">Back to Film Tools</string>
     <string name="desktop_next_arrow">Next →</string>
     <string name="desktop_hub_find_it_under_setup_production_setup">Find it under Setup › Production Setup.</string>
-    <string name="desktop_hub_find_it_under_production_setup_deal_memo_setup">Find it under Production Setup › Deal Memo Setup.</string>
+    <string name="desktop_hub_find_it_under_production_setup_deal_memo_setup">Find it under Deal Memo › Deal Memo Setup.</string>
     <string name="desktop_hub_find_it_under_configuration_chart_of_accounts">Find it under Configuration › Chart of Accounts.</string>
     <string name="desktop_accounting_setup">Accounting Setup</string>
     <string name="desktop_hub_purchase_order_entry_setup">Purchase Order Entry Setup</string>
@@ -2623,7 +2623,7 @@
     <string name="desktop_add_package">Add package</string>
     <string name="desktop_publishing">Publishing…</string>
     <string name="desktop_external_emails">External emails</string>
-    <string name="desktop_hub_project_wide_defaults_inherited_by_new_deal_memos_purchase_orders">Project-wide defaults inherited by new deal memos, purchase orders, payroll runs, and onboarding flows.</string>
+    <string name="desktop_hub_project_wide_defaults_inherited_by_new_deal_memos_purchase_orders">Project-wide accounting defaults inherited by purchase orders, invoices, expenses, payroll runs and time cards.</string>
     <string name="desktop_hub_you_can_see_this_configuration_but_not_change_it_edits">You can see this configuration but not change it — edits are the accounts department\'s.</string>
     <string name="desktop_hub_approvers_authorised_to_sign_off_payroll_runs_and_the_projects">Approvers authorised to sign off payroll runs, and the project\'s pay-cycle window (e.g. Mon → Sun or Wed → Tue).</string>
     <string name="desktop_hub_time_card_entry_setup">Time Card Entry Setup</string>

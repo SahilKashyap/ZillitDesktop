@@ -34,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -75,7 +74,6 @@ import com.zillit.desktop.feature.accounthub.ui.SetupRemoval
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
 import com.zillit.desktop.feature.accounthub.ui.bankLoad
 import com.zillit.desktop.feature.accounthub.ui.sectionLoad
-import com.zillit.desktop.feature.accounthub.ui.SetupTab
 import com.zillit.desktop.feature.accounthub.ui.SpendSetup
 import com.zillit.desktop.feature.accounthub.ui.components.HubPageHeader
 import com.zillit.desktop.feature.accounthub.ui.components.Chip
@@ -90,13 +88,14 @@ import com.zillit.desktop.feature.accounthub.ui.components.SectionShell
 /**
  * Production Setup — the web's `ProductionSetupModule`.
  *
- * Two tabs, because the sections belong to two different owners: the accounting
- * side lives in the finance schema, and the deal-memo side in the production
- * one. Users think of them that way too — an accountant sets currencies and a
- * production coordinator sets the shoot dates. The sections follow the web's
- * order exactly, and the six module setups are tiles that open the web's
- * drill-down modals — or, for the three tools that already have a settings
- * page on this client, hand off to it.
+ * One page: Companies, Bank Accounts and the accounting sections. The web
+ * dropped the Deal Memo Setup tab (commit `a91e1065d`) once the Deal Memo
+ * module grew its own Setup Hub / builder that writes the same project
+ * slices — schedule, non-union pay, allowances, agreements, deal conditions,
+ * payroll bureau. This page never duplicated that editor either; only its
+ * tab bar did, so the tab bar is what left. The six module setups are tiles
+ * that open the web's drill-down modals — or, for the three tools that
+ * already have a settings page on this client, hand off to it.
  *
  * The page scrolls and holds no data table. That is deliberate: a virtualised
  * table inside a scrolling column is measured against an unbounded height and
@@ -106,15 +105,12 @@ import com.zillit.desktop.feature.accounthub.ui.components.SectionShell
 fun ProductionSetupPage(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
-    /** Whether the host wired file storage; false leaves Agreements read-only. */
+    /** Whether the host wired file storage; the PO Setup modal's Terms document needs it. */
     canAttachAgreements: Boolean = false,
     canOpenDocuments: Boolean = false,
 ) {
     val setup = state.setup
     val scroll = rememberScrollState()
-    // A tab is a different page: it starts at its top, not wherever the other
-    // one was left.
-    LaunchedEffect(setup.tab) { scroll.scrollTo(0) }
 
     HubPage {
         HubPageHeader(
@@ -131,10 +127,6 @@ fun ProductionSetupPage(
             )
         }
 
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            SetupTabBar(active = setup.tab, onSelect = { onEvent(AccountHubEvent.SwitchSetupTab(it)) })
-        }
-
         if (setup.loading && !setup.loaded) {
             SetupSkeleton()
             return@HubPage
@@ -145,10 +137,7 @@ fun ProductionSetupPage(
             state = scroll,
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
-            when (setup.tab) {
-                SetupTab.Accounting -> AccountingSections(state, onEvent)
-                SetupTab.DealMemo -> DealMemoSections(state, onEvent, canAttachAgreements, canOpenDocuments)
-            }
+            AccountingSections(state, onEvent)
         }
     }
 
@@ -156,52 +145,8 @@ fun ProductionSetupPage(
     // editor (its inline "Add bank account"), and a removal confirms over both.
     CompanyDialog(state, onEvent)
     BankAccountDialog(state, onEvent)
-    NonUnionPayDialogs(state, onEvent)
     SetupRemovalDialog(state, onEvent)
     SetupModals(state, onEvent, canAttachAgreements, canOpenDocuments)
-}
-
-/**
- * The pill tab strip — an accent dot, the label, a mono count chip; the active
- * tab raised onto the surface (the web's `TabBar`).
- */
-@Composable
-private fun SetupTabBar(active: SetupTab, onSelect: (SetupTab) -> Unit) {
-    val colors = ZillitTheme.colors
-    Row(
-        modifier = Modifier
-            .clip(ZillitTheme.shapes.large)
-            .background(colors.surfaceSunken)
-            .border(1.dp, colors.border, ZillitTheme.shapes.large)
-            .padding(ZillitTheme.spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-    ) {
-        SetupTab.entries.forEach { tab ->
-            val isActive = tab == active
-            Row(
-                modifier = Modifier
-                    .clip(ZillitTheme.shapes.large)
-                    .background(if (isActive) colors.surface else Color.Transparent)
-                    .clickable { onSelect(tab) }
-                    .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(if (isActive) colors.accent else colors.borderStrong),
-                )
-                ZillitText(
-                    text = tab.label,
-                    style = ZillitTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = if (isActive) colors.textPrimary else colors.textSecondary,
-                )
-                MonoChip(tab.count.toString(), active = isActive)
-            }
-        }
-    }
 }
 
 /** The shimmer the web shows while the slices land — a header, a tab bar and three card stubs. */
@@ -282,24 +227,6 @@ private fun ColumnScope.AccountingSections(
         onConfigure = { onEvent(AccountHubEvent.OpenSpendSetup(SpendSetup.PettyCash)) },
         actionText = str(S.desktop_hub_open_petty_cash_settings_chevron),
     )
-}
-
-@Composable
-private fun ColumnScope.DealMemoSections(
-    state: AccountHubUiState,
-    onEvent: (AccountHubEvent) -> Unit,
-    canAttachAgreements: Boolean,
-    canOpenDocuments: Boolean,
-) {
-    // The web's order: schedule, rate cards, allowances, then the document /
-    // clause / bureau cluster, then payroll defaults.
-    ScheduleSection(state, onEvent)
-    NonUnionPaySection(state, onEvent)
-    AllowancesSection(state, onEvent)
-    AgreementsSection(state, onEvent, canAttach = canAttachAgreements, canOpen = canOpenDocuments)
-    DealConditionsSection(state, onEvent)
-    PayrollBureausSection(state, onEvent)
-    PayrollDefaultsSection(state, onEvent)
 }
 
 // -- companies --------------------------------------------------------------

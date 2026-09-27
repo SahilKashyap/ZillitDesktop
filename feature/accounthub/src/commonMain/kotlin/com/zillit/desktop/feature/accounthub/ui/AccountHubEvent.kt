@@ -111,8 +111,6 @@ sealed interface AccountHubEvent {
 
     // -- production setup ---------------------------------------------------
 
-    data class SwitchSetupTab(val tab: SetupTab) : AccountHubEvent
-
     data class EditCompanies(val companies: List<Company>) : AccountHubEvent
 
     data class EditCurrencies(val settings: CurrencySettings) : AccountHubEvent

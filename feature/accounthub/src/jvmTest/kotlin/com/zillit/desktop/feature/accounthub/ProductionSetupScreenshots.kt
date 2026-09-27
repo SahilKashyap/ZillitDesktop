@@ -4,8 +4,6 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
-import com.zillit.desktop.feature.accounthub.domain.AgreementRuleImport
-import com.zillit.desktop.feature.accounthub.domain.AgreementRuleRow
 import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankDetail
@@ -15,16 +13,11 @@ import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
 import com.zillit.desktop.feature.accounthub.domain.EntitlementRow
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubNavigation
-import com.zillit.desktop.feature.accounthub.domain.PayRateType
-import com.zillit.desktop.feature.accounthub.domain.PayTrigger
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
 import com.zillit.desktop.feature.accounthub.domain.TaxType
-import com.zillit.desktop.feature.accounthub.domain.UnionAgreementSummary
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
-import com.zillit.desktop.feature.accounthub.ui.RuleImportState
 import com.zillit.desktop.feature.accounthub.ui.SectionEdit
 import com.zillit.desktop.feature.accounthub.ui.SetupState
-import com.zillit.desktop.feature.accounthub.ui.SetupTab
 import com.zillit.desktop.feature.accounthub.ui.pages.ProductionSetupPage
 import java.io.File
 import kotlin.test.Test
@@ -158,7 +151,6 @@ class ProductionSetupScreenshots {
         val base = setup()
         val shots = listOf(
             Triple("accounting", base, TALL),
-            Triple("deal", base.copy(tab = SetupTab.DealMemo), TALL),
             Triple("company", base.copy(companyDraft = base.companies.saved.first()), HEIGHT_DP),
             Triple("company-new", base.copy(companyDraft = Company(id = "co-new")), HEIGHT_DP),
             Triple(
@@ -171,39 +163,6 @@ class ProductionSetupScreenshots {
                 HEIGHT_DP,
             ),
             Triple("bank", base.copy(bankDraft = banks.first()), HEIGHT_DP),
-            Triple(
-                "import-rules",
-                base.copy(
-                    tab = SetupTab.DealMemo,
-                    ruleImport = RuleImportState(
-                        covered = setOf("uk", "us"),
-                        territory = "uk",
-                        agreements = listOf(UnionAgreementSummary("pact-tv", "PACT/BECTU TV Drama", "uk")),
-                        agreementId = "pact-tv",
-                        rules = AgreementRuleImport.project(
-                            overtimes = listOf(
-                                AgreementRuleRow(
-                                    id = "overtime", label = "OT after 10 hrs", rateAmount = 1.5,
-                                    trigger = PayTrigger(afterMinutes = 600),
-                                ),
-                                AgreementRuleRow(
-                                    id = "meal_penalty", label = "Meal Penalty", rateType = PayRateType.Flat,
-                                    rateAmount = 25.0, trigger = PayTrigger(meal = true, afterMinutes = 360),
-                                ),
-                            ),
-                            premiums = listOf(
-                                AgreementRuleRow(
-                                    id = "night", label = "Night Work", rateAmount = 1.25,
-                                    trigger = PayTrigger(clock = true, afterMinutes = 0),
-                                ),
-                            ),
-                            turnarounds = emptyList(),
-                            salt = "shot",
-                        ),
-                    ),
-                ),
-                HEIGHT_DP,
-            ),
         )
         listOf(false, true).forEach { dark ->
             shots.forEach { (name, setup, height) ->

@@ -81,7 +81,6 @@ enum class SetupGap(
         listOf(
             S.desktop_deal_dates to S.desktop_hub_tour_schedule_deal_dates,
             S.desktop_hub_prep_shoot_wrap to S.desktop_hub_tour_schedule_prep_shoot_wrap,
-            S.custom to S.desktop_hub_tour_schedule_custom,
         ),
         SetupTourTarget.DealTab,
     ),

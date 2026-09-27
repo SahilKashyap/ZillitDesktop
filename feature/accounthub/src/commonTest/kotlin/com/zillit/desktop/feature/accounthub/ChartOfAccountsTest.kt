@@ -297,6 +297,44 @@ class ChartOfAccountsTest {
         assertTrue(ChartOfAccounts.search(rows, "  ").isEmpty())
     }
 
+    // -- the code picker's description search -----------------------------------------
+
+    /** A whole-string match still ranks first, exactly as [ChartOfAccounts.suggest] does. */
+    @Test
+    fun `searchLeaves ranks a whole-string code or name match first`() {
+        val rows = listOf(account("a", "5125", name = "Fuel & Oil"), account("b", "6000", name = "Other"))
+
+        assertEquals(listOf("a"), ChartOfAccounts.searchLeaves(rows, "fuel").map { it.id })
+    }
+
+    /** The web's word-by-word fallback: every word, any order, across code and name. */
+    @Test
+    fun `searchLeaves finds a row by every typed word, in any order`() {
+        val rows = listOf(account("a", "5125", name = "Fuel & Oil - Diesel"), account("b", "6000", name = "Other"))
+
+        assertEquals(listOf("a"), ChartOfAccounts.searchLeaves(rows, "diesel fuel").map { it.id })
+        assertEquals(listOf("a"), ChartOfAccounts.searchLeaves(rows, "5125 fuel").map { it.id })
+    }
+
+    /** A code-shaped query never gets the word fallback — it would over-match on digits alone. */
+    @Test
+    fun `searchLeaves does not word-match a query with no letters`() {
+        val rows = listOf(account("a", "1100", name = "Camera hire"), account("b", "1100-10", name = "Sub-hire"))
+
+        assertEquals(emptyList(), ChartOfAccounts.searchLeaves(rows, "1100 10"))
+    }
+
+    /** Only the active, postable leaves are offered — headers and sections never are. */
+    @Test
+    fun `searchLeaves only offers postable leaves`() {
+        val rows = listOf(
+            account("h", "1", CoaLineType.Header, name = "Fuel head"),
+            account("a", "1100", name = "Fuel").copy(isActive = false),
+        )
+
+        assertTrue(ChartOfAccounts.searchLeaves(rows, "fuel").isEmpty())
+    }
+
     // -- the bulk grid -----------------------------------------------------------------
 
     private fun row(id: String, code: String, serverId: String? = null) =
