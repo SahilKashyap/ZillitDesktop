@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.payroll.domain.OverrideFlags
 import com.zillit.desktop.feature.payroll.domain.PayrollAdjustmentRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollCompany
 import com.zillit.desktop.feature.payroll.domain.PayrollCrewRow
+import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.PayrollJournalRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
 import com.zillit.desktop.feature.payroll.domain.PayrollRepository
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
 /** An in-memory payroll service that records every write it is asked for. */
+@Suppress("LongParameterList") // Every test's own fixture knobs, each defaulted.
 internal class FakePayrollRepository(
     var paid: List<PayrollTimecard> = emptyList(),
     var crewRows: List<PayrollCrewRow> = emptyList(),
@@ -34,6 +36,7 @@ internal class FakePayrollRepository(
     var locked: String? = null,
     var flags: OverrideFlags = OverrideFlags(isAccountant = true, isApprover = false),
     var defaultCurrency: String? = "GBP",
+    var currencyRates: PayrollCurrencyRates = PayrollCurrencyRates(defaultCode = "GBP"),
     override val refreshes: Flow<Unit> = emptyFlow(),
 ) : PayrollRepository {
 
@@ -77,6 +80,7 @@ internal class FakePayrollRepository(
         override suspend fun lockedDate() = ZillitResult.Success(locked)
         override suspend fun companies() = ZillitResult.Success(emptyList<PayrollCompany>())
         override suspend fun defaultCurrency() = ZillitResult.Success<String?>(defaultCurrency)
+        override suspend fun currencyRates() = ZillitResult.Success(currencyRates)
         override suspend fun journalReference() = ZillitResult.Success(reference)
         override suspend fun activeDealCoding(userId: String) = ZillitResult.Success<DealCoding?>(null)
     }

@@ -112,6 +112,9 @@ interface PayrollSettingsRepository {
      */
     suspend fun defaultCurrency(): ZillitResult<String?>
 
+    /** The project currencies' rates against the default — for converting a mixed-currency total. */
+    suspend fun currencyRates(): ZillitResult<PayrollCurrencyRates>
+
     /** The crew member's active deal's nominal codes, or null for none. */
     suspend fun activeDealCoding(userId: String): ZillitResult<DealCoding?>
 

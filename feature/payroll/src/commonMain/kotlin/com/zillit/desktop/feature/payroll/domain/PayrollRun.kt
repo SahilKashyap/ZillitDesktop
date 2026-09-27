@@ -3,6 +3,34 @@ package com.zillit.desktop.feature.payroll.domain
 import kotlin.math.max
 
 /**
+ * The project currencies' exchange rates against the default — the same
+ * shape as Purchase Orders' `PoCurrencyRates`.
+ *
+ * `exr` is foreign-per-default (`foreign = default × exr`), so converting a
+ * foreign amount into the default divides by it. Without this, the Run's
+ * summary strip added a £ row's gross to a ¥ row's gross at face value and
+ * labelled the result with whichever currency the first row happened to be
+ * in — seen live: desktop's own "Gross Labour" read £4.8K (a raw face-value
+ * sum) where the web's converted total read ¥14.12K.
+ */
+data class PayrollCurrencyRates(
+    val defaultCode: String? = null,
+    /** Upper-case ISO code to its `exr`; a currency with no usable rate is absent. */
+    val rates: Map<String, Double> = emptyMap(),
+) {
+    /**
+     * Converts [amount] in [code] into the default currency, or null when the
+     * code has no rate — the caller adds such an amount at face value and says so.
+     */
+    fun toDefault(amount: Double, code: String?): Double? {
+        val default = defaultCode?.uppercase() ?: return amount
+        val currency = code?.uppercase()?.takeIf { it.isNotBlank() } ?: return amount
+        if (currency == default) return amount
+        return rates[currency]?.let { amount / it }
+    }
+}
+
+/**
  * The employment type the Run's sidebar filters on — the web's
  * `mapEmpStatusToEmpType` (`PayrollRunModule.jsx` 2487-2502), in its order.
  */

@@ -153,6 +153,7 @@ class PayrollViewModel(
         launch { settings.lockedDate().getOrNull().let { setState { copy(lockedDate = it) } } }
         launch { settings.companies().getOrNull()?.let { setState { copy(companies = it) } } }
         launch { settings.defaultCurrency().getOrNull()?.let { setState { copy(defaultCurrency = it) } } }
+        launch { settings.currencyRates().getOrNull()?.let { setState { copy(currencyRates = it) } } }
         // Reference data for the journal's Layers and Tags. Absent, those
         // cells offer nothing to pick rather than blocking the ledger.
         launch {

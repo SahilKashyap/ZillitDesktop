@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.payroll.domain.DealCoding
 import com.zillit.desktop.feature.payroll.domain.DealRates
 import com.zillit.desktop.feature.payroll.domain.EstimatedDay
 import com.zillit.desktop.feature.payroll.domain.PayrollCrewRow
+import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.Employment
 import com.zillit.desktop.feature.payroll.domain.JournalCoding
 import com.zillit.desktop.feature.payroll.domain.JournalEdit
@@ -44,6 +45,8 @@ data class PayrollUiState(
      * itself states none.
      */
     val defaultCurrency: String? = null,
+    /** The project currencies' rates against the default, for converting a mixed-currency total. */
+    val currencyRates: PayrollCurrencyRates = PayrollCurrencyRates(),
     val people: Map<String, PayrollPerson> = emptyMap(),
     val projectName: String = "",
     /** Epoch millis of now, read when the tool opened — the current week and today's date. */

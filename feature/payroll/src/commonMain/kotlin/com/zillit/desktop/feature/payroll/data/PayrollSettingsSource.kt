@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.payroll.domain.DealCoding
 import com.zillit.desktop.feature.payroll.domain.JournalReference
 import com.zillit.desktop.feature.payroll.domain.OverrideFlags
 import com.zillit.desktop.feature.payroll.domain.PayrollCompany
+import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
 import com.zillit.desktop.feature.payroll.domain.PayrollSettingsRepository
 import com.zillit.desktop.feature.payroll.domain.TrackingNode
@@ -102,6 +103,24 @@ internal class PayrollSettingsSource(
             // spellings older productions were saved under.
             val body = data.obj()?.let { it.obj("value") ?: it.obj("data") ?: it }
             body?.text("default", "default_currency", "default_code")
+        }
+
+    /**
+     * `exr`, foreign-per-default — the same read [defaultCurrency] makes,
+     * plus the per-currency rate array [defaultCurrency] discards.
+     */
+    override suspend fun currencyRates(): ZillitResult<PayrollCurrencyRates> =
+        http.get("$hub/project-settings/project-currencies").map { data ->
+            val body = data.obj()?.let { it.obj("value") ?: it.obj("data") ?: it }
+            val rows = body?.array("currencies").orEmpty().mapNotNull { it as? JsonObject }
+            val rates = rows.mapNotNull { row ->
+                val code = row.text("code")?.uppercase() ?: return@mapNotNull null
+                row.number("exr")?.takeIf { it > 0 }?.let { code to it }
+            }.toMap()
+            PayrollCurrencyRates(
+                defaultCode = body?.text("default", "default_currency", "default_code")?.uppercase(),
+                rates = rates,
+            )
         }
 
     /**
