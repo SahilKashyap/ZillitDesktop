@@ -1,11 +1,12 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.S3Presigner
-import com.zillit.desktop.core.network.headersFor
+import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.payroll.data.PayrollBinaryTransport
@@ -87,8 +88,12 @@ private fun AppGraph.Ready.payrollTransport(): PayrollBinaryTransport = object :
      * its message goes up as the server's, so the screen translates it.
      */
     override suspend fun get(url: String): ZillitResult<ByteArray> = try {
-        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null)
-        val response = httpClient.get(url) { headers.forEach { (name, value) -> this.headers.append(name, value) } }
+        val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson = null) { headers, bearer ->
+            httpClient.get(url) {
+                headers.forEach { (name, value) -> this.headers.append(name, value) }
+                bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+            }
+        }
         val bytes = response.readRawBytes()
         val json = response.contentType()?.match(ContentType.Application.Json) == true
         if (response.status.isSuccess() && !json) {
@@ -115,7 +120,9 @@ private fun AppGraph.Ready.payrollTransport(): PayrollBinaryTransport = object :
  * once the run exports as several files), or a real refusal. Kept off
  * [postForBytes] deliberately — that helper is shared by every other module's
  * exports, none of which answer this way, and folding the S3 branch into it
- * would be a behaviour change for callers that never asked for one.
+ * would be a behaviour change for callers that never asked for one. The auth
+ * decision itself (token vs `moduledata`, the one 401 retry) is shared, via
+ * [signedRawResponse] — this is not a second copy of that.
  */
 private suspend fun AppGraph.Ready.postForExportFile(
     url: String,
@@ -123,12 +130,14 @@ private suspend fun AppGraph.Ready.postForExportFile(
     requestedFormat: String,
 ): ZillitResult<PayrollExportFile> {
     val bodyJson = HttpClientFactory.json.encodeToString(JsonElement.serializer(), body)
-    val headers = headerProvider.headersFor(RequestModule.ProjectUser, bodyJson, null)
     return runCatching {
-        val response = httpClient.post(url) {
-            headers.forEach { (name, value) -> this.headers.append(name, value) }
-            contentType(ContentType.Application.Json)
-            setBody(bodyJson)
+        val response = signedRawResponse(RequestModule.ProjectUser, url, bodyJson) { headers, bearer ->
+            httpClient.post(url) {
+                headers.forEach { (name, value) -> this.headers.append(name, value) }
+                bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+                contentType(ContentType.Application.Json)
+                setBody(bodyJson)
+            }
         }
         val bytes = response.readRawBytes()
         val isJson = response.contentType()?.match(ContentType.Application.Json) == true
@@ -141,7 +150,10 @@ private suspend fun AppGraph.Ready.postForExportFile(
         }
     }.fold(
         onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Unknown(it.message ?: "Export failed")) },
+        onFailure = {
+            ZillitLog.w("PayrollExport") { "postForExportFile failed: ${it::class.simpleName}: ${it.message}" }
+            ZillitResult.Failure(ZillitError.Unknown(it.message ?: "Export failed"))
+        },
     )
 }
 
