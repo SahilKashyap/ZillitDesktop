@@ -3,9 +3,11 @@ package com.zillit.desktop.feature.saportal.ui.pages
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,30 +98,38 @@ internal fun ColumnScope.OverviewPage(state: SaUiState, onEvent: (SaEvent) -> Un
 private fun ColumnScope.EarningsTiles(state: SaUiState) {
     val summary = state.summary ?: return
     ZillitSectionLabel(str(S.desktop_sa_your_earnings))
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
+    // A fixed four-column row, as the web's own `repeat(4, 1fr)` grid is —
+    // not a FlowRow, which never synced height across a wrap and left
+    // Holiday Accrued/Days Worked (each carrying a subtitle) taller than
+    // This Year/All Time (neither does) every time this rendered.
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
+        val tile = Modifier.weight(1f).fillMaxHeight()
         ZillitStatTile(
             label = str(S.desktop_this_year),
             value = money(summary.ytdGross, state.profile?.currency),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.desktop_all_time),
             value = money(summary.totalGross, state.profile?.currency),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.desktop_sa_holiday_accrued),
             value = money(summary.holidayAccrued, state.profile?.currency),
             // Not spendable yet, and saying so stops it being read as owed now.
             sub = str(S.desktop_sa_paid_with_final_week),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.desktop_sa_days_worked),
             value = summary.vouchers.total.toString(),
             sub = str(S.desktop_sa_paid_count, summary.vouchers.paid),
             tone = if (summary.vouchers.pending > 0) StatusTone.Pending else StatusTone.Done,
+            modifier = tile,
         )
     }
 }

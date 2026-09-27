@@ -3,10 +3,13 @@ package com.zillit.desktop.feature.cashexpenses.ui.pages
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -60,8 +63,12 @@ fun StatRow(
     modifier: Modifier = Modifier,
 ) {
     if (tiles.isEmpty()) return
+    // Bounded, not each tile's own: every caller today happens to give every
+    // tile a sub or none at all, but the moment one doesn't match its
+    // siblings, an unbounded row goes visibly uneven with no warning (see
+    // purchaseorder-web-parity-port memory for the shape this guards against).
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         tiles.forEach { tile ->
@@ -72,7 +79,7 @@ fun StatRow(
                 tone = tile.tone,
                 icon = tile.icon,
                 onClick = tile.onClick,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
     }
