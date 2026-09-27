@@ -45,19 +45,8 @@ internal suspend fun AppGraph.Ready.postForBytes(
                 setBody(bodyJson)
             }
         }
-        val bytes = response.readRawBytes()
-        val isJson = response.contentType()?.match(ContentType.Application.Json) == true
-        when {
-            !response.status.isSuccess() -> throw ExportDeclined(
-                "Export answered ${response.status.value}" + (envelopeMessage(bytes)?.let { ": $it" } ?: ""),
-            )
-            isJson -> throw ExportDeclined(envelopeMessage(bytes) ?: "The service returned no file")
-            else -> bytes
-        }
-    }.fold(
-        onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Unknown(it.message ?: "Export failed")) },
-    )
+        response.declineOrBytes()
+    }.toRawResult()
 }
 
 /**
@@ -76,20 +65,56 @@ internal suspend fun AppGraph.Ready.getForBytes(
                 bearer?.let { this.headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
             }
         }
-        val bytes = response.readRawBytes()
-        val isJson = response.contentType()?.match(ContentType.Application.Json) == true
-        when {
-            !response.status.isSuccess() -> throw ExportDeclined(
-                "Request answered ${response.status.value}" + (envelopeMessage(bytes)?.let { ": $it" } ?: ""),
-            )
-            isJson -> throw ExportDeclined(envelopeMessage(bytes) ?: "The service returned no file")
-            else -> bytes
-        }
-    }.fold(
-        onSuccess = { ZillitResult.Success(it) },
-        onFailure = { ZillitResult.Failure(ZillitError.Unknown(it.message ?: "Download failed")) },
-    )
+        response.declineOrBytes()
+    }.toRawResult()
 }
+
+/** Bytes on success; the service's own refusal otherwise — shared by [postForBytes] and [getForBytes]. */
+private suspend fun HttpResponse.declineOrBytes(): ByteArray {
+    val bytes = readRawBytes()
+    val isJson = contentType()?.match(ContentType.Application.Json) == true
+    return when {
+        !status.isSuccess() -> throw ExportDeclined(status.value, envelopeMessage(bytes))
+        // A refusal wrapped in an otherwise-successful response — "nothing to
+        // export", a permission key — so there is no real status to blame.
+        isJson -> throw ExportDeclined(httpStatus = null, envelopeMessage(bytes))
+        else -> bytes
+    }
+}
+
+private fun Result<ByteArray>.toRawResult(): ZillitResult<ByteArray> = fold(
+    onSuccess = { ZillitResult.Success(it) },
+    onFailure = { failure ->
+        val declined = failure as? ExportDeclined
+        ZillitResult.Failure(rawExportError(declined?.httpStatus, declined?.serverMessage, failure.message))
+    },
+)
+
+/**
+ * The [ZillitError] a raw (non-envelope) failure maps to — the same rule
+ * `ApiClient.envelope` applies to every envelope failure (401/403 get the
+ * app's fixed, generic copy; anything else keeps the server's own message,
+ * translatable via `ZillitError.localised()`). Before this, every raw
+ * failure — a genuine 401, a real 403 permission refusal, a decode error —
+ * collapsed into the same [ZillitError.Unknown] with its hardcoded
+ * "Something went wrong.", because `Unknown.userMessage` deliberately
+ * ignores `technical`. Shared with [PayrollWiring.toPayrollExportError],
+ * whose export routes hit the same three shapes over their own exception type.
+ *
+ * [httpStatus] null means the failure carries no real HTTP error code to
+ * show — a soft decline on an otherwise-successful response (see
+ * [declineOrBytes]) — so it is never rendered as if it were one.
+ */
+internal fun rawExportError(httpStatus: Int?, serverMessage: String?, fallbackMessage: String?): ZillitError =
+    when (httpStatus) {
+        HTTP_UNAUTHORIZED -> ZillitError.Unauthorized(serverMessage)
+        HTTP_FORBIDDEN -> ZillitError.Forbidden(serverMessage)
+        else -> when {
+            serverMessage != null -> ZillitError.Http(httpStatus ?: 0, serverMessage)
+            httpStatus != null -> ZillitError.Http(httpStatus, null)
+            else -> ZillitError.Unknown(fallbackMessage)
+        }
+    }
 
 /**
  * Performs a raw (non-envelope) request with the same auth decision
@@ -133,8 +158,13 @@ internal suspend fun AppGraph.Ready.signedRawResponse(
 }
 
 private const val HTTP_UNAUTHORIZED = 401
+private const val HTTP_FORBIDDEN = 403
 
-private class ExportDeclined(message: String) : RuntimeException(message)
+/** [httpStatus] null means a soft decline on an otherwise-successful response — see [declineOrBytes]. */
+private class ExportDeclined(
+    val httpStatus: Int?,
+    val serverMessage: String?,
+) : RuntimeException(serverMessage ?: "declined${httpStatus?.let { " ($it)" } ?: ""}")
 
 private fun envelopeMessage(bytes: ByteArray): String? = runCatching {
     HttpClientFactory.json.parseToJsonElement(bytes.decodeToString()).jsonObject["message"]?.jsonPrimitive?.content

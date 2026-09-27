@@ -3,6 +3,7 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.asFailure
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.S3Presigner
@@ -96,10 +97,12 @@ private fun AppGraph.Ready.payrollTransport(): PayrollBinaryTransport = object :
         }
         val bytes = response.readRawBytes()
         val json = response.contentType()?.match(ContentType.Application.Json) == true
-        if (response.status.isSuccess() && !json) {
-            ZillitResult.Success(bytes)
-        } else {
-            ZillitResult.Failure(ZillitError.Http(response.status.value, refusal(bytes)))
+        when {
+            response.status.isSuccess() && !json -> ZillitResult.Success(bytes)
+            !response.status.isSuccess() ->
+                PayrollExportDeclined(response.status.value, refusal(bytes)).toPayrollExportError().asFailure()
+            // A refusal wrapped in an otherwise-successful response — no real status to blame.
+            else -> PayrollExportDeclined(httpStatus = null, refusal(bytes)).toPayrollExportError().asFailure()
         }
     } catch (cancelled: CancellationException) {
         throw cancelled
@@ -142,19 +145,25 @@ private suspend fun AppGraph.Ready.postForExportFile(
         val bytes = response.readRawBytes()
         val isJson = response.contentType()?.match(ContentType.Application.Json) == true
         when {
-            !response.status.isSuccess() -> throw PayrollExportDeclined(
-                "Export answered ${response.status.value}" + (refusal(bytes)?.let { ": $it" } ?: ""),
-            )
+            !response.status.isSuccess() -> throw PayrollExportDeclined(response.status.value, refusal(bytes))
             !isJson -> PayrollExportFile(bytes, extensionOfMime(response.contentType()) ?: requestedFormat)
             else -> exportFileFromEnvelope(bytes, requestedFormat)
         }
     }.fold(
         onSuccess = { ZillitResult.Success(it) },
-        onFailure = {
-            ZillitLog.w("PayrollExport") { "postForExportFile failed: ${it::class.simpleName}: ${it.message}" }
-            ZillitResult.Failure(ZillitError.Unknown(it.message ?: "Export failed"))
+        onFailure = { failure ->
+            ZillitLog.w("PayrollExport") {
+                "postForExportFile failed: ${failure::class.simpleName}: ${failure.message}"
+            }
+            ZillitResult.Failure(failure.toPayrollExportError())
         },
     )
+}
+
+/** [rawExportError] over [PayrollExportDeclined] — see that function for why. */
+private fun Throwable.toPayrollExportError(): ZillitError {
+    val declined = this as? PayrollExportDeclined
+    return rawExportError(declined?.httpStatus, declined?.serverMessage, message ?: "Export failed")
 }
 
 /**
@@ -169,9 +178,10 @@ private suspend fun AppGraph.Ready.exportFileFromEnvelope(
 ): PayrollExportFile {
     val envelope = runCatching {
         HttpClientFactory.json.parseToJsonElement(bytes.decodeToString()).jsonObject
-    }.getOrNull() ?: throw PayrollExportDeclined("The service returned no file")
+    }.getOrNull() ?: throw PayrollExportDeclined(technical = "The service returned no file")
     val attachment = envelope.exportAttachment() ?: throw PayrollExportDeclined(
-        envelope["message"]?.jsonPrimitive?.contentOrNull ?: "The service returned no file",
+        serverMessage = envelope["message"]?.jsonPrimitive?.contentOrNull,
+        technical = "The service returned no file",
     )
     val ext = attachment.contentSubtype?.takeIf { it.isNotBlank() } ?: requestedFormat
     return PayrollExportFile(fetchS3Object(attachment), ext)
@@ -198,9 +208,9 @@ private fun JsonObject.exportAttachment(): ExportAttachment? {
 private suspend fun AppGraph.Ready.fetchS3Object(attachment: ExportAttachment): ByteArray {
     val presigner = S3Presigner(credentials = { awsKeyPair(remoteConfigRepository) })
     val fileUrl = presigner.presignedGet(bucket = attachment.bucket, region = attachment.region, key = attachment.media)
-        ?: throw PayrollExportDeclined("The export file could not be reached")
+        ?: throw PayrollExportDeclined(technical = "The export file could not be reached")
     val response = httpClient.get(fileUrl)
-    if (!response.status.isSuccess()) throw PayrollExportDeclined("The export file could not be reached")
+    if (!response.status.isSuccess()) throw PayrollExportDeclined(technical = "The export file could not be reached")
     return response.readRawBytes()
 }
 
@@ -215,7 +225,12 @@ private fun extensionOfMime(type: ContentType?): String? = when {
     else -> null
 }
 
-private class PayrollExportDeclined(message: String) : RuntimeException(message)
+/** [httpStatus] null means a soft decline on an otherwise-successful response. */
+private class PayrollExportDeclined(
+    val httpStatus: Int? = null,
+    val serverMessage: String? = null,
+    technical: String? = null,
+) : RuntimeException(serverMessage ?: technical ?: "declined${httpStatus?.let { " ($it)" } ?: ""}")
 
 private fun refusal(bytes: ByteArray): String? = runCatching {
     HttpClientFactory.json.parseToJsonElement(bytes.decodeToString()).jsonObject["message"]?.jsonPrimitive?.content
