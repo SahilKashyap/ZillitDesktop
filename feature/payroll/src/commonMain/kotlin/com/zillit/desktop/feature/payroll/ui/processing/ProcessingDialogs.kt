@@ -33,6 +33,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.ProcessingRow
+import com.zillit.desktop.feature.payroll.domain.payrollMoneyTotal
 import com.zillit.desktop.feature.payroll.ui.AdjustmentKind
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
@@ -98,7 +99,6 @@ fun OutstandingDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Un
     val shown = remember(detail != null) { detail } ?: detail
     val week = state.processing.weekStarting ?: state.currentWeek
     val rows = shown?.weeks.orEmpty().map { ProcessingRow(it, week) }
-    val currency = shown?.weeks?.firstNotNullOfOrNull { it.currency }
     ZillitDialogShell(
         title = shown?.let { str(S.desktop_payroll_outstanding_for, state.nameOf(it.userId)) }.orEmpty(),
         subtitle = str(S.desktop_payroll_outstanding_subtitle),
@@ -121,11 +121,15 @@ fun OutstandingDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Un
                 color = ZillitTheme.colors.textMuted,
             )
             else -> {
+                val weeksTotal = payrollMoneyTotal(
+                    rows.map { it.totalPay to it.timecard.currency },
+                    state.currencyRates,
+                )
                 ZillitStatusPill(
                     label = str(
                         S.desktop_payroll_weeks_total,
                         rows.size,
-                        Money.format(rows.sumOf { it.totalPay }, currency),
+                        Money.format(weeksTotal.first, weeksTotal.second),
                     ),
                     tone = StatusTone.Pending,
                 )

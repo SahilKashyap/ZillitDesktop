@@ -56,6 +56,7 @@ import com.zillit.desktop.feature.payroll.domain.OverallStatus
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.RowAction
+import com.zillit.desktop.feature.payroll.domain.payrollMoneyTotal
 import com.zillit.desktop.feature.payroll.domain.RunAction
 import com.zillit.desktop.feature.payroll.domain.RunRow
 import com.zillit.desktop.feature.payroll.domain.RunSelection
@@ -366,26 +367,12 @@ private fun ExportSummaryButton(exporting: Boolean, onEvent: (PayrollEvent) -> U
     }
 }
 
-/**
- * A converted total across rows that may be in different currencies — the
- * web's `describeMoneyTotal`/`describeConvertedTotal`. A zero-amount row
- * does not vote on the currency set (a £0 line must not flip a single-
- * currency total to mixed). One currency sums in that currency; several
- * convert into the project default through [rates] and sum, a currency with
- * no rate added at face value — the same rule Purchase Orders' `totalValue`
- * and Cash Expenses' `describeTotal` already use.
- */
+/** [payrollMoneyTotal] over a list of Run rows, reading each row's own currency. */
 internal fun RunRow.Companion.moneyTotal(
     rows: List<RunRow>,
     rates: PayrollCurrencyRates,
     amount: (RunRow) -> Double,
-): Pair<Double, String?> {
-    val entries = rows.map { amount(it) to it.timecard.currency }.filter { it.first != 0.0 }
-    val codes = entries.map { it.second?.uppercase().orEmpty() }.filter { it.isNotBlank() }.distinct()
-    if (codes.size <= 1) return entries.sumOf { it.first } to (codes.firstOrNull() ?: rates.defaultCode)
-    val total = entries.sumOf { (amt, code) -> rates.toDefault(amt, code) ?: amt }
-    return total to rates.defaultCode
-}
+): Pair<Double, String?> = payrollMoneyTotal(rows.map { amount(it) to it.timecard.currency }, rates)
 
 /** The six tiles — the web's `SummaryStrip`. Holiday pay and NIC are the grid's own estimates where no fringes came. */
 @Composable

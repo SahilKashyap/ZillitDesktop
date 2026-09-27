@@ -31,6 +31,30 @@ data class PayrollCurrencyRates(
 }
 
 /**
+ * A total across `(amount, currency)` pairs that may span more than one
+ * code — the web's `describeMoneyTotal`/`describeConvertedTotal`, shared by
+ * every payroll screen that rolls several crew/weeks into one tile or
+ * column (the Run's summary strip, Processing's KPI tiles, the Outstanding
+ * grid, the journal totals — each hit this independently as the same "add
+ * pounds to yen, label it with whichever currency came first" bug).
+ *
+ * A zero-amount entry does not vote on the currency set (a £0 USD line must
+ * not flip a single-currency GBP total to mixed). One currency sums in that
+ * currency; several convert into [rates]'s default and sum there, a
+ * currency with no rate added at face value.
+ */
+internal fun payrollMoneyTotal(
+    entries: List<Pair<Double, String?>>,
+    rates: PayrollCurrencyRates,
+): Pair<Double, String?> {
+    val live = entries.filter { it.first != 0.0 }
+    val codes = live.map { it.second?.uppercase().orEmpty() }.filter { it.isNotBlank() }.distinct()
+    if (codes.size <= 1) return live.sumOf { it.first } to (codes.firstOrNull() ?: rates.defaultCode)
+    val total = live.sumOf { (amt, code) -> rates.toDefault(amt, code) ?: amt }
+    return total to rates.defaultCode
+}
+
+/**
  * The employment type the Run's sidebar filters on — the web's
  * `mapEmpStatusToEmpType` (`PayrollRunModule.jsx` 2487-2502), in its order.
  */

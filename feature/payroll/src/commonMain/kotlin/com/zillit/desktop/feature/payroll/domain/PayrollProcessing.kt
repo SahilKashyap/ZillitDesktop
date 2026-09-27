@@ -102,19 +102,39 @@ data class ProcessingRow(val timecard: PayrollTimecard, val weekStarting: Long) 
  * One crew member's unsettled weeks summed — the web's
  * `aggregateOutstandingByUser`: one row per user, the heaviest first.
  */
-data class OutstandingRow(val userId: String, val weeks: List<ProcessingRow>) {
+data class OutstandingRow(
+    val userId: String,
+    val weeks: List<ProcessingRow>,
+    val rates: PayrollCurrencyRates = PayrollCurrencyRates(),
+) {
     val id: String get() = "outstanding-$userId"
     val status: TimecardStatus get() = weeks.firstOrNull()?.timecard?.status ?: TimecardStatus.Unknown
     val days: Int get() = weeks.sumOf { it.timecard.totalDays.takeIf { days -> days > 0 } ?: it.daysWorked }
-    val basic: Double get() = weeks.sumOf { it.basicTotal }
-    val ots: Double get() = weeks.sumOf { it.otTotal }
-    val allowances: Double get() = weeks.sumOf { it.allowanceTotal }
-    val total: Double get() = weeks.sumOf { it.totalPay }
+
+    /**
+     * Converted across the crew member's own weeks — most people are paid
+     * in one currency throughout, but a rate/currency change mid-production
+     * is exactly the "add pounds to yen" trap the summary strip and
+     * Processing's KPI tiles hit too.
+     */
+    private fun moneyOf(amount: (ProcessingRow) -> Double): Pair<Double, String?> =
+        payrollMoneyTotal(weeks.map { amount(it) to it.timecard.currency }, rates)
+    val basicMoney: Pair<Double, String?> get() = moneyOf { it.basicTotal }
+    val otsMoney: Pair<Double, String?> get() = moneyOf { it.otTotal }
+    val allowancesMoney: Pair<Double, String?> get() = moneyOf { it.allowanceTotal }
+    val totalMoney: Pair<Double, String?> get() = moneyOf { it.totalPay }
+
+    /** The raw figure, in [rates]'s default — for sorting only; use `*Money` to display. */
+    val total: Double get() = totalMoney.first
 
     companion object {
-        fun of(timecards: List<PayrollTimecard>, weekStarting: Long): List<OutstandingRow> =
+        fun of(
+            timecards: List<PayrollTimecard>,
+            weekStarting: Long,
+            rates: PayrollCurrencyRates,
+        ): List<OutstandingRow> =
             timecards.groupBy { it.userId }
-                .map { (userId, cards) -> OutstandingRow(userId, cards.map { ProcessingRow(it, weekStarting) }) }
+                .map { (userId, cards) -> OutstandingRow(userId, cards.map { ProcessingRow(it, weekStarting) }, rates) }
                 .sortedByDescending { it.total }
     }
 }

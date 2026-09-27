@@ -40,6 +40,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.ProcessingRow
+import com.zillit.desktop.feature.payroll.domain.payrollMoneyTotal
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import com.zillit.desktop.feature.payroll.ui.PayrollDestination
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
@@ -212,6 +213,7 @@ private fun DayPicker(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
  * premiums, allowances, rentals, and how many are approved. Summed from the
  * days in range, as the web sums them.
  */
+@Suppress("LongMethod") // Five tiles read top to bottom; the currency-aware sum grew each by a line.
 @Composable
 private fun ProcessingTiles(state: PayrollUiState) {
     val processing = state.processing
@@ -221,9 +223,14 @@ private fun ProcessingTiles(state: PayrollUiState) {
         ProcessingView.WeekToDate -> 0..processing.day
         else -> 0 until ProcessingRow.DAYS
     }
-    val inRange = rows.flatMap { row -> range.map { row.days[it] } }.filterNot { it.isOff }
-    val currency = rows.firstNotNullOfOrNull { it.timecard.currency }
-    val gross = inRange.sumOf { it.total }
+    // Each day paired with its own row's currency — flattening to bare
+    // ProcessingDay (as before) loses that, and every tile below ends up
+    // adding one crew member's £ to another's ¥ at face value. See
+    // [[payroll-run-summary-currency-fix-2026-09-27]].
+    val inRange = rows.flatMap { row -> range.map { row.days[it] to row.timecard.currency } }
+        .filterNot { it.first.isOff }
+    val rates = state.currencyRates
+    val gross = payrollMoneyTotal(inRange.map { it.first.total to it.second }, rates)
     val lead = when (processing.view) {
         ProcessingView.Daily -> str(S.desktop_payroll_day_gross)
         ProcessingView.WeekToDate -> str(S.desktop_payroll_wtd_gross)
@@ -240,28 +247,30 @@ private fun ProcessingTiles(state: PayrollUiState) {
         val tile = Modifier.weight(1f).fillMaxHeight()
         ZillitStatTile(
             lead,
-            Money.format(gross, currency),
+            Money.format(gross.first, gross.second),
             tile,
             str(S.desktop_payroll_crew_count, rows.size),
         )
         if (processing.view == ProcessingView.WeekToDate) {
-            val projected = gross / (processing.day + 1) * ProcessingRow.DAYS
+            val projected = gross.first / (processing.day + 1) * ProcessingRow.DAYS
             ZillitStatTile(
                 str(S.desktop_payroll_projected_weekly),
-                Money.format(projected, currency),
+                Money.format(projected, gross.second),
                 tile,
                 str(S.desktop_payroll_extrapolated),
             )
         }
+        val ots = payrollMoneyTotal(inRange.map { it.first.ots to it.second }, rates)
         ZillitStatTile(
             str(S.desktop_payroll_ots_premiums),
-            Money.format(inRange.sumOf { it.ots }, currency),
+            Money.format(ots.first, ots.second),
             tile,
             tone = StatusTone.Pending,
         )
+        val allowances = payrollMoneyTotal(inRange.map { it.first.allowances to it.second }, rates)
         ZillitStatTile(
             str(S.desktop_payroll_allowances_rental),
-            Money.format(inRange.sumOf { it.allowances }, currency),
+            Money.format(allowances.first, allowances.second),
             tile,
         )
         ZillitStatTile(
