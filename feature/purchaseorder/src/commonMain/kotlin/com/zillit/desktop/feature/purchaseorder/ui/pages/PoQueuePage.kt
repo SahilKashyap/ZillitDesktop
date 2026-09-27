@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -112,20 +114,27 @@ private fun QueueStats(state: PoUiState, rows: List<PurchaseOrder>) {
         rows.mapNotNull { state.departmentName(it.departmentId).ifBlank { null } }.distinct().joinToString(", ")
             .ifBlank { "—" }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+    // A fixed height, not each tile's own: My Committed and Ready to Process
+    // carry a subtitle the others don't, and without this every other row
+    // renders shorter and the row looks broken rather than aligned.
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        val tile = Modifier.weight(1f).fillMaxHeight()
         ZillitStatTile(
             label = if (state.viewer.isSeniorAccountant) str(S.ah_tab_all) else str(S.ah_tab_my),
             value = rows.size.toString(),
             tone = StatusTone.Pending,
             icon = ZillitIcons.File,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.pending),
             value = pending.toString(),
             sub = str(S.desktop_po_waiting_on_an_approval),
             icon = ZillitIcons.Clock,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.ah_ready_to_process),
@@ -133,13 +142,13 @@ private fun QueueStats(state: PoUiState, rows: List<PurchaseOrder>) {
             sub = str(S.desktop_po_approved_and_yours_to_code),
             tone = StatusTone.Done,
             icon = ZillitIcons.Ledger,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.desktop_po_assigned_depts),
             value = departments,
             icon = ZillitIcons.Users,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.desktop_po_my_committed),
@@ -147,7 +156,7 @@ private fun QueueStats(state: PoUiState, rows: List<PurchaseOrder>) {
             sub = rows.currencyNote(),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Wallet,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
     }
 }
