@@ -195,8 +195,16 @@ interface PayrollDocuments {
     /** `POST /runs/payslip {week_starting, user_id}` — one crew member's A4 payslip. */
     suspend fun payslip(weekStarting: Long, userId: String): ZillitResult<ByteArray>
 
-    /** `POST /runs/export-summary {week_starting, format}`. */
-    suspend fun runSummary(weekStarting: Long, format: ExportFormat): ZillitResult<ByteArray>
+    /**
+     * `POST /runs/export-summary {week_starting, format}`.
+     *
+     * The service answers one of three ways (2026-09-25): the file itself, a
+     * success envelope pointing at an S3 object (a CSV, or a ZIP once the run
+     * exports as several files), or a real refusal. [PayrollExportFile]
+     * carries back which of the first two happened, so the caller names the
+     * download by what it actually got rather than what it asked for.
+     */
+    suspend fun runSummary(weekStarting: Long, format: ExportFormat): ZillitResult<PayrollExportFile>
 
     /** `GET /timecards/weekly/payroll-processing/{ws}/csv`. */
     suspend fun weekWorkbook(weekStarting: Long): ZillitResult<ByteArray>
@@ -207,6 +215,24 @@ interface PayrollDocuments {
 
 /** The run summary's formats, as the web's `normalizeFormat` spells them. */
 enum class ExportFormat(val wire: String) { Pdf("pdf"), Excel("xlsx"), Csv("csv") }
+
+/**
+ * A rendered run summary — the bytes, and the extension they actually are,
+ * which is not always [ExportFormat.wire]: a streamed file is named from its
+ * own MIME type, and an S3 object (fetched when the service answers that way
+ * instead) from the attachment's `content_subtype`. Equality and hashing skip
+ * [bytes] — this is a transient value passed straight to a save dialog, never
+ * compared for content.
+ */
+class PayrollExportFile(val bytes: ByteArray, val extension: String) {
+    override fun equals(other: Any?): Boolean =
+        other is PayrollExportFile && other.extension == extension && other.bytes.size == bytes.size
+    override fun hashCode(): Int = extension.hashCode() * HASH_PRIME + bytes.size
+
+    private companion object {
+        const val HASH_PRIME = 31
+    }
+}
 
 /** Saves a rendered file and hands it to the OS. */
 fun interface PayrollFiles {

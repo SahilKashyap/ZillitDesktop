@@ -53,6 +53,7 @@ internal fun appLogger(
     online: StateFlow<Boolean>,
     scope: CoroutineScope,
 ): AppLogger {
+    fun osLabel(second: String?) = "${System.getProperty("os.name").orEmpty()} ${second.orEmpty()}".trim()
     val endpoint = config.apiV2(ZillitService.Lcw) + "location/log"
     val logger = AppLogger(
         queue = database?.let(::SqlLogQueue) ?: InMemoryLogQueue(),
@@ -60,8 +61,8 @@ internal fun appLogger(
         identity = LogIdentity(
             platform = "desktop",
             appVersion = installedAppVersion(),
-            osVersion = "${System.getProperty("os.name").orEmpty()} ${System.getProperty("os.version").orEmpty()}".trim(),
-            deviceModel = "${System.getProperty("os.name").orEmpty()} ${System.getProperty("os.arch").orEmpty()}".trim(),
+            osVersion = osLabel(System.getProperty("os.version")),
+            deviceModel = osLabel(System.getProperty("os.arch")),
             // As iOS: the server device id, encrypted with the header key.
             installId = {
                 val id = deviceId()

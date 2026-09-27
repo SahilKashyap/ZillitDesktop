@@ -76,8 +76,9 @@ internal fun ApprovalsRepository.readingLedger(ready: AppGraph.Ready): Approvals
         ): ZillitResult<Unit> = this@readingLedger.decide(queue, request, approved).also { result ->
             if (result is ZillitResult.Success) {
                 val segment = queue.badgeSegment
-                runCatching { emitSegmentRead(ready, segment = segment, module = segment, referenceId = request.userId) }
-                    .onFailure { ZillitLog.w("Approvals") { "could not clear the approval's badge: ${it.message}" } }
+                runCatching {
+                    emitSegmentRead(ready, segment = segment, module = segment, referenceId = request.userId)
+                }.onFailure { ZillitLog.w("Approvals") { "could not clear the approval's badge: ${it.message}" } }
             }
         }
     }

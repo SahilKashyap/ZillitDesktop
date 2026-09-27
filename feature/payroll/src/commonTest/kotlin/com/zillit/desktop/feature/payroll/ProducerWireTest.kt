@@ -8,6 +8,7 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.feature.payroll.data.PayrollBinaryTransport
 import com.zillit.desktop.feature.payroll.data.payrollProducerSeams
+import com.zillit.desktop.feature.payroll.domain.PayrollExportFile
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.engine.mock.MockEngine
@@ -38,7 +39,11 @@ class ProducerWireTest {
         val urls = mutableListOf<String>()
         val engine = MockEngine { request ->
             urls += request.url.toString()
-            respond("""{"status":1,"data":[]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(
+                """{"status":1,"data":[]}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
         }
         val seams = payrollProducerSeams(
             apiClient = ApiClient(
@@ -63,7 +68,10 @@ class ProducerWireTest {
         assertTrue(wrap.all { "/api/v2/ad-shoot-days/day-details" in it }, "wrap report path: $wrap")
         // Both sides are scoped to the crew member: without it the service
         // resolves the ACCOUNTANT's unit's report for everybody.
-        assertTrue((report + wrap).all { "user_id=u1" in it }, "every report read is scoped to the crew: ${report + wrap}")
+        assertTrue(
+            (report + wrap).all { "user_id=u1" in it },
+            "every report read is scoped to the crew: ${report + wrap}",
+        )
     }
 
     @Test
@@ -71,7 +79,11 @@ class ProducerWireTest {
         val urls = mutableListOf<String>()
         val engine = MockEngine { request ->
             urls += request.url.toString()
-            respond("""{"status":1,"data":[]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(
+                """{"status":1,"data":[]}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
         }
         val seams = payrollProducerSeams(
             apiClient = ApiClient(
@@ -94,7 +106,11 @@ class ProducerWireTest {
         val urls = mutableListOf<String>()
         val engine = MockEngine { request ->
             urls += request.url.toString()
-            respond("""{"status":1,"data":{}}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(
+                """{"status":1,"data":{}}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
         }
         val seams = payrollProducerSeams(
             apiClient = ApiClient(
@@ -125,6 +141,8 @@ class ProducerWireTest {
 private object NoBundles : PayrollBinaryTransport {
     override suspend fun post(url: String, body: JsonObject) = ZillitResult.Success(ByteArray(0))
     override suspend fun get(url: String) = ZillitResult.Success(ByteArray(0))
+    override suspend fun postForFile(url: String, body: JsonObject, requestedFormat: String) =
+        ZillitResult.Success(PayrollExportFile(ByteArray(0), requestedFormat))
 }
 
 private class ProducerMockEngineFactory(private val engine: MockEngine) : HttpClientEngineFactory<MockEngineConfig> {

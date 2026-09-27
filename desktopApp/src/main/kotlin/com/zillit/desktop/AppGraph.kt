@@ -709,6 +709,7 @@ sealed interface AppGraph {
      */
     data class Unconfigured(val reason: String) : AppGraph
 
+    @Suppress("LargeClass") // Linear construction of one graph; splitting it hides the order.
     companion object {
         // Linear construction of one graph; splitting it hides the order. The
         // branches are the optional caches (`database?.let`), nothing else.

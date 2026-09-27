@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.payroll.domain.JournalSubmission
 import com.zillit.desktop.feature.payroll.domain.ManualClaim
 import com.zillit.desktop.feature.payroll.domain.PayrollAdjustmentRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollDocuments
+import com.zillit.desktop.feature.payroll.domain.PayrollExportFile
 import com.zillit.desktop.feature.payroll.domain.PayrollProducerSeams
 import com.zillit.desktop.feature.payroll.domain.PayrollJournalRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollScriptHost
@@ -273,6 +274,14 @@ private fun JsonObject.toPendingClaim(): PendingClaim? {
 interface PayrollBinaryTransport {
     suspend fun post(url: String, body: JsonObject): ZillitResult<ByteArray>
     suspend fun get(url: String): ZillitResult<ByteArray>
+
+    /**
+     * A rendered export that may come back as the file itself OR as a success
+     * envelope pointing at an S3 object — the run summary's own route. See
+     * [PayrollExportFile]. [requestedFormat] is only the fallback extension,
+     * used when the streamed reply's own MIME cannot be told apart.
+     */
+    suspend fun postForFile(url: String, body: JsonObject, requestedFormat: String): ZillitResult<PayrollExportFile>
 }
 
 /**
@@ -310,8 +319,8 @@ class PayrollDocumentsImpl(config: AppConfig, private val transport: PayrollBina
     override suspend fun payslip(weekStarting: Long, userId: String): ZillitResult<ByteArray> =
         transport.post("$payroll/runs/payslip", payslipBody(weekStarting, userId))
 
-    override suspend fun runSummary(weekStarting: Long, format: ExportFormat): ZillitResult<ByteArray> =
-        transport.post("$payroll/runs/export-summary", runSummaryBody(weekStarting, format))
+    override suspend fun runSummary(weekStarting: Long, format: ExportFormat): ZillitResult<PayrollExportFile> =
+        transport.postForFile("$payroll/runs/export-summary", runSummaryBody(weekStarting, format), format.wire)
 
     override suspend fun weekWorkbook(weekStarting: Long): ZillitResult<ByteArray> =
         transport.get("$payroll/timecards/weekly/payroll-processing/$weekStarting/csv")

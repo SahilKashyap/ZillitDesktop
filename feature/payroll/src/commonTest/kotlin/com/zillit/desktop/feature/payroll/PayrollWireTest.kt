@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.payroll.data.PayrollDocumentsImpl
 import com.zillit.desktop.feature.payroll.data.PayrollRepositoryImpl
 import com.zillit.desktop.feature.payroll.domain.ClaimLine
 import com.zillit.desktop.feature.payroll.domain.ExportFormat
+import com.zillit.desktop.feature.payroll.domain.PayrollExportFile
 import com.zillit.desktop.feature.payroll.domain.JournalLine
 import com.zillit.desktop.feature.payroll.domain.JournalSubmission
 import com.zillit.desktop.feature.payroll.domain.ManualClaim
@@ -295,6 +296,15 @@ class PayrollWireTest {
                 override suspend fun get(url: String): ZillitResult<ByteArray> {
                     calls += url to null
                     return ZillitResult.Success(byteArrayOf(2))
+                }
+
+                override suspend fun postForFile(
+                    url: String,
+                    body: JsonObject,
+                    requestedFormat: String,
+                ): ZillitResult<PayrollExportFile> {
+                    calls += url to body
+                    return ZillitResult.Success(PayrollExportFile(byteArrayOf(3), requestedFormat))
                 }
             },
         )

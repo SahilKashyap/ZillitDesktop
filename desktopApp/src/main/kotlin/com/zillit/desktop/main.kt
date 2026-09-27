@@ -894,9 +894,10 @@ private fun ApplicationScope.ZillitWindows(
  *
  * Two sources of number, because they count different things. Most badges are
  * unread counts from the server. Settings' is how many people are waiting to be
- * approved on its Admin Settings tab — shown to admins only — which the unread endpoint has nothing to say about: it is asked with
- * `section=tools_label`, so the approval queues report their own length back
- * through the settings state.
+ * approved on its Admin Settings tab — shown to admins only — which the unread
+ * endpoint has nothing to say about: it is asked with `section=tools_label`,
+ * so the approval queues report their own length back through the settings
+ * state.
  */
 private fun railItemsWith(
     badges: BadgeCounts,
@@ -1171,8 +1172,15 @@ private fun ApprovalCounts(ready: AppGraph.Ready, viewModels: AppViewModels) {
     // withdrawn — and then the row would wear a number nothing can clear.
     // Once a queue has answered, cleanly, with nobody in it, its unread rows
     // are read.
-    StaleApprovalNotifications(ready, approvalState.crew, ledger.unit(BadgeSections.JOIN_REQUEST_UNIT), BadgeSections.JOIN_REQUEST_UNIT)
-    StaleApprovalNotifications(ready, approvalState.profiles, ledger.unit(BadgeSections.PROFILE_CHANGE_UNIT), BadgeSections.PROFILE_CHANGE_UNIT)
+    StaleApprovalNotifications(
+        ready, approvalState.crew, ledger.unit(BadgeSections.JOIN_REQUEST_UNIT), BadgeSections.JOIN_REQUEST_UNIT,
+    )
+    StaleApprovalNotifications(
+        ready,
+        approvalState.profiles,
+        ledger.unit(BadgeSections.PROFILE_CHANGE_UNIT),
+        BadgeSections.PROFILE_CHANGE_UNIT,
+    )
 }
 
 @Composable
@@ -1582,6 +1590,7 @@ private fun ZillitContent(
  * the sync queue's dialog. Split from [ZillitContent] so the auth branches
  * and the shell branch each read on their own.
  */
+@Suppress("LongMethod") // The signed-in frame, read top to bottom: rail, tabs, status bar, calls, sync dialog.
 @Composable
 private fun SignedInShell(
     ready: AppGraph.Ready,
