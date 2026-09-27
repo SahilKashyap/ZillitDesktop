@@ -8,15 +8,19 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -82,33 +87,39 @@ fun AllTransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val visibleIds = TransactionSelection.selectableIds(rows)
     val selected = TransactionSelection.visibleSelection(state.selection, visibleIds)
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-    ) {
-        LedgerTiles(state)
-        LedgerToolbar(state, onEvent)
-        StatusChips(TRANSACTION_STATUS_FILTERS, state.statusFilter, onEvent)
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            when {
-                // Skeleton while there is nothing to show; a refetch after a
-                // delete or a socket event swaps the rows in place rather than
-                // blanking the table (`AllTransactionsPage.jsx:107-114`).
-                state.loading && state.transactions.isEmpty() -> LedgerSkeleton()
-                rows.isEmpty() -> ZillitText(
-                    text = str(S.desktop_ce_inbox_no_transactions),
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textSecondary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxl),
-                )
+    // The window's own height, not a guess: the filter panel below sizes its
+    // scrollable middle off this, so a short window still leaves Done on
+    // screen instead of pushing it past the bottom with no way back.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val availableHeight = maxHeight
+        Column(
+            modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+        ) {
+            LedgerTiles(state)
+            LedgerToolbar(state, onEvent, availableHeight)
+            StatusChips(TRANSACTION_STATUS_FILTERS, state.statusFilter, onEvent)
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                when {
+                    // Skeleton while there is nothing to show; a refetch after a
+                    // delete or a socket event swaps the rows in place rather than
+                    // blanking the table (`AllTransactionsPage.jsx:107-114`).
+                    state.loading && state.transactions.isEmpty() -> LedgerSkeleton()
+                    rows.isEmpty() -> ZillitText(
+                        text = str(S.desktop_ce_inbox_no_transactions),
+                        style = ZillitTheme.typography.bodyMedium,
+                        color = ZillitTheme.colors.textSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxl),
+                    )
 
-                else -> LedgerTable(state, rows, visibleIds, selected.toSet(), onEvent)
+                    else -> LedgerTable(state, rows, visibleIds, selected.toSet(), onEvent)
+                }
             }
+            // Below the table rather than above it: above, it pushed every row
+            // down on the click that created it (`AllTransactionsPage.jsx:509-515`).
+            if (!state.loading && selected.isNotEmpty()) SelectionBar(selected, onEvent)
         }
-        // Below the table rather than above it: above, it pushed every row
-        // down on the click that created it (`AllTransactionsPage.jsx:509-515`).
-        if (!state.loading && selected.isNotEmpty()) SelectionBar(selected, onEvent)
     }
 }
 
@@ -160,7 +171,7 @@ private fun LedgerTiles(state: CardUiState) {
 
 /** Search, the Filters button and its panel, and the one Export menu. */
 @Composable
-private fun LedgerToolbar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+private fun LedgerToolbar(state: CardUiState, onEvent: (CardEvent) -> Unit, availableHeight: Dp) {
     var filtersOpen by remember { mutableStateOf(false) }
     var exportOpen by remember { mutableStateOf(false) }
     val applied = state.transactionFilters.count
@@ -213,7 +224,7 @@ private fun LedgerToolbar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         if (filtersOpen) {
             Row(Modifier.fillMaxWidth()) {
                 Spacer(Modifier.weight(1f))
-                FilterPanel(state, onDone = { filtersOpen = false }, onEvent = onEvent)
+                FilterPanel(state, availableHeight, onDone = { filtersOpen = false }, onEvent = onEvent)
             }
         }
     }
@@ -227,8 +238,15 @@ private fun LedgerToolbar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // One panel: four fields, its header and its footer.
 @Composable
-private fun FilterPanel(state: CardUiState, onDone: () -> Unit, onEvent: (CardEvent) -> Unit) {
+private fun FilterPanel(state: CardUiState, availableHeight: Dp, onDone: () -> Unit, onEvent: (CardEvent) -> Unit) {
     val colors = ZillitTheme.colors
+    // [availableHeight] is the whole page's height, not the room left below
+    // this panel's own anchor — the tiles row, the toolbar row above it and
+    // the status chips sit above that anchor and have to be subtracted too,
+    // alongside this panel's own header and footer, or a short window still
+    // pushes Done past the bottom exactly as an unbounded panel did.
+    val fieldsMaxHeight = (availableHeight - ABOVE_PANEL_HEIGHT - PANEL_CHROME_HEIGHT)
+        .coerceIn(FILTER_FIELDS_MIN_HEIGHT, FILTER_FIELDS_MAX_HEIGHT)
     var draft by remember { mutableStateOf(state.transactionFilters) }
     var cardQuery by remember { mutableStateOf("") }
     val cardOptions = state.cards.filter { it.id.isNotBlank() }
@@ -269,8 +287,15 @@ private fun FilterPanel(state: CardUiState, onDone: () -> Unit, onEvent: (CardEv
             )
         }
         ZillitDivider()
+        // Bounded and scrolling on purpose: four fields plus a date range can
+        // outgrow a short window, and with no cap here the footer's Done —
+        // the only button that actually applies a change — is pushed off the
+        // bottom with nothing telling you it is still there.
         Column(
-            modifier = Modifier.padding(ZillitTheme.spacing.lg),
+            modifier = Modifier
+                .heightIn(max = fieldsMaxHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(ZillitTheme.spacing.lg),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             FilterLabel(str(S.desktop_ce_inbox_statement))
@@ -648,6 +673,12 @@ private const val HOLDER_WEIGHT = 1.1f
 private const val DEPARTMENT_WEIGHT = 0.9f
 private val ROW_PADDING = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 private val PANEL_WIDTH = 340.dp
+/** The tiles row, the toolbar row above the panel, the status chips, and the spacing between them. */
+private val ABOVE_PANEL_HEIGHT = 220.dp
+/** The panel's own title/Reset row and its filter-count/Done row. */
+private val PANEL_CHROME_HEIGHT = 100.dp
+private val FILTER_FIELDS_MIN_HEIGHT = 160.dp
+private val FILTER_FIELDS_MAX_HEIGHT = 340.dp
 private val SELECT_COLUMN = 36.dp
 private val DATE_COLUMN = 130.dp
 private val CARD_COLUMN = 84.dp
