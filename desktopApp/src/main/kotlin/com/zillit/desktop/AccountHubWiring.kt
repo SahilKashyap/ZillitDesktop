@@ -326,6 +326,9 @@ internal suspend fun AppGraph.Ready.hubUsers(): List<HubUser> {
  * is slugified from the *localised* name so a department whose raw `name` is
  * itself a label key (`accounts_department_label`) still derives the same
  * `department_accounts` other readers match on, not a garbled double key.
+ * Each [HubDesignation.name] is localised too — a job title carries the exact
+ * same untranslated-key risk (`director_label`) and was left raw here until
+ * Payroll Groups' chips showed it live.
  */
 internal suspend fun AppGraph.Ready.hubDepartments(): List<HubDepartment> =
     when (val loaded = adminRepository.departments()) {
@@ -335,7 +338,7 @@ internal suspend fun AppGraph.Ready.hubDepartments(): List<HubDepartment> =
                 id = department.id,
                 name = name,
                 identifier = name.trim().lowercase().replace(Regex("\\s+"), "_").let { "department_$it" },
-                designations = department.jobTitles.map { HubDesignation(id = it.id, name = it.name) },
+                designations = department.jobTitles.map { HubDesignation(id = it.id, name = it.name.localised()) },
             )
         }
         is ZillitResult.Failure -> emptyList()
