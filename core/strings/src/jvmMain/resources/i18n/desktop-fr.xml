@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Les fichiers et dossiers supprimés attendent ici jusqu\'à ce que vous les restauriez ou les supprimiez définitivement.</string>
     <string name="desktop_email_forward_to">Transférer vers</string>
     <string name="desktop_tools_drag_to_reorder">Faire glisser pour réorganiser %1$s</string>
-    <string name="desktop_call_line3_not_configured">La Ligne 3 n\'est pas configurée sur cette installation</string>
+    <string name="desktop_call_line3_not_configured">La Ligne 1 n\'est pas configurée sur cette installation</string>
     <string name="desktop_drive_favourite">Favori</string>
     <string name="desktop_drive_restore_tooltip">Restaurer à l\'emplacement d\'origine</string>
     <string name="desktop_turn_off">Désactiver</string>

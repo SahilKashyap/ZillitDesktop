@@ -5,12 +5,14 @@ import com.zillit.desktop.feature.payroll.domain.BatchOutcome
 import com.zillit.desktop.feature.payroll.domain.ClaimLine
 import com.zillit.desktop.feature.payroll.domain.DealCoding
 import com.zillit.desktop.feature.payroll.domain.JournalCoding
+import com.zillit.desktop.feature.payroll.domain.JournalReference
 import com.zillit.desktop.feature.payroll.domain.JournalPosted
 import com.zillit.desktop.feature.payroll.domain.JournalSubmission
 import com.zillit.desktop.feature.payroll.domain.ManualClaim
 import com.zillit.desktop.feature.payroll.domain.OverrideFlags
 import com.zillit.desktop.feature.payroll.domain.PayrollAdjustmentRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollCompany
+import com.zillit.desktop.feature.payroll.domain.PayrollCrewRow
 import com.zillit.desktop.feature.payroll.domain.PayrollJournalRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
 import com.zillit.desktop.feature.payroll.domain.PayrollRepository
@@ -25,17 +27,23 @@ import kotlinx.coroutines.flow.emptyFlow
 /** An in-memory payroll service that records every write it is asked for. */
 internal class FakePayrollRepository(
     var paid: List<PayrollTimecard> = emptyList(),
+    var crewRows: List<PayrollCrewRow> = emptyList(),
     var run: List<PayrollTimecard> = emptyList(),
     var processing: List<PayrollTimecard> = emptyList(),
     var metadata: PayrollMetadata = PayrollMetadata(),
     var locked: String? = null,
     var flags: OverrideFlags = OverrideFlags(isAccountant = true, isApprover = false),
+    var defaultCurrency: String? = "GBP",
     override val refreshes: Flow<Unit> = emptyFlow(),
 ) : PayrollRepository {
+
+    /** Set directly; it is reference data, not something a test varies at construction. */
+    var reference: JournalReference = JournalReference()
 
     val calls = mutableListOf<String>()
     val submissions = mutableListOf<JournalSubmission>()
     var paidWeeks = mutableListOf<Long>()
+    val crewWeeks = mutableListOf<Long>()
 
     override val journal: PayrollJournalRepository = object : PayrollJournalRepository {
         override suspend fun coding(timecardIds: List<String>, weekStarting: Long) =
@@ -68,12 +76,19 @@ internal class FakePayrollRepository(
         override suspend fun overrideFlags() = ZillitResult.Success(flags)
         override suspend fun lockedDate() = ZillitResult.Success(locked)
         override suspend fun companies() = ZillitResult.Success(emptyList<PayrollCompany>())
+        override suspend fun defaultCurrency() = ZillitResult.Success<String?>(defaultCurrency)
+        override suspend fun journalReference() = ZillitResult.Success(reference)
         override suspend fun activeDealCoding(userId: String) = ZillitResult.Success<DealCoding?>(null)
     }
 
     override suspend fun paidCrew(weekStarting: Long): ZillitResult<List<PayrollTimecard>> {
         paidWeeks += weekStarting
         return ZillitResult.Success(paid)
+    }
+
+    override suspend fun crew(weekStarting: Long): ZillitResult<List<PayrollCrewRow>> {
+        crewWeeks += weekStarting
+        return ZillitResult.Success(crewRows)
     }
 
     override suspend fun runQueue(weekStarting: Long) = ZillitResult.Success(run)

@@ -155,6 +155,17 @@ data class UserSnapshot(
      * start falls back to [email] until the network answers.
      */
     val mailboxAddress: String? = null,
+    /**
+     * This crew member is on a deal — the production requires them to sign a
+     * deal memo (`signing_required`).
+     *
+     * Payroll's Production Report board rosters the crew WITH A DEAL rather
+     * than the crew with a timecard, which is what lets it estimate someone
+     * who has not filled a card in yet. Not cached, like [mailboxAddress]: an
+     * offline start simply has no roster until the crew list answers, which is
+     * better than one built from a stale flag.
+     */
+    val signingRequired: Boolean = false,
 )
 
 data class ToolSnapshot(
@@ -207,6 +218,8 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
             departmentName = profile.departmentName,
             designationId = profile.designationId,
             designationName = profile.designationName,
+            departmentIdentifier = profile.departmentIdentifier,
+            designationIdentifier = profile.designationIdentifier,
             keepNamePrivate = profile.keepNamePrivate.toDb(),
             email = profile.email,
             phone = profile.phone,
@@ -230,6 +243,8 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
                 departmentName = it.departmentName,
                 designationId = it.designationId,
                 designationName = it.designationName,
+                departmentIdentifier = it.departmentIdentifier,
+                designationIdentifier = it.designationIdentifier,
                 keepNamePrivate = it.keepNamePrivate.toBool(),
                 email = it.email,
                 phone = it.phone,

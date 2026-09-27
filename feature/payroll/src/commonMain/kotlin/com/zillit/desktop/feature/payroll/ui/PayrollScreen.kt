@@ -15,6 +15,8 @@ import com.zillit.desktop.feature.payroll.ui.landing.PayrollLandingPage
 import com.zillit.desktop.feature.payroll.ui.processing.OutstandingDetailDialog
 import com.zillit.desktop.feature.payroll.ui.processing.ProcessingExportDialog
 import com.zillit.desktop.feature.payroll.ui.processing.ProcessingPage
+import com.zillit.desktop.feature.payroll.ui.producer.ProducerBoardPage
+import com.zillit.desktop.feature.payroll.ui.producer.ProductionReportPage
 import com.zillit.desktop.feature.payroll.ui.run.JournalAlertDialog
 import com.zillit.desktop.feature.payroll.ui.run.JournalPostDialog
 import com.zillit.desktop.feature.payroll.ui.run.RunConfirmDialog
@@ -35,6 +37,8 @@ fun PayrollScreen(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, modifi
             PayrollDestination.Landing -> PayrollLandingPage(state, onEvent)
             PayrollDestination.Processing -> ProcessingPage(state, onEvent)
             PayrollDestination.Run -> RunPage(state, onEvent)
+            PayrollDestination.ProducerBoard -> ProducerBoardPage(state, onEvent)
+            PayrollDestination.ProductionReport -> ProductionReportPage(state, onEvent)
             PayrollDestination.History -> HistoryPage(state, onEvent)
         }
         RunConfirmDialog(state, onEvent)

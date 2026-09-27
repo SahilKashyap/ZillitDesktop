@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls.ui
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
+import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
@@ -63,15 +64,17 @@ fun buildTiles(
     cameraOn: Boolean,
     selfHand: Boolean = false,
     /**
-     * User id → the name we are allowed to show, from the open production's
-     * crew. Keep-name-private members are absent from the map rather than
-     * mapped to a blank, so a lookup can never reveal one.
+     * User id → what the app can tell us about them, from the production's
+     * crew. Keep-name-private members are absent rather than mapped to a
+     * blank, so a lookup can never reveal one.
      *
-     * Line 1 group rows arrive with no name at all, and the 1:1 mitigation
-     * below cannot help them — there is no single "other person" to borrow
-     * from. Without this every face on a group stage read "Guest".
+     * The ROSTER is the authority for both fields; this is the fallback for
+     * what it left out, which is exactly what the web's `nameOfRoster` and
+     * `desigOf` do. Line 1 group rows arrive with no name at all, and the 1:1
+     * mitigation below cannot help them — there is no single "other person" to
+     * borrow from — so without this every face on a group stage read "Guest".
      */
-    nameFor: (String) -> String? = { null },
+    directory: (String) -> CallDirectoryEntry? = { null },
 ): List<CallTile> {
     session ?: return emptyList()
     val selfUid = media.selfUid.takeIf { it != 0 } ?: session.localUid
@@ -90,7 +93,7 @@ fun buildTiles(
     return buildList {
         add(selfTile(session, media, selfName, micMuted, cameraOn, selfUid, selfHand))
         roster.forEach {
-            add(rosterTile(it, media, bound[it.userId] ?: 0, theOtherPerson, nameFor))
+            add(rosterTile(it, media, bound[it.userId] ?: 0, theOtherPerson, directory))
         }
         media.peers.keys.filter { it != 0 && it !in claimed }.sorted()
             .forEach { add(guestTile(it, media)) }
@@ -144,7 +147,7 @@ private fun rosterTile(
     media: CallMedia,
     uid: Int,
     fallbackName: String = "",
-    nameFor: (String) -> String? = { null },
+    directory: (String) -> CallDirectoryEntry? = { null },
 ): CallTile =
     CallTile(
         // Keyed by user id, so a late `agora_uid` from the call-dump merge is
@@ -155,7 +158,7 @@ private fun rosterTile(
         // that declines to name somebody must fall through to Guest, never
         // render an empty caption.
         name = person.name
-            .ifBlank { nameFor(person.userId).orEmpty() }
+            .ifBlank { directory(person.userId)?.name.orEmpty() }
             .ifBlank { fallbackName }
             .ifBlank { UNNAMED },
         userId = person.userId,
@@ -168,7 +171,11 @@ private fun rosterTile(
         hand = person.handRaised,
         onHold = person.onHold && person.status.isConnected,
         isGuest = person.isGuest,
-        designation = person.designation,
+        // A guest has no job title in this production and never will; looking
+        // one up would find whoever happens to share their id shape.
+        designation = person.designation.ifBlank {
+            if (person.isGuest) "" else directory(person.userId)?.designation.orEmpty()
+        },
     )
 
 private fun selfTile(

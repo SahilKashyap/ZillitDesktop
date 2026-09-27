@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Удалённые файлы и папки хранятся здесь, пока вы не восстановите их или не удалите навсегда.</string>
     <string name="desktop_email_forward_to">Пересылать на</string>
     <string name="desktop_tools_drag_to_reorder">Перетащите, чтобы изменить порядок: %1$s</string>
-    <string name="desktop_call_line3_not_configured">Линия 3 не настроена в этой установке</string>
+    <string name="desktop_call_line3_not_configured">Линия 1 не настроена в этой установке</string>
     <string name="desktop_drive_favourite">В избранное</string>
     <string name="desktop_drive_restore_tooltip">Восстановить на прежнее место</string>
     <string name="desktop_turn_off">Выключить</string>

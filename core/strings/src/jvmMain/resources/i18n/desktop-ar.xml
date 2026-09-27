@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">تنتظر الملفات والمجلدات المحذوفة هنا حتى تستعيدها أو تحذفها نهائيًا.</string>
     <string name="desktop_email_forward_to">إعادة التوجيه إلى</string>
     <string name="desktop_tools_drag_to_reorder">اسحب لإعادة ترتيب %1$s</string>
-    <string name="desktop_call_line3_not_configured">الخط 3 غير مضبوط في هذا التثبيت</string>
+    <string name="desktop_call_line3_not_configured">الخط 1 غير مضبوط في هذا التثبيت</string>
     <string name="desktop_drive_favourite">مفضلة</string>
     <string name="desktop_drive_restore_tooltip">استعادة إلى الموقع الأصلي</string>
     <string name="desktop_turn_off">إيقاف</string>

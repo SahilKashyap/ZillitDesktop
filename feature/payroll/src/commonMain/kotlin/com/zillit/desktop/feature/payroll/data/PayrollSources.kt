@@ -17,7 +17,9 @@ import com.zillit.desktop.feature.payroll.domain.JournalSubmission
 import com.zillit.desktop.feature.payroll.domain.ManualClaim
 import com.zillit.desktop.feature.payroll.domain.PayrollAdjustmentRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollDocuments
+import com.zillit.desktop.feature.payroll.domain.PayrollProducerSeams
 import com.zillit.desktop.feature.payroll.domain.PayrollJournalRepository
+import com.zillit.desktop.feature.payroll.domain.PayrollScriptHost
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.PendingClaim
 import kotlinx.serialization.json.JsonArray
@@ -25,6 +27,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 
@@ -120,13 +123,23 @@ internal fun JsonObject.toJournalLine(): JournalLine? {
         debit = number("debit") ?: legacy.takeUnless { isCredit },
         credit = number("credit") ?: legacy.takeIf { isCredit },
         nominalCode = text("nominal_code").orEmpty(),
-        trackingCodes = this["tracking_codes"]?.takeUnless { it is JsonNull },
-        tags = this["tags"]?.takeUnless { it is JsonNull },
+        trackingCodes = (this["tracking_codes"] as? JsonObject).toLayers(),
+        tags = (this["tags"] as? JsonArray).toTags(),
         taxType = text("tax_type").orEmpty(),
         taxRate = number("tax_rate"),
         ledgerDescription = text("ledger_description").orEmpty(),
         effectiveDate = millis("effective_date"),
     )
+}
+
+/** `{ setId: code }` — a set left unpicked carries no key at all. */
+private fun JsonObject?.toLayers(): Map<String, String> = orEmpty().mapNotNull { (set, value) ->
+    (value as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.let { set to it }
+}.toMap()
+
+/** The account tags, non-blank strings only. */
+private fun JsonArray?.toTags(): List<String> = orEmpty().mapNotNull {
+    (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content?.trim()?.takeIf(String::isNotEmpty)
 }
 
 /** The web's wire line (`buildJournalLedgerLines`): every key present, the side that does not apply null. */
@@ -140,8 +153,8 @@ internal fun JournalLine.toJson(): JsonObject = buildJsonObject {
     put("debit", debit?.let(::JsonPrimitive) ?: JsonNull)
     put("credit", credit?.let(::JsonPrimitive) ?: JsonNull)
     put("nominal_code", JsonPrimitive(nominalCode))
-    put("tracking_codes", trackingCodes ?: JsonObject(emptyMap()))
-    put("tags", tags ?: JsonArray(emptyList()))
+    put("tracking_codes", buildJsonObject { trackingCodes.forEach { (set, code) -> put(set, JsonPrimitive(code)) } })
+    put("tags", buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } })
     put("tax_type", JsonPrimitive(taxType))
     put("tax_rate", taxRate?.let(::JsonPrimitive) ?: JsonNull)
     put("ledger_description", JsonPrimitive(ledgerDescription))
@@ -260,6 +273,29 @@ private fun JsonObject.toPendingClaim(): PendingClaim? {
 interface PayrollBinaryTransport {
     suspend fun post(url: String, body: JsonObject): ZillitResult<ByteArray>
     suspend fun get(url: String): ZillitResult<ByteArray>
+}
+
+/**
+ * The producer surfaces' seams, built together because they are used together.
+ *
+ * Production Report Payroll needs three things the accountant screens do not:
+ * the unit's production report, a crew member's active deal, and the engine
+ * that prices a day from the two. The engine needs a JavaScript runtime, which
+ * is the host's to provide — a host without one passes null and the boards say
+ * they cannot estimate, exactly as the web does when its bundle fails to load.
+ */
+fun payrollProducerSeams(
+    apiClient: ApiClient,
+    config: AppConfig,
+    transport: PayrollBinaryTransport,
+    scriptHost: PayrollScriptHost?,
+): PayrollProducerSeams {
+    val http = PayrollHttp(apiClient)
+    return PayrollProducerSeams(
+        reports = ProductionReportSourceImpl(http, config),
+        deals = ActiveDealSourceImpl(http, config),
+        estimator = scriptHost?.let { PayrollEstimatorImpl(http, transport, it, config) },
+    )
 }
 
 /**

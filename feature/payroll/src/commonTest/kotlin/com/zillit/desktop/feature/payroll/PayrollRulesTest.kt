@@ -221,8 +221,27 @@ class PayrollRouteTest {
         assertEquals(PayrollDestination.Processing, PayrollDestination.forRoute("/film-tools/payroll/processing"))
         assertEquals(PayrollDestination.Run, PayrollDestination.forRoute("/film-tools/payroll/run?entry=tool"))
         assertEquals(PayrollDestination.History, PayrollDestination.forRoute("/film-tools/payroll/accountant-payroll/"))
+        assertEquals(
+            PayrollDestination.ProducerBoard,
+            PayrollDestination.forRoute("/film-tools/payroll/producer-board?entry=tool"),
+        )
+        assertEquals(
+            PayrollDestination.ProductionReport,
+            PayrollDestination.forRoute("/film-tools/payroll/production-report"),
+        )
         // An unknown tile is the landing, as the web's router navigates it.
-        assertEquals(PayrollDestination.Landing, PayrollDestination.forRoute("/film-tools/payroll/producer-board"))
+        assertEquals(PayrollDestination.Landing, PayrollDestination.forRoute("/film-tools/payroll/bacs-dispatch"))
+    }
+
+    /** A tile opened from the tool entry keeps the marker, so Back returns there. */
+    @Test
+    fun `a tile route carries the entry it was opened from`() {
+        assertEquals("/film-tools/payroll/producer-board", PayrollDestination.ProducerBoard.path(false))
+        assertEquals(
+            "/film-tools/payroll/producer-board?entry=tool",
+            PayrollDestination.ProducerBoard.path(enteredAsTool = true),
+        )
+        assertEquals("/film-tools/payroll?entry=tool", PayrollDestination.Landing.path(enteredAsTool = true))
     }
 
     @Test
@@ -231,14 +250,54 @@ class PayrollRouteTest {
         assertFalse(PayrollDestination.enteredAsTool("/film-tools/payroll"))
     }
 
-    /** The web's filter (`PayrollLandingPage.jsx` 150-166). */
+    /**
+     * The web's filter (`PayrollLandingPage.jsx` 150-166). The Payroll TOOL
+     * TILE is the producer entry point and the Account Hub side-nav is the
+     * accountant one, so the SAME person is offered different tiles depending
+     * on which they came through — including an accountant, who gets the
+     * producer boards from the tool tile and nothing else.
+     */
     @Test
-    fun `the accountant grid is the accountant's, from the hub only`() {
-        assertEquals(PayrollTile.entries, PayrollTile.visibleTo(accountant, enteredAsTool = false))
-        assertTrue(PayrollTile.visibleTo(accountant, enteredAsTool = true).isEmpty())
+    fun `the entry point decides which tiles are offered`() {
+        val hub = PayrollTile.visibleTo(accountant, enteredAsTool = false)
+        assertEquals(PayrollTile.entries.filterNot { it in PayrollTile.PRODUCER }, hub)
+        assertTrue(PayrollTile.Processing in hub)
+        assertTrue(PayrollTile.EntrySetup in hub)
+        assertTrue(PayrollTile.ProducerBoard !in hub)
+
+        val tool = PayrollTile.visibleTo(accountant, enteredAsTool = true)
+        assertEquals(PayrollTile.PRODUCER.toList(), tool)
+    }
+
+    @Test
+    fun `a non-accountant with view access is offered the producer tiles, either way in`() {
         val producer = crew.copy(canView = true, rightsLoaded = true)
-        assertTrue(PayrollTile.visibleTo(producer, enteredAsTool = false).isEmpty())
-        assertFalse(PayrollDestination.Run.visibleTo(crew))
-        assertTrue(PayrollDestination.Landing.visibleTo(crew))
+        assertEquals(PayrollTile.PRODUCER.toList(), PayrollTile.visibleTo(producer, enteredAsTool = false))
+        assertEquals(PayrollTile.PRODUCER.toList(), PayrollTile.visibleTo(producer, enteredAsTool = true))
+    }
+
+    @Test
+    fun `no view access is no tiles at all`() {
+        assertTrue(PayrollTile.visibleTo(crew, enteredAsTool = false).isEmpty())
+        assertTrue(PayrollTile.visibleTo(crew, enteredAsTool = true).isEmpty())
+    }
+
+    /**
+     * A deep link is judged by the same filter, so nobody reaches a screen
+     * their own landing would not have offered them.
+     */
+    @Test
+    fun `a screen is reachable only by someone whose grid holds its tile`() {
+        assertTrue(PayrollDestination.Run.visibleTo(accountant, enteredAsTool = false))
+        assertFalse(PayrollDestination.Run.visibleTo(accountant, enteredAsTool = true))
+        assertTrue(PayrollDestination.ProducerBoard.visibleTo(accountant, enteredAsTool = true))
+        assertFalse(PayrollDestination.ProducerBoard.visibleTo(accountant, enteredAsTool = false))
+
+        val producer = crew.copy(canView = true, rightsLoaded = true)
+        assertTrue(PayrollDestination.ProductionReport.visibleTo(producer, enteredAsTool = false))
+        assertFalse(PayrollDestination.Processing.visibleTo(producer, enteredAsTool = false))
+
+        assertFalse(PayrollDestination.Run.visibleTo(crew, enteredAsTool = false))
+        assertTrue(PayrollDestination.Landing.visibleTo(crew, enteredAsTool = false))
     }
 }

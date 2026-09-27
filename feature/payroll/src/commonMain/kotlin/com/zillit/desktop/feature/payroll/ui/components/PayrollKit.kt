@@ -86,6 +86,12 @@ internal fun WeekNavigator(
     onShift: (Int) -> Unit,
     onCurrent: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * False on the producer surfaces, which address weeks by date range only:
+     * a week NUMBER is an accountant concept tied to each crew member's
+     * contract start, and would need a deal lookup per person to render.
+     */
+    weekEnding: Boolean = true,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         Row(
@@ -103,7 +109,7 @@ internal fun WeekNavigator(
                 onClick = { onShift(-1) },
             )
             ZillitText(
-                text = str(S.desktop_payroll_week_ending, label),
+                text = if (weekEnding) str(S.desktop_payroll_week_ending, label) else label,
                 style = ZillitTheme.typography.numeric,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,

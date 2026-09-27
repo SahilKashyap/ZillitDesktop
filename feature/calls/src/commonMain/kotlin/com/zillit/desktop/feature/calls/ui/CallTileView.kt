@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -22,8 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -58,14 +61,23 @@ fun CallTileView(
     val media = tile.media
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
+    // Their colour for THIS call — collision-free across the whole stage; see
+    // CallTileColors. Letter-only when the tile is drawn outside a stage.
+    val colour = LocalCallTileColors.current[tile.key] ?: CallTileColors.of(tile.name)
 
     Box(
         modifier = modifier
             .hoverable(hover)
             .clip(RoundedCornerShape(TILE_CORNER))
-            // The web's tile: #3c4043 at radius 12 with a 2px transparent border
-            // the speaking ring paints into (`styles.css:447-457`).
-            .background(if (ringing) CallPalette.tileIdle else CallPalette.control)
+            // The camera-off tile is the person's own colour under a soft
+            // white sheen, as the web's `gradientFor` paints it — not one flat
+            // grey for everyone, which is what made a grid of avatars read as
+            // one surface with faces floating on it. A tile still ringing keeps
+            // the idle grey: they are not here yet, and colouring them in says
+            // they are.
+            .background(
+                if (ringing) SolidColor(CallPalette.tileIdle) else tileWash(colour),
+            )
             .border(TILE_BORDER, Color.Transparent, RoundedCornerShape(TILE_CORNER))
             // Someone who has not picked up yet is present but not here; the
             // whole tile recedes rather than growing a second visual language.
@@ -75,7 +87,7 @@ fun CallTileView(
             if (!ringing && media != null) {
                 SpeakingRing(speaking = media.speaking, avatarSize = avatarSize, pulse = pulse)
             }
-            ZillitAvatar(name = tile.name, image = image, size = avatarSize)
+            ZillitAvatar(name = tile.name, image = image, size = avatarSize, colour = colour)
             if (!ringing && media?.audioMuted == true) {
                 MuteBadge(
                     modifier = Modifier
@@ -85,12 +97,16 @@ fun CallTileView(
             }
         }
 
-        if (showChip) {
-            NameChip(
-                text = if (ringing) str(S.txt_ringing) else tile.name,
+        if (showChip) TileLabel(tile, ringing)
+
+        // Directly under the avatar, where the eye already is: this person put
+        // the call on hold and is deliberately silent, which reads as a
+        // connection fault unless it is said.
+        if (tile.onHold && !ringing) {
+            HoldBadge(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(ZillitTheme.spacing.sm),
+                    .align(Alignment.Center)
+                    .padding(top = avatarSize * HOLD_BELOW_AVATAR),
             )
         }
 
@@ -106,6 +122,27 @@ fun CallTileView(
             }
         }
     }
+}
+
+/**
+ * The tile's name plate: who they are, and under it what they do.
+ *
+ * The designation is the web's `labelDesig` and it goes on its OWN line, never
+ * beside the name — on a grid tile a second phrase alongside the name is the
+ * first thing to be truncated, and it is the half that tells two people with
+ * the same first name apart. A link guest has no job title in this production,
+ * so the chip takes that line instead.
+ */
+@Composable
+private fun BoxScope.TileLabel(tile: CallTile, ringing: Boolean) {
+    NameChip(
+        text = if (ringing) str(S.txt_ringing) else tile.name,
+        detail = tile.designation.takeIf { it.isNotBlank() && !ringing && !tile.isGuest },
+        guest = tile.isGuest && !ringing,
+        modifier = Modifier
+            .align(Alignment.BottomStart)
+            .padding(ZillitTheme.spacing.sm),
+    )
 }
 
 /**
@@ -232,7 +269,50 @@ private fun MuteBadge(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun NameChip(text: String, modifier: Modifier = Modifier) {
+private fun NameChip(
+    text: String,
+    modifier: Modifier = Modifier,
+    detail: String? = null,
+    guest: Boolean = false,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(CHIP_CORNER))
+            .background(CallPalette.scrim)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
+    ) {
+        Column {
+            ZillitText(
+                text = text,
+                style = ZillitTheme.typography.labelSmall,
+                color = CallPalette.text,
+                maxLines = 1,
+            )
+            // Its own line under the name, never beside it: on a small tile a
+            // designation next to the name is the first thing to be truncated,
+            // and it is the half that identifies the person.
+            if (guest) {
+                ZillitText(
+                    text = str(S.txt_badge_guest),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = CallPalette.amber,
+                    maxLines = 1,
+                )
+            } else if (detail != null) {
+                ZillitText(
+                    text = detail,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = CallPalette.muted,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** "On hold" under the avatar — the web's `holdBadge`. */
+@Composable
+private fun HoldBadge(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(CHIP_CORNER))
@@ -240,13 +320,23 @@ private fun NameChip(text: String, modifier: Modifier = Modifier) {
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
     ) {
         ZillitText(
-            text = text,
+            text = str(S.desktop_call_on_hold),
             style = ZillitTheme.typography.labelSmall,
-            color = CallPalette.text,
+            color = CallPalette.amber,
             maxLines = 1,
         )
     }
 }
+
+/**
+ * The camera-off tile's background — the web's `gradientFor`: the person's
+ * colour at low opacity with a white sheen from the top left, and no fade to
+ * black. A flat fill of the same colour is far too loud at tile size; the
+ * sheen is what keeps eight of them from looking like a paint chart.
+ */
+private fun tileWash(colour: Color): Brush = Brush.linearGradient(
+    colors = listOf(colour.copy(alpha = WASH_STRONG), colour.copy(alpha = WASH_FAINT)),
+)
 
 @Composable
 private fun HandChip(modifier: Modifier = Modifier) {
@@ -301,4 +391,11 @@ private const val HALO_GROWTH = 0.12f
 private const val HALO_ALPHA = 0.32f
 private const val BADGE_INSET = 0.02f
 private val HAND_BELOW_SHARING = 28.dp
+
+/** The web's `gradientFor` washes the colour in at 0x73 and out at 0x3d. */
+private const val WASH_STRONG = 0.45f
+private const val WASH_FAINT = 0.24f
+
+/** How far below the avatar's centre the hold badge sits, as a fraction of it. */
+private const val HOLD_BELOW_AVATAR = 0.72f
 private val PIN_SIZE = 26.dp

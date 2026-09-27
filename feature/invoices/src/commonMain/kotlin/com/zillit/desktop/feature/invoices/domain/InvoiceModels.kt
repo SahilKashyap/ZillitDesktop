@@ -294,8 +294,6 @@ data class InvoiceSettings(
     /** `me.is_senior`; null when absent. */
     val isSenior: Boolean? = null,
     val teamMembers: List<TeamMember> = emptyList(),
-    /** Every user id in `run_authorization[].user`. */
-    val runApprovers: Set<String> = emptySet(),
     /** The run authorisation chain itself, tier by tier — who signs a run at each level. */
     val runAuthorisation: List<RunAuthLevel> = emptyList(),
     /**
@@ -339,6 +337,16 @@ data class InvoiceSettings(
 
     /** Whether anybody at all may operate runs, bar the seniors who always can. */
     val hasRunAuthoriser: Boolean get() = teamMembers.any { it.runAccess }
+
+    /**
+     * Every user id in `run_authorization[].user` — who the run tab is for.
+     *
+     * Read off [runAuthorisation] rather than stored beside it: as its own
+     * field the two could disagree, and settings built anywhere but the wire
+     * parser (a test fixture, a partial save) left it empty, which reads as
+     * "nobody signs runs".
+     */
+    val runApprovers: Set<String> get() = runAuthorisation.flatMapTo(mutableSetOf()) { it.userIds }
 }
 
 /** One supplier invoice. */

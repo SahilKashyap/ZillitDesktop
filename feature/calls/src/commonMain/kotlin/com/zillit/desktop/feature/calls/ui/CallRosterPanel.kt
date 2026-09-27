@@ -22,7 +22,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -87,6 +89,19 @@ fun CallUsersPanel(
             onClose = { onEvent(CallEvent.ToggleRoster) },
             tint = colors.textPrimary,
             icon = ZillitIcons.Users,
+            trailing = {
+                // Re-reads the list from the server: `refreshRoster` then
+                // `getCallRoster`, so someone who joined or left on another
+                // client appears. Line 3 only — the other lines have no roster
+                // route and their list is Firestore's.
+                if (state.session?.provider == CallProvider.LiveKit) {
+                    RefreshRosterButton(
+                        busy = state.rosterRefreshing,
+                        onClick = { onEvent(CallEvent.RefreshRoster) },
+                        tint = colors.textPrimary,
+                    )
+                }
+            },
         )
         ZillitSearchField(
             value = query,
@@ -95,6 +110,32 @@ fun CallUsersPanel(
             modifier = Modifier.fillMaxWidth(),
         )
         UserSectionsList(sections, state, onEvent)
+    }
+}
+
+/**
+ * The users panel's Refresh.
+ *
+ * Disabled rather than hidden while a refresh is in flight: a control that
+ * disappears under the pointer is how a second press lands on whatever moved
+ * into its place.
+ */
+@Composable
+private fun RefreshRosterButton(busy: Boolean, onClick: () -> Unit, tint: Color) {
+    Box(
+        modifier = Modifier
+            .size(REFRESH_BUTTON)
+            .clip(CircleShape)
+            .then(if (busy) Modifier else Modifier.clickable(onClick = onClick))
+            .alpha(if (busy) DISABLED_ALPHA else 1f),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(
+            icon = ZillitIcons.Reload,
+            contentDescription = str(S.refresh_text),
+            tint = tint,
+            size = REFRESH_ICON,
+        )
     }
 }
 
@@ -454,3 +495,8 @@ private val ROW_AVATAR = 28.dp
 private val ROW_ICON = 14.dp
 private val SPEAKING_DOT = 6.dp
 private val MENU_CORNER = 10.dp
+private val REFRESH_BUTTON = 26.dp
+private val REFRESH_ICON = 15.dp
+
+/** What a control that cannot be pressed right now looks like. */
+private const val DISABLED_ALPHA = 0.45f

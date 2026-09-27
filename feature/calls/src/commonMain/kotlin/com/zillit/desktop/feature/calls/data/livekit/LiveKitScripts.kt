@@ -17,9 +17,23 @@ object LiveKitScripts {
 
     fun join(params: CallJoin, microphoneId: String): String =
         "zillitLk.join(${params.livekitUrl.js()}, ${params.livekitToken.js()}, ${params.identity.js()}, " +
-            "${params.displayName.js()}, ${params.hasVideo}, ${microphoneId.js()})"
+            "${params.displayName.js()}, ${params.hasVideo}, ${microphoneId.js()}, ${params.callId.js()})"
 
     const val LEAVE = "zillitLk.leave()"
+
+    /**
+     * Pre-connect to the room on the ring's locked token, while it is still
+     * ringing. See `CallEngine.prewarm` for why.
+     */
+    fun prewarm(callId: String, url: String, preconnectToken: String): String =
+        "zillitLk.prewarm(${callId.js()}, ${url.js()}, ${preconnectToken.js()})"
+
+    fun claimPrewarm(callId: String): String = "zillitLk.claimPrewarm(${callId.js()})"
+
+    fun dropPrewarm(callId: String): String = "zillitLk.dropPrewarm(${callId.js()})"
+
+    /** Opens the devices before there is a room — see `CallEngine.prewarmMedia`. */
+    fun prewarmMedia(video: Boolean, audio: Boolean): String = "zillitLk.prewarmMedia($video, $audio)"
 
     fun setMic(muted: Boolean): String = "zillitLk.setMic($muted)"
 

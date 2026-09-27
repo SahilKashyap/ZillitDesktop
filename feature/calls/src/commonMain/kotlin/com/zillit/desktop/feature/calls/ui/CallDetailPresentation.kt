@@ -37,13 +37,13 @@ fun CallLogEntry.directionLabel(): String = when {
 /**
  * The duration chip, or null to hide it (`:127-137`).
  *
- * A Line 3 row's `call_duration` cannot be read on its own — it arrives
+ * A LiveKit row's `call_duration` cannot be read on its own — it arrives
  * negative when no end time was stamped — so its wall clock is rebuilt from
  * the roster's answer times (`liveKitCallDurationMs`, `:265-279`). The other
  * lines read the row's own duration, in the units the list uses.
  */
 fun CallLogEntry.detailDuration(): String? =
-    if (line == CallLine.Three) {
+    if (line == CallLine.One) {
         liveKitDurationMillis()?.let(::formatMillis)
     } else {
         durationMillis.takeIf { it > 0 }?.let(::formatDuration)

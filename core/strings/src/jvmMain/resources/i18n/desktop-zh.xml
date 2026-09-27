@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">已删除的文件和文件夹会保留在这里，直到您恢复或永久删除它们。</string>
     <string name="desktop_email_forward_to">转发到</string>
     <string name="desktop_tools_drag_to_reorder">拖动以重新排列 %1$s</string>
-    <string name="desktop_call_line3_not_configured">此安装未配置 Line 3</string>
+    <string name="desktop_call_line3_not_configured">此安装未配置 Line 1</string>
     <string name="desktop_drive_favourite">收藏</string>
     <string name="desktop_drive_restore_tooltip">恢复到原来的位置</string>
     <string name="desktop_turn_off">关闭</string>

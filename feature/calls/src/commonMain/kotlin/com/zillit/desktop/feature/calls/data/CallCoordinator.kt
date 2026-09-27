@@ -19,8 +19,10 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitGuest
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLineListener
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitRoster
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitRingWatch
 import com.zillit.desktop.feature.calls.domain.CallDirection
+import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.data.protoo.toJoin
 import com.zillit.desktop.feature.calls.domain.CallChatTarget
@@ -36,6 +38,7 @@ import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallRecording
 import com.zillit.desktop.feature.calls.domain.CallRecordingShare
+import com.zillit.desktop.feature.calls.domain.CallRingState
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
@@ -50,6 +53,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -204,6 +208,44 @@ class CallCoordinator(
 
     /** Policy, local mutes, chat blocks and pending guests on a Line 3 call. */
     val line3State: StateFlow<Line3CallState> get() = line3InCall.state
+
+    /**
+     * Who else the SERVER says could be rung into this call — the roster's
+     * `available` rows, and on Line 3 the only list the users panel offers.
+     *
+     * The open production's crew is not it: the call may belong to another
+     * production, the server seeds this list from the call's own membership,
+     * and it knows people this client never fetched. Empty until a roster
+     * answer lands, and cleared with the call.
+     */
+    private val _addableFromRoster = MutableStateFlow<List<CallCrewEntry>>(emptyList())
+    val addableFromRoster: StateFlow<List<CallCrewEntry>> = _addableFromRoster.asStateFlow()
+
+    /**
+     * Where each callee's ring has got to, by user id — the web's
+     * `ringStatuses`, which is what makes the outgoing screen read
+     * "Ringing…" rather than sitting on "Calling…" for the whole ring.
+     *
+     * Separate from the roster's [CallStatus] on purpose: a row is Ringing
+     * from the moment we dial, so the roster cannot tell "we have asked the
+     * server" from "their device is showing a popup", and those are the two
+     * states the caller most wants told apart.
+     */
+    private val _ringStatuses = MutableStateFlow<Map<String, CallRingState>>(emptyMap())
+    val ringStatuses: StateFlow<Map<String, CallRingState>> = _ringStatuses.asStateFlow()
+
+    /**
+     * Re-reads the roster from the server: the users panel's Refresh.
+     *
+     * [force] is the button — the server re-seeds from project membership and
+     * reconciles against the live room before answering. Line 3 only; the
+     * other lines have no such route and their roster comes from Firestore.
+     */
+    fun refreshRoster(force: Boolean = false) {
+        val current = _session.value ?: return
+        if (current.provider != CallProvider.LiveKit) return
+        line3?.refreshRoster(current.callUuid, current.callerUserId.ifBlank { current.selfUserId }, force = force)
+    }
 
     /** Whether this user holds the call's host controls — the original caller, on Line 3. */
     val isHost: Boolean get() = line3InCall.isHost(_session.value)
@@ -498,6 +540,24 @@ class CallCoordinator(
     /** Server truth for a Line 3 ring this device is showing — see [LiveKitRingWatch]. */
     private val line3Ring = LiveKitRingWatch()
 
+    /**
+     * Line 3's client → server telemetry. Diagnostics only: nothing it does
+     * can change how a call behaves, and it is silent outside a call.
+     *
+     * Line 3 alone, as on the phones and the web: `clientLog` is the calling
+     * backend's route and Lines 1 and 2 have no equivalent, so a `null` line
+     * leaves every emit a no-op rather than inventing a second transport.
+     */
+    private val diagnostics = CallDiagnostics(
+        scope = scope,
+        now = now,
+        socketOnline = { line3?.online?.value == true },
+        sendOverSocket = { callId, event, data -> line3?.clientLog(callId, event, data) == true },
+        sendOverRest = { callId, event, data ->
+            line3?.clientLogOverRest(callId, event, data, selfDeviceId().orEmpty())
+        },
+    )
+
     /** Tells two echoed reactions in one millisecond apart; see the listener. */
     private var reactionSequence = 0L
 
@@ -517,6 +577,9 @@ class CallCoordinator(
      * channel twice with the same uid kicks the first join out.
      */
     private var joining = false
+
+    /** When [joinMedia] handed the room to the engine — the `warm_connect` clock. */
+    private var joinStartedAtMillis = 0L
 
     fun start() {
         line3?.attach(Line3Listener())
@@ -768,6 +831,18 @@ class CallCoordinator(
         // it; a false here would show a camera-off button over a live camera.
         _cameraOn.value = current.hasVideo
         if (current.provider == CallProvider.LiveKit) {
+            // Before any roster or network work, so a tap with no matching
+            // `accept_sent` names the moment the answer was lost.
+            diagnostics.startCall(current.callUuid)
+            diagnostics.log("accept_tap", mapOf("source" to "inapp"))
+            // The devices open now rather than after the room exists: the OS
+            // prompt and the capture then overlap the accept and the connect,
+            // which is the web's `prewarmMedia` on its answering path.
+            engine.prewarmMedia(video = current.hasVideo, audio = true)
+            // The pre-warmed room (if the ring warmed one) is this call's now:
+            // a terminal event arriving around the accept must not disconnect
+            // the very room the accept depends on.
+            engine.claimPrewarm(current.callUuid)
             acceptLine3(current)
             return
         }
@@ -915,6 +990,21 @@ class CallCoordinator(
         // Line 1 additionally announces it over protoo — the phones there
         // learn hands from `peerRaisedHand` broadcasts, not only the mirror.
         engine.setHandRaised(raised)
+    }
+
+    /**
+     * Puts our own hand down, whatever the policy says.
+     *
+     * The host's `lowerHands` and `handsLowered` both land here: complying
+     * with an instruction is not the same act as raising a hand, so it is not
+     * gated the way [toggleHand] is. The mirror is written too, so the other
+     * clients' rosters agree.
+     */
+    private fun lowerOwnHand() {
+        if (!_handRaised.value) return
+        _handRaised.value = false
+        mirrorMediaState(mapOf("raise_hand" to false))
+        engine.setHandRaised(false)
     }
 
     /**
@@ -1435,7 +1525,22 @@ class CallCoordinator(
                 // the phones tear down here too. Reported as an error so the
                 // user is told, rather than the call simply vanishing.
                 CallEngineEvent.TokenExpired -> fail("call token expired")
-                is CallEngineEvent.ConnectionChanged -> reconnect.onConnectionChanged(event.state)
+                is CallEngineEvent.ConnectionChanged -> {
+                    if (event.state == EngineConnection.Connected && joinStartedAtMillis > 0) {
+                        // Once per call: a ring-warmed room connected during
+                        // the ring and the page has already sent this, so the
+                        // first writer wins rather than two lines disagreeing.
+                        diagnostics.logOnce(
+                            "warm_connect",
+                            mapOf("ok" to true, "ms" to now() - joinStartedAtMillis),
+                        )
+                    }
+                    reconnect.onConnectionChanged(event.state)
+                }
+                // Diagnostics the page measured, and our own speaking edge.
+                // Neither touches the call; both are dropped outside one.
+                is CallEngineEvent.Telemetry -> diagnostics.log(event.event, event.fields)
+                is CallEngineEvent.SelfSpeaking -> diagnostics.selfSpeaking(event.speaking, event.level)
                 is CallEngineEvent.ScreenShare -> {
                     // The phones read `screenShare` off the roster row to
                     // badge the sharer and pin their tile; mirrored only once
@@ -1637,6 +1742,10 @@ class CallCoordinator(
         }
         audio.restoreBeforeJoin()
 
+        // When the room connect began, for `warm_connect`. On a ring-warmed
+        // call the connect already happened during the ring and the page owns
+        // that line, so this one is `logOnce` and the first writer wins.
+        joinStartedAtMillis = now()
         engine.join(session.toJoin(selfDeviceId().orEmpty(), selfName().orEmpty()))
         // Publishes the lists so a picker opened mid-call has something to
         // draw without waiting for a hot-plug event.
@@ -1787,6 +1896,14 @@ class CallCoordinator(
         if (live != null && live.callUuid.isNotBlank() && live.callUuid != session.callUuid) return
         ZillitLog.i(TAG) { "call ${session.callUuid} ended: $reason (${session.provider.wire}, was ${_phase.value})" }
         cancelRingTimeout()
+        // `disconnect` first, then the window shuts — a diagnostic sent after
+        // the close has no call id and is dropped, every time.
+        diagnostics.endCall(reason.name)
+        // Declined, cancelled, rang out, answered elsewhere or simply over:
+        // the warm room has nothing left to become. Clearing the claim with it
+        // means a re-invite to the same call warms again rather than silently
+        // taking the slow path.
+        engine.dropPrewarm(session.callUuid)
         _ended.tryEmit(CallEndEvent(session, reason))
         reset()
     }
@@ -1802,6 +1919,10 @@ class CallCoordinator(
         emptyRoomCheck = null
         everConnected.clear()
         line3Ring.reset()
+        // Neither the ring's progress nor the server's add-user list means
+        // anything outside the call they were said in.
+        _ringStatuses.value = emptyMap()
+        _addableFromRoster.value = emptyList()
         // A hand does not carry into the next call; neither does a recording.
         _handRaised.value = false
         _onHold.value = false
@@ -1921,12 +2042,26 @@ class CallCoordinator(
                 },
             ),
         )
+        // The microphone and camera open NOW, in front of the ring rather than
+        // behind it: the OS prompt and the capture then overlap the create and
+        // the connect, which is what the web's `prewarmMedia` is for on its
+        // outgoing screen. A call that is refused releases them again.
+        engine.prewarmMedia(video = type == CallType.Video, audio = true)
+        // The outgoing screen says "Calling…" from the press, and moves to
+        // "Ringing…" on the callee's own ack — the web seeds the same map at
+        // the same moment. A group call rings the room, so there is nobody
+        // here to seed and the first `callRinging` fills it.
+        _ringStatuses.value = listOfNotNull(receiverUserId.takeIf { it.isNotBlank() })
+            .associateWith { CallRingState.Calling }
         _cameraOn.value = type == CallType.Video
         scope.launch {
             val placed = line.place(
                 LiveKitDial(
                     calleeUserIds = listOfNotNull(receiverUserId.takeIf { it.isNotBlank() }),
                     chatRoomId = chatRoomId.takeIf { it.isNotBlank() },
+                    // On a group call the name the button carried IS the room's,
+                    // and it is the only label the server can ring with.
+                    chatRoomName = displayName.takeIf { mode == CallMode.Group && chatRoomId.isNotBlank() },
                     mode = mode,
                     type = type,
                     callerUserId = me,
@@ -1951,6 +2086,12 @@ class CallCoordinator(
                         livekitToken = placed.data.token,
                     )
                     _session.value = session
+                    // The diagnostics window opens as soon as the call HAS an
+                    // id. Without this an outgoing call sent nothing at all —
+                    // no `warm_connect`, no `audio`, no `ice`, no reason it
+                    // ended — because every emit is dropped outside a window,
+                    // and only the ring path had opened one.
+                    diagnostics.startCall(session.callUuid)
                     startRingTimeout(CallTimeouts.OUTGOING_MS) { outgoingRangOut() }
                     joinMedia(session)
                 }
@@ -1982,21 +2123,44 @@ class CallCoordinator(
     private inner class Line3Listener : LiveKitLineListener {
         override fun onInvite(session: CallSession) {
             line3Ring.reset()
+            // The ring is about to be shown. `source` is the transport that
+            // delivered it — the desktop has no push, so it is always the
+            // socket; the field stays for the sake of one log across clients.
+            diagnostics.startCall(session.callUuid)
+            diagnostics.log("ring_shown", mapOf("source" to "socket"))
+            // PRE-CONNECT while it rings, on the ring's locked token: the
+            // accept then upgrades this participant in place instead of
+            // starting a connect from nothing. Idempotent by call id, so a
+            // re-emitted `incomingCall` does not tear down the one in flight.
+            if (session.livekitPreconnectToken.isNotBlank() && session.livekitUrl.isNotBlank()) {
+                engine.prewarm(session.callUuid, session.livekitUrl, session.livekitPreconnectToken)
+            }
             // Qualified: the unqualified name is this listener's own method, and an
             // incoming ring recursed into it until the stack ran out — every Line 3
             // ring reaching this device died there, silently, in a launched coroutine.
             this@CallCoordinator.onInvite(session.copy(selfDeviceId = selfDeviceId().orEmpty()))
         }
 
+        @Suppress("LongParameterList") // One parameter per field the event carries.
         override fun onRingState(
             callId: String,
             userId: String,
             displayName: String,
             status: CallStatus,
             busy: Boolean,
+            unreachable: Boolean,
         ) {
             val current = _session.value ?: return
             if (!callId.matches(current)) return
+            // The outgoing screen's own line, about the CALLEES: our own row
+            // going in_call the moment we join our own room is not an answer,
+            // and reading it as one said "Joining…" while their phone was
+            // still ringing (the web skips us for the same reason).
+            if (userId.isNotBlank() && userId != current.selfUserId) {
+                CallRingState.of(status, busy, unreachable)?.let { moved ->
+                    _ringStatuses.update { it + (userId to moved) }
+                }
+            }
             // A name the ring did not carry; a row the roster did not have yet.
             if (userId.isNotBlank() && current.participants.none { it.userId == userId }) {
                 _session.value = current.copy(
@@ -2120,10 +2284,7 @@ class CallCoordinator(
         override fun onHandsLowered(callId: String, userIds: List<String>) {
             val current = _session.value ?: return
             if (!callId.matches(current) || userIds.isEmpty()) return
-            if (current.selfUserId in userIds && _handRaised.value) {
-                _handRaised.value = false
-                engine.setHandRaised(false)
-            }
+            if (current.selfUserId in userIds) lowerOwnHand()
             _session.value = current.copy(
                 participants = current.participants.map { row ->
                     if (row.userId in userIds) row.copy(handRaised = false) else row
@@ -2134,7 +2295,19 @@ class CallCoordinator(
         override fun onChatBlock(callId: String, userId: String, blocked: Boolean) =
             line3InCall.onChatBlock(callId, userId, blocked)
 
-        override fun onPolicy(callId: String, policy: LiveKitCallPolicy) = line3InCall.onPolicy(callId, policy)
+        override fun onPolicy(callId: String, policy: LiveKitCallPolicy) {
+            line3InCall.onPolicy(callId, policy)
+            // A lock that arrives mid-share has to take the share down, not
+            // just hide the button: the SFU does not enforce these, so the one
+            // person the host is actually trying to stop is the one already
+            // presenting. (The web only greys the control, and a presenter
+            // there keeps presenting — reported here 2026-09-26.)
+            if (line3InCall.shareRestricted && _media.value.selfSharing) {
+                ZillitLog.i(TAG) { "host locked screen sharing; stopping ours" }
+                _notices.tryEmit(str(S.desktop_call_host_disabled_screen_sharing))
+                stopScreenShare()
+            }
+        }
 
         override fun onHostAction(callId: String, action: String) {
             val current = _session.value ?: return
@@ -2142,7 +2315,11 @@ class CallCoordinator(
             when (action) {
                 // Cooperative: the host asked, this client complies, the user can undo.
                 Line3InCall.ACTION_MUTE_ALL -> if (!_micMuted.value) toggleMicrophone()
-                Line3InCall.ACTION_LOWER_HANDS -> if (_handRaised.value) toggleHand()
+                // Lowered, not toggled: `toggleHand` refuses under a policy
+                // that has turned hand-raising off, so going through it would
+                // leave a hand up on exactly the call whose host had just
+                // asked for it down.
+                Line3InCall.ACTION_LOWER_HANDS -> lowerOwnHand()
                 // No background effects on this client; nothing to clear.
                 else -> Unit
             }
@@ -2161,6 +2338,9 @@ class CallCoordinator(
             _toasts.tryEmit(text)
         }
 
+        /** What only the line can see — which transport carried the accept. */
+        override fun onDiagnostic(event: String, data: Map<String, Any?>) = diagnostics.log(event, data)
+
         override fun onEnded(reason: String) {
             val current = _session.value ?: return
             if (current.provider != CallProvider.LiveKit) return
@@ -2169,9 +2349,16 @@ class CallCoordinator(
             finish(current, CallEndReason.RemoteEnded)
         }
 
-        override fun onRoster(callId: String, participants: List<CallParticipant>) {
+        override fun onRoster(callId: String, roster: LiveKitRoster) {
             val current = _session.value ?: return
-            if (!callId.matches(current) || participants.isEmpty()) return
+            if (!callId.matches(current)) return
+            // The addable list is the server's and only the server's — see
+            // `LiveKitRoster`. Published even when the people half is empty,
+            // which is exactly the state a call has before anyone answers.
+            _addableFromRoster.value = roster.addable
+            line3InCall.onRoster(roster)
+            val participants = roster.participants
+            if (participants.isEmpty()) return
             val merged = mergeRoster(current.participants, participants)
             _session.value = current.copy(participants = merged)
             participants.forEach { rememberIfConnected(it.userId, status = it.status) }

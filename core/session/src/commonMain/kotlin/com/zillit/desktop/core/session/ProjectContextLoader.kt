@@ -422,6 +422,9 @@ internal data class ProjectUserDto(
     // Android `JoinProjectResponse.kt:120`. The lists decide who shows by it.
     @SerialName("status") val status: String? = null,
     @SerialName("mail_box_detail") val mailBoxDetail: MailBoxDetailDto? = null,
+    // Whether the production requires a signed deal memo from them — the
+    // web's roster of "crew with a deal" (`ProductionReportPayrollModule`).
+    @SerialName("signing_required") val signingRequired: Boolean? = null,
 ) {
     fun toSnapshot(): UserSnapshot? {
         val resolved = userId ?: id ?: return null
@@ -443,6 +446,7 @@ internal data class ProjectUserDto(
             lastActiveMillis = lastActivity?.takeIf { it > 0 } ?: lastVisitedOn?.takeIf { it > 0 },
             status = status?.takeIf { it.isNotBlank() },
             mailboxAddress = mailBoxDetail?.emailAddress?.trim()?.takeIf { it.isNotBlank() },
+            signingRequired = signingRequired == true,
         )
     }
 }

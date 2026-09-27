@@ -17,6 +17,8 @@ kotlin {
             implementation(project(":core:localization"))
             implementation(project(":core:workspace"))
             implementation(libs.kotlinx.serialization.json)
+            // The production report stamps its times in the report's own IANA zone.
+            implementation(libs.kotlinx.datetime)
         }
         commonTest.dependencies {
             implementation(libs.ktor.client.mock)

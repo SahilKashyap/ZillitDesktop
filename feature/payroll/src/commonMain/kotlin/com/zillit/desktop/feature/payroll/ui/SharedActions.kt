@@ -132,7 +132,10 @@ internal class SharedActions(private val vm: PayrollViewModel) {
         val line = ManualClaim(
             name = open.name.trim(),
             amount = open.amount.trim().toDouble(),
-            currency = open.timecard.currency,
+            // The record's own currency, else the production's: a line
+            // saved with no currency at all is not the same as one in the
+            // project default, and only the latter is what the web sends.
+            currency = open.timecard.currency ?: vm.ui.defaultCurrency,
             nominalCode = open.nominal.trim(),
         )
         write(ADD_KEY, clearForm = true) {

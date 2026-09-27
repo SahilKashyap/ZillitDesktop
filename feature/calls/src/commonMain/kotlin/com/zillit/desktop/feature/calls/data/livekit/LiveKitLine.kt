@@ -18,11 +18,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlin.uuid.Uuid
 
 /** Who this device is on the calling backend: the signed-in user, on the open production. */
 data class LiveKitIdentity(
@@ -40,8 +42,20 @@ interface LiveKitLineListener {
     /** This device is being rung. The session is Line 3's, with its room credentials on it. */
     fun onInvite(session: CallSession)
 
-    /** A participant's ring moved — the coordinator's own status vocabulary. */
-    fun onRingState(callId: String, userId: String, displayName: String, status: CallStatus, busy: Boolean)
+    /**
+     * A participant's ring moved — the coordinator's own status vocabulary,
+     * plus the two verdicts it cannot spell: [busy] is their other call and
+     * [unreachable] is no registered device at all.
+     */
+    @Suppress("LongParameterList") // One parameter per field the event carries.
+    fun onRingState(
+        callId: String,
+        userId: String,
+        displayName: String,
+        status: CallStatus,
+        busy: Boolean,
+        unreachable: Boolean = false,
+    )
 
     /**
      * The ring this device showed for [callId] is over without an answer here:
@@ -80,11 +94,26 @@ interface LiveKitLineListener {
     /** A server broadcast for the user to read. */
     fun onNotice(text: String, warning: Boolean, sticky: Boolean) = Unit
 
+    /**
+     * A per-call diagnostic only this line can see — which transport carried
+     * an accept, today.
+     *
+     * Reported rather than sent from here: the budget, the call window and the
+     * "socket first, REST once" rule all belong to `CallDiagnostics`, and a
+     * line that sent its own would be a second sender with its own idea of
+     * both. See that class for the event set.
+     */
+    fun onDiagnostic(event: String, data: Map<String, Any?>) = Unit
+
     /** The call is over for everyone. */
     fun onEnded(reason: String)
 
-    /** The server's roster for a call, when it was asked for. */
-    fun onRoster(callId: String, participants: List<CallParticipant>)
+    /**
+     * The server's roster for a call, when it was asked for — whole, so the
+     * `available` rows come with it and the users panel never has to fall back
+     * on the open production's crew.
+     */
+    fun onRoster(callId: String, roster: LiveKitRoster)
 
     /**
      * The server's active-call list — every heartbeat's answer, and its own
@@ -101,6 +130,8 @@ data class LiveKitJoin(val callId: String, val url: String, val token: String)
 data class LiveKitDial(
     val calleeUserIds: List<String>,
     val chatRoomId: String?,
+    /** The room's name, for the label the server puts on a group ring. */
+    val chatRoomName: String? = null,
     val mode: CallMode,
     val type: CallType,
     /** The caller, on the production the call belongs to. */
@@ -308,7 +339,7 @@ class LiveKitLine(
         when (event) {
             is LiveKitEvent.IncomingCall -> onIncoming(event.invite, sink)
             is LiveKitEvent.RingState ->
-                sink.onRingState(event.callId, event.userId, "", event.status, event.busy)
+                sink.onRingState(event.callId, event.userId, "", event.status, event.busy, event.unreachable)
             is LiveKitEvent.UserState -> {
                 sink.onRingState(event.callId, event.userId, event.displayName, event.status, busy = false)
                 sink.onUserState(
@@ -390,53 +421,78 @@ class LiveKitLine(
     // ── Outgoing ────────────────────────────────────────────────────────────
 
     /**
-     * Places a call: creates it over REST, rings it over the socket, and
-     * resolves the room to join. The web's `startCall` sequence, including its
-     * two recoveries — a second create when the first is already ringing, and
-     * the REST ring when the socket cannot.
+     * Places a call and resolves the room to join — the web's `startCall`
+     * sequence, including its two recoveries: a fresh call id when the server
+     * still holds a ring for this pair, and the REST ring when the socket
+     * cannot carry one.
+     *
+     * With the presence socket up, nothing is created over REST at all; see
+     * [mintThenRing].
      */
     suspend fun place(dial: LiveKitDial): ZillitResult<LiveKitJoin> {
         // Socket down: one REST create that also rings, as the phones do — no
         // point minting an id nobody will `startCall` with.
         val rung = when (val live = peer) {
-            null -> create(dial, ring = true)
+            null -> createAndRing(dial).also { ZillitLog.i(TAG) { "presence socket down; ringing over REST" } }
             else -> mintThenRing(live, dial)
         }
         return when (rung) {
             is ZillitResult.Failure -> rung
-            is ZillitResult.Success ->
-                resolveJoin(rung.data.callId, rung.data.livekit, dial.callerUserId, dial.callerName, dial.projectId)
+            is ZillitResult.Success -> {
+                // Already on a call with them: the server answered with THAT
+                // call rather than starting a second one. Joining it is the
+                // right thing — the Calls tab's Ongoing rows are how the user
+                // gets there — and dialling on regardless would put this device
+                // in a room the server never minted.
+                rung.data.switchToCallId?.let { existing ->
+                    ZillitLog.i(TAG) { "the server says we are already in $existing; joining that, not dialling" }
+                }
+                val callId = rung.data.switchToCallId ?: rung.data.callId
+                resolveJoin(callId, rung.data.livekit, dial.callerUserId, dial.callerName, dial.projectId)
+            }
         }
-    }
-
-    private suspend fun mintThenRing(live: LiveKitPeer, dial: LiveKitDial): ZillitResult<LiveKitCallCredentials> {
-        val created = when (val outcome = create(dial, ring = false)) {
-            is ZillitResult.Failure -> return outcome
-            is ZillitResult.Success -> outcome.data
-        }
-        created.switchToCallId?.let { existing ->
-            ZillitLog.i(TAG) { "createCall -> already in $existing; joining that instead of dialling" }
-        }
-        return ringOverSocket(live, dial, created)
     }
 
     /**
-     * `POST /v1/calls`. Ringing, it carries the whole call and the server rings
-     * the callees itself (the socket-down fallback). Not ringing, it is the
-     * bare mint — `group`, nobody named — that the socket's `startCall` then
-     * describes; a mint that says `private` with no callees is refused.
+     * SOCKET-FIRST START, as the web does it (`App.tsx startCall`): with the
+     * presence socket up this client mints the call id ITSELF and the socket's
+     * `startCall` sets the ring up, so `POST /v1/calls` disappears from in
+     * front of the ring. Its two other jobs are covered on that path anyway —
+     * the caller's LiveKit credentials come folded into the ack, and the media
+     * region is resolved server-side from the per-device region cache.
+     *
+     * Only the socket-down path (and a `startCall` that fails for any reason
+     * but "you are busy") goes through REST, which is the fallback the phones
+     * keep as well.
      */
-    private suspend fun create(dial: LiveKitDial, ring: Boolean): ZillitResult<LiveKitCallCredentials> {
-        val outcome = if (ring) {
-            api.createCall(
-                dial.callerUserId, dial.callerName, dial.mode, dial.type,
-                dial.ringIds, dial.chatRoomId, dial.projectId, dial.projectName,
-            )
-        } else {
-            api.mintCall(dial.callerUserId, dial.callerName, dial.projectId)
-        }
+    private suspend fun mintThenRing(live: LiveKitPeer, dial: LiveKitDial): ZillitResult<LiveKitCallCredentials> =
+        ringOverSocket(live, dial, LiveKitCallCredentials(callId = newCallId(), livekit = null))
+
+    /**
+     * `POST /v1/calls` carrying the whole call, so the SERVER rings the
+     * callees and runs its own region detection — the web's `startCallRest`.
+     *
+     * The only REST path left on the way out: with the socket up the call id
+     * is minted here and `startCall` does the ringing (see [mintThenRing]),
+     * which is why nothing calls [LiveKitApi.mintCall] any more.
+     */
+    private suspend fun createAndRing(dial: LiveKitDial): ZillitResult<LiveKitCallCredentials> {
+        // Named: nine arguments of which four are strings, so a parameter added
+        // in the middle would rearrange the body silently. (It already did once,
+        // in this file's own test helper.)
+        val outcome = api.createCall(
+            callerId = dial.callerUserId,
+            callerName = dial.callerName,
+            callMode = dial.mode,
+            callType = dial.type,
+            calleeIds = dial.ringIds,
+            chatRoomId = dial.chatRoomId,
+            chatRoomName = dial.chatRoomName,
+            projectId = dial.projectId,
+            projectName = dial.projectName,
+        )
         if (outcome is ZillitResult.Failure) {
-            ZillitLog.w(TAG) { "createCall(ring=$ring) refused: ${outcome.error.technical}" }
+            ZillitLog.w(TAG) { "createCall refused: ${outcome.error.technical}" }
         }
         return outcome
     }
@@ -460,17 +516,18 @@ class LiveKitLine(
                 ZillitLog.w(TAG) {
                     "startCall over the socket failed (${first.exceptionOrNull()?.message}); ringing over REST"
                 }
-                create(dial, ring = true)
+                createAndRing(dial)
             }
         }
     }
 
-    /** The server still holds the last ring for this pair; a fresh call id clears it. */
+    /**
+     * The server still holds the last ring for this pair; a fresh call id
+     * clears it. Retried EXACTLY once, as the web does — a second refusal is
+     * the server saying something this client cannot fix by re-rolling an id.
+     */
     private suspend fun ringAgain(live: LiveKitPeer, dial: LiveKitDial): ZillitResult<LiveKitCallCredentials> {
-        val again = when (val outcome = create(dial, ring = false)) {
-            is ZillitResult.Failure -> return outcome
-            is ZillitResult.Success -> outcome.data
-        }
+        val again = LiveKitCallCredentials(callId = newCallId(), livekit = null)
         val second = startCall(live, again.callId, dial)
         return if (second.isSuccess) {
             ZillitResult.Success(again.withRoomFrom(second.getOrNull()))
@@ -479,9 +536,18 @@ class LiveKitLine(
         }
     }
 
+    /**
+     * `startCall`, capped.
+     *
+     * The socket can accept a request and never answer — a busy server, a
+     * half-open connection — and without the cap the ring hangs behind it
+     * instead of falling back to REST. [START_CALL_TIMEOUT_MILLIS] is the
+     * web's three seconds.
+     */
     private suspend fun startCall(live: LiveKitPeer, callId: String, dial: LiveKitDial): Result<JsonElement?> =
         runCatching {
-            live.request(
+            withTimeout(START_CALL_TIMEOUT_MILLIS) {
+                live.request(
                 "startCall",
                 buildJsonObject {
                     put("callId", JsonPrimitive(callId))
@@ -494,7 +560,8 @@ class LiveKitLine(
                     dial.projectName?.takeIf { it.isNotBlank() }?.let { put("projectName", JsonPrimitive(it)) }
                     dial.chatRoomId?.takeIf { it.isNotBlank() }?.let { put("chatRoomId", JsonPrimitive(it)) }
                 },
-            )
+                )
+            }
         }
 
     /** The caller's own way out while it still rings. */
@@ -519,11 +586,21 @@ class LiveKitLine(
         val live = peer
         if (live != null) {
             val accepted = runCatching { live.request("acceptCall", callIdFields(callId)) }
-            if (accepted.isSuccess) return resolveJoin(callId, bundled, me, displayName, projectId)
+            if (accepted.isSuccess) {
+                // The accept REACHED the backend. Deliberately a separate line
+                // from `accept_tap`: a tap with no matching send is the proof
+                // that an answer never landed, which is the whole reason this
+                // pair of events exists.
+                listener?.onDiagnostic("accept_sent", mapOf("transport" to "socket"))
+                return resolveJoin(callId, bundled, me, displayName, projectId)
+            }
             ZillitLog.w(TAG) { "acceptCall over the socket failed (${accepted.exceptionOrNull()?.message}); REST" }
         }
         return when (val rest = api.acceptCall(callId, me, displayName, projectId)) {
-            is ZillitResult.Success -> resolveJoin(callId, rest.data.livekit ?: bundled, me, displayName, projectId)
+            is ZillitResult.Success -> {
+                listener?.onDiagnostic("accept_sent", mapOf("transport" to "rest"))
+                resolveJoin(callId, rest.data.livekit ?: bundled, me, displayName, projectId)
+            }
             is ZillitResult.Failure -> rest
         }
     }
@@ -560,13 +637,94 @@ class LiveKitLine(
         }.isSuccess
     }
 
-    /** Asks for the server's roster and hands it to the listener. */
-    fun refreshRoster(callId: String, callerId: String) {
-        val live = peer ?: return
-        scope.launch {
-            runCatching { live.request("getCallRoster", callIdFields(callId)) }
-                .onSuccess { data -> listener?.onRoster(callId, readLiveKitRoster(data, callerId)) }
+    /**
+     * Asks for the server's roster and hands it to the listener.
+     *
+     * Socket first, exactly as the web does: while the presence socket is up it
+     * is the right transport — it pushes roster changes as they happen and
+     * beats HTTP on latency — and `GET …/roster` is the fallback for when it is
+     * not. Never both.
+     *
+     * [force] is the Refresh button and a reconnect: the server is told to
+     * RE-SEED from project membership and reconcile against the live media
+     * room (`refreshRoster` / `POST …/roster/refresh`) before the snapshot is
+     * read, so someone who joined or left on another client is reflected.
+     * Slower by design, which is why an ordinary hydrate leaves it false.
+     */
+    fun refreshRoster(callId: String, callerId: String, force: Boolean = false) {
+        scope.launch { pullRoster(callId, callerId, force) }
+    }
+
+    private suspend fun pullRoster(callId: String, callerId: String, force: Boolean) {
+        val me = identity()
+        val live = peer
+        if (live != null) {
+            // A forced refresh is two requests on purpose: `refreshRoster` only
+            // re-seeds (the server answers before the new rows are pushed), so
+            // `getCallRoster` is what makes the list visibly update on the tap.
+            if (force) {
+                runCatching { live.request("refreshRoster", callIdFields(callId)) }
+                    .onFailure { ZillitLog.w(TAG) { "refreshRoster refused: ${it.message}" } }
+            }
+            val answered = runCatching { live.request("getCallRoster", callIdFields(callId)) }
+            if (answered.isSuccess) {
+                listener?.onRoster(callId, readLiveKitRosterSnapshot(answered.getOrNull(), callerId))
+                return
+            }
+            ZillitLog.w(TAG) { "getCallRoster over the socket failed (${answered.exceptionOrNull()?.message}); HTTP" }
         }
+        // `userId` on the HTTP routes is OURS — it is whose view of the roster
+        // is being asked for (the web passes `state.selfId`). [callerId] is a
+        // different thing entirely: whose CALL it is, used to stamp the host
+        // row. Sending the caller's id here asked the server for somebody
+        // else's view.
+        val asked = me?.userId.orEmpty()
+        val over = if (force) {
+            api.refreshRoster(callId, asked, me?.projectId)
+        } else {
+            api.roster(callId, asked, me?.projectId)
+        }
+        when (over) {
+            is ZillitResult.Success ->
+                listener?.onRoster(callId, readLiveKitRosterSnapshot(over.data, callerId))
+            is ZillitResult.Failure ->
+                ZillitLog.w(TAG) { "roster over HTTP failed: ${over.error.technical}" }
+        }
+    }
+
+    /**
+     * One line of per-call diagnostics. True when the socket carried it —
+     * false is the caller's cue to send it over REST, and never both.
+     *
+     * Deliberately thin: the budget, the call window and the event set live in
+     * `CallDiagnostics`, because none of that is this line's business and all
+     * of it has to be testable without a socket.
+     */
+    suspend fun clientLog(callId: String, event: String, data: JsonObject): Boolean {
+        val live = peer ?: return false
+        return runCatching {
+            live.request(
+                "clientLog",
+                buildJsonObject {
+                    put("callId", JsonPrimitive(callId))
+                    put("event", JsonPrimitive(event))
+                    if (data.isNotEmpty()) put("data", data)
+                },
+            )
+        }.isSuccess
+    }
+
+    /** `POST /v1/client-log`, for a line the socket did not carry. */
+    suspend fun clientLogOverRest(callId: String, event: String, data: JsonObject, deviceId: String) {
+        val me = identity()
+        api.clientLog(
+            userId = me?.userId.orEmpty(),
+            deviceId = deviceId,
+            callId = callId,
+            event = event,
+            data = data,
+            projectId = me?.projectId,
+        )
     }
 
     // ── In-call verbs (the web's `App.tsx` socket requests, REST where it has a twin) ──
@@ -726,9 +884,23 @@ class LiveKitLine(
         extra.forEach { (key, value) -> put(key, value) }
     }
 
-    /** The ack's room, when it folded one in; else what the create carried. */
-    private fun LiveKitCallCredentials.withRoomFrom(ack: JsonElement?): LiveKitCallCredentials =
-        copy(livekit = (ack as? JsonObject)?.readLiveKitCredentials() ?: livekit)
+    /**
+     * What the `startCall` ack adds: the room it folded in, and `switchTo`.
+     *
+     * `switchTo` means the server did NOT start a call — this user is already
+     * on one with that callee, on this device or another — and answers with
+     * that call instead. It arrives on the socket ack as well as the REST
+     * answer (the web reads both), and dropping it on the socket-first path
+     * would leave the caller dialling a call the server deliberately never
+     * minted.
+     */
+    private fun LiveKitCallCredentials.withRoomFrom(ack: JsonElement?): LiveKitCallCredentials {
+        val obj = ack as? JsonObject ?: return this
+        return copy(
+            livekit = obj.readLiveKitCredentials() ?: livekit,
+            switchToCallId = (obj["switchTo"] as? JsonObject)?.text("callId") ?: switchToCallId,
+        )
+    }
 
     private fun Result<*>.isAlreadyRinging() = exceptionOrNull()?.message?.contains("call_already_ringing") == true
 
@@ -737,9 +909,22 @@ class LiveKitLine(
     private fun <T> Result<*>.asFailure(): ZillitResult<T> =
         ZillitResult.Failure(ZillitError.Unknown(exceptionOrNull()?.message ?: "the call could not be started"))
 
+    /**
+     * A call id this client minted.
+     *
+     * The backend's only check on a `startCall` id is its in-memory duplicate
+     * guard, so a UUID from here is as good as one from `POST /v1/calls` — and
+     * it is what the web sends (`crypto.randomUUID()`). A collision comes back
+     * as `call_already_ringing` and is retried with a fresh one.
+     */
+    private fun newCallId(): String = Uuid.random().toString()
+
     companion object {
         const val HEADER_MODULE_DATA = "moduledata"
         private const val HEARTBEAT_MILLIS = 15_000L
+
+        /** The web's cap on a `startCall` ack before the ring falls back to REST. */
+        private const val START_CALL_TIMEOUT_MILLIS = 3_000L
         private const val RESOLVED_REMEMBERED = 32
         private const val SIGNED_OUT_POLL_MILLIS = 5_000L
         private const val BACKOFF_BASE_MILLIS = 3_000L

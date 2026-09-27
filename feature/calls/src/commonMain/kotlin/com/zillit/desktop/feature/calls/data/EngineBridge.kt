@@ -95,6 +95,14 @@ object EngineBridge {
                 speakerId = obj.str("speakerId").orEmpty(),
             )
             "error" -> CallEngineEvent.Failed(obj.str("message") ?: "call page error")
+            // WebRTC facts only the page can measure, on their way to
+            // `CallDiagnostics`. Read as strings whatever their JSON type: the
+            // page is the only thing that knows what each field means, nothing
+            // here does arithmetic on them, and the diagnostic's own writer
+            // decides how they go back on the wire.
+            "telemetry" -> obj.str("event")?.takeIf(String::isNotBlank)
+                ?.let { CallEngineEvent.Telemetry(it, obj.fields("data")) }
+            "self-speaking" -> CallEngineEvent.SelfSpeaking(obj.bool("speaking"), obj.double("level"))
             else -> null
         }
     }
@@ -280,6 +288,20 @@ object EngineBridge {
             val id = row.str("id").orEmpty()
             if (id.isBlank()) null else MediaDevice(id = id, label = row.str("label").orEmpty())
         }
+
+    private fun JsonObject.double(key: String): Double =
+        (this[key] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 0.0
+
+    /**
+     * A flat object of scalars, as strings — the shape a telemetry line
+     * carries. Nested values are dropped rather than rendered: the diagnostic
+     * payload is flat by contract, and a stringified object inside it would eat
+     * the server's 900-character budget for nothing.
+     */
+    private fun JsonObject.fields(key: String): Map<String, String> =
+        (this[key] as? JsonObject)?.mapNotNull { (name, value) ->
+            (value as? JsonPrimitive)?.contentOrNull?.let { name to it }
+        }?.toMap().orEmpty()
 
     private fun JsonObject.intList(key: String): List<Int> =
         (this[key] as? JsonArray).orEmpty().mapNotNull { entry ->

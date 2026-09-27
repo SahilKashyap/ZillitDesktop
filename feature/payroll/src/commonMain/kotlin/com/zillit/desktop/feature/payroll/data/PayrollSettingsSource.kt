@@ -5,11 +5,18 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.feature.payroll.domain.DealCoding
+import com.zillit.desktop.feature.payroll.domain.JournalReference
 import com.zillit.desktop.feature.payroll.domain.OverrideFlags
 import com.zillit.desktop.feature.payroll.domain.PayrollCompany
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
 import com.zillit.desktop.feature.payroll.domain.PayrollSettingsRepository
+import com.zillit.desktop.feature.payroll.domain.TrackingNode
+import com.zillit.desktop.feature.payroll.domain.TrackingSet
 import kotlinx.coroutines.async
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.coroutines.coroutineScope
 
 /**
@@ -85,8 +92,72 @@ internal class PayrollSettingsSource(
             }
         }
 
+    /**
+     * `/project-settings/project-currencies` — the same row the rest of the
+     * hub reads its default from.
+     */
+    override suspend fun defaultCurrency(): ZillitResult<String?> =
+        http.get("$hub/project-settings/project-currencies").map { data ->
+            // `default` is the key the hub's own reader uses; the rest are
+            // spellings older productions were saved under.
+            val body = data.obj()?.let { it.obj("value") ?: it.obj("data") ?: it }
+            body?.text("default", "default_currency", "default_code")
+        }
+
+    /**
+     * Both halves at once. The sets come from the hub's tracking-sets route
+     * with their nodes bundled; the tags are a field of the project settings
+     * document, as Production Setup writes them.
+     */
+    override suspend fun journalReference(): ZillitResult<JournalReference> = coroutineScope {
+        val sets = async {
+            http.get("$hub/tracking-sets", mapOf("active_only" to "true", "include_nodes" to "true"))
+        }
+        val settings = async { http.get("$hub/project-settings") }
+        ZillitResult.Success(
+            JournalReference(
+                trackingSets = (sets.await() as? ZillitResult.Success)?.data.toTrackingSets(),
+                assetTags = (settings.await() as? ZillitResult.Success)?.data.toAssetTags(),
+            ),
+        )
+    }
+
     override suspend fun activeDealCoding(userId: String): ZillitResult<DealCoding?> =
         http.get("$dealMemo/deals/active/$userId").map { data ->
             data.obj()?.let { it.obj("data") ?: it }?.toDealCoding()
         }
 }
+
+
+/**
+ * Active sets with their active, non-header codes — the web's
+ * `TrackingCodesPicker` filter. A header is a grouping row, not something a
+ * line can be coded to.
+ */
+internal fun JsonElement?.toTrackingSets(): List<TrackingSet> = rows()
+    .filter { it.flagOrTrue("active") }
+    .mapNotNull { set ->
+        val id = set.identifier() ?: return@mapNotNull null
+        TrackingSet(
+            id = id,
+            name = set.text("name").orEmpty(),
+            nodes = set.objects("nodes")
+                .filter { it.flagOrTrue("active") && !it.flag("is_header") }
+                .mapNotNull { node ->
+                    node.text("code")?.let { TrackingNode(it, node.text("label", "name").orEmpty()) }
+                },
+        )
+    }
+
+/** Production Setup's Account Tags — the web's `useProjectAssetTags`. */
+internal fun JsonElement?.toAssetTags(): List<String> {
+    val root = obj()?.let { it.obj("value") ?: it }
+    val settings = root?.obj("settings") ?: root ?: return emptyList()
+    return settings.array("asset_tags").mapNotNull {
+        (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content?.trim()?.takeIf(String::isNotEmpty)
+    }
+}
+
+/** Absent means active: only an explicit `false` disables a set or a node. */
+private fun JsonObject.flagOrTrue(key: String): Boolean =
+    (this[key] as? JsonPrimitive)?.booleanOrNull != false

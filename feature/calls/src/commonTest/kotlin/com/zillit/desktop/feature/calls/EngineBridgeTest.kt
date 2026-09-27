@@ -53,6 +53,54 @@ class EngineBridgeTest {
         )
     }
 
+    /**
+     * The page measures the four WebRTC diagnostics (`publish`, `speak`,
+     * `audio`, `ice`) because nothing on this side can see them, and hands them
+     * over as name plus flat fields. Read as STRINGS whatever their JSON type:
+     * the page is the only thing that knows what a field means, nothing here
+     * does arithmetic on them, and `CallDiagnostics` decides how they go back
+     * out.
+     */
+    @Test
+    fun `a telemetry line arrives as its name and its fields`() {
+        assertEquals(
+            CallEngineEvent.Telemetry(
+                "audio",
+                mapOf("outPkts" to "120", "micOn" to "true", "jitterMs" to "4"),
+            ),
+            EngineBridge.parse(
+                """{"type":"telemetry","event":"audio","data":{"outPkts":120,"micOn":true,"jitterMs":4}}""",
+            ),
+        )
+        // No fields at all is a legitimate line — `promoted` sends almost none.
+        assertEquals(
+            CallEngineEvent.Telemetry("promoted", emptyMap()),
+            EngineBridge.parse("""{"type":"telemetry","event":"promoted"}"""),
+        )
+        // A nested value is dropped, not stringified: the payload is flat by
+        // contract and an object inside it would eat the server's size budget.
+        assertEquals(
+            CallEngineEvent.Telemetry("ice", mapOf("pc" to "pub")),
+            EngineBridge.parse("""{"type":"telemetry","event":"ice","data":{"pc":"pub","extra":{"a":1}}}"""),
+        )
+        // A line with no name is not a line.
+        assertNull(EngineBridge.parse("""{"type":"telemetry","data":{"a":1}}"""))
+        assertNull(EngineBridge.parse("""{"type":"telemetry","event":""}"""))
+    }
+
+    /** Our own speaking edge, with the level only the page can read. */
+    @Test
+    fun `self-speaking carries the edge and the level`() {
+        assertEquals(
+            CallEngineEvent.SelfSpeaking(true, 0.42),
+            EngineBridge.parse("""{"type":"self-speaking","speaking":true,"level":0.42}"""),
+        )
+        assertEquals(
+            CallEngineEvent.SelfSpeaking(false, 0.0),
+            EngineBridge.parse("""{"type":"self-speaking","speaking":false}"""),
+        )
+    }
+
     @Test
     fun `ready and unknown types are transport noise, not events`() {
         assertNull(EngineBridge.parse("""{"type":"ready","sdk":"4.24.2"}"""))

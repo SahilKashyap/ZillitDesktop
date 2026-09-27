@@ -229,6 +229,27 @@ class Line3InCall(
         }
     }
 
+    /**
+     * A roster snapshot's own extras — the host's policy, whose chat is
+     * blocked, who is at the door.
+     *
+     * The socket answer carries them and the HTTP one does not, so absent
+     * means "this transport does not say" and is left alone. Reading a missing
+     * policy as a fresh permissive one would silently unlock a locked call
+     * every time the roster was refreshed over HTTP; the web is explicit about
+     * the same distinction.
+     */
+    fun onRoster(roster: LiveKitRoster) {
+        current() ?: return
+        _state.update { live ->
+            live.copy(
+                policy = roster.policy ?: live.policy,
+                chatBlockedIds = roster.chatBlockedIds?.toSet() ?: live.chatBlockedIds,
+                pendingGuests = roster.guests ?: live.pendingGuests,
+            )
+        }
+    }
+
     fun onGuestList(callId: String, guests: List<LiveKitGuest>) {
         if (!callId.isThisCall()) return
         _state.update { it.copy(pendingGuests = guests) }

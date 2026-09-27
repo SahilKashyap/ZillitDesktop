@@ -257,7 +257,6 @@ internal fun parseSettings(data: JsonElement?): InvoiceSettings {
         canOverride = me?.flag("can_override"),
         isSenior = me?.flag("is_senior"),
         teamMembers = members,
-        runApprovers = chain.flatMap { it.userIds }.toSet(),
         runAuthorisation = chain,
         hasMe = me != null,
     )

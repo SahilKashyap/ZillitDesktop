@@ -35,15 +35,16 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
  * console through the hub. Here the difference is [LocalHostedBy]: null when
  * this window stands alone.
  *
- * The view model is one instance for the app, so the hub's embed and a
- * stand-alone window can be on screen at the same time. The layout is
- * therefore chosen **per composition** — each draws its own viewer — and every
- * event a composition sends is preceded by its entry, so the view model's
- * handlers gate on the door the event actually came through rather than on
- * whichever window last spoke.
+ * Each door has its own view model — [viewModel] for the hub, [toolViewModel]
+ * for the tile — because the web's two entries are two sessions with their
+ * own pages, data and badge scope: an accountant can have the console open in
+ * the hub and their own receipts open from the tile, and neither disturbs the
+ * other. Every event is still preceded by its entry, so a host that passes one
+ * model for both (tests) keeps working.
  */
 class CardExpensesToolProvider(
     private val viewModel: CardExpensesViewModel,
+    private val toolViewModel: CardExpensesViewModel = viewModel,
     private val onOpenAttachment: (String) -> Unit = {},
 ) : ToolProvider {
 
@@ -56,25 +57,26 @@ class CardExpensesToolProvider(
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
-        val state by viewModel.state.collectAsState()
-        var failure by remember { mutableStateOf<String?>(null) }
         val asTool = LocalHostedBy.current == null
+        val model = if (asTool) toolViewModel else viewModel
+        val state by model.state.collectAsState()
+        var failure by remember { mutableStateOf<String?>(null) }
         val focused = LocalWindowInfo.current.isWindowFocused
 
         // Before `start`, so the first landing page is already this door's.
-        LaunchedEffect(asTool) { viewModel.onEvent(CardEvent.Enter(asTool)) }
+        LaunchedEffect(asTool) { model.onEvent(CardEvent.Enter(asTool)) }
         // A window coming to the front takes the shared view model with it.
-        LaunchedEffect(asTool, focused) { if (focused) viewModel.onEvent(CardEvent.Enter(asTool)) }
+        LaunchedEffect(asTool, focused) { if (focused) model.onEvent(CardEvent.Enter(asTool)) }
 
         // The first time this tool is shown: the view model is built with the
         // app, before a production is open, so it resolves who the viewer is
         // here rather than in its constructor.
-        LaunchedEffect(viewModel) { viewModel.start() }
+        LaunchedEffect(model) { model.start() }
 
-        val onEvent: (CardEvent) -> Unit = remember(viewModel, asTool) {
+        val onEvent: (CardEvent) -> Unit = remember(model, asTool) {
             { event ->
-                viewModel.onEvent(CardEvent.Enter(asTool))
-                viewModel.onEvent(event)
+                model.onEvent(CardEvent.Enter(asTool))
+                model.onEvent(event)
             }
         }
 
@@ -88,8 +90,8 @@ class CardExpensesToolProvider(
                 ?.let { onEvent(CardEvent.Open(it)) }
         }
 
-        LaunchedEffect(viewModel) {
-            viewModel.effects.collect { effect ->
+        LaunchedEffect(model) {
+            model.effects.collect { effect ->
                 when (effect) {
                     is CardEffect.Failed -> failure = effect.message
                     is CardEffect.OpenAttachment -> onOpenAttachment(effect.key)

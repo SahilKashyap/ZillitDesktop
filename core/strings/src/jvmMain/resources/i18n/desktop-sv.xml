@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Borttagna filer och mappar väntar här tills du återställer eller tar bort dem permanent.</string>
     <string name="desktop_email_forward_to">Vidarebefordra till</string>
     <string name="desktop_tools_drag_to_reorder">Dra för att ändra ordning på %1$s</string>
-    <string name="desktop_call_line3_not_configured">Linje 3 är inte konfigurerad i den här installationen</string>
+    <string name="desktop_call_line3_not_configured">Linje 1 är inte konfigurerad i den här installationen</string>
     <string name="desktop_drive_favourite">Favorit</string>
     <string name="desktop_drive_restore_tooltip">Återställ till ursprunglig plats</string>
     <string name="desktop_turn_off">Stäng av</string>

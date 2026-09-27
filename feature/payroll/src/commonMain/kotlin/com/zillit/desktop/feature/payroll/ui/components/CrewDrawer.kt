@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +43,7 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.Employment
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
+import com.zillit.desktop.feature.payroll.domain.WeekView
 import com.zillit.desktop.feature.payroll.ui.AdjustmentKind
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
@@ -58,6 +63,12 @@ fun CrewDrawer(
     modifier: Modifier = Modifier,
     footer: @Composable RowScope.(PayrollTimecard) -> Unit,
 ) {
+    // Which day is open, and the week it belongs to. Reset per timecard: a
+    // day index means nothing once the drawer is showing someone else.
+    var selectedDay by remember(timecard?.id) { mutableStateOf(0) }
+    val rows = remember(timecard) {
+        timecard?.weekStarting?.let { WeekView.rows(it, timecard.days) }.orEmpty()
+    }
     Column(modifier.background(ZillitTheme.colors.surface)) {
         DrawerHeader(state, timecard, onClose)
         ZillitDivider()
@@ -78,7 +89,13 @@ fun CrewDrawer(
             AdjustRow(timecard, onEvent)
             WeekHero(timecard)
             EmploymentBanner(timecard)
-            DaysTable(timecard)
+            DrawerWeek(
+                timecard = timecard,
+                rows = rows,
+                selected = selectedDay,
+                now = state.now,
+                onSelect = { selectedDay = it },
+            )
             ClaimsAndDeductions(timecard)
         }
         ZillitDivider()
@@ -240,70 +257,5 @@ private fun EmploymentBanner(timecard: PayrollTimecard) {
     ZillitNotice(text = text, tone = StatusTone.InTransit, icon = ZillitIcons.Info)
 }
 
-/** Each day's times and money — the web's "Days" and "Times" in one table. */
-@Composable
-private fun DaysTable(timecard: PayrollTimecard) {
-    SectionHead(str(S.desktop_payroll_days_week))
-    Column(
-        Modifier.fillMaxWidth().clip(ZillitTheme.shapes.large).border(
-            1.dp,
-            ZillitTheme.colors.border,
-            ZillitTheme.shapes.large,
-        ),
-    ) {
-        DayLine(
-            listOf(
-                str(S.bs_day), str(S.type), str(S.desktop_payroll_unit_call), str(S.desktop_payroll_my_call),
-                str(S.desktop_payroll_unit_wrap), str(S.desktop_release), str(S.desktop_payroll_day_total),
-            ),
-            header = true,
-        )
-        timecard.days.sortedBy { it.date ?: 0L }.forEach { day ->
-            ZillitDivider()
-            DayLine(
-                listOf(
-                    day.date?.let(PayPeriod::dayLabel).orEmpty(),
-                    day.dayType?.localised().orEmpty().ifBlank { "—" },
-                    PayPeriod.hhmm(day.callTime),
-                    PayPeriod.hhmm(day.loginTime),
-                    PayPeriod.hhmm(day.wrapTime),
-                    PayPeriod.hhmm(day.logoutTime),
-                    Money.format(day.dayTotal, timecard.currency),
-                ),
-                header = false,
-            )
-        }
-        if (timecard.days.isEmpty()) {
-            ZillitText(
-                text = str(S.desktop_payroll_no_pay_lines),
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textMuted,
-                modifier = Modifier.padding(ZillitTheme.spacing.md),
-            )
-        }
-    }
-}
-
-@Composable
-private fun DayLine(cells: List<String>, header: Boolean) {
-    Row(
-        Modifier.fillMaxWidth()
-            .background(if (header) ZillitTheme.colors.surfaceSunken else ZillitTheme.colors.surface)
-            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-    ) {
-        cells.forEachIndexed { index, text ->
-            ZillitText(
-                text = if (header) text.uppercase() else text,
-                style = if (header) ZillitTheme.typography.columnHeader else ZillitTheme.typography.numeric,
-                color = if (header) ZillitTheme.colors.textMuted else ZillitTheme.colors.textPrimary,
-                textAlign = if (index == cells.lastIndex) TextAlign.End else TextAlign.Start,
-                modifier = Modifier.weight(if (index == 0) FIRST_WEIGHT else 1f),
-                maxLines = 1,
-            )
-        }
-    }
-}
-
 private val AVATAR = 40.dp
 private const val SKELETONS = 5
-private const val FIRST_WEIGHT = 1.4f

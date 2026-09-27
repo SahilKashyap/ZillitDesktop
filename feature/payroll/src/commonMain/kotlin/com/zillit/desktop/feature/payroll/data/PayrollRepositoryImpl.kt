@@ -11,6 +11,7 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.payroll.domain.BatchOutcome
 import com.zillit.desktop.feature.payroll.domain.PayrollAdjustmentRepository
+import com.zillit.desktop.feature.payroll.domain.PayrollCrewRow
 import com.zillit.desktop.feature.payroll.domain.PayrollJournalRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollSettingsRepository
@@ -81,6 +82,13 @@ class PayrollRepositoryImpl(
 
     override suspend fun paidCrew(weekStarting: Long): ZillitResult<List<PayrollTimecard>> =
         http.get("$weekly/$weekStarting/paid").map { data -> data.rows().mapNotNull { it.toTimecard() } }
+
+    /**
+     * The slim list is a bare array of projections; the same tolerant reader
+     * as every other queue, so a row the projection shortens still lands.
+     */
+    override suspend fun crew(weekStarting: Long): ZillitResult<List<PayrollCrewRow>> =
+        http.get("$weekly/$weekStarting/crew").map { data -> data.rows().mapNotNull { it.toCrewRow() } }
 
     override suspend fun runQueue(weekStarting: Long): ZillitResult<List<PayrollTimecard>> =
         http.get("$weekly/$weekStarting/processing").map { data ->

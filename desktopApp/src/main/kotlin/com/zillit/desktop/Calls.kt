@@ -35,6 +35,7 @@ import com.zillit.desktop.feature.calls.ui.OngoingCallsSource
 import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.displayTitle
 import com.zillit.desktop.feature.calls.domain.CallCrewEntry
+import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.calls.ui.reactionJson
 import com.zillit.desktop.feature.calls.ui.themeJson
@@ -396,20 +397,26 @@ internal fun crewNameOf(ready: AppGraph.Ready, userId: String): String? =
  * recorded, which is the wrong place to paint somebody's email address.
  * Ourselves as well: the self tile is built separately and says "You".
  */
-internal fun ProjectContext.callNameDirectory(): Map<String, String> {
+internal fun ProjectContext.callNameDirectory(): Map<String, CallDirectoryEntry> {
     val self = profile?.userId
     return users.asSequence()
         .filter { !it.keepNamePrivate && it.userId != self }
         .mapNotNull { user ->
             user.fullName
                 .takeIf { it.isNotBlank() && it != user.email && it != "Unknown" }
-                ?.let { user.userId to it }
+                // The designation rides along because the grid shows it under
+                // the name and the roster does not always carry one — the web
+                // falls back to the same local list (`desigOf`).
+                // `designationText` is the shared reader: a label key through
+                // the dictionary, and the bare "member" placeholder dropped
+                // rather than printed under every name.
+                ?.let { user.userId to CallDirectoryEntry(it, user.designationText().orEmpty()) }
         }
         .toMap()
 }
 
 /** [callNameDirectory] as the calls view model wants it — see its `nameDirectory`. */
-internal fun AppGraph.Ready.callNameDirectory(): Flow<Map<String, String>> =
+internal fun AppGraph.Ready.callNameDirectory(): Flow<Map<String, CallDirectoryEntry>> =
     projectContext?.context?.map { it.callNameDirectory() }?.distinctUntilChanged()
         ?: flowOf(emptyMap())
 

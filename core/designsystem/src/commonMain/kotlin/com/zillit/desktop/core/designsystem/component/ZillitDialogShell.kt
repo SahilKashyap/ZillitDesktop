@@ -82,6 +82,8 @@ fun ZillitDialogShell(
     width: Dp = DIALOG_WIDTH,
     maxHeight: Dp = DIALOG_MAX_HEIGHT,
     scrollable: Boolean = true,
+    /** Beside the title, before the close affordance — a record's status pill, as the web's modal headers carry one. */
+    headerTrailing: (@Composable RowScope.() -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -135,7 +137,13 @@ fun ZillitDialogShell(
                         onClick = {},
                     ),
             ) {
-                ShellHeader(title = title, subtitle = subtitle, icon = icon, onDismiss = onDismiss)
+                ShellHeader(
+                    title = title,
+                    subtitle = subtitle,
+                    icon = icon,
+                    trailing = headerTrailing,
+                    onDismiss = onDismiss,
+                )
                 ShellRule()
                 ShellBody(scrollable, content)
                 actions?.let { ShellActions(it) }
@@ -194,6 +202,7 @@ private fun ShellHeader(
     title: String,
     subtitle: String?,
     icon: ImageVector?,
+    trailing: (@Composable RowScope.() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     Row(
@@ -229,6 +238,7 @@ private fun ShellHeader(
                 )
             }
         }
+        trailing?.invoke(this)
         ZillitIconButton(
             icon = ZillitIcons.Close,
             contentDescription = str(S.close),

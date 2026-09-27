@@ -295,11 +295,33 @@
         root.appendChild(strip);
     }
 
+    /**
+     * One of the tile's words, as the app localised it.
+     *
+     * Kotlin sends them with the stage (`stageJson` `words`) because this page
+     * cannot read the string catalogue. The English fallback is for a stage
+     * pushed by an older build, and for the harness.
+     */
+    function word(key, fallback) {
+        const words = stage.words || {};
+        return words[key] || fallback;
+    }
+
     function buildCell(model, tileW, tileH, disc) {
         const tile = document.createElement('div');
         tile.className = 'tile' + (model.ringing ? ' idle' : '');
         tile.style.width = tileW + 'px';
         tile.style.height = tileH + 'px';
+        // The camera-off tile is washed in the person's own colour with a white
+        // sheen from the top left — the web's `gradientFor`. A ring still out
+        // keeps the idle grey: colouring someone in says they are here. The
+        // colour itself is assigned per call in Kotlin (`CallTileColors`) so
+        // two people with the same initial never share one.
+        if (!model.ringing && model.hue) {
+            tile.style.background =
+                'radial-gradient(circle at 28% 22%, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 55%),' +
+                'linear-gradient(135deg, ' + model.hue + '73 0%, ' + model.hue + '3d 100%)';
+        }
 
         const mount = document.createElement('div');
         mount.className = 'face';
@@ -314,8 +336,36 @@
 
         const chip = document.createElement('div');
         chip.className = 'chip';
-        chip.textContent = model.ringing ? 'Ringing…' : (model.self ? 'You' : model.name);
+        const who = document.createElement('div');
+        who.className = 'chipName';
+        who.textContent = model.ringing ? word('ringing', 'Ringing…') : (model.self ? word('you', 'You') : model.name);
+        chip.appendChild(who);
+        // Under the name, on its own line, never beside it: on a grid tile a
+        // designation next to the name is the first thing to be truncated, and
+        // it is the half that identifies the person. A link guest has no job
+        // title and is chipped as a guest instead.
+        if (!model.ringing && model.guest) {
+            const guest = document.createElement('div');
+            guest.className = 'chipGuest';
+            guest.textContent = word('guest', 'Guest');
+            chip.appendChild(guest);
+        } else if (!model.ringing && model.desig) {
+            const desig = document.createElement('div');
+            desig.className = 'chipDesig';
+            desig.textContent = model.desig;
+            chip.appendChild(desig);
+        }
         tile.appendChild(chip);
+
+        // This person put the call on hold: they are sending and hearing
+        // nothing on purpose, which reads as a broken connection unless said.
+        // Under the face, where the eye already is.
+        if (!model.ringing && model.hold) {
+            const hold = document.createElement('div');
+            hold.className = 'holdBadge';
+            hold.textContent = word('hold', 'On hold');
+            tile.appendChild(hold);
+        }
 
         const mute = document.createElement('div');
         mute.className = 'mute';

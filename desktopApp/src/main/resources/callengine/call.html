@@ -282,6 +282,29 @@
             text-overflow: ellipsis;
         }
 
+        /* Name and designation read as ONE label: the second line is pulled up
+           under the first rather than sitting as a separate chip, which is what
+           the web's `.labelDesig` does. */
+        .chipName { font-size: 11px; line-height: 14px; }
+        .chipDesig { font-size: 10px; line-height: 12px; color: var(--muted); }
+        /* Amber, so a guest chip never reads as part of their name. */
+        .chipGuest { font-size: 10px; line-height: 12px; color: var(--amber, #fbbc04); }
+
+        /* Under the face, inside the tile: "this silence is deliberate". */
+        .holdBadge {
+            position: absolute;
+            left: 50%;
+            top: 62%;
+            transform: translateX(-50%);
+            padding: 2px 8px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, .55);
+            color: var(--amber, #fbbc04);
+            font-size: 10px;
+            line-height: 13px;
+            white-space: nowrap;
+        }
+
         .mute {
             position: absolute;
             right: 8px;
@@ -311,6 +334,7 @@
            unreadable and every tile but the first is invisible anyway. */
         body.compact .chip,
         body.compact .hand,
+        body.compact .holdBadge,
         body.compact .mute,
         body.compact .pin { display: none; }
         body.compact .row:not(:first-child) { display: none; }

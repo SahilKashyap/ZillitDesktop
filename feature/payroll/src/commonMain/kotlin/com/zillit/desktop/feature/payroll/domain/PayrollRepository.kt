@@ -36,6 +36,12 @@ interface PayrollRepository {
     /** `/weekly/{ws}/paid` — the history queue: paid rows, and the posted ones for the audit. */
     suspend fun paidCrew(weekStarting: Long): ZillitResult<List<PayrollTimecard>>
 
+    /**
+     * `/weekly/{ws}/crew` — every status, slim: the producer surfaces list a
+     * whole unit's week and open one document at a time.
+     */
+    suspend fun crew(weekStarting: Long): ZillitResult<List<PayrollCrewRow>>
+
     /** `/weekly/{ws}/processing` — the run's week, full documents. */
     suspend fun runQueue(weekStarting: Long): ZillitResult<List<PayrollTimecard>>
 
@@ -96,8 +102,26 @@ interface PayrollSettingsRepository {
     /** Production Setup → Companies: the legal entity a payslip is headed with. */
     suspend fun companies(): ZillitResult<List<PayrollCompany>>
 
+    /**
+     * The production's default currency code.
+     *
+     * The last tier of the timecard currency policy: a record's own currency
+     * wins, and this is what a record without one is in. It is what a manual
+     * claim is saved in when the timecard does not state a currency — without
+     * it the line is stored currency-less, which is not the same thing.
+     */
+    suspend fun defaultCurrency(): ZillitResult<String?>
+
     /** The crew member's active deal's nominal codes, or null for none. */
     suspend fun activeDealCoding(userId: String): ZillitResult<DealCoding?>
+
+    /**
+     * What the journal's Layers and Tags cells are drawn against: the
+     * production's tracking sets and its account tags. Either half failing
+     * leaves that half empty rather than taking the ledger down with it — the
+     * codes and the money are what the page is for.
+     */
+    suspend fun journalReference(): ZillitResult<JournalReference>
 }
 
 /** A production company — the payslip's letterhead. */

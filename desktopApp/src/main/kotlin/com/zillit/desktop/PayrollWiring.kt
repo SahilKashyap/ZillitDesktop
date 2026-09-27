@@ -9,6 +9,7 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.payroll.data.PayrollBinaryTransport
 import com.zillit.desktop.feature.payroll.data.PayrollDocumentsImpl
+import com.zillit.desktop.feature.payroll.data.payrollProducerSeams
 import com.zillit.desktop.feature.payroll.domain.PayrollFiles
 import com.zillit.desktop.feature.payroll.domain.PayrollPerson
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
@@ -30,15 +31,23 @@ import kotlinx.serialization.json.jsonPrimitive
  * PDF, the run summary and the processing workbooks, which answer bytes the
  * envelope client cannot read.
  */
-internal fun AppGraph.Ready.buildPayroll(permissions: () -> ProjectPermissions) = PayrollViewModel(
-    repository = payrollRepository,
-    viewer = { payrollViewer(permissions()) },
-    now = System::currentTimeMillis,
-    people = { payrollPeople() },
-    projectName = { projectContext?.context?.value?.project?.name.orEmpty() },
-    documents = PayrollDocumentsImpl(config, payrollTransport()),
-    files = payrollFiles(),
-)
+internal fun AppGraph.Ready.buildPayroll(permissions: () -> ProjectPermissions): PayrollViewModel {
+    val transport = payrollTransport()
+    // The pay engine is a JavaScript bundle the payroll service publishes;
+    // Rhino runs it here so the desktop's overtime money is the same
+    // arithmetic every other client's is. See RhinoScriptHost.
+    val seams = payrollProducerSeams(apiClient, config, transport, RhinoScriptHost())
+    return PayrollViewModel(
+        repository = payrollRepository,
+        viewer = { payrollViewer(permissions()) },
+        now = System::currentTimeMillis,
+        people = { payrollPeople() },
+        projectName = { projectContext?.context?.value?.project?.name.orEmpty() },
+        documents = PayrollDocumentsImpl(config, transport),
+        files = payrollFiles(),
+        seams = seams,
+    )
+}
 
 private fun AppGraph.Ready.payrollViewer(permissions: ProjectPermissions): PayrollViewer {
     val context = projectContext?.context?.value
@@ -59,6 +68,7 @@ private fun AppGraph.Ready.payrollPeople(): Map<String, PayrollPerson> =
             fullName = user.fullName,
             department = user.department,
             designation = user.designation,
+            hasDeal = user.signingRequired,
         )
     }
 

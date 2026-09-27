@@ -231,7 +231,7 @@ private fun SalesDetailsCard(state: InvoicesUiState, draft: SalesInvoiceDraft, o
                 ZillitDateField(
                     value = draft.dueDate,
                     onValueChange = { edit(draft.copy(dueDate = it)) },
-                    label = "${str(S.ah_run_detail_col_due)} *",
+                    label = "${str(S.desktop_due_date_title)} *",
                     enabled = enabled,
                     errorText = str(S.desktop_that_is_not_a_date).takeIf { draft.dateIsWrong },
                     modifier = Modifier.weight(1f),
@@ -276,9 +276,10 @@ internal fun SalesPreviewDialog(state: InvoicesUiState, invoice: SalesInvoice, n
         visible = true,
         width = PREVIEW_WIDTH,
         icon = ZillitIcons.File,
+        // The pill sits beside the reference, as the web's modal header has it.
+        headerTrailing = { ZillitStatusPill(label = shown.label, tone = shown.tone()) },
         actions = { SalesPreviewActions(state, invoice, nowMs, onEvent) },
     ) {
-        ZillitStatusPill(label = shown.label, tone = shown.tone())
         DocumentHeader(state, invoice)
         BilledTo(invoice)
         DocumentLines(state, invoice)
@@ -389,17 +390,40 @@ private fun DocumentLines(state: InvoicesUiState, invoice: SalesInvoice) {
                 muted = line.isSplit,
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().background(colors.surfaceSunken)
-                .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            ZillitText(
-                text = "${str(S.ah_lbl_gross_total)}   ${money(invoice.grossAmount)}",
-                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold),
-                color = colors.accentText,
-            )
-        }
+        GrossTotalRow(money(invoice.grossAmount))
+    }
+}
+
+/**
+ * The web's `tfoot`: an accent rule, the label right-aligned over the body's
+ * first four columns and the total itself under Amount.
+ */
+@Composable
+private fun GrossTotalRow(total: String) {
+    val colors = ZillitTheme.colors
+    Box(Modifier.fillMaxWidth().height(TOTAL_RULE).background(colors.accent))
+    Row(
+        modifier = Modifier.fillMaxWidth().background(colors.surfaceSunken)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        val bold = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(NUMBER_WIDTH))
+        ZillitText(
+            text = str(S.ah_lbl_gross_total),
+            style = bold,
+            color = colors.accentText,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(DESCRIPTION_SHARE + TOTAL_LABEL_SPAN),
+        )
+        ZillitText(
+            text = total,
+            style = bold,
+            color = colors.accentText,
+            maxLines = 1,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -459,6 +483,7 @@ private fun PaymentFooter(state: InvoicesUiState, invoice: SalesInvoice) {
 /** Created By and, once changed, Updated By — name, designation and `DD Mon YYYY | hh:mm AM`. */
 @Composable
 private fun AuditRow(state: InvoicesUiState, invoice: SalesInvoice) {
+    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
         AuditCell(str(S.ah_lbl_created_by), state, invoice.createdBy, invoice.createdAtMs, Modifier.weight(1f))
         if (invoice.updatedBy.isNotBlank()) {
@@ -621,6 +646,11 @@ private val PREVIEW_WIDTH = 720.dp
 private val PDF_WIDTH = 820.dp
 private val PDF_HEIGHT = 620.dp
 private val NUMBER_WIDTH = 24.dp
+private val TOTAL_RULE = 3.dp
+private val HAIRLINE = 1.dp
+
+/** Qty, Unit Price and Tax, which the total's label spans as the web's `colSpan={5}` does. */
+private const val TOTAL_LABEL_SPAN = 3f
 private val ADDRESS_ICON = 12.dp
 private const val DESCRIPTION_SHARE = 2.6f
 private const val HISTORY_ID_CHARS = 8

@@ -11,9 +11,11 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLineListener
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitRoster
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitSocket
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitSocketFactory
 import com.zillit.desktop.feature.calls.data.livekit.SignedJsonHttp
+import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallProvider
@@ -55,6 +57,8 @@ class LiveKitLineTest {
         val dismissed = mutableListOf<Pair<String, LiveKitDismissal>>()
         val ended = mutableListOf<String>()
         val rosters = mutableListOf<List<CallParticipant>>()
+        val addable = mutableListOf<List<CallCrewEntry>>()
+        val diagnostics = mutableListOf<Pair<String, Map<String, Any?>>>()
         val activeCalls = mutableListOf<List<LiveKitActiveCall>>()
         val reactions = mutableListOf<Triple<String, String, String>>()
         override fun onReaction(callId: String, userId: String, emoji: String) {
@@ -67,6 +71,7 @@ class LiveKitLineTest {
             displayName: String,
             status: CallStatus,
             busy: Boolean,
+            unreachable: Boolean,
         ) {
             rings += Triple(userId, status, busy)
         }
@@ -74,7 +79,11 @@ class LiveKitLineTest {
             dismissed += callId to why
         }
         override fun onEnded(reason: String) { ended += reason }
-        override fun onRoster(callId: String, participants: List<CallParticipant>) { rosters += participants }
+        override fun onRoster(callId: String, roster: LiveKitRoster) {
+            rosters += roster.participants
+            addable += roster.addable
+        }
+        override fun onDiagnostic(event: String, data: Map<String, Any?>) { diagnostics += event to data }
         override fun onActiveCalls(calls: List<LiveKitActiveCall>) { activeCalls += calls }
     }
 
@@ -137,37 +146,35 @@ class LiveKitLineTest {
     }
 
     @Test
-    fun `placing a call creates over REST, rings over the socket, and joins with the ack's room`() = runTest {
+    fun `with the socket up the call id is minted here and nothing is created over REST`() = runTest {
         val socket = LiveKitFakeSocket()
-        val http = LiveKitFakeHttp().apply { answers["/v1/calls"] = """{"callId":"c9","wsUrl":"","token":""}""" }
+        val http = LiveKitFakeHttp()
         val (line, _) = line(socket, http)
         line.start()
         runCurrent()
 
         val placed = async { line.place(dial(listOf("u-2"), projectName = "Sides Testing")) }
         runCurrent()
-        assertEquals(listOf("/v1/calls"), http.paths(), "created before it rings")
-        // The mint is the web's bare create: `group`, nobody named — the backend
-        // refuses a `private` call with no callees. The ring describes the call.
-        val mint = http.calls.single().second!!
-        assertEquals("group", mint["type"]!!.jsonPrimitive.content)
-        assertEquals(0, (mint["calleeIds"] as JsonArray).size)
-        assertEquals(null, mint["callType"], "the mint does not describe the call")
-        assertEquals("p1" to "me", http.calls.single().third, "signed as the caller on the call's project")
+        // SOCKET-FIRST (the web's `startCall`): `POST /v1/calls` disappears
+        // from in front of the ring entirely. Its two other jobs ride the ack —
+        // the caller's room credentials — and the per-device region cache.
+        assertEquals(emptyList(), http.paths(), "nothing is created over REST while the socket is up")
         val start = socket.frames.last { it["type"]!!.jsonPrimitive.content == "startCall" }
-        assertEquals("c9", start["callId"]!!.jsonPrimitive.content)
+        val minted = start["callId"]!!.jsonPrimitive.content
+        assertTrue(minted.length >= UUID_LENGTH, "the call id is minted here: $minted")
         assertEquals("video", start["callType"]!!.jsonPrimitive.content)
         assertEquals("private", start["callMode"]!!.jsonPrimitive.content)
         assertEquals("p1", start["projectId"]!!.jsonPrimitive.content)
+        assertEquals("me", start["callerId"]!!.jsonPrimitive.content)
 
         socket.answer("startCall", """{"livekit":{"token":"ring-tok","url":"wss://region.zillit.com/livekit"}}""")
         runCurrent()
 
         val join = (placed.await() as ZillitResult.Success).data
-        assertEquals("c9", join.callId)
+        assertEquals(minted, join.callId)
         assertEquals("ring-tok", join.token)
         assertEquals("wss://region.zillit.com/livekit", join.url)
-        assertEquals(1, http.paths().count { it == "/v1/calls" }, "no token mint when the ack carried the room")
+        assertEquals(emptyList(), http.paths(), "no token mint when the ack carried the room")
     }
 
     @Test
@@ -187,7 +194,13 @@ class LiveKitLineTest {
         assertEquals("c7", join.callId)
         assertEquals(listOf("/v1/calls"), http.paths(), "one create, which also rings")
         val body = http.calls.single().second!!
-        assertEquals("private", body["type"]!!.jsonPrimitive.content)
+        // `type` is the ENDPOINT's vocabulary and `callMode` the call flow's.
+        // They share the word "group" and nothing else, so sending the callMode
+        // word for both was invisible on group calls and refused outright on
+        // every 1:1 — this assertion used to read "private", which pinned the
+        // bug rather than the contract, and the socket-down path had therefore
+        // never once started a one-to-one call.
+        assertEquals("direct", body["type"]!!.jsonPrimitive.content)
         assertEquals("private", body["callMode"]!!.jsonPrimitive.content)
         assertEquals("audio", body["callType"]!!.jsonPrimitive.content)
         assertEquals("u-2", (body["calleeIds"] as JsonArray).single().jsonPrimitive.content)
@@ -195,12 +208,77 @@ class LiveKitLineTest {
         assertEquals(emptyList(), socket.sentTypes(), "nothing could go over a socket that is not there")
     }
 
+    /**
+     * `switchTo` on the ack means the server did NOT start a call: this user is
+     * already on one with that callee, here or on another device, and it
+     * answers with THAT call. Dialling on regardless would put this device in a
+     * room the server deliberately never minted.
+     */
+    @Test
+    fun `an ack that says we are already in a call joins that one instead`() = runTest {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp()
+        val (line, _) = line(socket, http)
+        line.start()
+        runCurrent()
+
+        val placed = async { line.place(dial(listOf("u-2"))) }
+        runCurrent()
+        socket.answer(
+            "startCall",
+            """{"switchTo":{"callId":"live-7"},"livekit":{"token":"t","url":"wss://node.zillit.com/livekit"}}""",
+        )
+        runCurrent()
+
+        val join = (placed.await() as ZillitResult.Success).data
+        assertEquals("live-7", join.callId, "the call we are already in, not the id we minted")
+    }
+
+    /**
+     * A group ring over REST sends NO member list — the server resolves the
+     * room's members itself — so the room's NAME is the only label it can put
+     * on the callee's card.
+     */
+    @Test
+    fun `a group call rung over REST carries the room, its name, and no member list`() = runTest {
+        val socket = LiveKitFakeSocket().apply { refuse = true }
+        val http = LiveKitFakeHttp().apply {
+            answers["/v1/calls"] = """{"callId":"c8","livekit":{"token":"t","url":"wss://node.zillit.com/livekit"}}"""
+        }
+        val (line, _) = line(socket, http)
+        line.start()
+        runCurrent()
+
+        val placed = async {
+            line.place(
+                LiveKitDial(
+                    calleeUserIds = listOf("u-2", "u-3"),
+                    chatRoomId = "room-1",
+                    chatRoomName = "Camera Unit",
+                    mode = CallMode.Group,
+                    type = CallType.Audio,
+                    callerUserId = "me",
+                    callerName = "Me",
+                    projectId = "p1",
+                    projectName = "Sides Testing",
+                ),
+            )
+        }
+        runCurrent()
+        placed.await()
+
+        val body = http.calls.single().second!!
+        assertEquals("group", body["type"]!!.jsonPrimitive.content)
+        assertEquals("group", body["callMode"]!!.jsonPrimitive.content)
+        assertEquals("room-1", body["chatRoomId"]!!.jsonPrimitive.content)
+        assertEquals("Camera Unit", body["chatRoomName"]!!.jsonPrimitive.content)
+        assertEquals(0, (body["calleeIds"] as JsonArray).size, "a real group ring names the room, not its members")
+    }
+
     @Test
     fun `an internal room address is replaced by the configured public one`() = runTest {
         val socket = LiveKitFakeSocket()
-        val http = LiveKitFakeHttp().apply {
-            answers["/v1/calls"] = """{"callId":"c9","livekit":{"token":"t","url":"ws://localhost:7880"}}"""
-        }
+        val http = LiveKitFakeHttp()
         val (line, _) = line(socket, http, override = "wss://calls.zillit.com/livekit")
         line.start()
         runCurrent()
@@ -209,7 +287,8 @@ class LiveKitLineTest {
             line.place(dial(emptyList(), chatRoomId = "room-1", mode = CallMode.Group, type = CallType.Audio))
         }
         runCurrent()
-        socket.answer("startCall")
+        // The room rides the `startCall` ack on the socket-first path.
+        socket.answer("startCall", """{"livekit":{"token":"t","url":"ws://localhost:7880"}}""")
         runCurrent()
 
         assertEquals("wss://calls.zillit.com/livekit", (placed.await() as ZillitResult.Success).data.url)
@@ -222,9 +301,7 @@ class LiveKitLineTest {
     @Test
     fun `a reachable room from the server beats the configured one`() = runTest {
         val socket = LiveKitFakeSocket()
-        val http = LiveKitFakeHttp().apply {
-            answers["/v1/calls"] = """{"callId":"c9","livekit":{"token":"t","url":"wss://node-eu.zillit.com"}}"""
-        }
+        val http = LiveKitFakeHttp()
         val (line, _) = line(socket, http, override = "wss://calls.zillit.com/livekit")
         line.start()
         runCurrent()
@@ -233,7 +310,7 @@ class LiveKitLineTest {
             line.place(dial(emptyList(), chatRoomId = "room-1", mode = CallMode.Group, type = CallType.Audio))
         }
         runCurrent()
-        socket.answer("startCall")
+        socket.answer("startCall", """{"livekit":{"token":"t","url":"wss://node-eu.zillit.com"}}""")
         runCurrent()
 
         assertEquals("wss://node-eu.zillit.com", (placed.await() as ZillitResult.Success).data.url)
@@ -244,7 +321,6 @@ class LiveKitLineTest {
     fun `without a usable room the token is minted`() = runTest {
         val socket = LiveKitFakeSocket()
         val http = LiveKitFakeHttp().apply {
-            answers["/v1/calls"] = """{"callId":"c9","livekit":{"token":"t","url":"ws://localhost:7880"}}"""
             answers["/v1/livekit/token"] = """{"token":"minted","url":"wss://eu.zillit.com/livekit"}"""
         }
         val (line, _) = line(socket, http)
@@ -253,7 +329,7 @@ class LiveKitLineTest {
 
         val placed = async { line.place(dial(listOf("u-2"), type = CallType.Audio)) }
         runCurrent()
-        socket.answer("startCall")
+        socket.answer("startCall", """{"livekit":{"token":"t","url":"ws://localhost:7880"}}""")
         runCurrent()
 
         val join = (placed.await() as ZillitResult.Success).data
@@ -534,6 +610,9 @@ class LiveKitLineTest {
     }
 }
 
+/** A UUID's 36 characters — a client-minted call id is at least that long. */
+private const val UUID_LENGTH = 36
+
 /** A dial from "me" on p1 — the fields every placed call in these tests shares. */
 private fun dial(
     callees: List<String>,
@@ -541,4 +620,16 @@ private fun dial(
     mode: CallMode = CallMode.Private,
     type: CallType = CallType.Video,
     projectName: String? = null,
-) = LiveKitDial(callees, chatRoomId, mode, type, "me", "Me", "p1", projectName)
+) = LiveKitDial(
+    // Named, not positional: this broke silently when `chatRoomName` was added
+    // in the middle, and the compiler only caught it because the types happened
+    // to differ.
+    calleeUserIds = callees,
+    chatRoomId = chatRoomId,
+    mode = mode,
+    type = type,
+    callerUserId = "me",
+    callerName = "Me",
+    projectId = "p1",
+    projectName = projectName,
+)

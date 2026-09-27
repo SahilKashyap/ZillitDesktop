@@ -21,7 +21,11 @@ import com.zillit.desktop.feature.payroll.domain.TimecardDay
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import com.zillit.desktop.feature.payroll.ui.AdjustmentDialog
 import com.zillit.desktop.feature.payroll.ui.AdjustmentKind
+import com.zillit.desktop.feature.payroll.domain.JournalReference
+import com.zillit.desktop.feature.payroll.domain.TrackingNode
+import com.zillit.desktop.feature.payroll.domain.TrackingSet
 import com.zillit.desktop.feature.payroll.ui.HistoryState
+import com.zillit.desktop.feature.payroll.ui.JournalState
 import com.zillit.desktop.feature.payroll.ui.HistoryTab
 import com.zillit.desktop.feature.payroll.ui.PayrollDestination
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
@@ -80,8 +84,9 @@ class PayrollScreenRenderTest {
         },
     )
 
+    /** The Account Hub entry: an accountant's grid, and no producer boards on it. */
     @Test
-    fun `the landing offers the accountant grid with the web's tiles`() {
+    fun `the hub landing offers the accountant grid with the web's tiles`() {
         runComposeUiTest {
             var opened: PayrollEvent? = null
             setContent {
@@ -90,22 +95,143 @@ class PayrollScreenRenderTest {
                 }
             }
             onNodeWithText("Payroll Management", substring = true, ignoreCase = true).assertExists()
-            PayrollTile.entries.forEach { onNodeWithText(it.title).assertExists() }
+            PayrollTile.entries.filterNot { it in PayrollTile.PRODUCER }
+                .forEach { onNodeWithText(it.title).assertExists() }
+            PayrollTile.PRODUCER.forEach { onAllNodesWithText(it.title).assertCountEquals(0) }
             onNodeWithText("Payroll History").performClick()
             assertEquals(PayrollEvent.OpenTile(PayrollTile.History), opened)
         }
     }
 
+    /**
+     * The Film Tools entry: the SAME accountant is offered the producer boards
+     * and nothing else, because the tool tile is the producer entry point.
+     */
     @Test
-    fun `a producer is told the producer views are not here rather than shown an empty grid`() {
+    fun `the tool landing offers the producer boards, even to an accountant`() {
+        runComposeUiTest {
+            var opened: PayrollEvent? = null
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(
+                        state(destination = PayrollDestination.Landing).copy(enteredAsTool = true),
+                        onEvent = { opened = it },
+                    )
+                }
+            }
+            PayrollTile.PRODUCER.forEach { onNodeWithText(it.title).assertExists() }
+            onAllNodesWithText("Payroll Run").assertCountEquals(0)
+            onAllNodesWithText("Payroll Entry Setup").assertCountEquals(0)
+            onNodeWithText("Producer Board Payroll Status").performClick()
+            assertEquals(PayrollEvent.OpenTile(PayrollTile.ProducerBoard), opened)
+        }
+    }
+
+    /** A non-accountant with view access gets the producer boards, either way in. */
+    @Test
+    fun `a producer is offered the producer boards and no accountant screens`() {
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = true) {
                     PayrollScreen(state(viewer = producer, destination = PayrollDestination.Landing), onEvent = {})
                 }
             }
-            onNodeWithText("No payroll views here").assertIsDisplayed()
+            onNodeWithText("Producer Board Payroll Status").assertIsDisplayed()
+            onNodeWithText("Production Report Payroll").assertIsDisplayed()
             onAllNodesWithText("Payroll Run").assertCountEquals(0)
+            onAllNodesWithText("Payroll Processing").assertCountEquals(0)
+        }
+    }
+
+    /** No access at all is said out loud, rather than drawn as an empty grid. */
+    @Test
+    fun `a viewer with no payroll access is told so`() {
+        runComposeUiTest {
+            val stranger = producer.copy(canView = false, rightsLoaded = true)
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(state(viewer = stranger, destination = PayrollDestination.Landing), onEvent = {})
+                }
+            }
+            onNodeWithText("No payroll views here").assertIsDisplayed()
+            onAllNodesWithText("Producer Board Payroll Status").assertCountEquals(0)
+        }
+    }
+
+    /**
+     * The Run's crew drawer opens on a day, not on the week: the question it
+     * exists to answer is which lines made that day's money.
+     */
+    @Test
+    fun `the crew drawer breaks a day into its own pay lines`() {
+        runComposeUiTest {
+            val open = card("a", TimecardStatus.Approved)
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(
+                        state(destination = PayrollDestination.Run).copy(
+                            run = RunState(
+                                weekStarting = week,
+                                timecards = listOf(open),
+                                drawerId = open.id,
+                                drawer = open,
+                            ),
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("PAY BREAKDOWN").assertExists()
+            // Monday's own line, with the hours it covers — not a week total.
+            onNodeWithText("Basic").assertExists()
+            onNodeWithText("DAY TOTAL").assertExists()
+            // Every day of the week is offered, so the reader can move between them.
+            onAllNodesWithText("MON").assertCountEquals(1)
+            onAllNodesWithText("SUN").assertCountEquals(1)
+        }
+    }
+
+    /**
+     * The Journal Ledger codes a line four ways — account, layers, tags and
+     * date — and splits it into allocations that each carry their own.
+     */
+    @Test
+    fun `the journal offers layers, tags and a split on each line`() {
+        runComposeUiTest {
+            val paid = card("a", TimecardStatus.Paid)
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(
+                        state(destination = PayrollDestination.Run).copy(
+                            run = RunState(
+                                weekStarting = week,
+                                timecards = listOf(paid),
+                                journalOpen = true,
+                                journal = JournalState(
+                                    reference = JournalReference(
+                                        trackingSets = listOf(
+                                            TrackingSet("s1", "Department", listOf(TrackingNode("CAM", "Camera"))),
+                                        ),
+                                        assetTags = listOf("Recharge"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("LAYERS").assertExists()
+            onNodeWithText("TAGS").assertExists()
+            // Nine columns of coding overflow a laptop, so Actions sits beyond
+            // the viewport until the ledger is scrolled — which is the point of
+            // the horizontal scroll, and why the click has to scroll first.
+            // One Split per line, and the tax line is offered once per
+            // timecard. Clicking is asserted in PayrollViewModelTest: a
+            // synthetic click cannot reach a control inside a TooltipArea,
+            // though a real pointer does (the pattern ships in Sides).
+            onAllNodesWithText("Split line").assertCountEquals(3)
+            onAllNodesWithText("Add tax").assertCountEquals(1)
         }
     }
 

@@ -146,6 +146,27 @@ sealed interface CallEngineEvent {
     /** This machine started or stopped sharing its screen. */
     data class ScreenShare(val sharing: Boolean) : CallEngineEvent
 
+    /**
+     * One line of per-call diagnostics the PAGE measured — `publish`, `speak`,
+     * `audio`, `ice` (see `CallDiagnostics`).
+     *
+     * These are WebRTC facts: peer-connection stats, the selected ICE
+     * candidate pair, which local track actually published. Nothing on this
+     * side can see them, so the page samples them on its own five-second
+     * clock and hands them over as name plus fields. It carries no transport,
+     * no budget and no call window with it — all three belong to
+     * `CallDiagnostics`, which is the only thing that sends.
+     */
+    data class Telemetry(val event: String, val fields: Map<String, String>) : CallEngineEvent
+
+    /**
+     * Our own active-speaker state flipped, with how loud we are.
+     *
+     * Distinct from [ActiveSpeakers], which is about the tiles: this is the
+     * `speak` diagnostic's edge, and only the page knows the level.
+     */
+    data class SelfSpeaking(val speaking: Boolean, val level: Double) : CallEngineEvent
+
     data class Devices(
         val microphones: List<MediaDevice>,
         val speakers: List<MediaDevice>,
@@ -217,6 +238,14 @@ data class CallJoin(
     val displayName: String = "",
 
     // ── Line 3 (LiveKit) ────────────────────────────────────────────────
+    /**
+     * The call this join belongs to.
+     *
+     * Line 3 only, and only so the page can recognise a room it PRE-WARMED
+     * during the ring and adopt it instead of connecting a second time. Nothing
+     * else needs it: the room is named by its URL and token, not by the call.
+     */
+    val callId: String = "",
     /** The room URL, already swapped for a public one where the ring named the node's internal address. */
     val livekitUrl: String = "",
     /** This participant's token for that room. */
@@ -370,6 +399,55 @@ interface CallEngine {
      * video call's reactions go through here instead.
      */
     fun showReaction(json: String) {}
+
+    /**
+     * PRE-CONNECTS to the room while the phone is still ringing — Line 3's
+     * `preconnectToken`, which the ring carries.
+     *
+     * The locked token joins hidden: no publish, no subscribe, enforced by the
+     * server, so nothing reaches the caller before the user answers. On accept
+     * the SAME participant is upgraded in place, which is what turns answering
+     * from a full connect into a permission grant — a second or more off every
+     * answer, and the reason the web and both phones all do it.
+     *
+     * Idempotent by [callId]: the same ring can be reported twice (socket and
+     * push, or a socket reconnect re-emitting `incomingCall`), and a second
+     * report must not tear down a connect already in flight. Fire and forget;
+     * a failed pre-warm just means the answer takes the slow path.
+     */
+    fun prewarm(callId: String, url: String, preconnectToken: String) {}
+
+    /**
+     * "I am accepting this call" — protects the warm room between the tap and
+     * [join] adopting it.
+     *
+     * Without this, a terminal event arriving around an accept (the server
+     * tells this user's OTHER devices, and the answering one hears it too)
+     * drops the very room the accept depends on, which the server reads as the
+     * callee leaving and ends the call the user just answered.
+     */
+    fun claimPrewarm(callId: String) {}
+
+    /**
+     * Lets the warm room go — declined, cancelled, rang out, handled
+     * elsewhere, or the call ended. Blank drops whatever is warm.
+     *
+     * Also clears the claim, so being re-invited to the same call later warms
+     * again instead of silently taking the slow path.
+     */
+    fun dropPrewarm(callId: String = "") {}
+
+    /**
+     * Opens the microphone and camera BEFORE there is a room to publish them
+     * to — the outgoing screen, and an accept.
+     *
+     * The devices and the OS permission prompt then overlap the ring and the
+     * connect instead of following them, which is the difference between a
+     * call that has a picture the moment it connects and one that gains it a
+     * second later. The web calls this `prewarmMedia` from the same two
+     * places.
+     */
+    fun prewarmMedia(video: Boolean, audio: Boolean) {}
 
     /** Releases the stack. The engine is unusable afterwards. */
     suspend fun destroy()

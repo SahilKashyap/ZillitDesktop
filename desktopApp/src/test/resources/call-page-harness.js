@@ -31,8 +31,10 @@ function element(tag) {
         // render() empties the stage this way; the pin checks count what is left.
         set innerHTML(value) { if (value === '') { node.children = []; } },
         get innerHTML() { return ''; },
-        set textContent(_) {},
-        get textContent() { return ''; },
+        // Stored, not swallowed: the tile's name plate is built from real text
+        // nodes, so a check on what it says has to be able to read it back.
+        set textContent(value) { node._text = value == null ? '' : String(value); },
+        get textContent() { return node._text || ''; },
         appendChild(child) { child.parentNode = node; node.children.push(child); return child; },
         removeChild(child) {
             node.children = node.children.filter(c => c !== child);
@@ -88,6 +90,16 @@ context.window.matchMedia = () => ({ matches: false, addEventListener() {} });
 vm.createContext(context);
 vm.runInContext(source, context, { filename: 'call.js' });
 
+/** The first node in the stage that matches, depth first. */
+function find(node, test) {
+    if (test(node)) { return node; }
+    for (const child of node.children || []) {
+        const hit = find(child, test);
+        if (hit) { return hit; }
+    }
+    return null;
+}
+
 const api = context.window.zillitCall;
 if (!api) { throw new Error('call.js did not install window.zillitCall'); }
 
@@ -124,18 +136,68 @@ api.setStage(model);
 api.detachRemote('lk:PA:screen_share');
 api.detachRemote('lk:PA:camera');
 
+// THE ROSTER FACTS the tile draws: a job title under the name, the Guest chip
+// in its place, the hold badge, and the per-call colour washing the tile.
+// Kotlin pushes all four with the stage because a heavyweight video surface
+// owns every pixel inside its rectangle — nothing drawn on the Compose side
+// survives in there, so a tile that ignored these showed none of them on a
+// video call.
+const rosterModel = JSON.stringify({
+    cols: 2,
+    tiles: [
+        {
+            uid: 0, name: 'Vivek Mishra', self: true, hue: '#1a73e8', muted: false, known: true,
+            ringing: false, hand: false, peerId: 'me', key: 'self', desig: 'Director of Photography',
+            hold: false, guest: false, sharing: false,
+        },
+        {
+            uid: 7, name: 'Pat', self: false, hue: '#d93025', muted: false, known: true,
+            ringing: false, hand: true, peerId: 'guest_7', key: 'guest_7', desig: '',
+            hold: true, guest: true, sharing: false,
+        },
+    ],
+});
+api.setStage(rosterModel);
+const desig = find(stage, (n) => n.className === 'chipDesig');
+if (!desig || desig.textContent !== 'Director of Photography') {
+    throw new Error('the tile did not draw the designation under the name');
+}
+if (!find(stage, (n) => n.className === 'chipGuest')) { throw new Error('a link guest is not chipped'); }
+if (!find(stage, (n) => n.className === 'holdBadge')) { throw new Error('a held participant has no badge'); }
+const washed = find(stage, (n) => /\btile\b/.test(n.className || '') && (n.style.background || '').includes('#1a73e8'));
+if (!washed) { throw new Error("the tile is not washed in the person's own colour"); }
+// A ring still out keeps the idle grey: colouring someone in says they are here.
+const ringingModel = JSON.stringify({
+    cols: 1,
+    tiles: [{
+        uid: 7, name: 'Ana', self: false, hue: '#188038', muted: false, known: false,
+        ringing: true, hand: false, peerId: 'ana', key: 'ana', desig: 'Gaffer', hold: false, guest: false,
+    }],
+});
+api.setStage(ringingModel);
+if (find(stage, (n) => n.className === 'chipDesig')) { throw new Error('a ring still out drew a designation'); }
+const ringWord = find(stage, (n) => n.className === 'chipName');
+if (!ringWord || ringWord.textContent !== 'Ringing…') {
+    throw new Error('the ringing tile lost its word: ' + (ringWord && ringWord.textContent));
+}
+// The words are the APP's, not the page's: this surface ships in 23 languages
+// and the page cannot read the string catalogue, so Kotlin sends them.
+const translated = JSON.stringify(Object.assign(JSON.parse(ringingModel), {
+    words: { ringing: 'बज रहा है…', you: 'आप', guest: 'अतिथि', hold: 'होल्ड पर' },
+}));
+api.setStage(translated);
+if (find(stage, (n) => n.className === 'chipName').textContent !== 'बज रहा है…') {
+    throw new Error('the page ignored the localised words and drew English');
+}
+if (find(stage, (n) => (n.style && n.style.background || '').includes('#188038'))) {
+    throw new Error('a ring still out was coloured in');
+}
+api.setStage(model);
+
 // A pin: the stage laid out around a pinned tile, and the tile's own pin
 // asking Kotlin (the page never decides) — for the other person and for us.
 const pinnedModel = JSON.stringify(Object.assign(JSON.parse(model), { pins: ['them'] }));
 api.setStage(pinnedModel);
-function find(node, test) {
-    if (test(node)) { return node; }
-    for (const child of node.children || []) {
-        const hit = find(child, test);
-        if (hit) { return hit; }
-    }
-    return null;
-}
 const pins = [];
 (function collect(node) {
     if (node.className && /\bpin\b/.test(node.className)) { pins.push(node); }

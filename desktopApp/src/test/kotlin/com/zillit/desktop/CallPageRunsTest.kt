@@ -31,11 +31,11 @@ class CallPageRunsTest {
         .map(::File)
         .firstOrNull { it.canExecute() }
 
-    private fun run(page: String): Pair<Int, String> {
+    private fun run(page: String, harness: String = "call-page-harness.js"): Pair<Int, String> {
         val runner = requireNotNull(node)
         val process = ProcessBuilder(
             runner.absolutePath,
-            File("src/test/resources/call-page-harness.js").absolutePath,
+            File("src/test/resources/$harness").absolutePath,
             File("src/main/resources/callengine/$page").absolutePath,
         ).redirectErrorStream(true).start()
         val output = process.inputStream.bufferedReader().readText()
@@ -51,6 +51,25 @@ class CallPageRunsTest {
         // The failure this exists for prints "RangeError: Maximum call stack
         // size exceeded" and exits 1.
         assertEquals(0, exit, "call.js threw when driven:\n$output")
+        assertTrue(output.contains("without throwing"), output)
+    }
+
+    /**
+     * Line 3's PRE-WARM bookkeeping, which is all "must not" and all silent.
+     *
+     * Warm the same ring twice and the connect in flight is torn down, so the
+     * answer is slow anyway. Drop the room after the accept and the server
+     * reads it as the callee leaving, ending the call they just answered. Fail
+     * to adopt it and the second connect collapses the call server-side. None
+     * of that is reachable from Kotlin — the logic lives in the page — and none
+     * of it shows in a syntax check, so the harness asserts each rule.
+     */
+    @Test
+    fun `the pre-warm rules hold`() {
+        if (node == null) return
+        val (exit, output) = run("livekit.js", harness = "livekit-page-harness.js")
+
+        assertEquals(0, exit, "livekit.js broke a pre-warm rule:\n$output")
         assertTrue(output.contains("without throwing"), output)
     }
 }

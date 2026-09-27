@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -151,11 +152,18 @@ private fun StageBody(
                 val several = state.tiles.size > 1
                 val pins = TilePins(state.pins, if (several) { key -> onEvent(CallEvent.TogglePin(key)) } else null)
                 val fill = Modifier.fillMaxSize()
-                when {
-                    several && pinnedTiles(state.tiles, state.pins).isNotEmpty() ->
-                        PinnedStage(tiles = state.tiles, pins = pins, modifier = fill, loadAvatar = loadAvatar)
-                    isDuo(state.tiles) -> DuoStage(state.tiles, fill, loadAvatar, pins)
-                    else -> AvatarGrid(tiles = state.tiles, modifier = fill, loadAvatar = loadAvatar, pins = pins)
+                // Assigned once for the whole stage, not per tile: the
+                // collision bump that keeps two people called Sahil from
+                // sharing a colour needs the whole list, and the three layouts
+                // below must agree on the answer.
+                val colours = remember(state.tiles) { CallTileColors.assign(state.tiles) }
+                CompositionLocalProvider(LocalCallTileColors provides colours) {
+                    when {
+                        several && pinnedTiles(state.tiles, state.pins).isNotEmpty() ->
+                            PinnedStage(tiles = state.tiles, pins = pins, modifier = fill, loadAvatar = loadAvatar)
+                        isDuo(state.tiles) -> DuoStage(state.tiles, fill, loadAvatar, pins)
+                        else -> AvatarGrid(tiles = state.tiles, modifier = fill, loadAvatar = loadAvatar, pins = pins)
+                    }
                 }
                 if (state.tiles.size <= 1) WaitingForOthers()
             }

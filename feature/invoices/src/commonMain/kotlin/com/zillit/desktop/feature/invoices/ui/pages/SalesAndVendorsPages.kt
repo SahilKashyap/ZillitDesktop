@@ -317,28 +317,43 @@ internal fun ColumnScope.SalesInvoicesPage(
 private fun salesColumns(state: InvoicesUiState): List<TableColumn<SalesInvoice>> = listOf(
     // The invoice's `sales_invoices` chip beside its ref (`SalesPage.jsx:133-140, 967-971`).
     TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) { invoice ->
-        Box(Modifier.alpha(if (state.sales.deletingId == invoice.id) DIMMED else 1f)) {
+        DimmedWhileDeleting(state, invoice) {
             CellTextWithUnread(invoice.listRef, state.pageRowUnread(AccountantPage.Sales, invoice.id))
         }
     },
-    TableColumn(str(S.desktop_client), ColumnWidth.Weight(WEIGHT_WIDEST)) { CellText(it.clientName) },
-    TableColumn(str(S.desktop_gross), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.grossAmount, it.currency, state.projectCurrency)
+    TableColumn(str(S.desktop_client), ColumnWidth.Weight(WEIGHT_WIDEST)) { invoice ->
+        DimmedWhileDeleting(state, invoice) { CellText(invoice.clientName) }
     },
-    TableColumn(str(S.desktop_due), ColumnWidth.Fixed(DUE_WIDTH)) {
-        CellText(InvoiceFormat.date(it.dueDateMs), muted = true)
+    TableColumn(str(S.desktop_gross), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) { invoice ->
+        DimmedWhileDeleting(state, invoice) {
+            MoneyText(invoice.grossAmount, invoice.currency, state.projectCurrency)
+        }
+    },
+    TableColumn(str(S.desktop_due), ColumnWidth.Fixed(DUE_WIDTH)) { invoice ->
+        DimmedWhileDeleting(state, invoice) { CellText(InvoiceFormat.date(invoice.dueDateMs), muted = true) }
     },
     TableColumn(str(S.status), ColumnWidth.Weight(WEIGHT_NARROW)) { invoice ->
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitStatusPill(label = invoice.status.label, tone = invoice.status.tone())
-            if (state.sales.previewLoadingId == invoice.id) ZillitSpinner(size = SPINNER)
+        DimmedWhileDeleting(state, invoice) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitStatusPill(label = invoice.status.label, tone = invoice.status.tone())
+                if (state.sales.previewLoadingId == invoice.id) ZillitSpinner(size = SPINNER)
+            }
         }
     },
 )
+
+/**
+ * The row being deleted fades out whole, as the web's `opacity-40` on the `tr`
+ * does — dimming only its reference left the rest of the row at full strength.
+ */
+@Composable
+private fun DimmedWhileDeleting(state: InvoicesUiState, invoice: SalesInvoice, content: @Composable () -> Unit) {
+    Box(Modifier.alpha(if (state.sales.deletingId == invoice.id) DIMMED else 1f)) { content() }
+}
 
 /** The web's `STATUS_MAP` tones: draft blue, sent amber, paid green, overdue red. */
 internal fun SalesInvoiceStatus.tone(): StatusTone = when (this) {

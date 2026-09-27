@@ -105,6 +105,8 @@ dependencies {
     // Already on the runtime classpath transitively; declared so the Drive
     // widget's desktop-layer call (DesktopWindowLevel) can compile against it.
     implementation("net.java.dev.jna:jna:5.13.0")
+    // Runs the payroll service's published OT-engine bundle — see RhinoScriptHost.
+    implementation(libs.rhino)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.kotlinx.datetime)
     implementation(libs.compose.uiToolingPreview)

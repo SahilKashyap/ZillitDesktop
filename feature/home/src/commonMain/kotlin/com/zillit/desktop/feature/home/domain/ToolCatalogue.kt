@@ -144,8 +144,15 @@ object ToolCatalogue {
             (ZillitToolIcons.Location to WorkspaceRoute.Tool("/film-tools/map")),
         "main_budget_tool" to
             (ZillitToolIcons.Budget to WorkspaceRoute.Tool("/film-tools/main-budget")),
+        // The Payroll TOOL TILE is the PRODUCER entry point, and the web marks
+        // it as one (`useAvailableFilmTools.js:471` →
+        // `/film-tools/account-hub/payroll?entry=tool`). The marker is what
+        // makes this entry offer the Producer Board and Production Report
+        // Payroll — to an accountant as much as to anyone. The ACCOUNTANT
+        // entry is the Account Hub's side-nav, which carries no marker and
+        // opens the processing, run, history and setup grid instead.
         "payroll_tool" to
-            (ZillitToolIcons.Payroll to WorkspaceRoute.Tool("/film-tools/payroll")),
+            (ZillitToolIcons.Payroll to WorkspaceRoute.Tool("/film-tools/payroll?entry=tool")),
         "permission_grid_tool" to
             (ZillitToolIcons.PostingRights to WorkspaceRoute.Tool("/film-tools/permission-grid")),
         "pre_production_tool" to

@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">I file e le cartelle eliminati restano qui finché non li ripristini o li elimini definitivamente.</string>
     <string name="desktop_email_forward_to">Inoltra a</string>
     <string name="desktop_tools_drag_to_reorder">Trascina per riordinare %1$s</string>
-    <string name="desktop_call_line3_not_configured">La Linea 3 non è configurata in questa installazione</string>
+    <string name="desktop_call_line3_not_configured">La Linea 1 non è configurata in questa installazione</string>
     <string name="desktop_drive_favourite">Preferito</string>
     <string name="desktop_drive_restore_tooltip">Ripristina nella posizione originale</string>
     <string name="desktop_turn_off">Disattiva</string>

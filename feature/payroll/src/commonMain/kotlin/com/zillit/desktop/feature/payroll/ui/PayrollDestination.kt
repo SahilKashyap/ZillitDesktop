@@ -17,6 +17,8 @@ enum class PayrollDestination(val segment: String, private val labelKey: String)
     Landing("", S.dm_section_payroll),
     Processing("processing", S.desktop_payroll_processing),
     Run("run", S.desktop_payroll_run),
+    ProducerBoard("producer-board", S.desktop_payroll_producer_board),
+    ProductionReport("production-report", S.desktop_payroll_production_report),
     History("accountant-payroll", S.desktop_payroll_history),
     ;
 
@@ -25,12 +27,21 @@ enum class PayrollDestination(val segment: String, private val labelKey: String)
     val path: String get() = if (segment.isEmpty()) PAYROLL_PATH else "$PAYROLL_PATH/$segment"
 
     /**
-     * The landing is everyone's; the three accountant screens are the
-     * accountant's. The web offers their tiles only on the accountant's grid
-     * (`PayrollLandingPage.jsx` 150-166), so a deep link from anyone else lands
-     * on the landing rather than on a screen they were never offered.
+     * The route to this screen from an entry that carries the web's tool-tile
+     * marker. The web threads `?entry=tool` through every tile link
+     * (`PayrollLandingPage.jsx` 168-170) so a screen opened from the Film Tools
+     * grid keeps the producer entry — and its Back returns to the producer
+     * landing, not the accountant one.
      */
-    fun visibleTo(viewer: PayrollViewer): Boolean = this == Landing || viewer.seesAccountantViews
+    fun path(enteredAsTool: Boolean): String = if (enteredAsTool) "$path?$ENTRY_TOOL" else path
+
+    /**
+     * The landing is everyone's; every other screen is offered only to a
+     * viewer whose landing grid holds its tile, so a deep link to a screen
+     * someone was never offered lands on the landing instead.
+     */
+    fun visibleTo(viewer: PayrollViewer, enteredAsTool: Boolean): Boolean =
+        this == Landing || PayrollTile.visibleTo(viewer, enteredAsTool).any { it.destination == this }
 
     companion object {
         /**
@@ -48,23 +59,19 @@ enum class PayrollDestination(val segment: String, private val labelKey: String)
          * offered the producer tiles, not the accountant grid.
          */
         fun enteredAsTool(path: String): Boolean =
-            path.substringAfter('?', "").split('&').any { it == "entry=tool" }
+            path.substringAfter('?', "").split('&').any { it == ENTRY_TOOL }
     }
 }
 
 /**
  * The landing's tiles, in the web's order (`PayrollLandingPage.jsx` 30-104).
- *
- * The producer tiles — Producer Board and Production Report Payroll — are not
- * part of this port; a viewer who would only be offered those sees the
- * landing say so rather than a grid of screens they were never given.
  */
 enum class PayrollTile(
     val slug: String,
     private val titleKey: String,
     private val descriptionKey: String,
     private val tagKeys: List<String>,
-    /** The web's accent: `#fc9404`, `#6366f1`, `#c084fc`, `#14a394`. */
+    /** The web's accent: `#fc9404`, `#6366f1`, `#fb923c`, `#7a4cd6`, `#c084fc`, `#14a394`. */
     val accent: Long,
 ) {
     Processing(
@@ -80,6 +87,24 @@ enum class PayrollTile(
         S.desktop_payroll_tile_run_description,
         listOf(S.desktop_payroll_pipeline, S.desktop_payroll_dept_totals, S.desktop_payroll_crew_approval),
         accent = 0xFF6366F1,
+    ),
+    ProducerBoard(
+        "producer-board",
+        S.desktop_payroll_producer_board,
+        S.desktop_payroll_tile_producer_board_description,
+        listOf(S.desktop_payroll_override_times, S.desktop_payroll_approve_days, S.desktop_payroll_full_crew_board),
+        accent = 0xFFFB923C,
+    ),
+    ProductionReport(
+        "production-report",
+        S.desktop_payroll_production_report,
+        S.desktop_payroll_tile_production_report_description,
+        listOf(
+            S.desktop_payroll_crew_with_deals,
+            S.desktop_payroll_fill_from_report_tag,
+            S.desktop_payroll_local_estimate,
+        ),
+        accent = 0xFF7A4CD6,
     ),
     History(
         "accountant-payroll",
@@ -106,19 +131,37 @@ enum class PayrollTile(
         get() = when (this) {
             Processing -> PayrollDestination.Processing
             Run -> PayrollDestination.Run
+            ProducerBoard -> PayrollDestination.ProducerBoard
+            ProductionReport -> PayrollDestination.ProductionReport
             History -> PayrollDestination.History
             EntrySetup -> null
         }
 
     companion object {
         /**
-         * Who is offered which tile — the web's filter: an accountant arriving
-         * from the Account Hub gets every accountant tile; the tool-tile entry,
-         * and anyone else with view access, gets the producer tiles, which this
-         * port does not have.
+         * The producer's two tiles. The Payroll TOOL TILE on the Film Tools
+         * grid is the producer entry point, so it offers these and nothing
+         * else — to an accountant as much as to anyone; the accountant grid is
+         * the Account Hub's side-nav, which offers everything but these.
          */
-        fun visibleTo(viewer: PayrollViewer, enteredAsTool: Boolean): List<PayrollTile> =
-            if (viewer.seesAccountantViews && !enteredAsTool) entries else emptyList()
+        val PRODUCER: Set<PayrollTile> = setOf(ProducerBoard, ProductionReport)
+
+        /**
+         * Who is offered which tile — the web's filter verbatim
+         * (`PayrollLandingPage.jsx` 150-166):
+         *
+         *  - an accountant from the Account Hub gets every accountant tile;
+         *  - an accountant from the tool tile gets the producer tiles;
+         *  - anyone else with the payroll tool's view access gets the producer
+         *    tiles, whichever way they came;
+         *  - anyone else gets nothing, which the landing says.
+         */
+        fun visibleTo(viewer: PayrollViewer, enteredAsTool: Boolean): List<PayrollTile> = when {
+            viewer.seesAccountantViews ->
+                entries.filter { if (enteredAsTool) it in PRODUCER else it !in PRODUCER }
+            viewer.canView -> entries.filter { it in PRODUCER }
+            else -> emptyList()
+        }
     }
 }
 
@@ -129,3 +172,6 @@ enum class PayrollTile(
 const val PAYROLL_ENTRY_SETUP_ROUTE = "/film-tools/account-hub/production-setup?setup=payroll"
 
 const val PAYROLL_PATH = "/film-tools/payroll"
+
+/** The web's tool-tile marker, as the Film Tools grid stamps it on the route. */
+const val ENTRY_TOOL = "entry=tool"

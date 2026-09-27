@@ -382,6 +382,24 @@ data class CallSession(
  * row. Built by the host from the production's crew, minus whoever is already
  * on the roster.
  */
+/**
+ * What the app can tell the call about somebody, for the rows the SERVER did
+ * not fill in.
+ *
+ * Only ever a fallback: the roster is the authority — it knows people this
+ * client never fetched, and the call may not even belong to the open
+ * production. This covers the two things a roster row is most often missing,
+ * and both show on the grid: a nameless row reads "Guest", and a row with no
+ * job title loses the line under the name that tells two Sahils apart.
+ *
+ * Keep-name-private members are filtered out before this is built, so a
+ * lookup here can never reveal one.
+ */
+data class CallDirectoryEntry(
+    val name: String,
+    val designation: String = "",
+)
+
 data class CallCrewEntry(
     val userId: String,
     val deviceId: String,

@@ -697,6 +697,30 @@ class KcefCallEngine(
         if (livekitActive) browser?.let { run(it, LiveKitScripts.setHandRaised(raised)) }
     }
 
+    /**
+     * Line 3's pre-connect, pre-claim and pre-drop, and the early device open.
+     *
+     * Not gated on [livekitActive]: every one of them happens BEFORE there is a
+     * room — that is their whole purpose — so the gate would refuse exactly the
+     * calls that need them. They are gated on the page being up instead, and
+     * the page itself ignores each of them when it has nothing to act on.
+     */
+    override fun prewarm(callId: String, url: String, preconnectToken: String) {
+        browser?.let { run(it, LiveKitScripts.prewarm(callId, url, preconnectToken)) }
+    }
+
+    override fun claimPrewarm(callId: String) {
+        browser?.let { run(it, LiveKitScripts.claimPrewarm(callId)) }
+    }
+
+    override fun dropPrewarm(callId: String) {
+        browser?.let { run(it, LiveKitScripts.dropPrewarm(callId)) }
+    }
+
+    override fun prewarmMedia(video: Boolean, audio: Boolean) {
+        browser?.let { run(it, LiveKitScripts.prewarmMedia(video, audio)) }
+    }
+
     // Line 3 only: the other lines have no hold, no per-peer subscription
     // and no host mute to announce.
     override fun setHold(on: Boolean) {
