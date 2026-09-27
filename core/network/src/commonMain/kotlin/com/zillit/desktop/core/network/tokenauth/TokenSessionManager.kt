@@ -38,12 +38,27 @@ import kotlin.concurrent.Volatile
  *
  * ## Mode
  *
- * [tokenMode] is `token_auth_enabled` from the configuration — cached across
- * starts, so a cold start knows before the first configuration answers —
- * minus the server's kill switch: a `session_token_auth_disabled` verdict
- * falls back to `moduledata` until the next configuration says otherwise.
- * The server accepts `moduledata` for the whole migration, so every failure
- * to obtain a token degrades to it rather than to a credential-less call.
+ * Decided by `POST /session/device` itself, **not** by a configuration flag.
+ * The phones dropped `token_auth_enabled` (Shubham, Sep 2026) because
+ * `GET /configuration` is project-scoped while the token flow starts at
+ * device level, before any production is chosen — and on develop that call
+ * now answers 401 under `moduledata`, so a client waiting to be told to use
+ * tokens waits forever. That is exactly how this port failed: every request
+ * came back `libs_moduledata_not_accepted` while the flag it was waiting for
+ * sat behind a call that needed the token.
+ *
+ * So token mode is **on by default** and turns off for two proven cases only:
+ *
+ * - `401 libs_invalid_device_id` — no device registered yet (a fresh install
+ *   before create/join). Stay on `moduledata`, and [onDeviceRegistered]
+ *   re-probes once the device exists.
+ * - `session_token_auth_disabled` — the server's kill switch.
+ *
+ * A token-eligible call never *skips* the token: it waits while the session
+ * is established and drops to `moduledata` only after acquisition has
+ * genuinely failed. That ordering is the point — `moduledata` is still
+ * accepted on some routes during the migration, but others have tightened,
+ * so an eager fallback shows up as a 401 rather than a graceful degrade.
  */
 @Suppress("TooManyFunctions") // The session's operations, each small; splitting them would only scatter the locks.
 class TokenSessionManager(
@@ -63,9 +78,19 @@ class TokenSessionManager(
         fun isUsable(now: Long): Boolean = value.isNotEmpty() && now < renewAtMillis
     }
 
-    @Volatile private var configEnabled: Boolean? = null
+    /**
+     * The server does not know this device — set by a `libs_invalid_device_id`
+     * verdict, cleared by [onDeviceRegistered]. The only thing that turns
+     * token mode off besides the kill switch.
+     */
+    @Volatile private var noDeviceYet = false
 
-    @Volatile private var cachedEnabled = false
+    /**
+     * Quiet period after a transient establish failure. Token mode stays on,
+     * so without this every request would fire its own `/session/device`
+     * attempt while the server is unreachable.
+     */
+    @Volatile private var establishBackoffUntil = 0L
 
     @Volatile private var killSwitched = false
 
@@ -86,40 +111,97 @@ class TokenSessionManager(
     private val tokensLock = Mutex()
     private val projectTokens = mutableMapOf<String, CachedToken>()
     private val mintLocks = mutableMapOf<String, Mutex>()
-    private var proactive: Job? = null
-
-    init {
-        scope.launch { cachedEnabled = store.tokenModeCache() }
-    }
-
     val tokenMode: Boolean
-        get() = !killSwitched && (configEnabled ?: cachedEnabled)
+        get() = !killSwitched && !noDeviceYet
 
-    /** Every configuration answer lands here — the phones wire it to `GET /configuration`. */
-    fun onConfigFetched(enabled: Boolean) {
-        val wasOn = tokenMode
-        configEnabled = enabled
-        killSwitched = false
-        cachedEnabled = enabled
-        ZillitLog.i(TAG) { "token_auth_enabled=$enabled" }
-        scope.launch { store.cacheTokenMode(enabled) }
-        if (enabled && !wasOn) scope.launch { warmUp() }
-        if (!enabled) stopProactiveLoop()
+    /**
+     * The mode probe — `POST /session/device`, which replaced the
+     * `token_auth_enabled` flag. Called once at start and after sign-in.
+     *
+     * Cheap and idempotent: a no-op when a usable device token is cached, a
+     * refresh when one is stored, and a `moduledata` exchange only when there
+     * is neither. A warm-up rather than a gate — requests establish the
+     * session on demand anyway; this just gets it in place before the first
+     * burst so those calls do not each wait on it, and it is where
+     * `libs_invalid_device_id` is discovered.
+     */
+    fun probeDeviceSession() {
+        if (killSwitched) return
+        scope.launch { warmUp() }
     }
 
-    override suspend fun bearerFor(module: RequestModule, projectId: String?): String? {
+    /**
+     * Wake seam — the window came back to the front, or the network did.
+     *
+     * The point-of-use 80% check already guarantees correctness; this only
+     * moves the renewal off the critical path, and clears the establish
+     * backoff so a session that failed while offline is retried at once
+     * rather than after the quiet period. Since the timer went, this and the
+     * point-of-use check are the whole renewal story — which is the shape the
+     * backend asked for (24 Sep 2026): every rotation nobody needed is
+     * another chance to be left holding a token the server has retired.
+     */
+    fun onAppForegrounded() {
+        if (killSwitched) return
+        establishBackoffUntil = 0L
+        scope.launch { warmUp() }
+    }
+
+    /**
+     * Create/join project has completed — that is the call which registers
+     * the device, so a probe that answered `libs_invalid_device_id` will now
+     * succeed.
+     */
+    fun onDeviceRegistered() {
+        if (!noDeviceYet) return
+        noDeviceYet = false
+        ZillitLog.i(TAG) { "device registered; re-probing /session/device" }
+        probeDeviceSession()
+    }
+
+    /**
+     * The server does not recognise this device — removed from the project,
+     * unlinked, or re-registered on another install.
+     *
+     * Leaving token mode is the only honest thing the client can do: a device
+     * record is created by create/join project or device recovery, not by any
+     * call this layer can make. Without it the phones saw two 401s per call,
+     * on every call, for as long as the app stayed open — mint a replacement
+     * for the same dead device, get refused, fall back. Idempotent: the first
+     * rejection wins.
+     */
+    fun onDeviceRejectedByServer() {
+        if (noDeviceYet) return
+        noDeviceYet = true
+        scope.launch { clearTokens() }
+        ZillitLog.w(TAG) { "server rejected this device; on moduledata until it is registered again" }
+    }
+
+    override suspend fun bearerFor(module: RequestModule, projectId: String?, path: String): String? {
         if (!tokenMode) return null
-        val tokenScope = module.tokenScope(projectId) ?: return null
-        return bearerTokenFor(tokenScope)
+        return scopeFor(module, projectId, path)?.let { bearerTokenFor(it) }
     }
 
     override suspend fun recoverFromUnauthorized(
         module: RequestModule,
         projectId: String?,
+        path: String,
         failedToken: String,
-    ): String? {
-        val tokenScope = module.tokenScope(projectId) ?: return null
-        return recoverFromUnauthorized(tokenScope, failedToken)
+    ): String? = scopeFor(module, projectId, path)?.let { recoverFromUnauthorized(it, failedToken) }
+
+    /**
+     * The scope one request rides, with the route taken into account.
+     *
+     * [tokenScope] answers the device token for a project-scoped module with
+     * no production open, which is right for the many device-level calls
+     * written against a project variant. For the handful of routes that are
+     * genuinely project-scoped that fallback is a guaranteed 401, so those
+     * take the legacy credential instead — see [requiresProjectToken].
+     */
+    private fun scopeFor(module: RequestModule, projectId: String?, path: String): TokenScope? {
+        val scope = module.tokenScope(projectId) ?: return null
+        if (scope == TokenScope.Device && requiresProjectToken(path)) return null
+        return scope
     }
 
     /** The Bearer for one request; null when none could be obtained. */
@@ -178,7 +260,6 @@ class TokenSessionManager(
     /** Sign-out: forget everything, the stored refresh token included. */
     fun clearSession() {
         epoch++
-        stopProactiveLoop()
         scope.launch { clearTokens() }
         ZillitLog.i(TAG) { "session cleared" }
     }
@@ -250,18 +331,38 @@ class TokenSessionManager(
             }
         }
 
-    private suspend fun establish(startEpoch: Int): String? = when (val result = api.establishDeviceSession()) {
-        is SessionCallResult.Success ->
-            if (adoptDeviceSession(result.data, startEpoch)) {
-                ZillitLog.i(TAG) { "device session established (expires_in=${result.data.expiresInSeconds}s)" }
-                deviceToken?.value
-            } else {
+    /**
+     * The `moduledata` exchange — and the mode probe, since its verdict is
+     * what decides whether token auth is available at all.
+     *
+     * A transient failure starts a quiet period: token mode stays on, so
+     * without one every request in a burst would fire its own attempt while
+     * the server is unreachable.
+     */
+    private suspend fun establish(startEpoch: Int): String? {
+        if (nowMillis() < establishBackoffUntil) return null
+        return when (val result = api.establishDeviceSession()) {
+            is SessionCallResult.Success -> {
+                establishBackoffUntil = 0L
+                if (adoptDeviceSession(result.data, startEpoch)) {
+                    ZillitLog.i(TAG) { "device session established (expires_in=${result.data.expiresInSeconds}s)" }
+                    deviceToken?.value
+                } else {
+                    null
+                }
+            }
+
+            is SessionCallResult.Failure -> {
+                when {
+                    result.serverMessage == MSG_TOKEN_AUTH_DISABLED -> killSwitch()
+                    // Not a token problem: there is no device record to mint
+                    // for. Token mode goes off until one is registered.
+                    result.serverMessage == MSG_INVALID_DEVICE_ID -> onDeviceRejectedByServer()
+                    else -> establishBackoffUntil = nowMillis() + ESTABLISH_BACKOFF_MILLIS
+                }
+                ZillitLog.w(TAG) { "device session not established: ${result.httpStatus} ${result.serverMessage}" }
                 null
             }
-        is SessionCallResult.Failure -> {
-            if (result.serverMessage == MSG_TOKEN_AUTH_DISABLED) killSwitch()
-            ZillitLog.w(TAG) { "device session not established: ${result.httpStatus} ${result.serverMessage}" }
-            null
         }
     }
 
@@ -285,7 +386,6 @@ class TokenSessionManager(
             ZillitLog.w(TAG) { "refresh token could not be persisted; store cleared for a clean re-establish" }
         }
         deviceToken = CachedToken(data.accessToken, nowMillis(), data.expiresInSeconds ?: DEFAULT_TTL_SECONDS)
-        ensureProactiveLoop()
         return true
     }
 
@@ -363,48 +463,35 @@ class TokenSessionManager(
         ZillitLog.w(TAG) { "kill switch: token auth disabled by the server; back to moduledata" }
     }
 
-    /**
-     * Foreground renewal: sleep until the device token's ~80% mark, rotate,
-     * and keep the open production's token warm. Re-arms itself from each
-     * new token's `expires_in`, dies quietly on failure, and the next
-     * successful renewal (the reactive path) restarts it.
-     */
-    private fun ensureProactiveLoop() {
-        if (proactive?.isActive == true) return
-        proactive = scope.launch {
-            while (isActive && tokenMode && renewWhenDue()) {
-                activeProjectId()?.takeIf { it.isNotBlank() }?.let { id ->
-                    projectToken(id, staleValue = tokensLock.withLock { projectTokens[id]?.value })
-                }
-            }
-        }
-    }
-
-    /** Sleeps until the device token's renewal mark and rotates; false ends the loop. */
-    private suspend fun renewWhenDue(): Boolean {
-        val current = deviceToken ?: return false
-        val wait = current.renewAtMillis - nowMillis()
-        if (wait > 0) delay(wait)
-        if (!tokenMode) return false
-        val renewed = refreshLock.withLock {
-            deviceToken?.takeIf { it.isUsable(nowMillis()) }?.value ?: renewDeviceSessionLocked()
-        }
-        return renewed != null
-    }
-
-    private fun stopProactiveLoop() {
-        proactive?.cancel()
-        proactive = null
-    }
-
     companion object {
         private const val TAG = "TokenSession"
         private const val MILLIS_PER_SECOND = 1000L
         private const val RENEW_AT_FRACTION = 0.8
         private const val STATUS_UNAUTHORIZED = 401
 
-        /** Only for a malformed answer without `expires_in`. */
-        internal const val DEFAULT_TTL_SECONDS = 3600L
+        /**
+         * Assumed only when a mint answers without a usable `expires_in`.
+         *
+         * Deliberately tiny, and deliberately not an hour. All three mints
+         * always return `expires_in`, it always equals the token's own
+         * `exp - iat`, and it is one fixed value per environment — 3600s on
+         * production, **300s on develop and QA** (backend, 23 Sep 2026). So a
+         * missing value means our parse failed, not the server omitting it,
+         * and the old 3600 default held a token about twelve times past its
+         * real life on develop, with a genuine 401 on every call in between.
+         * A minute costs one extra renewal and cannot outlive the shortest
+         * TTL in any environment.
+         */
+        internal const val DEFAULT_TTL_SECONDS = 60L
+
+        /** Quiet period after a transient establish failure — see [establish]. */
+        private const val ESTABLISH_BACKOFF_MILLIS = 30_000L
+
+        /**
+         * No device record the server recognises. Matched on ordinary 401s
+         * too, not just the session call's — see [onDeviceRejectedByServer].
+         */
+        const val MSG_INVALID_DEVICE_ID = "libs_invalid_device_id"
 
         // The server's verdicts, by name.
         const val MSG_REFRESH_INVALID = "session_refresh_invalid"

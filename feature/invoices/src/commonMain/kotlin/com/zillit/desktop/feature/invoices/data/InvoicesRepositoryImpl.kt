@@ -509,14 +509,22 @@ class InvoicesRepositoryImpl(
     override suspend fun countries(): ZillitResult<List<ClientCountry>> = apiClient.envelope(
         verb = HttpVerb.Get,
         url = "$preset/isd-codes",
-        module = RequestModule.Device,
+        // Device *scope*, not the pre-auth `Device` module: same legacy
+        // payload, but `Device` is pinned to `moduledata` for the
+        // registration calls that have no session yet, and a preset
+        // lookup is not one of those. Develop refuses `moduledata`, so
+        // these 401'd (`preset/currencies` and `preset/isd-codes` were
+        // still doing it after the session landed). The phones classify
+        // the preset routes as device-token calls, and note the backend
+        // does too (`TokenAuth.scopeFor`).
+        module = RequestModule.Default,
     ).mapData(::parseCountries)
 
     override suspend fun postcodePlace(countryCode: String, postcode: String): ZillitResult<PostcodeMatch> =
         apiClient.envelope(
             verb = HttpVerb.Get,
             url = "$preset/geonames/postalcode/${countryCode.pathSegment()}/${postcode.pathSegment()}",
-            module = RequestModule.Device,
+            module = RequestModule.Default,
         ).mapData(::parsePostcodeMatch)
 
     // -- the entry stage -----------------------------------------------------
@@ -639,7 +647,7 @@ class InvoicesRepositoryImpl(
     override suspend fun currencyCatalogue(): ZillitResult<List<CatalogueCurrency>> = apiClient.envelope(
         verb = HttpVerb.Get,
         url = presetCurrencies,
-        module = RequestModule.Device,
+        module = RequestModule.Default,
     ).mapData(::parseCurrencyCatalogue)
 
     // -- queries ---------------------------------------------------------------

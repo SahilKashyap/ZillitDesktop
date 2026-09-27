@@ -1189,6 +1189,26 @@ private fun StaleApprovalNotifications(ready: AppGraph.Ready, queue: ApprovalQue
     }
 }
 
+/**
+ * Re-arms the Bearer session once the QR scan has registered this device.
+ *
+ * The graph — and the token session with it — is built before anyone signs
+ * in, so its opening `POST /session/device` runs against a device the server
+ * does not know and comes back `libs_invalid_device_id`. That correctly turns
+ * token mode off; nothing but this turns it back on. Without it the desktop
+ * spent the whole session on `moduledata`, which develop now refuses
+ * (`libs_moduledata_not_accepted`) — every call 401, no data anywhere.
+ *
+ * Idempotent on both sides: the effect only fires on the transition, and
+ * `onDeviceRegistered` is a no-op unless the mode is actually off.
+ */
+@Composable
+private fun TokenSessionOnSignIn(ready: AppGraph.Ready, signedIn: Boolean) {
+    LaunchedEffect(signedIn) {
+        if (signedIn) ready.tokenSession.onDeviceRegistered()
+    }
+}
+
 @Composable
 private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
     // Nothing to count once signed out — and the store was cleared at
@@ -1414,6 +1434,7 @@ private fun BackgroundWork(
     EndCallOnSignOut(ready, signedIn = auth.step == AuthStep.Complete)
     AuthEffects(authViewModel, createViewModel, joinViewModel)
     BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
+    TokenSessionOnSignIn(ready, signedIn = auth.step == AuthStep.Complete)
     ToolsRefresh(ready, viewModels.home)
     DockBadge(ready, viewModels)
     ApprovalCounts(ready, viewModels)

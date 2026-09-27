@@ -5,9 +5,11 @@ package com.zillit.desktop.core.network.tokenauth
  *
  * Only the device REFRESH token — the long-lived credential — is persisted,
  * and the host keeps it in the keychain. Access tokens live in memory by
- * contract and are never written here. The mode flag is cached so a cold
- * start knows which credential to send before any configuration call has
- * answered (the phones' `tokenAuthEnabledCache`).
+ * contract and are never written here.
+ *
+ * There is no mode cache any more: the mode is decided by
+ * `POST /session/device` itself, and a stored refresh token already
+ * short-circuits that call on a cold start.
  */
 interface TokenAuthStore {
     suspend fun refreshToken(): String?
@@ -16,8 +18,4 @@ interface TokenAuthStore {
     suspend fun saveRefreshToken(token: String): Boolean
 
     suspend fun clearRefreshToken()
-
-    suspend fun tokenModeCache(): Boolean
-
-    suspend fun cacheTokenMode(enabled: Boolean)
 }

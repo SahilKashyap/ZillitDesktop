@@ -40,7 +40,7 @@ class ApiClientTokenAuthTest {
         val asked = mutableListOf<Pair<RequestModule, String?>>()
         val recovered = mutableListOf<String>()
 
-        override suspend fun bearerFor(module: RequestModule, projectId: String?): String? {
+        override suspend fun bearerFor(module: RequestModule, projectId: String?, path: String): String? {
             asked += module to projectId
             return token
         }
@@ -48,6 +48,7 @@ class ApiClientTokenAuthTest {
         override suspend fun recoverFromUnauthorized(
             module: RequestModule,
             projectId: String?,
+            path: String,
             failedToken: String,
         ): String? {
             recovered += failedToken

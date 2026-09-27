@@ -124,6 +124,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import com.zillit.desktop.core.localization.labelRefreshTrigger
 import com.zillit.desktop.core.strings.BundledCatalogSource
 import com.zillit.desktop.core.strings.StringStore
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -527,6 +528,13 @@ sealed interface AppGraph {
         val preferences: PreferenceStore,
         val secureStore: SecureStore,
         val authRepository: AuthRepository,
+        /**
+         * The Bearer session. Exposed because sign-in happens after this
+         * graph is built: the probe at construction runs against a device
+         * the server does not know yet, so the scan's completion has to
+         * re-arm it — see [TokenSessionManager.onDeviceRegistered].
+         */
+        val tokenSession: TokenSessionManager,
         val projectRepository: ProjectRepository,
         val qrLoginRepository: QrLoginRepository,
         val presetRepository: PresetRepository,
@@ -805,7 +813,7 @@ sealed interface AppGraph {
             // 401s are the session's to act on, not the app's to sign out on.
             val tokenSession = TokenSessionManager(
                 api = KtorSessionApi(storageClient, headerProvider, config.apiV2()),
-                store = KeychainTokenAuthStore(secureStore, preferences),
+                store = KeychainTokenAuthStore(secureStore),
                 scope = appScope,
                 activeProjectId = { headerContext.value.projectId },
                 nowMillis = System::currentTimeMillis,
@@ -858,13 +866,23 @@ sealed interface AppGraph {
 
             val socketEvents = SocketEventBus(socketClient)
 
-            // The configuration says which credential to send; the session
-            // follows it, and warms the open production's token on every
-            // switch so the landing burst never pays a mint.
+            // The session decides its own mode by asking for one — there is
+            // no configuration flag any more. `GET /configuration` is
+            // project-scoped and on develop answers 401 under `moduledata`,
+            // so a client that waited to be told to use tokens waited behind
+            // a call that needed one. Every request establishes the session
+            // on demand anyway; probing just keeps the first burst off the
+            // critical path.
+            //
+            // Probed on the first device id rather than here and now: the
+            // graph is built before one is loaded, and `/session/device`
+            // signs with `moduledata` over that id, so an immediate probe
+            // was refused `406 libs_module_data_invalid` and then sat out
+            // its establish backoff — half a minute of 401s on every cold
+            // start before the session recovered on its own.
             appScope.launch {
-                remoteConfigRepository.credentials.collect { loaded ->
-                    loaded?.let { tokenSession.onConfigFetched(it.tokenAuthEnabled) }
-                }
+                headerContext.map { it.deviceId }.first { it.isNotBlank() }
+                tokenSession.probeDeviceSession()
             }
             appScope.launch {
                 headerContext.map { it.projectId.orEmpty() }.distinctUntilChanged().collect { projectId ->
@@ -1528,6 +1546,7 @@ sealed interface AppGraph {
                 preferences = preferences,
                 secureStore = secureStore,
                 authRepository = authRepository,
+                tokenSession = tokenSession,
                 projectRepository = projectRepository,
                 qrLoginRepository = qrLoginRepository,
                 presetRepository = presetRepository,

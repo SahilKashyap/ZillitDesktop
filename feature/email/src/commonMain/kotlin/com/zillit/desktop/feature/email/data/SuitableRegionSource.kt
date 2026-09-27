@@ -36,7 +36,7 @@ class SuitableRegionSource(
             verb = HttpVerb.Get,
             url = "${config.apiV2(ZillitService.Core)}preset/suitable-region",
             serializer = JsonElement.serializer(),
-            module = RequestModule.Device,
+            module = RequestModule.Default,
         ).map { payload ->
             val row = payload as? JsonObject
             StorageTarget(

@@ -82,7 +82,7 @@ class CostReportRepositoryImpl(
     override suspend fun currencyCatalogue(): ZillitResult<List<CrCurrency>> = apiClient.envelope(
         verb = HttpVerb.Get,
         url = "$presetBase/currencies",
-        module = RequestModule.Device,
+        module = RequestModule.Default,
     ).mapData(::parseCurrencyCatalogue)
 
     override suspend fun live(

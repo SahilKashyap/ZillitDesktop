@@ -277,7 +277,7 @@ class ApiClient(
         // server reads one or the other, never both. Legacy mode, and any
         // call the authenticator declines, carries `moduledata` as before.
         val projectForAuth = options.projectId ?: readScope()?.projectId?.takeIf { it.isNotBlank() }
-        val token = authenticator?.bearerFor(module, projectForAuth)
+        val token = authenticator?.bearerFor(module, projectForAuth, url)
         val resolvedHeaders = if (token == null) {
             headerProvider.headersFor(module, bodyJson, options.projectId, options.userId)
         } else {
@@ -288,7 +288,7 @@ class ApiClient(
         if (token != null && response.status.value == STATUS_UNAUTHORIZED) {
             // An expired token heals here, once, and the retry's answer is the
             // one reported. A second 401 is the session really being gone.
-            val renewed = authenticator?.recoverFromUnauthorized(module, projectForAuth, token)
+            val renewed = authenticator?.recoverFromUnauthorized(module, projectForAuth, url, token)
             if (renewed != null && renewed != token) {
                 response = perform(verb, url, resolvedHeaders, renewed, queryParameters, bodyJson)
             }

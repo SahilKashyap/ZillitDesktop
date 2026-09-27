@@ -598,14 +598,22 @@ class AccountHubRepositoryImpl(
             verb = HttpVerb.Get,
             url = "$presetBase/currencies",
             serializer = ListSerializer(CurrencyDto.serializer()),
-            module = RequestModule.Device,
+            // Device *scope*, not the pre-auth `Device` module: same legacy
+            // payload, but `Device` is pinned to `moduledata` for the
+            // registration calls that have no session yet, and a preset
+            // lookup is not one of those. Develop refuses `moduledata`, so
+            // these 401'd (`preset/currencies` and `preset/isd-codes` were
+            // still doing it after the session landed). The phones classify
+            // the preset routes as device-token calls, and note the backend
+            // does too (`TokenAuth.scopeFor`).
+            module = RequestModule.Default,
         ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     override suspend fun taxesByCountry(): ZillitResult<List<CountryTaxes>> = apiClient.request(
         verb = HttpVerb.Get,
         url = "$presetBase/taxes-by-country",
         serializer = ListSerializer(CountryTaxesDto.serializer()),
-        module = RequestModule.Device,
+        module = RequestModule.Default,
     ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     // -- chart of accounts — see [HubChartSource] ------------------------------

@@ -39,7 +39,15 @@ class PresetRepositoryImpl(
             verb = HttpVerb.Get,
             url = endpoints.projectTypes,
             serializer = ListSerializer(ProductionTypeDto.serializer()),
-            module = RequestModule.Device,
+            // Device *scope*, not the pre-auth `Device` module: same legacy
+            // payload, but `Device` is pinned to `moduledata` for the
+            // registration calls that have no session yet, and a preset
+            // lookup is not one of those. Develop refuses `moduledata`, so
+            // these 401'd (`preset/currencies` and `preset/isd-codes` were
+            // still doing it after the session landed). The phones classify
+            // the preset routes as device-token calls, and note the backend
+            // does too (`TokenAuth.scopeFor`).
+            module = RequestModule.Default,
         ).map { dtos -> dtos.mapNotNull { it.toDomain() } }
 
     override suspend fun languages(): ZillitResult<List<ProductionLanguage>> =
@@ -47,7 +55,7 @@ class PresetRepositoryImpl(
             verb = HttpVerb.Get,
             url = endpoints.languages,
             serializer = ListSerializer(LanguageDto.serializer()),
-            module = RequestModule.Device,
+            module = RequestModule.Default,
             queryParameters = mapOf("lang" to languageCode()),
         ).map { dtos ->
             // Sorted here rather than in the UI: the server returns them in
