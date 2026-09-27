@@ -207,9 +207,18 @@ fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = build
     )
 }
 
-/** The batch table's columns. Identical everywhere a batch is listed. */
+/**
+ * The batch table's columns. Identical everywhere a batch is listed, except
+ * the total column: [amount] defaults to the claim's own gross, but Payment
+ * Routing reads `reimbursement_amount` instead — what is actually owed back,
+ * which is not always the claim's full receipt total.
+ */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
-fun batchColumns(accountant: Boolean, compact: Boolean = false): List<TableColumn<ClaimBatch>> = buildList {
+fun batchColumns(
+    accountant: Boolean,
+    compact: Boolean = false,
+    amount: (ClaimBatch) -> Double = { it.totalGross },
+): List<TableColumn<ClaimBatch>> = buildList {
     add(
         textColumn(str(S.desktop_reference), ColumnWidth.Weight(1.2f)) {
             it.reference.ifBlank { it.id.take(REF_FALLBACK) }
@@ -227,7 +236,7 @@ fun batchColumns(accountant: Boolean, compact: Boolean = false): List<TableColum
             },
         )
     }
-    add(textColumn(str(S.ah_total_label), ColumnWidth.Weight(1f), numeric = true) { money(it.totalGross, it.currency) })
+    add(textColumn(str(S.ah_total_label), ColumnWidth.Weight(1f), numeric = true) { money(amount(it), it.currency) })
     if (!compact) {
         add(textColumn(str(S.txt_submitted), ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
     }
