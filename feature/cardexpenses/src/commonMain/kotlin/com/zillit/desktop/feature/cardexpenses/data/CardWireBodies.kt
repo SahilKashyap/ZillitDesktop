@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ProcessLine
 import com.zillit.desktop.feature.cardexpenses.domain.ProcessSubmission
 import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
 import com.zillit.desktop.feature.cardexpenses.domain.TaxLineWire
+import com.zillit.desktop.feature.cardexpenses.domain.TransactionFilters
 import com.zillit.desktop.feature.cardexpenses.domain.round2
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -179,7 +180,16 @@ internal fun cardExportBody(format: ExportFormat, rows: List<CardExportRow>): Js
     )
 }
 
-internal fun transactionExportBody(format: ExportFormat): JsonObject = buildJsonObject { putExportHeader(format) }
+/**
+ * Same keys as [TransactionFilters.query] — the GET the list itself runs — so
+ * the export scopes to what is on screen instead of the whole register. The
+ * server was never asked for this before; an unrecognised key here can only
+ * be ignored, never break a request that worked without it.
+ */
+internal fun transactionExportBody(format: ExportFormat, filters: TransactionFilters): JsonObject = buildJsonObject {
+    putExportHeader(format)
+    filters.query().forEach { (key, value) -> put(key, JsonPrimitive(value)) }
+}
 
 private fun kotlinx.serialization.json.JsonObjectBuilder.putExportHeader(format: ExportFormat) {
     put("format", JsonPrimitive(format.wire))

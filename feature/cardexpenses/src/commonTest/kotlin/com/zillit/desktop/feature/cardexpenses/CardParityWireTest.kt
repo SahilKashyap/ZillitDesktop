@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.ProcessSubmission
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptAssignment
 import com.zillit.desktop.feature.cardexpenses.domain.TierVisibility
 import com.zillit.desktop.feature.cardexpenses.domain.TopUpMethod
+import com.zillit.desktop.feature.cardexpenses.domain.TransactionFilters
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.engine.mock.MockEngine
@@ -305,7 +306,7 @@ class CardParityWireTest {
     fun `an export with no byte channel refuses`() = runTest {
         val (repo, _) = repository()
 
-        assertIs<ZillitResult.Failure>(repo.exportTransactions(ExportFormat.Pdf))
+        assertIs<ZillitResult.Failure>(repo.exportTransactions(ExportFormat.Pdf, TransactionFilters()))
     }
 
     @Test
@@ -332,6 +333,37 @@ class CardParityWireTest {
         val row = (body.getValue("rows") as JsonArray).single().jsonObject
         assertEquals("Ada", row["holder"]?.jsonPrimitive?.content)
         assertEquals("4821", row["last4"]?.jsonPrimitive?.content)
+    }
+
+    /**
+     * The register's own export sent no filters at all, so it always answered
+     * the whole account regardless of what the screen was showing — a real
+     * mismatch a user would notice (found live, 2026-09-27). Scoped the same
+     * way [CardRepositoryImpl.transactions] scopes the list itself.
+     */
+    @Test
+    fun `the transactions export carries the screen's own filters, not the whole account`() = runTest {
+        var posted: Pair<String, JsonObject>? = null
+        val (repo, _) = repository(
+            CardBinaryPost { url, body ->
+                posted = url to body
+                ZillitResult.Success(ByteArray(3))
+            },
+        )
+
+        val result = repo.exportTransactions(
+            ExportFormat.Pdf,
+            TransactionFilters(cardId = "card-1", departmentId = "dept-2", from = "2026-08-01", to = "2026-08-27"),
+        )
+
+        assertIs<ZillitResult.Success<ByteArray>>(result)
+        val (url, body) = posted ?: error("nothing was posted")
+        assertTrue(url.endsWith("/transactions/export"), url)
+        assertEquals("pdf", body["format"]?.jsonPrimitive?.content)
+        assertEquals("card-1", body["card_id"]?.jsonPrimitive?.content)
+        assertEquals("dept-2", body["department_id"]?.jsonPrimitive?.content)
+        assertEquals("2026-08-01T00:00:00Z", body["from"]?.jsonPrimitive?.content)
+        assertEquals("2026-08-27T23:59:59Z", body["to"]?.jsonPrimitive?.content)
     }
 
     // -- fixtures ---------------------------------------------------------------
