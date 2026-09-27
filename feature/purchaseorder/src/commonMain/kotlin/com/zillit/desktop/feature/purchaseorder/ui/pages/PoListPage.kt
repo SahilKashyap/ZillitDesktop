@@ -227,6 +227,9 @@ internal fun PoOrderTable(state: PoUiState, rows: List<PurchaseOrder>, onEvent: 
         key = { it.id },
         loading = state.loading,
         onRowClick = { onEvent(PoEvent.OpenOrder(it.id)) },
+        // All POs lists the whole production to an accounts assistant so the
+        // cards above it add up, but only lets them into their own orders.
+        rowEnabled = state::canOpen,
         // The page scrolls, so the table lays out every row rather than
         // virtualising inside a box of its own.
         virtualised = false,

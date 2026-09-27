@@ -77,6 +77,26 @@ class PoRouteTest {
         assertEquals(PoDestination.Settings, PoDestination.forRoute("/film-tools/purchase-order/settings", crew))
     }
 
+    /**
+     * And the same URL resolves differently for the same person, depending on
+     * the door.
+     *
+     * `/all` is All POs in the console and the Approval Queue in the
+     * department view. An accountant sees both in a session, so the only
+     * thing that separates them is `?entry=tool` — which is what makes this
+     * the test that the two entries really are two flows and not one with a
+     * different frame around it.
+     */
+    @Test
+    fun `the door decides which page one accountant's link opens`() {
+        val throughTheTile = accountant.copy(enteredAsTool = true)
+        assertEquals(PoDestination.AllPos, PoDestination.forRoute("/film-tools/purchase-order/all", accountant))
+        assertEquals(
+            PoDestination.ApprovalQueue,
+            PoDestination.forRoute("/film-tools/purchase-order/all", throughTheTile),
+        )
+    }
+
     @Test
     fun `an unknown segment opens nothing rather than guessing`() {
         assertNull(PoDestination.forRoute("/film-tools/purchase-order/overview"))

@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -149,6 +150,21 @@ fun <T> ZillitDataTable(
      * approved one's green. Null (or a null answer) keeps the plain stripes.
      */
     rowTint: ((T) -> Color?)? = null,
+    /**
+     * Whether a row may be opened at all.
+     *
+     * Null — the default — leaves every row clickable, which is what all but
+     * one caller wants. A false answer takes the row's click, its hover and
+     * its full contrast away together: the web's `opacity-60 cursor-default`,
+     * used where a queue lists orders the reader may see the shape of but not
+     * open (the purchase-order console's All POs and All Queue, where only the
+     * assignee, an approver on the chain, or a senior accountant may go in).
+     *
+     * A gate here rather than at the call site because all three signals have
+     * to agree: a row that still highlights on hover and then does nothing is
+     * read as a broken table, not as a closed door.
+     */
+    rowEnabled: ((T) -> Boolean)? = null,
 ) {
     // A duplicate key would take the whole window down inside a LazyColumn.
     // Ids come from a server, and a server that repeats one is a bug worth a
@@ -191,6 +207,7 @@ fun <T> ZillitDataTable(
                     loading = loading,
                     virtualised = virtualised,
                     rowTint = rowTint,
+                    rowEnabled = rowEnabled,
                 )
             }
             if (wide) ZillitHorizontalScrollRail(across)
@@ -219,6 +236,7 @@ private fun <T> ColumnScope.TableBody(
     loading: Boolean,
     virtualised: Boolean,
     rowTint: ((T) -> Color?)?,
+    rowEnabled: ((T) -> Boolean)?,
 ) {
     run {
         TableHeader(columns)
@@ -241,8 +259,11 @@ private fun <T> ColumnScope.TableBody(
                             columns = columns,
                             striped = index % 2 == 1,
                             selected = isSelected?.invoke(row) == true,
-                            onClick = onRowClick?.let { click -> { click(row) } },
+                            onClick = onRowClick
+                                ?.takeIf { rowEnabled?.invoke(row) != false }
+                                ?.let { click -> { click(row) } },
                             tint = rowTint?.invoke(row),
+                            dimmed = rowEnabled?.invoke(row) == false,
                         )
                         ZillitDivider()
                     }
@@ -256,8 +277,11 @@ private fun <T> ColumnScope.TableBody(
                         columns = columns,
                         striped = index % 2 == 1,
                         selected = isSelected?.invoke(row) == true,
-                        onClick = onRowClick?.let { click -> { click(row) } },
+                        onClick = onRowClick
+                            ?.takeIf { rowEnabled?.invoke(row) != false }
+                            ?.let { click -> { click(row) } },
                         tint = rowTint?.invoke(row),
+                        dimmed = rowEnabled?.invoke(row) == false,
                     )
                     ZillitDivider()
                 }
@@ -304,6 +328,8 @@ private fun <T> TableRow(
     selected: Boolean,
     onClick: (() -> Unit)?,
     tint: Color? = null,
+    /** A row the reader may not open — shown, but visibly out of reach. */
+    dimmed: Boolean = false,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -321,6 +347,7 @@ private fun <T> TableRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(background)
+            .then(if (dimmed) Modifier.alpha(DISABLED_ROW_ALPHA) else Modifier)
             .then(if (onClick != null) Modifier.hoverable(interaction) else Modifier)
             .then(
                 if (onClick != null) {
@@ -377,6 +404,9 @@ private fun RowScope.cellModifier(width: ColumnWidth): Modifier = when (width) {
 }
 
 private const val SKELETON_ROWS = 6
+
+/** The web's `opacity-60` on a row the reader may not open. */
+private const val DISABLED_ROW_ALPHA = 0.6f
 
 /** Narrower than this and a column's text is unreadable, so the table scrolls instead. */
 private val MIN_COLUMN_WIDTH = 110.dp

@@ -142,6 +142,32 @@ data class PoUiState(
     /** Whether [order]'s saved effective date sits in the locked cost-report period. */
     fun isLocked(order: PurchaseOrder): Boolean = periodLock.locks(order)
 
+    /**
+     * Whether this viewer may open [order] from the page they are on — the
+     * web's row gate (`isDisabled` in `PurchaseOrdersModule`'s All POs table
+     * and in `POQueue`'s All sub-tab).
+     *
+     * Only those two pages gate a row, and the web is explicit that it is the
+     * two: they are the console's project-wide lists, where an accounts
+     * assistant is shown every order on the production so the totals above
+     * add up, but may only go into the ones that are theirs. Every other
+     * page — My POs, My Department POs, the Approval Queue, Posted — already
+     * lists nothing but the reader's own work, so a second gate there would
+     * only dim rows that passed it anyway.
+     *
+     * Three ways through, the web's three: the senior designation (which is
+     * what [PoViewer.hasFullAccess] means for an accounts user), being the
+     * assignee, or sitting somewhere on this order's approval chain — see
+     * [PoApprovalTiers.isApprover] for why the whole chain and not just the
+     * tier that is out.
+     */
+    fun canOpen(order: PurchaseOrder): Boolean {
+        if (!destination.gatesRows(queueScope)) return true
+        if (viewer.hasFullAccess) return true
+        if (order.assignedTo != null && order.assignedTo == viewer.userId) return true
+        return tiers.isApprover(order, viewer.userId)
+    }
+
     /** The form's own rules — which fields show, and which must be filled in. */
     val formLayout: FormLayout get() = FormLayout(formTemplate)
 

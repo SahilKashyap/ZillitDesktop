@@ -1366,6 +1366,7 @@ private fun ProjectScopedLoads(
     // when the production is chosen, but rights arrive with the Home load this
     // very effect kicks off. Every viewer resolved up there is therefore the
     // "rights not yet known" one, and nothing replaced it: Document
+        viewModels.purchaseOrdersTool?.onProjectChanged()
     // Distribution offered no publish destination at all on a production with
     // 42 tools switched on (seen live 2026-08-27). Keyed on the arrival, so it
     // fires once per production and swaps in the real rights without
@@ -1407,6 +1408,7 @@ private fun BackgroundWork(
     viewModels: AppViewModels,
     workspace: WorkspaceViewModel,
 ) {
+        viewModels.purchaseOrdersTool?.onRightsChanged()
     val auth by authViewModel.state.collectAsState()
     SessionExpiry(ready, authViewModel)
     EndCallOnSignOut(ready, signedIn = auth.step == AuthStep.Complete)
@@ -2398,7 +2400,7 @@ private fun AppGraph.Ready.cashViewer(): CashViewer {
     )
 }
 
-private fun AppGraph.Ready.poViewer(permissions: ProjectPermissions): PoViewer {
+private fun AppGraph.Ready.poViewer(permissions: ProjectPermissions, asTool: Boolean = false): PoViewer {
     val context = projectContext?.context?.value
     val me = context?.user(context.profile?.userId)
     return PoViewer(
@@ -2421,14 +2423,23 @@ private const val PURCHASE_ORDER_TOOL = "purchase_order_tool"
 
 private fun AppGraph.Ready.timecardViewer(): TimecardViewer {
     val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
+    val profile = context?.profile
+    val me = context?.user(profile?.userId)
     return TimecardViewer(
-        userId = context?.profile?.userId.orEmpty(),
-        departmentIdentifier = me?.department,
-        designationIdentifier = me?.designation,
+        userId = profile?.userId.orEmpty(),
+        // The profile's identifiers, not the crew row's display names. The
+        // profile is there from sign-in and the crew list arrives later, so
+        // an accountant resolved as crew until it landed and opened on the
+        // wrong page — the web reads the profile for this exact reason
+        // (`AuthContext.jsx:80`, the same guard the card tool carries). The
+        // crew row stays the fallback for a profile without them.
+        departmentIdentifier = profile?.departmentIdentifier ?: me?.department,
+        designationIdentifier = profile?.designationIdentifier ?: me?.designation,
     )
 }
 
+        // Which door this session came through — see purchaseOrderModel.
+        enteredAsTool = asTool,
 /** `Unknown` and `UpToDate` both mean "render nothing". */
 private fun UpdateStatus.toNotice(installed: String, updater: InAppUpdater, state: InstallState): UpdateNotice? {
     val (version, mandatory, url) = when (this) {
@@ -2442,6 +2453,43 @@ private fun UpdateStatus.toNotice(installed: String, updater: InAppUpdater, stat
 
 /** The updater's state for [version]; a state about another version reads as not started. */
 private fun InstallState.toInstall(version: String): UpdateInstall = when {
+/**
+ * One Purchase Orders view model for one door.
+ *
+ * [asTool] is the web's `?entry=tool` (`PurchaseOrdersRouter.jsx`): the Film
+ * Tools tile opens the **department view** — an accountant raises their own
+ * orders there, with no PO Entry, Posted or Settings — and the Account Hub's
+ * sidebar the **accounts console**. Each door keeps its own page, filters,
+ * selection and open form, as the web's two sessions do.
+ */
+private fun AppGraph.Ready.purchaseOrderModel(
+    permissions: () -> ProjectPermissions,
+    asTool: Boolean,
+): PurchaseOrderViewModel {
+    val graph = this
+    return PurchaseOrderViewModel(
+        repository = graph.purchaseOrderRepository,
+        viewer = { graph.poViewer(permissions(), asTool = asTool) },
+        offline = graph.offlineSupport,
+        // The form's configuration belongs to the account hub's service, not
+        // the purchase-order one, so it is handed in rather than fetched by
+        // the module's own repository.
+        formTemplate = graph.formTemplateFor(FormModule.PurchaseOrders),
+        // The Settings tab's pickers read the crew list, and its terms
+        // document rides the hub's document store.
+        people = graph.poSettingsPeople(),
+        termsFiles = graph.poTermsFiles(),
+        // Companies, tax types, departments and currencies — the web fetches
+        // all four once on PO entry and shares them between both role views;
+        // they are the hub's documents.
+        projectSettings = graph.poProjectSettings(),
+        // An order's own paperwork: the same store, a wider accept rule than
+        // the terms document's.
+        attachmentFiles = graph.poAttachmentFiles(),
+        badges = graph.purchaseOrderBadges(),
+    )
+}
+
     this.version != version -> UpdateInstall.Offer
     this is InstallState.Downloading -> UpdateInstall.Downloading(fraction?.let { (it * PERCENT).toInt() })
     this is InstallState.Preparing -> UpdateInstall.Preparing
@@ -2647,6 +2695,8 @@ internal class AppViewModels(
     val costReportWorksheet: com.zillit.desktop.feature.costreport.ui.worksheet.WorksheetViewModel?,
     /** The cost report's Analytics page, which both cost-report screens open. */
     val costReportAnalytics: com.zillit.desktop.feature.costreport.ui.analytics.AnalyticsViewModel?,
+    /** The same tool opened from the Film Tools tile — the department view; see [purchaseOrderModel]. */
+    val purchaseOrdersTool: PurchaseOrderViewModel?,
     val saPortal: SaPortalViewModel?,
     val adDashboard: AdViewModel?,
     /** The two budget tiles, one view model each — see BudgetToolProvider. */
@@ -2903,27 +2953,10 @@ private fun rememberAppViewModels(
                 ).also { cardModel = it }
             },
             purchaseOrders = ready?.let { graph ->
-                PurchaseOrderViewModel(
-                    repository = graph.purchaseOrderRepository,
-                    viewer = { graph.poViewer(permissions()) },
-                    offline = graph.offlineSupport,
-                    // The form's configuration belongs to the account hub's
-                    // service, not the purchase-order one, so it is handed in
-                    // rather than fetched by the module's own repository.
-                    formTemplate = graph.formTemplateFor(FormModule.PurchaseOrders),
-                    // The Settings tab's pickers read the crew list, and its
-                    // terms document rides the hub's document store.
-                    people = graph.poSettingsPeople(),
-                    termsFiles = graph.poTermsFiles(),
-                    // Companies, tax types, departments and currencies — the
-                    // web fetches all four once on PO entry and shares them
-                    // between both role views; they are the hub's documents.
-                    projectSettings = graph.poProjectSettings(),
-                    // An order's own paperwork: the same store, a wider accept
-                    // rule than the terms document's.
-                    attachmentFiles = graph.poAttachmentFiles(),
-                    badges = graph.purchaseOrderBadges(),
-                )
+                graph.purchaseOrderModel(permissions, asTool = false)
+            },
+            purchaseOrdersTool = ready?.let { graph ->
+                graph.purchaseOrderModel(permissions, asTool = true)
             },
             timecards = ready?.let { graph ->
                 TimecardViewModel(
@@ -3596,6 +3629,7 @@ private fun buildRegistry(
     val taxFiling = viewModels.taxFiling?.let { taxFilingProvider(it) }
     val bankRec = viewModels.bankRec?.let { bankRecProvider(it) }
     // The launch is the host's act — a loopback gateway plus a Chromium
+            toolViewModel = viewModels.purchaseOrdersTool ?: vm,
     // window — so the provider is handed a launcher, not a repository.
     val budgetBuilder = viewModels.budgetBuilder?.let { viewModel ->
         BudgetBuilderToolProvider(viewModel) { onProblem ->

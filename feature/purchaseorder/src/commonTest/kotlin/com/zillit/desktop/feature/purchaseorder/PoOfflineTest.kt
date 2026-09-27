@@ -94,6 +94,23 @@ class PoOfflineTest {
             runCurrent()
         }
 
+    /**
+     * The same, then moved to My POs.
+     *
+     * Only the read-cache tests want this, and they want it named rather than
+     * landed on: a department user's landing is decided by entitlement now
+     * (All POs with the posting right, else the Approval Queue —
+     * `lib/departmentLanding.js`), and the cache is keyed per page, so
+     * letting the landing choose would seed one page and read another.
+     * Opening a tab also clears the form, which is why the draft tests above
+     * must NOT go through here.
+     */
+    private fun TestScope.onMyPos(repository: FakeOrders, support: OfflineSupport?) =
+        viewModel(repository, support).also {
+            it.onEvent(PoEvent.Open(PoDestination.MyPos))
+            runCurrent()
+        }
+
     private val filled = PoFormState(
         mode = PoFormMode.NewOrder,
         vendorName = "Panavision",
@@ -197,18 +214,18 @@ class PoOfflineTest {
     fun `a list that cannot be fetched is shown from its saved copy, dated`() = runTest(dispatcher) {
         val support = support()
         val served = listOf(order("po-1", "PO-0001"), order("po-2", "PO-0002"))
-        viewModel(FakeOrders(myOrders = served), support)
+        onMyPos(FakeOrders(myOrders = served), support)
         // Fetched and remembered at `now`.
         val fetchedAt = now
 
         now += 60_000
-        val cut = viewModel(FakeOrders(myOrdersAnswer = ZillitResult.Failure(ZillitError.NoConnection())), support)
+        val cut = onMyPos(FakeOrders(myOrdersAnswer = ZillitResult.Failure(ZillitError.NoConnection())), support)
         assertEquals(served.map { it.id }, cut.state.value.orders.map { it.id })
         assertEquals(fetchedAt, cut.state.value.staleSince)
         assertNull(cut.state.value.error)
 
         // A server refusal is not "offline": no saved copy is shown for it.
-        val refused = viewModel(FakeOrders(myOrdersAnswer = ZillitResult.Failure(ZillitError.Http(500))), support)
+        val refused = onMyPos(FakeOrders(myOrdersAnswer = ZillitResult.Failure(ZillitError.Http(500))), support)
         assertNull(refused.state.value.staleSince)
         assertNotNull(refused.state.value.error)
     }

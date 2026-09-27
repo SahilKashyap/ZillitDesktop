@@ -115,12 +115,45 @@ class PurchaseOrderViewModel(
     private var started = false
     internal val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * Which door this session came through — the web's `?entry=tool`, captured
+     * once per Account Hub session (`AuthContext.jsx`) and held for its whole
+     * life, because internal navigation drops the query string.
+     *
+     * Held here and folded into every viewer this model resolves, rather than
+     * written once into the state: the viewer is re-read whenever the rights
+     * or the production change, and a door lost on one of those refreshes
+     * would drop an accountant from the department view into the console
+     * mid-session.
+     *
+     * Seeded from the supplier, because the host builds one model per door
+     * and its viewer already carries the answer. Without the seed the first
+     * `Enter(true)` a tile window sends would read as a *change* and re-land
+     * and re-fetch a model that was already on the right page.
+     */
+    private var enteredAsTool = viewer().enteredAsTool
+
+    /**
+     * True while the page on screen is the one [start] chose, not one the
+     * reader or a route asked for.
+     *
+     * The department landing is decided by a right that arrives after the
+     * tool opens ([PoDestination.landingFor]), so a default landing is
+     * re-decided when the rights land and a *chosen* page is never disturbed
+     * — the web's `awaitingLandingRights`, which holds the same distinction.
+     */
+    private var landedByDefault = false
+
+    /** This viewer, through this door. */
+    private fun identity(): PoViewer = viewer().copy(enteredAsTool = enteredAsTool)
+
     /** Resolves the viewer and opens their landing page. Idempotent. */
     fun start() {
         if (started) return
         started = true
         loadFormTemplate()
-        val identity = viewer()
+        val identity = identity()
+        landedByDefault = true
         setState { copy(viewer = identity, destination = PoDestination.landingFor(identity)) }
         launch { loadVendors() }
         launch { loadTeam() }
@@ -212,18 +245,62 @@ class PurchaseOrderViewModel(
     fun onRightsChanged() {
         // Read outside the state lambda: inside it, `viewer` is the
         // state's own viewer property rather than the supplier.
-        val resolved = viewer()
-        val moved = !currentState.destination.visibleTo(resolved)
+        val resolved = identity()
+        // Two reasons to move. The page may have become invisible — the
+        // usual one. Or the reader never picked this page at all: it is the
+        // landing [start] guessed before the rights said who they are, and
+        // the answer has changed now they have. Holding the second case is
+        // the web's `awaitingLandingRights`; without it a department user
+        // with the posting right opens the Approval Queue, fetches it, and
+        // is bumped to All POs a beat later — two fetches and a flicker.
+        val landing = PoDestination.landingFor(resolved)
+        val moved = !currentState.destination.visibleTo(resolved) ||
+            (landedByDefault && currentState.destination != landing)
         setState {
             copy(
                 viewer = resolved,
-                destination = if (moved) PoDestination.landingFor(resolved) else destination,
+                destination = if (moved) landing else destination,
             )
         }
         if (moved) load(currentState.destination)
         // A route asked for before the rights said who this is — `/queue`
         // before the viewer was known to be in accounts — is honoured now.
         pendingRoute?.let(::openRoute)
+    }
+
+    /**
+     * Moves this session to one door or the other — the web's `?entry=tool`.
+     *
+     * Through the **Film Tools tile** an accountant is a department user:
+     * they raise their own orders and never see PO Entry, Posted, Settings or
+     * the console's project-wide queues. Through the **Account Hub** they get
+     * the accounts console. `PoViewer.isAccountant` is what carries the
+     * difference, so reseating the viewer moves every gate in the tool at
+     * once — tabs, the action button's wording, the assistant banner, full
+     * access and the row gate.
+     *
+     * A no-op when the door has not changed, so a host may send it on every
+     * composition and on every focus. The page follows only when it has to: a
+     * page the new door cannot show becomes that door's landing, and one it
+     * can show is kept, because a reader switching windows should find what
+     * they left.
+     */
+    private fun enter(asTool: Boolean) {
+        if (asTool == enteredAsTool) return
+        enteredAsTool = asTool
+        val moved = identity()
+        val keep = currentState.destination.takeIf { it.visibleTo(moved) }
+        val target = keep ?: PoDestination.landingFor(moved)
+        landedByDefault = keep == null
+        setState { copy(viewer = moved, destination = target) }
+        // The form and the processing page belong to the door that opened
+        // them: the console's PO Entry has no meaning in the department view.
+        if (keep == null) {
+            setState { copy(form = null, entry = null, detail = null, selection = emptySet()) }
+            // Before `start`, the landing is fetched there — fetching here as
+            // well would put two reads of the same list in flight.
+            if (started) load(target)
+        }
     }
 
     /**
@@ -262,11 +339,17 @@ class PurchaseOrderViewModel(
         val scope = PoDestination.queueScopeFor(path) ?: PoQueueScope.Mine.takeIf { page == null }
         if (scope != null && scope != state.queueScope) setState { copy(queueScope = scope) }
         if (target != state.destination) open(target)
+        // A bare tool path names no page, so this is still the role's own
+        // landing and the rights may yet change it — the web sends department
+        // users to the bare path for exactly that (`poEntryPath.js`). A path
+        // that names a tab is a choice and is left alone.
+        landedByDefault = page == null
     }
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per user action.
     override fun onEvent(event: PoEvent) {
         when (event) {
+            is PoEvent.Enter -> enter(event.asTool)
             PoEvent.Refresh -> {
                 loadWorkflow()
                 load(currentState.destination)
@@ -371,6 +454,9 @@ class PurchaseOrderViewModel(
      * the Queue and Posted should not retype it three times.
      */
     private fun open(destination: PoDestination) {
+        // Whatever brought us here, the page is now a choice: the rights
+        // landing must not pull the reader off it when they arrive.
+        landedByDefault = false
         if (destination == PoDestination.Vendors) {
             sendEffect(PoEffect.OpenVendors)
             return

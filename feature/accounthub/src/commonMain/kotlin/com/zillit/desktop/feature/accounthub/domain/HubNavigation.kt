@@ -283,6 +283,34 @@ object HubNavigation {
             .mapNotNull { (it.target as? HubTarget.Page)?.area }
 
     /**
+     * Whether [area] may be opened, given who is asking and where from.
+     *
+     * The hub's own front door is [areasFor] and nothing else: a department
+     * user typing or bookmarking `/account-hub/vendors` is turned away, which
+     * is what the web does too (`AccountHubToolHost`:
+     * `isAccountant ? <VendorsModule/> : <Navigate to="../purchase-orders"/>`).
+     *
+     * **Vendors has a second door**, and only Vendors. The department
+     * purchase-order view has a Vendors *tab*, and the web fills it by
+     * mounting the very same `VendorsModule` inside the PO page
+     * (`DepartmentPOModule.jsx:60`) — bypassing the hub route entirely. So
+     * the page is theirs; only the hub's front door is not.
+     *
+     * The desktop's PO tool hands that tab off here rather than carrying a
+     * second copy of the vendor screens, so it says where it is coming from
+     * ([FROM_PURCHASE_ORDERS]) and is let through. Without it the tab reached
+     * the gate and did nothing at all — the hub opened, `open()` returned,
+     * and the reader was left on the console's landing with no vendors and no
+     * error. Widening [areasFor] instead would be the opposite mistake: a
+     * sidebar row, and an open front door, that the web does not give them.
+     */
+    fun mayOpen(area: HubArea, viewer: AccountHubViewer, from: String? = null): Boolean =
+        area in areasFor(viewer) || (area == HubArea.Vendors && from == FROM_PURCHASE_ORDERS)
+
+    /** [mayOpen]'s marker for the department PO view's own Vendors tab. */
+    const val FROM_PURCHASE_ORDERS = "purchase-orders"
+
+    /**
      * Where the console opens.
      *
      * Production Setup when it is reachable, because that is the configuration

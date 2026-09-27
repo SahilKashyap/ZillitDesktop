@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.purchaseorder
 
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
+import com.zillit.desktop.feature.purchaseorder.domain.PoApprovalTiers
+import com.zillit.desktop.feature.purchaseorder.domain.PoTierApprover
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoDepartment
 import com.zillit.desktop.feature.purchaseorder.domain.PoQuickFilter
@@ -16,6 +18,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.RENTAL_EXPENDITURE_TYPE
 import com.zillit.desktop.feature.purchaseorder.domain.splitCadence
 import com.zillit.desktop.feature.purchaseorder.ui.PoAudience
 import com.zillit.desktop.feature.purchaseorder.ui.PoDestination
+import com.zillit.desktop.feature.purchaseorder.ui.PoQueueScope
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
 import com.zillit.desktop.feature.purchaseorder.ui.periodsIn
 import kotlin.test.Test
@@ -145,11 +148,98 @@ class PoWebParityTest {
         assertEquals("Create PO", PoUiState(viewer = crew).createLabel)
     }
 
-    /** Everyone lands on the page with work on it, not a summary. */
+    /**
+     * The web's two landing rules — `poEntryPath.js` and
+     * `lib/departmentLanding.js`.
+     *
+     * An accountant through the hub opens their own queue. A department user
+     * opens by **entitlement**: anyone who may see every order on the
+     * production lands on All POs, everyone else on the Approval Queue. Never
+     * My POs, which is where this used to land and which the web has never
+     * opened a department user on — for a user with the posting right it hid
+     * the one page they came for.
+     */
     @Test
-    fun `the landing page is the role's own queue`() {
+    fun `the landing page follows the web's two rules`() {
         assertEquals(PoDestination.Queue, PoDestination.landingFor(senior))
-        assertEquals(PoDestination.MyPos, PoDestination.landingFor(crew))
+        assertEquals(PoDestination.ApprovalQueue, PoDestination.landingFor(crew))
+        assertEquals(PoDestination.DepartmentAllPos, PoDestination.landingFor(crew.copy(isProjectAdmin = true)))
+        assertEquals(
+            PoDestination.DepartmentAllPos,
+            PoDestination.landingFor(crew.copy(canPostPurchaseOrders = true)),
+        )
+    }
+
+    /**
+     * The Film Tools tile is the web's `?entry=tool`, and it is a different
+     * module: `PurchaseOrdersRouter` mounts `DepartmentPOModule` for an
+     * accountant who arrived that way.
+     *
+     * Everything the console is follows from `isAccountant`, so the whole
+     * difference is one flag on the viewer: the six console tabs go, the six
+     * department ones arrive, the action button changes its wording, the
+     * assistant banner goes with the console it explains, and full access
+     * falls back to the department rule (`is_admin`) from the accountant one
+     * (the senior designation).
+     */
+    @Test
+    fun `the Film Tools tile gives an accountant the department view`() {
+        val throughTheTile = senior.copy(enteredAsTool = true)
+
+        assertTrue(senior.isAccountant)
+        assertFalse(throughTheTile.isAccountant)
+
+        // The console's tabs are gone and the department's have arrived.
+        assertTrue(PoDestination.Entry.visibleTo(senior))
+        assertFalse(PoDestination.Entry.visibleTo(throughTheTile))
+        assertFalse(PoDestination.Posted.visibleTo(throughTheTile))
+        assertFalse(PoDestination.Settings.visibleTo(throughTheTile))
+        assertTrue(PoDestination.MyPos.visibleTo(throughTheTile))
+        assertTrue(PoDestination.DepartmentPos.visibleTo(throughTheTile))
+
+        // A senior accountant is senior in the console and an ordinary
+        // department user through the tile — the web's two predicates.
+        assertTrue(senior.hasFullAccess)
+        assertFalse(throughTheTile.hasFullAccess)
+        assertTrue(throughTheTile.copy(isProjectAdmin = true).hasFullAccess)
+
+        // And the surface says so: Create PO, no Assistant View banner.
+        assertEquals("Create PO", PoUiState(viewer = throughTheTile).createLabel)
+        assertFalse(PoUiState(viewer = throughTheTile).showAssistantBanner)
+
+        // Through the tile they land like any department user.
+        assertEquals(PoDestination.ApprovalQueue, PoDestination.landingFor(throughTheTile))
+    }
+
+    /**
+     * The console's row gate — `isDisabled` in `PurchaseOrdersModule`'s All
+     * POs table and in `POQueue`'s All sub-tab, and nowhere else.
+     *
+     * An accounts assistant is shown every order on the production so the
+     * cards above the table add up, but may only open the ones that are
+     * theirs: assigned to them, or on whose approval chain they sit.
+     */
+    @Test
+    fun `only the console's project-wide lists withhold a row`() {
+        val mine = order(assignedTo = assistant.userId)
+        val theirs = order(assignedTo = "someone-else")
+        val allPos = PoUiState(viewer = assistant, destination = PoDestination.AllPos)
+
+        assertTrue(allPos.canOpen(mine))
+        assertFalse(allPos.canOpen(theirs))
+
+        // My Queue lists nothing but their own work, so it gates nothing.
+        val myQueue = allPos.copy(destination = PoDestination.Queue, queueScope = PoQueueScope.Mine)
+        assertTrue(myQueue.canOpen(theirs))
+        assertFalse(allPos.copy(destination = PoDestination.Queue, queueScope = PoQueueScope.All).canOpen(theirs))
+
+        // A senior opens everything, and so does the order's approver.
+        assertTrue(allPos.copy(viewer = senior).canOpen(theirs))
+        assertTrue(
+            allPos.copy(
+                tiers = PoApprovalTiers(legacy = mapOf(1 to listOf(PoTierApprover(assistant.userId, null)))),
+            ).canOpen(theirs),
+        )
     }
 
     /**

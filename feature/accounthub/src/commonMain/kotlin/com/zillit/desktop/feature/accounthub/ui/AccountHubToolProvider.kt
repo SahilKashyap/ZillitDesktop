@@ -168,7 +168,10 @@ internal fun hubRouteEvents(path: String): List<AccountHubEvent> {
     val area = HubArea.fromSlug(segments.firstOrNull()) ?: return emptyList()
     val module = segments.getOrNull(1)?.let(FormModule::from)
     return listOfNotNull(
-        AccountHubEvent.Open(area),
+        // `?from=purchase-orders` — the department PO view's Vendors tab,
+        // which the web fills by embedding the vendors module rather than by
+        // this route. It is the one caller the gate lets through.
+        AccountHubEvent.Open(area, from = query["from"]),
         module?.takeIf { area == HubArea.FormConfig }?.let(AccountHubEvent::OpenFormConfig),
         // `?module=card_expenses` — the web's "Set Approval Level" link from the
         // card and petty-cash modules lands on that module's chain.

@@ -89,6 +89,17 @@ enum class PoDestination(
     val isRegisterTab: Boolean get() = this == Templates || this == Drafts || this == DeliveryAddresses
 
     /**
+     * Whether this page withholds rows the reader may not open — the web's
+     * two gated tables, and only those two.
+     *
+     * The console's All POs always; its Queue only on the **All** half, since
+     * "My Queue" is by definition already the reader's own. See
+     * [PoUiState.canOpen] for the rule itself.
+     */
+    fun gatesRows(scope: PoQueueScope): Boolean =
+        this == AllPos || (this == Queue && scope == PoQueueScope.All)
+
+    /**
      * Where this tab's badge rows live, for the four tabs the web badges
      * (`PurchaseOrdersModule.jsx:2653`, `DepartmentPOModule.jsx:563`); null
      * for a tab that carries no slice. Invoices is counted by unit, not here.
@@ -138,11 +149,35 @@ enum class PoDestination(
         /**
          * Where a viewer lands when nothing was asked for.
          *
-         * The web lands an accountant on their own queue (`/queue/my`) and
-         * everyone else on their orders — `poEntryPath.js`. Both are the page
-         * with work on it rather than a summary, which is the point.
+         * Two rules, and the web keeps them in two files because they are
+         * decided at different moments:
+         *
+         * - an accountant through the hub lands on their own queue
+         *   (`/queue/my` — `poEntryPath.js`), the page with work on it rather
+         *   than a summary;
+         * - everyone in the department view lands by **entitlement**
+         *   (`lib/departmentLanding.js`): anyone who may see every order on
+         *   the production opens there, and everyone else on the Approval
+         *   Queue. The web sends department users to the *bare* path for
+         *   exactly this reason — naming a tab in the link pinned every
+         *   posting user to the Approval Queue and made the check
+         *   unreachable.
+         *
+         * Note this is **not** My POs, which is where this landed before: the
+         * web has never opened a department user there, and for a user with
+         * the posting right it hid the one page they came for.
+         *
+         * While the rights payload is still in flight `canPostPurchaseOrders`
+         * is false, so an entitled user would land on the Approval Queue and
+         * be moved a beat later. The view model holds the landing until the
+         * rights arrive rather than fetching twice — the web's
+         * `awaitingLandingRights`.
          */
-        fun landingFor(viewer: PoViewer): PoDestination = if (viewer.isAccountant) Queue else MyPos
+        fun landingFor(viewer: PoViewer): PoDestination = when {
+            viewer.isAccountant -> Queue
+            DepartmentAllPos.visibleTo(viewer) -> DepartmentAllPos
+            else -> ApprovalQueue
+        }
     }
 }
 

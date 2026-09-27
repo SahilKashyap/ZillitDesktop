@@ -54,9 +54,13 @@ data class PoDeliveryAddress(
      * accountant may edit any, everyone else only the rows they created. Shown
      * rather than discovered — the web disables the pencil with
      * "Only the creator or an accountant can edit this".
+     *
+     * The *department*, not the console view: the web reads `isAccountant`
+     * straight off the auth user here, so an accountant who opened the tool
+     * from the Film Tools tile keeps this. See [PoViewer.isAccountsDepartment].
      */
     fun editableBy(viewer: PoViewer): Boolean =
-        viewer.isAccountant || viewer.hasFullAccess || (createdBy != null && createdBy == viewer.userId)
+        viewer.isAccountsDepartment || viewer.hasFullAccess || (createdBy != null && createdBy == viewer.userId)
 }
 
 /** The parts of a delivery address, as the form and the wire both hold them. */
