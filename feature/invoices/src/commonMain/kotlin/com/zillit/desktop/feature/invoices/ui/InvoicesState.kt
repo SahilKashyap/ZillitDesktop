@@ -707,8 +707,17 @@ data class InvoicesUiState(
     fun vendorName(invoice: Invoice): String =
         vendors[invoice.vendorId]?.name?.ifBlank { null } ?: invoice.supplierName.ifBlank { str(S.desktop_unknown) }
 
-    /** A department the directory has not got: an em dash, never its id. */
-    fun departmentName(id: String): String = departmentNames[id] ?: id.orDash()
+    /**
+     * A department the directory has not got: an em dash, never its id —
+     * the web's `DEPT_NAME[id] || "—"`, unconditional on any miss.
+     *
+     * [String.orDash] alone was not enough: it only masks a raw ObjectId or
+     * UUID, so an invoice whose `department_id` carries an identifier-style
+     * slug instead of a real id (seen live: `department_writer`, sitting
+     * beside a genuine "Writer" department) still fell through it and
+     * printed the slug verbatim in the register's own filter dropdown.
+     */
+    fun departmentName(id: String): String = departmentNames[id] ?: null.orDash()
 
     /**
      * The Register's department filter: every department of the production in

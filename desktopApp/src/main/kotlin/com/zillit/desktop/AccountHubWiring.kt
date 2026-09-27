@@ -9,6 +9,7 @@ import com.zillit.desktop.core.datastore.PreferenceScope
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.forms.FormTemplateSource
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.media.AwtAttachmentPicker
 import com.zillit.desktop.core.media.PickRefusal
 import com.zillit.desktop.core.media.PreviewKind
@@ -268,10 +269,16 @@ internal fun AppGraph.Ready.formTemplateFor(
  * reads them. An empty answer is a working state: the pay breakdown's scope
  * picker then shows the ids it already holds rather than dropping a scope it
  * cannot put a name to.
+ *
+ * Localised here, once: a production that never renamed a default department
+ * keeps its untranslated key as `name` (`accounts_department_label` instead
+ * of "Accounts") — seen live on Cash Expenses' Approval Queue — and every
+ * caller of this shared read (Invoices, Bank Reconciliation) would otherwise
+ * have to remember to translate it itself.
  */
 internal suspend fun AppGraph.Ready.departmentNames(): Map<String, String> =
     when (val loaded = adminRepository.departments()) {
-        is ZillitResult.Success -> loaded.data.associate { it.id to it.name }
+        is ZillitResult.Success -> loaded.data.associate { it.id to it.name.localised() }
         is ZillitResult.Failure -> emptyMap()
     }
 
@@ -311,14 +318,23 @@ internal suspend fun AppGraph.Ready.hubUsers(): List<HubUser> {
     }
 }
 
-/** Departments with their designations, for the payroll groups and the approver scope picker. */
+/**
+ * Departments with their designations, for the payroll groups, the approver
+ * scope picker, Cash/Card Expenses and Cost Report's Analytics filter.
+ *
+ * [name] is localised for the same reason [departmentNames] is; [identifier]
+ * is slugified from the *localised* name so a department whose raw `name` is
+ * itself a label key (`accounts_department_label`) still derives the same
+ * `department_accounts` other readers match on, not a garbled double key.
+ */
 internal suspend fun AppGraph.Ready.hubDepartments(): List<HubDepartment> =
     when (val loaded = adminRepository.departments()) {
         is ZillitResult.Success -> loaded.data.map { department ->
+            val name = department.name.localised()
             HubDepartment(
                 id = department.id,
-                name = department.name,
-                identifier = department.name.trim().lowercase().replace(Regex("\\s+"), "_").let { "department_$it" },
+                name = name,
+                identifier = name.trim().lowercase().replace(Regex("\\s+"), "_").let { "department_$it" },
                 designations = department.jobTitles.map { HubDesignation(id = it.id, name = it.name) },
             )
         }
