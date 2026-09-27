@@ -46,6 +46,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
+import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
@@ -224,7 +225,7 @@ private fun LedgerToolbar(state: CardUiState, onEvent: (CardEvent) -> Unit) {
  * when the panel opens. Reset clears the draft only; Done applies it — and is
  * the only thing that reaches the server.
  */
-@Suppress("LongMethod") // One panel: four fields, its header and its footer.
+@Suppress("LongMethod", "CyclomaticComplexMethod") // One panel: four fields, its header and its footer.
 @Composable
 private fun FilterPanel(state: CardUiState, onDone: () -> Unit, onEvent: (CardEvent) -> Unit) {
     val colors = ZillitTheme.colors
@@ -312,19 +313,44 @@ private fun FilterPanel(state: CardUiState, onDone: () -> Unit, onEvent: (CardEv
                 modifier = Modifier.fillMaxWidth(),
             )
             FilterLabel(str(S.cs_date_range))
+            // EITHER Until today (every transaction, no dates sent) OR the
+            // range below — never both. Checking it does not clear the stored
+            // range, so unchecking brings it back.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { draft = draft.copy(untilToday = !draft.untilToday) },
+            ) {
+                ZillitSwitch(checked = draft.untilToday, onCheckedChange = { draft = draft.copy(untilToday = it) })
+                ZillitText(str(S.desktop_ce_until_today), style = ZillitTheme.typography.label)
+                if (draft.untilToday) {
+                    ZillitText(
+                        str(S.desktop_ce_until_today_all_transactions),
+                        style = ZillitTheme.typography.labelSmall,
+                        color = colors.textMuted,
+                    )
+                }
+            }
+            val todayIso = remember { TransactionFilters.todayIso() }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ZillitDateField(
-                    value = draft.from,
+                    value = if (draft.untilToday) "" else draft.from,
                     onValueChange = { draft = draft.copy(from = it) },
+                    enabled = !draft.untilToday,
+                    errorText = str(S.desktop_ce_date_must_not_be_in_the_future)
+                        .takeIf { draft.from.isNotBlank() && draft.from > todayIso },
                     modifier = Modifier.weight(1f),
                 )
                 ZillitText("–", color = colors.textMuted)
                 ZillitDateField(
-                    value = draft.to,
+                    value = if (draft.untilToday) "" else draft.to,
                     onValueChange = { draft = draft.copy(to = it) },
+                    enabled = !draft.untilToday,
+                    errorText = str(S.desktop_ce_date_must_not_be_in_the_future)
+                        .takeIf { draft.to.isNotBlank() && draft.to > todayIso },
                     modifier = Modifier.weight(1f),
                 )
             }
