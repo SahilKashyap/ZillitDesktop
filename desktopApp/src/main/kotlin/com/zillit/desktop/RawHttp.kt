@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
@@ -130,6 +131,15 @@ internal fun rawExportError(httpStatus: Int?, serverMessage: String?, fallbackMe
  *
  * Kept in this file rather than folded into [com.zillit.desktop.core.network.ApiClient]:
  * that class speaks envelopes only, and every caller here reads raw bytes.
+ *
+ * Logs status + URL only, at the same level `ApiClient` logs a failure —
+ * never headers or bytes. [httpClient] is the lean, unlogged storage client
+ * on purpose (it also carries S3 uploads and the token session's own calls,
+ * whose answers hold live credentials), but every URL that reaches here is
+ * the app's own export/download endpoint, never one of those, so naming it
+ * costs nothing. Without this line, a raw call's failure was invisible in
+ * `~/.zillit/logs` — diagnosing one meant a temporary debug log and a
+ * rebuild, twice, before this existed.
  */
 internal suspend fun AppGraph.Ready.signedRawResponse(
     module: RequestModule,
@@ -154,8 +164,13 @@ internal suspend fun AppGraph.Ready.signedRawResponse(
             response = perform(resolvedHeaders, renewed)
         }
     }
+    if (!response.status.isSuccess()) {
+        ZillitLog.w(RAW_HTTP_TAG) { "${response.status.value} $url" }
+    }
     return response
 }
+
+private const val RAW_HTTP_TAG = "RawHttp"
 
 private const val HTTP_UNAUTHORIZED = 401
 private const val HTTP_FORBIDDEN = 403
