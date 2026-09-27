@@ -2,10 +2,13 @@ package com.zillit.desktop.feature.purchaseorder.ui.pages
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -157,12 +160,19 @@ internal fun PoDraftsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         contentPadding = PaddingValues(ZillitTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        // Draft Value can gain a currencies subtitle Total Drafts never does —
+        // fixed height, not each tile's own, or the row goes uneven exactly
+        // like the Queue and All POs rows did (see purchaseorder-web-parity-port).
+        Row(
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            val tile = Modifier.weight(1f).fillMaxHeight()
             ZillitStatTile(
                 label = str(S.desktop_po_total_drafts),
                 value = rows.size.toString(),
                 icon = ZillitIcons.File,
-                modifier = Modifier.weight(1f),
+                modifier = tile,
             )
             ZillitStatTile(
                 label = str(S.desktop_po_draft_value),
@@ -170,7 +180,7 @@ internal fun PoDraftsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 sub = rows.currencyNote(),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Wallet,
-                modifier = Modifier.weight(1f),
+                modifier = tile,
             )
         }
         ZillitSectionCard(

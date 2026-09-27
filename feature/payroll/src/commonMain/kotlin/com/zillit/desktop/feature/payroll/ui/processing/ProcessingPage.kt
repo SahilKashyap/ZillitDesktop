@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -228,11 +230,18 @@ private fun ProcessingTiles(state: PayrollUiState) {
         else -> str(S.desktop_payroll_gross_payroll)
     }
     val approved = rows.count { it.timecard.processingBucket == ProcessingNav.Approved }
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    // Gross, Projected Weekly and Approved always carry a subtitle; OTs/Premiums
+    // and Allowances/Rental never do — a fixed height, not each tile's own, or
+    // the row goes uneven every time it renders.
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        val tile = Modifier.weight(1f).fillMaxHeight()
         ZillitStatTile(
             lead,
             Money.format(gross, currency),
-            Modifier.weight(1f),
+            tile,
             str(S.desktop_payroll_crew_count, rows.size),
         )
         if (processing.view == ProcessingView.WeekToDate) {
@@ -240,25 +249,25 @@ private fun ProcessingTiles(state: PayrollUiState) {
             ZillitStatTile(
                 str(S.desktop_payroll_projected_weekly),
                 Money.format(projected, currency),
-                Modifier.weight(1f),
+                tile,
                 str(S.desktop_payroll_extrapolated),
             )
         }
         ZillitStatTile(
             str(S.desktop_payroll_ots_premiums),
             Money.format(inRange.sumOf { it.ots }, currency),
-            Modifier.weight(1f),
+            tile,
             tone = StatusTone.Pending,
         )
         ZillitStatTile(
             str(S.desktop_payroll_allowances_rental),
             Money.format(inRange.sumOf { it.allowances }, currency),
-            Modifier.weight(1f),
+            tile,
         )
         ZillitStatTile(
             str(S.approved),
             approved.toString(),
-            Modifier.weight(1f),
+            tile,
             str(S.desktop_payroll_of_count, rows.size),
             tone = StatusTone.Ready,
         )
