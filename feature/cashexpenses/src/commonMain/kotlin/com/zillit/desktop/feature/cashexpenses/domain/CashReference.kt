@@ -22,9 +22,26 @@ data class CashCurrencies(
     val currencies: List<CashCurrency> = emptyList(),
     /** Production Setup's default; null until it is read, or on a project that has none. */
     val defaultCode: String? = null,
+    /**
+     * Upper-case ISO code to its rate against the default (`exr`, foreign per
+     * default); a currency with no usable rate is absent — the purchase
+     * order module's `PoCurrencyRates` in the same shape.
+     */
+    val rates: Map<String, Double> = emptyMap(),
 ) {
     /** The code aggregates render in — never blank. */
     val default: String get() = defaultCode?.takeIf { it.isNotBlank() } ?: LEGACY_DEFAULT
+
+    /**
+     * Converts [amount] in [code] into the default currency, or null when the
+     * code has no rate — the caller adds such an amount at face value and
+     * says so. Dividing by `exr` mirrors `PoCurrencyRates.toDefault`.
+     */
+    fun toDefault(amount: Double, code: String?): Double? {
+        val currency = code?.uppercase()?.takeIf { it.isNotBlank() } ?: return amount
+        if (currency == default.uppercase()) return amount
+        return rates[currency]?.let { amount / it }
+    }
 
     /**
      * A record's currency — `record.currency || record.transaction_currency ||
