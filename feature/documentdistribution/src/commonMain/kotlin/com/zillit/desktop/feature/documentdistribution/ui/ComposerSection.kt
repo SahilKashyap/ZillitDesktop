@@ -152,10 +152,13 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
 
     fun close() {
         // Device uploads that were never sent are the composer's to clean up;
-        // a reused row belongs to the past send it came from.
+        // a reused row belongs to the past send it came from. Closing itself
+        // is never blocked by a rights change mid-session — only the network
+        // cleanup call is, since it is the one thing here that writes.
         val orphaned = vm.state.composer.attachments.filter { it.isEphemeral && !it.reused }
+        val canPost = vm.state.viewer.canPost
         vm.update { copy(composer = ComposerState()) }
-        if (orphaned.isNotEmpty()) vm.run { orphaned.forEach { vm.repository.deleteEphemeral(it.id) } }
+        if (orphaned.isNotEmpty() && canPost) vm.run { orphaned.forEach { vm.repository.deleteEphemeral(it.id) } }
     }
 
     private inline fun edit(crossinline change: ComposerState.() -> ComposerState) =
@@ -239,11 +242,15 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
 
     fun removeAttachment(documentId: String) {
         val removed = vm.state.composer.attachments.firstOrNull { it.id == documentId } ?: return
+        // Dropping a library reference is local; dropping an own upload deletes
+        // it on the server, so only that branch needs the rights check.
+        val deletesUpload = removed.isEphemeral && !removed.reused
+        if (deletesUpload && vm.refusesWrite()) return
         edit { copy(
             attachments = attachments.filterNot { it.id == documentId },
             watermarked = watermarked - documentId,
         ) }
-        if (removed.isEphemeral && !removed.reused) vm.run { vm.repository.deleteEphemeral(removed.id) }
+        if (deletesUpload) vm.run { vm.repository.deleteEphemeral(removed.id) }
     }
 
     /** Order matters: the mail attaches the files in this sequence. */
@@ -265,11 +272,13 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
 
     fun pickAndAttach() {
         if (vm.state.composer.uploading != null) return
+        if (vm.refusesWrite()) return
         vm.run { attachFiles(vm.host.pickFiles()) }
     }
 
     fun attachDropped(files: List<LocalFile>) {
         if (!vm.state.composer.open) return
+        if (vm.refusesWrite()) return
         vm.run { attachFiles(files) }
     }
 
@@ -306,6 +315,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
     fun confirmOversize() {
         val chooser = vm.state.composer.oversize ?: return
         if (chooser.over || chooser.selected.isEmpty()) return
+        if (vm.refusesWrite()) return
         val picked = chooser.files.filterIndexed { index, _ -> index in chooser.selected }
         edit { copy(oversize = null) }
         vm.run { uploadEphemeral(picked) }

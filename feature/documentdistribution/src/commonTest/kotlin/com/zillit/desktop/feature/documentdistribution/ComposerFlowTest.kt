@@ -21,11 +21,13 @@ import com.zillit.desktop.feature.documentdistribution.domain.WatermarkLine
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.ui.AddressField
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination
+import com.zillit.desktop.feature.documentdistribution.ui.DocDistEffect
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -193,6 +195,76 @@ class ComposerFlowTest {
         vm.onEvent(DocDistEvent.CloseComposer)
         runCurrent()
         assertEquals(listOf("e1"), repo.deletedEphemeral, "an unsent upload does not linger on the server")
+    }
+
+    /**
+     * `pickAndAttach` reaches `repository.uploadEphemeral` straight from
+     * `onEvent`, bypassing the guard every composer-opening function has —
+     * so it needs its own check, or a rights change mid-session (the same
+     * race `send()`'s own comment calls out) leaves the composer able to
+     * upload with nothing gating it.
+     */
+    @Test
+    fun `losing post rights mid-session blocks a device upload`() = runTest(dispatcher) {
+        var canPost = true
+        val repo = Repo()
+        val vm = DocDistViewModel(
+            repository = repo,
+            viewer = { DocDistViewer(userId = "u1", userEmail = "me@x.com", ready = true, canPost = canPost) },
+            today = { LocalDate(2026, 9, 13) },
+            host = host,
+        ).also { it.start() }
+        runCurrent()
+        vm.onEvent(DocDistEvent.ComposeBlank)
+        runCurrent()
+        assertTrue(vm.state.value.composer.open)
+
+        canPost = false
+        vm.onRightsChanged()
+        host.files = listOf(LocalFile("scan.png", "image/png", ByteArray(10)))
+        val failures = mutableListOf<String>()
+        val effects = launch { vm.effects.collect { if (it is DocDistEffect.Failed) failures += it.message } }
+        vm.onEvent(DocDistEvent.PickAndAttach)
+        runCurrent()
+
+        assertEquals(0, repo.uploaded, "a viewer who lost post rights uploaded a file")
+        assertTrue(vm.state.value.composer.attachments.isEmpty())
+        assertTrue(failures.isNotEmpty(), "the rights refusal should say so")
+        effects.cancel()
+    }
+
+    /**
+     * `close`'s cleanup delete is the one write in the composer that fires
+     * with no effect and no button of its own — a rights change mid-session
+     * must still stop the network call, but must not stop the close itself:
+     * the composer resets either way, it is only the server cleanup that
+     * needs the right.
+     */
+    @Test
+    fun `losing post rights mid-session skips the cleanup delete on close`() = runTest(dispatcher) {
+        var canPost = true
+        val repo = Repo()
+        val vm = DocDistViewModel(
+            repository = repo,
+            viewer = { DocDistViewer(userId = "u1", userEmail = "me@x.com", ready = true, canPost = canPost) },
+            today = { LocalDate(2026, 9, 13) },
+            host = host,
+        ).also { it.start() }
+        runCurrent()
+        vm.onEvent(DocDistEvent.ComposeBlank)
+        runCurrent()
+        host.files = listOf(LocalFile("scan.png", "image/png", ByteArray(10)))
+        vm.onEvent(DocDistEvent.PickAndAttach)
+        runCurrent()
+        assertEquals(1, repo.uploaded)
+
+        canPost = false
+        vm.onRightsChanged()
+        vm.onEvent(DocDistEvent.CloseComposer)
+        runCurrent()
+
+        assertTrue(repo.deletedEphemeral.isEmpty(), "the cleanup call must not fire without post rights")
+        assertTrue(!vm.state.value.composer.open, "closing itself is never blocked, only the network call")
     }
 
     @Test
