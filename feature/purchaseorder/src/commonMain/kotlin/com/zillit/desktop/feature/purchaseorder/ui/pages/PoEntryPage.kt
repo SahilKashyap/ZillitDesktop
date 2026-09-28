@@ -39,6 +39,9 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
+import com.zillit.desktop.feature.purchaseorder.domain.customFieldPicks
+import com.zillit.desktop.feature.purchaseorder.domain.customFieldsJson
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
 import com.zillit.desktop.feature.purchaseorder.domain.trackingJson
 import com.zillit.desktop.feature.purchaseorder.domain.trackingPicks
@@ -401,7 +404,7 @@ private fun CodingCard(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent)
             )
         },
     ) {
-        EntryLineHeader()
+        EntryLineHeader(state)
         ZillitDivider()
         entry.lines.forEachIndexed { index, line ->
             EntryLineRow(state, entry, line, index, onEvent)
@@ -410,19 +413,45 @@ private fun CodingCard(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent)
     }
 }
 
-/** The coded table's column headers — a row of bare inputs is unreadable without them. */
+/**
+ * The coded table's column headers — Forms Configuration's own `line_items`
+ * section, not a fixed set (see [LineColumns]). No Expenditure Type column
+ * exists on this page — the header's own coding, not a line-level pick.
+ */
 @Composable
-private fun EntryLineHeader() {
+private fun EntryLineHeader(state: PoUiState) {
+    val cols = LineColumns(state.formLayout, isAccountant = true)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        EntryHeaderCell(str(S.description), Modifier.weight(1f))
-        EntryHeaderCell(str(S.ah_lbl_qty), Modifier.width(QTY_FIELD))
-        EntryHeaderCell(str(S.dm_step2_unit), Modifier.width(PRICE_FIELD))
-        EntryHeaderCell(str(S.code), Modifier.width(CODE_FIELD))
-        EntryHeaderCell(str(S.ah_lbl_vat_tax), Modifier.width(TAX_FIELD))
-        EntryHeaderCell(str(S.desktop_layers), Modifier.width(PO_LAYERS_WIDTH))
+        if (cols.description) {
+            EntryHeaderCell(cols.reqLabel(str(S.description), PoFormFields.LINE_DESCRIPTION), Modifier.weight(1f))
+        }
+        if (cols.quantity) {
+            EntryHeaderCell(cols.reqLabel(str(S.ah_lbl_qty), PoFormFields.LINE_QUANTITY), Modifier.width(QTY_FIELD))
+        }
+        if (cols.unitPrice) {
+            EntryHeaderCell(
+                cols.reqLabel(str(S.dm_step2_unit), PoFormFields.LINE_UNIT_PRICE),
+                Modifier.width(PRICE_FIELD),
+            )
+        }
+        if (cols.code) {
+            EntryHeaderCell(cols.reqLabel(str(S.code), PoFormFields.ACCOUNT_CODE), Modifier.width(CODE_FIELD))
+        }
+        if (cols.tax) {
+            EntryHeaderCell(cols.reqLabel(str(S.ah_lbl_vat_tax), PoFormFields.TAX_TYPE), Modifier.width(TAX_FIELD))
+        }
+        if (cols.layers) {
+            EntryHeaderCell(
+                cols.reqLabel(str(S.desktop_layers), PoFormFields.TRACKING_CODES),
+                Modifier.width(PO_LAYERS_WIDTH),
+            )
+        }
+        cols.custom.forEach { field ->
+            EntryHeaderCell(field.name + if (field.required) " *" else "", Modifier.width(CUSTOM_FIELD_WIDTH))
+        }
         EntryHeaderCell(str(S.amount), Modifier.width(AMOUNT_WIDTH))
         EntryHeaderCell("", Modifier.width(LINE_ACTIONS))
     }
@@ -477,85 +506,111 @@ private fun EntryLineRow(
     }
     // The last Post named this row for want of a nominal.
     val flagged = (index + 1) in entry.missingCodes
+    val cols = LineColumns(state.formLayout, isAccountant = true)
+    val customPicks = line.customFields.customFieldPicks()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitTextField(
-            value = line.description,
-            onValueChange = { set(line.copy(description = it)) },
-            placeholder = if (line.isSplitChild) str(S.desktop_po_split_child) else str(S.ah_description_hint),
-            leadingIcon = if (line.isSplitChild) ZillitIcons.ArrowRight else null,
-            modifier = Modifier.weight(1f),
-        )
+        if (cols.description) {
+            ZillitTextField(
+                value = line.description,
+                onValueChange = { set(line.copy(description = it)) },
+                placeholder = if (line.isSplitChild) str(S.desktop_po_split_child) else str(S.ah_description_hint),
+                leadingIcon = if (line.isSplitChild) ZillitIcons.ArrowRight else null,
+                modifier = Modifier.weight(1f),
+            )
+        }
         if (line.isSplitChild) {
             // The web locks a split child's own qty/price/tax — its total
             // exists only to be redistributed from the parent's.
-            EntryLockedCell(line.quantity.trimmed(), Modifier.width(QTY_FIELD))
-            EntryLockedCell(line.unitPrice.trimmed(), Modifier.width(PRICE_FIELD))
+            if (cols.quantity) EntryLockedCell(line.quantity.trimmed(), Modifier.width(QTY_FIELD))
+            if (cols.unitPrice) EntryLockedCell(line.unitPrice.trimmed(), Modifier.width(PRICE_FIELD))
         } else {
+            if (cols.quantity) {
+                ZillitTextField(
+                    value = line.quantity.trimmed(),
+                    onValueChange = {
+                        setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null))
+                    },
+                    placeholder = str(S.ah_lbl_qty),
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(QTY_FIELD),
+                )
+            }
+            if (cols.unitPrice) {
+                ZillitTextField(
+                    value = line.unitPrice.trimmed(),
+                    onValueChange = {
+                        setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
+                    },
+                    placeholder = str(S.dm_step2_unit),
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(PRICE_FIELD),
+                )
+            }
+        }
+        if (cols.code) {
             ZillitTextField(
-                value = line.quantity.trimmed(),
-                onValueChange = { setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-                placeholder = str(S.ah_lbl_qty),
-                keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.width(QTY_FIELD),
-            )
-            ZillitTextField(
-                value = line.unitPrice.trimmed(),
-                onValueChange = {
-                    setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
-                },
-                placeholder = str(S.dm_step2_unit),
-                keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.width(PRICE_FIELD),
+                value = line.nominalCode.orEmpty(),
+                onValueChange = { set(line.copy(nominalCode = it.takeIf { code -> code.isNotBlank() })) },
+                placeholder = str(S.code),
+                errorText = if (flagged) str(S.desktop_po_nominal_required) else null,
+                modifier = Modifier.width(CODE_FIELD),
             )
         }
-        ZillitTextField(
-            value = line.nominalCode.orEmpty(),
-            onValueChange = { set(line.copy(nominalCode = it.takeIf { code -> code.isNotBlank() })) },
-            placeholder = str(S.code),
-            errorText = if (flagged) str(S.desktop_po_nominal_required) else null,
-            modifier = Modifier.width(CODE_FIELD),
-        )
-        if (line.isSplitChild) {
-            EntryLockedCell(
-                state.taxTypes.firstOrNull { it.id == line.taxType }?.name ?: str(S.ah_lbl_vat_tax),
-                Modifier.width(TAX_FIELD),
-            )
-        } else {
-            ZillitSelect(
-                value = line.taxType,
-                options = listOf(null) + state.taxTypes.map { it.id },
-                onSelect = { id ->
-                    // Children inherit the parent's tax at split time; a later
-                    // edit here has to keep reaching them or they quote a
-                    // stale rate.
-                    val tax = state.taxTypes.firstOrNull { it.id == id }
-                    val parentKey = line.id ?: "line-$index"
-                    val lines = entry.lines.mapIndexed { at, row ->
-                        when {
-                            at == index -> row.copy(taxType = id, vatRate = tax?.rate)
-                            row.splitParentId == parentKey -> row.copy(taxType = id, vatRate = tax?.rate)
-                            else -> row
+        if (cols.tax) {
+            if (line.isSplitChild) {
+                EntryLockedCell(
+                    state.taxTypes.firstOrNull { it.id == line.taxType }?.name ?: str(S.ah_lbl_vat_tax),
+                    Modifier.width(TAX_FIELD),
+                )
+            } else {
+                ZillitSelect(
+                    value = line.taxType,
+                    options = listOf(null) + state.taxTypes.map { it.id },
+                    onSelect = { id ->
+                        // Children inherit the parent's tax at split time; a later
+                        // edit here has to keep reaching them or they quote a
+                        // stale rate.
+                        val tax = state.taxTypes.firstOrNull { it.id == id }
+                        val parentKey = line.id ?: "line-$index"
+                        val lines = entry.lines.mapIndexed { at, row ->
+                            when {
+                                at == index -> row.copy(taxType = id, vatRate = tax?.rate)
+                                row.splitParentId == parentKey -> row.copy(taxType = id, vatRate = tax?.rate)
+                                else -> row
+                            }
                         }
-                    }
-                    val next = entry.copy(lines = lines, missingCodes = entry.missingCodes - (index + 1))
-                    onEvent(PoEvent.EditEntry(next))
+                        val next = entry.copy(lines = lines, missingCodes = entry.missingCodes - (index + 1))
+                        onEvent(PoEvent.EditEntry(next))
+                    },
+                    label = { id ->
+                        id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
+                            ?: str(S.ah_lbl_vat_tax)
+                    },
+                    modifier = Modifier.width(TAX_FIELD),
+                )
+            }
+        }
+        if (cols.layers) {
+            PoLineLayersField(
+                sets = state.trackingSets,
+                picked = line.trackingCodes.trackingPicks(),
+                enabled = true,
+                modifier = Modifier.width(PO_LAYERS_WIDTH),
+            ) { picks -> set(line.copy(trackingCodes = picks.trackingJson())) }
+        }
+        cols.custom.forEach { field ->
+            ZillitTextField(
+                value = customPicks[field.label].orEmpty(),
+                onValueChange = { value ->
+                    set(line.copy(customFields = (customPicks + (field.label to value)).customFieldsJson()))
                 },
-                label = { id ->
-                    id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
-                        ?: str(S.ah_lbl_vat_tax)
-                },
-                modifier = Modifier.width(TAX_FIELD),
+                placeholder = field.name,
+                modifier = Modifier.width(CUSTOM_FIELD_WIDTH),
             )
         }
-        PoLineLayersField(
-            sets = state.trackingSets,
-            picked = line.trackingCodes.trackingPicks(),
-            enabled = true,
-            modifier = Modifier.width(PO_LAYERS_WIDTH),
-        ) { picks -> set(line.copy(trackingCodes = picks.trackingJson())) }
         if (line.isSplitChild) {
             // The one editable figure on a split child: typing here
             // redistributes the remainder across its siblings.

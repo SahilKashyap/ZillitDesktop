@@ -41,6 +41,14 @@ object PoFormFields {
     const val DELIVERY_POSTAL_CODE = "delivery_postal_code"
     const val COUNTRY = "country"
 
+    // -- the line_items section's own fields, `POForm.jsx`'s `lineItemSystemLabels` --
+    const val LINE_DESCRIPTION = "line_description"
+    const val LINE_QUANTITY = "line_quantity"
+    const val LINE_UNIT_PRICE = "line_unit_price"
+    const val EXP_TYPE = "exp_type"
+    const val TAX_TYPE = "tax_type"
+    const val TRACKING_CODES = "tracking_codes"
+
     /**
      * What the desktop form offers a control for.
      *

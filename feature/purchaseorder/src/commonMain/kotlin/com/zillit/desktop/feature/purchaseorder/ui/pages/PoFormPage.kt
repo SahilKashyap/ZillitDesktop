@@ -47,6 +47,8 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.RENTAL_EXPENDITURE_TYPE
+import com.zillit.desktop.feature.purchaseorder.domain.customFieldPicks
+import com.zillit.desktop.feature.purchaseorder.domain.customFieldsJson
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
 import com.zillit.desktop.feature.purchaseorder.domain.splitCadence
 import com.zillit.desktop.feature.purchaseorder.domain.trackingJson
@@ -621,7 +623,7 @@ private fun LineItemsSection(state: PoUiState, form: PoFormState, onEvent: (PoEv
             )
         },
     ) {
-        LineHeader(showLayers = state.viewer.isAccountant)
+        LineHeader(state)
         form.lines.forEachIndexed { index, line ->
             LineRow(
                 state = state,
@@ -649,22 +651,44 @@ private fun LineItemsSection(state: PoUiState, form: PoFormState, onEvent: (PoEv
 }
 
 /**
- * The line table's column headers — the web draws them from the form template's
- * own field order, and they are what makes a row of bare inputs legible.
+ * The line table's column headers — Forms Configuration's own `line_items`
+ * section, not a fixed set: a hidden system field draws no header, and a
+ * required one carries the web's own " *" (`POForm.jsx`'s `reqMark`).
  */
 @Composable
-private fun LineHeader(showLayers: Boolean) {
+private fun LineHeader(state: PoUiState) {
+    val layout = state.formLayout
+    val cols = LineColumns(layout, state.viewer.isAccountant)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        HeaderCell(str(S.description), Modifier.weight(1f))
-        HeaderCell(str(S.desktop_exp_type), Modifier.width(EXP_WIDTH))
-        HeaderCell(str(S.ah_lbl_qty), Modifier.width(QTY_WIDTH))
-        HeaderCell(str(S.ah_lbl_unit_price), Modifier.width(PRICE_WIDTH))
-        HeaderCell(str(S.code), Modifier.width(CODE_COLUMN))
-        HeaderCell(str(S.ah_lbl_vat_tax), Modifier.width(TAX_WIDTH))
-        if (showLayers) HeaderCell(str(S.desktop_layers), Modifier.width(PO_LAYERS_WIDTH))
+        if (cols.description) {
+            HeaderCell(cols.reqLabel(str(S.description), PoFormFields.LINE_DESCRIPTION), Modifier.weight(1f))
+        }
+        if (cols.expType) {
+            HeaderCell(cols.reqLabel(str(S.desktop_exp_type), PoFormFields.EXP_TYPE), Modifier.width(EXP_WIDTH))
+        }
+        if (cols.quantity) {
+            HeaderCell(cols.reqLabel(str(S.ah_lbl_qty), PoFormFields.LINE_QUANTITY), Modifier.width(QTY_WIDTH))
+        }
+        if (cols.unitPrice) {
+            HeaderCell(
+                cols.reqLabel(str(S.ah_lbl_unit_price), PoFormFields.LINE_UNIT_PRICE),
+                Modifier.width(PRICE_WIDTH),
+            )
+        }
+        if (cols.code) HeaderCell(cols.reqLabel(str(S.code), PoFormFields.ACCOUNT_CODE), Modifier.width(CODE_COLUMN))
+        if (cols.tax) HeaderCell(cols.reqLabel(str(S.ah_lbl_vat_tax), PoFormFields.TAX_TYPE), Modifier.width(TAX_WIDTH))
+        if (cols.layers) {
+            HeaderCell(
+                cols.reqLabel(str(S.desktop_layers), PoFormFields.TRACKING_CODES),
+                Modifier.width(PO_LAYERS_WIDTH),
+            )
+        }
+        cols.custom.forEach { field ->
+            HeaderCell(field.name + if (field.required) " *" else "", Modifier.width(CUSTOM_FIELD_WIDTH))
+        }
         HeaderCell(str(S.amount), Modifier.width(AMOUNT_WIDTH))
     }
     ZillitDivider()
@@ -734,6 +758,8 @@ private fun LineRow(
         }
         onEvent(PoEvent.EditForm(form.copy(lines = lines)))
     }
+    val cols = LineColumns(state.formLayout, state.viewer.isAccountant)
+    val customPicks = line.customFields.customFieldPicks()
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         if (line.isSplitChild) {
             ZillitText(
@@ -746,87 +772,111 @@ private fun LineRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitTextField(
-                value = line.description,
-                onValueChange = { set(line.copy(description = it)) },
-                placeholder = str(S.ah_description_hint),
-                modifier = Modifier.weight(1f),
-            )
-            ZillitSelect(
-                value = line.expenditureType,
-                options = listOf(null) + EXPENDITURE_TYPES,
-                onSelect = { type ->
-                    setSyncingChildren(line.copy(expenditureType = type)) { it.copy(expenditureType = type) }
-                },
-                label = { expenditureTypeLabel(it) },
-                modifier = Modifier.width(EXP_WIDTH),
-            )
+            if (cols.description) {
+                ZillitTextField(
+                    value = line.description,
+                    onValueChange = { set(line.copy(description = it)) },
+                    placeholder = str(S.ah_description_hint),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (cols.expType) {
+                ZillitSelect(
+                    value = line.expenditureType,
+                    options = listOf(null) + EXPENDITURE_TYPES,
+                    onSelect = { type ->
+                        setSyncingChildren(line.copy(expenditureType = type)) { it.copy(expenditureType = type) }
+                    },
+                    label = { expenditureTypeLabel(it) },
+                    modifier = Modifier.width(EXP_WIDTH),
+                )
+            }
             if (line.isSplitChild) {
                 // The web locks a split child's own qty/price/tax — its total
                 // exists only to be redistributed from the parent's, and a
                 // child that silently repriced itself would stop summing back
                 // to the order the parent still shows (`POForm.jsx:2619-2660`).
-                LockedCell(line.quantity.trimmed(), Modifier.width(QTY_WIDTH))
-                LockedCell(line.unitPrice.trimmed(), Modifier.width(PRICE_WIDTH))
+                if (cols.quantity) LockedCell(line.quantity.trimmed(), Modifier.width(QTY_WIDTH))
+                if (cols.unitPrice) LockedCell(line.unitPrice.trimmed(), Modifier.width(PRICE_WIDTH))
             } else {
-                ZillitTextField(
-                    value = line.quantity.trimmed(),
-                    onValueChange = { setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-                    placeholder = str(S.ah_lbl_qty),
-                    keyboardType = KeyboardType.Decimal,
-                    modifier = Modifier.width(QTY_WIDTH),
-                )
-                ZillitTextField(
-                    value = line.unitPrice.trimmed(),
-                    onValueChange = {
-                        setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
-                    },
-                    placeholder = str(S.ah_lbl_unit_price),
-                    keyboardType = KeyboardType.Decimal,
-                    modifier = Modifier.width(PRICE_WIDTH),
+                if (cols.quantity) {
+                    ZillitTextField(
+                        value = line.quantity.trimmed(),
+                        onValueChange = {
+                            setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null))
+                        },
+                        placeholder = str(S.ah_lbl_qty),
+                        keyboardType = KeyboardType.Decimal,
+                        modifier = Modifier.width(QTY_WIDTH),
+                    )
+                }
+                if (cols.unitPrice) {
+                    ZillitTextField(
+                        value = line.unitPrice.trimmed(),
+                        onValueChange = {
+                            setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
+                        },
+                        placeholder = str(S.ah_lbl_unit_price),
+                        keyboardType = KeyboardType.Decimal,
+                        modifier = Modifier.width(PRICE_WIDTH),
+                    )
+                }
+            }
+            if (cols.code) {
+                val nominalOptions = (
+                    state.nominals.map { it.code } + listOfNotNull(line.nominalCode?.takeIf { it.isNotBlank() })
+                    ).distinct()
+                ZillitSearchSelect(
+                    value = line.nominalCode?.takeIf { it.isNotBlank() },
+                    options = nominalOptions,
+                    onSelect = { set(line.copy(nominalCode = it)) },
+                    label = { code -> state.nominals.firstOrNull { it.code == code }?.label ?: code },
+                    onCreate = { typed -> set(line.copy(nominalCode = typed)) },
+                    placeholder = str(S.code),
+                    modifier = Modifier.width(CODE_COLUMN),
                 )
             }
-            val nominalOptions = (
-                state.nominals.map { it.code } + listOfNotNull(line.nominalCode?.takeIf { it.isNotBlank() })
-                ).distinct()
-            ZillitSearchSelect(
-                value = line.nominalCode?.takeIf { it.isNotBlank() },
-                options = nominalOptions,
-                onSelect = { set(line.copy(nominalCode = it)) },
-                label = { code -> state.nominals.firstOrNull { it.code == code }?.label ?: code },
-                onCreate = { typed -> set(line.copy(nominalCode = typed)) },
-                placeholder = str(S.code),
-                modifier = Modifier.width(CODE_COLUMN),
-            )
-            if (line.isSplitChild) {
-                LockedCell(
-                    state.taxTypes.firstOrNull { it.id == line.taxType }?.name ?: str(S.ah_lbl_vat_tax),
-                    Modifier.width(TAX_WIDTH),
-                )
-            } else {
-                ZillitSelect(
-                    value = line.taxType,
-                    options = listOf(null) + state.taxTypes.map { it.id },
-                    onSelect = { id ->
-                        val tax = state.taxTypes.firstOrNull { it.id == id }
-                        setSyncingChildren(line.copy(taxType = id, vatRate = tax?.rate)) {
-                            it.copy(taxType = id, vatRate = tax?.rate)
-                        }
-                    },
-                    label = { id ->
-                        id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
-                            ?: str(S.ah_lbl_vat_tax)
-                    },
-                    modifier = Modifier.width(TAX_WIDTH),
-                )
+            if (cols.tax) {
+                if (line.isSplitChild) {
+                    LockedCell(
+                        state.taxTypes.firstOrNull { it.id == line.taxType }?.name ?: str(S.ah_lbl_vat_tax),
+                        Modifier.width(TAX_WIDTH),
+                    )
+                } else {
+                    ZillitSelect(
+                        value = line.taxType,
+                        options = listOf(null) + state.taxTypes.map { it.id },
+                        onSelect = { id ->
+                            val tax = state.taxTypes.firstOrNull { it.id == id }
+                            setSyncingChildren(line.copy(taxType = id, vatRate = tax?.rate)) {
+                                it.copy(taxType = id, vatRate = tax?.rate)
+                            }
+                        },
+                        label = { id ->
+                            id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
+                                ?: str(S.ah_lbl_vat_tax)
+                        },
+                        modifier = Modifier.width(TAX_WIDTH),
+                    )
+                }
             }
-            if (state.viewer.isAccountant) {
+            if (cols.layers) {
                 PoLineLayersField(
                     sets = state.trackingSets,
                     picked = line.trackingCodes.trackingPicks(),
                     enabled = true,
                     modifier = Modifier.width(PO_LAYERS_WIDTH),
                 ) { picks -> set(line.copy(trackingCodes = picks.trackingJson())) }
+            }
+            cols.custom.forEach { field ->
+                ZillitTextField(
+                    value = customPicks[field.label].orEmpty(),
+                    onValueChange = { value ->
+                        set(line.copy(customFields = (customPicks + (field.label to value)).customFieldsJson()))
+                    },
+                    placeholder = field.name,
+                    modifier = Modifier.width(CUSTOM_FIELD_WIDTH),
+                )
             }
             if (line.isSplitChild) {
                 // The one editable figure on a split child: typing here
