@@ -165,6 +165,15 @@ fun <T> ZillitDataTable(
      * read as a broken table, not as a closed door.
      */
     rowEnabled: ((T) -> Boolean)? = null,
+    /**
+     * Replaces a row's per-column cells with one composable spanning the
+     * whole width — the web's `colSpan`, which this table has no other way
+     * to express. A null answer (the default, for every row) keeps the
+     * ordinary per-column layout; used for a vendor-group header line, which
+     * needs its name, count and total to read across the columns rather than
+     * squeezed into one.
+     */
+    rowContent: ((T) -> (@Composable RowScope.() -> Unit)?)? = null,
 ) {
     // A duplicate key would take the whole window down inside a LazyColumn.
     // Ids come from a server, and a server that repeats one is a bug worth a
@@ -208,6 +217,7 @@ fun <T> ZillitDataTable(
                     virtualised = virtualised,
                     rowTint = rowTint,
                     rowEnabled = rowEnabled,
+                    rowContent = rowContent,
                 )
             }
             if (wide) ZillitHorizontalScrollRail(across)
@@ -237,6 +247,7 @@ private fun <T> ColumnScope.TableBody(
     virtualised: Boolean,
     rowTint: ((T) -> Color?)?,
     rowEnabled: ((T) -> Boolean)?,
+    rowContent: ((T) -> (@Composable RowScope.() -> Unit)?)?,
 ) {
     run {
         TableHeader(columns)
@@ -264,6 +275,7 @@ private fun <T> ColumnScope.TableBody(
                                 ?.let { click -> { click(row) } },
                             tint = rowTint?.invoke(row),
                             dimmed = rowEnabled?.invoke(row) == false,
+                            content = rowContent?.invoke(row),
                         )
                         ZillitDivider()
                     }
@@ -282,6 +294,7 @@ private fun <T> ColumnScope.TableBody(
                             ?.let { click -> { click(row) } },
                         tint = rowTint?.invoke(row),
                         dimmed = rowEnabled?.invoke(row) == false,
+                        content = rowContent?.invoke(row),
                     )
                     ZillitDivider()
                 }
@@ -330,6 +343,8 @@ private fun <T> TableRow(
     tint: Color? = null,
     /** A row the reader may not open — shown, but visibly out of reach. */
     dimmed: Boolean = false,
+    /** Non-null replaces the per-column cells below with one full-width composable. */
+    content: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -360,6 +375,10 @@ private fun <T> TableRow(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (content != null) {
+            content()
+            return@Row
+        }
         columns.forEach { column ->
             Box(
                 modifier = cellModifier(column.width),

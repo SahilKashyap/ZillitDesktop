@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -26,7 +27,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -267,6 +270,9 @@ private fun ColumnScope.OpenItemsPanel(state: InvoicesUiState, nowMs: Long, onEv
         action = { OpenItemsActions(state, onEvent) },
     ) {
         PanelHint(str(S.desktop_inv_select_per_vendor))
+        // Resolved here, in composable scope, so the plain (non-composable)
+        // rowTint lambda below can just return it.
+        val headerTint = ZillitTheme.colors.accentSoft
         ZillitDataTable(
             rows = state.openItemRows,
             columns = groupedColumns(state, nowMs, onEvent),
@@ -278,6 +284,12 @@ private fun ColumnScope.OpenItemsPanel(state: InvoicesUiState, nowMs: Long, onEv
             emptyTitle = str(S.desktop_inv_no_posted_awaiting_payment),
             loading = state.loading && state.invoices.isEmpty(),
             modifier = Modifier.fillMaxSize(),
+            // The web's `bg-[#faf9f6]` — a group's line reads as a heading,
+            // not just another row.
+            rowTint = { row -> if (row is OpenItemRow.Header) headerTint else null },
+            rowContent = { row ->
+                (row as? OpenItemRow.Header)?.let { header -> { GroupHeaderRow(state, header, onEvent) } }
+            },
         )
     }
 }
@@ -326,46 +338,67 @@ private fun OpenItemsActions(state: InvoicesUiState, onEvent: (InvoicesEvent) ->
 }
 
 /**
- * A header line per vendor and currency — its tick, "{vendor} · {currency}"
- * and count, its total, and ▾ / ▸ — then that group's invoices.
+ * A header row's own columns never render — [OpenItemsPanel] supplies
+ * [GroupHeaderRow] as the table's `rowContent` instead, since a group's line
+ * needs to read across the columns (the web's `colSpan`) rather than being
+ * squeezed into the narrow Ref column alone.
  */
 private fun groupedColumns(
     state: InvoicesUiState,
     nowMs: Long,
     onEvent: (InvoicesEvent) -> Unit,
-): List<TableColumn<OpenItemRow>> = openItemColumns(state, nowMs, onEvent).mapIndexed { index, column ->
+): List<TableColumn<OpenItemRow>> = openItemColumns(state, nowMs, onEvent).map { column ->
     TableColumn<OpenItemRow>(column.header, column.width, numeric = column.numeric) { row ->
-        when (row) {
-            is OpenItemRow.Item -> column.cell(row.invoice)
-            is OpenItemRow.Header -> GroupCell(state, row, index, onEvent)
-        }
+        if (row is OpenItemRow.Item) column.cell(row.invoice)
     }
 }
 
+/**
+ * A vendor-and-currency group's line — its tick, "{vendor} · {currency}" with
+ * its count, the group's total (compact, as the web's tiles use), and ▾ / ▸ —
+ * spanning the row rather than sitting inside one column, matching the web's
+ * `colSpan` layout (`PaymentsPage.jsx:414-448`).
+ */
 @Composable
-private fun GroupCell(state: InvoicesUiState, row: OpenItemRow.Header, index: Int, onEvent: (InvoicesEvent) -> Unit) {
+private fun RowScope.GroupHeaderRow(state: InvoicesUiState, row: OpenItemRow.Header, onEvent: (InvoicesEvent) -> Unit) {
     val group = row.group
     val ticked = state.pay.openItemsSelected
-    when (index) {
-        TICK_COLUMN -> ZillitCheckbox(
-            checked = group.ids.isNotEmpty() && ticked.containsAll(group.ids),
-            onCheckedChange = { onEvent(InvoicesEvent.SelectGroup(group.ids)) },
-        )
-        REF_COLUMN -> ZillitText(
+    val picked = group.ids.count { it in ticked }
+    val partial = picked > 0 && picked < group.ids.size
+    val count = countMeta(group.invoices.size)
+    ZillitCheckbox(
+        checked = group.ids.isNotEmpty() && ticked.containsAll(group.ids),
+        onCheckedChange = { onEvent(InvoicesEvent.SelectGroup(group.ids)) },
+        modifier = Modifier.width(TICK_WIDTH),
+    )
+    Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(
             text = "${group.vendorName} · ${group.currency}",
             style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold),
             maxLines = 1,
         )
-        DESCRIPTION_COLUMN -> {
-            val picked = group.ids.count { it in ticked }
-            val count = countMeta(group.invoices.size)
-            val partial = picked > 0 && picked < group.ids.size
-            CellText(if (partial) "$count (${str(S.dd_n_selected, picked)})" else count, muted = true)
-        }
-        AMOUNT_COLUMN -> MoneyText(group.total, group.currency, state.projectCurrency)
-        LAST_COLUMN -> CellText(if (row.open) "▾" else "▸", muted = true)
-        else -> Unit
+        CellText(if (partial) "$count (${str(S.dd_n_selected, picked)})" else count, muted = true)
     }
+    ZillitText(
+        text = Money.compact(group.total, group.currency),
+        style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.Bold),
+        color = ZillitTheme.colors.accent,
+        maxLines = 1,
+        textAlign = TextAlign.End,
+        modifier = Modifier.width(GROUP_TOTAL_WIDTH),
+    )
+    ZillitText(
+        text = if (row.open) "▾" else "▸",
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.textMuted,
+        maxLines = 1,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.width(CHEVRON_WIDTH),
+    )
 }
 
 /** Ref, vendor, description, amount, PO, method (a plain chip) and days, as the web's rows. */
@@ -772,10 +805,7 @@ private val PAYMENTS_KEY: String = AccountantPage.Payments.badgeKey.orEmpty()
 private const val TILE_COLUMNS = 5
 private const val BORDER_ALPHA = 0.3f
 
-/** The flat table's columns, as the grouped header lines up against them. */
-private const val TICK_COLUMN = 0
-private const val REF_COLUMN = 1
-private const val DESCRIPTION_COLUMN = 3
-private const val AMOUNT_COLUMN = 4
-private const val LAST_COLUMN = 8
 private val CHEVRON_WIDTH = 40.dp
+
+/** The group header's total — roughly the PO + Method columns' width, as the web's `colSpan={2}` covers. */
+private val GROUP_TOTAL_WIDTH = 240.dp
