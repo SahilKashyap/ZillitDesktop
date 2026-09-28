@@ -200,6 +200,14 @@ object ZillitPreferences {
      */
     val UpdateInstanceId = PreferenceKey.StringKey("update.instanceId", "", PreferenceScope.Device)
 
+    /**
+     * The version the app last restarted itself to install. Seeing that
+     * version staged again means the install did not take — a declined
+     * password or UAC prompt — so the next restart waits for a click instead
+     * of looping.
+     */
+    val UpdateAutoRestartTried = PreferenceKey.StringKey("update.autoRestartTried", "", PreferenceScope.Device)
+
     // -- last-used context (user-scoped) -----------------------------------
 
     val LastProjectId = PreferenceKey.StringKey("session.lastProjectId", "", PreferenceScope.User)
@@ -267,6 +275,7 @@ object ZillitPreferences {
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch, WorkspaceViewMode,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
+        UpdateAutoRestartTried,
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,

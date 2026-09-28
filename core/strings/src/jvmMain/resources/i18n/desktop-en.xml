@@ -10298,4 +10298,8 @@
     <string name="desktop_ce_until_today">Until today</string>
     <string name="desktop_ce_until_today_all_transactions">All transactions</string>
     <string name="desktop_ce_date_must_not_be_in_the_future">Must not be in the future</string>
+    <string name="desktop_update_restarting_in">Version %1$s is ready. Zillit will restart to finish updating in %2$d s.</string>
+    <string name="desktop_update_restart_after_call">Version %1$s is ready. Zillit will restart to finish updating when your call ends.</string>
+    <string name="desktop_update_required_title">Update required</string>
+    <string name="desktop_update_required_detail">This version of Zillit is no longer supported. Zillit will update itself and reopen.</string>
 </resources>

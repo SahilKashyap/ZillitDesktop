@@ -35,6 +35,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * |---|---|---|
  * | `desktop_latest_version` | `1.2.0` | newest published desktop build |
  * | `desktop_min_version` | `1.1.0` | below this, updating is mandatory |
+ * | `desktop_force_update` | `true` | any build below `desktop_latest_version` must update |
  * | `desktop_download_url` | `https://zillit.com/download` | where to send the reader |
  *
  * ### Per-platform overrides
@@ -70,6 +71,11 @@ import kotlinx.serialization.json.JsonPrimitive
  * Use `_windows` with the `.msi`. The digest is what stops a swapped file on
  * the CDN from being installed; the build's code signature is checked too
  * (`PlatformInstaller`), but the digest is checked first and needs no OS tool.
+ *
+ * When `desktop_installer_url` is absent, a `desktop_download_url` that is
+ * itself a `.dmg` or `.msi` stands in for it — prod publishes the file there
+ * and only the digest beside it. The digest is still required: a link alone
+ * never installs anything.
  *
  * `desktop_download_url` is optional: when it is absent the checker falls back
  * to the Zillit configuration's own `app_download_url`
@@ -237,7 +243,8 @@ class AppUpdateChecker(
 
         val url = usableUrl(entries.forPlatform(KEY_DOWNLOAD_URL, os)) ?: usableUrl(fallbackDownloadUrl())
         val installer = installerRef(
-            rawUrl = entries.forPlatform(KEY_INSTALLER_URL, os),
+            rawUrl = entries.forPlatform(KEY_INSTALLER_URL, os)?.takeIf { AppVersions.normalise(it).isNotEmpty() }
+                ?: entries.forPlatform(KEY_DOWNLOAD_URL, os)?.takeIf(::isInstallerFile),
             rawSha256 = entries.forPlatform(KEY_INSTALLER_SHA256, os),
         )
         ZillitLog.d(TAG) {
@@ -248,10 +255,13 @@ class AppUpdateChecker(
             // published — "update to at least this" beats naming nothing.
             return UpdateStatus.Required(latest.takeIf { AppVersions.isMeaningful(it) } ?: floor, url, installer)
         }
-        return if (AppVersions.isNewer(latest, installed)) {
-            UpdateStatus.Available(latest, url, installer)
+        if (!AppVersions.isNewer(latest, installed)) return UpdateStatus.UpToDate
+        // The switch makes "behind the latest" mandatory — but only behind it:
+        // unlike Android's global flag, a build already current is never forced.
+        return if (isOn(entries.forPlatform(KEY_FORCE_UPDATE, os))) {
+            UpdateStatus.Required(latest, url, installer)
         } else {
-            UpdateStatus.UpToDate
+            UpdateStatus.Available(latest, url, installer)
         }
     }
 
@@ -366,6 +376,23 @@ internal fun installerRef(rawUrl: String?, rawSha256: String?): InstallerRef? {
 
 private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
 
+/**
+ * A Remote Config boolean: every value is a string, and the console gets
+ * typed into — `true`, `"true"`, `TRUE` and `1` all mean on; anything else,
+ * absence included, is off.
+ */
+internal fun isOn(raw: String?): Boolean = AppVersions.normalise(raw).lowercase() in setOf("true", "1", "yes")
+
+/**
+ * True when [raw] links straight to a `.dmg` or `.msi` — a file an installer
+ * can take, rather than a page for a person to read (prod's plain
+ * `desktop_download_url` is a Google Drive page).
+ */
+internal fun isInstallerFile(raw: String): Boolean {
+    val path = AppVersions.normalise(raw).substringBefore('?').substringBefore('#').lowercase()
+    return path.endsWith(".dmg") || path.endsWith(".msi")
+}
+
 /** `https://firebaseremoteconfig.googleapis.com` — no trailing slash. */
 const val FIREBASE_REMOTE_CONFIG_HOST = "https://firebaseremoteconfig.googleapis.com"
 
@@ -374,6 +401,9 @@ const val KEY_LATEST_VERSION = "desktop_latest_version"
 
 /** Builds below this must update to keep working. */
 const val KEY_MIN_VERSION = "desktop_min_version"
+
+/** `true` makes any build older than [KEY_LATEST_VERSION] update before it can be used. */
+const val KEY_FORCE_UPDATE = "desktop_force_update"
 
 /** Where the Download action sends the reader; falls back to `app_download_url`. */
 const val KEY_DOWNLOAD_URL = "desktop_download_url"

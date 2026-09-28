@@ -46,8 +46,9 @@ import com.zillit.desktop.core.strings.str
  *
  * ## The in-app steps
  *
- * With [UpdateNotice.install] set the strip walks Update now → a progress bar
- * → Restart now. A failed download offers Try again; a file that failed its
+ * With [UpdateNotice.install] set the strip walks a progress bar → a
+ * countdown to the automatic restart, with Restart now beside it. A failed
+ * download offers Try again; a file that failed its
  * checksum or signature does not (it would fail the same way) and falls back
  * to the download page.
  *
@@ -82,30 +83,15 @@ internal fun UpdateBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                InstallAction(notice, accent, onInstall, onRestart, onCancel, onOpenDownloaded)
-                // The page link stays wherever the app cannot finish the job
-                // itself: no installer, or an install that stopped.
-                if (notice.install == null || notice.install is UpdateInstall.Failed) {
-                    notice.downloadUrl?.let { url ->
-                        // The lambda is the app's guarded launcher — https only.
-                        // The URL came out of a remote console, so nothing here may
-                        // hand it to the OS directly.
-                        ZillitButton(
-                            // Says where it goes. Once the app can download
-                            // in place, the only button that leaves it must
-                            // not look like the one that does not.
-                            text = if (notice.manual) str(S.desktop_update_open_in_browser) else str(S.download),
-                            onClick = { onDownload(url) },
-                            size = ButtonSize.Small,
-                            variant = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Secondary,
-                        )
-                    }
-                }
+                UpdateActions(notice, accent, onDownload, onInstall, onRestart, onCancel, onOpenDownloaded)
                 // Absent when mandatory: there is no "later" for a build the
                 // server will stop serving.
                 // Nor while downloading: dismissing would hide a download
-                // that is still running, with no way back to cancel it.
-                if (!notice.mandatory && notice.install !is UpdateInstall.Downloading) {
+                // that is still running, with no way back to cancel it. Nor
+                // while a restart is counting down: the strip stays up (see
+                // shownAfter), so an X would do nothing.
+                val autoRestart = (notice.install as? UpdateInstall.Ready)?.automatic == true
+                if (!notice.mandatory && notice.install !is UpdateInstall.Downloading && !autoRestart) {
                     ZillitIconButton(
                         icon = ZillitIcons.Close,
                         contentDescription = str(S.desktop_dismiss_update),
@@ -118,16 +104,51 @@ internal fun UpdateBanner(
     )
 }
 
+/**
+ * The step's own control, then the download page wherever the app cannot
+ * finish the job itself: no installer, or an install that stopped. Shared by
+ * the strip and [ForceUpdateScreen], so the two never offer different ways out.
+ */
+@Composable
+@Suppress("LongParameterList") // one per callback the strip exposes
+internal fun UpdateActions(
+    notice: UpdateNotice,
+    accent: Color,
+    onDownload: (String) -> Unit,
+    onInstall: () -> Unit,
+    onRestart: () -> Unit,
+    onCancel: () -> Unit,
+    onOpenDownloaded: () -> Unit,
+) {
+    InstallAction(notice, accent, onInstall, onRestart, onCancel, onOpenDownloaded)
+    if (notice.install == null || notice.install is UpdateInstall.Failed) {
+        notice.downloadUrl?.let { url ->
+            // The lambda is the app's guarded launcher — https only.
+            // The URL came out of a remote console, so nothing here may
+            // hand it to the OS directly.
+            ZillitButton(
+                // Says where it goes. Once the app can download
+                // in place, the only button that leaves it must
+                // not look like the one that does not.
+                text = if (notice.manual) str(S.desktop_update_open_in_browser) else str(S.download),
+                onClick = { onDownload(url) },
+                size = ButtonSize.Small,
+                variant = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Secondary,
+            )
+        }
+    }
+}
+
 /** The strip's sentence for where the update has got to. */
 @Composable
-private fun bannerText(notice: UpdateNotice): String {
+internal fun bannerText(notice: UpdateNotice): String {
     val version = notice.latestVersion
     return when (val install = notice.install) {
         is UpdateInstall.Downloading -> install.percent
             ?.let { str(S.desktop_update_downloading_percent, version, it) }
             ?: str(S.desktop_update_downloading, version)
         UpdateInstall.Preparing -> str(S.desktop_update_preparing, version)
-        UpdateInstall.Ready -> str(S.desktop_update_ready, version)
+        is UpdateInstall.Ready -> readyText(install, version)
         UpdateInstall.Downloaded -> str(S.desktop_update_downloaded, version)
         is UpdateInstall.Failed -> when {
             install.retryable -> str(S.desktop_update_failed_network, version)
@@ -141,6 +162,14 @@ private fun bannerText(notice: UpdateNotice): String {
             str(headline, version) + installed
         }
     }
+}
+
+/** A staged build: when the restart comes on its own, or that it waits for a click. */
+@Composable
+private fun readyText(install: UpdateInstall.Ready, version: String): String = when {
+    install.afterCall -> str(S.desktop_update_restart_after_call, version)
+    install.restartIn != null -> str(S.desktop_update_restarting_in, version, install.restartIn)
+    else -> str(S.desktop_update_ready, version)
 }
 
 /** Update now, the progress bar, Restart now or Try Again — whichever the step calls for. */
@@ -197,7 +226,7 @@ private fun InstallAction(
             variant = primary,
             modifier = Modifier.testTag(OPEN_INSTALLER_TAG),
         )
-        UpdateInstall.Ready -> ZillitButton(
+        is UpdateInstall.Ready -> ZillitButton(
             text = str(S.desktop_update_restart_now),
             onClick = onRestart,
             size = ButtonSize.Small,

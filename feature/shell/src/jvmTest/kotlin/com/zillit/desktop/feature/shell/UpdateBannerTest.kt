@@ -25,6 +25,8 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * The update strip, composed inside the real frame.
@@ -199,7 +201,8 @@ class UpdateBannerTest {
         onNodeWithText("Try Again").assertIsDisplayed()
 
         onNodeWithContentDescription("Dismiss update notice").performClick()
-        live.value = UpdateNotice("1.2.0", mandatory = false, downloadUrl = DOWNLOAD_URL, install = UpdateInstall.Ready)
+        live.value =
+            UpdateNotice("1.2.0", mandatory = false, downloadUrl = DOWNLOAD_URL, install = UpdateInstall.Ready())
             .copy(requests = 2)
         waitForIdle()
         onNodeWithTag(RESTART_TAG).assertIsDisplayed()
@@ -318,13 +321,64 @@ class UpdateBannerTest {
     fun `a staged build offers the restart`() = runComposeUiTest {
         var restarts = 0
         setShell(
-            notice = UpdateNotice("1.2.0", true, DOWNLOAD_URL, install = UpdateInstall.Ready),
+            notice = UpdateNotice("1.2.0", true, DOWNLOAD_URL, install = UpdateInstall.Ready()),
             onRestart = { restarts++ },
         )
 
         onNodeWithTag(RESTART_TAG).performClick()
 
         assertEquals(1, restarts)
+    }
+
+    /** The restart is coming on its own: the strip says when, and still offers it now. */
+    @Test
+    fun `an automatic restart counts down and cannot be dismissed`() = runComposeUiTest {
+        var restarts = 0
+        setShell(notice = inApp(UpdateInstall.Ready(restartIn = 12)), onRestart = { restarts++ })
+
+        onNodeWithText("Version 1.2.0 is ready. Zillit will restart to finish updating in 12 s.").assertIsDisplayed()
+        onAllNodesWithContentDescription("Dismiss update notice").assertCountEquals(0)
+        onNodeWithTag(RESTART_TAG).performClick()
+
+        assertEquals(1, restarts)
+    }
+
+    @Test
+    fun `an automatic restart waits for the call to end`() = runComposeUiTest {
+        setShell(notice = inApp(UpdateInstall.Ready(afterCall = true)))
+
+        onNodeWithText("Version 1.2.0 is ready. Zillit will restart to finish updating when your call ends.")
+            .assertIsDisplayed()
+    }
+
+    /** Dismissed earlier, the strip comes back for the countdown: Zillit closing unwarned would look like a crash. */
+    @Test
+    fun `a dismissed strip returns for an automatic restart`() {
+        val dismissed = UpdateDismissal("1.2.0", requests = 0)
+
+        assertTrue(inApp(UpdateInstall.Ready(restartIn = 5)).shownAfter(dismissed))
+        assertFalse(inApp(UpdateInstall.Ready()).shownAfter(dismissed))
+    }
+
+    /** Below the floor on a packaged build: the frame is covered, not striped, and Quit is the other way out. */
+    @Test
+    fun `a blocking notice covers the frame and offers the update and quit`() = runComposeUiTest {
+        var quits = 0
+        var installs = 0
+        setShell(
+            notice = UpdateNotice("1.2.0", true, DOWNLOAD_URL, install = UpdateInstall.Offer, blocking = true),
+            onInstall = { installs++ },
+            onQuit = { quits++ },
+        )
+
+        onNodeWithTag(FORCE_UPDATE_TAG).assertIsDisplayed()
+        onNodeWithText("Update required").assertIsDisplayed()
+        onAllNodesWithTag(BLOCKING_TAG).assertCountEquals(0)
+        onNodeWithTag(INSTALL_TAG).performClick()
+        onNodeWithTag(FORCE_UPDATE_QUIT_TAG).performClick()
+
+        assertEquals(1, installs)
+        assertEquals(1, quits)
     }
 
     /** A file that failed verification would fail again: no retry, the page instead. */
@@ -357,6 +411,7 @@ class UpdateBannerTest {
         assertEquals(1, installs)
     }
 
+    @Suppress("LongParameterList") // one per callback the strip exposes
     private fun ComposeUiTest.setShell(
         notice: UpdateNotice?,
         onDownload: (String) -> Unit = {},
@@ -365,9 +420,10 @@ class UpdateBannerTest {
         onRestart: () -> Unit = {},
         onCancel: () -> Unit = {},
         onOpen: () -> Unit = {},
+        onQuit: (() -> Unit)? = null,
     ) = setLiveShell(
         androidx.compose.runtime.mutableStateOf(notice),
-        onDownload, mode, onInstall, onRestart, onCancel, onOpen,
+        onDownload, mode, onInstall, onRestart, onCancel, onOpen, onQuit,
     )
 
     /** [setShell] with a notice the test can change after composition. */
@@ -380,6 +436,7 @@ class UpdateBannerTest {
         onRestart: () -> Unit = {},
         onCancel: () -> Unit = {},
         onOpen: () -> Unit = {},
+        onQuit: (() -> Unit)? = null,
     ) {
         setContent {
             val registry = remember { ToolRegistry(placeholderTools()) }
@@ -404,6 +461,7 @@ class UpdateBannerTest {
                     onRestartToUpdate = onRestart,
                     onCancelUpdate = onCancel,
                     onOpenUpdate = onOpen,
+                    onQuit = onQuit,
                 )
             }
         }

@@ -11,6 +11,7 @@ import java.nio.file.Files
  *
  *  - the image holds exactly the app it should: a bundle whose
  *    `CFBundleIdentifier` is this one's;
+ *  - its launcher is built for this Mac's architecture (`lipo -archs`);
  *  - `codesign --verify --deep --strict` passes on it, so no file inside was
  *    altered after signing;
  *  - its Team ID is this build's Team ID. A build signed by anyone else —
@@ -37,6 +38,8 @@ internal class MacInstaller(
     private val bundle: File,
     private val workDir: File,
     private val commands: CommandRunner,
+    /** `arm64` or `x86_64`, as `lipo` names it: what this JVM, and so this Mac, runs. */
+    private val arch: String = runningArch(),
 ) : PlatformInstaller {
 
     override fun accepts(url: String): Boolean = url.substringBefore('?').lowercase().endsWith(".dmg")
@@ -76,6 +79,22 @@ internal class MacInstaller(
         val ourTeam = teamId(commands.run(listOf("codesign", "-dv", "--verbose=2", bundle.path)).output)
         if (ourTeam != null && ourTeam != newTeam) refuse("signed by team $newTeam, this build by $ourTeam")
         if (ourTeam == null) ZillitLog.d(TAG) { "this build is unsigned; accepting team $newTeam on the digest" }
+        verifyArchitecture(candidate)
+    }
+
+    /**
+     * The new launcher must run on this Mac. Prod publishes one Apple Silicon
+     * `.dmg` under a fixed name; installed unasked on an Intel Mac it would
+     * replace a working Zillit with one that cannot start.
+     */
+    private fun verifyArchitecture(candidate: File) {
+        val launcher = File(candidate, "Contents/MacOS/${bundle.nameWithoutExtension}")
+        val archs = commands.run(listOf("lipo", "-archs", launcher.path))
+            .takeIf { it.ok }?.output?.trim()?.split(Regex("\\s+")).orEmpty()
+        if (arch !in archs) {
+            val found = archs.ifEmpty { listOf("?") }
+            throw UpdateFailure(UpdateFailure.Reason.Install, "new build is $found, not $arch")
+        }
     }
 
     private fun refuse(message: String): Nothing = throw UpdateFailure(UpdateFailure.Reason.Signature, message)
@@ -134,6 +153,12 @@ internal class MacInstaller(
                 current = current.parentFile
             }
             return null
+        }
+
+        /** The running JVM's architecture in `lipo`'s words. */
+        fun runningArch(): String = when (System.getProperty("os.arch").orEmpty().lowercase()) {
+            "aarch64", "arm64" -> "arm64"
+            else -> "x86_64"
         }
 
         /** `TeamIdentifier=ABCDE12345` from `codesign -dv`; null for "not set" or an unsigned bundle. */

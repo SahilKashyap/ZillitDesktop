@@ -55,6 +55,9 @@ import com.zillit.desktop.core.workspace.ui.WorkspaceTabStrip
  * are open, and features reach it only through `ToolProvider`.
  */
 @Composable
+// The frame's regions plus its two overlays, each a single call: splitting
+// them out would only move the list somewhere else.
+@Suppress("LongMethod")
 fun AppShell(
     viewModel: WorkspaceViewModel,
     registry: ToolRegistry,
@@ -133,6 +136,8 @@ fun AppShell(
     onOpenUpdate: () -> Unit = {},
     /** Hands the staged build to the installer and quits; the helper reopens Zillit. */
     onRestartToUpdate: () -> Unit = {},
+    /** Quit, offered on [ForceUpdateScreen]; null leaves it off. */
+    onQuit: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     // The rail asks; the frame confirms. A dialog composed inside the rail is
@@ -145,7 +150,7 @@ fun AppShell(
     // becomes permanently invisible. Per session, because a strip this cheap
     // does not need to survive a restart to be worth showing again.
     var dismissed by remember { mutableStateOf<UpdateDismissal?>(null) }
-    val notice = updateNotice?.takeIf { it.shownAfter(dismissed) }
+    val notice = updateNotice?.takeIf { !it.blocking && it.shownAfter(dismissed) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = ZillitTheme.colors.canvas) {
         Box(Modifier.fillMaxSize()) {
@@ -191,6 +196,20 @@ fun AppShell(
 
                 HorizontalDivider(color = ZillitTheme.colors.divider)
                 StatusBar(statusText = statusText, action = statusAction, unsaved = state.hasDirtyWindows)
+            }
+
+            // Over everything, sign-out included: below the floor nothing in
+            // the frame is usable.
+            updateNotice?.takeIf { it.blocking }?.let {
+                ForceUpdateScreen(
+                    notice = it,
+                    onDownload = onDownloadUpdate,
+                    onInstall = onInstallUpdate,
+                    onRestart = onRestartToUpdate,
+                    onCancel = onCancelUpdate,
+                    onOpenDownloaded = onOpenUpdate,
+                    onQuit = onQuit,
+                )
             }
 
             // Above the frame rather than inside the rail: it is a question
@@ -516,6 +535,12 @@ data class UpdateNotice(
      * where the download's progress and its result appear.
      */
     val requests: Int = 0,
+    /**
+     * Covers the frame with [ForceUpdateScreen] instead of showing the strip.
+     * The app sets it for a mandatory update on a packaged build; a Gradle
+     * run keeps the strip, so a raised floor never locks a developer out.
+     */
+    val blocking: Boolean = false,
 )
 
 /** The strip the person closed: which version, and how many asks for it had been made by then. */
@@ -528,11 +553,13 @@ internal data class UpdateDismissal(val version: String, val requests: Int)
  * step the update is at then: a download that fails at once, or a staged
  * build waiting for "Restart now", is as much the answer to the ask as a
  * progress bar. Nor does a running download ever hide: it could not be
- * cancelled. Every other step can be dismissed: its X must work.
+ * cancelled. Nor a restart that is coming on its own: Zillit closing with no
+ * warning would look like a crash. Every other step can be dismissed: its X
+ * must work.
  */
 internal fun UpdateNotice.shownAfter(dismissed: UpdateDismissal?): Boolean =
     mandatory || dismissed == null || latestVersion != dismissed.version || requests != dismissed.requests ||
-        install is UpdateInstall.Downloading
+        install is UpdateInstall.Downloading || (install as? UpdateInstall.Ready)?.automatic == true
 
 /** The in-app update's progress, as the strip words it. */
 sealed interface UpdateInstall {
@@ -545,8 +572,18 @@ sealed interface UpdateInstall {
     /** Signature check and staging. */
     data object Preparing : UpdateInstall
 
-    /** Staged; "Restart now" installs it. */
-    data object Ready : UpdateInstall
+    /**
+     * Staged; a restart installs it.
+     *
+     * The app restarts on its own: [restartIn] counts the seconds down, or,
+     * with [afterCall], the restart waits for the call to end. With neither,
+     * "Restart now" is the only way — an automatic restart already ran for
+     * this version and Zillit came back unchanged (a declined password
+     * prompt, say), and running it again would loop.
+     */
+    data class Ready(val restartIn: Int? = null, val afterCall: Boolean = false) : UpdateInstall {
+        val automatic: Boolean get() = restartIn != null || afterCall
+    }
 
     /** Saved to Downloads and shown to the person to install. Nothing was installed. */
     data object Downloaded : UpdateInstall

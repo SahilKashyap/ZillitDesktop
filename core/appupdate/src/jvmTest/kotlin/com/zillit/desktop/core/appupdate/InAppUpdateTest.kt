@@ -142,6 +142,16 @@ class InAppUpdateTest {
     }
 
     @Test
+    fun `a build for another architecture is refused and nothing is staged`() {
+        val (installer, _) = mac(newTeam = "TEAM1", ourTeam = "TEAM1", newArchs = "x86_64")
+
+        val failure = assertFailsWith<UpdateFailure> { installer.prepare(File(root, "update.dmg")) }
+
+        assertEquals(UpdateFailure.Reason.Install, failure.reason)
+        assertFalse(File(root, "work/staged/Zillit-Desktop.app").exists())
+    }
+
+    @Test
     fun `the image is detached whether or not the build passes`() {
         val (installer, log) = mac(newTeam = "SOMEONE", ourTeam = "TEAM1")
 
@@ -158,7 +168,11 @@ class InAppUpdateTest {
     }
 
     /** A fake `hdiutil`/`codesign`/`ditto` that plays the parts [prepare] needs. */
-    private fun mac(newTeam: String?, ourTeam: String?): Pair<MacInstaller, List<List<String>>> {
+    private fun mac(
+        newTeam: String?,
+        ourTeam: String?,
+        newArchs: String = "x86_64 arm64",
+    ): Pair<MacInstaller, List<List<String>>> {
         val bundle = File(root, "Applications/Zillit-Desktop.app").apply { mkdirs() }
         val log = mutableListOf<List<String>>()
         val commands = CommandRunner { command ->
@@ -175,6 +189,7 @@ class InAppUpdateTest {
                     val team = if (command.last() == bundle.path) ourTeam else newTeam
                     CommandResult(0, "TeamIdentifier=${team ?: "not set"}\n")
                 }
+                command.take(2) == listOf("lipo", "-archs") -> CommandResult(0, "$newArchs\n")
                 command.first() == "ditto" -> {
                     File(command[2]).mkdirs()
                     CommandResult(0, "")
@@ -182,7 +197,7 @@ class InAppUpdateTest {
                 else -> CommandResult(0, "")
             }
         }
-        return MacInstaller(bundle, File(root, "work"), commands) to log
+        return MacInstaller(bundle, File(root, "work"), commands, arch = "arm64") to log
     }
 
     // --- Windows -------------------------------------------------------------

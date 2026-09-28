@@ -394,6 +394,65 @@ class AppUpdateCheckerTest {
         )
     }
 
+    /**
+     * Prod's shape: the `.dmg` sits in `desktop_download_url_mac`, its digest in
+     * `desktop_installer_sha256_mac`, and no `desktop_installer_url_mac` at all.
+     */
+    @Test
+    fun `a download link that is the installer file stands in for the installer url`() = runTest {
+        val mac = "c".repeat(64)
+        val dmg = "https://downloads.example/Zillit-Desktop-Mac-Silicon.dmg"
+        val entries = """"desktop_latest_version":"1.2.0",""" +
+            """"desktop_download_url":"https://drive.example/file/view?usp=sharing",""" +
+            """"desktop_download_url_mac":"$dmg","desktop_installer_sha256_mac":"$mac""""
+
+        assertEquals(
+            UpdateStatus.Available("1.2.0", dmg, InstallerRef(dmg, mac)),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.MacOs),
+        )
+        // A page is never an installer, digest or not.
+        assertEquals(
+            UpdateStatus.Available("1.2.0", "https://drive.example/file/view?usp=sharing", null),
+            check(
+                installed = "1.1.0",
+                entries = "$entries,\"desktop_installer_sha256_windows\":\"$mac\"",
+                os = OperatingSystem.Windows,
+            ),
+        )
+        // And the file alone, with nothing vouching for it, is not one either.
+        assertEquals(
+            UpdateStatus.Available("1.2.0", dmg, null),
+            check(
+                installed = "1.1.0",
+                entries = """"desktop_latest_version":"1.2.0","desktop_download_url_mac":"$dmg"""",
+                os = OperatingSystem.MacOs,
+            ),
+        )
+    }
+
+    /** The switch makes behind-latest mandatory, per platform, and never forces a current build. */
+    @Test
+    fun `desktop_force_update makes an older build update and leaves a current one alone`() = runTest {
+        val forced = """"desktop_latest_version":"1.2.0","desktop_force_update":"\"true\"""""
+
+        assertEquals(UpdateStatus.Required("1.2.0", null), check(installed = "1.1.0", entries = forced))
+        assertEquals(UpdateStatus.UpToDate, check(installed = "1.2.0", entries = forced))
+        assertEquals(
+            UpdateStatus.Available("1.2.0", null),
+            check(installed = "1.1.0", entries = """"desktop_latest_version":"1.2.0","desktop_force_update":"false""""),
+        )
+        // A platform can be forced on its own.
+        val macOnly = """"desktop_latest_version":"1.2.0","desktop_force_update_mac":"true""""
+        assertEquals(
+            UpdateStatus.Required("1.2.0", null),
+            check(installed = "1.1.0", entries = macOnly, os = OperatingSystem.MacOs),
+        )
+        assertEquals(
+            UpdateStatus.Available("1.2.0", null),
+            check(installed = "1.1.0", entries = macOnly, os = OperatingSystem.Windows),
+        )
+    }
+
     private suspend fun check(
         installed: String?,
         entries: String? = null,
