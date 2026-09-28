@@ -430,13 +430,19 @@ data class PoFormState(
 
 enum class PoFormMode { NewOrder, EditOrder, EditDraft, NewTemplate, EditTemplate }
 
-/** A fresh, empty line — one item at no price, which is what a new row means. */
-fun blankLine(): PoLine = PoLine(
+/**
+ * A fresh, empty line — one item at no price, which is what a new row means.
+ *
+ * [nominalCode] seeds from the header's own code, as the web's `createLine`
+ * does (`POForm.jsx:544-549`) — most orders code every line the same way, and
+ * starting each new row blank just means retyping the same code repeatedly.
+ */
+fun blankLine(nominalCode: String? = null): PoLine = PoLine(
     id = null,
     description = "",
     quantity = 1.0,
     unitPrice = 0.0,
-    nominalCode = null,
+    nominalCode = nominalCode,
     vatRate = null,
 )
 

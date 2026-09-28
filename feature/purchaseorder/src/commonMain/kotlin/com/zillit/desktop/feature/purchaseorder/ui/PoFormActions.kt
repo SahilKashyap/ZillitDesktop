@@ -50,7 +50,9 @@ internal class PoFormActions(
             }
 
             is PoEvent.EditForm -> edit(event.form)
-            PoEvent.AddLine -> withForm { form -> form.copy(lines = form.lines + blankLine()) }
+            PoEvent.AddLine -> withForm { form ->
+                form.copy(lines = form.lines + blankLine(nominalCode = form.nominalCode.takeIf { it.isNotBlank() }))
+            }
             is PoEvent.RemoveLine -> withForm { form -> form.copy(lines = form.lines.without(event.index)) }
             is PoEvent.SplitLine -> withForm { form -> form.copy(lines = form.lines.splitEvenly(event.index)) }
             is PoEvent.SplitLineByPeriod -> splitByPeriod(event.index)
@@ -83,6 +85,9 @@ internal class PoFormActions(
                     // approval chain to the wrong people.
                     departmentId = state.viewer.departmentId,
                     currency = state.defaultCurrency(),
+                    // The web pre-fills the sole company a production has,
+                    // still clearable afterward (`POForm.jsx:278-290`).
+                    companyId = state.companies.singleOrNull()?.id,
                 ),
             )
         }
@@ -474,15 +479,16 @@ internal class PoFormActions(
  * The parent stays and keeps the description; the children carry half the
  * money each and a [PoLine.splitParentId] pointing at it, which is what keeps
  * every total on this tool from counting the money twice. An odd penny goes to
- * the first child, so the two children still add to the parent exactly.
+ * the second child, matching the web's own split (`lineItemSplit.js:56`), so
+ * the two children still add to the parent exactly.
  */
 internal fun List<PoLine>.splitEvenly(index: Int): List<PoLine> {
     val parent = getOrNull(index) ?: return this
     if (parent.isSplitChild) return this
     val parentKey = parent.id ?: "line-$index"
     val pennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
-    val first = (pennies / 2) + (pennies % 2)
-    val children = listOf(first, pennies - first).map { part ->
+    val second = (pennies / 2) + (pennies % 2)
+    val children = listOf(pennies - second, second).map { part ->
         parent.copy(
             id = null,
             quantity = 1.0,
@@ -500,8 +506,9 @@ internal fun List<PoLine>.splitEvenly(index: Int): List<PoLine> {
  * the web's "Split by Period". Null when the window gives fewer than two
  * periods, which the caller reports rather than approximating.
  *
- * The remainder rides the first child so the children still add to the parent
- * to the penny — a rental split that loses 2p reconciles wrong.
+ * The remainder rides the last child, matching the web's own split
+ * (`lineItemPeriods.jsx:197-201`), so the children still add to the parent to
+ * the penny — a rental split that loses 2p reconciles wrong.
  */
 internal fun List<PoLine>.splitByPeriod(index: Int, days: Int): List<PoLine>? {
     val parent = getOrNull(index)?.takeIf { it.isDivisibleRental } ?: return null
@@ -512,7 +519,7 @@ internal fun List<PoLine>.splitByPeriod(index: Int, days: Int): List<PoLine>? {
     val each = pennies / periods.size
     val remainder = pennies - each * periods.size
     val children = periods.mapIndexed { position, window ->
-        val part = each + if (position == 0) remainder else 0L
+        val part = each + if (position == periods.lastIndex) remainder else 0L
         parent.copy(
             id = null,
             quantity = 1.0,

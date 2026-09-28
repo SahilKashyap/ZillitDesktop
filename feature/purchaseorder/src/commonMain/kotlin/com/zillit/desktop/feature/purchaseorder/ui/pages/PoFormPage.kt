@@ -241,12 +241,17 @@ private fun TemplateNameCard(form: PoFormState, onEvent: (PoEvent) -> Unit) {
 @Composable
 private fun PoDetailsSection(state: PoUiState, form: PoFormState, onEvent: (PoEvent) -> Unit) {
     ZillitSectionCard(title = str(S.desktop_po_details), icon = ZillitIcons.File) {
-        VendorAndDescription(state, form, onEvent)
-        DepartmentAndCompany(state, form, onEvent)
-        CodingRow(state, form, onEvent)
-        DateRow(state, form, onEvent)
-        NotesRow(state, form, onEvent)
-        CustomFields(state, form, onEvent)
+        // LabelledField draws no margin of its own below a field — every
+        // field on this section needs this to keep the next one's label off
+        // its border, not just the row-groups the Rows already space apart.
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            VendorAndDescription(state, form, onEvent)
+            DepartmentAndCompany(state, form, onEvent)
+            CodingRow(state, form, onEvent)
+            DateRow(state, form, onEvent)
+            NotesRow(state, form, onEvent)
+            CustomFields(state, form, onEvent)
+        }
     }
 }
 
@@ -468,6 +473,9 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
         onEvent(PoEvent.EditForm(form.copy(deliveryAddress = next, deliveryAddressId = null)))
     }
     ZillitSectionCard(title = str(S.delivery_address), icon = ZillitIcons.Home) {
+        // Same reason as PoDetailsSection: LabelledField has no margin of its
+        // own, so the section needs to space its rows itself.
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         if (state.addresses.isNotEmpty()) {
             Row(verticalAlignment = Alignment.Bottom) {
                 LabelledField(str(S.desktop_po_saved_address), Modifier.weight(1f)) {
@@ -581,6 +589,7 @@ private fun DeliverySection(state: PoUiState, form: PoFormState, onEvent: (PoEve
                 )
             }
         }
+        }
     }
 }
 
@@ -657,6 +666,18 @@ private fun LineHeader() {
     ZillitDivider()
 }
 
+/** A split child's own qty/price/tax cell — shown, not editable (`POForm.jsx:2619-2660`). */
+@Composable
+private fun LockedCell(text: String, modifier: Modifier = Modifier) {
+    ZillitText(
+        text = text.ifBlank { "—" },
+        style = ZillitTheme.typography.bodyMedium,
+        color = ZillitTheme.colors.textMuted,
+        modifier = modifier,
+        maxLines = 1,
+    )
+}
+
 @Composable
 private fun HeaderCell(text: String, modifier: Modifier = Modifier) {
     ZillitText(
@@ -668,7 +689,8 @@ private fun HeaderCell(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-@Suppress("LongMethod") // One line's controls; a table row reads as a row.
+// One line's controls, split-child aware; a table row reads as a row.
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 private fun LineRow(
     state: PoUiState,
@@ -704,42 +726,64 @@ private fun LineRow(
                 value = line.expenditureType,
                 options = listOf(null) + EXPENDITURE_TYPES,
                 onSelect = { set(line.copy(expenditureType = it)) },
-                label = { it ?: str(S.desktop_exp_type) },
+                label = { expenditureTypeLabel(it) },
                 modifier = Modifier.width(EXP_WIDTH),
             )
-            ZillitTextField(
-                value = line.quantity.trimmed(),
-                onValueChange = { set(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-                placeholder = str(S.ah_lbl_qty),
-                keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.width(QTY_WIDTH),
-            )
-            ZillitTextField(
-                value = line.unitPrice.trimmed(),
-                onValueChange = { set(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-                placeholder = str(S.ah_lbl_unit_price),
-                keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.width(PRICE_WIDTH),
-            )
-            ZillitTextField(
-                value = line.nominalCode.orEmpty(),
-                onValueChange = { set(line.copy(nominalCode = it.takeIf { code -> code.isNotBlank() })) },
+            if (line.isSplitChild) {
+                // The web locks a split child's own qty/price/tax — its total
+                // exists only to be redistributed from the parent's, and a
+                // child that silently repriced itself would stop summing back
+                // to the order the parent still shows (`POForm.jsx:2619-2660`).
+                LockedCell(line.quantity.trimmed(), Modifier.width(QTY_WIDTH))
+                LockedCell(line.unitPrice.trimmed(), Modifier.width(PRICE_WIDTH))
+            } else {
+                ZillitTextField(
+                    value = line.quantity.trimmed(),
+                    onValueChange = { set(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
+                    placeholder = str(S.ah_lbl_qty),
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(QTY_WIDTH),
+                )
+                ZillitTextField(
+                    value = line.unitPrice.trimmed(),
+                    onValueChange = { set(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null)) },
+                    placeholder = str(S.ah_lbl_unit_price),
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(PRICE_WIDTH),
+                )
+            }
+            val nominalOptions = (
+                state.nominals.map { it.code } + listOfNotNull(line.nominalCode?.takeIf { it.isNotBlank() })
+                ).distinct()
+            ZillitSearchSelect(
+                value = line.nominalCode?.takeIf { it.isNotBlank() },
+                options = nominalOptions,
+                onSelect = { set(line.copy(nominalCode = it)) },
+                label = { code -> state.nominals.firstOrNull { it.code == code }?.label ?: code },
+                onCreate = { typed -> set(line.copy(nominalCode = typed)) },
                 placeholder = str(S.code),
                 modifier = Modifier.width(CODE_COLUMN),
             )
-            ZillitSelect(
-                value = line.taxType,
-                options = listOf(null) + state.taxTypes.map { it.id },
-                onSelect = { id ->
-                    val tax = state.taxTypes.firstOrNull { it.id == id }
-                    set(line.copy(taxType = id, vatRate = tax?.rate))
-                },
-                label = { id ->
-                    id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
-                        ?: str(S.ah_lbl_vat_tax)
-                },
-                modifier = Modifier.width(TAX_WIDTH),
-            )
+            if (line.isSplitChild) {
+                LockedCell(
+                    state.taxTypes.firstOrNull { it.id == line.taxType }?.name ?: str(S.ah_lbl_vat_tax),
+                    Modifier.width(TAX_WIDTH),
+                )
+            } else {
+                ZillitSelect(
+                    value = line.taxType,
+                    options = listOf(null) + state.taxTypes.map { it.id },
+                    onSelect = { id ->
+                        val tax = state.taxTypes.firstOrNull { it.id == id }
+                        set(line.copy(taxType = id, vatRate = tax?.rate))
+                    },
+                    label = { id ->
+                        id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
+                            ?: str(S.ah_lbl_vat_tax)
+                    },
+                    modifier = Modifier.width(TAX_WIDTH),
+                )
+            }
             ZillitText(
                 text = Money.format(line.total, form.currency),
                 style = ZillitTheme.typography.numeric,
@@ -917,6 +961,13 @@ private const val PENNIES = 100.0
 private const val BANNER_BORDER_ALPHA = 0.4f
 
 private val EXPENDITURE_TYPES = listOf("Purchase", "Consumption", RENTAL_EXPENDITURE_TYPE)
+
+/** The web's `expenditureTypeLabel` — the wire says "Consumption", every reader sees "Consumables". */
+private fun expenditureTypeLabel(value: String?): String = when (value) {
+    null -> str(S.desktop_exp_type)
+    "Consumption" -> str(S.ah_exp_consumption)
+    else -> value
+}
 private val EXP_WIDTH = 130.dp
 private val QTY_WIDTH = 70.dp
 private val PRICE_WIDTH = 110.dp
