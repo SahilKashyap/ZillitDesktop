@@ -46,7 +46,7 @@ internal class PoProcessActions(
                 if (line == null || line.isDivisibleRental) {
                     entry
                 } else {
-                    entry.copy(lines = entry.lines.splitEvenly(event.index))
+                    entry.copy(lines = entry.lines.splitLine(event.index))
                 }
             }
 

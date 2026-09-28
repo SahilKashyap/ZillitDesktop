@@ -134,11 +134,17 @@ sealed interface PoEvent {
     data object AddLine : PoEvent
     data class RemoveLine(val index: Int) : PoEvent
 
-    /** Halves a line into two children — the web's "Split Line". */
+    /**
+     * Splits a line into two children — or, on a line already split, adds one
+     * more and rebalances the rest. The web's "Split Line".
+     */
     data class SplitLine(val index: Int) : PoEvent
 
     /** Divides a rental line across its own window — the web's "Split by Period". */
     data class SplitLineByPeriod(val index: Int) : PoEvent
+
+    /** A split child's own Amount cell, typed directly — its siblings absorb the remainder. */
+    data class SetLineAmount(val index: Int, val amount: Double) : PoEvent
     data object AttachFile : PoEvent
     data class RemoveAttachment(val attachment: PoAttachment) : PoEvent
     data object CloseForm : PoEvent

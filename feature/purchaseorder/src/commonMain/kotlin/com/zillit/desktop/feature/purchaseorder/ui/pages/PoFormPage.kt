@@ -53,6 +53,7 @@ import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
 import com.zillit.desktop.feature.purchaseorder.ui.PoFormMode
 import com.zillit.desktop.feature.purchaseorder.ui.PoFormState
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
+import com.zillit.desktop.feature.purchaseorder.ui.rescaleSplitChildren
 
 /**
  * Raising or editing an order — the web's `POForm`, which takes over the page.
@@ -704,6 +705,32 @@ private fun LineRow(
         val lines = form.lines.mapIndexed { at, row -> if (at == index) next else row }
         onEvent(PoEvent.EditForm(form.copy(lines = lines)))
     }
+    // Quantity/unit-price are only editable on a parent (a child's are
+    // locked), so a change here can only ever be the PARENT's own total
+    // moving — rescale its children unconditionally; it's a no-op on a line
+    // with none (`PoFormActions.kt`'s rescaleSplitChildren).
+    val setAndRescale = { next: PoLine ->
+        val lines = form.lines
+            .mapIndexed { at, row -> if (at == index) next else row }
+            .rescaleSplitChildren(index)
+        onEvent(PoEvent.EditForm(form.copy(lines = lines)))
+    }
+    // Children inherit expenditure type and tax from the parent at split
+    // time (they're a copy of it); a later edit on the parent has to keep
+    // reaching them or they quote a stale type/rate forever
+    // (`POForm.jsx:591-604`). Only ever called on a parent — these two
+    // fields are locked on a child (LockedCell), so `line` here is never one.
+    val setSyncingChildren = { next: PoLine, syncChild: (PoLine) -> PoLine ->
+        val parentKey = line.id ?: "line-$index"
+        val lines = form.lines.mapIndexed { at, row ->
+            when {
+                at == index -> next
+                row.splitParentId == parentKey -> syncChild(row)
+                else -> row
+            }
+        }
+        onEvent(PoEvent.EditForm(form.copy(lines = lines)))
+    }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         if (line.isSplitChild) {
             ZillitText(
@@ -725,7 +752,9 @@ private fun LineRow(
             ZillitSelect(
                 value = line.expenditureType,
                 options = listOf(null) + EXPENDITURE_TYPES,
-                onSelect = { set(line.copy(expenditureType = it)) },
+                onSelect = { type ->
+                    setSyncingChildren(line.copy(expenditureType = type)) { it.copy(expenditureType = type) }
+                },
                 label = { expenditureTypeLabel(it) },
                 modifier = Modifier.width(EXP_WIDTH),
             )
@@ -739,14 +768,16 @@ private fun LineRow(
             } else {
                 ZillitTextField(
                     value = line.quantity.trimmed(),
-                    onValueChange = { set(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
+                    onValueChange = { setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
                     placeholder = str(S.ah_lbl_qty),
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.width(QTY_WIDTH),
                 )
                 ZillitTextField(
                     value = line.unitPrice.trimmed(),
-                    onValueChange = { set(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null)) },
+                    onValueChange = {
+                        setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
+                    },
                     placeholder = str(S.ah_lbl_unit_price),
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.width(PRICE_WIDTH),
@@ -775,7 +806,9 @@ private fun LineRow(
                     options = listOf(null) + state.taxTypes.map { it.id },
                     onSelect = { id ->
                         val tax = state.taxTypes.firstOrNull { it.id == id }
-                        set(line.copy(taxType = id, vatRate = tax?.rate))
+                        setSyncingChildren(line.copy(taxType = id, vatRate = tax?.rate)) {
+                            it.copy(taxType = id, vatRate = tax?.rate)
+                        }
                     },
                     label = { id ->
                         id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
@@ -784,11 +817,24 @@ private fun LineRow(
                     modifier = Modifier.width(TAX_WIDTH),
                 )
             }
-            ZillitText(
-                text = Money.format(line.total, form.currency),
-                style = ZillitTheme.typography.numeric,
-                modifier = Modifier.width(AMOUNT_WIDTH),
-            )
+            if (line.isSplitChild) {
+                // The one editable figure on a split child: typing here
+                // redistributes the remainder across its siblings rather than
+                // just overwriting this line in isolation (`PoEvent.SetLineAmount`,
+                // the web's `updateSplitAmount` → `redistributeSplitAmountWith`).
+                ZillitTextField(
+                    value = line.total.trimmed(),
+                    onValueChange = { onEvent(PoEvent.SetLineAmount(index, it.toDoubleOrNull() ?: 0.0)) },
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(AMOUNT_WIDTH),
+                )
+            } else {
+                ZillitText(
+                    text = Money.format(line.total, form.currency),
+                    style = ZillitTheme.typography.numeric,
+                    modifier = Modifier.width(AMOUNT_WIDTH),
+                )
+            }
         }
         if (line.expenditureType == RENTAL_EXPENDITURE_TYPE) {
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -825,11 +871,15 @@ private fun LineRow(
                 )
             } else {
                 ZillitButton(
+                    // Web's canSplitLine — enabled for the parent AND any of
+                    // its existing children, each subdividing the same line
+                    // (`POForm.jsx:861`, `lineItemSplit.js:38-39` resolves a
+                    // clicked child up to its parent).
                     text = str(S.desktop_po_split_line),
                     onClick = { onEvent(PoEvent.SplitLine(index)) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
-                    enabled = !line.isSplitChild && line.total > 0,
+                    enabled = line.total > 0,
                 )
             }
             Spacer(modifier = Modifier.weight(1f))

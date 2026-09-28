@@ -54,7 +54,10 @@ internal class PoFormActions(
                 form.copy(lines = form.lines + blankLine(nominalCode = form.nominalCode.takeIf { it.isNotBlank() }))
             }
             is PoEvent.RemoveLine -> withForm { form -> form.copy(lines = form.lines.without(event.index)) }
-            is PoEvent.SplitLine -> withForm { form -> form.copy(lines = form.lines.splitEvenly(event.index)) }
+            is PoEvent.SplitLine -> withForm { form -> form.copy(lines = form.lines.splitLine(event.index)) }
+            is PoEvent.SetLineAmount -> withForm { form ->
+                form.copy(lines = form.lines.redistributeSplitAmount(event.index, event.amount))
+            }
             is PoEvent.SplitLineByPeriod -> splitByPeriod(event.index)
             PoEvent.AttachFile -> attach()
             is PoEvent.RemoveAttachment -> withForm { form ->
@@ -473,32 +476,133 @@ internal class PoFormActions(
 }
 
 /**
- * Halves a line into two children — the web's "Split Line", on the form and on
- * the processing page alike.
+ * Splits a line into two children — or, clicking again on the parent or on any
+ * existing child, adds one more child and rebalances every child evenly
+ * across the parent's total. The web's "Split Line" (`lineItemSplit.js:33-77`
+ * — `splitSelectedLineWith`), ported for a per-row button instead of the
+ * web's select-a-line-then-click-one-button: the web resolves the *selected*
+ * line up to its parent; this resolves whichever row's own button fired the
+ * event. [index] is that row — parent or child, either can be clicked to
+ * subdivide further.
  *
- * The parent stays and keeps the description; the children carry half the
- * money each and a [PoLine.splitParentId] pointing at it, which is what keeps
- * every total on this tool from counting the money twice. An odd penny goes to
- * the second child, matching the web's own split (`lineItemSplit.js:56`), so
- * the two children still add to the parent exactly.
+ * A childless parent that has never been split may still carry a null [PoLine.id]
+ * ([blankLine] never assigns one); the first split gives it the synthetic
+ * `"line-$index"` key so every later operation on this parent — a second
+ * split, [redistributeSplitAmount], [rescaleSplitChildren] — has a stable,
+ * non-null id to search [PoLine.splitParentId] against.
  */
-internal fun List<PoLine>.splitEvenly(index: Int): List<PoLine> {
-    val parent = getOrNull(index) ?: return this
-    if (parent.isSplitChild) return this
-    val parentKey = parent.id ?: "line-$index"
+@Suppress("ReturnCount") // Guard clauses over a lookup chain — nothing to fall through to.
+internal fun List<PoLine>.splitLine(index: Int): List<PoLine> {
+    val clicked = getOrNull(index) ?: return this
+    val parentKey = clicked.splitParentId ?: clicked.id ?: "line-$index"
+    val parentIndex = if (clicked.isSplitChild) indexOfFirst { it.id == parentKey } else index
+    if (parentIndex < 0) return this
+    val parent = this[parentIndex]
+    if (parent.total <= 0) return this
     val pennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
-    val second = (pennies / 2) + (pennies % 2)
-    val children = listOf(pennies - second, second).map { part ->
-        parent.copy(
-            id = null,
-            quantity = 1.0,
-            unitPrice = part / PENNIES_PER_UNIT,
-            amount = part / PENNIES_PER_UNIT,
-            splitParentId = parentKey,
-        )
+    val existingCount = count { it.splitParentId == parentKey }
+
+    // First split: two even children, remainder on the second
+    // (`lineItemSplit.js:51-58`) — clicked is necessarily the parent here,
+    // since a line with no children yet cannot itself be a child.
+    if (existingCount == 0) {
+        val second = (pennies / 2) + (pennies % 2)
+        val children = listOf(pennies - second, second).map { splitChildOf(parent, parentKey, it) }
+        val withKey = if (parent.id == null) parent.copy(id = parentKey) else parent
+        return take(parentIndex) + withKey + children + drop(parentIndex + 1)
     }
-    val withKey = if (parent.id == null) parent.copy(id = parentKey) else parent
-    return take(index) + withKey + children + drop(index + 1)
+
+    // Subsequent split: one more child at the even share; every EXISTING
+    // child rebalances to that same share, remainder on the last of them
+    // (`lineItemSplit.js:60-76`) — the new child, inserted right after
+    // whichever row was clicked, does not receive the remainder itself.
+    val shareCount = existingCount + 1
+    val per = pennies / shareCount
+    val last = pennies - per * (shareCount - 1)
+    var seen = 0
+    val rebalanced = map { row ->
+        if (row.splitParentId == parentKey) {
+            val part = if (seen == existingCount - 1) last else per
+            seen += 1
+            row.penniesAsAmount(part)
+        } else {
+            row
+        }
+    }
+    val newChild = splitChildOf(parent, parentKey, per)
+    return rebalanced.take(index + 1) + newChild + rebalanced.drop(index + 1)
+}
+
+private fun splitChildOf(parent: PoLine, parentKey: String, pennies: Long): PoLine =
+    parent.copy(id = null, splitParentId = parentKey).penniesAsAmount(pennies)
+
+private fun PoLine.penniesAsAmount(pennies: Long): PoLine = copy(
+    quantity = 1.0,
+    unitPrice = pennies / PENNIES_PER_UNIT,
+    amount = pennies / PENNIES_PER_UNIT,
+)
+
+/**
+ * Editing a split child's own Amount cell — the web's `redistributeSplitAmountWith`
+ * (`lineItemSplit.js:84-109`): the typed amount is this child's, and the
+ * remainder of the parent's total spreads evenly across its siblings (2dp,
+ * remainder on the last sibling) so the children keep summing to the parent
+ * exactly. A no-op on anything that isn't a split child.
+ */
+internal fun List<PoLine>.redistributeSplitAmount(index: Int, newAmount: Double): List<PoLine> {
+    val target = getOrNull(index) ?: return this
+    val parentKey = target.splitParentId ?: return this
+    val parent = firstOrNull { it.id == parentKey } ?: return this
+    val siblingCount = count { it.splitParentId == parentKey } - 1
+    val amountPennies = kotlin.math.round(newAmount * PENNIES_PER_UNIT).toLong()
+    val parentPennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
+    val remaining = parentPennies - amountPennies
+    val per = if (siblingCount > 0) remaining / siblingCount else 0L
+    val last = if (siblingCount > 0) remaining - per * (siblingCount - 1) else 0L
+    var seen = 0
+    return mapIndexed { at, row ->
+        when {
+            at == index -> row.penniesAsAmount(amountPennies)
+            row.splitParentId == parentKey -> {
+                val part = if (seen == siblingCount - 1) last else per
+                seen += 1
+                row.penniesAsAmount(part)
+            }
+            else -> row
+        }
+    }
+}
+
+/**
+ * The parent's own total moved (a quantity/unit-price edit on a line that
+ * already has children) — rescale the children so they still sum to it,
+ * keeping each child's existing SHARE of the total rather than flattening
+ * them back to even. The web's `rescaleSplitChildrenWith`
+ * (`lineItemSplit.js:134-158`), the counterpart of [redistributeSplitAmount]:
+ * that one holds `Σ children == parent` when a child is edited, this one
+ * holds it when the parent is. A no-op when [parentIndex]'s line has no
+ * children, so callers can run it unconditionally after any edit that might
+ * have changed a line's total.
+ */
+internal fun List<PoLine>.rescaleSplitChildren(parentIndex: Int): List<PoLine> {
+    val parent = getOrNull(parentIndex) ?: return this
+    val parentKey = parent.id ?: return this
+    val children = filter { it.splitParentId == parentKey }
+    if (children.isEmpty()) return this
+    val targetPennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
+    val childPennies = children.map { kotlin.math.round(it.total * PENNIES_PER_UNIT).toLong() }
+    val currentTotal = childPennies.sum()
+    val shares = if (currentTotal > 0) {
+        childPennies.map { it.toDouble() / currentTotal }
+    } else {
+        children.map { 1.0 / children.size }
+    }
+    val amounts = shares.map { kotlin.math.round(targetPennies * it).toLong() }.toMutableList()
+    amounts[amounts.lastIndex] = targetPennies - amounts.dropLast(1).sum()
+    var idx = 0
+    return map { row ->
+        if (row.splitParentId == parentKey) row.penniesAsAmount(amounts[idx++]) else row
+    }
 }
 
 /**

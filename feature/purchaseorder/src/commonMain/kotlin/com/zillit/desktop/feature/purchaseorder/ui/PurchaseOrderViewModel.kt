@@ -434,6 +434,7 @@ class PurchaseOrderViewModel(
             PoEvent.CreateOrder, is PoEvent.EditOrder, is PoEvent.ResumeDraft, is PoEvent.UseTemplate,
             is PoEvent.EditTemplate, PoEvent.CreateTemplate, is PoEvent.EditForm, PoEvent.AddLine,
             is PoEvent.RemoveLine, is PoEvent.SplitLine, is PoEvent.SplitLineByPeriod,
+            is PoEvent.SetLineAmount,
             PoEvent.AttachFile, is PoEvent.RemoveAttachment, PoEvent.CloseForm, PoEvent.SubmitForm,
             PoEvent.SaveDraft, is PoEvent.SaveAsTemplate, PoEvent.NameTemplate,
             is PoEvent.PickSavedAddress,
