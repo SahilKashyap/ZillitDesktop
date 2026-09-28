@@ -1,10 +1,13 @@
 package com.zillit.desktop.feature.shell
 
 import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -76,6 +79,145 @@ class UpdateBannerTest {
         onNodeWithText("Download").performClick()
 
         assertEquals(listOf(DOWNLOAD_URL), opened)
+    }
+
+    // --- downloading inside the app -----------------------------------------
+    //
+    // Reported as "tap Download and it goes outside the app". Where the app can
+    // fetch the installer itself, Download does that — with a progress bar —
+    // and the only control that still leaves the app says so.
+
+    private fun inApp(install: UpdateInstall) =
+        UpdateNotice("1.2.0", mandatory = false, downloadUrl = INSTALLER_URL, install = install, manual = true)
+
+    @Test
+    fun `Download stays inside the app when it can fetch the installer`() = runComposeUiTest {
+        val browser = mutableListOf<String>()
+        var started = 0
+        setShell(notice = inApp(UpdateInstall.Offer), onDownload = { browser += it }, onInstall = { started++ })
+
+        onAllNodesWithText("Update now").assertCountEquals(0)
+        onNodeWithText("Download").performClick()
+
+        assertEquals(1, started)
+        assertEquals(emptyList(), browser, "the report: Download must not leave the app")
+    }
+
+    @Test
+    fun `a download in progress shows its progress and can be cancelled`() = runComposeUiTest {
+        var cancelled = 0
+        setShell(notice = inApp(UpdateInstall.Downloading(percent = 42)), onCancel = { cancelled++ })
+
+        onNodeWithText("Downloading version 1.2.0… 42%").assertIsDisplayed()
+        onNode(hasTestTag(PROGRESS_TAG) and hasProgressBarRangeInfo(ProgressBarRangeInfo(0.42f, 0f..1f)))
+            .assertIsDisplayed()
+        onNodeWithTag(CANCEL_TAG).performClick()
+
+        assertEquals(1, cancelled)
+    }
+
+    /** Dismissing would hide a download that is still running, with no way back to cancel it. */
+    @Test
+    fun `a download in progress cannot be dismissed`() = runComposeUiTest {
+        setShell(notice = inApp(UpdateInstall.Downloading(percent = 42)))
+
+        onAllNodesWithContentDescription("Dismiss update notice").assertCountEquals(0)
+    }
+
+    @Test
+    fun `a download of unknown size still shows it is working`() = runComposeUiTest {
+        setShell(notice = inApp(UpdateInstall.Downloading(percent = null)))
+
+        onNodeWithText("Downloading version 1.2.0…").assertIsDisplayed()
+        // Indeterminate: an empty bar would sit at 0% and look stuck.
+        onNode(hasTestTag(PROGRESS_TAG) and hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate))
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `once downloaded the strip says where it is and can open it again`() = runComposeUiTest {
+        var opened = 0
+        setShell(notice = inApp(UpdateInstall.Downloaded), onOpen = { opened++ })
+
+        onNodeWithText("saved in your Downloads folder", substring = true).assertIsDisplayed()
+        onNodeWithTag(OPEN_INSTALLER_TAG).performClick()
+
+        assertEquals(1, opened)
+    }
+
+    /** After a failure the browser is the fallback — and it must say it is the browser. */
+    @Test
+    fun `the fallback that leaves the app is labelled as the browser`() = runComposeUiTest {
+        val browser = mutableListOf<String>()
+        setShell(
+            notice = inApp(UpdateInstall.Failed(retryable = true, verification = false)),
+            onDownload = { browser += it },
+        )
+
+        onNodeWithText("Try Again").assertIsDisplayed()
+        onAllNodesWithText("Download").assertCountEquals(0)
+        onNodeWithText("Open in browser").performClick()
+
+        assertEquals(listOf(INSTALLER_URL), browser)
+    }
+
+    /** Started from Settings after the strip was dismissed: the progress must still be seen. */
+    @Test
+    fun `a download the person started shows even after the strip was dismissed`() = runComposeUiTest {
+        val live = androidx.compose.runtime.mutableStateOf<UpdateNotice?>(inApp(UpdateInstall.Offer))
+        setLiveShell(live)
+        onNodeWithContentDescription("Dismiss update notice").performClick()
+        onAllNodesWithTag(DISMISSIBLE_TAG).assertCountEquals(0)
+
+        // Settings' Download: one ask.
+        live.value = inApp(UpdateInstall.Downloading(percent = 10)).copy(requests = 1)
+        waitForIdle()
+
+        onNodeWithTag(DISMISSIBLE_TAG).assertIsDisplayed()
+        onNodeWithTag(PROGRESS_TAG).assertIsDisplayed()
+
+        // And it stays to say how the download ended.
+        live.value = inApp(UpdateInstall.Downloaded).copy(requests = 1)
+        waitForIdle()
+        onNodeWithTag(OPEN_INSTALLER_TAG).assertIsDisplayed()
+    }
+
+    /**
+     * The ask, not a progress frame, is what brings the strip back. A download
+     * that fails before a frame shows Downloading, or a staged build waiting
+     * for its restart, is just as much the answer to it.
+     */
+    @Test
+    fun `asking again from Settings re-shows a dismissed strip at any step`() = runComposeUiTest {
+        val live = androidx.compose.runtime.mutableStateOf<UpdateNotice?>(inApp(UpdateInstall.Offer))
+        setLiveShell(live)
+        onNodeWithContentDescription("Dismiss update notice").performClick()
+        waitForIdle()
+
+        live.value = inApp(UpdateInstall.Failed(retryable = true, verification = false)).copy(requests = 1)
+        waitForIdle()
+        onNodeWithText("Try Again").assertIsDisplayed()
+
+        onNodeWithContentDescription("Dismiss update notice").performClick()
+        live.value = UpdateNotice("1.2.0", mandatory = false, downloadUrl = DOWNLOAD_URL, install = UpdateInstall.Ready)
+            .copy(requests = 2)
+        waitForIdle()
+        onNodeWithTag(RESTART_TAG).assertIsDisplayed()
+    }
+
+    /** Once the download is over, the X must work like it does everywhere else. */
+    @Test
+    fun `a finished or failed download can be dismissed`() = runComposeUiTest {
+        val live = androidx.compose.runtime.mutableStateOf<UpdateNotice?>(inApp(UpdateInstall.Downloaded))
+        setLiveShell(live)
+
+        onNodeWithContentDescription("Dismiss update notice").performClick()
+        waitForIdle()
+        onAllNodesWithTag(DISMISSIBLE_TAG).assertCountEquals(0)
+
+        live.value = inApp(UpdateInstall.Failed(retryable = true, verification = false))
+        waitForIdle()
+        onAllNodesWithTag(DISMISSIBLE_TAG).assertCountEquals(0)
     }
 
     @Test
@@ -221,6 +363,23 @@ class UpdateBannerTest {
         mode: ThemeMode = ThemeMode.System,
         onInstall: () -> Unit = {},
         onRestart: () -> Unit = {},
+        onCancel: () -> Unit = {},
+        onOpen: () -> Unit = {},
+    ) = setLiveShell(
+        androidx.compose.runtime.mutableStateOf(notice),
+        onDownload, mode, onInstall, onRestart, onCancel, onOpen,
+    )
+
+    /** [setShell] with a notice the test can change after composition. */
+    @Suppress("LongParameterList") // one per callback the strip exposes
+    private fun ComposeUiTest.setLiveShell(
+        live: androidx.compose.runtime.State<UpdateNotice?>,
+        onDownload: (String) -> Unit = {},
+        mode: ThemeMode = ThemeMode.System,
+        onInstall: () -> Unit = {},
+        onRestart: () -> Unit = {},
+        onCancel: () -> Unit = {},
+        onOpen: () -> Unit = {},
     ) {
         setContent {
             val registry = remember { ToolRegistry(placeholderTools()) }
@@ -239,10 +398,12 @@ class UpdateBannerTest {
                     themeMode = mode,
                     onThemeModeChange = {},
                     railItems = railItems,
-                    updateNotice = notice,
+                    updateNotice = live.value,
                     onDownloadUpdate = onDownload,
                     onInstallUpdate = onInstall,
                     onRestartToUpdate = onRestart,
+                    onCancelUpdate = onCancel,
+                    onOpenUpdate = onOpen,
                 )
             }
         }
@@ -250,5 +411,6 @@ class UpdateBannerTest {
 
     private companion object {
         const val DOWNLOAD_URL = "https://zillit.example.com/download"
+        const val INSTALLER_URL = "https://downloads.zillit.example.com/Zillit-Desktop-Mac-Silicon.dmg"
     }
 }

@@ -8967,6 +8967,9 @@
     <string name="desktop_decline_selected_title">Decline %1$d requests?</string>
     <string name="desktop_bulk_decided">Done: %1$d of %2$d.</string>
     <string name="desktop_update_downloading">Downloading version %1$s…</string>
+    <string name="desktop_update_downloaded">Version %1$s is saved in your Downloads folder. Install it from there to finish updating.</string>
+    <string name="desktop_update_open_installer">Show installer</string>
+    <string name="desktop_update_open_in_browser">Open in browser</string>
     <string name="desktop_update_downloading_percent">Downloading version %1$s… %2$d%%</string>
     <string name="desktop_update_preparing">Checking version %1$s before it installs…</string>
     <string name="desktop_update_ready">Version %1$s is ready. Zillit will close and reopen to finish updating.</string>

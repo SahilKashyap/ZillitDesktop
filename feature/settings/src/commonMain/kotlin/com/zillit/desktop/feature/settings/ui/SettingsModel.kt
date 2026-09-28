@@ -241,6 +241,13 @@ sealed interface SettingsEvent {
 sealed interface SettingsEffect {
     data object SignedOut : SettingsEffect
 
+    /**
+     * Get the update at [url] — installed in place, or downloaded inside the
+     * app and handed over. The host decides which; a host that cannot do
+     * either opens [url] in the browser, as this used to do unconditionally.
+     */
+    data class GetUpdate(val url: String) : SettingsEffect
+
     /** Moves the administration window to one of the two approval queues. */
     data class OpenApprovals(val queue: ApprovalQueue) : SettingsEffect
 

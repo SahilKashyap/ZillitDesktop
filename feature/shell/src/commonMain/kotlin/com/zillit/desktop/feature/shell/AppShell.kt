@@ -5,13 +5,10 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
-import androidx.compose.runtime.remember
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.VerticalDivider
@@ -26,7 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ThemeMode
@@ -127,6 +127,10 @@ fun AppShell(
     onDownloadUpdate: (String) -> Unit = {},
     /** Starts the in-app download, when [UpdateNotice.install] offers one. */
     onInstallUpdate: () -> Unit = {},
+    /** Stops an update download in progress. */
+    onCancelUpdate: () -> Unit = {},
+    /** Opens a downloaded installer again. */
+    onOpenUpdate: () -> Unit = {},
     /** Hands the staged build to the installer and quits; the helper reopens Zillit. */
     onRestartToUpdate: () -> Unit = {},
 ) {
@@ -140,8 +144,8 @@ fun AppShell(
     // 1.3.0 — a preference keyed on nothing but "seen" is how an update notice
     // becomes permanently invisible. Per session, because a strip this cheap
     // does not need to survive a restart to be worth showing again.
-    var dismissedVersion by remember { mutableStateOf<String?>(null) }
-    val notice = updateNotice?.takeIf { it.mandatory || it.latestVersion != dismissedVersion }
+    var dismissed by remember { mutableStateOf<UpdateDismissal?>(null) }
+    val notice = updateNotice?.takeIf { it.shownAfter(dismissed) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = ZillitTheme.colors.canvas) {
         Box(Modifier.fillMaxSize()) {
@@ -169,7 +173,9 @@ fun AppShell(
                         onDownload = onDownloadUpdate,
                         onInstall = onInstallUpdate,
                         onRestart = onRestartToUpdate,
-                        onDismiss = { dismissedVersion = it.latestVersion },
+                        onCancel = onCancelUpdate,
+                        onOpenDownloaded = onOpenUpdate,
+                        onDismiss = { dismissed = UpdateDismissal(it.latestVersion, it.requests) },
                     )
                 }
 
@@ -498,7 +504,35 @@ data class UpdateNotice(
     val downloadUrl: String?,
     val installedVersion: String? = null,
     val install: UpdateInstall? = null,
+    /**
+     * True when [install] is the download-and-open path: the file is fetched
+     * inside the app with a progress bar and handed over, rather than
+     * installed. The strip then offers "Download", not "Update now".
+     */
+    val manual: Boolean = false,
+    /**
+     * How many times the person has asked for this update from elsewhere —
+     * Settings' Download. Each ask re-shows a strip they dismissed: it is
+     * where the download's progress and its result appear.
+     */
+    val requests: Int = 0,
 )
+
+/** The strip the person closed: which version, and how many asks for it had been made by then. */
+internal data class UpdateDismissal(val version: String, val requests: Int)
+
+/**
+ * Whether the strip shows, given what the person last dismissed.
+ *
+ * Dismissed stays dismissed until they ask again, from Settings — whatever
+ * step the update is at then: a download that fails at once, or a staged
+ * build waiting for "Restart now", is as much the answer to the ask as a
+ * progress bar. Nor does a running download ever hide: it could not be
+ * cancelled. Every other step can be dismissed: its X must work.
+ */
+internal fun UpdateNotice.shownAfter(dismissed: UpdateDismissal?): Boolean =
+    mandatory || dismissed == null || latestVersion != dismissed.version || requests != dismissed.requests ||
+        install is UpdateInstall.Downloading
 
 /** The in-app update's progress, as the strip words it. */
 sealed interface UpdateInstall {
@@ -513,6 +547,9 @@ sealed interface UpdateInstall {
 
     /** Staged; "Restart now" installs it. */
     data object Ready : UpdateInstall
+
+    /** Saved to Downloads and shown to the person to install. Nothing was installed. */
+    data object Downloaded : UpdateInstall
 
     /**
      * Stopped. [retryable] for a broken download, where trying again may

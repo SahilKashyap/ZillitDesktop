@@ -201,7 +201,9 @@ class SettingsViewModel(
             SettingsEvent.DismissSignOut -> setState { copy(isConfirmingSignOut = false) }
 
             SettingsEvent.CheckForUpdates -> checkForUpdates()
-            is SettingsEvent.DownloadUpdate -> sendEffect(SettingsEffect.OpenExternal(event.url))
+            // Not OpenExternal: that sent this button to a browser even when
+            // the app could download the update itself.
+            is SettingsEvent.DownloadUpdate -> sendEffect(SettingsEffect.GetUpdate(event.url))
             SettingsEvent.ConfirmSignOut -> {
                 setState { copy(isConfirmingSignOut = false) }
                 launch {

@@ -106,15 +106,20 @@ class AboutSettingsTest {
         assertEquals(UpdateCheck.UpToDate, settings.state.value.about.updateCheck)
     }
 
-    /** Download is the same external-URL effect the help links use — the app's guarded launcher. */
+    /**
+     * Download asks the host to get the update — installed in place or
+     * downloaded inside the app — rather than handing the link to a browser,
+     * which is what this used to do and what was reported: "tap Download and
+     * it goes outside the app". Only a host that can do neither opens it.
+     */
     @Test
-    fun `Download hands the URL out as an external open`() = runTest(dispatcher) {
+    fun `Download asks for the update rather than opening a browser`() = runTest(dispatcher) {
         val settings = settings { UpdateStatus.UpToDate }
 
         settings.onEvent(SettingsEvent.DownloadUpdate("https://dl.example/Zillit.msi"))
         val effect = settings.effects.first()
 
-        assertEquals(SettingsEffect.OpenExternal("https://dl.example/Zillit.msi"), effect)
+        assertEquals(SettingsEffect.GetUpdate("https://dl.example/Zillit.msi"), effect)
     }
 
     private fun settings(check: suspend () -> UpdateStatus) = SettingsViewModel(
