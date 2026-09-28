@@ -97,8 +97,13 @@ private fun ExportOption(title: String, sub: String, onClick: () -> Unit) {
 fun OutstandingDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
     val detail = state.processing.detail
     val shown = remember(detail != null) { detail } ?: detail
+    // `detail` first, `shown` only to keep the last week list on screen
+    // during the dismiss fade (once `detail` itself goes null) — reading
+    // `shown` alone here missed the fetch actually completing, since
+    // `shown` never updates past its first (loading, empty) snapshot.
+    val open = detail ?: shown
     val week = state.processing.weekStarting ?: state.currentWeek
-    val rows = shown?.weeks.orEmpty().map { ProcessingRow(it, week) }
+    val rows = open?.weeks.orEmpty().map { ProcessingRow(it, week) }
     ZillitDialogShell(
         title = shown?.let { str(S.desktop_payroll_outstanding_for, state.nameOf(it.userId)) }.orEmpty(),
         subtitle = str(S.desktop_payroll_outstanding_subtitle),
@@ -107,7 +112,7 @@ fun OutstandingDetailDialog(state: PayrollUiState, onEvent: (PayrollEvent) -> Un
         width = WIDE_DIALOG,
         onDismiss = { onEvent(ProcessingEvent.OpenOutstanding(null)) },
     ) {
-        val open = detail ?: shown ?: return@ZillitDialogShell
+        if (open == null) return@ZillitDialogShell
         when {
             open.loading -> repeat(SKELETONS) { ZillitSkeletonBar(Modifier.fillMaxWidth()) }
             open.error != null -> ZillitNotice(
