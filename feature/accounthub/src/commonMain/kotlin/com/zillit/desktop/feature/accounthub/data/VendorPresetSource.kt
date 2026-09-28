@@ -57,7 +57,7 @@ internal class VendorPresetSource(private val apiClient: ApiClient, config: AppC
      * `status === 1`; so does this.
      */
     private suspend fun <T> confirmedRows(url: String, row: KSerializer<T>): ZillitResult<List<T>> =
-        apiClient.envelope(verb = HttpVerb.Get, url = url, module = RequestModule.Device).flatMap { envelope ->
+        apiClient.envelope(verb = HttpVerb.Get, url = url, module = RequestModule.Default).flatMap { envelope ->
             val data = envelope.data
             when {
                 envelope.status != STATUS_CONFIRMED ->

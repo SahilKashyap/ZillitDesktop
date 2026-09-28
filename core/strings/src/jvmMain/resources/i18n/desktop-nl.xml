@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Verwijderde bestanden en mappen wachten hier tot je ze herstelt of definitief verwijdert.</string>
     <string name="desktop_email_forward_to">Doorsturen naar</string>
     <string name="desktop_tools_drag_to_reorder">Sleep om %1$s te verplaatsen</string>
-    <string name="desktop_call_line3_not_configured">Lijn 3 is niet ingesteld voor deze installatie</string>
+    <string name="desktop_call_line3_not_configured">Lijn 1 is niet ingesteld voor deze installatie</string>
     <string name="desktop_drive_favourite">Favoriet</string>
     <string name="desktop_drive_restore_tooltip">Terugzetten op de oorspronkelijke locatie</string>
     <string name="desktop_turn_off">Uitzetten</string>

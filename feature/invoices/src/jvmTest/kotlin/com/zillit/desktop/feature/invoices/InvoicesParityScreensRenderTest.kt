@@ -7,6 +7,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.invoices.domain.BankAccount
+import com.zillit.desktop.feature.invoices.domain.ClientAddress
 import com.zillit.desktop.feature.invoices.domain.CodedLine
 import com.zillit.desktop.feature.invoices.domain.Company
 import com.zillit.desktop.feature.invoices.domain.CreditAttachment
@@ -17,10 +18,13 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceAnalytics
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
+import com.zillit.desktop.feature.invoices.domain.InvoiceProjectInfo
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.LineDraft
 import com.zillit.desktop.feature.invoices.domain.LinkedPo
 import com.zillit.desktop.feature.invoices.domain.PayMethod
+import com.zillit.desktop.feature.invoices.domain.SalesInvoice
+import com.zillit.desktop.feature.invoices.domain.SalesInvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PaymentTab
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import com.zillit.desktop.feature.invoices.domain.VendorSpend
@@ -33,6 +37,7 @@ import com.zillit.desktop.feature.invoices.ui.EnterTab
 import com.zillit.desktop.feature.invoices.ui.InvoicesScreen
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.SalesInvoiceDraft
+import com.zillit.desktop.feature.invoices.ui.SalesUi
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -125,6 +130,27 @@ class InvoicesParityScreensRenderTest {
             ),
             listOf("Apply Credit Note", "TAX AMT", "GROSS TOTAL", "AGAINST INVOICE"),
         ),
+        "sales-list" to Scene(
+            base.copy(page = AccountantPage.Sales, salesInvoices = salesRows()),
+            listOf("Sales Invoices", "Create Invoice", "Invoice List"),
+        ),
+        "sales-preview" to Scene(
+            base.copy(
+                page = AccountantPage.Sales,
+                salesInvoices = salesRows(),
+                sales = SalesUi(
+                    preview = salesRows().first(),
+                    project = InvoiceProjectInfo(
+                        projectName = "The Long Winter",
+                        companyName = "Prod Co Ltd",
+                        companyAddress = "12 Wardour Street, London W1D 6QF",
+                        companyPhone = "+44 20 7946 0000",
+                        companyEmail = "accounts@prodco.test",
+                    ),
+                ),
+            ),
+            listOf("BILLED TO", "Gross Total", "Mark Sent", "View PDF"),
+        ),
         "sales-sheet" to Scene(
             base.copy(
                 page = AccountantPage.Sales,
@@ -168,7 +194,7 @@ class InvoicesParityScreensRenderTest {
                 page = AccountantPage.Inbox,
                 enter = EnterInvoiceForm(tab = EnterTab.Manual, companyId = "co1", paid = true),
             ),
-            listOf("Already Paid", "Prod Co"),
+            listOf("Already paid", "Prod Co"),
         ),
     )
 
@@ -183,6 +209,55 @@ class InvoicesParityScreensRenderTest {
         vendors = mapOf("v1" to Vendor("v1", "Lamps Ltd", email = "a@lamps.test"), "v2" to Vendor("v2", "Grip Co")),
         companies = listOf(Company("co1", "Prod Co")),
         banks = listOf(BankAccount("b1", "Main", entityId = "co1")),
+    )
+
+    private fun salesRows() = listOf(
+        SalesInvoice(
+            id = "s1",
+            reference = "SI-482193",
+            clientName = "Channel 4 Television Corporation",
+            grossAmount = 14_400.0,
+            currency = "GBP",
+            status = SalesInvoiceStatus.Draft,
+            invoiceDateMs = NOW,
+            dueDateMs = NOW + 30L * 86_400_000L,
+            createdAtMs = NOW,
+            createdBy = "u1",
+            payTerms = "30 days",
+            clientAddress = ClientAddress(
+                line1 = "124 Horseferry Road",
+                city = "London",
+                postalCode = "SW1P 2TX",
+                country = "United Kingdom",
+            ),
+            lineItems = listOf(
+                CodedLine("sl1", description = "Facility recharge — Stage 4", account = "7100", amount = 8_000.0, taxRate = 20.0),
+                CodedLine("sl2", description = "Placement fee — episode 3", account = "7200", amount = 4_000.0, taxRate = 20.0),
+            ),
+            lineTaxAmounts = mapOf("sl1" to 1_600.0, "sl2" to 800.0),
+        ),
+        SalesInvoice(
+            id = "s2",
+            reference = "SI-482194",
+            clientName = "Sky Studios",
+            grossAmount = 7_200.0,
+            currency = "GBP",
+            status = SalesInvoiceStatus.Sent,
+            invoiceDateMs = NOW - 40L * 86_400_000L,
+            dueDateMs = NOW - 10L * 86_400_000L,
+            createdAtMs = NOW - 40L * 86_400_000L,
+        ),
+        SalesInvoice(
+            id = "s3",
+            reference = "SI-482195",
+            clientName = "Netflix UK",
+            grossAmount = 22_500.0,
+            currency = "GBP",
+            status = SalesInvoiceStatus.Paid,
+            invoiceDateMs = NOW - 60L * 86_400_000L,
+            dueDateMs = NOW - 30L * 86_400_000L,
+            createdAtMs = NOW - 60L * 86_400_000L,
+        ),
     )
 
     private fun matching() = listOf(

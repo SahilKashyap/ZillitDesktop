@@ -17,8 +17,9 @@
  * land on the same tile.
  *
  * Remote media is rendered through the page's own sink (`zillitCall.attachRemote`),
- * not LiveKit's `track.attach`, so tiles, names and speaking rings are the
- * same chrome on every line.
+ * so tiles, names and speaking rings are the same chrome on every line — but a
+ * remote VIDEO is handed over with its LiveKit track, which the page attaches
+ * with `track.attach` so adaptiveStream can see the tile it plays in (below).
  */
 (function () {
     'use strict';
@@ -45,6 +46,164 @@
     var hidden = {};
     var onHold = false;
     var mediaBeforeHold = { mic: true, cam: false };
+    /** What the last join was given — replayed by a rejoin after the link died. */
+    var creds = null;
+    var rejoining = false;
+    var netOffline = false;
+    var reconnectPoll = null;
+
+    /**
+     * THE PRE-WARMED ROOM — the one connected on the ring's locked token while
+     * the phone was still ringing (`prewarm`), waiting for the accept to adopt
+     * it.
+     *
+     * The locked token joins hidden: the SERVER enforces no-publish and
+     * no-subscribe, so nothing reaches the caller before the user answers. On
+     * accept the SAME participant is upgraded in place, which is what turns
+     * answering from a full connect into a permission grant. The rule it
+     * serves is exactly one connect per call: connect(locked) → disconnect →
+     * connect(full) is what collapses a call server-side.
+     *
+     * `{ callId, room, ready, gen }`. `gen` is bumped on every start and drop,
+     * so a connect that lands late disconnects itself instead of lingering as
+     * an invisible ghost participant in someone else's call.
+     */
+    var warm = null;
+    var warmGen = 0;
+    /**
+     * The call the user has ACCEPTED, so `dropPrewarm` refuses to touch its
+     * room: terminal events routinely arrive around an accept (the server tells
+     * this user's other devices, and the answering one hears it too), and
+     * disconnecting a pre-warmed participant mid-adoption reads to the server
+     * as the callee LEAVING — ending the call they just answered.
+     */
+    var warmClaimed = '';
+    /**
+     * Tracks opened before there was a room to publish them to
+     * (`prewarmMedia`). Published as-is at join: a second getUserMedia while
+     * the first is still held fails outright on some devices, so these exact
+     * tracks are the ones that go on the wire.
+     */
+    var prewarmed = null;
+
+    /**
+     * The Room, with the options every connection shares — the web's
+     * `buildRoom` (`LivekitEngine.ts:463-469`). adaptiveStream asks the SFU for
+     * the simulcast layer that fits the tile each video actually plays in, and
+     * dynacast stops the layers nobody watches; together they are what keeps a
+     * remote picture coming on a slow link. With adaptiveStream off every
+     * viewer asked for the full 720p layer, which a slow downlink cannot carry,
+     * and the tile stayed black where the web's showed a smaller picture.
+     *
+     * `pauseVideoInBackground` is off because this page is drawn off-screen
+     * into the app's window: the document can read as hidden while the call
+     * is on screen, and LiveKit would pause every video for it.
+     */
+    function buildRoom() {
+        return new LK.Room({
+            adaptiveStream: { pauseVideoInBackground: false },
+            dynacast: true,
+            videoCaptureDefaults: { resolution: LK.VideoPresets.h720.resolution },
+        });
+    }
+
+    function sendConnection(word) {
+        send({ type: 'connection', state: word, reason: '' });
+    }
+
+    /*
+     * Reconnection — the web's (`LivekitEngine.ts:221-900`). LiveKit's own
+     * reconnect misses a device network drop: an outage can leave the room
+     * "connected" while media is dead, and a resume that stalls on a slow link
+     * never restarts itself. So the device's own online/offline events count
+     * too, and a room that stays down while the network is up is dropped and
+     * joined again with the same token — LiveKit replaces the participant in
+     * place, so the others see a rejoin, not a new party.
+     */
+    function onOnline() { netOffline = false; ensureReconnectPoll(); }
+    function onOffline() {
+        netOffline = true;
+        if (room) { sendConnection('RECONNECTING'); }
+        ensureReconnectPoll();
+    }
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    function isConnected() {
+        return !!room && room.state === LK.ConnectionState.Connected;
+    }
+
+    /** Polls while the link is down: clears once the room proves itself, rejoins when it is stuck, to a deadline. */
+    function ensureReconnectPoll() {
+        if (reconnectPoll || !room) { return; }
+        var POLL = 1000, RETRY_AFTER = 4000, DEADLINE = 30000;
+        var stuck = 0, spent = 0;
+        reconnectPoll = setInterval(function () {
+            spent += POLL;
+            if (!room) { stopReconnectPoll(); return; }
+            var connected = isConnected();
+            if (!netOffline && connected && !rejoining) {
+                stopReconnectPoll();
+                sendConnection('CONNECTED');
+                return;
+            }
+            // A rejoin in flight is the recovery, not a stuck room.
+            if (!netOffline && !connected && !rejoining) { stuck += POLL; } else { stuck = 0; }
+            if (stuck >= RETRY_AFTER && spent < DEADLINE) { stuck = 0; rejoin(); }
+            if (spent >= DEADLINE) { stopReconnectPoll(); }
+        }, POLL);
+    }
+
+    function stopReconnectPoll() {
+        if (reconnectPoll) { clearInterval(reconnectPoll); reconnectPoll = null; }
+    }
+
+    /**
+     * Drops the dead room without ending the call — its listeners go first,
+     * so its disconnect cannot reach Kotlin as `left` — then joins again with
+     * the same credentials and puts back what was being sent.
+     */
+    async function rejoin() {
+        if (rejoining || !creds || !room) { return; }
+        rejoining = true;
+        var gen = joinGeneration;
+        try {
+            sendConnection('RECONNECTING');
+            var dead = room;
+            try { dead.removeAllListeners(); } catch (e) { /* not an emitter */ }
+            dead.remoteParticipants.forEach(function (p) {
+                p.trackPublications.forEach(function (pub) { detachRemote(p, pub); });
+            });
+            // Capped: a disconnect that hangs on a dead link must not block recovery.
+            await Promise.race([
+                dead.disconnect().catch(function () { /* already gone */ }),
+                new Promise(function (resolve) { setTimeout(resolve, 1500); }),
+            ]);
+            if (gen !== joinGeneration) { return; }
+            var r = buildRoom();
+            room = r;
+            wire(r);
+            await r.connect(creds.url, creds.token);
+            if (gen !== joinGeneration) { await r.disconnect(); return; }
+            trace('rejoined after the link died');
+            r.remoteParticipants.forEach(function (p) { peerJoined(p); });
+            if (r.metadata) { reportRecording(r.metadata); }
+            if (desiredMic && !onHold) {
+                try {
+                    await r.localParticipant.setMicrophoneEnabled(true, chosenMic ? { deviceId: chosenMic } : undefined);
+                } catch (e) { warn('rejoin:microphone', e); }
+            }
+            if (desiredCam && !onHold) {
+                try { await r.localParticipant.setCameraEnabled(true); } catch (e) { warn('rejoin:camera', e); }
+            }
+            showLocalPreview();
+            sendConnection('CONNECTED');
+        } catch (e) {
+            warn('rejoin', e);   // the poll retries to its deadline
+        } finally {
+            rejoining = false;
+        }
+    }
 
     function send(event) {
         try {
@@ -61,6 +220,212 @@
     function trace(message) {
         send({ type: 'warning', where: 'livekit:trace', message: message });
     }
+
+    // ── Per-call diagnostics the page measures ──────────────────────────────
+    //
+    // Four of `CallDiagnostics`' ten events are WebRTC facts — `publish`,
+    // `speak`, `audio`, `ice` — plus `promoted`, `warm_connect` and `screen`
+    // where the page is the only thing that can see them. Kotlin owns the
+    // budget, the call window and the transport; this only measures and hands
+    // over. Nothing here may throw into a call, so every sample is guarded.
+
+    var sampleTimer = null;
+    var prevStats = null;
+    var prevScreenStats = null;
+    var iceSeen = {};
+    var publishLogged = false;
+    var connectAt = 0;
+    var lastSpoke = false;
+
+    function telemetry(event, data) {
+        send({ type: 'telemetry', event: event, data: data || {} });
+    }
+
+    function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
+    function round1(v) { return Math.round(v * 10) / 10; }
+    function round3(v) { return Math.round(v * 1000) / 1000; }
+
+    function pcOf(r, which) {
+        try {
+            var mgr = r.engine && r.engine.pcManager;
+            if (!mgr) { return null; }
+            return which === 'pub' ? mgr.publisher : mgr.subscriber;
+        } catch (e) { return null; }
+    }
+
+    function iceStateOf(pc) {
+        try {
+            return (pc && pc.getICEConnectionState) ? pc.getICEConnectionState() : 'connected';
+        } catch (e) { return 'connected'; }
+    }
+
+    /**
+     * `audio` — what this device sent and received in the last five seconds.
+     *
+     * A group call has several inbound streams: the counters are summed, and
+     * the WORST jitter and the loudest level are taken, so one line still
+     * answers "what do I receive".
+     */
+    function emitAudio(r, pub, sub) {
+        var outPkts = 0, outBytes = 0, outLevel = 0;
+        if (pub) {
+            pub.forEach(function (st) {
+                if (st.type === 'outbound-rtp' && st.kind === 'audio') {
+                    outPkts += num(st.packetsSent);
+                    outBytes += num(st.bytesSent);
+                } else if (st.type === 'media-source' && st.kind === 'audio') {
+                    outLevel = Math.max(outLevel, num(st.audioLevel));
+                }
+            });
+        }
+        var inPkts = 0, inBytes = 0, inLost = 0, inLevel = 0, jitterMs = 0;
+        if (sub) {
+            sub.forEach(function (st) {
+                if (st.type !== 'inbound-rtp' || st.kind !== 'audio') { return; }
+                inPkts += num(st.packetsReceived);
+                inBytes += num(st.bytesReceived);
+                inLost += num(st.packetsLost);
+                inLevel = Math.max(inLevel, num(st.audioLevel));
+                jitterMs = Math.max(jitterMs, num(st.jitter) * 1000);
+            });
+        }
+        var at = Date.now();
+        var outKbps = 0, inKbps = 0;
+        if (prevStats && at > prevStats.at) {
+            var secs = (at - prevStats.at) / 1000;
+            outKbps = round1(Math.max(0, outBytes - prevStats.outBytes) * 8 / 1000 / secs);
+            inKbps = round1(Math.max(0, inBytes - prevStats.inBytes) * 8 / 1000 / secs);
+        }
+        prevStats = { at: at, outBytes: outBytes, inBytes: inBytes };
+        var micOn = false;
+        try { micOn = !!r.localParticipant.isMicrophoneEnabled; } catch (e) { /* ignore */ }
+        telemetry('audio', {
+            outPkts: outPkts, outKbps: outKbps, outLevel: round3(outLevel), micOn: micOn,
+            inPkts: inPkts, inKbps: inKbps, inLevel: round3(inLevel), inLost: inLost,
+            jitterMs: Math.round(jitterMs),
+        });
+    }
+
+    /**
+     * `ice` — one line per peer connection per distinct path.
+     *
+     * `local: "relay"` means TURN is in use, which is the whole reason this
+     * event exists. Deduped on the path AND the ICE state, so a stable
+     * connection sends one line while a state change always reports; the
+     * bitrates are deliberately not in the signature — they move constantly
+     * and would turn this into a second sampler.
+     */
+    function emitIce(which, report, state) {
+        var byId = {};
+        var selectedPairId = '';
+        var pairs = [];
+        report.forEach(function (st, id) {
+            byId[id] = st;
+            if (st.type === 'transport' && st.selectedCandidatePairId) { selectedPairId = st.selectedCandidatePairId; }
+            if (st.type === 'candidate-pair') { pairs.push(st); }
+        });
+        var pair = (selectedPairId && byId[selectedPairId])
+            || pairs.filter(function (p) { return p.selected === true; })[0]
+            || pairs.filter(function (p) { return p.nominated === true && p.state === 'succeeded'; })[0]
+            || pairs.filter(function (p) { return p.state === 'succeeded'; })[0];
+        if (!pair) { return; }
+        var local = byId[pair.localCandidateId];
+        var remote = byId[pair.remoteCandidateId];
+        if (!local || !remote) { return; }
+        var signature = state + '|' + local.candidateType + '|' + remote.candidateType + '|' + local.protocol;
+        if (iceSeen[which] === signature) { return; }
+        iceSeen[which] = signature;
+        var data = {
+            pc: which,
+            state: state,
+            local: String(local.candidateType || ''),
+            remote: String(remote.candidateType || ''),
+            protocol: String(local.protocol || ''),
+            rttMs: Math.round(num(pair.currentRoundTripTime) * 1000),
+            availOutKbps: Math.round(num(pair.availableOutgoingBitrate) / 1000),
+            availInKbps: Math.round(num(pair.availableIncomingBitrate) / 1000),
+        };
+        if (local.candidateType === 'relay') {
+            if (local.relayProtocol) { data.relayProtocol = String(local.relayProtocol); }
+            if (local.url) { data.url = String(local.url).slice(0, 120); }
+        }
+        telemetry('ice', data);
+    }
+
+    /**
+     * `screen` — what a live share is actually sending.
+     *
+     * The only way to settle a "the share looks blurry" report:
+     * `qualityLimitationReason` is the whole story, and it only diverges
+     * between share modes once the encoder is under pressure. Sent only while
+     * something is being shared, on the sampler that already runs.
+     */
+    function emitScreen(pub) {
+        if (!pub) { return; }
+        var width = 0, height = 0, fps = 0, bytes = 0, limited = '';
+        pub.forEach(function (st) {
+            if (st.type !== 'outbound-rtp' || st.kind !== 'video') { return; }
+            var w = num(st.frameWidth);
+            if (w < width) { return; }
+            width = w; height = num(st.frameHeight);
+            fps = num(st.framesPerSecond);
+            bytes = num(st.bytesSent);
+            limited = String(st.qualityLimitationReason || '');
+        });
+        // Nothing being shared — or a camera-only call, whose outbound video is
+        // not a share. `screenPub` is the page's own answer to which it is.
+        if (!width || !screenPub) { prevScreenStats = null; return; }
+        var at = Date.now();
+        var kbps = 0;
+        if (prevScreenStats && at > prevScreenStats.at) {
+            kbps = round1(Math.max(0, bytes - prevScreenStats.bytes) * 8 / 1000 / ((at - prevScreenStats.at) / 1000));
+        }
+        prevScreenStats = { at: at, bytes: bytes };
+        telemetry('screen', {
+            width: width, height: height, fps: Math.round(fps), kbps: kbps,
+            limited: limited || 'none',
+        });
+    }
+
+    async function sample(r) {
+        if (room !== r) { stopSampler(); return; }
+        try {
+            var pub = pcOf(r, 'pub');
+            var sub = pcOf(r, 'sub');
+            var pubReport = pub && pub.getStats ? await pub.getStats().catch(function () { return null; }) : null;
+            var subReport = sub && sub.getStats ? await sub.getStats().catch(function () { return null; }) : null;
+            if (room !== r) { return; }
+            emitAudio(r, pubReport, subReport);
+            emitScreen(pubReport);
+            if (pubReport) { emitIce('pub', pubReport, iceStateOf(pub)); }
+            if (subReport) { emitIce('sub', subReport, iceStateOf(sub)); }
+        } catch (e) { /* a failed sample is skipped; the loop continues */ }
+    }
+
+    /** Starts the five-second sampler for a connected room. Replaces any previous one. */
+    function startSampler(r) {
+        stopSampler();
+        connectAt = Date.now();
+        publishLogged = false;
+        lastSpoke = false;
+        prevStats = null;
+        prevScreenStats = null;
+        iceSeen = {};
+        // Promptly, not in five seconds: `ice` is the line most often wanted,
+        // and a call that fails in its first seconds would never send one.
+        sample(r);
+        sampleTimer = setInterval(function () { sample(r); }, SAMPLE_MS);
+    }
+
+    /** Kills the sampler. Safe to call repeatedly. */
+    function stopSampler() {
+        if (sampleTimer) { clearInterval(sampleTimer); sampleTimer = null; }
+        prevStats = null;
+        prevScreenStats = null;
+        iceSeen = {};
+    }
+
+    var SAMPLE_MS = 5000;
 
     /**
      * The person behind a LiveKit identity. The token's subject is
@@ -104,8 +469,12 @@
             // The last argument says "this is a shared screen": the page shows
             // it in the presenter's tile in place of their camera, uncropped,
             // rather than the two tracks taking turns in one cell.
+            // The LiveKit track rides along for videos: the page attaches it to
+            // the tile's element, which is what adaptiveStream sizes against.
+            var kind = kindOf(track);
             window.zillitCall.attachRemote(
-                key, user, kindOf(track), stream, publication.source === LK.Track.Source.ScreenShare);
+                key, user, kind, stream, publication.source === LK.Track.Source.ScreenShare,
+                kind === 'video' ? track : null);
         }
         if (publication.source === LK.Track.Source.ScreenShare) {
             send({ type: 'peer-screen-share', uid: uid, sharing: true });
@@ -253,15 +622,28 @@
         r.on(E.RoomMetadataChanged, function (md) { reportRecording(md); });
         r.on(E.ActiveSpeakersChanged, function (speakers) {
             var uids = [];
-            speakers.forEach(function (p) { if (p !== r.localParticipant) { uids.push(uidOf(userIdOf(p.identity))); } });
+            var me = false;
+            speakers.forEach(function (p) {
+                if (p === r.localParticipant) { me = true; return; }
+                uids.push(uidOf(userIdOf(p.identity)));
+            });
             send({ type: 'speakers', uids: uids });
+            // Our own edge, for the `speak` diagnostic. Edge only: Kotlin
+            // debounces, and a line per flip would eat the whole budget.
+            if (me !== lastSpoke) {
+                lastSpoke = me;
+                var level = 0;
+                try { level = round3(num(r.localParticipant.audioLevel)); } catch (e) { /* ignore */ }
+                send({ type: 'self-speaking', speaking: me, level: level });
+            }
         });
         r.on(E.ConnectionStateChanged, function (state) {
             var S = LK.ConnectionState;
             var word = state === S.Connected ? 'CONNECTED'
                 : state === S.Reconnecting ? 'RECONNECTING'
                 : state === S.Disconnected ? 'DISCONNECTED' : 'CONNECTING';
-            send({ type: 'connection', state: word, reason: '' });
+            sendConnection(word);
+            if (state === S.Reconnecting) { ensureReconnectPoll(); }
         });
         r.on(E.Disconnected, function () {
             if (room === r) {
@@ -306,18 +688,167 @@
         });
         r.on(E.LocalTrackPublished, function (pub) {
             send({ type: 'warning', where: 'livekit:trace', message: 'published ' + (pub ? pub.source : '?') });
+            // `publish` — the first MICROPHONE track on the wire, which is the
+            // moment the call became usable. Once per call; Kotlin drops a
+            // second one anyway, but the clock here is the room's own.
+            var mic = pub && (pub.source === 'microphone' || pub.kind === 'audio');
+            if (mic && !publishLogged) {
+                publishLogged = true;
+                telemetry('publish', { ok: true, ms: Date.now() - connectAt });
+            }
             showLocalPreview();
         });
         r.on(E.LocalTrackUnpublished, function () { showLocalPreview(); });
         r.on(E.MediaDevicesChanged, function () {
             if (window.zillitCall && window.zillitCall.listDevices) { window.zillitCall.listDevices(); }
         });
+        // `promoted` — the server granted canPublish on a participant that
+        // joined hidden on the ring's locked token. On the pre-warmed path this
+        // IS the moment answering completes, and its absence after an
+        // `accept_sent` is the signature of an accept the backend never acted
+        // on. Only meaningful where the room was warm; a normal join is
+        // publishing from the start.
+        if (E.ParticipantPermissionsChanged) {
+            r.on(E.ParticipantPermissionsChanged, function (prev, participant) {
+                if (participant !== r.localParticipant) { return; }
+                var could = prev && prev.canPublish;
+                var can = false;
+                try { can = !!r.localParticipant.permissions.canPublish; } catch (e) { /* ignore */ }
+                if (can && !could) { telemetry('promoted', { ms: Date.now() - connectAt }); }
+            });
+        }
+    }
+
+    /** Release anything `prewarmMedia` opened that a join never published. */
+    function dropPrewarmedTracks() {
+        if (!prewarmed) { return; }
+        prewarmed.forEach(function (t) { try { t.stop(); } catch (e) { /* already gone */ } });
+        prewarmed = null;
+    }
+
+    /**
+     * Publish the tracks `prewarmMedia` already opened, honouring what the user
+     * has switched off since — a pre-muted microphone must never reach the wire,
+     * so its track is stopped rather than published.
+     *
+     * Returns false when there was nothing warm, and the caller opens the
+     * devices the ordinary way.
+     */
+    async function publishPrewarmed(r) {
+        var tracks = prewarmed;
+        if (!tracks || !tracks.length) { return false; }
+        prewarmed = null;
+        for (var i = 0; i < tracks.length; i++) {
+            var t = tracks[i];
+            var audio = t.kind === (LK.Track && LK.Track.Kind ? LK.Track.Kind.Audio : 'audio');
+            var keep = audio ? desiredMic : desiredCam;
+            if (!keep || room !== r) {
+                try { t.stop(); } catch (e) { /* already gone */ }
+                continue;
+            }
+            try {
+                await r.localParticipant.publishTrack(t);
+            } catch (e) { warn(audio ? 'publish:microphone' : 'publish:camera', e); }
+        }
+        return true;
     }
 
     window.zillitLk = {
         get active() { return room !== null; },
 
-        async join(url, token, selfIdentity, displayName, withVideo, microphoneId) {
+        /**
+         * PRE-CONNECT on the ring's locked token. Idempotent by call id: the
+         * same ring can be reported twice, and the second report must not tear
+         * down the connect the first one started — that is how a warm room dies
+         * mid-handshake and the answer ends up slow anyway.
+         */
+        prewarm(callId, url, preconnectToken) {
+            if (!LK || !callId || !url || !preconnectToken) { return; }
+            if (warm && warm.callId === callId) { return; }
+            this.dropPrewarm('');
+            warmClaimed = '';
+            var myGen = ++warmGen;
+            var r = buildRoom();
+            var startedAt = Date.now();
+            trace('prewarm connecting during the ring for ' + callId);
+            var ready = r.connect(url, preconnectToken).then(function () {
+                // Declined or cancelled while connecting: disconnect the late
+                // arrival rather than leaving a hidden participant in the room.
+                if (myGen !== warmGen) { r.disconnect().catch(function () {}); return false; }
+                // This IS the connect for a ring-warmed call, so it owns
+                // `warm_connect`; join() only sends it on the paths that connect
+                // themselves, which keeps it at one line per call either way.
+                telemetry('warm_connect', { ok: true, ms: Date.now() - startedAt });
+                return true;
+            }).catch(function (e) { warn('prewarm', e); return false; });
+            warm = { callId: callId, room: r, ready: ready, gen: myGen };
+        },
+
+        /** "I am accepting this call" — see `warmClaimed`. */
+        claimPrewarm(callId) {
+            if (!warm || warm.callId !== callId) { return; }
+            warmClaimed = callId;
+            trace('prewarm claimed for the accept of ' + callId);
+        },
+
+        /**
+         * Let the warm room go. A blank [callId] drops whatever is warm; a
+         * named one only that call's, so a terminal event for another call can
+         * never take this one's room with it.
+         */
+        dropPrewarm(callId) {
+            if (!warm) { return; }
+            if (callId && warm.callId !== callId) { return; }
+            if (warmClaimed && warm.callId === warmClaimed) {
+                trace('prewarm drop ignored — accepted, adoption pending, for ' + warm.callId);
+                return;
+            }
+            var w = warm;
+            warm = null;
+            warmGen++;
+            trace('prewarm dropping the warm room for ' + w.callId);
+            w.ready.then(function () { w.room.disconnect().catch(function () {}); }).catch(function () {});
+            dropPrewarmedTracks();
+        },
+
+        /**
+         * Open the microphone and camera NOW, before there is a room.
+         *
+         * The device warm-up and the OS permission prompt then overlap the
+         * call-setup round trips instead of following them. These exact tracks
+         * are what join publishes — never re-opened, because a second
+         * getUserMedia while the first is still held fails on some hardware.
+         */
+        async prewarmMedia(video, audio) {
+            if (!LK || prewarmed || (!video && !audio)) { return; }
+            var myGen = joinGeneration;
+            try {
+                var tracks = await LK.createLocalTracks({
+                    audio: !!audio,
+                    video: video ? { resolution: LK.VideoPresets.h720.resolution } : false,
+                });
+                // Too late to be of use: either the call ended while the
+                // devices were opening (nothing to publish them to), or the
+                // join already ran and opened its own (publishing these now
+                // would put two cameras on the wire, and holding them is
+                // exactly the second getUserMedia this mechanism exists to
+                // avoid). Release them either way.
+                if (myGen !== joinGeneration || room) {
+                    tracks.forEach(function (t) { try { t.stop(); } catch (e) { /* gone */ } });
+                    trace('prewarmMedia landed too late; devices released');
+                    return;
+                }
+                prewarmed = tracks;
+                trace('prewarmMedia opened ' + tracks.length + ' track(s)');
+            } catch (e) {
+                // Permission denied, or no device. The join reports it; there is
+                // nothing to release.
+                prewarmed = null;
+                warn('prewarmMedia', e);
+            }
+        },
+
+        async join(url, token, selfIdentity, displayName, withVideo, microphoneId, callId) {
             if (!LK) { send({ type: 'error', message: 'LiveKit SDK is not loaded' }); return; }
             if (room) { await this.leave(); }
             var gen = ++joinGeneration;
@@ -327,14 +858,33 @@
             chosenMic = microphoneId || '';
             var r = null;
             try {
-                r = new LK.Room({
-                    adaptiveStream: false,
-                    dynacast: true,
-                    videoCaptureDefaults: { resolution: LK.VideoPresets.h720.resolution },
-                });
+                // ADOPT the room the ring pre-warmed, when this is that call:
+                // the participant is already in it and the accept has upgraded
+                // it in place, so connecting again would be the second connect
+                // the whole mechanism exists to avoid.
+                var adopted = null;
+                if (warm && callId && warm.callId === callId) {
+                    adopted = warm;
+                    warm = null;
+                    warmClaimed = '';
+                }
+                r = adopted ? adopted.room : buildRoom();
                 room = r;
+                creds = { url: url, token: token };
                 wire(r);
-                await r.connect(url, token);
+                if (adopted) {
+                    trace('adopted the warm room for ' + callId + ' — no second connect');
+                    var landed = await adopted.ready;
+                    if (!landed) {
+                        // The pre-connect never made it. Fall back to a normal
+                        // connect on this room rather than sitting in a room
+                        // that was never joined.
+                        trace('the warm room never connected; connecting now');
+                        await r.connect(url, token);
+                    }
+                } else {
+                    await r.connect(url, token);
+                }
                 if (gen !== joinGeneration) { await r.disconnect(); return; }
                 onHold = false;
                 r.remoteParticipants.forEach(function (p) { peerJoined(p); });
@@ -344,13 +894,22 @@
                 // A stale hand from a previous session on this device would
                 // otherwise stay up; an explicit "" forces the change through.
                 r.localParticipant.setAttributes({ hand: '' }).catch(function () { /* no grant */ });
-                try {
-                    await r.localParticipant.setMicrophoneEnabled(true, chosenMic ? { deviceId: chosenMic } : undefined);
-                } catch (e) { warn('microphone', e); }
-                if (desiredCam) {
-                    try { await r.localParticipant.setCameraEnabled(true); } catch (e) { warn('camera', e); }
-                    traceCamera('join');
+                // The tracks `prewarmMedia` opened, if any: publishing those is
+                // the point of having opened them early. Nothing warm → open the
+                // devices here as before.
+                if (!(await publishPrewarmed(r))) {
+                    try {
+                        await r.localParticipant.setMicrophoneEnabled(
+                            true,
+                            chosenMic ? { deviceId: chosenMic } : undefined,
+                        );
+                    } catch (e) { warn('microphone', e); }
+                    if (desiredCam) {
+                        try { await r.localParticipant.setCameraEnabled(true); } catch (e) { warn('camera', e); }
+                        traceCamera('join');
+                    }
                 }
+                startSampler(r);
                 showLocalPreview();
                 if (window.zillitCall && window.zillitCall.listDevices) { window.zillitCall.listDevices(); }
             } catch (e) {
@@ -366,6 +925,10 @@
             var r = room;
             room = null;
             joinGeneration++;
+            creds = null;
+            stopReconnectPoll();
+            stopSampler();
+            dropPrewarmedTracks();
             screenPub = null;
             onHold = false;
             deafened = {};

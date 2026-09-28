@@ -328,7 +328,8 @@ interface CardRepository : CardInboxApi {
     /** The register as a file; the server prints the [rows] it is handed, names already resolved. */
     suspend fun exportCards(format: ExportFormat, rows: List<CardExportRow>): ZillitResult<ByteArray>
 
-    suspend fun exportTransactions(format: ExportFormat): ZillitResult<ByteArray>
+    /** Scoped to [filters] — the register the screen is actually showing, not the whole account. */
+    suspend fun exportTransactions(format: ExportFormat, filters: TransactionFilters): ZillitResult<ByteArray>
 
     suspend fun alerts(): ZillitResult<List<CardAlert>>
 

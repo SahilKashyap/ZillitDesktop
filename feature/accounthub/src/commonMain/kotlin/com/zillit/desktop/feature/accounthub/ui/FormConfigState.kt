@@ -124,9 +124,15 @@ data class FormConfigState(
     /** A save or a reset is on its way; neither may start while the other runs. */
     val busy: Boolean get() = saving || resetting
 
-    val sectionCount: Int get() = template.configurable.size
+    /**
+     * Over every section, `terms_of_engagement` included: the web's own
+     * `templateStats` counts the raw template, not the configurable list, so
+     * this header stays a template inventory rather than a preview of what
+     * [FormConfigPage] renders below it.
+     */
+    val sectionCount: Int get() = template.sections.size
 
-    val fieldCount: Int get() = template.configurable.sumOf { it.fields.size }
+    val fieldCount: Int get() = template.fieldCount
 
     val customCount: Int get() = template.customFieldCount
 

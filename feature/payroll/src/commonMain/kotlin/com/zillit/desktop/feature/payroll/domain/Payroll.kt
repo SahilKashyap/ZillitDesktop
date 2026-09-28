@@ -66,6 +66,14 @@ enum class TimecardStatus(val wire: String, private val labelKey: String) {
     /** Already in the ledger. */
     val isPosted: Boolean get() = this == Posted || this == Processed
 
+    /**
+     * Settled: the week has been locked, paid, reversed or posted, and its
+     * days are no longer estimated over from the production report. The web's
+     * `FILL_LOCKED_STATUSES` (`ProductionReportPayrollModule.jsx` 78-84) —
+     * everything BEFORE a lock still allows the estimate fill.
+     */
+    val isSettled: Boolean get() = this == Locked || this == Paid || this == Unpaid || isPosted
+
     companion object {
         fun from(wire: String?): TimecardStatus {
             val value = wire?.trim()?.lowercase().orEmpty()
@@ -106,6 +114,12 @@ data class PayrollPerson(
     val department: String?,
     /** A label key (`designation_gaffer_electrical`), translated at the edge. */
     val designation: String?,
+    /**
+     * They are on a deal — the production requires a signed deal memo from
+     * them. Production Report Payroll rosters exactly these people, which is
+     * what lets it estimate a crew member who has no timecard yet.
+     */
+    val hasDeal: Boolean = false,
 )
 
 /**

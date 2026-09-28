@@ -4,6 +4,7 @@ import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
+import com.zillit.desktop.feature.accounthub.ui.PeriodCloseTab
 import com.zillit.desktop.feature.accounthub.ui.SetupModal
 import com.zillit.desktop.feature.accounthub.ui.VendorFilter
 import com.zillit.desktop.feature.accounthub.ui.hubRouteEvents
@@ -110,6 +111,22 @@ class HubRouteEventsTest {
                 AccountHubEvent.OpenSetupModal(SetupModal.PurchaseOrders),
             ),
             hubRouteEvents("/film-tools/account-hub/production-setup?setup=po_setup"),
+        )
+    }
+
+    /** Where the Invoices module's old `/cash-close` is sent (`InvoicesModule.jsx:534`). */
+    @Test
+    fun `period close opens on the tab its route names`() {
+        assertEquals(
+            listOf(
+                AccountHubEvent.Open(HubArea.PeriodClose),
+                AccountHubEvent.SwitchPeriodCloseTab(PeriodCloseTab.CashClose),
+            ),
+            hubRouteEvents("/film-tools/account-hub/period-close?tab=cash-close"),
+        )
+        assertEquals(
+            listOf(AccountHubEvent.Open(HubArea.PeriodClose)),
+            hubRouteEvents("/film-tools/account-hub/period-close?tab=nowhere"),
         )
     }
 }

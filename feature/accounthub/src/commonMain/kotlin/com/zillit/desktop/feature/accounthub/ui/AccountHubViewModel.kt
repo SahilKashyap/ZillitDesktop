@@ -276,7 +276,7 @@ class AccountHubViewModel(
     @Suppress("CyclomaticComplexMethod") // One branch per shell action.
     private fun onShellEvent(event: AccountHubEvent): Boolean {
         when (event) {
-            is AccountHubEvent.Open -> open(event.area)
+            is AccountHubEvent.Open -> open(event.area, event.from)
             is AccountHubEvent.OpenTool -> handOff(event)
             is AccountHubEvent.EmbedRoute -> setState {
                 copy(embedded = embedded?.copy(path = event.path) ?: EmbeddedTool(event.path, ""))
@@ -290,14 +290,16 @@ class AccountHubViewModel(
             is AccountHubEvent.CreatePurchaseOrder -> show(PURCHASE_ORDER_NEW_PATH, str(S.ah_purchase_orders))
             AccountHubEvent.Refresh -> currentState.area?.let(::load)
             AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
-            is AccountHubEvent.SwitchSetupTab -> setState { copy(setup = setup.copy(tab = event.tab)) }
             else -> return false
         }
         return true
     }
 
-    private fun open(area: HubArea) {
-        if (area !in HubNavigation.areasFor(currentState.viewer)) return
+    private fun open(area: HubArea, from: String? = null) {
+        // Reachable, not necessarily listed — the purchase-order tool's
+        // Vendors tab is a department user's only way in, and it says so.
+        // See [HubNavigation.mayOpen].
+        if (!HubNavigation.mayOpen(area, currentState.viewer, from)) return
         setState { copy(area = area, embedded = null) }
         load(area)
         tourActions.onAreaOpened(area)

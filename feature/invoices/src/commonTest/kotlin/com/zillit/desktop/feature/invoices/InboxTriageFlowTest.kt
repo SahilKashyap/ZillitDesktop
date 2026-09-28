@@ -1,19 +1,28 @@
 package com.zillit.desktop.feature.invoices
 
+import com.zillit.desktop.core.badges.TabBadgeSource
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.data.bulkUploadBody
+import com.zillit.desktop.feature.invoices.data.linkNotes
 import com.zillit.desktop.feature.invoices.data.parseBulkBatches
+import com.zillit.desktop.feature.invoices.data.parseBulkProgress
 import com.zillit.desktop.feature.invoices.data.processBody
 import com.zillit.desktop.feature.invoices.domain.AmountField
 import com.zillit.desktop.feature.invoices.domain.AmountSplit
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
 import com.zillit.desktop.feature.invoices.domain.BulkBatch
+import com.zillit.desktop.feature.invoices.domain.BulkCounterKind
+import com.zillit.desktop.feature.invoices.domain.BulkCounts
 import com.zillit.desktop.feature.invoices.domain.BulkFile
 import com.zillit.desktop.feature.invoices.domain.BulkFileProblem
 import com.zillit.desktop.feature.invoices.domain.BulkFileStatus
 import com.zillit.desktop.feature.invoices.domain.BulkPhase
 import com.zillit.desktop.feature.invoices.domain.BulkUploads
+import com.zillit.desktop.feature.invoices.domain.CatalogueCurrency
+import com.zillit.desktop.feature.invoices.domain.Company
+import com.zillit.desktop.feature.invoices.domain.CountryCurrency
 import com.zillit.desktop.feature.invoices.domain.CurrencyRates
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
@@ -29,12 +38,17 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
+import com.zillit.desktop.feature.invoices.domain.LinkedPo
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.domain.PoPick
+import com.zillit.desktop.feature.invoices.domain.PoSuggestions
 import com.zillit.desktop.feature.invoices.domain.ServerBatch
 import com.zillit.desktop.feature.invoices.domain.Vendor
+import com.zillit.desktop.feature.invoices.domain.VendorSeed
 import com.zillit.desktop.feature.invoices.ui.AccountantPage
+import com.zillit.desktop.feature.invoices.ui.BulkPick
+import com.zillit.desktop.feature.invoices.ui.InboxForm
 import com.zillit.desktop.feature.invoices.ui.InboxEvent
 import com.zillit.desktop.feature.invoices.ui.InboxTab
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
@@ -108,6 +122,50 @@ class InboxTriageFlowTest {
     }
 
     @Test
+    fun `an exact supplier match is the vendor, a new supplier is one to create`() {
+        val vendors = listOf(Vendor("v1", "Lamps Ltd"))
+        assertEquals(VendorSeed(vendorId = "v1"), InboxTriage.seedVendor("  lamps ltd ", vendors))
+        assertEquals(VendorSeed(pendingName = "Lamps Limited"), InboxTriage.seedVendor("Lamps Limited", vendors))
+        assertNull(InboxTriage.seedVendor("", vendors))
+        assertNull(InboxTriage.seedVendor("Lamps Ltd", emptyList()), "an empty list may be a failed read — never mint a vendor from it")
+    }
+
+    @Test
+    fun `a lone bank is picked and its holder becomes the company, never over a value`() {
+        val banks = listOf(BankAccount("b1", "Main", entityId = "co2"))
+        val companies = listOf(Company("co1", "One"), Company("co2", "Two"))
+        assertEquals("b1" to null, InboxTriage.autoFill("", "", banks, companies), "one pass fills the bank")
+        assertEquals(null to "co2", InboxTriage.autoFill("b1", "", banks, companies), "the next finds its holder")
+        assertEquals(null to null, InboxTriage.autoFill("b1", "co1", banks, companies))
+        assertEquals(null to "co1", InboxTriage.autoFill("", "", emptyList(), listOf(Company("co1", "One"))))
+    }
+
+    @Test
+    fun `a company's country gives its currency, overrides first`() {
+        val catalogue = listOf(
+            CatalogueCurrency("GBP", country = "United Kingdom"),
+            CatalogueCurrency("EUR", country = "Eurozone (Austria, Belgium)"),
+        )
+        assertEquals("GBP", CountryCurrency.forCountry("United Kingdom", catalogue))
+        assertEquals("EUR", CountryCurrency.forCountry("France", catalogue))
+        assertEquals("USD", CountryCurrency.forCountry("Ecuador", emptyList()))
+        assertNull(CountryCurrency.forCountry("Atlantis", catalogue))
+        assertNull(CountryCurrency.forCountry("", catalogue))
+    }
+
+    @Test
+    fun `derived amounts use natural decimals and never go below zero`() {
+        val anchored = AmountSplit("", "", "1200", grossAnchored = true)
+        assertEquals("0", InboxTriage.applyAmountEdit(anchored, AmountField.Net, "1500").tax)
+        assertEquals("200.5", InboxTriage.applyAmountEdit(anchored, AmountField.Net, "999.5").tax)
+        val free = InboxTriage.applyAmountEdit(AmountSplit("", "", "", grossAnchored = false), AmountField.Net, "1000")
+        assertEquals("1000", free.gross, "never 1000.00")
+        val cleared = InboxTriage.applyAmountEdit(AmountSplit("100", "20", "120", grossAnchored = true), AmountField.Net, "")
+        assertEquals("20", cleared.tax, "clearing a field leaves its partner alone")
+        assertTrue(InboxTriage.splitMismatch(AmountSplit("100", "", "120", grossAnchored = true)), "a blank tax counts as 0")
+    }
+
+    @Test
     fun `the PO balance needs every order's amount`() {
         assertNull(InboxTriage.poBalance(100.0, emptyList()))
         assertNull(InboxTriage.poBalance(100.0, listOf(PoPick("p1", "PO-1", null))))
@@ -149,6 +207,46 @@ class InboxTriageFlowTest {
         assertEquals(ServerBatch("b1", 3, 2, 1, 0, listOf("i1", "i2"), isComplete = true), batch)
     }
 
+    /** The server's own shape: `data` is an object holding `batches` (`bulkUploadStore.js:371-372`). */
+    @Test
+    fun `server batches are read from the batches envelope`() {
+        val data = Json.parseToJsonElement(
+            """{"batches":[{"batch_id":"b1","total":2,"completed":1,"failed":0,"pending":1},
+               {"batch_id":"b2","total":1,"completed":1,"is_complete":true}]}""",
+        )
+        val batches = parseBulkBatches(data)
+        assertEquals(listOf("b1", "b2"), batches.map { it.batchId })
+        assertEquals(1, batches.first().pending)
+        assertTrue(batches.last().isComplete)
+        assertTrue(parseBulkBatches(Json.parseToJsonElement("""{"batches":[]}""")).isEmpty())
+    }
+
+    @Test
+    fun `a progress frame is read from the envelope's data, and needs a batch id`() {
+        val frame = parseBulkProgress(
+            Json.parseToJsonElement(
+                """{"project_id":"p1","data":{"batch_id":"b1","total":2,"completed":1,"failed":1,"is_complete":true}}""",
+            ),
+        )
+        assertEquals(ServerBatch("b1", total = 2, completed = 1, failed = 1, isComplete = true), frame)
+        assertNull(parseBulkProgress(Json.parseToJsonElement("""{"data":{"total":2}}""")))
+    }
+
+    @Test
+    fun `a link's notes read as an array, a JSON string or plain text`() {
+        assertEquals(listOf("a", "b"), linkNotes(Json.parseToJsonElement("""[" a ","","b"]""")))
+        assertEquals(listOf("x"), linkNotes(Json.parseToJsonElement("\"[\\\"x\\\"]\"")))
+        assertEquals(listOf("Called vendor"), linkNotes(Json.parseToJsonElement("\"Called vendor\"")))
+        assertTrue(linkNotes(null).isEmpty())
+        val invoice = ROW.copy(
+            linkedPos = listOf(
+                LinkedPo("po1", notes = listOf("Agreed", "Agreed ")),
+                LinkedPo("po2", notes = listOf("Second")),
+            ),
+        )
+        assertEquals("Agreed\n\nSecond", InboxForm.of(invoice, "v1").matchNotes, "each note once, a blank line between")
+    }
+
     // -- bulk upload rules ---------------------------------------------------------------
 
     @Test
@@ -160,6 +258,71 @@ class InboxTriageFlowTest {
         assertEquals(BulkFileProblem.Unreadable, BulkUploads.problemWith(file("a.pdf"), null))
         assertEquals(BulkFileProblem.TooManyPages, BulkUploads.problemWith(file("a.pdf"), 6))
         assertNull(BulkUploads.problemWith(file("a.pdf"), 5))
+    }
+
+    @Test
+    fun `counters leave out zeros but keep completed once posting is over, and split the failures`() {
+        val files = listOf(
+            BulkFile(1, "a.jpg", 1, status = BulkFileStatus.Sent),
+            BulkFile(2, "b.jpg", 1, status = BulkFileStatus.Failed),
+            BulkFile(3, "c.jpg", 1, status = BulkFileStatus.SendFailed),
+            BulkFile(4, "d.txt", 1, status = BulkFileStatus.Invalid),
+        )
+        val posting = BulkBatch("b1", files.map { it.copy(status = BulkFileStatus.Uploading) }, createdAtMs = 1)
+        val uploading = BulkUploads.counters(BulkUploads.rows(listOf(posting), emptyList()).single())
+        assertEquals(listOf(BulkCounterKind.Uploading, BulkCounterKind.Pending), uploading.map { it.kind })
+
+        val done = BulkBatch("b1", files, createdAtMs = 1, postingDone = true)
+        val row = BulkUploads.rows(listOf(done), listOf(ServerBatch("b1", total = 1, pending = 1))).single()
+        assertEquals(
+            listOf(
+                BulkCounterKind.Sent,
+                BulkCounterKind.Completed,
+                BulkCounterKind.Pending,
+                BulkCounterKind.FailedUpload,
+                BulkCounterKind.SendFailed,
+                BulkCounterKind.Rejected,
+            ),
+            BulkUploads.counters(row).map { it.kind },
+        )
+        assertEquals(0, BulkUploads.counters(row).first { it.kind == BulkCounterKind.Completed }.value)
+        assertTrue(BulkUploads.counters(row).filter { it.kind != BulkCounterKind.Sent }.none { it.kind.bad && it.value == 0 })
+    }
+
+    @Test
+    fun `a vanished batch quotes its terminal frame, and infers from a stale one`() {
+        val sent = (1..3).map { BulkFile(it, "f$it.jpg", 1, status = BulkFileStatus.Sent) }
+        val terminal = ServerBatch("b1", total = 3, completed = 1, failed = 2, isComplete = true)
+        val kept = BulkBatch("b1", sent, createdAtMs = 1, postingDone = true, sawServerRow = true, lastServerRow = terminal)
+        val row = BulkUploads.rows(listOf(kept), emptyList()).single()
+        assertEquals(BulkPhase.Done, row.phase)
+        assertEquals(BulkCounts(total = 3, completed = 1, failed = 2), row.counts, "the last word, quoted")
+
+        val stale = kept.copy(lastServerRow = ServerBatch("b1", total = 2, completed = 1, pending = 1))
+        assertEquals(
+            BulkCounts(total = 3, completed = 3, failed = 0),
+            BulkUploads.rows(listOf(stale), emptyList()).single().counts,
+            "a finished batch has nothing pending; the total never shrinks below what was sent",
+        )
+    }
+
+    @Test
+    fun `a terminal snapshot is never downgraded by a later poll, and a clean finish expires`() {
+        val sent = listOf(BulkFile(1, "a.jpg", 1, status = BulkFileStatus.Sent))
+        val batch = BulkBatch("b1", sent, createdAtMs = 1, postingDone = true)
+        val framed = BulkUploads.recordFrame(listOf(batch), ServerBatch("b1", total = 1, completed = 1, isComplete = true))
+        assertTrue(framed.single().sawServerRow)
+        val polled = BulkUploads.applyListed(framed, listOf(ServerBatch("b1", total = 1, pending = 1)))
+        assertEquals(true, polled.single().lastServerRow?.isComplete, "the terminal frame stands")
+        assertEquals(listOf("b1"), BulkUploads.expired(polled, emptyList()))
+        assertTrue(BulkUploads.expired(polled, listOf(ServerBatch("b1"))).isEmpty(), "still listed, still running")
+
+        val failed = polled.single().copy(files = sent + BulkFile(2, "b.jpg", 1, status = BulkFileStatus.Failed))
+        assertTrue(BulkUploads.needsAttention(failed))
+        assertTrue(BulkUploads.expired(listOf(failed), emptyList()).isEmpty(), "a retry on offer holds the row")
+        val retried = failed.copy(files = failed.files.map { if (it.ref == 2) it.copy(retried = true) else it })
+        assertTrue(BulkUploads.retryable(retried).isEmpty())
+        assertFalse(BulkUploads.needsAttention(retried))
     }
 
     @Test
@@ -273,6 +436,121 @@ class InboxTriageFlowTest {
     }
 
     @Test
+    fun `a refused file blocks the whole batch until it is removed, and a double drop is added once`() = runTest(dispatcher) {
+        val repo = Repo(listOf(ROW))
+        val files = Files(
+            listOf(
+                PickedInvoiceFile("a.jpg", "image/jpeg", ByteArray(8)),
+                PickedInvoiceFile("a.jpg", "image/jpeg", ByteArray(8)),
+                PickedInvoiceFile("notes.txt", "text/plain", ByteArray(3)),
+            ),
+        )
+        val vm = inbox(repo, files)
+        vm.onEvent(InboxEvent.StartBulk(allowPaid = true))
+        advanceUntilIdle()
+        val pick = assertNotNull(vm.state.value.bulkPick)
+        assertEquals(listOf("a.jpg", "notes.txt"), pick.files.map { it.name })
+        assertEquals(1, pick.rejected)
+        assertFalse(pick.canSubmit)
+        vm.onEvent(InboxEvent.SubmitBulk)
+        advanceUntilIdle()
+        assertTrue(repo.bulk.isEmpty(), "nothing is uploaded while a file is refused")
+
+        vm.onEvent(InboxEvent.RemoveBulkFile(pick.files.last().ref))
+        vm.onEvent(InboxEvent.SetAllBulkPaid(true))
+        vm.onEvent(InboxEvent.SubmitBulk)
+        advanceUntilIdle()
+        assertEquals(listOf(true), repo.bulk.map { it.second })
+    }
+
+    @Test
+    fun `eleven files are all kept, and the batch refused until one goes`() {
+        val files = (1..11).map { BulkFile(it, "f$it.jpg", it.toLong()) }
+        val pick = BulkPick(files = files, allowPaid = false)
+        assertTrue(pick.tooMany)
+        assertFalse(pick.canSubmit)
+        assertTrue(pick.copy(files = files.drop(1)).canSubmit)
+    }
+
+    @Test
+    fun `a storage failure is tried again, then offered as a retry batch that keeps the paid flag`() = runTest(dispatcher) {
+        val repo = Repo(listOf(ROW))
+        val files = Files(listOf(PickedInvoiceFile("a.jpg", "image/jpeg", ByteArray(8))), failUploads = 3)
+        val vm = inbox(repo, files)
+        vm.onEvent(InboxEvent.StartBulk(allowPaid = true))
+        advanceUntilIdle()
+        vm.onEvent(InboxEvent.SetAllBulkPaid(true))
+        vm.onEvent(InboxEvent.SubmitBulk)
+        advanceUntilIdle()
+        assertEquals(3, files.attempts, "three tries at storage")
+        val failed = vm.state.value.bulkBatches.single()
+        assertEquals(BulkFileStatus.Failed, failed.files.single().status)
+        assertTrue(repo.bulk.isEmpty())
+        assertEquals(BulkPhase.Error, vm.state.value.uploadRows.single().phase)
+
+        vm.onEvent(InboxEvent.RetryBatch(failed.id))
+        advanceUntilIdle()
+        assertEquals(listOf(true), repo.bulk.map { it.second }, "the retry sends it, still paid")
+        val old = vm.state.value.bulkBatches.first { it.id == failed.id }
+        assertTrue(old.files.single().retried)
+        assertTrue(BulkUploads.retryable(old).isEmpty(), "a second click finds nothing to send twice")
+    }
+
+    @Test
+    fun `a new supplier becomes a vendor on accept, created before the invoice is sent`() = runTest(dispatcher) {
+        val row = ROW.copy(vendorId = "", supplierName = "Brand New Ltd")
+        val repo = Repo(listOf(row))
+        val vm = inbox(repo)
+        vm.onEvent(InboxEvent.Open(row))
+        advanceUntilIdle()
+        val form = assertNotNull(vm.state.value.inboxReview).form
+        assertEquals("", form.vendorId)
+        assertEquals("Brand New Ltd", form.pendingVendorName)
+        assertEquals(listOf<Pair<String, String?>>("i1" to null), repo.suggestionVendors, "a pending vendor asks for no vendor's orders")
+
+        vm.onEvent(InboxEvent.Accept)
+        advanceUntilIdle()
+        vm.onEvent(InboxEvent.ConfirmNoPo)
+        advanceUntilIdle()
+        assertEquals(listOf("Brand New Ltd"), repo.createdVendors)
+        assertEquals("v-new", repo.processed.single().second?.vendorId)
+        assertEquals("Brand New Ltd", vm.state.value.vendors["v-new"]?.name)
+    }
+
+    @Test
+    fun `a refused vendor stops the accept with the pick intact`() = runTest(dispatcher) {
+        val row = ROW.copy(vendorId = "", supplierName = "Brand New Ltd")
+        val repo = Repo(listOf(row), refuseVendor = true)
+        val vm = inbox(repo)
+        vm.onEvent(InboxEvent.Open(row))
+        advanceUntilIdle()
+        vm.onEvent(InboxEvent.AddPo(PoPick("po1", "PO-1", 120.0)))
+        vm.onEvent(InboxEvent.Accept)
+        advanceUntilIdle()
+        assertTrue(repo.processed.isEmpty())
+        val review = assertNotNull(vm.state.value.inboxReview)
+        assertFalse(review.busy)
+        assertEquals("Brand New Ltd", review.form.pendingVendorName)
+        assertNotNull(vm.state.value.error)
+    }
+
+    @Test
+    fun `opening a review reads that invoice's unread and fills the lone bank`() = runTest(dispatcher) {
+        val repo = Repo(listOf(ROW), banks = listOf(BankAccount("b1", "Main", entityId = "co1")))
+        val badges = Reads()
+        val vm = viewModel(repo, Files(emptyList()), badges).also {
+            it.onEvent(InvoicesEvent.SelectPage(AccountantPage.Inbox))
+            dispatcher.scheduler.advanceUntilIdle()
+        }
+        vm.onEvent(InboxEvent.Open(ROW))
+        advanceUntilIdle()
+        assertEquals(listOf("invoice_inbox:i1"), badges.reads)
+        val form = assertNotNull(vm.state.value.inboxReview).form
+        assertEquals("b1", form.bankId)
+        assertEquals("co1", form.companyId)
+    }
+
+    @Test
     fun `a register row opens a detail with no decisions, and the handler holds the line`() = runTest(dispatcher) {
         val row = ROW.copy(status = InvoiceStatus.Approval)
         val repo = Repo(listOf(row))
@@ -290,7 +568,7 @@ class InboxTriageFlowTest {
 
     // -- harness ---------------------------------------------------------------------------
 
-    private fun viewModel(repo: Repo, files: Files) = InvoicesViewModel(
+    private fun viewModel(repo: Repo, files: Files, badges: TabBadgeSource = TabBadgeSource.None) = InvoicesViewModel(
         repository = repo,
         files = files,
         resolveViewer = { SENIOR },
@@ -298,6 +576,7 @@ class InboxTriageFlowTest {
         resolveUser = { null },
         departmentName = { null },
         nowMillis = { NOW },
+        badges = badges,
     ).also {
         it.start()
         dispatcher.scheduler.advanceUntilIdle()
@@ -308,7 +587,21 @@ class InboxTriageFlowTest {
         dispatcher.scheduler.advanceUntilIdle()
     }
 
-    private class Repo(val rows: List<Invoice>) : InvoicesRepository {
+    /** Records the row reads the view model makes. */
+    private class Reads : TabBadgeSource {
+        val reads = mutableListOf<String>()
+        override fun readEntity(key: String, entityId: String, kind: String?) {
+            reads += "$key:$entityId"
+        }
+    }
+
+    private class Repo(
+        val rows: List<Invoice>,
+        private val refuseVendor: Boolean = false,
+        private val banks: List<BankAccount> = emptyList(),
+    ) : InvoicesRepository {
+        val createdVendors = mutableListOf<String>()
+        val suggestionVendors = mutableListOf<Pair<String, String?>>()
         val processed = mutableListOf<Pair<List<String>, InboxAccept?>>()
         val notes = mutableListOf<String>()
         val bulk = mutableListOf<Pair<String, Boolean>>()
@@ -354,13 +647,29 @@ class InboxTriageFlowTest {
         override suspend fun approvalTiers(): ZillitResult<List<ApprovalTierConfig>> = ZillitResult.Success(emptyList())
         override suspend fun vendors(): ZillitResult<List<Vendor>> =
             ZillitResult.Success(listOf(Vendor("v1", "Lamps Ltd")))
-        override suspend fun bankAccounts(): ZillitResult<List<BankAccount>> = ZillitResult.Success(emptyList())
+        override suspend fun bankAccounts(): ZillitResult<List<BankAccount>> = ZillitResult.Success(banks)
+        override suspend fun createVendor(name: String): ZillitResult<Vendor> {
+            if (refuseVendor) return ZillitResult.Failure(ZillitError.Unknown("vendor refused"))
+            createdVendors += name
+            return ZillitResult.Success(Vendor("v-new", name))
+        }
+        override suspend fun poSuggestions(id: String, vendorId: String?): ZillitResult<PoSuggestions> {
+            suggestionVendors += id to vendorId
+            return ZillitResult.Success(PoSuggestions())
+        }
     }
 
-    private class Files(private val picked: List<PickedInvoiceFile>) : InvoiceFiles {
+    private class Files(private val picked: List<PickedInvoiceFile>, private var failUploads: Int = 0) : InvoiceFiles {
+        var attempts = 0
         override suspend fun pick(): List<PickedInvoiceFile> = picked
-        override suspend fun upload(file: PickedInvoiceFile): ZillitResult<InvoiceAttachment> =
-            ZillitResult.Success(ATTACHMENT.copy(name = file.name))
+        override suspend fun upload(file: PickedInvoiceFile): ZillitResult<InvoiceAttachment> {
+            attempts++
+            if (failUploads > 0) {
+                failUploads--
+                return ZillitResult.Failure(ZillitError.Unknown("storage down"))
+            }
+            return ZillitResult.Success(ATTACHMENT.copy(name = file.name))
+        }
         override suspend fun fetch(attachment: InvoiceAttachment): ZillitResult<ByteArray> =
             ZillitResult.Success(ByteArray(0))
         override suspend fun saveAndOpen(name: String, bytes: ByteArray): ZillitResult<Unit> =

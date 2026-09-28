@@ -62,9 +62,14 @@ class LiveKitApi(
     private val baseUrl: String,
 ) {
     /**
-     * `POST /v1/calls`. With callees this both creates and rings (the web's
-     * `startCallRest`); with none it only creates, and `startCall` over the
-     * socket does the ringing.
+     * `POST /v1/calls` — creates the call AND rings the callees, which is what
+     * the web's `startCallRest` is: the socket-down fallback, and the only REST
+     * path left on the way out now that a socket-first `startCall` mints its own
+     * call id.
+     *
+     * `type` is NOT `callMode` — see the body. Observed on prod (2026-09-05): a
+     * body saying `type: private` comes back 400 `bad_request`, which is why
+     * this path had never started a one-to-one call.
      */
     @Suppress("LongParameterList") // One parameter per field the endpoint takes; a wrapper would only rename them.
     suspend fun createCall(
@@ -74,6 +79,7 @@ class LiveKitApi(
         callType: CallType,
         calleeIds: List<String>,
         chatRoomId: String?,
+        chatRoomName: String?,
         projectId: String?,
         projectName: String?,
     ): ZillitResult<LiveKitCallCredentials> = http.call(
@@ -82,44 +88,29 @@ class LiveKitApi(
         buildJsonObject {
             put("callerId", JsonPrimitive(callerId))
             put("callerName", JsonPrimitive(callerName))
-            put("type", JsonPrimitive(callMode.wire))
+            // `type` is the endpoint's OWN vocabulary — `direct` or `group` —
+            // and `callMode` is the call flow's (`private` or `group`). They
+            // share the word "group" and nothing else, which is how sending
+            // `callMode.wire` for both went unnoticed: group calls worked by
+            // coincidence and this fallback never once started a one-to-one,
+            // because the endpoint refuses a `type` it does not recognise. The
+            // web fixed the same bug with the same two lines.
+            put("type", JsonPrimitive(if (callMode == CallMode.Group) "group" else "direct"))
             put("callMode", JsonPrimitive(callMode.wire))
             put("callType", JsonPrimitive(callType.wire))
             put("calleeIds", JsonArray(calleeIds.map(::JsonPrimitive)))
             chatRoomId?.takeIf { it.isNotBlank() }?.let { put("chatRoomId", JsonPrimitive(it)) }
+            // A group call is server-authoritative — we send NO member list —
+            // so the room's name is the only label the server can put on the
+            // ring. The endpoint accepts it; we simply never sent it, and the
+            // callee's card read as an unnamed group.
+            chatRoomName?.takeIf { it.isNotBlank() }?.let { put("chatRoomName", JsonPrimitive(it)) }
             projectId?.takeIf { it.isNotBlank() }?.let { put("projectId", JsonPrimitive(it)) }
             projectName?.takeIf { it.isNotBlank() }?.let { put("projectName", JsonPrimitive(it)) }
         },
         projectId,
         callerId,
     ).reading("a call") { it.readCredentials() }
-
-    /**
-     * `POST /v1/calls` with nobody to ring — the web's `createCall`, and what
-     * the socket-first flow mints its call id with. The body says `group` and
-     * names no callees whatever the call will be; the socket's `startCall`
-     * carries the real mode, type and callees a moment later. Observed on
-     * prod (2026-09-05): the same body with `type: private` and no callees is
-     * refused with 400 `bad_request`, so the mint must not describe the call.
-     */
-    suspend fun mintCall(
-        callerId: String,
-        callerName: String,
-        projectId: String?,
-    ): ZillitResult<LiveKitCallCredentials> =
-        http.call(
-            HttpVerb.Post,
-            "$baseUrl/v1/calls",
-            buildJsonObject {
-                put("callerId", JsonPrimitive(callerId))
-                put("callerName", JsonPrimitive(callerName))
-                put("type", JsonPrimitive(CallMode.Group.wire))
-                put("callMode", JsonPrimitive(CallMode.Group.wire))
-                put("calleeIds", JsonArray(emptyList()))
-            },
-            projectId,
-            callerId,
-        ).reading("a call") { it.readCredentials() }
 
     /** `POST /v1/calls/{id}/accept` — the callee's own credentials for the room. */
     suspend fun acceptCall(
@@ -156,6 +147,72 @@ class LiveKitApi(
         projectId,
         userId,
     ).reading("a token") { (it as? JsonObject)?.readLiveKitCredentials() }
+
+    /**
+     * `GET /v1/calls/{id}/roster?userId=` — who is on the call, over HTTP.
+     *
+     * The socket's `getCallRoster` by another door, and the only door there is
+     * while the presence socket is down: the web's `getCallRosterRest`, added
+     * for exactly that case. Answers at once and re-seeds the add-user list in
+     * the background, so this is the one to read with, not [refreshRoster].
+     *
+     * Answered raw, not parsed here: `readLiveKitRosterSnapshot` is the one
+     * parser and it serves both transports, which is what keeps the socket and
+     * the HTTP answer from drifting apart.
+     */
+    suspend fun roster(callId: String, userId: String, projectId: String?): ZillitResult<JsonElement?> = http.call(
+        HttpVerb.Get,
+        "$baseUrl/v1/calls/${callId.encoded()}/roster?userId=${userId.encoded()}",
+        null,
+        projectId,
+        userId,
+    )
+
+    /**
+     * `POST /v1/calls/{id}/roster/refresh` — re-seed from project membership
+     * AND reconcile against the live media room, then answer.
+     *
+     * Slower by design (the web says so outright): for the Refresh button and
+     * after a reconnect, never for polling.
+     */
+    suspend fun refreshRoster(callId: String, userId: String, projectId: String?): ZillitResult<JsonElement?> =
+        http.call(
+            HttpVerb.Post,
+            "$baseUrl/v1/calls/${callId.encoded()}/roster/refresh",
+            buildJsonObject { put("userId", JsonPrimitive(userId)) },
+            projectId,
+            userId,
+        )
+
+    /**
+     * `POST /v1/client-log` — one line of per-call diagnostics, when the
+     * presence socket could not carry it.
+     *
+     * Never both transports for one line: see `CallDiagnostics`. The body is
+     * the phones' (`ApiClient.clientLog`), `data` omitted when empty, and the
+     * answer is ignored — a dropped diagnostic is a non-event.
+     */
+    @Suppress("LongParameterList") // One parameter per field the endpoint takes.
+    suspend fun clientLog(
+        userId: String,
+        deviceId: String,
+        callId: String,
+        event: String,
+        data: JsonObject,
+        projectId: String?,
+    ): ZillitResult<Unit> = http.call(
+        HttpVerb.Post,
+        "$baseUrl/v1/client-log",
+        buildJsonObject {
+            if (userId.isNotBlank()) put("userId", JsonPrimitive(userId))
+            if (deviceId.isNotBlank()) put("device_id", JsonPrimitive(deviceId))
+            put("callId", JsonPrimitive(callId))
+            put("event", JsonPrimitive(event))
+            if (data.isNotEmpty()) put("data", data)
+        },
+        projectId,
+        userId,
+    ).map { }
 
     /** `POST /v1/calls/{id}/ringing` — the socket-down way to say the popup is up. */
     suspend fun ackRinging(callId: String, projectId: String?, userId: String?): ZillitResult<Unit> =
@@ -262,7 +319,10 @@ class LiveKitApi(
         )
     }
 
-    /** A path segment, percent-encoded — call ids are UUIDs today, but a segment is never trusted to be. */
+    /**
+     * A path segment or query value, percent-encoded — call ids are UUIDs
+     * today, but neither a segment nor a user id is ever trusted to be.
+     */
     private fun String.encoded(): String = buildString {
         for (byte in this@encoded.encodeToByteArray()) {
             val ch = byte.toInt().toChar()

@@ -1,10 +1,14 @@
 package com.zillit.desktop.feature.invoices.data
 
+import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.invoices.domain.CatalogueCurrency
 import com.zillit.desktop.feature.invoices.domain.InboxAccept
 import com.zillit.desktop.feature.invoices.domain.InboxTriage
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.ServerBatch
+import com.zillit.desktop.feature.invoices.domain.Vendor
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -29,9 +33,10 @@ private fun acceptWire(a: InboxAccept): JsonObject = buildJsonObject {
     a.invoiceNumber.trim().takeIf { it.isNotEmpty() }?.let { put("invoice_number", JsonPrimitive(it)) }
     a.vendorId.takeIf { it.isNotBlank() }?.let { put("vendor_id", JsonPrimitive(it)) }
     put("description", JsonPrimitive(a.description))
-    InvoiceFormat.parseDateInput(a.invoiceDate)?.let { put("invoice_date", JsonPrimitive(it)) }
-    InvoiceFormat.parseDateInput(a.dueDate)?.let { put("due_date", JsonPrimitive(it)) }
-    InvoiceFormat.parseDateInput(a.effectiveDate)?.let { put("effective_date", JsonPrimitive(it)) }
+    // Local midnight, as the review's `new Date(v + "T00:00:00")` sends.
+    InvoiceFormat.parseDateInputLocal(a.invoiceDate)?.let { put("invoice_date", JsonPrimitive(it)) }
+    InvoiceFormat.parseDateInputLocal(a.dueDate)?.let { put("due_date", JsonPrimitive(it)) }
+    InvoiceFormat.parseDateInputLocal(a.effectiveDate)?.let { put("effective_date", JsonPrimitive(it)) }
     if (a.net.isNotBlank()) put("net_amount", JsonPrimitive(InboxTriage.amount(a.net)))
     if (a.tax.isNotBlank()) put("tax_amount", JsonPrimitive(InboxTriage.amount(a.tax)))
     put("gross_amount", JsonPrimitive(InboxTriage.amount(a.gross)))
@@ -71,10 +76,16 @@ internal fun bulkUploadBody(batchId: String, attachment: InvoiceAttachment, size
         )
     }
 
-/** `GET /invoices/bulk-upload/batches` — every batch the server is still tracking. */
-internal fun parseBulkBatches(data: JsonElement?): List<ServerBatch> = rowsOf(data).mapNotNull { row ->
-    val id = row.text("batch_id", "id").ifBlank { return@mapNotNull null }
-    ServerBatch(
+/**
+ * `GET /invoices/bulk-upload/batches` — every batch the server is still
+ * tracking. The server wraps the list as `{batches: [...]}`
+ * (`bulkUploadStore.js`); a bare array is still read.
+ */
+internal fun parseBulkBatches(data: JsonElement?): List<ServerBatch> = batchRows(data).mapNotNull(::serverBatchOf)
+
+private fun serverBatchOf(row: JsonObject): ServerBatch? {
+    val id = row.text("batch_id", "id").ifBlank { return null }
+    return ServerBatch(
         batchId = id,
         total = row.number("total")?.toInt() ?: 0,
         completed = row.number("completed")?.toInt() ?: 0,
@@ -85,3 +96,48 @@ internal fun parseBulkBatches(data: JsonElement?): List<ServerBatch> = rowsOf(da
         createdAtMs = row.dateMs("created_at"),
     )
 }
+
+/** The socket event a bulk batch's extraction progress arrives on. */
+internal val BULK_PROGRESS_EVENT = SocketEventName("invoice:bulk_upload_progress")
+
+/**
+ * One `invoice:bulk_upload_progress` frame — the account-hub envelope's
+ * `data` (`{batch_id, total, completed, failed, pending, is_complete}`), or
+ * the bare row. Null without a `batch_id`, as the web drops it.
+ */
+internal fun parseBulkProgress(payload: JsonElement?): ServerBatch? {
+    val envelope = payload as? JsonObject ?: return null
+    val row = envelope["data"] as? JsonObject ?: envelope
+    return serverBatchOf(row)?.takeIf { row["batch_id"] != null }
+}
+
+/** The production a socket frame names, when it names one. */
+internal fun frameProject(payload: JsonElement?): String? =
+    ((payload as? JsonObject)?.get("project_id") as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+/** `POST /vendors`'s answer — the vendor itself, or wrapped under `vendor`. */
+internal fun parseCreatedVendor(data: JsonElement?): Vendor? {
+    val obj = data as? JsonObject ?: return null
+    val row = obj["vendor"] as? JsonObject ?: obj
+    return parseVendors(JsonArray(listOf(row))).firstOrNull()
+}
+
+/**
+ * The core `preset/currencies` catalogue: rows of `{code, name, symbol,
+ * country}`, as a bare list or under `currencies`.
+ */
+internal fun parseCurrencyCatalogue(data: JsonElement?): List<CatalogueCurrency> {
+    val rows = when (data) {
+        is JsonArray -> data
+        is JsonObject -> (data["currencies"] as? JsonArray) ?: (data["data"] as? JsonArray) ?: JsonArray(emptyList())
+        else -> JsonArray(emptyList())
+    }
+    return rows.mapNotNull { item ->
+        val row = item as? JsonObject ?: return@mapNotNull null
+        val code = row.text("code").trim().ifBlank { return@mapNotNull null }
+        CatalogueCurrency(code = code, name = row.text("name"), symbol = row.text("symbol"), country = row.text("country"))
+    }
+}
+
+private fun batchRows(data: JsonElement?): List<JsonObject> =
+    ((data as? JsonObject)?.get("batches") as? JsonArray)?.mapNotNull { it as? JsonObject } ?: rowsOf(data)

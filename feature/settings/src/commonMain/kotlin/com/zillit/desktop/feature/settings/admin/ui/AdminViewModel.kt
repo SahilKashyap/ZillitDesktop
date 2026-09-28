@@ -568,11 +568,16 @@ class AdminViewModel(
      * is exactly the state the screen must not guess at.
      */
     private fun onRightsToggled(event: AdminEvent.RightsToggled) {
-        val userId = currentState.selection.userId ?: return
+        if (!isAdmin()) {
+            setState { copy(error = str(S.desktop_only_admin_can_change)) }
+            return
+        }
+        val userId = currentState.selection.userId
         val current = currentState.selection.rights.firstOrNull {
             it.toolIdentifier == event.toggle.toolIdentifier && it.section == event.toggle.section
-        } ?: return
-        val unitId = current.unitId ?: return
+        }
+        val unitId = current?.unitId
+        if (userId == null || current == null || unitId == null) return
         if (current.locked(event.toggle.access)) return
 
         val changes = RightsChange(

@@ -677,8 +677,10 @@ class CardRepositoryImpl(
     override suspend fun exportCards(format: ExportFormat, rows: List<CardExportRow>): ZillitResult<ByteArray> =
         bytes("$base/cards/export", cardExportBody(format, rows))
 
-    override suspend fun exportTransactions(format: ExportFormat): ZillitResult<ByteArray> =
-        bytes("$base/transactions/export", transactionExportBody(format))
+    override suspend fun exportTransactions(
+        format: ExportFormat,
+        filters: TransactionFilters,
+    ): ZillitResult<ByteArray> = bytes("$base/transactions/export", transactionExportBody(format, filters))
 
     private suspend fun bytes(url: String, body: JsonObject): ZillitResult<ByteArray> =
         binaryPost?.post(url, body)

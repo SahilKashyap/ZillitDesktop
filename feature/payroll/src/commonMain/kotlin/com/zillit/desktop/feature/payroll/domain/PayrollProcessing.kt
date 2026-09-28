@@ -106,10 +106,28 @@ data class OutstandingRow(val userId: String, val weeks: List<ProcessingRow>) {
     val id: String get() = "outstanding-$userId"
     val status: TimecardStatus get() = weeks.firstOrNull()?.timecard?.status ?: TimecardStatus.Unknown
     val days: Int get() = weeks.sumOf { it.timecard.totalDays.takeIf { days -> days > 0 } ?: it.daysWorked }
-    val basic: Double get() = weeks.sumOf { it.basicTotal }
-    val ots: Double get() = weeks.sumOf { it.otTotal }
-    val allowances: Double get() = weeks.sumOf { it.allowanceTotal }
-    val total: Double get() = weeks.sumOf { it.totalPay }
+
+    /**
+     * Face-value across the crew member's own weeks, labelled with the
+     * first week's currency — the web's `aggregateOutstandingByUser`
+     * (`payrollData.js` 980-991: plain `+=`, no `exr` conversion). Unlike
+     * the summary strip and Processing's KPI tiles, which aggregate ACROSS
+     * crew and do convert, this aggregates one person's OWN weeks and the
+     * web deliberately does not — confirmed by reading `aggregateOutstandingByUser`
+     * directly rather than assuming it matches the other screens' pattern.
+     * Fixes only the *label*: the original per-field getters here picked
+     * one currency for the whole grid (`firstNotNullOfOrNull` in
+     * `ProcessingGrid.kt`), not this row's own.
+     */
+    private fun moneyOf(amount: (ProcessingRow) -> Double): Pair<Double, String?> =
+        weeks.sumOf(amount) to weeks.firstNotNullOfOrNull { it.timecard.currency }
+    val basicMoney: Pair<Double, String?> get() = moneyOf { it.basicTotal }
+    val otsMoney: Pair<Double, String?> get() = moneyOf { it.otTotal }
+    val allowancesMoney: Pair<Double, String?> get() = moneyOf { it.allowanceTotal }
+    val totalMoney: Pair<Double, String?> get() = moneyOf { it.totalPay }
+
+    /** The raw face-value figure — for sorting only; use `*Money` to display. */
+    val total: Double get() = totalMoney.first
 
     companion object {
         fun of(timecards: List<PayrollTimecard>, weekStarting: Long): List<OutstandingRow> =

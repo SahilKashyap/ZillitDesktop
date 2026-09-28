@@ -224,17 +224,24 @@ internal fun durationLabel(float: CashFloat, runOfShow: String = str(S.desktop_p
 }
 
 /**
- * A total across records that may be in different currencies — one figure
- * per currency, joined, rather than a sum that adds pounds to euros. The web
- * converts to the project default (`describeTotal`); no rates reach this
- * module, so the honest answer is the split.
+ * A total across records that may be in different currencies, converted into
+ * the project default and summed — the web's `describeTotal`. One currency
+ * sums in that currency; a currency with no rate is added at face value,
+ * which is also what the web does — the same rule as Purchase Orders'
+ * `totalValue` (`PoListPage.kt`).
  */
 internal fun com.zillit.desktop.feature.cashexpenses.ui.CashUiState.describeTotal(
     amounts: List<Pair<String?, Double>>,
 ): String {
-    val byCode = amounts.groupBy({ currencyOf(it.first) }, { it.second })
+    val byCode = amounts.groupBy({ currencyOf(it.first) }, { it.second }).mapValues { it.value.sum() }
     if (byCode.isEmpty()) return formatAggregate(0.0)
-    return byCode.entries.joinToString(" + ") { (code, values) -> formatMoney(values.sum(), code) }
+    if (byCode.size == 1) {
+        val (code, value) = byCode.entries.first()
+        return formatMoney(value, code)
+    }
+    val default = currencies.default
+    val total = byCode.entries.sumOf { (code, value) -> currencies.toDefault(value, code) ?: value }
+    return formatMoney(total, default)
 }
 
 internal const val RUN_OF_SHOW = "run_of_show"

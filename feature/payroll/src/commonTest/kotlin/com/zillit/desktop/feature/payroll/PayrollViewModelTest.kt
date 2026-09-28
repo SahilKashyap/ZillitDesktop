@@ -2,12 +2,19 @@ package com.zillit.desktop.feature.payroll
 
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
+import com.zillit.desktop.feature.payroll.domain.PayLine
 import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
+import com.zillit.desktop.feature.payroll.domain.TimecardDay
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
 import com.zillit.desktop.feature.payroll.domain.RowAction
 import com.zillit.desktop.feature.payroll.domain.RunAction
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
+import com.zillit.desktop.feature.payroll.domain.JournalReference
+import com.zillit.desktop.feature.payroll.domain.TrackingNode
+import com.zillit.desktop.feature.payroll.domain.TrackingSet
 import com.zillit.desktop.feature.payroll.ui.HistoryEvent
+import com.zillit.desktop.feature.payroll.ui.JournalEvent
+import com.zillit.desktop.feature.payroll.ui.journalRows
 import com.zillit.desktop.feature.payroll.ui.PAYROLL_ENTRY_SETUP_ROUTE
 import com.zillit.desktop.feature.payroll.ui.PayrollDestination
 import com.zillit.desktop.feature.payroll.ui.PayrollEffect
@@ -97,6 +104,79 @@ class PayrollViewModelTest {
             advanceUntilIdle()
             assertTrue(effects.none { it is PayrollEffect.Navigate })
         }
+
+    // -- journal ledger ---------------------------------------------------------------------
+
+    /** A week with pay on it: the shared `card` has no lines, so it has no journal rows. */
+    private fun paidWeek(id: String) = card(id, TimecardStatus.Locked).copy(
+        days = listOf(
+            TimecardDay(
+                date = lastMonday,
+                dayType = "SWD",
+                rates = listOf(
+                    PayLine(identifier = "basic", label = "Basic", rateAmount = 400.0),
+                    PayLine(identifier = "overtime", label = "OT", rateAmount = 60.0),
+                ),
+            ),
+        ),
+    )
+
+    /**
+     * Splitting a line, coding one allocation elsewhere, and the two ending up
+     * on the wire as the parent's children — the whole path the button starts.
+     */
+    @Test
+    fun `a split line posts its allocations, each with its own coding`() = runTest(dispatcher) {
+        val repository = FakePayrollRepository(run = listOf(paidWeek("a")))
+        repository.reference = JournalReference(
+            trackingSets = listOf(TrackingSet("dept", "Department", listOf(TrackingNode("CAM", "Camera")))),
+            assetTags = listOf("Recharge"),
+        )
+        val (model, _) = model(repository, viewer = controller, route = "/film-tools/payroll/run")
+        val row = model.state.value.journalRows().first { !it.isTax }
+
+        model.onEvent(JournalEvent.Split(row.id))
+        advanceUntilIdle()
+        val splits = model.state.value.run.journal.edits.getValue(row.id).splits.orEmpty()
+        assertEquals(2, splits.size)
+
+        model.onEvent(JournalEvent.SplitLayers(row.id, splits[0].id, mapOf("dept" to "CAM")))
+        model.onEvent(JournalEvent.SplitTags(row.id, splits[1].id, listOf("Recharge")))
+        model.onEvent(JournalEvent.Save)
+        advanceUntilIdle()
+
+        val lines = repository.submissions.single().timecards.getValue("a")
+        val children = lines.filter { it.splitParentId == row.id }
+        assertEquals(2, children.size)
+        assertEquals(mapOf("dept" to "CAM"), children[0].trackingCodes)
+        assertEquals(listOf("Recharge"), children[1].tags)
+    }
+
+    /** A tax line exists only once it is asked for, and goes away when it is not. */
+    @Test
+    fun `adding and removing a tax line shows and hides it`() = runTest(dispatcher) {
+        val repository = FakePayrollRepository(run = listOf(paidWeek("a")))
+        val (model, _) = model(repository, viewer = controller, route = "/film-tools/payroll/run")
+        assertTrue(model.state.value.journalRows().none { it.isTax })
+
+        model.onEvent(JournalEvent.AddTax("a"))
+        advanceUntilIdle()
+        val tax = model.state.value.journalRows().single { it.isTax }
+        // Its base is the sum of the timecard's own lines, and its money
+        // follows the picked rate until someone types over it.
+        assertEquals(model.state.value.journalRows().filterNot { it.isTax }.sumOf { it.amount ?: 0.0 }, tax.taxBase)
+
+        model.onEvent(JournalEvent.TaxRate(tax.id, "20"))
+        advanceUntilIdle()
+        val edit = model.state.value.run.journal.edits[tax.id]
+        assertEquals(20.0, edit?.taxRate)
+
+        model.onEvent(JournalEvent.RemoveTax("a"))
+        advanceUntilIdle()
+        assertTrue(model.state.value.journalRows().none { it.isTax })
+        // Its edits go with it, so a line that returns starts clean.
+        assertTrue(model.state.value.run.journal.edits[tax.id] == null)
+    }
 
     // -- history ----------------------------------------------------------------------------
 

@@ -122,7 +122,8 @@ class InvoiceWireTest {
             parseInvoice(Json.parseToJsonElement("""{"id":"x","status":"vaporised"}""") as JsonObject),
         )
         assertEquals(InvoiceStatus.Unknown, invoice.status)
-        assertEquals("vaporised", invoice.statusLabel)
+        // Upper-cased, as the web's `STATUS_MAP` fallback prints an unknown status.
+        assertEquals("VAPORISED", invoice.statusLabel)
         assertEquals("—", invoice.displayNumber)
         assertTrue(rowsOf(Json.parseToJsonElement("{}")).isEmpty())
         assertEquals(1, rowsOf(Json.parseToJsonElement("""{"data":[{"id":"1"}]}""")).size)
@@ -130,7 +131,7 @@ class InvoiceWireTest {
     }
 
     @Test
-    fun `settings fall back to team_members when the me block is absent, arrays may be strings`() {
+    fun `override falls back to team_members when the me block is absent, seniority never does`() {
         val withMe = parseSettings(
             Json.parseToJsonElement("""{"me":{"can_override":true,"is_senior":false},"team_members":[]}"""),
         )
@@ -144,7 +145,10 @@ class InvoiceWireTest {
             ),
         )
         assertTrue(legacy.overrideFor("u1"))
-        assertTrue(legacy.seniorFor("u1"))
+        // The web's `serverIsSenior` is the me block's alone (`InvoicesModule.jsx:392-393`).
+        assertFalse(legacy.seniorFor("u1"))
+        assertFalse(legacy.hasMe)
+        assertTrue(withMe.hasMe)
         assertFalse(legacy.overrideFor("u2"))
         assertEquals(setOf("u7"), legacy.runApprovers)
     }
@@ -162,8 +166,9 @@ class InvoiceWireTest {
         val config = configs.single()
         assertEquals(TierScope.Department, config.scope)
         assertEquals("d1", config.departmentId)
-        assertEquals(listOf(1, 2), config.tiers.map { it.order })
-        assertEquals(500.0, config.tiers[1].rules.single().amountThreshold)
+        // Array order, as the server lists them — the web never sorts by `order`.
+        assertEquals(listOf(2, 1), config.tiers.map { it.order })
+        assertEquals(500.0, config.tiers[0].rules.single().amountThreshold)
     }
 
     @Test

@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.CallJoin
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallProvider
+import com.zillit.desktop.feature.calls.domain.CallRingState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -84,6 +85,18 @@ class Line3CoordinatorTest {
         val hands = mutableListOf<Boolean>()
         var mics = mutableListOf<Boolean>()
         var joined = 0
+        val prewarmed = mutableListOf<String>()
+        val claimed = mutableListOf<String>()
+        val dropped = mutableListOf<String>()
+        val mediaPrewarms = mutableListOf<Pair<Boolean, Boolean>>()
+
+        override fun prewarm(callId: String, url: String, preconnectToken: String) {
+            prewarmed += "$callId|$url|$preconnectToken"
+        }
+
+        override fun claimPrewarm(callId: String) { claimed += callId }
+        override fun dropPrewarm(callId: String) { dropped += callId }
+        override fun prewarmMedia(video: Boolean, audio: Boolean) { mediaPrewarms += video to audio }
 
         /** False holds the connect open: the test decides when the room is up. */
         var autoJoin = true
@@ -180,6 +193,206 @@ class Line3CoordinatorTest {
         runCurrent()
         return Harness(coordinator, socket, http, engine, notices, toasts, data)
     }
+
+    /**
+     * The ring's `preconnectToken` is the whole point of Line 3's fast answer:
+     * the room is joined HIDDEN while the phone rings and the accept upgrades
+     * that participant in place, rather than starting a connect from nothing.
+     * The desktop parsed the token from day one and never used it.
+     */
+    @Test
+    fun `a ring pre-connects to the room, the accept claims it, and the end lets it go`() = runTest {
+        val h = harness()
+        h.socket.push(warmRing)
+        runCurrent()
+
+        assertEquals(
+            listOf("c1|wss://node.zillit.com/rtc|warm-tok"),
+            h.engine.prewarmed,
+            "the ring did not pre-connect on its locked token",
+        )
+
+        h.coordinator.accept()
+        runCurrent()
+        // Claimed BEFORE the accept goes out: terminal events routinely arrive
+        // around an accept, and dropping the room then reads to the server as
+        // the callee leaving — ending the call they just answered.
+        assertEquals(listOf("c1"), h.engine.claimed)
+        // And the devices open now, not after the room exists.
+        assertEquals(listOf(false to true), h.engine.mediaPrewarms, "an audio ring opens the mic only")
+        h.socket.answer("acceptCall")
+        runCurrent()
+
+        h.coordinator.hangUp()
+        runCurrent()
+        // The teardown waits on `leaveCall`, as it does in the field.
+        h.socket.answer("leaveCall")
+        runCurrent()
+        assertTrue("c1" in h.engine.dropped, "the warm room was never let go")
+    }
+
+    /** A ring with no pre-connect token is the ordinary path: nothing to warm. */
+    @Test
+    fun `a ring without a pre-connect token warms nothing`() = runTest {
+        val h = harness()
+        h.socket.push(ring)
+        runCurrent()
+        assertEquals(emptyList(), h.engine.prewarmed)
+    }
+
+    /**
+     * `ring_shown` and `accept_tap` bracket the answer, and `accept_sent` says
+     * which transport carried it. A tap with no matching send is the proof that
+     * an answer never reached the backend — the pair exists for that.
+     */
+    @Test
+    fun `the ten diagnostics are sent, and only inside a call`() = runTest {
+        val h = harness()
+        h.socket.push(ring)
+        runCurrent()
+        assertTrue(h.socket.logged("ring_shown"), "the ring was not reported: ${h.socket.sentTypes()}")
+
+        h.coordinator.accept()
+        runCurrent()
+        assertTrue(h.socket.logged("accept_tap"))
+        h.socket.answer("acceptCall")
+        runCurrent()
+        assertTrue(h.socket.logged("accept_sent"))
+
+        // The page's own measurements travel the same road, and carry the
+        // platform marker so one server log can tell a desktop from a phone.
+        h.engine.push(CallEngineEvent.Telemetry("audio", mapOf("outPkts" to "31")))
+        h.engine.push(CallEngineEvent.SelfSpeaking(speaking = true, level = 0.4))
+        runCurrent()
+        assertTrue(h.socket.logged("audio"))
+        assertTrue(h.socket.logged("speak"))
+        assertEquals("desktop", h.socket.logFor("audio")?.get("platform")?.jsonPrimitive?.content)
+
+        h.coordinator.hangUp()
+        runCurrent()
+        h.socket.answer("leaveCall")
+        runCurrent()
+        assertTrue(h.socket.logged("disconnect"), "the reason a call ended is the most-read line of all")
+
+        val before = h.socket.frames.size
+        h.engine.push(CallEngineEvent.Telemetry("audio", mapOf("outPkts" to "0")))
+        runCurrent()
+        assertEquals(before, h.socket.frames.size, "between calls, it is silent")
+    }
+
+    /**
+     * The outgoing screen's own line. A roster row is Ringing from the moment
+     * we dial, so only these can say "Ringing…" — reading the roster left the
+     * card on "Calling…" for the whole ring.
+     */
+    @Test
+    fun `the ring's progress is tracked per callee, and cleared with the call`() = runTest {
+        val h = harness()
+        h.coordinator.placeCall(
+            chatRoomId = "",
+            receiverDeviceId = "",
+            mode = com.zillit.desktop.feature.calls.domain.CallMode.Private,
+            type = com.zillit.desktop.feature.calls.domain.CallType.Audio,
+            displayName = "Vivek",
+            provider = CallProvider.LiveKit,
+            receiverUserId = "vivek",
+            projectId = "p1",
+            callerUserId = "me",
+        )
+        runCurrent()
+        assertEquals(
+            mapOf("vivek" to CallRingState.Calling),
+            h.coordinator.ringStatuses.value,
+            "the card says Calling… from the press",
+        )
+        // The provisional session carries NO call id (`callUuid = ""`), so the
+        // ring events cannot be matched to it until `startCall` is acked and the
+        // minted id is adopted. That is the real sequence: the seed above is
+        // what the card shows in the meantime.
+        assertEquals("", h.coordinator.session.value!!.callUuid, "nothing is named until the server answers")
+        h.socket.answer("startCall", """{"livekit":{"token":"t","url":"wss://node.zillit.com/rtc"}}""")
+        runCurrent()
+        val placed = h.coordinator.session.value!!.callUuid
+        assertTrue(placed.isNotBlank(), "the minted call id was never adopted")
+
+        // Their device put the popup up.
+        h.socket.push("""{"type":"callRinging","callId":"$placed","userId":"vivek"}""")
+        runCurrent()
+        assertEquals(CallRingState.Ringing, h.coordinator.ringStatuses.value["vivek"])
+        // Our OWN row going in_call is not an answer — the server marks the
+        // caller the moment we join our own room, and reading it as one said
+        // "Joining…" while their phone was still ringing.
+        h.socket.push("""{"type":"callAccepted","callId":"$placed","userId":"me"}""")
+        runCurrent()
+        assertEquals(CallRingState.Ringing, h.coordinator.ringStatuses.value["vivek"])
+        assertNull(h.coordinator.ringStatuses.value["me"])
+
+        h.coordinator.hangUp()
+        runCurrent()
+        // Unanswered and ours, so the teardown cancels rather than leaves.
+        h.socket.answer("cancelCall")
+        runCurrent()
+        assertEquals(emptyMap(), h.coordinator.ringStatuses.value, "no ring outlives its call")
+    }
+
+    /**
+     * Who may be rung in is the SERVER's list — the roster's `available` rows.
+     * The open production's crew is not it: the call may belong to another
+     * production, and the server knows people this client never fetched.
+     */
+    @Test
+    fun `the addable list comes from the roster and goes with the call`() = runTest {
+        val h = harness()
+        inCall(h)
+        h.socket.answer(
+            "getCallRoster",
+            """{"states":[{"userId":"vivek","displayName":"Vivek","state":"in_call"},
+                {"userId":"asha","displayName":"Asha","state":"available","designationName":"Gaffer"}]}""",
+        )
+        runCurrent()
+
+        val addable = h.coordinator.addableFromRoster.value
+        assertEquals(listOf("asha"), addable.map { it.userId })
+        assertEquals("Gaffer", addable.single().designation)
+
+        h.coordinator.hangUp()
+        runCurrent()
+        h.socket.answer("leaveCall")
+        runCurrent()
+        assertEquals(emptyList(), h.coordinator.addableFromRoster.value)
+    }
+
+    /**
+     * The Refresh button: the server is told to RE-SEED from project membership
+     * and reconcile against the live room before it answers, so somebody who
+     * joined or left on another client shows up. `getCallRoster` alone would
+     * answer from whatever the server already held.
+     */
+    @Test
+    fun `a forced refresh re-seeds before it reads`() = runTest {
+        val h = harness()
+        inCall(h)
+        val before = h.socket.sentTypes().count { it == "getCallRoster" }
+
+        h.coordinator.refreshRoster(force = true)
+        runCurrent()
+        assertTrue("refreshRoster" in h.socket.sentTypes(), "the server was not asked to re-seed")
+        // Re-seeding answers before the new rows are pushed, so the read is
+        // what makes the list visibly update on the tap.
+        h.socket.answer("refreshRoster")
+        runCurrent()
+        assertEquals(
+            before + 1,
+            h.socket.sentTypes().count { it == "getCallRoster" },
+            "a re-seed with no read leaves the list looking unchanged",
+        )
+    }
+
+    private val warmRing = """
+        {"type":"incomingCall","callId":"c1","callType":"audio","callMode":"private",
+         "from":{"userId":"vivek","displayName":"Vivek"},"toUserId":"me","projectId":"p1",
+         "livekit":{"token":"tok","url":"wss://node.zillit.com/rtc","preconnectToken":"warm-tok"}}
+    """.trimIndent()
 
     private val ring = """
         {"type":"incomingCall","callId":"c1","callType":"audio","callMode":"private",

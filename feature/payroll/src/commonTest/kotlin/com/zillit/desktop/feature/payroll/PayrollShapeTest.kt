@@ -71,6 +71,13 @@ class PayrollShapeTest {
         assertEquals(45.0, card.weeklyAllowRent, 0.0001)
         assertEquals(20.0, card.claimsTotal)
         assertEquals(50.0, card.deductionsTotal)
+        // No day_summary on this full document, so gross must walk days[].rates_ots[]/
+        // allowances[] directly (350+350 basic, 80 camera OT, 25 kit) rather than the raw
+        // basic_pay/overtime_pay/total_allowances scalars, which are absent here and would
+        // silently zero out every one of those lines. 870 matches PayBreakdown.gross below,
+        // computed independently from the same document.
+        assertEquals(870.0, card.gross, 0.0001)
+        assertEquals(820.0, card.net, 0.0001)
         assertEquals("paid", card.history.single().action)
     }
 
@@ -137,6 +144,38 @@ class PayrollShapeTest {
         assertEquals(60.0, row.otTotal)
         assertEquals(15.0, row.allowanceTotal)
         assertEquals(575.0, row.totalPay)
+    }
+
+    /**
+     * The live bug: a full document whose `overtime_pay` scalar (227.08)
+     * only ever held the "overtime" rates_ots line, while the day itself
+     * also carried a premium and a penalty line (48.66 + 50.00) that never
+     * reached that scalar. Before the fix, `gross` read `overtime_pay`
+     * straight off the document — 227.08 — dropping both extra lines from
+     * the total while the day's own OT/Premiums figure (`otTotal`, what the
+     * Outstanding grid's column shows) already included them. Real numbers
+     * from a live Payroll Processing → Outstanding card whose own displayed
+     * Basic + OTs/Premiums didn't sum to its own displayed Total Pay.
+     */
+    @Test
+    fun `gross walks the day's rates_ots even when a narrower scalar is also present`() {
+        val card = assertNotNull(
+            obj(
+                """{"_id":"tc4","user_id":"u4","status":"locked","week_starting":$week,
+                "basic_pay":178.46,"overtime_pay":227.08,
+                "days":[{"date":$week,"day_type":"SWD",
+                    "rates_ots":[{"identifier":"basic","label":"Basic","rate_amount":178.46},
+                                 {"identifier":"overtime","label":"Non-Camera OT","rate_amount":227.08},
+                                 {"identifier":"early_call","label":"Pre-Dawn","rate_amount":48.66},
+                                 {"identifier":"broken_meal_penalty","label":"Broken Meal Penalty",
+                                  "rate_amount":50.0}]}]}""",
+            ).toTimecard(),
+        )
+        val row = ProcessingRow(card, week)
+        assertEquals(178.46, row.basicTotal, 0.001)
+        assertEquals(325.74, row.otTotal, 0.001)
+        assertEquals(504.2, card.gross, 0.001)
+        assertEquals(504.2, row.totalPay, 0.001)
     }
 
     @Test

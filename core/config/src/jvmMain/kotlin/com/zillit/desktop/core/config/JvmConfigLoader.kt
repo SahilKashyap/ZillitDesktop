@@ -3,6 +3,7 @@ package com.zillit.desktop.core.config
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.ZillitVariant
 import java.io.File
 
 /**
@@ -12,7 +13,8 @@ import java.io.File
  *  1. `-Dzillit.config=<path>` system property
  *  2. `ZILLIT_CONFIG` environment variable
  *  3. `zillit.properties` next to the executable
- *  4. `~/.zillit/zillit.properties`
+ *  4. `zillit.properties` in this variant's data directory (`~/.zillit`, or
+ *     `~/.zillit-qa` / `~/.zillit-develop` for a non-production build)
  *
  * Packaged builds that opted into `-PzillitBundleConfig` land here through
  * candidate 1: jpackage bakes `-Dzillit.config=$APPDIR/resources/…` into the
@@ -81,7 +83,7 @@ class JvmConfigLoader(
         System.getProperty(PROPERTY_CONFIG),
         System.getenv(ENV_CONFIG),
         File(System.getProperty("user.dir"), FILE_NAME).path,
-        File(System.getProperty("user.home"), ".zillit/$FILE_NAME").path,
+        File(ZillitVariant.dataDir, FILE_NAME).path,
     )
 
     private companion object {

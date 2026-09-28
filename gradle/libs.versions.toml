@@ -40,6 +40,11 @@ socketIo = "2.1.2"
 # QR encoding, pure Java. Used to render login QR codes LOCALLY — see
 # ZillitQrCode kdoc for why that matters.
 zxing = "3.5.4"
+# Pure-Java JavaScript engine. Runs the payroll service's published OT-engine
+# bundle — the arithmetic that decides overtime pay — rather than this app
+# reimplementing it and drifting from the web the first time an agreement
+# changes. No natives; the JDK's own script engine was removed in JDK 15.
+rhino = "1.9.1"
 
 # --- quality ---
 detekt = "1.23.8"
@@ -53,6 +58,7 @@ jcodec = { module = "org.jcodec:jcodec", version = "0.2.5" }
 # Pure-Java PDF rendering for document poster frames — Apache-2.0, no natives.
 pdfbox = { module = "org.apache.pdfbox:pdfbox", version = "3.0.3" }
 jcodec-javase = { module = "org.jcodec:jcodec-javase", version = "0.2.5" }
+rhino = { module = "org.mozilla:rhino", version.ref = "rhino" }
 # --- gradle plugin artifacts, for build-logic convention plugins only ---
 kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 compose-gradlePlugin = { module = "org.jetbrains.compose:compose-gradle-plugin", version.ref = "composeMultiplatform" }

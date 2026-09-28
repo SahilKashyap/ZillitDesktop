@@ -2,12 +2,11 @@ package com.zillit.desktop.feature.invoices.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignmentRule
 import com.zillit.desktop.feature.invoices.domain.InvoiceSetup
 import com.zillit.desktop.feature.invoices.domain.InvoiceTeamRow
 import kotlinx.coroutines.delay
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
 
 /**
  * The Settings page's behaviour — the web's `SettingsPage.jsx`.
@@ -30,8 +29,10 @@ internal class InvoiceSetupActions(private val vm: InvoicesViewModel) {
             is InvoicesEvent.ToggleAlert -> edit { copy(edited = edited.toggle(event.alert)) }
             is InvoicesEvent.SaveSetupSection -> save(event.section)
 
+            // A new member starts at a zero limit — "Submit Only", Unlimited unticked —
+            // as the web seeds `posting_limit: 0` (`SettingsPage.jsx:719`).
             InvoicesEvent.AddTeamMember -> edit {
-                copy(memberDraft = TeamMemberDraft.of(InvoiceTeamRow(userId = ""), isNew = true))
+                copy(memberDraft = TeamMemberDraft.of(InvoiceTeamRow(userId = "", postingLimit = 0.0), isNew = true))
             }
             is InvoicesEvent.EditTeamMember -> edit {
                 copy(memberDraft = TeamMemberDraft.of(event.row, isNew = false))
@@ -45,13 +46,30 @@ internal class InvoiceSetupActions(private val vm: InvoicesViewModel) {
 
             is InvoicesEvent.AddRunAuthLevel -> edit { copy(edited = edited.insertingLevel(event.index)) }
             is InvoicesEvent.RemoveRunAuthLevel -> edit { copy(edited = edited.removingLevel(event.tier)) }
-            is InvoicesEvent.OpenRunAuthPicker -> edit { copy(pickingForTier = event.tier, pickerSearch = "") }
-            is InvoicesEvent.SearchRunAuthPicker -> edit { copy(pickerSearch = event.query) }
-            is InvoicesEvent.PickRunAuthUser -> edit {
-                val tier = pickingForTier ?: return@edit this
-                copy(edited = edited.addingToLevel(tier, listOf(event.userId)))
+            is InvoicesEvent.OpenRunAuthPicker -> edit {
+                copy(pickingForTier = event.tier, pickerSearch = "", pickerStaged = emptyList())
             }
-            InvoicesEvent.CloseRunAuthPicker -> edit { copy(pickingForTier = null) }
+            is InvoicesEvent.SearchRunAuthPicker -> edit { copy(pickerSearch = event.query) }
+            // A tick stages the person; a second tick takes them off again.
+            is InvoicesEvent.PickRunAuthUser -> edit {
+                if (pickingForTier == null || event.userId in edited.allApprovers) return@edit this
+                copy(
+                    pickerStaged = if (event.userId in pickerStaged) {
+                        pickerStaged - event.userId
+                    } else {
+                        pickerStaged + event.userId
+                    },
+                )
+            }
+            SetupEvent.AddStagedRunAuthUsers -> edit {
+                val tier = pickingForTier ?: return@edit this
+                copy(
+                    edited = edited.addingToLevel(tier, pickerStaged),
+                    pickingForTier = null,
+                    pickerStaged = emptyList(),
+                )
+            }
+            InvoicesEvent.CloseRunAuthPicker -> edit { copy(pickingForTier = null, pickerStaged = emptyList()) }
             is InvoicesEvent.RemoveRunAuthUser -> edit {
                 copy(edited = edited.removingFromLevel(event.tier, event.userId))
             }
@@ -118,13 +136,17 @@ internal class InvoiceSetupActions(private val vm: InvoicesViewModel) {
         edit { copy(saving = saving + section) }
         vm.run {
             val result = when (section) {
-                InvoiceSetupSection.Alerts -> vm.repo.saveAlerts(edited.alerts)
-                else -> vm.repo.saveRunAuthorisation(edited.runAuthorisation)
+                InvoiceSetupSection.Alerts -> vm.repo.saveAlertsWithMessage(edited.alerts)
+                else -> vm.repo.saveRunAuthorisationWithMessage(edited.runAuthorisation)
             }
             when (result) {
                 is ZillitResult.Success -> {
                     edit { copy(saved = saved.taking(section, edited), saving = saving - section) }
                     flash(section)
+                    // The web toasts only a message the server sent (`if (res?.message)`).
+                    result.data?.let { vm.notice(it.localisedMessage()) }
+                    // `ah:invoice:settings` — the reader's own rights may have moved.
+                    vm.reloadViewerRights()
                 }
                 is ZillitResult.Failure -> {
                     edit { copy(saving = saving - section) }
@@ -164,8 +186,9 @@ internal class InvoiceSetupActions(private val vm: InvoicesViewModel) {
     private fun persistTeam(next: List<InvoiceTeamRow>, onDone: () -> Unit) {
         edit { copy(saving = saving + InvoiceSetupSection.Team) }
         vm.run {
-            when (val result = vm.repo.saveTeam(next)) {
+            when (val result = vm.repo.saveTeamWithMessage(next)) {
                 is ZillitResult.Success -> {
+                    result.data?.let { vm.notice(it.localisedMessage()) }
                     edit {
                         copy(
                             saved = saved.copy(teamMembers = next),
@@ -195,11 +218,8 @@ internal class InvoiceSetupActions(private val vm: InvoicesViewModel) {
 
     /** Every row goes — a stored one patched, a new one created — in list order, as the web saves them. */
     private fun saveRules() {
+        // The web saves a rule with nobody to assign to as it stands; so does this.
         val rules = setup.rules
-        if (rules.any { it.assignTo.isBlank() }) {
-            vm.fail(str(S.desktop_inv_pick_who_each_rule_assigns_to))
-            return
-        }
         edit { copy(saving = saving + InvoiceSetupSection.Rules) }
         vm.run {
             val landed = mutableListOf<InvoiceAssignmentRule>()

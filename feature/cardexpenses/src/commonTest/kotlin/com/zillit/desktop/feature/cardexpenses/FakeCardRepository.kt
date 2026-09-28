@@ -202,7 +202,10 @@ internal class FakeCardRepository(
         return read(ByteArray(1))
     }
 
-    override suspend fun exportTransactions(format: ExportFormat): ZillitResult<ByteArray> {
+    override suspend fun exportTransactions(
+        format: ExportFormat,
+        filters: TransactionFilters,
+    ): ZillitResult<ByteArray> {
         calls += "exportTransactions"
         return read(ByteArray(1))
     }

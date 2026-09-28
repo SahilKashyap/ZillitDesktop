@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.zillit.desktop.core.common.OperatingSystem
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.common.currentPlatform
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
@@ -110,7 +111,7 @@ object DesktopNotifications {
     private const val HELPER_TIMEOUT_SECONDS = 130L
 
     /** The app's bundle identifier — what the notification daemon files the permission under. */
-    const val BUNDLE_ID = "com.zillit.desktop"
+    val BUNDLE_ID: String = ZillitVariant.bundleId
 
     /** For tests: the helper file the answers come from. */
     internal val helperPresent: Boolean get() = TrayNotifier.macNotifyHelper?.let(File::canExecute) == true

@@ -71,6 +71,26 @@ data class PoApprovalTiers(
         )
     }
 
+    /**
+     * Whether [userId] sits **anywhere** on this order's chain — the web's
+     * `isApproverForRow`, which both console tables compute per row.
+     *
+     * Deliberately not [visibility]'s `canApprove`. That one asks "may they
+     * decide it *now*", so it names only the next undecided tier; this one
+     * asks "is this order any of their business", which stays true after they
+     * have signed their tier and while a later tier is out. Using the
+     * narrower rule here would grey out the very orders an approver had just
+     * approved, hiding them from the person who most recently touched them.
+     *
+     * Every tier of the resolved chain is searched, regardless of what has
+     * been signed off — the web iterates the whole resolved config for the
+     * same reason.
+     */
+    fun isApprover(order: PurchaseOrder, userId: String): Boolean =
+        resolve(order.departmentId, order.gross).any { tier ->
+            tier.any { it.userId == userId && it.coversDepartment(order.departmentId) }
+        }
+
     companion object {
         const val SCOPE_ALL = "all"
         const val SCOPE_DEPARTMENT = "department"

@@ -10,12 +10,24 @@ package com.zillit.desktop.core.network
  * sign-out over a transient failure.
  */
 interface RequestAuthenticator {
-    suspend fun bearerFor(module: RequestModule, projectId: String?): String?
+    /**
+     * The Bearer for one request, or null to send `moduledata` instead.
+     *
+     * [path] is the request's URL: a few routes are genuinely project-scoped
+     * and refuse a device token, so the authenticator needs to see where the
+     * call is going, not only which module it belongs to.
+     */
+    suspend fun bearerFor(module: RequestModule, projectId: String?, path: String): String?
 
     /**
      * After a 401 carrying [failedToken]: a renewed token to retry once with,
      * or null when the session cannot be recovered. A token another call
      * already renewed meanwhile is returned without another rotation.
      */
-    suspend fun recoverFromUnauthorized(module: RequestModule, projectId: String?, failedToken: String): String?
+    suspend fun recoverFromUnauthorized(
+        module: RequestModule,
+        projectId: String?,
+        path: String,
+        failedToken: String,
+    ): String?
 }

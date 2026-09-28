@@ -158,6 +158,84 @@ class PoApprovalFlowTest {
         assertEquals(PoQueueScope.All, model.state.value.queueScope)
     }
 
+    /**
+     * The Film Tools door, driven through the view model.
+     *
+     * `PoEvent.Enter(true)` is what `PurchaseOrderToolProvider` sends when
+     * `LocalHostedBy` is null — a window standing on its own rather than
+     * inside the hub's console — and it is the port of the web's
+     * `?entry=tool`. An accountant sitting on PO Entry must not stay there
+     * through it: that page does not exist in the department view.
+     */
+    @Test
+    fun `entering through the Film Tools tile moves an accountant off the console`() = runTest(dispatcher) {
+        val senior = PoViewer("senior", "department_accounts", "designation_production_accountant_accounts")
+        val repository = FlowFake(emptyList())
+        val (model, _) = opened(repository, viewer = senior)
+        model.onEvent(PoEvent.Open(PoDestination.Entry))
+        runCurrent()
+        assertEquals(PoDestination.Entry, model.state.value.destination)
+
+        model.onEvent(PoEvent.Enter(asTool = true))
+        runCurrent()
+        // The console page is gone and so is the console: they are a
+        // department user here, landing where a department user lands.
+        assertEquals(PoDestination.ApprovalQueue, model.state.value.destination)
+        assertTrue(model.state.value.viewer.enteredAsTool)
+        assertEquals(false, model.state.value.viewer.isAccountant)
+
+        // And back through the hub door, the console returns.
+        model.onEvent(PoEvent.Enter(asTool = false))
+        runCurrent()
+        assertEquals(PoDestination.Queue, model.state.value.destination)
+        assertTrue(model.state.value.viewer.isAccountant)
+    }
+
+    /**
+     * A page **both** doors have is kept across the switch, because a reader
+     * moving between their two windows should find what they left.
+     */
+    @Test
+    fun `a page both doors share survives the switch`() = runTest(dispatcher) {
+        val senior = PoViewer("senior", "department_accounts", "designation_production_accountant_accounts")
+        val (model, _) = opened(FlowFake(emptyList()), viewer = senior)
+        model.onEvent(PoEvent.Open(PoDestination.Templates))
+        runCurrent()
+        model.onEvent(PoEvent.Enter(asTool = true))
+        runCurrent()
+        assertEquals(PoDestination.Templates, model.state.value.destination)
+    }
+
+    /**
+     * The landing waits for the rights rather than fetching twice — the web's
+     * `awaitingLandingRights`.
+     *
+     * A department user with the posting right belongs on All POs, but that
+     * right arrives after the tool opens. The landing chosen without it is
+     * re-decided when it lands; a page the reader *chose* never is.
+     */
+    @Test
+    fun `a default landing is re-decided when the rights arrive, a chosen page is not`() = runTest(dispatcher) {
+        val crew = PoViewer("crew", "department_camera", "designation_focus_puller_camera")
+        var rights = false
+        val model = PurchaseOrderViewModel(FlowFake(emptyList()), { crew.copy(canPostPurchaseOrders = rights) })
+        model.start()
+        runCurrent()
+        assertEquals(PoDestination.ApprovalQueue, model.state.value.destination)
+
+        rights = true
+        model.onRightsChanged()
+        runCurrent()
+        assertEquals(PoDestination.DepartmentAllPos, model.state.value.destination)
+
+        // Now they pick a page. A later rights refresh leaves it alone.
+        model.onEvent(PoEvent.Open(PoDestination.MyPos))
+        runCurrent()
+        model.onRightsChanged()
+        runCurrent()
+        assertEquals(PoDestination.MyPos, model.state.value.destination)
+    }
+
     @Test
     fun `search, department and sort survive a tab switch`() = runTest(dispatcher) {
         val (model, _) = opened(FlowFake(emptyList()))

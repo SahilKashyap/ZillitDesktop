@@ -367,8 +367,17 @@ private fun PickerFooter(shown: Int, total: Int, picked: Int? = null) {
  *
  * Offers the active, postable leaves as the person types; a code not in the
  * chart can be committed as typed, and an accountant can create it on the
- * spot as a top-level category. Digits, hyphens and dots only, as the web
- * filters the input.
+ * spot as a top-level category.
+ *
+ * Only a LETTER turns typing into a search (`ChartOfAccounts.search`): digits,
+ * hyphens and dots still live-commit as the code, exactly as before, but
+ * letters no longer do — a name typed to search a code used to commit that
+ * name as the code itself. A search only filters the list; nothing commits
+ * until a row is picked or Enter is pressed on a match, there is no "create
+ * this as a nominal" offer while searching, and leaving the field with an
+ * uncommitted search (blur, Tab, dismiss) restores the code the field held
+ * when it was focused — including any digits that had live-committed earlier
+ * in the same edit, which were never a real decision either.
  */
 @Suppress("CyclomaticComplexMethod", "LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
@@ -384,30 +393,61 @@ fun CoaCodeField(
     onCreate: ((code: String, name: String, costType: CoaCostType) -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val suggestions = remember(value, accounts) { ChartOfAccounts.suggest(accounts, value) }
+    var displayText by remember(value) { mutableStateOf(value) }
+    var startingValue by remember { mutableStateOf(value) }
+    var everSearched by remember { mutableStateOf(false) }
+    val isSearch = displayText.any { it.isLetter() }
+    if (isSearch) everSearched = true
+
+    val suggestions = remember(displayText, accounts, isSearch) {
+        if (isSearch) {
+            ChartOfAccounts.searchLeaves(accounts, displayText)
+        } else {
+            ChartOfAccounts.suggest(accounts, displayText)
+        }
+    }
     val known = accounts.any { it.code.equals(value.trim(), ignoreCase = true) }
     val colors = ZillitTheme.colors
 
+    fun commit(code: String) {
+        displayText = code
+        everSearched = false
+        onValueChange(code)
+    }
+
     Box(modifier = modifier) {
         ZillitTextField(
-            value = value,
+            value = displayText,
             onValueChange = { text ->
-                onValueChange(text.filter { it.isDigit() || it == '-' || it == '.' || it.isLetter() })
+                val cleaned = text.filter { it.isDigit() || it == '-' || it == '.' || it.isLetter() || it == ' ' }
+                displayText = cleaned
+                if (cleaned.none { it.isLetter() }) onValueChange(cleaned)
             },
             label = label,
             placeholder = placeholder,
             enabled = enabled,
             helperText = when {
-                value.isBlank() -> null
-                known -> accounts.firstOrNull { it.code.equals(value.trim(), true) }?.name
+                isSearch -> if (suggestions.isEmpty()) str(S.desktop_hub_no_results_for_x, displayText) else null
+                displayText.isBlank() -> null
+                known -> accounts.firstOrNull { it.code.equals(displayText.trim(), true) }?.name
                 accounts.isEmpty() -> str(S.desktop_hub_the_chart_is_empty_the_code_will_be_stored_as)
                 else -> str(S.desktop_hub_not_in_the_chart_stored_as_typed)
             },
-            modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
+            imeAction = ImeAction.Done,
+            onImeAction = { if (isSearch) suggestions.firstOrNull()?.let { commit(it.code) } },
+            modifier = Modifier.fillMaxWidth().onFocusChanged { state ->
+                if (state.isFocused && !focused) startingValue = value
+                if (!state.isFocused && focused && everSearched) {
+                    if (value != startingValue) onValueChange(startingValue)
+                    displayText = startingValue
+                    everSearched = false
+                }
+                focused = state.isFocused
+            },
         )
-        val typingUnknownCode = focused && enabled && value.isNotBlank() && !known
-        val hasChoices = suggestions.isNotEmpty() || onCreate != null
-        if (typingUnknownCode && hasChoices) {
+        val showPopup = focused && enabled && displayText.isNotBlank() && (isSearch || !known)
+        val hasChoices = suggestions.isNotEmpty() || (onCreate != null && !isSearch)
+        if (showPopup && hasChoices) {
             Popup(offset = IntOffset(0, CODE_DROP), onDismissRequest = { focused = false }) {
                 Column(
                     modifier = Modifier
@@ -423,7 +463,7 @@ fun CoaCodeField(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(ZillitTheme.shapes.medium)
-                                .clickable { onValueChange(account.code); focused = false }
+                                .clickable { commit(account.code); focused = false }
                                 .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
                             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                         ) {
@@ -439,10 +479,13 @@ fun CoaCodeField(
                             )
                         }
                     }
-                    if (onCreate != null) {
+                    if (onCreate != null && !isSearch) {
                         ZillitButton(
-                            text = str(S.desktop_hub_create_x_as_a_nominal, value.trim()),
-                            onClick = { onCreate(value.trim(), value.trim(), costType); focused = false },
+                            text = str(S.desktop_hub_create_x_as_a_nominal, displayText.trim()),
+                            onClick = {
+                                onCreate(displayText.trim(), displayText.trim(), costType)
+                                focused = false
+                            },
                             variant = ButtonVariant.Tertiary,
                             size = ButtonSize.Small,
                             leadingIcon = ZillitIcons.Add,

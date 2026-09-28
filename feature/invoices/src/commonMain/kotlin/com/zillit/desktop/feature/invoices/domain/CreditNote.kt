@@ -35,7 +35,21 @@ data class CreditNote(
     val updatedAtMs: Long? = null,
     /** The saved `line_items` as sent, so layers and tags survive an edit. */
     val lineItemsJson: String = "",
+    /** The type as stored — the preview names `refund` and `write_off` too (`CreditsPage.jsx:910`). */
+    val typeRaw: String = "",
+    /** Each line's stored `tax_amount`, by line id — the preview prints it rather than recomputing. */
+    val lineTaxAmounts: Map<String, Double> = emptyMap(),
 ) {
+    /** "Credit Note", "Refund", "Write Off", "Dispute" — else the stored word, else Credit Note. */
+    val typeLabel: String
+        get() = when (typeRaw) {
+            "", CreditNoteType.CreditNote.wire -> CreditNoteType.CreditNote.label
+            CreditNoteType.Dispute.wire -> CreditNoteType.Dispute.label
+            "refund" -> str(S.desktop_inv_credit_type_refund)
+            "write_off" -> str(S.desktop_inv_credit_type_write_off)
+            else -> typeRaw
+        }
+
     /** The web's `cn.reference || cn.id.slice(0, 8).toUpperCase()`. */
     val displayRef: String get() = reference.ifBlank { id.take(REF_CHARS).uppercase() }
 

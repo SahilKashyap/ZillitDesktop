@@ -38,9 +38,19 @@ fun ZillitAvatar(
     size: Dp = AVATAR_SIZE,
     image: ImageBitmap? = null,
     userId: String? = null,
+    /**
+     * Overrides the name-derived hue.
+     *
+     * One caller needs it: the call stage, where the colour is not decoration
+     * but the tile's identity — it is the background, the speaking ring and
+     * this disc at once, and it is assigned per call so that two people with
+     * the same initial are never the same colour (`CallTileColors`). Everywhere
+     * else the hue from the name is the right answer and this stays null.
+     */
+    colour: Color? = null,
 ) {
     val cleaned = name.trim()
-    val background = avatarHue(cleaned)
+    val background = colour ?: avatarHue(cleaned)
     val shown = image ?: rememberAvatar(userId)
 
     Box(

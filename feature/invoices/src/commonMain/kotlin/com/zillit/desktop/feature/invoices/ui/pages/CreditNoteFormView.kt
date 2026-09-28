@@ -4,6 +4,28 @@
 package com.zillit.desktop.feature.invoices.ui.pages
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import com.zillit.desktop.core.designsystem.component.ZillitCalcField
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.feature.invoices.domain.Vendor
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,13 +45,10 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitSelect
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -78,10 +97,7 @@ internal fun ColumnScope.CreditNoteFormView(
             enabled = !form.saving,
         )
         if (form.locked) {
-            ZillitStatusPill(
-                label = str(S.desktop_inv_locked_period, state.periodLock.lockedThrough),
-                tone = StatusTone.Escalated,
-            )
+            LockBanner(str(S.desktop_inv_locked_period_credit, state.periodLock.lockedThrough))
         } else {
             ZillitButton(
                 text = str(saveLabel(form)),
@@ -138,15 +154,7 @@ private fun DetailsCard(state: InvoicesUiState, form: CreditNoteForm, onEvent: (
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             FieldRow {
                 InvoicePickerField(state, form, enabled, onEvent)
-                val vendors = state.vendors.values.sortedBy { it.name.lowercase() }
-                FormPicker(
-                    label = "${str(S.ah_lbl_vendor)} *",
-                    value = form.vendorId,
-                    options = listOf("") + vendors.map { it.id },
-                    text = { id -> state.vendors[id]?.name ?: str(S.desktop_inv_select_vendor) },
-                    enabled = enabled,
-                    error = form.errors[CreditField.Vendor],
-                ) { edit(form.copy(vendorId = it)) }
+                VendorPickerField(state, form, enabled) { edit(form.copy(vendorId = it)) }
                 ZillitTextField(
                     value = form.reason,
                     onValueChange = { edit(form.copy(reason = it)) },
@@ -166,22 +174,24 @@ private fun DetailsCard(state: InvoicesUiState, form: CreditNoteForm, onEvent: (
                     label = "${str(S.ah_lbl_eff_date)} *",
                     errorText = form.errors[CreditField.EffectiveDate],
                     enabled = enabled,
+                    // The web's date input `min` — the day after the cost report's lock.
+                    minDate = dayAfterLock(state),
                     modifier = Modifier.weight(1f),
                 )
-                val currency = form.currency.ifBlank { state.projectCurrency }
-                FormPicker(
-                    label = str(S.asset_currency),
-                    value = currency,
-                    options = (state.currencyOptions + currency).distinct(),
-                    text = { it },
-                    enabled = enabled,
-                ) { edit(form.copy(currency = it)) }
+                CaptionedField(str(S.asset_currency), Modifier.weight(1f)) {
+                    CurrencyPicker(
+                        state = state,
+                        value = form.currency.ifBlank { state.projectCurrency },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { edit(form.copy(currency = it)) }
+                }
                 if (form.isDispute) {
-                    ZillitTextField(
+                    // The web's `CalcInput`: "2*50" resolves as the field is left.
+                    ZillitCalcField(
                         value = form.disputeAmount,
-                        onValueChange = { edit(form.copy(disputeAmount = it)) },
+                        onCommit = { edit(form.copy(disputeAmount = it)) },
                         label = str(S.amount),
-                        placeholder = "0.00",
                         enabled = enabled,
                         modifier = Modifier.weight(1f),
                     )
@@ -203,9 +213,11 @@ private fun DetailsCard(state: InvoicesUiState, form: CreditNoteForm, onEvent: (
 }
 
 /**
- * Against Invoice Ref — typed to search, picked from the list under it. Only
- * a numbered invoice that is not ready to pay is offered: the number is the
- * link. Picking one brings its vendor and currency.
+ * Against Invoice Ref — typed to search, picked from the list under it. The
+ * list opens as the box takes focus, even before anything is typed, shows up
+ * to thirty, and shuts on a pick or a click elsewhere (`CreditsPage.jsx:520-550`).
+ * Only a numbered invoice that is not ready to pay is offered: the number is
+ * the link. Picking one brings its vendor and currency.
  */
 @Composable
 private fun RowScope.InvoicePickerField(
@@ -214,13 +226,15 @@ private fun RowScope.InvoicePickerField(
     enabled: Boolean,
     onEvent: (InvoicesEvent) -> Unit,
 ) {
-    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+    var fieldSize by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
+    Box(Modifier.weight(1f).onSizeChanged { fieldSize = it }) {
         ZillitTextField(
             value = form.invoiceQuery,
             onValueChange = {
                 onEvent(CreditEvent.Change(form.copy(invoiceQuery = it, invoiceRef = "", invoiceId = "")))
             },
-            label = str(S.desktop_inv_against_invoice_ref) + if (form.isDispute) " *" else "",
+            label = str(S.desktop_inv_against_invoice_ref),
             placeholder = str(S.desktop_inv_search_invoice_number),
             errorText = form.errors[CreditField.InvoiceRef],
             enabled = enabled,
@@ -235,29 +249,44 @@ private fun RowScope.InvoicePickerField(
             } else {
                 null
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { focus ->
+                if (focus.isFocused && enabled && !form.pickerOpen) onEvent(CreditEvent.OpenInvoicePicker)
+            },
         )
-        if (enabled && form.invoiceRef.isBlank() && form.invoiceQuery.isNotBlank()) {
-            val matches = CreditNotes.creditable(state.credit.invoices, form.invoiceQuery) { state.vendorName(it) }
-            Column(
-                Modifier.fillMaxWidth()
-                    .clip(ZillitTheme.shapes.medium)
-                    .border(1.dp, ZillitTheme.colors.border, ZillitTheme.shapes.medium),
+        val matches = CreditNotes.creditable(state.credit.invoices, form.invoiceQuery.takeIf { form.invoiceRef.isBlank() }.orEmpty()) {
+            state.vendorName(it)
+        }.take(SUGGESTIONS_SHOWN)
+        if (enabled && form.pickerOpen && matches.isNotEmpty()) {
+            Popup(
+                offset = IntOffset(0, fieldSize.height),
+                onDismissRequest = { onEvent(CreditEvent.CloseInvoicePicker) },
+                properties = PopupProperties(focusable = false),
             ) {
-                matches.take(SUGGESTIONS_SHOWN).forEach { invoice ->
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .clickable { onEvent(CreditEvent.PickInvoice(invoice)) }
-                            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-                    ) {
-                        ZillitText(text = invoice.invoiceNumber, style = ZillitTheme.typography.label)
-                        MutedLine(
-                            "${state.vendorName(invoice)} · " +
-                                InvoiceFormat.money(
-                                    invoice.grossAmount,
-                                    invoice.currency.ifBlank { state.projectCurrency },
-                                ),
-                        )
+                Column(
+                    Modifier
+                        .width(with(density) { fieldSize.width.toDp() })
+                        .heightIn(max = SUGGESTIONS_MAX)
+                        .shadow(SUGGESTIONS_ELEVATION, ZillitTheme.shapes.medium)
+                        .clip(ZillitTheme.shapes.medium)
+                        .background(ZillitTheme.colors.surfaceRaised)
+                        .border(1.dp, ZillitTheme.colors.border, ZillitTheme.shapes.medium)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    matches.forEach { invoice ->
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .clickable { onEvent(CreditEvent.PickInvoice(invoice)) }
+                                .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+                        ) {
+                            ZillitText(text = invoice.invoiceNumber, style = ZillitTheme.typography.label)
+                            MutedLine(
+                                "${state.vendorName(invoice)} · " +
+                                    InvoiceFormat.money(
+                                        invoice.grossAmount,
+                                        invoice.currency.ifBlank { state.projectCurrency },
+                                    ),
+                            )
+                        }
                     }
                 }
             }
@@ -265,30 +294,62 @@ private fun RowScope.InvoicePickerField(
     }
 }
 
-/** A select under its label, and the save's refusal under it; weighted so it never crushes its row. */
+/**
+ * Vendor * — searchable by name, email and contact, each option with that
+ * second line; "No vendors…" when the list is empty; in the order the
+ * directory lists them (`CreditsPage.jsx:556-574`).
+ */
 @Composable
-private fun RowScope.FormPicker(
-    label: String,
-    value: String,
-    options: List<String>,
-    text: (String) -> String,
+private fun RowScope.VendorPickerField(
+    state: InvoicesUiState,
+    form: CreditNoteForm,
     enabled: Boolean,
-    error: String? = null,
     onSelect: (String) -> Unit,
 ) {
+    val vendors = state.vendors.values.toList()
+    val error = form.errors[CreditField.Vendor]
     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        ZillitText(text = label, style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-        ZillitSelect(
-            value = value,
-            options = options,
-            onSelect = onSelect,
-            label = text,
+        ZillitText(
+            text = "${str(S.ah_lbl_vendor)} *",
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        SearchPicker(
+            value = state.vendors[form.vendorId],
+            options = vendors,
+            label = { it.name },
+            searchText = { "${it.name} ${vendorSubline(it)}" },
+            subline = ::vendorSubline,
+            onSelect = { onSelect(it.id) },
+            placeholder = if (vendors.isEmpty()) str(S.desktop_inv_no_vendors_ellipsis) else str(S.desktop_inv_search_vendor_hint),
             enabled = enabled,
+            error = error != null,
             modifier = Modifier.fillMaxWidth(),
         )
         error?.let {
             ZillitText(text = it, style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.danger)
         }
+    }
+}
+
+/** The web's `vendorSubline`: email · contact person. */
+private fun vendorSubline(vendor: Vendor): String =
+    listOf(vendor.email, vendor.contactPerson).filter { it.isNotBlank() }.joinToString(" · ")
+
+/** The web's `PeriodLockBanner`, in the Save button's place. */
+@Composable
+private fun LockBanner(text: String) {
+    Row(
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.medium)
+            .background(ZillitTheme.colors.dangerSoft)
+            .border(1.dp, ZillitTheme.colors.danger.copy(alpha = LOCK_BORDER_ALPHA), ZillitTheme.shapes.medium)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIcon(icon = ZillitIcons.Lock, tint = ZillitTheme.colors.danger, size = LOCK_ICON)
+        ZillitText(text = text, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger)
     }
 }
 
@@ -338,6 +399,17 @@ private fun sizeLabel(bytes: Long): String {
     return "$tenths KB"
 }
 
-private const val SUGGESTIONS_SHOWN = 8
+private const val SUGGESTIONS_SHOWN = 30
+private val SUGGESTIONS_MAX = 208.dp
+private val SUGGESTIONS_ELEVATION = 8.dp
+private val LOCK_ICON = 12.dp
+private const val LOCK_BORDER_ALPHA = 0.3f
 private const val BYTES_PER_KB = 1024.0
 private const val TENTHS = 10.0
+
+/** The first day a note may be dated — the day after the lock; null when nothing is locked. */
+private fun dayAfterLock(state: InvoicesUiState): LocalDate? =
+    state.periodLock.lockedThrough.takeIf { it.isNotBlank() }
+        ?.let { runCatching { LocalDate.parse(it.take(ISO_DATE)).plus(1, DateTimeUnit.DAY) }.getOrNull() }
+
+private const val ISO_DATE = 10

@@ -295,11 +295,33 @@
         root.appendChild(strip);
     }
 
+    /**
+     * One of the tile's words, as the app localised it.
+     *
+     * Kotlin sends them with the stage (`stageJson` `words`) because this page
+     * cannot read the string catalogue. The English fallback is for a stage
+     * pushed by an older build, and for the harness.
+     */
+    function word(key, fallback) {
+        const words = stage.words || {};
+        return words[key] || fallback;
+    }
+
     function buildCell(model, tileW, tileH, disc) {
         const tile = document.createElement('div');
         tile.className = 'tile' + (model.ringing ? ' idle' : '');
         tile.style.width = tileW + 'px';
         tile.style.height = tileH + 'px';
+        // The camera-off tile is washed in the person's own colour with a white
+        // sheen from the top left — the web's `gradientFor`. A ring still out
+        // keeps the idle grey: colouring someone in says they are here. The
+        // colour itself is assigned per call in Kotlin (`CallTileColors`) so
+        // two people with the same initial never share one.
+        if (!model.ringing && model.hue) {
+            tile.style.background =
+                'radial-gradient(circle at 28% 22%, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 55%),' +
+                'linear-gradient(135deg, ' + model.hue + '73 0%, ' + model.hue + '3d 100%)';
+        }
 
         const mount = document.createElement('div');
         mount.className = 'face';
@@ -314,8 +336,36 @@
 
         const chip = document.createElement('div');
         chip.className = 'chip';
-        chip.textContent = model.ringing ? 'Ringing…' : (model.self ? 'You' : model.name);
+        const who = document.createElement('div');
+        who.className = 'chipName';
+        who.textContent = model.ringing ? word('ringing', 'Ringing…') : (model.self ? word('you', 'You') : model.name);
+        chip.appendChild(who);
+        // Under the name, on its own line, never beside it: on a grid tile a
+        // designation next to the name is the first thing to be truncated, and
+        // it is the half that identifies the person. A link guest has no job
+        // title and is chipped as a guest instead.
+        if (!model.ringing && model.guest) {
+            const guest = document.createElement('div');
+            guest.className = 'chipGuest';
+            guest.textContent = word('guest', 'Guest');
+            chip.appendChild(guest);
+        } else if (!model.ringing && model.desig) {
+            const desig = document.createElement('div');
+            desig.className = 'chipDesig';
+            desig.textContent = model.desig;
+            chip.appendChild(desig);
+        }
         tile.appendChild(chip);
+
+        // This person put the call on hold: they are sending and hearing
+        // nothing on purpose, which reads as a broken connection unless said.
+        // Under the face, where the eye already is.
+        if (!model.ringing && model.hold) {
+            const hold = document.createElement('div');
+            hold.className = 'holdBadge';
+            hold.textContent = word('hold', 'On hold');
+            tile.appendChild(hold);
+        }
 
         const mute = document.createElement('div');
         mute.className = 'mute';
@@ -495,9 +545,23 @@
      * already playing. Browsers without setSinkId throw NOT_SUPPORTED, which
      * is a warning rather than a failure: the OS default still plays.
      */
-    function applySpeaker(track) {
-        if (!chosenSpeaker || !track || !track.setPlaybackDevice) { return; }
-        track.setPlaybackDevice(chosenSpeaker).catch(e => warn('setPlaybackDevice', e));
+    function applySpeaker(track, force) {
+        if ((!chosenSpeaker && !force) || !track || !track.setPlaybackDevice) { return; }
+        // 'default' is Chromium's own id for the OS output, so choosing
+        // "System default" mid-call moves the voices back rather than leaving
+        // them on the device picked before.
+        track.setPlaybackDevice(chosenSpeaker || 'default').catch(e => warn('setPlaybackDevice', e));
+    }
+
+    /**
+     * The same routing for the `<audio>` sinks Lines 1 and 3 play through
+     * (`attachRemote`): mediasoup and LiveKit hand this page a bare stream,
+     * so the output is the element's `setSinkId`. An empty id is the OS
+     * default, which is also how "System default" is put back.
+     */
+    function applySink(element, force) {
+        if ((!chosenSpeaker && !force) || !element || !element.setSinkId) { return; }
+        element.setSinkId(chosenSpeaker).catch(e => warn('setSinkId', e));
     }
 
     /** The three lists Kotlin draws its pickers from, plus what is chosen now. */
@@ -815,7 +879,7 @@
         return null;
     }
 
-    function line1VideoElement(stream, share) {
+    function line1VideoElement(stream, share, lk) {
         const video = document.createElement('video');
         video.autoplay = true;
         video.playsInline = true;
@@ -826,7 +890,15 @@
         // A shared screen is shown whole: cropped to the tile like a face, the
         // edges of a document or a spreadsheet's columns were simply cut off.
         video.style.objectFit = share ? 'contain' : 'cover';
-        video.srcObject = stream;
+        // A LiveKit video is attached through the SDK, as the web's Tile does:
+        // adaptiveStream then watches THIS element's size and visibility and
+        // asks for the layer to match — a small tile on a slow link gets a
+        // picture that fits the link, rather than a 720p one that never comes.
+        if (lk && lk.attach) {
+            try { lk.attach(video); } catch (e) { video.srcObject = stream; warn('lk.attach', e); }
+        } else {
+            video.srcObject = stream;
+        }
         // Asked explicitly, not left to `autoplay`: an element that stays
         // paused is a black tile with a live track behind it, and the
         // refusal's name is the only clue to why.
@@ -879,7 +951,7 @@
                 report.push(videoState(entry.peerId, entry.element));
                 return;
             }
-            if (!entry.element) { entry.element = line1VideoElement(entry.stream, entry.share); }
+            if (!entry.element) { entry.element = line1VideoElement(entry.stream, entry.share, entry.lk); }
             cell.mount.innerHTML = '';
             cell.mount.appendChild(entry.element);
             resume(entry.element);
@@ -948,6 +1020,7 @@
         line1Media.forEach((entry) => {
             try {
                 if (entry.element) {
+                    if (entry.lk && entry.lk.detach) { entry.lk.detach(entry.element); }
                     entry.element.srcObject = null;
                     if (entry.element.parentNode) { entry.element.parentNode.removeChild(entry.element); }
                 }
@@ -967,13 +1040,15 @@
     window.zillitCall = {
 
         /** Binds one consumed remote track so it is actually heard or seen. */
-        attachRemote(consumerId, peerId, kind, stream, share) {
+        attachRemote(consumerId, peerId, kind, stream, share, lk) {
             try {
                 this.detachRemote(consumerId);
                 if (kind === 'audio') {
                     const sink = document.createElement('audio');
                     sink.autoplay = true;
                     sink.srcObject = stream;
+                    // A voice that joins after the output was chosen goes to it too.
+                    applySink(sink);
                     // Detached from the document on purpose: an audio element
                     // needs no layout, and appending it to the grid would take
                     // space from the picture.
@@ -983,7 +1058,9 @@
                     recorderAdd(stream);
                     return;
                 }
-                line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: null, share: !!share });
+                line1Media.set(consumerId, {
+                    peerId: peerId, kind: kind, stream: stream, element: null, share: !!share, lk: lk || null,
+                });
                 // A share arriving or leaving changes the layout, not just one
                 // cell: the presenter takes the big slot, then gives it back.
                 if (share) { render(); } else { line1Mount(); }
@@ -999,6 +1076,8 @@
             line1Media.delete(consumerId);
             try {
                 if (entry.element) {
+                    // Stops adaptiveStream watching an element that is going away.
+                    if (entry.lk && entry.lk.detach) { entry.lk.detach(entry.element); }
                     entry.element.srcObject = null;
                     if (entry.element.parentNode) { entry.element.parentNode.removeChild(entry.element); }
                 }
@@ -1236,7 +1315,11 @@
         /** Routes every remote voice — playing and future — to one output. */
         async setSpeakerDevice(deviceId) {
             chosenSpeaker = deviceId || '';
-            remoteAudio.forEach(track => applySpeaker(track));
+            // Line 2 (Agora) routes per track; Lines 1 and 3 per element.
+            remoteAudio.forEach(track => applySpeaker(track, true));
+            line1Media.forEach(entry => {
+                if (entry.kind === 'audio') { applySink(entry.element, true); }
+            });
             reportDevices();
         },
 

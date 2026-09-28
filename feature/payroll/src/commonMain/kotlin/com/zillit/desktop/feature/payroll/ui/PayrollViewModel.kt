@@ -3,11 +3,15 @@ package com.zillit.desktop.feature.payroll.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.feature.payroll.domain.ActiveDealSource
 import com.zillit.desktop.feature.payroll.domain.PayrollDocuments
+import com.zillit.desktop.feature.payroll.domain.PayrollEstimator
+import com.zillit.desktop.feature.payroll.domain.PayrollProducerSeams
 import com.zillit.desktop.feature.payroll.domain.PayrollFiles
 import com.zillit.desktop.feature.payroll.domain.PayrollPerson
 import com.zillit.desktop.feature.payroll.domain.PayrollRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
+import com.zillit.desktop.feature.payroll.domain.ProductionReportSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 
@@ -40,7 +44,19 @@ class PayrollViewModel(
     /** The payslip and export files; null hides the downloads. */
     internal val documents: PayrollDocuments? = null,
     internal val files: PayrollFiles? = null,
+    /**
+     * What the producer boards need beyond the payroll service: the unit's
+     * production report, a crew member's deal, and the engine that prices a
+     * day from the two. Absent, they behave as the web does when its own
+     * engine bundle fails to load — nothing is priced locally, and the boards
+     * say so rather than showing a figure nobody computed.
+     */
+    private val seams: PayrollProducerSeams = PayrollProducerSeams(),
 ) : ZillitViewModel<PayrollUiState, PayrollEvent, PayrollEffect>(PayrollUiState(viewer = viewer())) {
+
+    internal val reports: ProductionReportSource? get() = seams.reports
+    internal val deals: ActiveDealSource? get() = seams.deals
+    internal val estimator: PayrollEstimator? get() = seams.estimator
 
     internal fun update(reducer: PayrollUiState.() -> PayrollUiState) = setState(reducer)
     internal fun launchWork(block: suspend () -> Unit): Job = launch { block() }
@@ -55,7 +71,12 @@ class PayrollViewModel(
     private val run = RunActions(this)
     private val journal = JournalActions(this, run)
     private val processing = ProcessingActions(this)
+    private val producer = ProducerBoardActions(this)
+    private val estimate = ProductionReportActions(this)
     private val shared = SharedActions(this)
+
+    /** Crew whose holiday-pay rate has been asked for, however it turned out. */
+    private val holidayPayAsked = mutableSetOf<String>()
 
     private var started = false
     private var listening = false
@@ -71,7 +92,15 @@ class PayrollViewModel(
         val crew = people()
         val production = projectName()
         val clock = now()
-        setState { copy(viewer = resolved, people = crew, projectName = production, now = clock) }
+        setState {
+            copy(
+                viewer = resolved,
+                people = crew,
+                projectName = production,
+                now = clock,
+                hasPayEngine = estimator != null,
+            )
+        }
         listenOnce()
         loadSettings()
     }
@@ -123,6 +152,15 @@ class PayrollViewModel(
         }
         launch { settings.lockedDate().getOrNull().let { setState { copy(lockedDate = it) } } }
         launch { settings.companies().getOrNull()?.let { setState { copy(companies = it) } } }
+        launch { settings.defaultCurrency().getOrNull()?.let { setState { copy(defaultCurrency = it) } } }
+        launch { settings.currencyRates().getOrNull()?.let { setState { copy(currencyRates = it) } } }
+        // Reference data for the journal's Layers and Tags. Absent, those
+        // cells offer nothing to pick rather than blocking the ledger.
+        launch {
+            settings.journalReference().getOrNull()?.let { reference ->
+                setState { copy(run = run.copy(journal = run.journal.copy(reference = reference))) }
+            }
+        }
     }
 
     /**
@@ -144,11 +182,31 @@ class PayrollViewModel(
         }
     }
 
+    /**
+     * Resolves a crew member's holiday-pay rate, once each.
+     *
+     * A failure is remembered as an attempt rather than retried: the card is
+     * supplementary, and a crew member with no deal would otherwise be looked
+     * up again every time they were opened.
+     */
+    internal fun resolveHolidayPay(userId: String) {
+        val source = deals ?: return
+        val engine = estimator ?: return
+        if (userId.isBlank() || !holidayPayAsked.add(userId)) return
+        launch {
+            val deal = source.activeDeal(userId).getOrNull() ?: return@launch
+            val rate = engine.load(deal).getOrNull()?.holidayPayRate ?: return@launch
+            if (rate > 0) setState { copy(holidayPayRates = holidayPayRates + (userId to rate)) }
+        }
+    }
+
     internal fun reloadOpen(silent: Boolean) {
         when (currentState.destination) {
             PayrollDestination.History -> history.reload(silent)
             PayrollDestination.Run -> run.reload(silent)
             PayrollDestination.Processing -> processing.reload(silent)
+            PayrollDestination.ProducerBoard -> producer.reload(silent)
+            PayrollDestination.ProductionReport -> estimate.reload(silent)
             PayrollDestination.Landing -> Unit
         }
     }
@@ -160,6 +218,8 @@ class PayrollViewModel(
             PayrollDestination.History -> history.ensureLoaded()
             PayrollDestination.Run -> run.ensureLoaded()
             PayrollDestination.Processing -> processing.ensureLoaded()
+            PayrollDestination.ProducerBoard -> producer.ensureLoaded()
+            PayrollDestination.ProductionReport -> estimate.ensureLoaded()
             PayrollDestination.Landing -> Unit
         }
     }
@@ -170,6 +230,8 @@ class PayrollViewModel(
             is RunEvent -> run.onEvent(event)
             is JournalEvent -> journal.onEvent(event)
             is ProcessingEvent -> processing.onEvent(event)
+            is ProducerBoardEvent -> producer.onEvent(event)
+            is ProductionReportEvent -> estimate.onEvent(event)
             else -> onShellEvent(event)
         }
     }
@@ -178,7 +240,10 @@ class PayrollViewModel(
         when (event) {
             is PayrollEvent.Route -> route(event.path)
             is PayrollEvent.OpenTile -> openTile(event.tile)
-            PayrollEvent.BackToLanding -> emit(PayrollEffect.Navigate(PayrollDestination.Landing.path))
+            // Back keeps the entry it came in on, so a producer screen
+            // reached from the Film Tools tile returns to the producer landing.
+            PayrollEvent.BackToLanding ->
+                emit(PayrollEffect.Navigate(PayrollDestination.Landing.path(currentState.enteredAsTool)))
             PayrollEvent.ClearNotice -> setState { copy(notice = null) }
             else -> shared.onEvent(event)
         }
@@ -189,9 +254,14 @@ class PayrollViewModel(
      * back to the landing rather than drawing a page they have no tile for.
      */
     private fun route(path: String) {
+        // The marker is read BEFORE the gate: which screens a viewer is
+        // offered depends on which entry they came through, so a route that
+        // carries `?entry=tool` must be judged as a tool entry, not against
+        // whatever the last route was.
+        val asTool = PayrollDestination.enteredAsTool(path)
         val asked = PayrollDestination.forRoute(path)
-        val shown = asked.takeIf { it.visibleTo(currentState.viewer) } ?: PayrollDestination.Landing
-        setState { copy(destination = shown, enteredAsTool = PayrollDestination.enteredAsTool(path)) }
+        val shown = asked.takeIf { it.visibleTo(currentState.viewer, asTool) } ?: PayrollDestination.Landing
+        setState { copy(destination = shown, enteredAsTool = asTool) }
         ensureLoaded()
     }
 
@@ -202,7 +272,7 @@ class PayrollViewModel(
      */
     private fun openTile(tile: PayrollTile) {
         if (tile !in PayrollTile.visibleTo(currentState.viewer, currentState.enteredAsTool)) return
-        val target = tile.destination?.path ?: PAYROLL_ENTRY_SETUP_ROUTE
+        val target = tile.destination?.path(currentState.enteredAsTool) ?: PAYROLL_ENTRY_SETUP_ROUTE
         emit(PayrollEffect.Navigate(target))
     }
 

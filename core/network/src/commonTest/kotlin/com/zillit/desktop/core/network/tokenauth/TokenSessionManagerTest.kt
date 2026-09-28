@@ -54,7 +54,6 @@ class TokenSessionManagerTest {
 
     private class FakeStore : TokenAuthStore {
         var refresh: String? = null
-        var mode = false
         var saves = 0
         override suspend fun refreshToken(): String? = refresh
         override suspend fun saveRefreshToken(token: String): Boolean {
@@ -65,36 +64,79 @@ class TokenSessionManagerTest {
         override suspend fun clearRefreshToken() {
             refresh = null
         }
-        override suspend fun tokenModeCache(): Boolean = mode
-        override suspend fun cacheTokenMode(enabled: Boolean) {
-            mode = enabled
-        }
     }
 
+    /** Any device-scoped route; only the project-scoped list in TokenScope cares which. */
+    private val PATH = "https://projectapi-dev.zillit.com/api/v2/user/profile"
+
+    /**
+     * Built and probed, which is what the host does: `AppGraph` calls
+     * [TokenSessionManager.probeDeviceSession] as the graph comes up. There
+     * is no configuration answer to wait for any more, so the probe is the
+     * only thing that warms the session ahead of the first call.
+     */
     private fun TestScope.manager(api: FakeApi, store: FakeStore, project: String? = "p1") = TokenSessionManager(
         api = api,
         store = store,
         scope = backgroundScope,
         activeProjectId = { project },
         nowMillis = { testScheduler.currentTime },
-    )
+    ).also { it.probeDeviceSession() }
 
+    /**
+     * Token mode is ON without being told — the whole point of dropping
+     * `token_auth_enabled`. A client that waited for that flag waited behind
+     * `GET /configuration`, which is project-scoped and answers 401 under
+     * `moduledata`, so it never arrived and every call 401'd.
+     */
     @Test
-    fun `with the mode off nothing is asked for and nothing is sent`() = runTest {
+    fun `token mode is on by default, with no configuration answer at all`() = runTest {
         val api = FakeApi()
         val manager = manager(api, FakeStore())
         runCurrent()
 
-        assertNull(manager.bearerFor(RequestModule.Default, null))
-        assertNull(manager.bearerFor(RequestModule.ProjectUser, "p1"))
-        assertTrue(api.calls.isEmpty())
+        assertTrue(manager.tokenMode)
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
     }
 
+    /**
+     * `libs_invalid_device_id` is the one verdict that turns the mode off: no
+     * device record exists to mint for, and only create/join project can make
+     * one. Calls go back to `moduledata` until [onDeviceRegistered].
+     */
     @Test
-    fun `a cold start trusts the cached mode before any configuration answers`() = runTest {
-        val manager = manager(FakeApi(), FakeStore().apply { mode = true })
+    fun `an unregistered device leaves token mode until it is registered`() = runTest {
+        val api = FakeApi().apply {
+            establish = { SessionCallResult.Failure(401, "libs_invalid_device_id") }
+        }
+        val manager = manager(api, FakeStore())
+        manager.probeDeviceSession()
+        runCurrent()
+
+        assertFalse(manager.tokenMode)
+        assertNull(manager.bearerFor(RequestModule.Default, null, PATH))
+
+        api.establish = { SessionCallResult.Success(DeviceSession("dev-1", "ref-1", HOUR)) }
+        manager.onDeviceRegistered()
         runCurrent()
         assertTrue(manager.tokenMode)
+    }
+
+    /**
+     * A project-scoped module with no production open rides the DEVICE token
+     * rather than dropping to `moduledata`, which develop refuses — except on
+     * the handful of routes the server has been seen refusing a device token
+     * on, which take the legacy credential instead.
+     */
+    @Test
+    fun `no open production falls back to the device token, but not on a project-only route`() = runTest {
+        val manager = manager(FakeApi(), FakeStore(), project = null)
+        runCurrent()
+
+        assertEquals("dev-1", manager.bearerFor(RequestModule.ProjectUser, null, PATH))
+        assertNull(
+            manager.bearerFor(RequestModule.Project, null, "https://projectapi-dev.zillit.com/api/v2/project/users"),
+        )
     }
 
     @Test
@@ -102,13 +144,11 @@ class TokenSessionManagerTest {
         val api = FakeApi()
         val store = FakeStore()
         val manager = manager(api, store)
-        manager.onConfigFetched(true)
         runCurrent()
 
-        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
         assertEquals("ref-1", store.refresh)
         assertEquals(1, api.count("establish"), "the warm-up's session is the one every call reuses")
-        assertTrue(store.mode)
     }
 
     @Test
@@ -116,13 +156,12 @@ class TokenSessionManagerTest {
         val api = FakeApi()
         val store = FakeStore().apply { refresh = "ref-0" }
         val manager = manager(api, store)
-        manager.onConfigFetched(true)
         runCurrent()
 
         assertEquals("refresh:ref-0", api.calls.first())
         assertEquals(0, api.count("establish"))
         assertEquals("ref-2", store.refresh, "the rotated token is on disk")
-        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null))
+        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null, PATH))
     }
 
     @Test
@@ -132,11 +171,10 @@ class TokenSessionManagerTest {
         }
         val store = FakeStore().apply { refresh = "ref-0" }
         val manager = manager(api, store)
-        manager.onConfigFetched(true)
         runCurrent()
 
         assertEquals(listOf("refresh:ref-0", "establish"), api.calls.take(2))
-        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
         assertEquals("ref-1", store.refresh)
     }
 
@@ -145,41 +183,53 @@ class TokenSessionManagerTest {
         val api = FakeApi().apply { refresh = { SessionCallResult.Failure(null, "timed out") } }
         val store = FakeStore().apply { refresh = "ref-0" }
         val manager = manager(api, store)
-        manager.onConfigFetched(true)
         runCurrent()
 
-        assertNull(manager.bearerFor(RequestModule.Default, null), "no token, so the call sends moduledata")
+        assertNull(manager.bearerFor(RequestModule.Default, null, PATH), "no token, so the call sends moduledata")
         assertEquals("ref-0", store.refresh)
         assertEquals(0, api.count("establish"), "a timeout is not a dead token")
     }
 
+    /**
+     * The kill switch needs the explicit verdict — a bare 503 is a load
+     * balancer hiccup, not the feature being turned off — and with the
+     * configuration flag gone it is final for the life of the process. There
+     * is no longer a "next configuration" to lift it, which is the honest
+     * shape: the server said stop, so the client stops until it restarts.
+     */
     @Test
-    fun `the server's kill switch turns the mode off until the next configuration`() = runTest {
+    fun `the server's kill switch turns the mode off for good`() = runTest {
         val api = FakeApi().apply {
             establish = { SessionCallResult.Failure(503, TokenSessionManager.MSG_TOKEN_AUTH_DISABLED) }
         }
         val manager = manager(api, FakeStore())
-        manager.onConfigFetched(true)
         runCurrent()
 
         assertFalse(manager.tokenMode)
-        assertNull(manager.bearerFor(RequestModule.Default, null))
-        manager.onConfigFetched(true)
-        assertTrue(manager.tokenMode, "the next configuration lifts the switch")
+        assertNull(manager.bearerFor(RequestModule.Default, null, PATH))
+        // A probe after the switch does not re-arm it, and asks for nothing.
+        val before = api.count("establish")
+        manager.probeDeviceSession()
+        runCurrent()
+        assertFalse(manager.tokenMode)
+        assertEquals(before, api.count("establish"), "nothing is asked for once the server has said stop")
     }
 
     @Test
     fun `project tokens are minted once per production and reused`() = runTest {
         val api = FakeApi()
         val manager = manager(api, FakeStore())
-        manager.onConfigFetched(true)
         runCurrent()
 
-        assertEquals("proj-p1", manager.bearerFor(RequestModule.ProjectUser, "p1"))
-        assertEquals("proj-p1", manager.bearerFor(RequestModule.Chat, "p1"))
+        assertEquals("proj-p1", manager.bearerFor(RequestModule.ProjectUser, "p1", PATH))
+        assertEquals("proj-p1", manager.bearerFor(RequestModule.Chat, "p1", PATH))
         assertEquals(1, api.count("mint:p1"), "the warm-up minted it; nothing since")
-        assertEquals("proj-p2", manager.bearerFor(RequestModule.ProjectUser, "p2"), "another project, its own token")
-        assertNull(manager.bearerFor(RequestModule.ProjectUser, ""), "no project in context: legacy")
+        assertEquals("proj-p2", manager.bearerFor(RequestModule.ProjectUser, "p2", PATH), "another project, its own token")
+        assertEquals(
+            "dev-1",
+            manager.bearerFor(RequestModule.ProjectUser, "", PATH),
+            "no production in context: the device token, not moduledata",
+        )
     }
 
     @Test
@@ -194,10 +244,9 @@ class TokenSessionManagerTest {
             }
         }
         val manager = manager(api, FakeStore())
-        manager.onConfigFetched(true)
         runCurrent()
 
-        assertNull(manager.bearerFor(RequestModule.ProjectUser, "p9"))
+        assertNull(manager.bearerFor(RequestModule.ProjectUser, "p9", PATH))
         assertEquals(1, api.count("mint:p9"))
     }
 
@@ -206,14 +255,13 @@ class TokenSessionManagerTest {
         val api = FakeApi()
         val store = FakeStore()
         val manager = manager(api, store)
-        manager.onConfigFetched(true)
         runCurrent()
-        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
 
-        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, failedToken = "dev-1"))
+        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, PATH, failedToken = "dev-1"))
         assertEquals("ref-2", store.refresh)
         // A second call that carried the same dead token finds the renewal done.
-        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, failedToken = "dev-1"))
+        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, PATH, failedToken = "dev-1"))
         assertEquals(1, api.count("refresh"), "one rotation, however many 401s carried the old token")
     }
 
@@ -221,13 +269,12 @@ class TokenSessionManagerTest {
     fun `a refused project token is re-minted with the device session`() = runTest {
         val api = FakeApi()
         val manager = manager(api, FakeStore())
-        manager.onConfigFetched(true)
         runCurrent()
         api.mint = { _, project ->
             SessionCallResult.Success(ProjectSession("proj-$project-fresh", "project", QUARTER))
         }
 
-        assertEquals("proj-p1-fresh", manager.recoverFromUnauthorized(RequestModule.ProjectUser, "p1", "proj-p1"))
+        assertEquals("proj-p1-fresh", manager.recoverFromUnauthorized(RequestModule.ProjectUser, "p1", PATH, "proj-p1"))
         assertEquals(0, api.count("refresh"), "a project mint rotates nothing")
     }
 
@@ -237,7 +284,6 @@ class TokenSessionManagerTest {
         val api = FakeApi().apply { establish = { gate.await() } }
         val store = FakeStore()
         val manager = manager(api, store)
-        manager.onConfigFetched(true)
         runCurrent()
         assertEquals(1, api.count("establish"), "the exchange is in flight")
 
@@ -253,7 +299,6 @@ class TokenSessionManagerTest {
     fun `a token the socket refused is not shown again until a fresh one exists`() = runTest {
         val api = FakeApi()
         val manager = manager(api, FakeStore())
-        manager.onConfigFetched(true)
         runCurrent()
         assertEquals("dev-1", manager.deviceTokenForSocket())
 
@@ -263,20 +308,43 @@ class TokenSessionManagerTest {
         assertEquals("dev-2", manager.deviceTokenForSocket())
     }
 
+    /**
+     * Renewal happens at the point of use and at the wake seam — never on a
+     * timer.
+     *
+     * The backend asked for the timer to go (24 Sep 2026): every rotation
+     * nobody needed is another chance to be left holding a token the server
+     * has already retired. Correctness is the 80% check below; the wake seam
+     * only moves that cost off the first call after a long idle.
+     */
     @Test
-    fun `the device session is renewed ahead of time, at eighty percent of its life`() = runTest {
+    fun `a token past eighty percent of its life is renewed when it is used, not on a timer`() = runTest {
         val api = FakeApi()
         val manager = manager(api, FakeStore())
-        manager.onConfigFetched(true)
         runCurrent()
         assertEquals(0, api.count("refresh"))
 
         advanceTimeBy(HOUR * 1000 * 8 / 10 + 1)
         runCurrent()
+        assertEquals(0, api.count("refresh"), "no timer: time passing alone rotates nothing")
 
+        // Using it is what renews it.
+        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null, PATH))
         assertEquals(1, api.count("refresh"))
-        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null))
-        assertEquals(2, api.count("mint:p1"), "the open project's token is kept warm too")
+    }
+
+    /** The wake seam renews ahead of the first call, so that call does not pay for it. */
+    @Test
+    fun `coming back to the front renews before anything is asked for`() = runTest {
+        val api = FakeApi()
+        val manager = manager(api, FakeStore())
+        runCurrent()
+
+        advanceTimeBy(HOUR * 1000 * 8 / 10 + 1)
+        manager.onAppForegrounded()
+        runCurrent()
+
+        assertEquals(1, api.count("refresh"), "renewed at the seam, before the first request")
     }
 
     private companion object {

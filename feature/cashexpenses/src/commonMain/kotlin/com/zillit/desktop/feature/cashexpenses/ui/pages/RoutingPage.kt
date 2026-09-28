@@ -60,7 +60,7 @@ fun PaymentRoutingPage(state: CashUiState) {
             ) {
                 ZillitDataTable(
                     rows = routing?.bacsBatches.orEmpty(),
-                    columns = batchColumns(accountant = true, compact = true),
+                    columns = batchColumns(accountant = true, compact = true, amount = { it.reimbursementAmount }),
                     key = { it.id },
                     loading = state.loading,
                     emptyTitle = str(S.desktop_ce_nothing_waiting_to_pay),
@@ -76,7 +76,7 @@ fun PaymentRoutingPage(state: CashUiState) {
             ) {
                 ZillitDataTable(
                     rows = routing?.payrollBatches.orEmpty(),
-                    columns = batchColumns(accountant = true, compact = true),
+                    columns = batchColumns(accountant = true, compact = true, amount = { it.reimbursementAmount }),
                     key = { it.id },
                     loading = state.loading,
                     emptyTitle = str(S.desktop_ce_nothing_waiting_to_pay),

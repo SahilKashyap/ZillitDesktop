@@ -26,6 +26,12 @@ enum class AmountField { Net, Tax, Gross }
 /** The trio as typed, and whether Gross was typed itself (then it stays put). */
 data class AmountSplit(val net: String, val tax: String, val gross: String, val grossAnchored: Boolean)
 
+/**
+ * What an OCR'd supplier name seeds the vendor picker with —
+ * `resolveSupplierVendor`: an existing vendor, or a name to create on accept.
+ */
+data class VendorSeed(val vendorId: String? = null, val pendingName: String? = null)
+
 /** One order picked to match an inbox invoice — its id and the number the chip shows. */
 data class PoPick(val id: String, val number: String, val gross: Double? = null)
 
@@ -113,6 +119,42 @@ object InboxTriage {
         val key = supplierName.trim().lowercase()
         if (key.isEmpty()) return null
         return vendors.firstOrNull { it.name.trim().lowercase() == key }?.id
+    }
+
+    /**
+     * `resolveSupplierVendor` whole: an exact match selects the vendor; a miss
+     * becomes a vendor to create when the invoice is accepted. Nothing at all
+     * for a blank name — or an empty vendor list, which is as likely a failed
+     * read as a production with no vendors, and matching against it would
+     * mint a duplicate of a vendor that exists.
+     */
+    fun seedVendor(supplierName: String, vendors: Collection<Vendor>): VendorSeed? {
+        val name = supplierName.trim()
+        if (name.isEmpty() || vendors.isEmpty()) return null
+        return vendorFor(name, vendors)?.let { VendorSeed(vendorId = it) } ?: VendorSeed(pendingName = name)
+    }
+
+    /**
+     * `resolveAutoFill` — one pass of the bank and company fills, each only
+     * into an empty field: a lone bank is the bank; the company is the picked
+     * bank's account holder, or failing that the lone company. Null for a
+     * field this pass leaves alone. Run again once a filled bank has landed,
+     * so its holder can follow.
+     */
+    fun autoFill(
+        bankId: String,
+        companyId: String,
+        banks: List<BankAccount>,
+        companies: List<Company>,
+    ): Pair<String?, String?> {
+        val bank = banks.singleOrNull()?.id?.takeIf { bankId.isBlank() }
+        val company = if (companyId.isNotBlank()) {
+            null
+        } else {
+            val holder = banks.firstOrNull { bankId.isNotBlank() && it.id == bankId }?.entityId
+            holder?.takeIf { it.isNotBlank() } ?: companies.singleOrNull()?.id
+        }
+        return bank to company
     }
 
     /**

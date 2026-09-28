@@ -4,6 +4,10 @@
 package com.zillit.desktop.feature.invoices.ui.pages
 
 import androidx.compose.foundation.layout.Arrangement
+import com.zillit.desktop.feature.invoices.domain.SalesInvoices
+import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -30,13 +34,11 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ColumnWidth
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.TableColumn
-import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDataTable
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
@@ -53,9 +55,9 @@ import com.zillit.desktop.feature.invoices.domain.CreditNoteType
 import com.zillit.desktop.feature.invoices.domain.InvoiceExport
 import com.zillit.desktop.feature.invoices.domain.InvoiceExportFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
-import com.zillit.desktop.feature.invoices.domain.LineItems
 import com.zillit.desktop.feature.invoices.ui.CreditEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
+import com.zillit.desktop.feature.invoices.ui.AccountantPage
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 
 /**
@@ -138,7 +140,8 @@ internal fun ColumnScope.CreditNotesPage(
             rows = rows,
             columns = creditNoteColumns(state, onEvent),
             key = { it.id },
-            onRowClick = { onEvent(CreditEvent.Preview(it)) },
+            // The row itself reads the note's unread (`CreditsPage.jsx:862`).
+            onRowClick = { onEvent(CreditEvent.Preview(it, fromRow = true)) },
             // Nine columns, as the web has: narrower floors keep Apply / Resolve on screen.
             minColumnWidth = CREDIT_MIN_COLUMN,
             emptyTitle = str(S.desktop_inv_no_credit_notes),
@@ -163,7 +166,11 @@ private fun PickerLabel(text: String) {
     )
 }
 
-/** Export, grouped as the web's menu is: the Credit Notes register, then the Disputes one. */
+/**
+ * Export, grouped as the web's menu is (`CreditsPage.jsx:97-106`): a
+ * "Credit Notes" heading and a "Disputes" one, each with Export PDF and
+ * Export Excel, their one-line descriptions and a format badge.
+ */
 @Composable
 private fun CreditExportMenu(busy: Boolean, onEvent: (InvoicesEvent) -> Unit) {
     var open by remember { mutableStateOf(false) }
@@ -176,22 +183,52 @@ private fun CreditExportMenu(busy: Boolean, onEvent: (InvoicesEvent) -> Unit) {
             size = ButtonSize.Small,
             enabled = !busy,
         )
-        val groups = listOf(
-            InvoiceExport.CreditNotes to str(S.desktop_credit_notes),
-            InvoiceExport.Disputes to str(S.desktop_inv_disputes),
-        )
-        ZillitActionMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            entries = groups.flatMapIndexed { index, (export, title) ->
-                val actions = InvoiceExportFormat.entries.map { format ->
-                    ZillitMenuEntry.Action(label = "$title · ${format.label}", icon = ZillitIcons.Download) {
+        ZillitMenuSurface(expanded = open, onDismissRequest = { open = false }) {
+            listOf(
+                InvoiceExport.CreditNotes to str(S.desktop_credit_notes),
+                InvoiceExport.Disputes to str(S.desktop_inv_disputes),
+            ).forEach { (export, title) ->
+                ZillitText(
+                    text = title.uppercase(),
+                    style = ZillitTheme.typography.columnHeader,
+                    color = ZillitTheme.colors.textMuted,
+                    modifier = Modifier.padding(
+                        horizontal = ZillitTheme.spacing.md,
+                        vertical = ZillitTheme.spacing.xs,
+                    ),
+                )
+                InvoiceExportFormat.entries.forEach { format ->
+                    ExportOption(format) {
+                        open = false
                         onEvent(InvoicesEvent.Export(export, format))
                     }
                 }
-                if (index == 0) actions else listOf(ZillitMenuEntry.Divider) + actions
-            },
-        )
+            }
+        }
+    }
+}
+
+/** One export: the badge, "Export PDF" and what it makes. */
+@Composable
+private fun ExportOption(format: InvoiceExportFormat, onClick: () -> Unit) {
+    val pdf = format == InvoiceExportFormat.Pdf
+    Row(
+        modifier = Modifier
+            .width(EXPORT_MENU_WIDTH)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitStatusPill(label = format.extension.uppercase(), tone = if (pdf) StatusTone.Rejected else StatusTone.Done)
+        Column(Modifier.weight(1f)) {
+            ZillitText(
+                text = str(if (pdf) S.recce_export_pdf else S.desktop_dm_export_excel),
+                style = ZillitTheme.typography.label,
+            )
+            MutedLine(str(if (pdf) S.desktop_hub_formatted_document_print_ready else S.desktop_hub_editable_spreadsheet_with_live_data))
+        }
+        MutedLine(".${format.extension}")
     }
 }
 
@@ -199,8 +236,11 @@ private fun creditNoteColumns(
     state: InvoicesUiState,
     onEvent: (InvoicesEvent) -> Unit,
 ): List<TableColumn<CreditNote>> = listOf(
+    // The note's `credit_notes` chip beside its ref (`CreditsPage.jsx:178-181, 864`).
     TableColumn(str(S.desktop_ref), ColumnWidth.Weight(1f)) { note ->
-        Box(Modifier.alpha(if (state.credit.deletingId == note.id) DIMMED else 1f)) { CellText(note.displayRef) }
+        Box(Modifier.alpha(if (state.credit.deletingId == note.id) DIMMED else 1f)) {
+            CellTextWithUnread(note.displayRef, state.pageRowUnread(AccountantPage.Credits, note.id))
+        }
     },
     TableColumn(str(S.type), ColumnWidth.Fixed(PAY_WIDTH)) {
         ZillitStatusPill(label = it.type.label, tone = it.type.tone())
@@ -227,7 +267,7 @@ private fun creditNoteColumns(
     TableColumn(str(S.status), ColumnWidth.Weight(WEIGHT_NARROW)) {
         ZillitStatusPill(label = it.status.label, tone = it.status.tone())
     },
-    TableColumn("", ColumnWidth.Fixed(ACTIONS_WIDTH)) { note ->
+    TableColumn(str(S.dd_actions), ColumnWidth.Fixed(ACTIONS_WIDTH)) { note ->
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             RowAction(state, note, onEvent)
         }
@@ -250,7 +290,7 @@ private fun RowAction(state: InvoicesUiState, note: CreditNote, onEvent: (Invoic
         },
         variant = if (note.isOpen) ButtonVariant.Secondary else ButtonVariant.Tertiary,
         size = ButtonSize.Small,
-        enabled = !applying && !locked && state.credit.applyingId == null,
+        enabled = !applying && !locked,
     )
 }
 
@@ -278,13 +318,13 @@ internal fun CreditNotePreviewDialog(state: InvoicesUiState, note: CreditNote, o
     val locked = state.periodLock.isLocked(note.effectiveDateMs)
     ZillitDialogShell(
         title = note.reference.ifBlank { str(S.desktop_credit_note) },
-        subtitle = note.status.label,
         onDismiss = { onEvent(CreditEvent.ClosePreview) },
         visible = true,
         width = PREVIEW_WIDTH,
         icon = ZillitIcons.File,
         actions = { PreviewActions(state, note, locked, onEvent) },
     ) {
+        ZillitStatusPill(label = note.status.label, tone = note.status.tone())
         PreviewVendor(state, note)
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
             Fact(str(S.ah_lbl_eff_date), InvoiceFormat.date(note.effectiveDateMs))
@@ -296,15 +336,9 @@ internal fun CreditNotePreviewDialog(state: InvoicesUiState, note: CreditNote, o
         if (note.notes.isNotBlank()) Fact(str(S.notes), note.notes, Modifier.fillMaxWidth())
         if (note.attachments.isNotEmpty()) AttachmentList(note.attachments, removable = false, onEvent = onEvent)
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
-            Fact(
-                str(S.ah_lbl_created_by),
-                "${state.userNames[note.createdBy] ?: "—"}\n${InvoiceFormat.date(note.createdAtMs)}",
-            )
+            AuditFact(state, str(S.ah_lbl_created_by), note.createdBy, note.createdAtMs)
             if (note.updatedBy.isNotBlank()) {
-                Fact(
-                    str(S.ah_lbl_updated_by),
-                    "${state.userNames[note.updatedBy] ?: "—"}\n${InvoiceFormat.date(note.updatedAtMs)}",
-                )
+                AuditFact(state, str(S.ah_lbl_updated_by), note.updatedBy, note.updatedAtMs)
             }
         }
     }
@@ -370,7 +404,19 @@ private fun PreviewVendor(state: InvoicesUiState, note: CreditNote) {
                 MutedLine(it.joinToString(" · "))
             }
         }
-        ZillitStatusPill(label = note.type.label, tone = note.type.tone())
+        ZillitStatusPill(label = note.typeLabel, tone = note.type.tone())
+    }
+}
+
+/** Created By / Updated By: the name, the designation, and `DD Mon YYYY | hh:mm AM` (`CreditsPage.jsx:1046-1063`). */
+@Composable
+private fun AuditFact(state: InvoicesUiState, label: String, userId: String, atMs: Long?) {
+    val person = state.credit.people[userId]
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        FactLabel(label)
+        ZillitText(text = person?.name ?: state.userNames[userId] ?: "—", style = ZillitTheme.typography.label)
+        person?.role?.takeIf { it.isNotBlank() }?.let { MutedLine(it) }
+        if (atMs != null) MutedLine(SalesInvoices.stamp(atMs))
     }
 }
 
@@ -393,7 +439,7 @@ private fun PreviewLines(state: InvoicesUiState, note: CreditNote) {
             header = true,
         )
         note.lineItems.forEach { line ->
-            val tax = LineItems.taxOf(line)
+            val tax = note.lineTaxAmounts[line.id] ?: 0.0
             PreviewLine(
                 listOf(
                     (if (line.isSplit) "↳ " else "") + line.description.ifBlank { "—" },
@@ -478,7 +524,7 @@ internal fun CreditDeleteDialog(note: CreditNote, onEvent: (InvoicesEvent) -> Un
         },
     ) {
         ZillitText(
-            text = str(S.desktop_inv_delete_credit_confirm, note.reference.ifBlank { str(S.desktop_credit_note) }),
+            text = str(S.desktop_inv_delete_credit_confirm, note.reference.ifBlank { str(S.desktop_inv_this_credit_note) }),
             style = ZillitTheme.typography.bodyMedium,
         )
     }
@@ -490,3 +536,4 @@ private const val DESCRIPTION_SHARE = 2.4f
 private val DATE_PICKER_WIDTH = 150.dp
 private val SORT_PICKER_WIDTH = 170.dp
 private val PREVIEW_WIDTH = 680.dp
+private val EXPORT_MENU_WIDTH = 300.dp

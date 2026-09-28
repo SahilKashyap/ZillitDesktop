@@ -310,7 +310,10 @@ internal class RunActions(private val vm: PayrollViewModel) {
         vm.launchWork {
             val saved = when (val file = documents.runSummary(week, format)) {
                 is ZillitResult.Success ->
-                    files.saveAndOpen("payroll-run-summary_${fileStamp(vm.ui.now)}.${format.wire}", file.data)
+                    files.saveAndOpen(
+                        "payroll-run-summary_${fileStamp(vm.ui.now)}.${file.data.extension}",
+                        file.data.bytes,
+                    )
                 is ZillitResult.Failure -> file
             }
             edit { copy(exporting = false) }

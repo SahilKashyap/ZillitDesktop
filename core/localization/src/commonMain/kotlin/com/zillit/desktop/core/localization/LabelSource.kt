@@ -38,7 +38,15 @@ class PresetLabelSource(
             verb = HttpVerb.Get,
             url = "${config.apiV2(ZillitService.Core)}preset/${kind.path}",
             serializer = JsonObject.serializer(),
-            module = RequestModule.Device,
+            // Device *scope*, not the pre-auth `Device` module: both send the
+            // same legacy payload (device id + timestamp), but `Device` is
+            // pinned to `moduledata` for the registration calls that have no
+            // session yet, and these are not those. Develop refuses
+            // `moduledata` now, so the dictionaries 401'd on every cold start
+            // and the app fell back to its bundled copies. The phones classify
+            // the preset routes as device-token calls for the same reason
+            // (`TokenAuth.scopeFor`, which notes the backend does too).
+            module = RequestModule.Default,
             queryParameters = mapOf("lang" to language),
         ).map { it.toTranslations() }
 }

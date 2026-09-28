@@ -3,6 +3,7 @@ package com.zillit.desktop.core.database
 import app.cash.sqldelight.db.SqlDriver
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.security.DatabaseKeyManager
 import java.io.File
@@ -74,6 +75,6 @@ class ZillitDatabaseFactory(
         private const val TAG = "Database"
 
         fun defaultPath(): String =
-            File(System.getProperty("user.home"), ".zillit/zillit.db").absolutePath
+            File(ZillitVariant.dataDir, "zillit.db").absolutePath
     }
 }

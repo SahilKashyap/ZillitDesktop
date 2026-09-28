@@ -308,11 +308,18 @@ data class CardViewer(
     val isAccountant: Boolean
         get() = !enteredAsTool && isAccountsRole
 
-    /** See the cash module's `CashViewer.isSeniorAccountant` for the matching. */
+    /**
+     * The two designations that are senior whatever the card team says.
+     *
+     * Matched **exactly**, against the profile's `designation_identifier`, as
+     * the web does (`po-permissions.js:23-26`). A substring match reads
+     * *Assistant Production Accountant* and *Deputy Financial Controller* as
+     * senior, and seniority is not a job title here: it opens Settings — where
+     * everyone else's posting limits and override rights are written — the
+     * posting review queue, and every receipt in the processing queue.
+     */
     val isSeniorAccountant: Boolean
-        get() = designationIdentifier.normalisedRole().let { value ->
-            value.isNotEmpty() && SENIOR_DESIGNATIONS.any { value.contains(it) }
-        }
+        get() = designationIdentifier in SENIOR_DESIGNATIONS
 
     val isSenior: Boolean get() = metadata.isSenior || isSeniorAccountant
 
@@ -344,10 +351,10 @@ data class CardViewer(
 
     private companion object {
         const val ACCOUNTS = "accounts"
-        val SENIOR_DESIGNATIONS = setOf("production accountant", "financial controller")
+        val SENIOR_DESIGNATIONS = setOf(
+            "designation_production_accountant_accounts",
+            "designation_financial_controller_accounts",
+        )
     }
 }
 
-/** Lowercased words, from either an identifier or a display name. */
-internal fun String?.normalisedRole(): String =
-    orEmpty().lowercase().map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("").trim()

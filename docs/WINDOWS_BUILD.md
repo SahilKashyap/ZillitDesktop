@@ -45,6 +45,14 @@ From the repo root, in PowerShell or `cmd`:
   `findstr zillit.env desktopApp\build\compose\binaries\main\app\Zillit-Desktop\app\Zillit-Desktop.cfg`
   before handing it out — a prod desktop shows a prod QR that a develop phone
   cannot scan.
+- The same flag also picks the **build variant** (override on its own with
+  `-PzillitVariant=qa`/`develop` if it should ever differ from `-PzillitEnv`):
+  the installer becomes `Zillit-Desktop-Dev-<version>.exe`, installs under its
+  own Start Menu group and `upgradeUuid`, and the app it installs uses its own
+  data directory (`%USERPROFILE%\.zillit-develop`) and Credential Manager
+  entries — so a develop install sits beside a prod one instead of upgrading
+  over it. A plain `packageExe` with no `-PzillitEnv`/`-PzillitVariant` is
+  unaffected by any of this.
 - `-PzillitBundleConfig` bundles the properties file staged in step 4 (or
   `-PzillitBundleConfig=C:\path\to\zillit.properties`). Omit it for an
   installer that expects the user to provide the config.

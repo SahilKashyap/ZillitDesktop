@@ -80,6 +80,9 @@ internal suspend fun AppGraph.Ready.cashCurrencies(): CashCurrencies {
     return CashCurrencies(
         currencies = settings.currencies.map { CashCurrency(code = it.code.uppercase(), symbol = it.symbol) },
         defaultCode = settings.defaultCode?.uppercase(),
+        rates = settings.currencies.mapNotNull { currency ->
+            currency.rate?.takeIf { it > 0 }?.let { currency.code.uppercase() to it }
+        }.toMap(),
     )
 }
 

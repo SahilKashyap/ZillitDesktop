@@ -57,6 +57,30 @@ class EntryCodingTest {
         assertEquals("PO-0007", line.sourcePo)
     }
 
+    @Test
+    fun `an order's line brings its layers, tags and untouched extras`() {
+        val carried = com.zillit.desktop.feature.invoices.domain.CarriedFields(
+            customFieldsJson = """[{"name":"Set","value":"A"}]""",
+            rentalStartJson = "1789257600000",
+        )
+        val order = LinkedPoDetail(
+            poId = "po1",
+            lines = listOf(
+                PoLine(
+                    description = "Lamps",
+                    total = 100.0,
+                    trackingCodes = mapOf("set" to "LOC"),
+                    tags = listOf("prep"),
+                    carried = carried,
+                ),
+            ),
+        )
+        val line = EntryCoding.poLines(listOf(order), newId).single()
+        assertEquals(mapOf("set" to "LOC"), line.trackingCodes)
+        assertEquals(listOf("prep"), line.tags)
+        assertEquals(carried, line.carried)
+    }
+
     // -- splits ------------------------------------------------------------------
 
     @Test
@@ -154,8 +178,13 @@ class EntryCodingTest {
         assertNull(block(l = listOf(lines.first().copy(account = "2400"), lines.last())))
     }
 
+    /**
+     * The web appends `{ id: "__tax", account }` to the nominal check, but its
+     * own `isBlankLine` skips a row with no description and no amount — so a
+     * sent tax line never blocks on its nominal (`EntryDetailModal.jsx:960-962`).
+     */
     @Test
-    fun `a sent tax line needs its own nominal`() {
+    fun `a sent tax line without a nominal does not block, as on the web`() {
         val lines = listOf(CodedLine("a", description = "Lamps", account = "2400", amount = 100.0))
         val block = EntryCoding.postBlock(
             EntryHeader(bankId = "b", effectiveDate = "2026-09-01"),
@@ -166,7 +195,130 @@ class EntryCodingTest {
             100.0,
             false,
         )
-        assertEquals(EntryBlock.MissingNominal(listOf(2)), block)
+        assertNull(block)
+    }
+
+    @Test
+    fun `a described parent line with no amount blocks the post, after the nominals`() {
+        val header = EntryHeader(bankId = "b", effectiveDate = "2026-09-01")
+        fun block(lines: List<CodedLine>) =
+            EntryCoding.postBlock(header, lines, TaxLine(), emptyList(), true, 0.0, false)
+
+        val priced = CodedLine("a", description = "Lamps", account = "2400", amount = 100.0)
+        val unpriced = CodedLine("b", description = "Cables", account = "2400")
+        assertEquals(EntryBlock.MissingAmount(listOf(2)), block(listOf(priced, unpriced)))
+        // A nominal is asked for first.
+        assertEquals(EntryBlock.MissingNominal(listOf(2)), block(listOf(priced, unpriced.copy(account = ""))))
+        // Negatives are real money; blank placeholders and split children never count.
+        assertNull(block(listOf(priced, unpriced.withAmount(-5.0))))
+        assertNull(block(listOf(priced, CodedLine("blank"))))
+        val child = CodedLine("c", description = "Lamps", account = "2400", splitParentId = "a")
+        assertNull(block(listOf(priced, child)))
+        assertEquals(listOf(2, 3), EntryCoding.missingAmountRows(listOf(priced, unpriced, unpriced.copy(id = "d"))))
+    }
+
+    // -- the currency-change mode ------------------------------------------------------
+
+    @Test
+    fun `a picked currency other than the stored one is a change, blank and case never are`() {
+        assertTrue(EntryCoding.isCurrencyChanged("USD", "GBP", "GBP"))
+        assertFalse(EntryCoding.isCurrencyChanged("", "GBP", "GBP"))
+        assertFalse(EntryCoding.isCurrencyChanged("gbp", "GBP", "EUR"))
+        // Nothing stored: the project's default is what it was entered in.
+        assertFalse(EntryCoding.isCurrencyChanged("GBP", "", "GBP"))
+        assertTrue(EntryCoding.isCurrencyChanged("EUR", "", "GBP"))
+    }
+
+    @Test
+    fun `once the currency changed the old gross is not matched against`() {
+        val lines = listOf(CodedLine("a", description = "Lamps", account = "2400", amount = 90.0))
+        val header = EntryHeader(bankId = "b", effectiveDate = "2026-09-01", currency = "USD")
+        fun block(changed: Boolean) =
+            EntryCoding.postBlock(header, lines, TaxLine(), emptyList(), true, 100.0, false, currencyChanged = changed)
+        assertEquals(EntryBlock.Mismatch, block(changed = false))
+        assertNull(block(changed = true))
+    }
+
+    // -- tax, cascade and auto-fill ------------------------------------------------------
+
+    @Test
+    fun `switching a preset line to Other drops its rate on the ledger, keeps it in Credits and Sales`() {
+        val types = listOf(TaxType("vat", "VAT", rate = 20.0))
+        val vat = CodedLine("a", amount = 100.0, taxType = "vat", taxRate = 20.0)
+        assertNull(EntryCoding.pickTax(vat, "other", types, keepRateOnOther = false).taxRate)
+        assertEquals("other", EntryCoding.pickTax(vat, "other", types, keepRateOnOther = false).taxType)
+        assertEquals(20.0, EntryCoding.pickTax(vat, "other", types, keepRateOnOther = true).taxRate)
+        // A line already on Other keeps its typed rate.
+        val custom = vat.copy(taxType = "other", taxRate = 7.5)
+        assertEquals(7.5, EntryCoding.pickTax(custom, "other", types, keepRateOnOther = false).taxRate)
+        // A preset brings its own rate; none clears both.
+        assertEquals(20.0, EntryCoding.pickTax(custom, "vat", types, keepRateOnOther = false).taxRate)
+        assertEquals(CodedLine("a", amount = 100.0), EntryCoding.pickTax(vat, "", types, keepRateOnOther = false))
+    }
+
+    @Test
+    fun `the Credits and Sales editor passes a parent's coding to children still holding the old value`() {
+        val parent = CodedLine(
+            "p",
+            amount = 100.0,
+            account = "2400",
+            trackingCodes = mapOf("set" to "LOC"),
+            tags = listOf("prep"),
+            taxType = "vat",
+            taxRate = 20.0,
+        )
+        val (split, _) = EntryCoding.split(listOf(parent), "p", newId)
+        // The second child is recoded on its own; the first still mirrors the parent.
+        val customised = split.map {
+            if (it.id == "n2") it.copy(account = "9999", tags = listOf("own"), trackingCodes = emptyMap()) else it
+        }
+        val next = EntryCoding.update(customised, "p", cascadeCoding = true) {
+            it.copy(
+                account = "2500",
+                trackingCodes = mapOf("set" to "STU"),
+                tags = listOf("wrap"),
+                taxType = "zero",
+                taxRate = 0.0,
+            )
+        }
+        val first = next.single { it.id == "n1" }
+        assertEquals("2500", first.account)
+        assertEquals(mapOf("set" to "STU"), first.trackingCodes)
+        assertEquals(listOf("wrap"), first.tags)
+        assertEquals("zero", first.taxType)
+        val second = next.single { it.id == "n2" }
+        assertEquals("9999", second.account, "a child coded on its own keeps its nominal")
+        assertEquals(listOf("own"), second.tags)
+        assertEquals(mapOf("set" to "STU"), second.trackingCodes, "an empty value is filled")
+
+        // The ledger passes the tax only.
+        val ledger = EntryCoding.update(split, "p") { it.copy(account = "2500", taxRate = 5.0) }
+        assertTrue(ledger.filter { it.isSplit }.all { it.account == "2400" && it.taxRate == 5.0 })
+    }
+
+    @Test
+    fun `children inherit their parent's layers and tags when cut`() {
+        val parent = CodedLine("p", amount = 10.0, trackingCodes = mapOf("set" to "LOC"), tags = listOf("prep"))
+        val (split, _) = EntryCoding.split(listOf(parent), "p", newId)
+        assertTrue(split.filter { it.isSplit }.all { it.trackingCodes == parent.trackingCodes && it.tags == parent.tags })
+    }
+
+    @Test
+    fun `a lone bank is picked and the company follows its entity, else the only company`() {
+        val banks = listOf(com.zillit.desktop.feature.invoices.domain.BankAccount("b1", "Main", entityId = "co2"))
+        val companies = listOf(
+            com.zillit.desktop.feature.invoices.domain.Company("co1", "One"),
+            com.zillit.desktop.feature.invoices.domain.Company("co2", "Two"),
+        )
+        val filled = EntryCoding.autoFill(EntryHeader(), banks, companies)
+        assertEquals("b1", filled.bankId)
+        assertEquals("co2", filled.companyId)
+        // A pick is never overwritten.
+        assertEquals("co1", EntryCoding.autoFill(EntryHeader(companyId = "co1"), banks, companies).companyId)
+        // A bank with no entity: the only company, when there is one.
+        val loose = listOf(com.zillit.desktop.feature.invoices.domain.BankAccount("b1", "Main"))
+        assertEquals("co1", EntryCoding.autoFill(EntryHeader(), loose, companies.take(1)).companyId)
+        assertEquals("", EntryCoding.autoFill(EntryHeader(), loose, companies).companyId)
     }
 
     @Test
@@ -176,6 +328,41 @@ class EntryCodingTest {
         assertEquals("b-100", EntryCoding.wrapNominal("b-100", chart))
         assertEquals("[[9999]]", EntryCoding.wrapNominal("9999", chart))
         assertEquals("9999", EntryCoding.wrapNominal("9999", emptySet()), "with no chart nothing is wrapped")
+    }
+
+    // -- the Credits / Sales editor --------------------------------------------------
+
+    @Test
+    fun `a picked child splits its parent again, and nothing picked splits nothing`() {
+        var draft = com.zillit.desktop.feature.invoices.domain.LineDraft(listOf(CodedLine("p", amount = 90.0)))
+        assertFalse(draft.canSplit)
+        draft = com.zillit.desktop.feature.invoices.domain.LineItems.apply(
+            draft,
+            com.zillit.desktop.feature.invoices.domain.LineEdit.Select("p"),
+            newId,
+        )
+        draft = com.zillit.desktop.feature.invoices.domain.LineItems.apply(
+            draft,
+            com.zillit.desktop.feature.invoices.domain.LineEdit.Split,
+            newId,
+        )
+        // The first child is picked after a split — and it can split again.
+        assertEquals("n1", draft.selectedId)
+        assertTrue(draft.canSplit)
+        draft = com.zillit.desktop.feature.invoices.domain.LineItems.apply(
+            draft,
+            com.zillit.desktop.feature.invoices.domain.LineEdit.Split,
+            newId,
+        )
+        assertEquals(listOf(30.0, 30.0, 30.0), draft.lines.filter { it.isSplit }.map { it.amount })
+        assertTrue(draft.lines.filter { it.isSplit }.all { it.splitParentId == "p" })
+    }
+
+    @Test
+    fun `picking the picked line again lets it go`() {
+        val select = com.zillit.desktop.feature.invoices.domain.LineEdit.Select("p")
+        val draft = com.zillit.desktop.feature.invoices.domain.LineDraft(listOf(CodedLine("p")), selectedId = "p")
+        assertNull(com.zillit.desktop.feature.invoices.domain.LineItems.apply(draft, select, newId).selectedId)
     }
 
     // -- the close boundary ---------------------------------------------------------

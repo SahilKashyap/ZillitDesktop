@@ -13,10 +13,13 @@ enum class TierScope(val wire: String) {
 
 /**
  * One rule inside a tier. `type` is `default` or `amount`; an amount rule
- * only counts once the invoice's gross reaches [amountThreshold].
+ * only counts once the invoice's gross reaches [amountThreshold]. Any other
+ * type — blank included — counts as neither, as on the web.
  */
 data class TierRule(val type: String, val amountThreshold: Double? = null, val userIds: List<String> = emptyList()) {
-    val isAmount: Boolean get() = type.equals(AMOUNT, ignoreCase = true)
+    val isAmount: Boolean get() = type == AMOUNT
+
+    val isDefault: Boolean get() = type == DEFAULT
 
     fun applies(gross: Double): Boolean = !isAmount || (amountThreshold != null && gross >= amountThreshold)
 
@@ -57,14 +60,14 @@ object ApprovalChain {
     }
 
     /**
-     * Per tier: amount rules whose threshold the gross reaches win; otherwise
-     * the default rules. Tiers that resolve to nobody are dropped and the
-     * survivors renumbered 1..N.
+     * Per tier, in the order the server lists them (the web reads the array,
+     * not `order`): amount rules whose threshold the gross reaches win;
+     * otherwise the default rules. Tiers that resolve to nobody are dropped
+     * and the survivors renumbered 1..N (`approval-helpers.js:176-222`).
      */
     fun resolveTiers(config: ApprovalTierConfig?, gross: Double): List<ResolvedTier> {
         if (config == null) return emptyList()
         return config.tiers
-            .sortedBy { it.order }
             .map { tier -> usersFor(tier, gross) }
             .filter { it.isNotEmpty() }
             .mapIndexed { index, users -> ResolvedTier(index + 1, users) }
@@ -91,11 +94,10 @@ object ApprovalChain {
         return tiers.firstOrNull { it.number == next }?.userIds?.contains(userId) == true
     }
 
+    /** Deduplicated as the web's `seen` set does; an id is kept as the server stored it. */
     private fun usersFor(tier: TierLevel, gross: Double): List<String> {
         val amountUsers = tier.rules.filter { it.isAmount && it.applies(gross) }.flatMap { it.userIds }
-        val users = if (amountUsers.isNotEmpty()) amountUsers else tier.rules.filterNot {
-            it.isAmount }.flatMap { it.userIds
-        }
-        return users.filter { it.isNotBlank() }.distinct()
+        val users = amountUsers.ifEmpty { tier.rules.filter { it.isDefault }.flatMap { it.userIds } }
+        return users.distinct()
     }
 }

@@ -3,6 +3,7 @@ package com.zillit.desktop
 import com.zillit.desktop.core.database.ProfileSnapshot
 import com.zillit.desktop.core.database.UserSnapshot
 import com.zillit.desktop.core.session.ProjectContext
+import com.zillit.desktop.feature.chat.domain.MEMBER_DESIGNATION
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -23,12 +24,13 @@ class CallNameDirectoryTest {
         name: String,
         email: String? = "$id@zillit.com",
         keepNamePrivate: Boolean = false,
+        designation: String? = null,
     ) = UserSnapshot(
         userId = id,
         fullName = name,
         email = email,
         department = null,
-        designation = null,
+        designation = designation,
         avatarUrl = null,
         isAdmin = false,
         keepNamePrivate = keepNamePrivate,
@@ -50,7 +52,26 @@ class CallNameDirectoryTest {
     fun `a crew member is named by their user id`() {
         val directory = context(user("a", "Priya Nair")).callNameDirectory()
 
-        assertEquals("Priya Nair", directory["a"])
+        assertEquals("Priya Nair", directory["a"]?.name)
+    }
+
+    /**
+     * The job title rides along, because the stage draws it under the name and
+     * the roster does not always carry one — the web falls back to the same
+     * local list. A label key on the wire, humanised on the way through; the
+     * bare "member" placeholder is dropped rather than printed under a name.
+     */
+    @Test
+    fun `a crew member brings their job title as words`() {
+        val directory = context(
+            user("a", "Priya Nair", designation = "gaffer_label"),
+            user("b", "Rahul Verma", designation = MEMBER_DESIGNATION),
+            user("c", "Dev Singh"),
+        ).callNameDirectory()
+
+        assertEquals("Gaffer", directory["a"]?.designation)
+        assertEquals("", directory["b"]?.designation, "everyone is a member; it is not a job title")
+        assertEquals("", directory["c"]?.designation)
     }
 
     @Test
@@ -61,8 +82,8 @@ class CallNameDirectoryTest {
         ).callNameDirectory()
 
         assertNull(directory["p"], "a private name must never be reachable by lookup")
-        assertFalse(directory.values.any { it.contains("Priya") })
-        assertEquals("Rahul Verma", directory["r"], "the rest of the crew still resolves")
+        assertFalse(directory.values.any { it.name.contains("Priya") })
+        assertEquals("Rahul Verma", directory["r"]?.name, "the rest of the crew still resolves")
     }
 
     @Test

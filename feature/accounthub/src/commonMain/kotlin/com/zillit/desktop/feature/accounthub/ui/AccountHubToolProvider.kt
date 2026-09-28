@@ -168,7 +168,10 @@ internal fun hubRouteEvents(path: String): List<AccountHubEvent> {
     val area = HubArea.fromSlug(segments.firstOrNull()) ?: return emptyList()
     val module = segments.getOrNull(1)?.let(FormModule::from)
     return listOfNotNull(
-        AccountHubEvent.Open(area),
+        // `?from=purchase-orders` — the department PO view's Vendors tab,
+        // which the web fills by embedding the vendors module rather than by
+        // this route. It is the one caller the gate lets through.
+        AccountHubEvent.Open(area, from = query["from"]),
         module?.takeIf { area == HubArea.FormConfig }?.let(AccountHubEvent::OpenFormConfig),
         // `?module=card_expenses` — the web's "Set Approval Level" link from the
         // card and petty-cash modules lands on that module's chain.
@@ -180,6 +183,11 @@ internal fun hubRouteEvents(path: String): List<AccountHubEvent> {
         query["setup"]?.takeIf { area == HubArea.ProductionSetup }
             ?.let { key -> SetupModal.entries.firstOrNull { it.slug == key || it.slug.startsWith("${key}_") } }
             ?.let(AccountHubEvent::OpenSetupModal),
+        // `?tab=cash-close` — where the Invoices module's old `/cash-close`
+        // redirects (`InvoicesModule.jsx:534`).
+        query["tab"]?.takeIf { area == HubArea.PeriodClose }
+            ?.let { slug -> PeriodCloseTab.entries.firstOrNull { it.slug == slug } }
+            ?.let(AccountHubEvent::SwitchPeriodCloseTab),
     ) + if (area == HubArea.Vendors) vendorRouteEvents(segments.getOrNull(1), query) else emptyList()
 }
 

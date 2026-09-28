@@ -56,8 +56,17 @@ sealed interface AccountHubEvent {
 
     // -- shell --------------------------------------------------------------
 
-    /** Open one of the hub's own screens. */
-    data class Open(val area: HubArea) : AccountHubEvent
+    /**
+     * Open one of the hub's own screens.
+     *
+     * [from] names the surface that asked, when that changes the answer. Only
+     * one does: the department purchase-order view's Vendors tab, which the
+     * web fills by mounting `VendorsModule` inside the PO page rather than by
+     * going through the hub's own accountant-only vendors route. See
+     * [HubNavigation.mayOpen]. A sidebar click leaves it null and is judged
+     * on the sidebar's own rules.
+     */
+    data class Open(val area: HubArea, val from: String? = null) : AccountHubEvent
 
     /**
      * Follow a sidebar row that points at another film tool.
@@ -101,8 +110,6 @@ sealed interface AccountHubEvent {
     data object TourClose : AccountHubEvent
 
     // -- production setup ---------------------------------------------------
-
-    data class SwitchSetupTab(val tab: SetupTab) : AccountHubEvent
 
     data class EditCompanies(val companies: List<Company>) : AccountHubEvent
 

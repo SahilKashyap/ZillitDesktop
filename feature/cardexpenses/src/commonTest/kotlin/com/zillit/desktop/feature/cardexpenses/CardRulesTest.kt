@@ -319,6 +319,33 @@ class CardAccessTest {
     }
 
     @Test
+    fun `seniority by designation is the two identifiers exactly`() {
+        // The web's `resolveIsSenior` (`po-permissions.js:23-26`): these two
+        // identifiers, whole. An assistant is not a senior.
+        assertTrue(viewer(designation = "designation_production_accountant_accounts").isSenior)
+        assertTrue(viewer(designation = "designation_financial_controller_accounts").isSenior)
+
+        listOf(
+            "designation_assistant_production_accountant_accounts",
+            "designation_2nd_assistant_accountant_accounts",
+            "designation_deputy_financial_controller_accounts",
+            "designation_production_accountant",
+            "Production Accountant",
+        ).forEach { designation ->
+            assertFalse(viewer(designation = designation).isSenior, designation)
+            assertFalse(viewer(designation = designation).canOpenSettings, designation)
+        }
+
+        // The card team's own flag still makes anyone senior.
+        assertTrue(
+            viewer(
+                designation = "designation_assistant_production_accountant_accounts",
+                metadata = CardMetadata(isSenior = true),
+            ).isSenior,
+        )
+    }
+
+    @Test
     fun `an absent posting limit means no ceiling`() {
         assertTrue(viewer().canPost(1_000_000.0))
         assertFalse(viewer(metadata = CardMetadata(postingLimit = 250.0)).canPost(250.01))

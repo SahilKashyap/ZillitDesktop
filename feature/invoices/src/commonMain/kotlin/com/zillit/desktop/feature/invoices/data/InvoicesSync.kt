@@ -111,3 +111,35 @@ internal data class InvoiceSyncEnvelope(
     fun inProject(here: String?): Boolean =
         projectId == null || here == null || projectId == here
 }
+
+/**
+ * A query thread opened, answered, closed or removed — `accountHubListeners.js:485-535`
+ * fans each into `ah:query:entity:<type>:<id>`, which an open `QueryPanel`
+ * answers with a silent re-read.
+ */
+val QUERY_SYNC_EVENTS: List<SocketEventName> = listOf(
+    SocketEventName("query:opened"),
+    SocketEventName("query:replied"),
+    SocketEventName("query:closed"),
+    SocketEventName("query:deleted"),
+)
+
+/** The account-hub envelope around a query event: the project, and the entity inside `data`. */
+@Serializable
+internal data class QuerySyncEnvelope(
+    @SerialName("project_id") val projectId: String? = null,
+    val data: QuerySyncData? = null,
+) {
+    /** The invoice whose thread moved, when this frame is about one in [here]; null otherwise. */
+    fun invoiceId(here: String?): String? {
+        if (projectId != null && here != null && projectId != here) return null
+        val entity = data ?: return null
+        return entity.entityId?.takeIf { entity.entityType == QUERY_ENTITY && it.isNotBlank() }
+    }
+}
+
+@Serializable
+internal data class QuerySyncData(
+    @SerialName("entity_type") val entityType: String? = null,
+    @SerialName("entity_id") val entityId: String? = null,
+)

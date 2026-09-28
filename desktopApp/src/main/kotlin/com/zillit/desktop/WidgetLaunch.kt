@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.datastore.WidgetKeys
 import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.strings.S
@@ -106,7 +107,7 @@ internal object WidgetLaunch {
         }
     }
 
-    private fun defaultDirectory() = File(System.getProperty("user.home"), ".zillit")
+    private fun defaultDirectory() = ZillitVariant.dataDir
 
     private const val POLL_MILLIS = 1_000L
     private const val TAG = "WidgetLaunch"

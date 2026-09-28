@@ -2,6 +2,9 @@ package com.zillit.desktop.feature.invoices.ui.pages
 
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +29,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -62,7 +66,7 @@ internal fun ColumnScope.AnalyticsPage(state: InvoicesUiState) {
                 title = str(S.desktop_top_vendors_by_spend),
                 icon = ZillitIcons.Users,
                 rows = data.vendors,
-                empty = str(S.desktop_no_vendor_spend_yet),
+                empty = str(S.desktop_inv_no_vendor_data),
                 nameOf = { it.ifBlank { str(S.desktop_unknown) } },
                 modifier = Modifier.weight(1f),
             )
@@ -88,7 +92,9 @@ private fun StatRow(data: InvoiceAnalytics) {
                 ZillitStatTile(
                     label = str(S.desktop_total_ap_spend),
                     value = stats.totalApSpend.ifBlank { "—" },
-                    sub = stats.totalApSubtitle.ifBlank { "production total" },
+                    sub = stats.totalApSubtitle.ifBlank { str(S.desktop_production_total) },
+                    tone = StatusTone.Pending,
+                    icon = ZillitIcons.Bank,
                     modifier = statTile,
                 )
             },
@@ -97,6 +103,7 @@ private fun StatRow(data: InvoiceAnalytics) {
                     label = str(S.desktop_avg_invoice),
                     value = stats.averageInvoice.ifBlank { "—" },
                     sub = stats.averageInvoiceSubtitle.ifBlank { null },
+                    icon = ZillitIcons.File,
                     modifier = statTile,
                 )
             },
@@ -106,6 +113,7 @@ private fun StatRow(data: InvoiceAnalytics) {
                     value = stats.onTimePayment.ifBlank { "—" },
                     sub = stats.onTimeSubtitle.ifBlank { null },
                     tone = StatusTone.Done,
+                    icon = AhIcons.CheckCircle,
                     modifier = statTile,
                 )
             },
@@ -113,7 +121,9 @@ private fun StatRow(data: InvoiceAnalytics) {
                 ZillitStatTile(
                     label = str(S.desktop_ap_days),
                     value = stats.apDays.ifBlank { "—" },
-                    sub = stats.apDaysSubtitle.ifBlank { "avg days to payment" },
+                    sub = stats.apDaysSubtitle.ifBlank { str(S.desktop_avg_days_to_payment) },
+                    tone = StatusTone.Progress,
+                    icon = ZillitIcons.Clock,
                     modifier = statTile,
                 )
             },
@@ -124,7 +134,12 @@ private fun StatRow(data: InvoiceAnalytics) {
 @Composable
 private fun SummaryRow(state: InvoicesUiState, data: InvoiceAnalytics) {
     val summary = data.summary
-    ZillitSectionCard(title = str(S.desktop_cost_report_impact_of_ap), icon = ZillitIcons.Ledger) {
+    ZillitSectionCard(
+        title = str(S.desktop_cost_report_impact_of_ap),
+        icon = ZillitIcons.Bank,
+        action = { ZillitStatusPill(label = str(S.desktop_inv_senior_eyes_only), tone = StatusTone.Escalated) },
+    ) {
+        Muted(str(S.desktop_inv_cost_report_intro))
         StatGrid(
             columns = ANALYTICS_COLUMNS,
             tiles = listOf(
@@ -142,7 +157,6 @@ private fun SummaryRow(state: InvoicesUiState, data: InvoiceAnalytics) {
                         label = str(S.desktop_pending_post),
                         value = summary.pending.ifBlank { "—" },
                         sub = summary.pendingSubtitle.ifBlank { null },
-                        tone = StatusTone.Pending,
                         modifier = statTile,
                     )
                 },
@@ -160,22 +174,45 @@ private fun SummaryRow(state: InvoicesUiState, data: InvoiceAnalytics) {
                         label = str(S.desktop_total_projected_ap),
                         value = summary.projected.ifBlank { "—" },
                         sub = summary.projectedSubtitle.ifBlank { null },
+                        tone = StatusTone.Pending,
                         modifier = statTile,
                     )
                 },
             ),
         )
         DepartmentRows(state, data)
+        Legend()
+    }
+}
+
+/** The three dots under the table — what each column means (`AnalyticsPage.jsx:263-265`). */
+@Composable
+private fun Legend() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LegendDot(ZillitTheme.colors.success, str(S.desktop_inv_legend_posted))
+        LegendDot(ZillitTheme.colors.accent, str(S.desktop_inv_legend_pending))
+        LegendDot(ZillitTheme.colors.danger, str(S.desktop_inv_legend_unknown))
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        Box(Modifier.size(DOT).clip(ZillitTheme.shapes.pill).background(color))
+        Muted(label)
     }
 }
 
 /** The web's per-department table under the figures: posted, pending, unattributed, projected, variance. */
 @Composable
 private fun ColumnScope.DepartmentRows(state: InvoicesUiState, data: InvoiceAnalytics) {
-    if (data.departments.isEmpty()) {
-        Muted(str(S.desktop_inv_nothing_attributed_to_department))
-        return
-    }
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.xs),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -183,9 +220,13 @@ private fun ColumnScope.DepartmentRows(state: InvoicesUiState, data: InvoiceAnal
         Caption(str(S.department), Modifier.weight(2f))
         Caption(str(S.ah_step_posted), Modifier.weight(1f))
         Caption(str(S.pending), Modifier.weight(1f))
-        Caption(str(S.desktop_unattributed), Modifier.weight(1f))
+        Caption(str(S.desktop_unknown), Modifier.weight(1f))
         Caption(str(S.desktop_projected), Modifier.weight(1f))
-        Caption(str(S.desktop_variance), Modifier.weight(1f))
+        Caption(str(S.desktop_inv_vs_budget), Modifier.weight(1f))
+    }
+    if (data.departments.isEmpty()) {
+        ZillitDivider()
+        Muted(str(S.desktop_inv_no_department_data))
     }
     data.departments.forEach { row ->
         ZillitDivider()
@@ -210,6 +251,30 @@ private fun ColumnScope.DepartmentRows(state: InvoicesUiState, data: InvoiceAnal
             }
         }
     }
+    ZillitDivider()
+    val totals = data.totals
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Caption(str(S.asset_total), Modifier.weight(2f))
+        TotalCell(totals.posted, Modifier.weight(1f))
+        TotalCell(totals.pending, Modifier.weight(1f))
+        TotalCell(totals.unknown, Modifier.weight(1f))
+        TotalCell(totals.projected, Modifier.weight(1f))
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun TotalCell(text: String, modifier: Modifier) {
+    ZillitText(
+        text = text.ifBlank { "—" },
+        style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+        modifier = modifier,
+        maxLines = 1,
+    )
 }
 
 /** Each row's share — a vendor's, or a department's — as a bar the width of its own percentage. */
@@ -244,11 +309,6 @@ private fun SharePanel(
                         modifier = Modifier.weight(1f),
                     )
                     ZillitText(
-                        text = "${vendor.percent.toInt()}%",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                    ZillitText(
                         text = vendor.amount.ifBlank { "—" },
                         style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.SemiBold),
                     )
@@ -267,12 +327,19 @@ private fun SharePanel(
                             .fillMaxWidth(share.toFloat())
                             .height(BAR)
                             .clip(ZillitTheme.shapes.pill)
-                            .background(ZillitTheme.colors.accent),
+                            .background(barColour(index)),
                     )
                 }
             }
         }
     }
+}
+
+/** The web's five rotating bar colours — amber, teal, violet, blue, green. */
+@Composable
+private fun barColour(index: Int): Color {
+    val colors = ZillitTheme.colors
+    return listOf(colors.accent, colors.teal, colors.violet, colors.info, colors.success)[index % BAR_TONES]
 }
 
 @Composable
@@ -301,3 +368,5 @@ private val BAR = 8.dp
 private val LOADING_PAD = 96.dp
 private const val MIN_BAR = 3.0
 private const val WHOLE_SHARE = 100.0
+private const val BAR_TONES = 5
+private val DOT = 8.dp

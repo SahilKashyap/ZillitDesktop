@@ -87,6 +87,15 @@ internal class PoSettingsActions(
 
     private fun save(section: PoSettingsSection) {
         if (section in settings.saving) return
+        // Guarded here as well as at the tab's own door (PoDestination): the
+        // Settings tab is navigation-gated to seniors, but SaveSettings can
+        // still reach this handler directly, and it is the write that matters
+        // — including the assignment rules, which decide who an order is
+        // routed to for processing.
+        if (!vm.currentState.viewer.isSeniorAccountant) {
+            vm.fail(str(S.desktop_po_no_rights_on_project))
+            return
+        }
         if (section == PoSettingsSection.Rules) {
             saveRules()
             return

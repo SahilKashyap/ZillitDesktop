@@ -416,7 +416,27 @@ data class PoViewer(
      * equality check has demoted whole accounts teams before.
      */
     val isAccountant: Boolean
-        get() = !enteredAsTool && departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
+        get() = !enteredAsTool && isAccountsDepartment
+
+    /**
+     * Whether this person is in the accounts department at all, whichever
+     * door they came through.
+     *
+     * [isAccountant] is the *view* question — "do they get the console?" —
+     * and the Film Tools tile answers no to an accountant on purpose. This is
+     * the plain fact underneath it, and the web keeps the two apart: only
+     * `PurchaseOrdersRouter` combines `isAccountant` with `enteredAsTool`,
+     * while `currentUser.isAccountant` itself is read straight from the
+     * profile and stays true through both doors.
+     *
+     * One gate wants the fact rather than the view — the delivery-address
+     * register, where accounts may edit anybody's row
+     * (`PODeliveryAddressesView.jsx:145`, reading AuthContext directly). Using
+     * the view there would take an accountant's own saved addresses away from
+     * them the moment they opened the tool from the tile.
+     */
+    val isAccountsDepartment: Boolean
+        get() = departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
 
     /**
      * Production Accountant or Financial Controller — senior by role.

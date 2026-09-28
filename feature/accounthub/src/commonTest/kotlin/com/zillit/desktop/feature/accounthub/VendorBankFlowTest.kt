@@ -14,6 +14,7 @@ import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankDetail
 import com.zillit.desktop.feature.accounthub.domain.HubArea
+import com.zillit.desktop.feature.accounthub.domain.HubNavigation
 import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.domain.VendorBank
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
@@ -270,6 +271,33 @@ class VendorBankFlowTest {
 
         assertTrue(model.state.value.area != HubArea.Vendors)
         assertTrue(calls.value.none { it.endsWith("/api/v2/vendors") }, "the register is not even fetched")
+    }
+
+    /**
+     * …but the department purchase-order view's own Vendors tab gets in.
+     *
+     * The web is two rules, not one: the hub route turns them away *and*
+     * `DepartmentPOModule` mounts the very same `VendorsModule` as its
+     * Vendors tab. The desktop's PO tool hands that tab off here instead of
+     * carrying a second copy of the vendor screens, so it says who is asking
+     * (`?from=purchase-orders`) and is let through. Without this the tab
+     * opened the hub and did nothing at all — no vendors, no error.
+     */
+    @Test
+    fun `the department PO view's Vendors tab reaches them anyway`() = runTest(dispatcher) {
+        val model = AccountHubViewModel(
+            repository = repository(::answer),
+            viewer = { viewer(userId = "dept-user", accountant = false) },
+        )
+        model.start()
+        model.onEvent(
+            AccountHubEvent.Open(HubArea.Vendors, from = HubNavigation.FROM_PURCHASE_ORDERS),
+        )
+        advanceUntilIdle()
+
+        assertEquals(HubArea.Vendors, model.state.value.area)
+        // Still no sidebar row: the front door stays shut.
+        assertTrue(HubArea.Vendors !in HubNavigation.areasFor(model.state.value.viewer))
     }
 
     /**

@@ -370,6 +370,14 @@ internal class PoEntryActions(
 
     private fun applyBulkDate() {
         val dialog = vm.ui.bulkDate ?: return
+        // Re-checked here too: the bulk bar that opens this dialog is gated on
+        // isAccountant (PoBulkBar), same as reassign()'s own re-check above —
+        // the dialog has no auto-dismiss, so the handler must not trust it.
+        if (!vm.ui.viewer.isAccountant) {
+            vm.update { copy(bulkDate = null) }
+            vm.fail(str(S.desktop_po_no_rights_on_project))
+            return
+        }
         val date = dialog.date
         if (date == null) {
             vm.fail(str(S.desktop_po_pick_an_effective_date))

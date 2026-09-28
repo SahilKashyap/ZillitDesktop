@@ -2,6 +2,11 @@ package com.zillit.desktop.feature.invoices.domain
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.time.Instant
 
 /**
  * A batch of approved invoices paid together — the web's Active Runs, on
@@ -25,7 +30,28 @@ data class PaymentRun(
     val rejectionReason: String = "",
     val rejectedBy: String = "",
     val rejectedAtMs: Long? = null,
-)
+    /** Who built the run and when — the department approver's "Created" column and footer. */
+    val createdBy: String = "",
+    val createdAtMs: Long? = null,
+    /** `status` as sent; what a status this client does not know is called. */
+    val statusRaw: String = "",
+) {
+    /**
+     * The status pill's words — the web prints the raw status capitalised,
+     * "Pending" when there is none (`PaymentsPage.jsx:2106-2108`), so a known
+     * one reads as its label and one this client has never seen still reads
+     * as itself, never "Draft".
+     */
+    val statusLabel: String
+        get() = when {
+            status != PaymentRunStatus.Other -> status.label
+            statusRaw.isBlank() -> PaymentRunStatus.Pending.label
+            else -> statusRaw.trim().replaceFirstChar { it.uppercaseChar() }
+        }
+}
+
+/** A run the server has just made: its id (blank when it sent none) and its toast. */
+data class RunCreated(val id: String = "", val message: String? = null)
 
 /** One signed tier of a run: which tier, and who signed it. */
 data class RunSignOff(val tierNumber: Int, val userId: String)
@@ -39,13 +65,23 @@ data class PaymentRunDetail(val run: PaymentRun, val invoices: List<Invoice> = e
  */
 data class RunApprovalDecision(val canApprove: Boolean, val nextTier: Int?, val totalTiers: Int)
 
-/** Where a run stands. Only a pending one can be authorised or turned down. */
+/**
+ * Where a run stands. Only a pending one can be authorised or turned down.
+ *
+ * The web's `runStatusColor` knows pending, approved, waiting, paid, sent and
+ * rejected. A missing status, or one it does not know, is [Other]: grey, and
+ * never signable — `resolveRunApproval` insists on `status === "pending"` —
+ * though a missing one still reads "Pending" ([PaymentRun.statusLabel]).
+ */
 enum class PaymentRunStatus(val wire: String, private val labelKey: String) {
-    Draft("draft", S.draft),
-    Pending("pending", S.dm_filter_status_pending),
-    Approved("approved", S.approved),
-    Rejected("rejected", S.rejected),
+    Draft("draft", S.ah_status_draft),
+    Pending("pending", S.ah_run_status_pending),
+    Approved("approved", S.ah_run_status_approved),
+    Waiting("waiting", S.ah_run_detail_tier_waiting),
+    Sent("sent", S.cs_sent),
+    Rejected("rejected", S.ah_run_status_rejected),
     Paid("paid", S.desktop_paid),
+    Other("", S.desktop_unknown),
     ;
 
     val label: String get() = str(labelKey)
@@ -53,7 +89,10 @@ enum class PaymentRunStatus(val wire: String, private val labelKey: String) {
     val isDecidable: Boolean get() = this == Pending || this == Draft
 
     companion object {
-        fun from(wire: String?): PaymentRunStatus = entries.firstOrNull { it.wire == wire } ?: Draft
+        fun from(wire: String?): PaymentRunStatus {
+            val code = wire?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it != Other && it.wire == code } ?: Other
+        }
     }
 }
 
@@ -105,7 +144,7 @@ object PaymentRuns {
         vendorName: (Invoice) -> String,
         defaultCurrency: String,
     ): List<PaymentGroup> = invoices
-        .groupBy { it.vendorId.ifBlank { "unknown" } to it.currency.ifBlank { defaultCurrency }.uppercase() }
+        .groupBy { it.vendorId.ifBlank { "unknown" } to currencyCode(it.currency, defaultCurrency) }
         .map { (key, rows) ->
             PaymentGroup(
                 vendorId = key.first,
@@ -155,8 +194,102 @@ object PaymentRuns {
         return RunApprovalDecision(canApprove = canApprove, nextTier = next?.tier, totalTiers = sorted.size)
     }
 
+    /**
+     * The web's `normalizeCurrencyCode`: trimmed, upper-cased, and the
+     * project's own when blank — so `" gbp"` and `GBP` are one group.
+     */
+    fun currencyCode(code: String, defaultCurrency: String): String =
+        code.trim().uppercase().ifBlank { defaultCurrency.trim().uppercase() }
+
+    /** The Wires tab's two codes — `["wire", "faster"].includes(payMethodCode(...))`. */
+    val WIRE_CODES: Set<String> = setOf(PayMethod.Wire.wire, PayMethod.Faster.wire)
+
+    /**
+     * A method's name on Open Items and in the Process sheet — the web's
+     * `METHOD_LABELS`, then `payMethodLabel`, then the code humanised.
+     */
+    fun methodLabel(code: String, humanise: (String) -> String): String = when (code) {
+        PayMethod.Bacs.wire -> str(S.desktop_inv_method_bacs)
+        PayMethod.Wire.wire -> str(S.desktop_inv_method_wire_transfer)
+        PayMethod.Faster.wire -> str(S.desktop_faster_payment)
+        PayMethod.Cheque.wire -> str(S.ah_run_card_method_cheque)
+        else -> PayMethod.entries.firstOrNull { it.wire == code }?.label ?: humanise(code)
+    }
+
+    /**
+     * Open Items' PO chip: with an order linked (or a `po_id`), "N POs", the
+     * first linked number or the typed one; otherwise — and when none of
+     * those has a number — null, which reads "No PO" (`PaymentsPage.jsx:1767-1774`).
+     */
+    fun openItemPo(invoice: Invoice): String? = when {
+        !invoice.hasMatchedPo -> null
+        invoice.linkedPos.size > 1 -> str(S.desktop_po_count_pos, invoice.linkedPos.size)
+        else -> invoice.linkedPos.firstOrNull()?.poNumber?.takeIf { it.isNotBlank() }
+            ?: invoice.poNumber.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Open Items' Days column: `d = ceil((due − now) / day)`; `"{d}d"` while
+     * d > 0, otherwise `"{|d|}d overdue"`, pink once the due moment has
+     * passed; "—" without a due date (`PaymentsPage.jsx:1780-1795`).
+     */
+    fun openItemDays(dueMs: Long?, nowMs: Long): DueLabel {
+        if (dueMs == null) return DueLabel("—", DueTone.Plain)
+        val days = daysUntil(dueMs, nowMs)
+        val tone = if (dueMs - nowMs < 0) DueTone.Overdue else DueTone.Plain
+        return if (days > 0) {
+            DueLabel(str(S.desktop_pc_age_days, days.toInt()), tone)
+        } else {
+            DueLabel(str(S.desktop_inv_n_days_overdue, abs(days).toInt()), tone)
+        }
+    }
+
+    /**
+     * The Wires tab's due line — the web's `getDueDays`: "Nd overdue" (pink),
+     * "Due today" (amber) or "Nd left", from the same ceiling of days.
+     */
+    fun wireDue(dueMs: Long?, nowMs: Long): DueLabel {
+        if (dueMs == null) return DueLabel("—", DueTone.Plain)
+        val days = daysUntil(dueMs, nowMs)
+        return when {
+            days < 0 -> DueLabel(str(S.desktop_inv_n_days_overdue, abs(days).toInt()), DueTone.Overdue)
+            days == 0L -> DueLabel(str(S.desktop_inv_due_today), DueTone.Today)
+            else -> DueLabel(str(S.desktop_inv_n_days_left, days.toInt()), DueTone.Plain)
+        }
+    }
+
+    private fun daysUntil(dueMs: Long, nowMs: Long): Long = ceil((dueMs - nowMs).toDouble() / DAY_MS).toLong()
+
+    /**
+     * The rejection banner's stamp — `DD Mon YYYY | h:mm AM/PM` in the local
+     * zone, the web's `fmtDateTime` (`PaymentsPage.jsx:77-85`).
+     */
+    fun stamp(ms: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+        val t = Instant.fromEpochMilliseconds(ms).toLocalDateTime(zone)
+        val hour = (t.hour % HALF_DAY).let { if (it == 0) HALF_DAY else it }
+        val meridiem = if (t.hour < HALF_DAY) "AM" else "PM"
+        val day = t.day.toString().padStart(2, '0')
+        val minute = t.minute.toString().padStart(2, '0')
+        return "$day ${str(SHORT_MONTHS[t.month.ordinal])} ${t.year} | $hour:$minute $meridiem"
+    }
+
     private const val RUN_NUMBER_DIGITS = 3
+    private const val DAY_MS = 86_400_000L
+    private const val HALF_DAY = 12
+
+    private val SHORT_MONTHS = listOf(
+        S.desktop_month_short_jan, S.desktop_month_short_feb, S.desktop_month_short_mar,
+        S.desktop_month_short_apr, S.desktop_month_short_may, S.desktop_month_short_jun,
+        S.desktop_month_short_jul, S.desktop_month_short_aug, S.desktop_month_short_sep,
+        S.desktop_month_short_oct, S.desktop_month_short_nov, S.desktop_month_short_dec,
+    )
 }
+
+/** How a due line is coloured: plain, pink once overdue, amber on the day. */
+enum class DueTone { Plain, Overdue, Today }
+
+/** A due line's words and colour. */
+data class DueLabel(val text: String, val tone: DueTone)
 
 /** The four surfaces of the Payment Runs page — the web's tabs. */
 enum class PaymentTab(val id: String, private val labelKey: String) {
@@ -168,103 +301,4 @@ enum class PaymentTab(val id: String, private val labelKey: String) {
 
     val label: String get() = str(labelKey)
 
-}
-
-/**
- * A sales invoice — money owed *to* the production, on
- * `/invoices/sales-invoices`.
- *
- * The only record in this module that faces outward: it is raised against a
- * client, sent, and then marked paid.
- */
-data class SalesInvoice(
-    val id: String,
-    val reference: String = "",
-    val clientName: String = "",
-    val description: String = "",
-    val grossAmount: Double = 0.0,
-    val currency: String = "",
-    val dueDateMs: Long? = null,
-    val createdAtMs: Long? = null,
-    val status: SalesInvoiceStatus = SalesInvoiceStatus.Draft,
-    val invoiceDateMs: Long? = null,
-    val lineItems: List<CodedLine> = emptyList(),
-)
-
-/**
- * What raising a sales invoice sends — `SalesPage`'s `handleCreate`: the
- * client, the dates as `YYYY-MM-DD`, and the lines, whose gross is the
- * invoice's.
- */
-data class SalesInvoiceWrite(
-    val reference: String,
-    val clientName: String,
-    val description: String,
-    val currency: String,
-    val invoiceDate: String,
-    val dueDate: String,
-    val lines: List<CodedLine>,
-) {
-    val gross: Double get() = EntryCoding.totals(lines).gross
-}
-
-/** A sales invoice's life: drafted, sent to the client, paid. */
-enum class SalesInvoiceStatus(val wire: String, private val labelKey: String) {
-    Draft("draft", S.draft),
-    Sent("sent", S.cs_sent),
-    Paid("paid", S.desktop_paid),
-    Overdue("overdue", S.desktop_overdue),
-    Cancelled("cancelled", S.cancelled),
-    ;
-
-    val label: String get() = str(labelKey)
-
-    /** Sending is for a draft; marking paid is for one already out. */
-    val canSend: Boolean get() = this == Draft
-    val canMarkPaid: Boolean get() = this == Sent || this == Overdue
-
-    companion object {
-        fun from(wire: String?): SalesInvoiceStatus = entries.firstOrNull { it.wire == wire } ?: Draft
-    }
-}
-
-/**
- * A vendor as the Vendors page shows it: the record, plus what the production
- * has spent with them.
- *
- * The spend is counted here rather than fetched, because no route answers it —
- * the web adds up the same invoice list on the client.
- */
-data class VendorRow(
-    val vendor: Vendor,
-    val totalSpend: Double,
-    val invoiceCount: Int,
-    val currency: String,
-) {
-    val isCompliant: Boolean get() = vendor.taxNumber.isNotBlank() && vendor.bankName.isNotBlank()
-
-    /** What the compliance column says: what is missing, or that nothing is. */
-    val complianceLabel: String
-        get() = when {
-            isCompliant -> str(S.dm_action_complete)
-            vendor.taxNumber.isBlank() && vendor.bankName.isBlank() -> str(S.desktop_no_tax_id_or_bank)
-            vendor.taxNumber.isBlank() -> str(S.desktop_no_tax_id)
-            else -> str(S.desktop_no_bank)
-        }
-}
-
-object VendorSpendReport {
-    /** One row per vendor, biggest spend first — the web's Vendors table. */
-    fun rows(vendors: List<Vendor>, invoices: List<Invoice>): List<VendorRow> {
-        val byVendor = invoices.groupBy { it.vendorId }
-        return vendors.map { vendor ->
-            val theirs = byVendor[vendor.id].orEmpty()
-            VendorRow(
-                vendor = vendor,
-                totalSpend = theirs.sumOf { it.grossAmount },
-                invoiceCount = theirs.size,
-                currency = theirs.firstNotNullOfOrNull { it.currency.takeIf(String::isNotBlank) }.orEmpty(),
-            )
-        }.sortedByDescending { it.totalSpend }
-    }
 }

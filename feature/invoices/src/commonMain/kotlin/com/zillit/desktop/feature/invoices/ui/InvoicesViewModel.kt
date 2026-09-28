@@ -7,7 +7,11 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceExportFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceExport
 import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.localization.localisedMessage
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.map
+import com.zillit.desktop.feature.invoices.domain.PostedLedger
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.invoices.domain.ApprovalChain
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
@@ -17,14 +21,18 @@ import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceFiles
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
+import com.zillit.desktop.feature.invoices.domain.InvoiceLabels
+import com.zillit.desktop.feature.invoices.domain.DateWindow
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.InvoiceDirectory
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
+import com.zillit.desktop.feature.invoices.domain.InvoiceProjectInfo
 import com.zillit.desktop.feature.invoices.domain.InvoiceRefresh
 import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
+import com.zillit.desktop.feature.invoices.domain.PaymentRuns
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.domain.ResolvedTier
 import kotlinx.coroutines.Job
@@ -57,6 +65,8 @@ class InvoicesViewModel(
     private val directory: InvoiceDirectory = InvoiceDirectory(),
     /** The ledger's rows for this tool per page key, and the page read. */
     private val badges: TabBadgeSource = TabBadgeSource.None,
+    /** The production's name, company and contact details — the sales invoice document's header. */
+    private val projectInfoSource: () -> InvoiceProjectInfo = { InvoiceProjectInfo() },
 ) : ZillitViewModel<InvoicesUiState, InvoicesEvent, InvoicesEffect>(InvoicesUiState()) {
 
     private val actions = InvoiceActions(this)
@@ -70,6 +80,8 @@ class InvoicesViewModel(
     private val quick = InvoiceQuickEntryActions(this)
     private val credits = InvoiceCreditActions(this)
     private val sales = InvoiceSalesActions(this)
+    private val vendorActions = InvoiceVendorActions(this)
+    private val accrualActions = InvoiceAccrualActions(this)
 
     /** Bumped per list load so a late answer for the previous tab is dropped. */
     private var loadToken = 0
@@ -92,20 +104,52 @@ class InvoicesViewModel(
                 projectCurrency = projectMoney().defaultCode.ifBlank { "GBP" },
                 rates = projectMoney(),
                 departmentNames = departmentNames + departments(),
+                departmentOrder = departments().keys.toList(),
             )
         }
         viewerResolved = true
-        pendingRoute?.let(::applyRoute)
+        pendingRoute?.let { path ->
+            applyRoute(path)
+            openPostedDeepLink(path)
+        }
         pendingRoute = null
         loadReference()
         listenOnce()
         refresh()
     }
 
-    /** The page on screen is its read — its rows, whole, as it is looked at. */
-    private fun readOpenPage() {
-        val key = currentState.openBadgeKey ?: return
+    /**
+     * Payment Runs' tab-entry read — the one whole-`level_1` read the
+     * accountant console makes: `payment_runs`, as the page opens and again
+     * whenever a run lands while it is on screen (`PaymentsPage.jsx:959-977`,
+     * ZL-20693).
+     *
+     * Every other accountant page reads row by row, as the web's does
+     * (`emitInvoiceLevelRead`): Pre-approval as a review opens, the Approval
+     * Queue once a decision lands, Entry as the coding screen opens, Credit
+     * Notes and Sales on a row click, the Inbox as its review opens, and the
+     * Register never — so unread work keeps its chip until it is looked at.
+     * The department board reads row by row too ([readDepartmentRow]).
+     */
+    private fun readPaymentsTab() {
+        if (!currentState.isAccountant || currentState.page != AccountantPage.Payments) return
+        val key = AccountantPage.Payments.badgeKey ?: return
         if ((currentState.unread[key] ?: 0) > 0) badges.read(key)
+    }
+
+    /**
+     * The coding screen's read — `EntryDetailModal`'s mark-read on open
+     * (`EntryDetailModal.jsx:374-396`): the invoice under `invoice_entry`,
+     * only while it has something unread there, and again whenever more lands
+     * while it is still open (the effect re-runs on the badge slice). A screen
+     * opened read-only — Posted's, which passes no `readScope` — reads nothing.
+     */
+    internal fun readOpenEntry() {
+        val s = state.value
+        val ledger = s.ledger ?: return
+        val key = AccountantPage.Entry.badgeKey ?: return
+        if (!s.isAccountant || s.page != AccountantPage.Entry || ledger.readOnly) return
+        if (s.rowUnread(key, ledger.invoice.id) > 0) readAccountantRow(key, ledger.invoice.id)
     }
 
     /**
@@ -120,8 +164,18 @@ class InvoicesViewModel(
     private fun listenOnce() {
         if (listening) return
         listening = true
-        // A row landing on the open page is read as it lands.
-        launch { badges.counts.collect { counts -> setState { copy(unread = counts) }.also { readOpenPage() } } }
+        // A run landing while Payment Runs is on screen is read as it lands.
+        launch { badges.counts.collect { counts -> setState { copy(unread = counts) }.also { readPaymentsTab() } } }
+        // Per row, for every table's chips (`renderUnread`) — and an open
+        // coding screen reads what lands on its own invoice.
+        launch {
+            badges.entityCounts.collect { rows ->
+                setState { copy(unreadRows = rows) }
+                readOpenEntry()
+            }
+        }
+        // A bulk batch's progress frames: kept, then the uploads re-read on any page (`BulkUploadWatcher`).
+        launch { repository.bulkProgress.collect { frame -> inbox.onProgressFrame(frame) } }
         launch {
             repository.refreshes.collect { kind ->
                 syncJobs.remove(kind)?.cancel()
@@ -148,12 +202,21 @@ class InvoicesViewModel(
         // answer false for everything else, so the list below is unchanged.
         if (setup.onEvent(event) || review.onEvent(event) || entry.onEvent(event)) return
         if (queries.onEvent(event) || inbox.onEvent(event) || quick.onEvent(event)) return
-        if (credits.onEvent(event) || sales.onEvent(event)) return
+        if (credits.onEvent(event) || sales.onEvent(event) || payments.onEvent(event)) return
+        if (forms.onEvent(event)) return
+        if (vendorActions.onEvent(event) || accrualActions.onEvent(event)) return
         when (event) {
             is InvoicesEvent.SelectDepartmentTab -> {
-                setState { copy(departmentTab = event.tab, invoices = emptyList(), selected = emptySet()) }
+                // A new tab starts on "All" — the web's `onTabChange` resets the filter.
+                setState {
+                    copy(
+                        departmentTab = event.tab,
+                        quickFilter = QuickFilter.All,
+                        invoices = emptyList(),
+                        selected = emptySet(),
+                    )
+                }
                 refresh()
-                readOpenPage()
             }
             is InvoicesEvent.SelectQuickFilter -> setState { copy(quickFilter = event.filter) }
             is InvoicesEvent.SelectPage -> {
@@ -178,23 +241,31 @@ class InvoicesViewModel(
                     },
                 )
             }
+            // Open Items' own tick set — the web's `toggleGroup` (`PaymentsPage.jsx:1409-1418`).
             is InvoicesEvent.SelectGroup -> setState {
-                val all = selected.containsAll(event.ids)
-                copy(selected = if (all) selected - event.ids.toSet() else selected + event.ids)
+                val ticked = pay.openItemsSelected
+                val all = ticked.containsAll(event.ids)
+                copy(pay = pay.copy(openItemsSelected = if (all) ticked - event.ids.toSet() else ticked + event.ids))
             }
             is InvoicesEvent.MarkPaidOne -> payments.markPaidOne(event.invoice)
             is InvoicesEvent.SelectPostedFilter -> setState { copy(postedFilter = event.filter) }
             is InvoicesEvent.SelectCreditNoteFilter -> setState { copy(creditNoteFilter = event.filter) }
             is InvoicesEvent.SelectAccrualFilter -> setState { copy(accrualFilter = event.filter) }
-            is InvoicesEvent.SelectPaymentTab -> setState { copy(paymentTab = event.tab, selected = emptySet()) }
+            // The three tick sets are the tabs' own, and survive moving between them.
+            is InvoicesEvent.SelectPaymentTab -> setState { copy(paymentTab = event.tab) }
             InvoicesEvent.ToggleSelectAll -> if (currentState.page == AccountantPage.Entry) {
                 // Select-all covers only what this reader may open, and nothing in a closed period.
                 val ids = currentState.entrySelectableIds.toSet()
                 setState { copy(selected = if (ids.isNotEmpty() && selected.containsAll(ids)) emptySet() else ids) }
+            } else if (currentState.isAccountant && currentState.page == AccountantPage.Matching) {
+                // Every waiting row of the whole queue, held ones never — the
+                // web's `toggleAll` counts the unfiltered list (`MatchingPage.jsx:441-450`).
+                val ids = currentState.invoices.filter { it.status != InvoiceStatus.Held }.map { it.id }.toSet()
+                setState { copy(selected = if (selected.size == ids.size) emptySet() else ids) }
             } else {
                 payments.toggleSelectAll()
             }
-            is InvoicesEvent.ProcessSelected -> payments.processSelected(event.method)
+            is InvoicesEvent.ProcessSelected -> payments.processSelected(event.code)
             InvoicesEvent.CancelPaymentRun -> setState { copy(runDraft = null) }
             is InvoicesEvent.OpenRun -> payments.openRun(event.run)
             InvoicesEvent.CloseRun -> setState { copy(runDetail = null) }
@@ -219,9 +290,10 @@ class InvoicesViewModel(
                     str(S.desktop_inv_sent_back_for_approval),
                 ) { repository.returnToApproval(it.id) }
 
-            is InvoicesEvent.SelectEntryFilter -> setState { copy(entryFilter = event.filter, selected = emptySet()) }
+            // The web's filters leave the ticks alone (`EntryPage.jsx:359-375`).
+            is InvoicesEvent.SelectEntryFilter -> setState { copy(entryFilter = event.filter) }
             is InvoicesEvent.SelectEntrySort -> setState { copy(entrySort = event.sort) }
-            is InvoicesEvent.SelectPayFilter -> setState { copy(payFilter = event.method, selected = emptySet()) }
+            is InvoicesEvent.SelectPayFilter -> setState { copy(payFilter = event.method) }
             // Seniors are the reviewers, so the hand-off is not theirs (ZL-20450);
             // a row in a closed period is never in the selection to begin with.
             InvoicesEvent.ReviewSelected -> if (!currentState.viewer.isSenior) {
@@ -234,17 +306,16 @@ class InvoicesViewModel(
             InvoicesEvent.ConfirmAssign -> payments.confirmAssign()
             InvoicesEvent.CancelAssign -> setState { copy(assignFor = null) }
 
-            InvoicesEvent.RegenerateAccruals -> regenerateAccruals()
             is InvoicesEvent.SendToApproval -> sendToApproval(event.invoice)
             is InvoicesEvent.StartHold -> setState { copy(holdFor = HoldRequest(holdTargets(event.invoice))) }
             is InvoicesEvent.HoldReasonChanged -> setState { copy(holdFor = holdFor?.copy(reason = event.reason)) }
             is InvoicesEvent.HoldNotesChanged -> setState { copy(holdFor = holdFor?.copy(notes = event.notes)) }
             InvoicesEvent.ConfirmHold -> confirmHold()
             InvoicesEvent.CancelHold -> setState { copy(holdFor = null) }
-            is InvoicesEvent.Release -> actOn(
+            is InvoicesEvent.Release -> actOnWithMessage(
                 listOf(event.invoice),
                 str(S.desktop_released),
-            ) { repository.release(it.id) }
+            ) { repository.releaseWithMessage(it.id) }
             is InvoicesEvent.Unmatch -> actOn(
                 listOf(event.invoice),
                 str(S.desktop_po_removed),
@@ -300,7 +371,7 @@ class InvoicesViewModel(
                 )
             }
             InvoicesEvent.EnterPickFile -> forms.enterPickFile()
-            is InvoicesEvent.EnterChanged -> setState { copy(enter = event.form.copy(error = null)) }
+            is InvoicesEvent.EnterChanged -> forms.changed(event.form)
             is InvoicesEvent.EnterNetChanged -> forms.netChanged(event.value)
             is InvoicesEvent.EnterTaxChanged -> forms.taxChanged(event.value)
             is InvoicesEvent.EnterGrossChanged -> forms.grossChanged(event.value)
@@ -319,6 +390,8 @@ class InvoicesViewModel(
         val s = currentState
         val row = s.invoices.firstOrNull { it.id == id } ?: return true
         if (id in s.selected) return true
+        // The Inbox ticks a closed-period row like any other (`InboxPage.jsx:433-434`).
+        if (s.isAccountant && s.page == AccountantPage.Inbox) return true
         if (s.isLocked(row)) return false
         return s.page != AccountantPage.Entry || s.canAccessEntry(row)
     }
@@ -332,13 +405,24 @@ class InvoicesViewModel(
                 invoices = emptyList(),
                 selected = emptySet(),
                 search = "",
+                // Each web page keeps its filters in its own component state,
+                // so they start over whenever the page is opened again.
+                registerChip = RegisterChip.All,
+                registerDepartment = null,
+                registerDate = DateWindow.All,
+                departmentOrder = departments().keys.toList().ifEmpty { departmentOrder },
                 ledger = null,
                 inboxTab = InboxTab.Queue,
-                credit = credit.copy(form = null, preview = null, history = null, confirmDelete = null),
+                credit = credit.copy(form = null, preview = null, history = null, confirmDelete = null, viewing = null),
+                salesDraft = null,
+                sales = sales.copy(preview = null, history = null, pdf = null),
+                vendorsPage = vendorsPage.copy(detail = null),
+                accrualsPage = accrualsPage.copy(detailId = null, detail = null),
+                pay = pay.cleared(),
             )
         }
         refresh()
-        readOpenPage()
+        readPaymentsTab()
     }
 
     private fun openRoute(path: String) {
@@ -348,8 +432,21 @@ class InvoicesViewModel(
         }
         if (applyRoute(path)) {
             refresh()
-            readOpenPage()
+            readPaymentsTab()
         }
+        openPostedDeepLink(path)
+    }
+
+    /**
+     * `/invoices/posted/<id>` opens that invoice's coding screen, frozen — the
+     * web's detail is URL-driven (`PostedPage.jsx:190-191, 286-289`), and a
+     * bare id is enough: the screen reads the record itself.
+     */
+    private fun openPostedDeepLink(path: String) {
+        val id = AccountantPage.postedDetailId(path) ?: return
+        val s = currentState
+        if (!s.isAccountant || s.page != AccountantPage.Posted || s.ledger?.invoice?.id == id) return
+        onEvent(EntryEvent.Open(Invoice(id = id), readOnly = true))
     }
 
     /**
@@ -363,7 +460,15 @@ class InvoicesViewModel(
      */
     private fun applyRoute(path: String): Boolean {
         val s = currentState
-        if (!s.isAccountant) return false
+        if (!s.isAccountant) return applyDepartmentRoute(path)
+        // `/invoices/cash-close` moved to the Account Hub's Period Close
+        // (`InvoicesModule.jsx:534`): the old address is sent on, not dropped on Overview.
+        val segment = path.substringBefore('?').substringAfter(INVOICES_ROOT, missingDelimiterValue = "")
+            .trim('/').substringBefore('/')
+        if (segment == CASH_CLOSE_SEGMENT) {
+            sendEffect(InvoicesEffect.Navigate(CASH_CLOSE_ROUTE))
+            return false
+        }
         val asked = AccountantPage.forRoute(path)
         awaitingSenior = null
         val page = when {
@@ -375,7 +480,35 @@ class InvoicesViewModel(
             else -> AccountantPage.Overview
         }
         if (page == s.page) return false
-        setState { copy(page = page, invoices = emptyList(), selected = emptySet(), search = "") }
+        setState {
+            copy(
+                page = page,
+                invoices = emptyList(),
+                selected = emptySet(),
+                search = "",
+                pay = pay.cleared(),
+                registerChip = RegisterChip.All,
+                registerDepartment = null,
+                registerDate = DateWindow.All,
+            )
+        }
+        return true
+    }
+
+    /**
+     * The department board keeps its tab in `?tab=` — `all`, `dept`, `my`,
+     * `uploads`, `runApproval`; anything else, or none, is the Approval Queue
+     * (`DepartmentInvoiceModule.jsx:521-531`). True when the tab changed.
+     */
+    private fun applyDepartmentRoute(path: String): Boolean {
+        val tab = DepartmentTab.fromId(
+            path.substringAfter('?', missingDelimiterValue = "").split('&')
+                .firstOrNull { it.startsWith(TAB_PARAM) }?.removePrefix(TAB_PARAM),
+        )
+        if (tab == currentState.departmentTab) return false
+        setState {
+            copy(departmentTab = tab, quickFilter = QuickFilter.All, invoices = emptyList(), selected = emptySet())
+        }
         return true
     }
 
@@ -390,12 +523,18 @@ class InvoicesViewModel(
                 viewer = viewer.withSettings(settings),
                 runAuth = settings.runAuthorisation,
                 hasRunAuthoriser = settings.hasRunAuthoriser,
+                pay = pay.copy(settingsLoaded = true, authLabels = payments.authLabels(settings.runAuthorisation)),
             )
         }
         val s = currentState
         val waiting = awaitingSenior
         awaitingSenior = null
         when {
+            // The run tab is only on the strip for someone on the run chain;
+            // losing that place loses the tab.
+            !s.isAccountant && s.departmentTab == DepartmentTab.RunApproval && !s.viewer.isRunApprover ->
+                onEvent(InvoicesEvent.SelectDepartmentTab(DepartmentTab.ApprovalQueue))
+            !s.isAccountant -> Unit
             s.page.seniorOnly && !s.viewer.isSenior -> showPage(AccountantPage.Overview)
             waiting != null && s.viewer.isSenior && s.page == AccountantPage.Overview -> showPage(waiting)
         }
@@ -410,7 +549,7 @@ class InvoicesViewModel(
             AccountantPage.Overview -> loadOverview()
             AccountantPage.Analytics -> loadAnalytics()
             AccountantPage.Credits -> credits.load()
-            AccountantPage.Accruals -> loadAccruals()
+            AccountantPage.Accruals -> accrualActions.load()
             AccountantPage.Sales -> sales.load()
             else -> return false
         }
@@ -467,30 +606,6 @@ class InvoicesViewModel(
         }
     }
 
-    private fun loadAccruals() {
-        setState { copy(loading = false, accrualsLoading = true) }
-        launch {
-            when (val result = repository.accruals()) {
-                is ZillitResult.Success -> setState { copy(accrualsLoading = false, accruals = result.data) }
-                is ZillitResult.Failure -> setState { copy(accrualsLoading = false, error = result.error.localised()) }
-            }
-        }
-    }
-
-    /** The server recomputes from the orders and invoices as they stand; then the list is re-read. */
-    private fun regenerateAccruals() {
-        if (state.value.busy) return
-        setState { copy(busy = true) }
-        launch {
-            val result = repository.regenerateAccruals()
-            setState { copy(busy = false, error = (result as? ZillitResult.Failure)?.error?.localised()) }
-            if (result is ZillitResult.Success) {
-                notice(str(S.desktop_accruals_recalculated))
-                loadAccruals()
-            }
-        }
-    }
-
     /** One row, or everything ticked — the web's per-row and bulk actions share a path. */
     private fun holdTargets(invoice: Invoice?): List<Invoice> = when {
         invoice != null -> listOf(invoice)
@@ -505,7 +620,7 @@ class InvoicesViewModel(
             setState { copy(error = str(S.desktop_nothing_to_send)) }
             return
         }
-        actOn(rows, str(S.ah_sent_for_approval_toast)) { repository.sendToApproval(it.id) }
+        actOnWithMessage(rows, str(S.ah_sent_for_approval_toast)) { repository.sendToApprovalWithMessage(it.id) }
     }
 
     private fun confirmHold() {
@@ -514,8 +629,10 @@ class InvoicesViewModel(
         if (!request.isReady || request.busy) return
         setState { copy(holdFor = holdFor?.copy(busy = true)) }
         launch {
+            // Notes go only with "Other"; a set reason explains itself (`HoldForQueryModal`).
+            val notes = if (reason.needsNotes()) request.notes.trim() else ""
             val failure = request.invoices.firstNotNullOfOrNull {
-                (repository.hold(it.id, reason, request.notes) as? ZillitResult.Failure)?.error
+                (repository.hold(it.id, reason, notes) as? ZillitResult.Failure)?.error
             }
             setState {
                 copy(
@@ -549,13 +666,48 @@ class InvoicesViewModel(
         }
     }
 
+    /**
+     * [actOn] for the pre-approval queue's writes: row by row, stopping at the
+     * first refusal, and on success the toast is the server's own `message`
+     * — the last one, as the web's loops keep `res` — or [fallback] when it
+     * sent none (`MatchingPage.jsx` `sendToApproval` / `releaseHold`).
+     */
+    internal fun actOnWithMessage(
+        rows: List<Invoice>,
+        fallback: String,
+        action: suspend (Invoice) -> ZillitResult<String?>,
+    ) {
+        if (rows.isEmpty() || state.value.busy) return
+        setState { copy(busy = true) }
+        launch {
+            var message: String? = null
+            var failure: ZillitError? = null
+            for (row in rows) {
+                when (val result = action(row)) {
+                    is ZillitResult.Success -> message = result.data ?: message
+                    is ZillitResult.Failure -> failure = result.error
+                }
+                if (failure != null) break
+            }
+            setState { copy(busy = false, selected = emptySet(), error = failure?.localised()) }
+            if (failure == null) notice(message?.takeIf { it.isNotBlank() }?.localisedMessage() ?: fallback)
+            refresh()
+        }
+    }
+
     /** Which invoices the open accountant page lists; the pages that list none answer empty. */
     private suspend fun accountantRows(page: AccountantPage): ZillitResult<List<Invoice>> = when (page) {
         AccountantPage.Register -> repository.list(InvoiceQuery())
+        // Only what is still in the inbox, as the web filters the answer again (`InboxPage.jsx:217`).
         AccountantPage.Inbox -> repository.list(InvoiceQuery(statuses = listOf(InvoiceStatus.Inbox)))
+            .map { rows -> rows.filter { it.status == InvoiceStatus.Inbox } }
         AccountantPage.ApprovalQueue ->
             repository.list(InvoiceQuery(statuses = listOf(InvoiceStatus.Approval, InvoiceStatus.Rejected)))
-        AccountantPage.Posted -> repository.postedInvoices()
+        // Newest posting first, with the endpoint's total for "Showing N of M" (`PostedPage.jsx:193-210`).
+        AccountantPage.Posted -> repository.postedLedger().map { ledger ->
+            setState { copy(postedTotal = ledger.total) }
+            PostedLedger.sorted(ledger.rows)
+        }
         // Entry is what approval has cleared, or bypassed, and entry has not
         // yet posted — the web's `approved,under_review,override`.
         AccountantPage.Entry -> repository.list(
@@ -565,14 +717,23 @@ class InvoicesViewModel(
         )
         // A payment run is built from what is approved and ready; the batches
         // themselves are a second read, running alongside.
+        // Anything already inside a pending run is left out, so it cannot be
+        // put in a second one (`PaymentsPage.jsx:1194-1198`); the paid wires
+        // beside them are a third read.
         AccountantPage.Payments -> {
             payments.loadPaymentRuns()
-            repository.list(InvoiceQuery(statuses = listOf(InvoiceStatus.ReadyToPay)))
+            payments.loadRecentlyPaid()
+            repository.list(
+                InvoiceQuery(statuses = listOf(InvoiceStatus.ReadyToPay), perPage = InvoicePayments.OPEN_ITEMS_PAGE),
+            ).map { rows -> rows.filter { it.activeRunId.isBlank() } }
         }
         // Vendors shows spend, which is every invoice this production has.
-        AccountantPage.Vendors -> repository.list(InvoiceQuery())
+        AccountantPage.Vendors -> repository.list(InvoiceQuery(perPage = VENDOR_SPEND_PAGE))
         // What the production owes, grouped by vendor on the screen.
-        AccountantPage.Creditors -> repository.list(InvoiceQuery(statuses = Creditors.OPEN_STATUSES))
+        // Re-filtered on arrival, as the web does, should the server loosen the filter.
+        AccountantPage.Creditors ->
+            repository.list(InvoiceQuery(statuses = Creditors.OPEN_STATUSES, perPage = Creditors.PAGE_SIZE))
+                .map(Creditors::owed)
         // Pre-approval is two queues in one list, as the web loads it.
         AccountantPage.Matching ->
             repository.list(InvoiceQuery(statuses = listOf(InvoiceStatus.Matching, InvoiceStatus.Held)))
@@ -642,7 +803,17 @@ class InvoicesViewModel(
         launch {
             when (val r = repository.settings()) {
                 // Older backends have no settings; the buttons fall back to designation.
-                is ZillitResult.Failure -> awaitingSenior = null
+                // The run banner still settles: the web marks the settings read
+                // with an empty team, so nobody reads as an authoriser (`:1181-1182`).
+                is ZillitResult.Failure -> {
+                    awaitingSenior = null
+                    setState {
+                        copy(
+                            hasRunAuthoriser = hasRunAuthoriser && pay.settingsLoaded,
+                            pay = pay.copy(settingsLoaded = true),
+                        )
+                    }
+                }
                 is ZillitResult.Success -> applySettings(r.data)
             }
         }
@@ -666,6 +837,12 @@ class InvoicesViewModel(
                 setState { copy(companies = r.data.companies, taxTypes = r.data.taxTypes, taxTypesKnown = true) }
             }
         }
+        // The currency catalogue a picked company's country resolves through (`useCurrencies`).
+        launch {
+            (repository.currencyCatalogue() as? ZillitResult.Success)?.let { r ->
+                setState { copy(currencyCatalogue = r.data) }
+            }
+        }
         // The close boundary: what it dates on or before is read-only everywhere.
         launch {
             (repository.periodLock() as? ZillitResult.Success)?.let { r -> setState { copy(periodLock = r.data) } }
@@ -680,6 +857,10 @@ class InvoicesViewModel(
         // Three accountant pages are not invoice lists and fetch their own.
         if (s.isAccountant && loadOwnPage(s.page)) return
         if (loadUploadsOnly(s)) return
+        if (!s.isAccountant && s.departmentTab == DepartmentTab.RunApproval) {
+            loadRunApprovals()
+            return
+        }
         val token = ++loadToken
         setState { copy(loading = true) }
         launch {
@@ -695,12 +876,19 @@ class InvoicesViewModel(
                         departmentNames = departmentNames + namesOfDepartments(result.data),
                         userNames = userNames + namesOfAssignees(result.data),
                         assignees = assignees.ifEmpty { directory.accountsTeam() },
-                        // Payment Runs opens with everything ticked, as the web
-                        // does: the queue exists to be paid, not picked over.
-                        selected = if (s.page == AccountantPage.Payments) {
-                            ids
+                        selected = selected.filter { it in ids }.toSet(),
+                        // Open Items is re-ticked whole whenever its rows change,
+                        // as the web's effect on `dbInvoices` does; the Wires and
+                        // Cheques ticks are the reader's own and only lose rows
+                        // that have gone (`PaymentsPage.jsx:1394-1396`).
+                        pay = if (s.isAccountant && s.page == AccountantPage.Payments) {
+                            pay.copy(
+                                openItemsSelected = ids,
+                                wiresSelected = pay.wiresSelected.intersect(ids),
+                                chequesSelected = pay.chequesSelected.intersect(ids),
+                            )
                         } else {
-                            selected.filter { it in ids }.toSet()
+                            pay
                         },
                     )
                 }
@@ -723,16 +911,35 @@ class InvoicesViewModel(
         return false
     }
 
+    /**
+     * Payment Run Approval: every active run, of which the tab shows the ones
+     * this reader signs next ([InvoicesUiState.runsAwaitingMe]) — the web's
+     * `fetchPendingRuns`. A failed read shows an empty list, as the web's does.
+     */
+    private fun loadRunApprovals() {
+        val token = ++loadToken
+        setState { copy(loading = true) }
+        launch {
+            val runs = repository.paymentRuns().getOrNull().orEmpty()
+            if (token != loadToken) return@launch
+            setState { copy(loading = false, paymentRuns = runs) }
+            rememberNames(runs.map { it.createdBy })
+        }
+    }
+
     private suspend fun departmentRows(s: InvoicesUiState): ZillitResult<List<Invoice>> = when (s.departmentTab) {
         DepartmentTab.ApprovalQueue -> repository.approvalQueue()
         DepartmentTab.MyDepartment -> if (s.viewer.departmentId.isBlank()) {
             ZillitResult.Success(emptyList())
         } else {
-            repository.list(InvoiceQuery(departmentId = s.viewer.departmentId))
+            // `department_id` alone, as the web asks (`DepartmentInvoiceModule.jsx:760-762`).
+            repository.list(InvoiceQuery(departmentId = s.viewer.departmentId, perPage = null))
         }
         DepartmentTab.MyInvoices -> repository.mine()
         // Read by loadUploadsOnly, as batches; never reaches here.
         DepartmentTab.Uploads -> ZillitResult.Success(emptyList())
+        // Runs, not invoices — read by loadRunApprovals; never reaches here.
+        DepartmentTab.RunApproval -> ZillitResult.Success(emptyList())
     }
 
     private fun namesOfAssignees(rows: List<Invoice>): Map<String, String> =
@@ -743,13 +950,58 @@ class InvoicesViewModel(
         rows.map { it.departmentId }.filter { it.isNotBlank() }.distinct()
             .mapNotNull { id -> departmentName(id)?.let { id to it } }.toMap()
 
+    /**
+     * Designations for the people an invoice names — its creator, its last
+     * editor, its approvers and the chain's approvers — as the web prints
+     * them under each name (`formatLabel(user.designation_name)`).
+     */
+    internal fun designationsFor(invoice: Invoice): Map<String, String> {
+        val ids = buildSet {
+            add(invoice.userId)
+            add(invoice.updatedBy)
+            invoice.approvals.forEach { add(it.userId) }
+            tiersFor(invoice).forEach { addAll(it.userIds) }
+        }.filter { it.isNotBlank() }
+        if (ids.isEmpty()) return emptyMap()
+        val people = directory.everyone().associateBy { it.id }
+        return ids.mapNotNull { id ->
+            people[id]?.role?.takeIf { it.isNotBlank() }?.let { id to InvoiceLabels.format(it) }
+        }.toMap()
+    }
+
+    /** One person's name and designation, for a read-only record that names who raised it. */
+    internal fun personOf(userId: String): Pair<String?, String?> {
+        if (userId.isBlank()) return null to null
+        val role = directory.everyone().firstOrNull { it.id == userId }?.role?.takeIf { it.isNotBlank() }
+        return resolveUser(userId) to role?.let(InvoiceLabels::format)
+    }
+
     // -- detail --------------------------------------------------------------
 
     internal fun openInvoice(invoice: Invoice) {
         setState {
             val register = isAccountant && page == AccountantPage.Register
-            copy(detail = InvoiceDetail(invoice = invoice, names = namesFor(invoice), decisions = !register))
+            // Payment Runs passes its detail Mark Paid (wire and faster only)
+            // and nothing that decides — no approve, reject or override
+            // (`PaymentsPage.jsx:2388-2406`).
+            val fromPayments = isAccountant && page == AccountantPage.Payments
+            copy(
+                detail = InvoiceDetail(
+                    invoice = invoice,
+                    names = namesFor(invoice),
+                    designations = designationsFor(invoice),
+                    decisions = !register && !fromPayments,
+                    markPaid = fromPayments && invoice.payCode in PaymentRuns.WIRE_CODES,
+                ),
+            )
         }
+        // The web's detail reads its row on open, under the tab it came from.
+        // On the accountant console only Payment Runs' does: the Register and
+        // the Approval Queue pass `markReadOnOpen={false}` (`RegisterPage.jsx:623,
+        // 645`, `ApprovalPage.jsx:134`), Payments keeps the default
+        // (`PaymentsPage.jsx:2389-2397`, `InvoiceDetailModal.jsx:310-317`).
+        readDepartmentRow(invoice.id)
+        readPageRow(AccountantPage.Payments, invoice.id)
         launch {
             when (val r = repository.invoice(invoice.id)) {
                 is ZillitResult.Failure -> setState {
@@ -758,9 +1010,18 @@ class InvoicesViewModel(
                 is ZillitResult.Success -> {
                     setState {
                         val d = detail?.takeIf { it.invoice.id == invoice.id } ?: return@setState this
-                        copy(detail = d.copy(invoice = r.data, loading = false, names = d.names + namesFor(r.data)))
+                        copy(
+                            detail = d.copy(
+                                invoice = r.data,
+                                loading = false,
+                                names = d.names + namesFor(r.data),
+                                designations = d.designations + designationsFor(r.data),
+                            ),
+                        )
                     }
                     loadPreview(r.data)
+                    // The linked-PO cards' faces (`useLinkedPoSummaries`).
+                    review.summarise(r.data.linkedPos.map { it.poId })
                 }
             }
         }
@@ -900,6 +1161,76 @@ class InvoicesViewModel(
 
     internal fun notice(text: String) = sendEffect(InvoicesEffect.Notice(text))
 
+    /**
+     * A payment run's unread read on the accountant console — the web's
+     * `emitInvoiceLevelRead({ level_1: payment_runs, invoiceId: run.id })`
+     * after an approve or a reject lands (`PaymentsPage.jsx:1271-1275, 2308-2312`).
+     */
+    internal fun readPaymentRunRow(id: String) {
+        val key = AccountantPage.Payments.badgeKey
+        if (!state.value.isAccountant || id.isBlank() || key == null) return
+        badges.readEntity(key, id, ROW_READ_KIND)
+    }
+
+    /**
+     * One row's unread read on the accountant console — `emitInvoiceLevelRead`
+     * with the page's `level_1`: the Inbox reads an invoice as its review
+     * opens; [kind] narrows it to one bucket (`query_chat`).
+     */
+    internal fun readAccountantRow(key: String, id: String, kind: String = ROW_READ_KIND) {
+        if (!state.value.isAccountant || id.isBlank()) return
+        badges.readEntity(key, id, kind)
+    }
+
+    /**
+     * One row read under [page]'s `level_1`, and only while [page] is the one
+     * on screen — the web's pages each read their own rows with their own
+     * `emitInvoiceLevelRead`, so the same action reached from another page
+     * (the Register's matching row, Pre-approval's Override) reads nothing.
+     */
+    internal fun readPageRow(page: AccountantPage, id: String) {
+        val s = state.value
+        if (!s.isAccountant || s.page != page) return
+        page.badgeKey?.let { readAccountantRow(it, id) }
+    }
+
+    /**
+     * Whether a decision taken now is the accountant Approval Queue's, whose
+     * row is read once — and only once — the decision lands: approve, reject,
+     * override, Override & Pay and delete, after the await, so a refusal
+     * leaves the badge lit (`ApprovalPage.jsx:282-286, 327-331, 360-364,
+     * 395-399, 635-639`; `InvoiceDetailModal.jsx:436, 894, 916, 948`). Taken
+     * as the action starts, as the web's handler closes over its page.
+     */
+    internal val onApprovalQueue: Boolean
+        get() = state.value.let { it.isAccountant && it.page == AccountantPage.ApprovalQueue }
+
+    /** The Approval Queue's row read after a decision — see [onApprovalQueue]. */
+    internal fun readApprovalQueueRow(id: String) {
+        AccountantPage.ApprovalQueue.badgeKey?.let { readAccountantRow(it, id) }
+    }
+
+    /** Who entered an invoice, and their designation — the review's "Created By" (the raw id when unknown). */
+    internal fun creatorOf(userId: String): Pair<String, String> {
+        if (userId.isBlank()) return "" to ""
+        val person = directory.everyone().firstOrNull { it.id == userId }
+        val name = resolveUser(userId) ?: person?.name?.ifBlank { null } ?: userId
+        return name to person?.role.orEmpty()
+    }
+
+    /**
+     * One row's unread read on the department board — the web's
+     * `emitInvoiceLevelRead({ tool: purchase_order_label, level_1, invoiceId })`,
+     * `level_1` being the open tab's ([DepartmentTab.rowBadgeKey]). Nothing on
+     * the accountant console, whose pages read their own rows under their own
+     * `level_1` ([readAccountantRow], [readPageRow]).
+     */
+    internal fun readDepartmentRow(id: String) {
+        val s = state.value
+        if (s.isAccountant || id.isBlank()) return
+        badges.readEntity(s.departmentTab.rowBadgeKey, id, ROW_READ_KIND)
+    }
+
     internal fun run(block: suspend () -> Unit) = launch { block() }
 
     internal fun now(): Long = nowMillis()
@@ -916,6 +1247,37 @@ class InvoicesViewModel(
 
     /** Saves a fetched file to Downloads and opens it — a credit note's attachments. */
     internal suspend fun saveAndOpen(name: String, bytes: ByteArray) = files.saveAndOpen(name, bytes)
+
+    /** The server's PDF of a sales invoice — the preview's View PDF. */
+    internal suspend fun salesInvoicePdf(id: String) = files.salesInvoicePdf(id)
+
+    /**
+     * What the credit-note and sales line grids pick from beyond the chart:
+     * the Layers picker's tracking sets and the currency catalogue its labels
+     * read — each fetched once, when a form first opens.
+     */
+    internal fun loadLineReference() {
+        if (currentState.trackingSets.isEmpty()) {
+            launch {
+                (repository.trackingSets() as? ZillitResult.Success)?.data?.takeIf { it.isNotEmpty() }?.let { sets ->
+                    setState { copy(trackingSets = sets) }
+                }
+            }
+        }
+        if (currentState.currencyCatalogue.isEmpty()) {
+            launch {
+                (repository.currencyCatalogue() as? ZillitResult.Success)?.data?.takeIf { it.isNotEmpty() }?.let { rows ->
+                    setState { copy(currencyCatalogue = rows) }
+                }
+            }
+        }
+    }
+
+    /** The production's details, as the host has them now — read as a sales preview opens. */
+    internal fun projectInfo(): InvoiceProjectInfo = projectInfoSource()
+
+    /** Leaves for another tool's route — Account Hub → Vendors from the Vendors page. */
+    internal fun navigate(path: String) = sendEffect(InvoicesEffect.Navigate(path))
 
     internal val repo: InvoicesRepository get() = repository
 
@@ -935,7 +1297,8 @@ class InvoicesViewModel(
             attachment = attachment,
             invoiceNumber = form.invoiceNumber.trim(),
             vendorId = form.vendorId,
-            description = form.description.trim(),
+            // `description: form.description || "Invoice"` (`EnterInvoiceModal.jsx:217`).
+            description = form.description.trim().ifBlank { ENTERED_DESCRIPTION },
             grossAmount = gross,
             invoiceDateMs = invoiceDate,
             dueDateMs = InvoiceFormat.parseDateInput(form.dueDate) ?: (nowMillis() + DEFAULT_TERMS_MS),
@@ -956,10 +1319,27 @@ class InvoicesViewModel(
     companion object {
         const val MAX_FILE_BYTES = 10L * 1024 * 1024
         val UPLOAD_EXTENSIONS = setOf("pdf", "jpg", "jpeg", "png")
-        val ENTER_EXTENSIONS = UPLOAD_EXTENSIONS + setOf("doc", "docx")
+        /** `invoiceFileValidation.ALLOWED_EXT` — the manual tab takes what the upload takes. */
+        val ENTER_EXTENSIONS = UPLOAD_EXTENSIONS
+
+        /** What a manual entry with no description is saved as. */
+        private const val ENTERED_DESCRIPTION = "Invoice"
         private const val DEFAULT_TERMS_MS = 30L * 86_400_000L
+
+        /** Vendors adds up every invoice — the web reads `invoices?perPage=500` for it. */
+        private const val VENDOR_SPEND_PAGE = 500
 
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
+
+        /** The `level_2` every non-query invoice read is filed under (`invoice-badge-helpers.js:56`). */
+        private const val ROW_READ_KIND = "invoice_label"
+
+        /** The department board's query-string key. */
+        private const val TAB_PARAM = "tab="
+
+        private const val INVOICES_ROOT = "/invoices"
+        private const val CASH_CLOSE_SEGMENT = "cash-close"
+        private const val CASH_CLOSE_ROUTE = "/film-tools/account-hub/period-close?tab=cash-close"
     }
 }

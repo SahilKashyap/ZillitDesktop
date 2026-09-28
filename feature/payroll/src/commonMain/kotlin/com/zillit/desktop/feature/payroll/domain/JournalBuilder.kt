@@ -44,7 +44,7 @@ class JournalBuilder(
         val week = weekLabel(timecard.weekStarting ?: weekStarting)
         val name = nameOf(timecard.userId)
         val rows = breaks.map { (key, part) -> breakRow(timecard, key, part, byKey[key].orEmpty(), "$week $name") }
-        return rows + savedTaxRow(timecard, byKey["${Journal.SRC_TAX}::${Journal.SRC_TAX}"].orEmpty(), week, name)
+        return rows + taxRow(timecard, rows, byKey["${Journal.SRC_TAX}::${Journal.SRC_TAX}"].orEmpty(), week, name)
     }
 
     /** One pay break's row, the saved coding laid over it. [lead] is the description's week and crew name. */
@@ -73,8 +73,8 @@ class JournalBuilder(
             effectiveDate = (parent?.effectiveDate ?: timecard.effectiveDate)?.let(PayPeriod::isoDate),
             taxType = parent?.taxType.orEmpty(),
             taxRate = parent?.taxRate,
-            trackingCodes = parent?.trackingCodes,
-            tags = parent?.tags,
+            trackingCodes = parent?.trackingCodes.orEmpty(),
+            tags = parent?.tags.orEmpty(),
             splits = lines.filter { it.splitParentId != null },
         )
     }
@@ -141,19 +141,29 @@ class JournalBuilder(
     }
 
     /**
-     * A tax line the accountant saved. Adding one is not part of this port,
-     * but a saved one is carried — so a save from here cannot delete it.
+     * The timecard's tax line — one per timecard, posting against the whole
+     * week's total rather than per pay break, because no single tax line can
+     * represent a mix of rates.
+     *
+     * Always constructed, saved or not: only this builder knows the week, the
+     * crew name and the base the rate applies to. Whether it is SHOWN is the
+     * screen's to decide from [JournalRow.taxSaved] and what the accountant
+     * has added or removed — nothing on the wire says a timecard has no tax,
+     * so a line deleted here would otherwise return on the next read.
      */
-    private fun savedTaxRow(
+    private fun taxRow(
         timecard: PayrollTimecard,
+        own: List<JournalRow>,
         lines: List<JournalLine>,
         week: String,
         name: String,
     ): List<JournalRow> {
-        val parent = lines.firstOrNull { it.splitParentId == null } ?: return emptyList()
+        if (own.isEmpty()) return emptyList()
+        val parent = lines.firstOrNull { it.splitParentId == null }
+        val base = PayrollTimecard.round2(own.sumOf { it.amount ?: 0.0 })
         return listOf(
             JournalRow(
-                id = "tax::${timecard.id}",
+                id = "${Journal.SRC_TAX}::${timecard.id}",
                 timecardId = timecard.id,
                 companyId = timecard.companyId,
                 src = Journal.SRC_TAX,
@@ -161,15 +171,18 @@ class JournalBuilder(
                 identifier = Journal.SRC_TAX,
                 label = taxLabel,
                 category = JournalCategory.Tax,
-                description = parent.ledgerDescription.ifEmpty { cased("$weekWord $week $name $taxLabel") },
-                descriptionOverride = parent.ledgerDescription,
-                amount = parent.debit,
-                code = parent.nominalCode,
-                effectiveDate = parent.effectiveDate?.let(PayPeriod::isoDate),
-                taxType = parent.taxType,
-                taxRate = parent.taxRate,
-                trackingCodes = parent.trackingCodes,
-                tags = parent.tags,
+                description = parent?.ledgerDescription?.takeIf { it.isNotEmpty() }
+                    ?: cased("$weekWord $week $name $taxLabel"),
+                descriptionOverride = parent?.ledgerDescription.orEmpty(),
+                amount = parent?.debit,
+                code = parent?.nominalCode.orEmpty(),
+                effectiveDate = parent?.effectiveDate?.let(PayPeriod::isoDate),
+                taxType = parent?.taxType.orEmpty(),
+                taxRate = parent?.taxRate,
+                trackingCodes = parent?.trackingCodes.orEmpty(),
+                tags = parent?.tags.orEmpty(),
+                taxBase = base,
+                taxSaved = parent != null,
             ),
         )
     }
@@ -202,8 +215,8 @@ class JournalBuilder(
                 effectiveDate = parent?.effectiveDate?.let(PayPeriod::isoDate),
                 taxType = parent?.taxType.orEmpty(),
                 taxRate = parent?.taxRate,
-                trackingCodes = parent?.trackingCodes,
-                tags = parent?.tags,
+                trackingCodes = parent?.trackingCodes.orEmpty(),
+                tags = parent?.tags.orEmpty(),
                 splits = lines.filter { it.splitParentId != null },
             )
         }

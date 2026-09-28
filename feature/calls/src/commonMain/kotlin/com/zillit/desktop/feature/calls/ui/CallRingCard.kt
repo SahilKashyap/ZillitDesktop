@@ -108,7 +108,7 @@ fun CallRingCard(
                 maxLines = 1,
             )
             ZillitText(
-                text = if (incoming) session.incomingRingSubtitle() else session.outgoingRingStatus(),
+                text = if (incoming) session.incomingRingSubtitle() else state.outgoingStatusLine(),
                 style = ZillitTheme.typography.bodySmall,
                 color = CallPalette.muted,
                 maxLines = 1,
@@ -239,8 +239,23 @@ internal fun CallSession.ringContext(incoming: Boolean): String? {
 }
 
 /**
- * The web's monotonic outgoing status (`CallOverlays.tsx:132-142`): `Calling…`
- * until the far end has answered, `Joining…` once someone is in the room.
+ * The outgoing card's status line.
+ *
+ * The per-callee ring states are the authority (`CallRingState`, the web's
+ * `RING_TEXT`), because they are the only thing that can say `Ringing…` — the
+ * roster cannot: a row is Ringing from the moment we dial, so reading it left
+ * the card on "Calling…" for the whole ring. The roster is the fallback, for a
+ * call placed on Line 1 or 2 (no ring events at all) and for the moment before
+ * the first one lands.
+ */
+internal fun CallUiState.outgoingStatusLine(): String {
+    outgoingRing?.let { return it.label }
+    return session?.outgoingRingStatus() ?: ""
+}
+
+/**
+ * The roster's own answer, for the lines with no ring events: `Calling…` until
+ * the far end has answered, `Joining…` once someone is in the room.
  */
 internal fun CallSession.outgoingRingStatus(): String =
     if (participants.any { it.userId != selfUserId && it.status == CallStatus.InCall }) {

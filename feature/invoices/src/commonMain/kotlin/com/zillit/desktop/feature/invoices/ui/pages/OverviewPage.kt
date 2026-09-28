@@ -3,6 +3,9 @@ package com.zillit.desktop.feature.invoices.ui.pages
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -37,6 +41,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
@@ -53,7 +58,9 @@ import com.zillit.desktop.feature.invoices.domain.PendingAction
 import com.zillit.desktop.feature.invoices.domain.PipelineStage
 import com.zillit.desktop.feature.invoices.domain.VendorAlert
 import com.zillit.desktop.feature.invoices.ui.AccountantPage
+import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
+import com.zillit.desktop.feature.invoices.ui.OverviewEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -91,9 +98,10 @@ internal fun OverviewPage(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Un
 // -- the six tiles ------------------------------------------------------------
 
 @Composable
-private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
+private fun StatTiles(data: InvoiceOverview, @Suppress("UNUSED_PARAMETER") onEvent: (InvoicesEvent) -> Unit) {
     val stats = data.stats
-    val open = { page: AccountantPage -> { onEvent(InvoicesEvent.SelectPage(page)) } }
+    // The web's tiles are figures, not links (`OverviewPage.jsx:426-431`).
+    val open = { _: AccountantPage -> null }
     StatGrid(
         columns = STAT_COLUMNS,
         tiles = listOf(
@@ -105,7 +113,7 @@ private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
             },
             {
                 CountTile(
-                    str(S.desktop_awaiting_match), stats.awaitingMatch, stats.awaitingMatchAmount,
+                    str(S.desktop_awaiting_match), stats.awaitingMatch, stats.awaitingMatchAmount.ifBlank { ZERO_MONEY },
                     ZillitIcons.Receipt, StatusTone.Pending, open(AccountantPage.Matching),
                 )
             },
@@ -117,7 +125,7 @@ private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
             },
             {
                 CountTile(
-                    str(S.desktop_ready_to_pay), stats.readyToPay, stats.readyToPayAmount,
+                    str(S.desktop_ready_to_pay), stats.readyToPay, stats.readyToPayAmount.ifBlank { ZERO_MONEY },
                     ZillitIcons.Wallet, StatusTone.Ready, open(AccountantPage.Payments),
                 )
             },
@@ -132,7 +140,7 @@ private fun StatTiles(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
             {
                 MoneyTile(
                     str(S.desktop_total_ap), stats.totalAP, str(S.ah_run_detail_summary_vendors, stats.vendorCount),
-                    ZillitIcons.Bank, null,
+                    ZillitIcons.Bank, StatusTone.Pending,
                 )
             },
         ),
@@ -147,7 +155,7 @@ private fun RowScope.CountTile(
     sub: String,
     icon: ImageVector,
     tone: StatusTone?,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
 ) {
     ZillitStatTile(
         label = label,
@@ -165,7 +173,7 @@ private fun RowScope.CountTile(
 private fun RowScope.MoneyTile(label: String, value: String, sub: String, icon: ImageVector, tone: StatusTone?) {
     ZillitStatTile(
         label = label,
-        value = value.ifBlank { "—" },
+        value = value.ifBlank { ZERO_MONEY },
         sub = sub,
         tone = tone,
         icon = icon,
@@ -178,9 +186,10 @@ private fun RowScope.MoneyTile(label: String, value: String, sub: String, icon: 
 private fun ColumnScope.AlertBanners(data: InvoiceOverview, onEvent: (InvoicesEvent) -> Unit) {
     val stats = data.stats
     if (stats.awaitingMatch <= 0 && stats.overdueCount <= 0) return
-    Row(
+    // Stacked, one under the other, as the web's `flex-col` (`OverviewPage.jsx:436`).
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         if (stats.awaitingMatch > 0) {
             Banner(
@@ -188,7 +197,7 @@ private fun ColumnScope.AlertBanners(data: InvoiceOverview, onEvent: (InvoicesEv
                 detail = str(S.desktop_inv_amount_unmatched, stats.awaitingMatchAmount).trim(),
                 action = str(S.desktop_match),
                 onAction = { onEvent(InvoicesEvent.SelectPage(AccountantPage.Matching)) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         if (stats.overdueCount > 0) {
@@ -197,7 +206,7 @@ private fun ColumnScope.AlertBanners(data: InvoiceOverview, onEvent: (InvoicesEv
                 detail = str(S.desktop_inv_n_past_terms, stats.overdueCount),
                 action = str(S.desktop_pay_now),
                 onAction = { onEvent(InvoicesEvent.SelectPage(AccountantPage.Payments)) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -278,10 +287,8 @@ private fun PipelinePanel(stages: List<PipelineStage>, onEvent: (InvoicesEvent) 
             }
         },
     ) {
-        if (stages.isEmpty()) {
-            Hint(str(S.desktop_nothing_in_the_pipeline))
-            return@ZillitSectionCard
-        }
+        // An empty pipeline draws nothing, as the web's does.
+        if (stages.isEmpty()) return@ZillitSectionCard
         val open = { stage: PipelineStage ->
             { onEvent(InvoicesEvent.SelectPage(AccountantPage.forPipelineStage(stage.id))) }
         }
@@ -651,9 +658,32 @@ private fun ColumnScope.CostReportTable(state: InvoicesUiState, impact: CostRepo
             Cell(row.budget, Modifier.weight(1f))
             Cell(row.pending, Modifier.weight(1f))
             Cell(row.projected, Modifier.weight(1f))
-            Box(Modifier.weight(VARIANCE_WEIGHT)) {
+            Row(
+                modifier = Modifier.weight(VARIANCE_WEIGHT),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                // The web draws a filled track alongside the number, capped at
+                // 100% so one runaway department can't blow out every row's bar.
+                val share = (kotlin.math.abs(row.variance) / VARIANCE_BAR_SCALE).coerceIn(0.0, 1.0).toFloat()
+                Box(
+                    modifier = Modifier
+                        .width(VARIANCE_BAR_WIDTH)
+                        .height(VARIANCE_BAR_HEIGHT)
+                        .clip(ZillitTheme.shapes.pill)
+                        .background(ZillitTheme.colors.surfaceSunken),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(share)
+                            .fillMaxHeight()
+                            .clip(ZillitTheme.shapes.pill)
+                            .background(if (row.isOver) ZillitTheme.colors.danger else ZillitTheme.colors.teal),
+                    )
+                }
                 ZillitStatusPill(
-                    label = (if (row.isOver) "+" else "") + "${row.variance.toInt()}%",
+                    // The server's figure as it is, not cut to a whole number (`{row.variance}%`).
+                    label = (if (row.isOver) "+" else "") + "${plainNumber(row.variance)}%",
                     tone = if (row.isOver) StatusTone.Rejected else StatusTone.Done,
                 )
             }
@@ -663,19 +693,52 @@ private fun ColumnScope.CostReportTable(state: InvoicesUiState, impact: CostRepo
 
 // -- vendor alerts, duplicates, actions, activity -----------------------------
 
+/**
+ * One row of a list-style panel — the web's `pad="0"` body, where every row
+ * owns its own edge-to-edge padding, a hairline under all but the last, and a
+ * hover wash even on rows with nothing to click.
+ */
+@Composable
+private fun SectionListRow(
+    isLast: Boolean,
+    onClick: (() -> Unit)? = null,
+    verticalPadding: Dp = ROW_PADDING_V,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .hoverable(interactionSource)
+                .let { m ->
+                    if (onClick != null) {
+                        m.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+                    } else {
+                        m
+                    }
+                }
+                .background(if (hovered) ZillitTheme.colors.surfaceHover else Color.Transparent)
+                .padding(horizontal = ROW_PADDING_H, vertical = verticalPadding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            content = content,
+        )
+        if (!isLast) ZillitDivider()
+    }
+}
+
 @Composable
 private fun VendorAlertsPanel(alerts: List<VendorAlert>, onEvent: (InvoicesEvent) -> Unit) {
     ZillitSectionCard(
         title = str(S.desktop_vendor_alerts),
         icon = ZillitIcons.Warning,
+        padded = false,
         action = { ZillitStatusPill(label = str(S.desktop_inv_n_actions, alerts.size), tone = StatusTone.Pending) },
     ) {
-        alerts.forEach { alert ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
+        alerts.forEachIndexed { index, alert ->
+            SectionListRow(isLast = index == alerts.lastIndex) {
                 Box(Modifier.size(DOT).clip(ZillitTheme.shapes.pill).background(severityColour(alert.severity)))
                 Column(modifier = Modifier.weight(1f)) {
                     ZillitText(
@@ -688,14 +751,13 @@ private fun VendorAlertsPanel(alerts: List<VendorAlert>, onEvent: (InvoicesEvent
                         color = ZillitTheme.colors.textSecondary,
                     )
                 }
-                AccountantPage.forHref(alert.href)?.let { page ->
-                    ZillitButton(
-                        text = alert.buttonLabel.ifBlank { str(S.recce_open) },
-                        onClick = { onEvent(InvoicesEvent.SelectPage(page)) },
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Small,
-                    )
-                }
+                // Always offered, whatever area the link names (`prefixHref`).
+                ZillitButton(
+                    text = alert.buttonLabel.ifBlank { str(S.recce_open) },
+                    onClick = { onEvent(OverviewEvent.FollowLink(alert.href)) },
+                    variant = ButtonVariant.Primary,
+                    size = ButtonSize.Small,
+                )
             }
         }
     }
@@ -715,6 +777,7 @@ private fun DuplicatesPanel(state: InvoicesUiState, onEvent: (InvoicesEvent) -> 
     ZillitSectionCard(
         title = str(S.desktop_possible_duplicates),
         icon = ZillitIcons.File,
+        padded = false,
         action = {
             if (!state.duplicatesLoading) {
                 ZillitStatusPill(
@@ -727,18 +790,16 @@ private fun DuplicatesPanel(state: InvoicesUiState, onEvent: (InvoicesEvent) -> 
         when {
             state.duplicatesLoading -> Hint(str(S.desktop_checking_for_duplicates))
             flags.isEmpty() -> Hint(str(S.desktop_inv_no_duplicates_detected))
-            else -> flags.forEach { flag -> DuplicateRow(state, flag, onEvent) }
+            else -> flags.forEachIndexed { index, flag ->
+                DuplicateRow(state, flag, isLast = index == flags.lastIndex, onEvent)
+            }
         }
     }
 }
 
 @Composable
-private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, onEvent: (InvoicesEvent) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
+private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, isLast: Boolean, onEvent: (InvoicesEvent) -> Unit) {
+    SectionListRow(isLast = isLast) {
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -760,6 +821,13 @@ private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, onEvent: (
                 color = ZillitTheme.colors.textSecondary,
             )
         }
+        // Every flag can be looked into on Pre-Approval (`OverviewPage.jsx:552`).
+        ZillitButton(
+            text = str(S.av_review),
+            onClick = { onEvent(InvoicesEvent.SelectPage(AccountantPage.Matching)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+        )
         if (flag.isPending) {
             ZillitButton(
                 text = str(S.confirm),
@@ -773,7 +841,7 @@ private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, onEvent: (
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
             )
-        } else {
+        } else if (flag.isConfirmed) {
             ZillitStatusPill(label = str(S.desktop_confirmed_upper), tone = StatusTone.Rejected)
         }
     }
@@ -782,8 +850,11 @@ private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, onEvent: (
 /** "INV-0012 Panavision £1,200.00 matches INV-0009 (paid 3 Mar) — same vendor, same amount." */
 private fun duplicateSentence(flag: DuplicateFlag, currency: String): String {
     val amount = Money.format(flag.invoiceAmount, currency)
+    // `({duplicate_status} {fmtDate(duplicate_date)})` — the date as "3 Mar", or "—".
+    val day = flag.duplicateDateMs?.takeIf { it > 0 }?.let { InvoiceFormat.date(it).substringBeforeLast(' ') } ?: "—"
     val against = listOfNotNull(
         flag.duplicateStatus.takeIf { it.isNotBlank() },
+        day,
     ).joinToString(" ")
     val reasons = flag.matchReasons.joinToString(", ")
     val subject = flag.invoiceRef.ifBlank { str(S.desktop_this_invoice) } + " " +
@@ -814,22 +885,19 @@ private fun PendingActionsPanel(actions: List<PendingAction>, total: Int, onEven
     ZillitSectionCard(
         title = str(S.ah_pending_actions),
         icon = ZillitIcons.Info,
+        padded = false,
         action = { ZillitStatusPill(label = total.toString(), tone = StatusTone.Pending) },
     ) {
         if (actions.isEmpty()) Hint(str(S.desktop_no_pending_actions))
-        actions.forEach { action ->
-            val page = AccountantPage.forHref(action.href)
-            val open = page?.let { Modifier.clickable { onEvent(InvoicesEvent.SelectPage(it)) } } ?: Modifier
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(open)
-                    .padding(vertical = ZillitTheme.spacing.xxs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        actions.forEachIndexed { index, action ->
+            // Every row is a link, wherever it points (`prefixHref`).
+            SectionListRow(
+                isLast = index == actions.lastIndex,
+                onClick = { onEvent(OverviewEvent.FollowLink(action.href)) },
             ) {
-                ZillitStatusPill(label = action.count.toString(), tone = StatusTone.Pending)
-                ZillitText(text = action.label, style = ZillitTheme.typography.bodyMedium)
+                ZillitStatusPill(label = action.count.toString(), tone = actionTone(action.variant))
+                ZillitText(text = action.label, style = ZillitTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                ZillitIcon(icon = ZillitIcons.ChevronRight, tint = ZillitTheme.colors.textMuted, size = CHEVRON)
             }
         }
     }
@@ -837,14 +905,12 @@ private fun PendingActionsPanel(actions: List<PendingAction>, total: Int, onEven
 
 @Composable
 private fun RecentActivityPanel(rows: List<ActivityRow>) {
-    ZillitSectionCard(title = str(S.desktop_recent_activity), icon = ZillitIcons.Reload) {
+    ZillitSectionCard(title = str(S.desktop_recent_activity), icon = ZillitIcons.Reload, padded = false) {
         if (rows.isEmpty()) Hint(str(S.desktop_no_recent_activity_dot))
-        rows.forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
+        rows.forEachIndexed { index, row ->
+            // The web's Recent Activity rows are `py-3` (12dp) — a touch
+            // tighter than the other panels' `py-3.5` (14dp).
+            SectionListRow(isLast = index == rows.lastIndex, verticalPadding = RECENT_ROW_PADDING_V) {
                 ZillitStatusPill(label = row.status, tone = activityTone(row.variant))
                 Column(modifier = Modifier.weight(1f)) {
                     ZillitText(
@@ -866,6 +932,17 @@ private fun RecentActivityPanel(rows: List<ActivityRow>) {
 }
 
 /** The server's tag variant, in this app's tones. */
+/** A number as JavaScript prints it: `12`, `12.5` — never `12.0`. */
+private fun plainNumber(value: Double): String =
+    if (value % 1.0 == 0.0 && kotlin.math.abs(value) < WHOLE_LIMIT) value.toLong().toString() else value.toString()
+
+/** `PILL_TONE[action.variant] || "amber"` — an unknown variant reads amber. */
+private fun actionTone(variant: String): StatusTone = when (variant.lowercase()) {
+    "dim" -> StatusTone.Neutral
+    "" -> StatusTone.Pending
+    else -> activityTone(variant).takeIf { it != StatusTone.Neutral } ?: StatusTone.Pending
+}
+
 private fun activityTone(variant: String): StatusTone = when (variant.lowercase()) {
     "green", "teal" -> StatusTone.Done
     "amber", "gold" -> StatusTone.Pending
@@ -876,9 +953,12 @@ private fun activityTone(variant: String): StatusTone = when (variant.lowercase(
 
 @Composable
 private fun Caption(text: String, modifier: Modifier = Modifier) {
+    // The web's `<th>` face — uppercase, bold and widely tracked in DM Mono —
+    // is `columnHeader`, not `labelSmall`, which also carries chips and reads
+    // noticeably narrower once tracked the same way.
     ZillitText(
         text = text.uppercase(),
-        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+        style = ZillitTheme.typography.columnHeader,
         color = ZillitTheme.colors.textMuted,
         modifier = modifier,
         maxLines = 1,
@@ -897,10 +977,22 @@ private fun Cell(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun Hint(text: String) {
-    ZillitText(text = text, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
+    // Every caller is now inside a `padded = false` card, so the empty-state
+    // line owns the same inset a real row would.
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.textMuted,
+        modifier = Modifier.padding(horizontal = ROW_PADDING_H, vertical = ROW_PADDING_V),
+    )
 }
 
 private const val DETAIL_ALPHA = 0.8f
+
+/** What the web's tiles show for a figure the server left out (`s.totalAP || "£0"`). */
+private const val ZERO_MONEY = "£0"
+private const val WHOLE_LIMIT = 1e15
+private val CHEVRON = 15.dp
 private const val WASH_ALPHA = 0.14f
 private const val EMPTY_WEIGHT = 0.55f
 private const val MIN_SHARE = 0.11f
@@ -919,3 +1011,9 @@ private val FUNNEL_BAR = 30.dp
 private val FUNNEL_LABEL = 110.dp
 private val DOT = 8.dp
 private val LOADING_PAD = 96.dp
+private val ROW_PADDING_H = 18.dp
+private val ROW_PADDING_V = 14.dp
+private val RECENT_ROW_PADDING_V = 12.dp
+private val VARIANCE_BAR_WIDTH = 54.dp
+private val VARIANCE_BAR_HEIGHT = 6.dp
+private const val VARIANCE_BAR_SCALE = 100.0

@@ -17,7 +17,7 @@ object PayPeriod {
     const val MONDAY = 1
     const val DAY_MILLIS = 86_400_000L
     const val WEEK_MILLIS = 7 * DAY_MILLIS
-    private const val DAYS_IN_WEEK = 7
+    const val DAYS_IN_WEEK = 7
     const val SUNDAY_ISO = 7
 
     /** 1970-01-01 was a Thursday — day 4 when Sunday is 0. */
@@ -27,6 +27,9 @@ object PayPeriod {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     )
     private val WEEKDAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    private val WEEKDAY_NAMES = listOf(
+        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+    )
 
     /** The start of the period [epochMillis] falls in. */
     fun startOf(epochMillis: Long, startDay: Int): Long {
@@ -57,6 +60,18 @@ object PayPeriod {
     fun dayLabel(dayMillis: Long): String {
         val day = dayMillis.floorDiv(DAY_MILLIS)
         return "${WEEKDAYS[(day + EPOCH_WEEKDAY).mod(DAYS_IN_WEEK)]} ${dayMonth(dayMillis)}"
+    }
+
+    /**
+     * `Monday` — the day's own name, read in UTC.
+     *
+     * Derived per date rather than taken from a fixed list, because a week
+     * starts on whichever day the production's pay period does: a Wednesday
+     * production's first row is Wednesday, not Monday.
+     */
+    fun weekdayName(dayMillis: Long): String {
+        val day = dayMillis.floorDiv(DAY_MILLIS)
+        return WEEKDAY_NAMES[(day + EPOCH_WEEKDAY).mod(DAYS_IN_WEEK)]
     }
 
     /** `Mon`, `Tue` … for the seven days from [weekStarting]. */

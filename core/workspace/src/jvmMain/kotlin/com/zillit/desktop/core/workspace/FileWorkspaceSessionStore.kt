@@ -1,6 +1,7 @@
 package com.zillit.desktop.core.workspace
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -55,7 +56,7 @@ class FileWorkspaceSessionStore(
         private const val TAG = "WorkspaceSession"
 
         fun defaultFile(): File =
-            File(System.getProperty("user.home"), ".zillit/workspace-session.json")
+            File(ZillitVariant.dataDir, "workspace-session.json")
     }
 }
 

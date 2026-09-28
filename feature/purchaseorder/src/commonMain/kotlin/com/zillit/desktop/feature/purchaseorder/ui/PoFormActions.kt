@@ -97,6 +97,13 @@ internal class PoFormActions(
      */
     private fun requestEdit(id: String) {
         val order = vm.ui.orderById(id) ?: return
+        // Guarded here as well as on the Edit button (PoDialogs.kt): the
+        // amendment path re-checks again in refusesPrompt, but a plain,
+        // not-yet-approved edit never goes through a confirm prompt at all.
+        if (!PoAccess.canEdit(order, vm.ui.viewer, vm.ui.projectSettings.allowAmendAfterApproval)) {
+            vm.fail(str(S.desktop_po_no_rights_on_project))
+            return
+        }
         if (!PoAccess.isAmendment(order.status)) {
             openOrder(id, PoFormMode.EditOrder)
             return
@@ -281,6 +288,19 @@ internal class PoFormActions(
     }
 
     private fun send(form: PoFormState, request: NewPurchaseOrder, success: String) {
+        // The commit is what writes: EditForm/SubmitForm can reach here with
+        // any orderId the caller likes, not only one requestEdit() opened, so
+        // an update is re-checked against the order as it now stands. Create
+        // (orderId == null) stays open to everyone, as the web has it.
+        val orderId = form.orderId
+        if (orderId != null) {
+            val order = vm.ui.orderById(orderId)
+            val allowAmend = vm.ui.projectSettings.allowAmendAfterApproval
+            if (order == null || !PoAccess.canEdit(order, vm.ui.viewer, allowAmend)) {
+                vm.fail(str(S.desktop_po_no_rights_on_project))
+                return
+            }
+        }
         val support = vm.offline
         if (support != null && support.isOffline && form.orderId == null) {
             vm.launchWork { vm.queueOrder(support, request) }

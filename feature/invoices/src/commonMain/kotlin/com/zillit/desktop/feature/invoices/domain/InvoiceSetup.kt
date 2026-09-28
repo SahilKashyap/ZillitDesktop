@@ -64,6 +64,13 @@ data class InvoiceTeamRow(
     val runAccess: Boolean = false,
     val overrideAccess: Boolean = false,
     val isSenior: Boolean = false,
+    /**
+     * The member exactly as the settings document stored it, so a save sends
+     * an untouched member back unchanged — extra keys, a string `"unlimited"`
+     * and all — as the web's `persistTeam` does (`SettingsPage.jsx:524-526`).
+     * Blank for a member added here.
+     */
+    val storedJson: String = "",
 ) {
     val isUnlimited: Boolean get() = isSenior || postingLimit == null
 

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.calls
 
+import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallSession
@@ -253,12 +254,16 @@ class CallTilesTest {
      */
     @Test
     fun `a nameless group roster row is named from the local directory`() {
-        val directory = mapOf("a" to "Priya", "b" to "Rahul", "c" to "Dev")
+        val directory = mapOf(
+            "a" to CallDirectoryEntry("Priya"),
+            "b" to CallDirectoryEntry("Rahul"),
+            "c" to CallDirectoryEntry("Dev"),
+        )
 
         val tiles = buildTiles(
             namelessGroup(), CallMedia(), "Vivek",
             micMuted = false, cameraOn = false, selfHand = false,
-            nameFor = directory::get,
+            directory = directory::get,
         )
 
         assertEquals(listOf("Priya", "Rahul", "Dev"), tiles.drop(1).map { it.name })
@@ -274,11 +279,39 @@ class CallTilesTest {
         val tiles = buildTiles(
             namelessGroup(), CallMedia(), "Vivek",
             micMuted = false, cameraOn = false, selfHand = false,
-            nameFor = mapOf("a" to "Priya")::get,
+            directory = mapOf("a" to CallDirectoryEntry("Priya"))::get,
         )
 
         assertEquals("Guest", tiles.single { it.userId == "b" }.name)
         assertEquals("Guest", tiles.single { it.userId == "c" }.name)
+    }
+
+    /**
+     * The roster is the authority for the job title too — it knows people this
+     * client never fetched — and the directory only fills a row it left blank,
+     * which is what the web's `desigOf` does. A guest has no title in this
+     * production and must never borrow one.
+     */
+    @Test
+    fun `a job title comes from the roster first and the directory second`() {
+        val tiles = buildTiles(
+            session(
+                person("vivek", name = "Vivek").copy(designation = "DoP"),
+                person("asha", name = "Asha"),
+                person("guest_7", name = "Pat").copy(isGuest = true),
+            ),
+            CallMedia(), "Me",
+            micMuted = false, cameraOn = false, selfHand = false,
+            directory = mapOf(
+                "vivek" to CallDirectoryEntry("Vivek", "Gaffer"),
+                "asha" to CallDirectoryEntry("Asha", "Grip"),
+                "guest_7" to CallDirectoryEntry("Pat", "Producer"),
+            )::get,
+        )
+
+        assertEquals("DoP", tiles.single { it.userId == "vivek" }.designation, "the roster's own wins")
+        assertEquals("Grip", tiles.single { it.userId == "asha" }.designation, "a blank row is filled in")
+        assertEquals("", tiles.single { it.userId == "guest_7" }.designation, "a guest has no title here")
     }
 
     @Test
@@ -286,7 +319,7 @@ class CallTilesTest {
         val tiles = buildTiles(
             session(person("vivek", name = "Asha")), CallMedia(), "Me",
             micMuted = false, cameraOn = false, selfHand = false,
-            nameFor = { "Someone Else" },
+            directory = { CallDirectoryEntry("Someone Else") },
         )
 
         assertEquals("Asha", tiles.last().name)
@@ -303,7 +336,7 @@ class CallTilesTest {
         val tiles = buildTiles(
             session(), media, "Me",
             micMuted = false, cameraOn = false, selfHand = false,
-            nameFor = { "Priya" },
+            directory = { CallDirectoryEntry("Priya") },
         )
 
         assertEquals("Guest", tiles.single { it.uid == 77 }.name)

@@ -214,6 +214,31 @@ class CardParityRulesTest {
         assertEquals(2, TransactionFilters(statementId = "s", from = "2026-08-01", to = "2026-08-31").count)
     }
 
+    /**
+     * A `to` of today is never sent, whatever range is stored — there are no
+     * future transactions, and `to=<today>T23:59:59Z` is a UTC day boundary,
+     * so west of UTC it clipped part of today's own spend.
+     */
+    @Test
+    fun `a to of today is dropped from the query, and does not count as a filter`() {
+        val today = TransactionFilters.todayIso()
+
+        val query = TransactionFilters(from = "2026-01-01", to = today).query()
+
+        assertEquals(mapOf("from" to "2026-01-01T00:00:00Z"), query)
+        assertEquals(0, TransactionFilters(to = today).count, "a range that is only 'to today' filters nothing")
+    }
+
+    /** Until today: no dates at all are sent, whatever range is stored underneath. */
+    @Test
+    fun `until today sends no dates, but still counts as one filter`() {
+        val f = TransactionFilters(from = "2026-08-01", to = "2026-09-01", untilToday = true)
+
+        assertTrue(f.query().isEmpty())
+        assertEquals(1, f.count, "the switch alone still shows a filter is applied")
+        assertEquals(2, f.copy(cardId = "c1").count)
+    }
+
     /** A month back from the 31st lands on the shorter month's last day, not in the next one. */
     @Test
     fun `the default window is the last month, clamped`() {

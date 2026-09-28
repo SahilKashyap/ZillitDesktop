@@ -54,7 +54,9 @@ import com.zillit.desktop.feature.payroll.domain.Employment
 import com.zillit.desktop.feature.payroll.domain.ExportFormat
 import com.zillit.desktop.feature.payroll.domain.OverallStatus
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
+import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.RowAction
+import com.zillit.desktop.feature.payroll.domain.payrollMoneyTotal
 import com.zillit.desktop.feature.payroll.domain.RunAction
 import com.zillit.desktop.feature.payroll.domain.RunRow
 import com.zillit.desktop.feature.payroll.domain.RunSelection
@@ -244,7 +246,7 @@ private fun RunMain(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         RunToolbar(state, selection, onEvent)
-        SummaryStrip(rows)
+        SummaryStrip(rows, state.currencyRates)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -365,11 +367,21 @@ private fun ExportSummaryButton(exporting: Boolean, onEvent: (PayrollEvent) -> U
     }
 }
 
+/** [payrollMoneyTotal] over a list of Run rows, reading each row's own currency. */
+internal fun RunRow.Companion.moneyTotal(
+    rows: List<RunRow>,
+    rates: PayrollCurrencyRates,
+    amount: (RunRow) -> Double,
+): Pair<Double, String?> = payrollMoneyTotal(rows.map { amount(it) to it.timecard.currency }, rates)
+
 /** The six tiles — the web's `SummaryStrip`. Holiday pay and NIC are the grid's own estimates where no fringes came. */
 @Composable
-private fun SummaryStrip(rows: List<RunRow>) {
-    val currency = rows.firstNotNullOfOrNull { it.timecard.currency }
+private fun SummaryStrip(rows: List<RunRow>, rates: PayrollCurrencyRates) {
     val approved = rows.count { it.overall in APPROVED_BUCKETS }
+    val gross = RunRow.moneyTotal(rows, rates) { it.gross }
+    val holidayPay = RunRow.moneyTotal(rows, rates) { it.holidayPay }
+    val allowances = RunRow.moneyTotal(rows, rates) { it.allowances }
+    val totalCost = RunRow.moneyTotal(rows, rates) { it.totalCost }
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         ZillitStatTile(
             str(S.desktop_payroll_total_crew),
@@ -379,25 +391,25 @@ private fun SummaryStrip(rows: List<RunRow>) {
         )
         ZillitStatTile(
             str(S.desktop_payroll_gross_labour),
-            Money.compact(rows.sumOf { it.gross }, currency),
+            Money.compact(gross.first, gross.second),
             Modifier.weight(1f),
             str(S.desktop_payroll_before_fringes),
         )
         ZillitStatTile(
             str(S.dm_rates_card_hp),
-            Money.compact(rows.sumOf { it.holidayPay }, currency),
+            Money.compact(holidayPay.first, holidayPay.second),
             Modifier.weight(1f),
             str(S.desktop_payroll_rate_where_applicable, RunRow.HOLIDAY_PAY_LABEL),
         )
         ZillitStatTile(
             str(S.allowances_label),
-            Money.compact(rows.sumOf { it.allowances }, currency),
+            Money.compact(allowances.first, allowances.second),
             Modifier.weight(1f),
             str(S.desktop_payroll_kit_mileage_box),
         )
         ZillitStatTile(
             str(S.desktop_payroll_total_cost),
-            Money.compact(rows.sumOf { it.totalCost }, currency),
+            Money.compact(totalCost.first, totalCost.second),
             Modifier.weight(1f),
             str(S.desktop_payroll_full_liability),
             tone = StatusTone.Ready,

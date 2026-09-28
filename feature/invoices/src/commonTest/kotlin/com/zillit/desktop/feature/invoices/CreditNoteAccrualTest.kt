@@ -1,6 +1,11 @@
 package com.zillit.desktop.feature.invoices
 
+import com.zillit.desktop.feature.invoices.data.parseAccrualDetail
 import com.zillit.desktop.feature.invoices.data.parseAccruals
+import com.zillit.desktop.feature.invoices.domain.AccrualSort
+import com.zillit.desktop.feature.invoices.domain.Vendor
+import com.zillit.desktop.feature.invoices.ui.AccrualsUi
+import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.data.parseCreditNotes
 import com.zillit.desktop.feature.invoices.domain.Accrual
 import com.zillit.desktop.feature.invoices.domain.AccrualFilter
@@ -12,6 +17,8 @@ import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Credit notes and accruals: their wire shapes, and the rules on their rows. */
@@ -97,5 +104,72 @@ class CreditNoteAccrualTest {
             listOf("All", "Pending", "Applied", "Disputed", "Resolved"),
             CreditNoteFilter.entries.map { it.label },
         )
+    }
+
+    /** `High Value (>£50k)` keeps what is accrued above fifty thousand. */
+    @Test
+    fun `the high value chip keeps big accruals`() {
+        assertTrue(AccrualFilter.HighValue.keeps(Accrual(id = "a", accrualAmount = 50_000.01)))
+        assertFalse(AccrualFilter.HighValue.keeps(Accrual(id = "b", accrualAmount = 50_000.0)))
+    }
+
+    /** The Used column is not clamped: an over-invoiced order reads past 100%. */
+    @Test
+    fun `used reads to one decimal and runs past a hundred`() {
+        assertEquals("132.4%", Accrual(id = "a", poTotal = 1000.0, invoicedAmount = 1324.0).usedLabel)
+        assertEquals("0.0%", Accrual(id = "a", poTotal = 0.0, invoicedAmount = 5.0).usedLabel)
+        assertEquals("33.3%", Accrual(id = "a", poTotal = 3.0, invoicedAmount = 1.0).usedLabel)
+    }
+
+    /**
+     * The page's own order: search (formatted amounts too), chip, the Accruals
+     * page's own department, then the Sort — the vendor named from the
+     * directory, "Unknown" without one.
+     */
+    @Test
+    fun `accruals filter by their own department and sort as asked`() {
+        val rows = listOf(
+            Accrual(id = "a1", vendorId = "v1", departmentId = "d1", accrualAmount = 100.0, poTotal = 400.0, invoicedAmount = 300.0),
+            Accrual(id = "a2", vendorId = "v2", departmentId = "d1", accrualAmount = 900.0, poTotal = 1000.0, invoicedAmount = 100.0),
+            Accrual(id = "a3", vendorId = "", departmentId = "d2", accrualAmount = 500.0),
+        )
+        val vendors = mapOf("v1" to Vendor("v1", "Zed Trucks"), "v2" to Vendor("v2", "Acme"))
+        val state = InvoicesUiState(accruals = rows, vendors = vendors)
+        assertEquals(listOf("a2", "a3", "a1"), state.shownAccruals.map { it.id }, "Accrual ↓ is the default")
+        assertEquals("Unknown", state.accrualVendorName(rows[2]))
+
+        val d1 = state.copy(accrualsPage = AccrualsUi(departmentId = "d1", sort = AccrualSort.VendorAZ))
+        assertEquals(listOf("a2", "a1"), d1.shownAccruals.map { it.id })
+        assertEquals(null, d1.registerDepartment, "the Register's filter is its own")
+
+        val used = state.copy(accrualsPage = AccrualsUi(sort = AccrualSort.UsedDesc))
+        assertEquals("a1", used.shownAccruals.first().id)
+
+        val asc = state.copy(accrualsPage = AccrualsUi(sort = AccrualSort.AccrualAsc), search = "900")
+        assertEquals(listOf("a2"), asc.shownAccruals.map { it.id }, "the formatted accrual is searched")
+    }
+
+    @Test
+    fun `an accrual detail unwraps the accrual, its order, vendor and invoices`() {
+        val detail = parseAccrualDetail(
+            json.parseToJsonElement(
+                """
+                {"accrual":{"id":"a1","po_number":"PO-9","description":"","po_total":1000,"invoiced_amount":250,
+                            "accrual_amount":750,"status":"accrued"},
+                 "po":{"po_number":"PO-9","status":"POSTED","currency":"USD","description":"Grip truck",
+                       "vat_treatment":"standard","notes":"Night work"},
+                 "vendor":{"name":"Movietech","address":"{\"line1\":\"1 Pinewood\",\"postcode\":\"SL0\"}",
+                           "contact_person":"Sam","email":"s@m.co","phone":{"isd":"+44","number":"7700"}},
+                 "invoices":[{"id":"i1","invoice_number":"INV-1","gross_amount":250,"status":"approved"}]}
+                """.trimIndent(),
+            ),
+        )
+        assertNotNull(detail)
+        assertEquals("PO-9 — Grip truck", detail.title)
+        assertTrue(detail.po!!.isPosted)
+        assertEquals("1 Pinewood, SL0", detail.vendor!!.address)
+        assertEquals("Sam · s@m.co · +44 7700", detail.vendor!!.contactLine)
+        assertEquals(listOf("INV-1"), detail.invoices.map { it.invoiceNumber })
+        assertNull(parseAccrualDetail(json.parseToJsonElement("""{"accrual":null}""")))
     }
 }

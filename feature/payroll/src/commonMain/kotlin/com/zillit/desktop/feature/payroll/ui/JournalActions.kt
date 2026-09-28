@@ -10,6 +10,8 @@ import com.zillit.desktop.feature.payroll.domain.JournalBuilder
 import com.zillit.desktop.feature.payroll.domain.JournalCategory
 import com.zillit.desktop.feature.payroll.domain.JournalEdit
 import com.zillit.desktop.feature.payroll.domain.JournalRow
+import com.zillit.desktop.feature.payroll.domain.JournalSplit
+import com.zillit.desktop.feature.payroll.domain.JournalSplits
 import com.zillit.desktop.feature.payroll.domain.JournalSubmission
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.RunAction
@@ -36,6 +38,9 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
         run.afterConfirm = { openPost() }
     }
 
+    /** Numbers the allocations this session makes; the server names the saved ones. */
+    private var splitSequence = 0
+
     @Suppress("CyclomaticComplexMethod") // One branch per event.
     fun onEvent(event: JournalEvent) {
         when (event) {
@@ -44,7 +49,32 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
             }
             is JournalEvent.Date -> editRow(event.rowId) { _, edit -> edit.copy(effectiveDate = clamp(event.date)) }
             is JournalEvent.Credit -> editRow(event.rowId) { row, edit -> credit(row, edit, event.amount) }
+            is JournalEvent.Describe -> editRow(event.rowId) { _, edit -> edit.copy(description = event.description) }
             is JournalEvent.HeaderDate -> headerDate(event.date)
+            is JournalEvent.AddTax -> addTax(event.timecardId)
+            is JournalEvent.RemoveTax -> removeTax(event.timecardId)
+            is JournalEvent.TaxType -> editRow(event.rowId) { _, edit -> tax(edit, type = event.type) }
+            is JournalEvent.TaxRate -> editRow(event.rowId) { _, edit -> tax(edit, rate = event.rate) }
+            is JournalEvent.Layers -> editRow(event.rowId) { _, edit -> edit.copy(trackingCodes = event.codes) }
+            is JournalEvent.Tags -> editRow(event.rowId) { _, edit -> edit.copy(tags = event.tags) }
+            is JournalEvent.SplitLayers ->
+                editSplit(event.rowId, event.childId) { it.copy(trackingCodes = event.codes) }
+            is JournalEvent.SplitTags -> editSplit(event.rowId, event.childId) { it.copy(tags = event.tags) }
+            is JournalEvent.Split -> editRow(event.rowId) { row, edit ->
+                if (row.splittable) edit.copy(splits = JournalSplits.split(row, edit, ::newSplitId)) else edit
+            }
+            is JournalEvent.SplitAmount -> editRow(event.rowId) { row, edit ->
+                val amount = event.amount.trim().toDoubleOrNull() ?: return@editRow edit
+                edit.copy(splits = JournalSplits.editSplitAmount(row, edit, event.childId, amount))
+            }
+            is JournalEvent.SplitCode -> editSplit(event.rowId, event.childId) { it.copy(nominalCode = event.code) }
+            is JournalEvent.SplitDescribe ->
+                editSplit(event.rowId, event.childId) { it.copy(description = event.description) }
+            is JournalEvent.SplitDate ->
+                editSplit(event.rowId, event.childId) { it.copy(effectiveDate = clamp(event.date)) }
+            is JournalEvent.RemoveSplit -> editRow(event.rowId) { row, edit ->
+                edit.copy(splits = JournalSplits.removeSplit(row, edit, event.childId))
+            }
             JournalEvent.Save -> save()
             JournalEvent.Post -> openPost()
             is JournalEvent.PostDate -> editJournal {
@@ -66,6 +96,53 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
         val text = typed.trim()
         return edit.copy(amount = text.toDoubleOrNull(), amountCleared = text.isEmpty())
     }
+
+    /**
+     * Adds the timecard's tax line, and forgets any removal of it — the two
+     * sets are opposites, so a line added back is not also a line removed.
+     */
+    private fun addTax(timecardId: String) {
+        if (!vm.ui.viewer.seesAccountantViews || timecardId.isBlank()) return
+        editJournal { copy(taxAdded = taxAdded + timecardId, taxRemoved = taxRemoved - timecardId) }
+    }
+
+    /**
+     * Removes it, and drops what was typed on it: a line that comes back after
+     * a refetch starts clean rather than inheriting a rate just deleted.
+     */
+    private fun removeTax(timecardId: String) {
+        if (!vm.ui.viewer.seesAccountantViews || timecardId.isBlank()) return
+        editJournal {
+            copy(
+                taxAdded = taxAdded - timecardId,
+                taxRemoved = taxRemoved + timecardId,
+                edits = edits - "${Journal.SRC_TAX}::$timecardId",
+            )
+        }
+    }
+
+    /**
+     * The picked tax, and the money it derives. Choosing a type or a rate
+     * drops any typed figure, because the figure now follows the rate again —
+     * leaving it would show 20% against an amount that is not 20% of the base.
+     */
+    private fun tax(edit: JournalEdit, type: String? = null, rate: String? = null): JournalEdit = edit.copy(
+        taxType = type ?: edit.taxType,
+        taxRate = rate?.trim()?.toDoubleOrNull()?.coerceIn(0.0, TAX_RATE_MAX) ?: edit.taxRate.takeIf { rate == null },
+        amount = null,
+        amountCleared = false,
+    )
+
+    /** One allocation's field, leaving its siblings' amounts alone. */
+    private fun editSplit(rowId: String, childId: String, change: (JournalSplit) -> JournalSplit) {
+        editRow(rowId) { row, edit ->
+            val splits = JournalSplits.splitsOf(row, edit)
+            edit.copy(splits = splits.map { if (it.id == childId) change(it) else it })
+        }
+    }
+
+    /** Unique within the session; the server assigns the saved line's own id. */
+    private fun newSplitId(): String = "split-${vm.ui.now}-${splitSequence++}"
 
     /** A closed period is read-only; everything else takes the edit. */
     private fun editRow(rowId: String, change: (JournalRow, JournalEdit) -> JournalEdit) {
@@ -299,6 +376,9 @@ internal class JournalActions(private val vm: PayrollViewModel, private val run:
         /** The server message keys the web falls back to (`showApiSuccess(res, t, key)`). */
         const val JOURNAL_SAVED_KEY = "journal_saved"
         const val TIMECARDS_POSTED_KEY = "timecards_posted"
+
+        /** The highest rate the percentage field will hold — the web's `TAX_RATE_MAX`. */
+        const val TAX_RATE_MAX = 100.0
     }
 }
 
@@ -311,7 +391,25 @@ internal fun PayrollUiState.journalRows(): List<JournalRow> {
         categoryLabel = { it.label() },
         taxLabel = str(S.ah_lbl_vat),
         weekWord = str(S.week_label),
-    ).rows(run.timecards, run.journal.coding, week)
+    ).rows(run.timecards, run.journal.coding, week).filter { showsTaxLine(it) }
+}
+
+/**
+ * Whether a tax line is on screen. The builder makes one for every timecard
+ * because only it knows the base; a line the server does not hold is shown
+ * once the accountant adds it, and a removal hides it until the save settles.
+ */
+private fun PayrollUiState.showsTaxLine(row: JournalRow): Boolean {
+    if (!row.isTax) return true
+    val timecardId = row.timecardId ?: return false
+    if (timecardId in run.journal.taxRemoved) return false
+    return row.taxSaved || timecardId in run.journal.taxAdded
+}
+
+/** The timecards on screen that have no tax line yet — each is offered one. */
+internal fun PayrollUiState.timecardsWithoutTax(rows: List<JournalRow>): Set<String> {
+    val withTax = rows.filter { it.isTax }.mapNotNull { it.timecardId }.toSet()
+    return rows.mapNotNull { it.timecardId }.toSet() - withTax
 }
 
 /** The grouped setting's line names — the web's `JOURNAL_CATEGORY_LABELS`. */

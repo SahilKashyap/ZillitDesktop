@@ -2,13 +2,15 @@ package com.zillit.desktop.feature.calls.ui
 
 import androidx.compose.ui.graphics.Color
 import com.zillit.desktop.core.designsystem.ZillitColors
-import com.zillit.desktop.core.designsystem.component.avatarHue
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 /**
  * The model the embedded page draws its own tile chrome from.
@@ -23,20 +25,51 @@ import kotlinx.serialization.json.putJsonArray
  */
 fun stageJson(tiles: List<CallTile>, columns: Int, pins: List<String> = emptyList()): String = buildJsonObject {
     put("cols", columns)
+    // The four words the page draws on a tile. It has no access to the string
+    // catalogue — it is a browser document, not part of the app — so the only
+    // way its chrome is not permanently English is to hand them over with the
+    // model. Three of them were hardcoded in the page until 2026-09-26, on a
+    // surface that ships in 23 languages.
+    putJsonObject("words") {
+        put("you", str(S.you))
+        put("ringing", str(S.txt_ringing))
+        put("guest", str(S.txt_badge_guest))
+        put("hold", str(S.desktop_call_on_hold))
+    }
     // Pinned tile keys, in pin order: the page lays them out big and asks
     // back through a `pin` event, never deciding for itself.
     putJsonArray("pins") { pins.forEach { add(JsonPrimitive(it)) } }
+    // Per-call, collision-free colours (`CallTileColors`) rather than one hash
+    // per name: eight faces at once is where two near-identical hues stop being
+    // a nicety, and the web assigns them the same way so one person is one
+    // colour on every client.
+    val colours = CallTileColors.assign(tiles)
     putJsonArray("tiles") {
         tiles.forEach { tile ->
             addJsonObject {
                 put("uid", tile.uid)
                 put("name", tile.name)
                 put("self", tile.isSelf)
-                put("hue", hex(avatarHue(tile.name)))
+                // Never the app-wide `avatarHue` here: that is a hash of the
+                // name, and two of its shades side by side on a grid of eight
+                // faces read as one person's tile moving. Letter-only is the
+                // fallback, as the web's `colorOf` uses when its map misses.
+                put("hue", hex(colours[tile.key] ?: CallTileColors.of(tile.name)))
                 put("muted", tile.media?.audioMuted ?: false)
                 put("known", tile.media != null)
                 put("ringing", tile.presence == CallStatus.Ringing)
                 put("hand", tile.hand)
+                // What the ROSTER says about them, so the page's chrome and the
+                // Compose stage tell the same story: their job title under the
+                // name, the hold badge and the Guest chip. Without these the
+                // video stage silently dropped all three — a heavyweight
+                // surface owns its pixels, so nothing here can be drawn over
+                // the top. Sharing is deliberately NOT among them: the page
+                // learns that first-hand from the track it mounts, a frame
+                // before Kotlin could tell it.
+                put("desig", tile.designation)
+                put("hold", tile.onHold)
+                put("guest", tile.isGuest)
                 // The Line 1 identity this tile answers to: the page binds a
                 // consumed stream to a tile by the peer id's user half, and a
                 // model without it strands every remote video in "no tile".

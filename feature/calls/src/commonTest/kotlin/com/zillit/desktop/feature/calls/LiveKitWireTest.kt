@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.calls.data.livekit.liveKitRequestFrame
 import com.zillit.desktop.feature.calls.data.livekit.parseLiveKitFrame
 import com.zillit.desktop.feature.calls.data.livekit.userStateStatus
 import com.zillit.desktop.feature.calls.data.livekit.readLiveKitRoster
+import com.zillit.desktop.feature.calls.data.livekit.readLiveKitRosterSnapshot
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallProvider
@@ -183,6 +184,74 @@ class LiveKitWireTest {
         assertTrue(roster[2].isGuest, "a stringified flag still reads")
         assertEquals("Grip", roster[2].designation)
         assertTrue(!roster[1].onHold, "absent is not on hold")
+    }
+
+    /**
+     * The `available` rows are the server's add-user list, which is the ONLY
+     * list the users panel offers — the open production's crew is never it.
+     * They used to be dropped on the floor by `userStateStatus`.
+     */
+    @Test
+    fun `the roster splits the people on the call from the people who could be added`() {
+        val roster = readLiveKitRosterSnapshot(
+            Json.parseToJsonElement(
+                """{"callerId":"u-1","groupMemberIds":["u-1","u-2"],"chatBlockedIds":["u-9"],
+                    "guests":[{"guestId":"g1","name":"Pat"}],
+                    "policy":{"on":true,"screenShareLocked":true},
+                    "states":[
+                      {"userId":"u-1","displayName":"Vivek","state":"in_call"},
+                      {"userId":"u-2","displayName":"Ana","state":"ringing"},
+                      {"userId":"u-5","displayName":"Sam","state":"available","designationName":"Gaffer"},
+                      {"userId":"u-6","displayName":"Jo","state":"left"},
+                      {"userId":"u-7","displayName":"Nobody","state":"a_word_this_build_does_not_know"}]}""",
+            ),
+            callerId = "",
+        )
+        assertEquals(listOf("u-1", "u-2", "u-6"), roster.participants.map { it.userId })
+        assertEquals(CallStatus.Caller, roster.participants[0].status, "the answer's own callerId stamps the host")
+        // One addable row, and an unreadable state is NOT one: offering to ring
+        // somebody on the strength of a word this build cannot read is the kind
+        // of guess that rings the wrong person.
+        assertEquals(listOf("u-5"), roster.addable.map { it.userId })
+        assertEquals("Gaffer", roster.addable.single().designation)
+        assertEquals("u-1", roster.callerId)
+        assertEquals(setOf("u-1", "u-2"), roster.groupMemberIds)
+        assertEquals(listOf("u-9"), roster.chatBlockedIds)
+        assertEquals("Pat", roster.guests?.single()?.name)
+        assertTrue(roster.policy?.shareLocked == true)
+    }
+
+    /**
+     * HTTP does not answer with the socket-only extras, and a caller must read
+     * their absence as "this transport does not say" — never as "the server
+     * cleared it". Absent policy read as a fresh permissive one would unlock a
+     * locked call on every HTTP refresh.
+     */
+    @Test
+    fun `a roster answer without the socket extras leaves them unknown`() {
+        val roster = readLiveKitRosterSnapshot(
+            Json.parseToJsonElement("""{"states":[{"userId":"u-1","displayName":"V","state":"in_call"}]}"""),
+            callerId = "u-1",
+        )
+        assertNull(roster.policy)
+        assertNull(roster.guests)
+        assertNull(roster.chatBlockedIds)
+        assertEquals(CallStatus.Caller, roster.participants.single().status, "the asked-for id stamps the host")
+    }
+
+    /** `callUnreachable` is no registered device; `callMissed` is a ring that timed out. */
+    @Test
+    fun `unreachable is told from a ring that simply timed out`() {
+        val unreachable = assertIs<LiveKitEvent.RingState>(
+            event("""{"type":"callUnreachable","callId":"c1","userId":"u-2"}"""),
+        )
+        assertEquals(CallStatus.NotAnswered, unreachable.status)
+        assertTrue(unreachable.unreachable)
+        val missed = assertIs<LiveKitEvent.RingState>(
+            event("""{"type":"callMissed","callId":"c1","userId":"u-2"}"""),
+        )
+        assertEquals(CallStatus.NotAnswered, missed.status)
+        assertTrue(!missed.unreachable)
     }
 
     @Test

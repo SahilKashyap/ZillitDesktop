@@ -1,3 +1,4 @@
+import java.util.UUID
 import java.util.zip.ZipFile
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
@@ -105,6 +106,8 @@ dependencies {
     // Already on the runtime classpath transitively; declared so the Drive
     // widget's desktop-layer call (DesktopWindowLevel) can compile against it.
     implementation("net.java.dev.jna:jna:5.13.0")
+    // Runs the payroll service's published OT-engine bundle — see RhinoScriptHost.
+    implementation(libs.rhino)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.kotlinx.datetime)
     implementation(libs.compose.uiToolingPreview)
@@ -112,8 +115,8 @@ dependencies {
 }
 
 /**
- * Forwards `-Pzillit.env` / `-Pzillit.config` from the Gradle command line into
- * the **application's** JVM.
+ * Forwards `-Pzillit.env` / `-Pzillit.config` / `-Pzillit.variant` from the
+ * Gradle command line into the **application's** JVM.
  *
  * Without this, `./gradlew :desktopApp:run -Dzillit.env=qa` sets the property on
  * *Gradle's* JVM and the app never sees it — so it silently falls back to
@@ -122,9 +125,10 @@ dependencies {
  *
  *   ./gradlew :desktopApp:run -Pzillit.env=qa
  *   ./gradlew :desktopApp:run -Pzillit.env=qa -Pzillit.http=body
+ *   ./gradlew :desktopApp:run -Pzillit.env=qa -Pzillit.variant=qa
  */
 tasks.withType<JavaExec>().configureEach {
-    listOf("zillit.env", "zillit.config", "zillit.http").forEach { key ->
+    listOf("zillit.env", "zillit.config", "zillit.http", "zillit.variant").forEach { key ->
         (project.findProperty(key) as String?)?.let { systemProperty(key, it) }
     }
 }
@@ -195,13 +199,55 @@ val zillitGitSha: String = runCatching {
     }.standardOutput.asText.get().trim()
 }.getOrDefault("")
 
+/**
+ * Which build this is — the thing that lets a production, QA and develop
+ * install of Zillit sit on one machine at once instead of overwriting each
+ * other (build variants).
+ *
+ * Defaults to `-PzillitEnv`, because anyone packaging a non-production build
+ * is already passing that to pick the server it talks to; override the
+ * variant on its own with `-PzillitVariant` if the two ever need to differ.
+ * Absent, blank, "prod" and "production" all mean production, so a plain
+ * `packageDmg` reproduces today's app exactly — same name, same bundle id,
+ * same data directory — with no migration for existing installs.
+ *
+ *   ./gradlew :desktopApp:packageDmg -PzillitEnv=qa
+ *   ./gradlew :desktopApp:packageDmg -PzillitEnv=develop
+ *   ./gradlew :desktopApp:packageDmg                       # production, unchanged
+ */
+val zillitVariant: String = providers.gradleProperty("zillitVariant")
+    .orElse(providers.gradleProperty("zillitEnv"))
+    .getOrElse("")
+    .trim()
+    .lowercase()
+    .let { if (it == "prod" || it == "production") "" else it }
+
+/** A word for a person to read: blank for production, "QA" / "Dev" otherwise. */
+val zillitVariantLabel: String = when (zillitVariant) {
+    "" -> ""
+    "qa" -> "QA"
+    "develop" -> "Dev"
+    else -> zillitVariant.replaceFirstChar(Char::uppercase)
+}
+
+/**
+ * This build's macOS bundle id (also its LaunchAgent label and the
+ * identifier the notification/screen-share helpers are signed under below).
+ * Must agree with `ZillitVariant.bundleId` at runtime (core:common) — both
+ * follow the same rule off the same `zillitVariant` rather than one
+ * hardcoding what the other computes.
+ */
+val zillitBundleId: String = if (zillitVariant.isEmpty()) "com.zillit.desktop" else "com.zillit.desktop.$zillitVariant"
+
 val generateBuildInfo = tasks.register("generateBuildInfo") {
-    description = "Writes com.zillit.desktop.BuildInfo from zillit.version and the git sha."
+    description = "Writes com.zillit.desktop.BuildInfo from zillit.version, the git sha and the variant."
     val outDir = layout.buildDirectory.dir("generated/buildinfo/kotlin")
     val version = zillitVersion
     val sha = zillitGitSha
+    val variant = zillitVariant
     inputs.property("version", version)
     inputs.property("gitSha", sha)
+    inputs.property("variant", variant)
     outputs.dir(outDir)
     doLast {
         val file = outDir.get().file("com/zillit/desktop/BuildInfo.kt").asFile
@@ -217,6 +263,8 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
             |internal object BuildInfo {
             |    const val VERSION: String = "$version"
             |    const val GIT_SHA: String = "$sha"
+            |    /** "", "qa" or "develop" — see `zillitVariant` in desktopApp/build.gradle.kts. */
+            |    const val VARIANT: String = "$variant"
             |}
             |
             """.trimMargin(),
@@ -227,9 +275,11 @@ val generateBuildInfo = tasks.register("generateBuildInfo") {
 kotlin.sourceSets["main"].kotlin.srcDir(generateBuildInfo)
 
 // The product's name everywhere a user sees a file: the .app bundle, the DMG,
-// the Windows installer, the dock and the menu bar. The bundle id stays
-// `com.zillit.desktop` — renaming the bundle must not re-identify the app.
-val desktopPackageName = "Zillit-Desktop"
+// the Windows installer, the dock and the menu bar. Suffixed with the variant
+// label so a QA or develop build installs *beside* production rather than
+// over it. For production the bundle id stays exactly `com.zillit.desktop` —
+// renaming the bundle must not re-identify the app.
+val desktopPackageName = "Zillit-Desktop" + if (zillitVariantLabel.isEmpty()) "" else "-$zillitVariantLabel"
 
 val jbrFrameworks = File(jetbrainsRuntime.get().metadata.installationPath.asFile.parentFile, "Frameworks")
 
@@ -504,7 +554,7 @@ if (jbrFrameworks.isDirectory) {
                 "bash", "-c",
                 """
                 set -euo pipefail
-                app="${'$'}1"; identity="${'$'}2"; entitlements="${'$'}3"
+                app="${'$'}1"; identity="${'$'}2"; entitlements="${'$'}3"; bundleId="${'$'}4"
 
                 staging="${'$'}(mktemp -d)"
                 trap 'rm -rf "${'$'}staging"' EXIT
@@ -545,11 +595,14 @@ if (jbrFrameworks.isDirectory) {
                 # disagree. For zillit-notify that decides whether the banner
                 # is delivered; for zillit-capture it decides whether the
                 # Screen Recording grant the user gave Zillit counts as this
-                # helper's grant too.
+                # helper's grant too. `bundleId` is THIS variant's id — a QA
+                # or develop build signed under production's identifier would
+                # pass codesign but fail both checks at runtime, because the
+                # daemon compares against the bundle actually on disk.
                 for helper in zillit-notify zillit-capture; do
                     path="${'$'}app/Contents/MacOS/${'$'}helper"
                     [ -f "${'$'}path" ] || continue
-                    codesign --force --identifier com.zillit.desktop --options runtime \
+                    codesign --force --identifier "${'$'}bundleId" --options runtime \
                         --timestamp --sign "${'$'}identity" "${'$'}path"
                 done
 
@@ -565,6 +618,7 @@ if (jbrFrameworks.isDirectory) {
                 app,
                 resignIdentity.get(),
                 project.file("entitlements.plist").absolutePath,
+                zillitBundleId,
             )
         }
     } else {
@@ -835,6 +889,17 @@ compose.desktop {
             jvmArgs += "-Dzillit.env=$environment"
         }
 
+        // This build's own identity for `ZillitVariant` (core:common) to read
+        // at runtime — the data directory, Keychain service and LaunchAgent
+        // label it computes from this must match what this same variant was
+        // packaged with below (`bundleID`, `packageName`, `upgradeUuid`), or a
+        // signed helper's `--identifier` above, or the two disagree about
+        // which app they are. Omitted for production, so a plain package
+        // keeps using `~/.zillit` with no flag needed.
+        if (zillitVariant.isNotEmpty()) {
+            jvmArgs += "-Dzillit.variant=$zillitVariant"
+        }
+
         nativeDistributions {
             // Dmg → macOS, Msi + Exe → Windows, Deb → ChromeOS/Crostini + Linux
             // (plan §1). Signing and notarization are configured in M12; these
@@ -892,7 +957,11 @@ compose.desktop {
             )
 
             macOS {
-                bundleID = "com.zillit.desktop"
+                // Distinct per variant (see `zillitBundleId` above) — this is
+                // what lets Launch Services, Spotlight and the Dock treat a
+                // QA or develop install as a different app from production
+                // rather than the same one living in a second folder.
+                bundleID = zillitBundleId
 
                 // The wordmark every other client wears — sourced from the
                 // iOS app icon set (1024px master in desktopApp/icons).
@@ -946,6 +1015,14 @@ compose.desktop {
                  * has no audio. They are user-facing: this exact text is what
                  * the permission dialog shows.
                  */
+                // CFBundleURLSchemes is deliberately NOT suffixed per variant:
+                // it is what WidgetLaunch's `zillit://` shortcuts and the
+                // server's deep links target, and both only know the one
+                // scheme. With two variants installed, macOS hands a
+                // `zillit://` URL to whichever last registered it — a variant
+                // opened directly from its own window/tray is unaffected;
+                // only a `zillit://…` link arriving from outside the app may
+                // land on the wrong copy.
                 infoPlist {
                     extraKeysRawXml = """
                         <key>NSMicrophoneUsageDescription</key>
@@ -958,7 +1035,7 @@ compose.desktop {
                         <array>
                             <dict>
                                 <key>CFBundleURLName</key>
-                                <string>com.zillit.desktop</string>
+                                <string>$zillitBundleId</string>
                                 <key>CFBundleURLSchemes</key>
                                 <array>
                                     <string>zillit</string>
@@ -969,11 +1046,26 @@ compose.desktop {
                 }
             }
             windows {
-                menuGroup = "Zillit"
+                menuGroup = "Zillit" + if (zillitVariantLabel.isEmpty()) "" else " $zillitVariantLabel"
                 iconFile.set(project.file("icons/zillit.ico"))
-                // Stable UUID — required for MSI upgrades to replace rather
-                // than install alongside. Do not regenerate.
-                upgradeUuid = "8F5D2C41-9A3E-4B7C-BE21-6D4A0F3E9C58"
+                // Stable per-variant UUID — required for MSI upgrades to
+                // replace rather than install alongside. An upgradeUuid is
+                // exactly how WiX/jpackage tells two products apart, so a QA
+                // or develop build needs its OWN id: sharing production's
+                // would make installing it silently replace production
+                // instead of sitting beside it. Do not regenerate any of these.
+                upgradeUuid = when (zillitVariant) {
+                    "" -> "8F5D2C41-9A3E-4B7C-BE21-6D4A0F3E9C58"
+                    "qa" -> "B3C6E6F1-4E8A-4E6B-9E36-5B9A6E1F0A2D"
+                    "develop" -> "0E7D9C2B-1A3F-4C5E-8D2A-7F6B4C9E3A1B"
+                    // An unrecognised variant still needs a stable id so
+                    // repackaging it twice upgrades rather than duplicates;
+                    // deterministic from the variant string rather than
+                    // hardcoded, since nothing named it in advance.
+                    else -> UUID.nameUUIDFromBytes(
+                        "zillit-desktop-variant-$zillitVariant".toByteArray(),
+                    ).toString()
+                }
                 // Start-menu entry, desktop shortcut, and a folder chooser —
                 // the installer people expect on Windows rather than a silent
                 // per-user drop into AppData.
@@ -983,7 +1075,7 @@ compose.desktop {
                 perUserInstall = false
             }
             linux {
-                packageName = "zillit-desktop"
+                packageName = "zillit-desktop" + if (zillitVariant.isEmpty()) "" else "-$zillitVariant"
                 iconFile.set(project.file("icons/zillit-512.png"))
             }
         }

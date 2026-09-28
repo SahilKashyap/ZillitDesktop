@@ -110,9 +110,11 @@ internal class CardLifecycleActions(
         deliver("card-register_${stamp()}.${format.extension}") { vm.repo.exportCards(format, rows) }
     }
 
+    /** The rows the screen is showing, not the whole register — the same filters that fetched it. */
     private fun exportTransactions(format: ExportFormat) {
         if (!vm.current.viewer.isAccountant) return refuse()
-        deliver("card-transactions_${stamp()}.${format.extension}") { vm.repo.exportTransactions(format) }
+        val filters = vm.current.transactionFilters
+        deliver("card-transactions_${stamp()}.${format.extension}") { vm.repo.exportTransactions(format, filters) }
     }
 
     private fun stamp(): String = CardDates.toIso(today())

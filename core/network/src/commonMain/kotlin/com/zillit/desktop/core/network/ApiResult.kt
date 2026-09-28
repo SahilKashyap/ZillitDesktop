@@ -24,6 +24,12 @@ data class ApiEnvelope(
      */
     @SerialName("messageElements") val messageElements: List<MessageElement>? = null,
     @SerialName("data") val data: JsonElement? = null,
+    /**
+     * A paged list's row count, when the service reports it beside `data`
+     * (`{status, data: [...], total}`) — how a capped page can say "Showing
+     * 500 of 812" rather than stop silently. Null when absent.
+     */
+    @SerialName("total") val total: JsonElement? = null,
 )
 
 /**

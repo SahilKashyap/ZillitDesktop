@@ -1,12 +1,15 @@
 package com.zillit.desktop.feature.invoices.data
 
+import com.zillit.desktop.feature.invoices.domain.CarriedFields
 import com.zillit.desktop.feature.invoices.domain.CodedLine
 import com.zillit.desktop.feature.invoices.domain.Company
 import com.zillit.desktop.feature.invoices.domain.EntryCoding
 import com.zillit.desktop.feature.invoices.domain.EntryHeader
+import com.zillit.desktop.feature.invoices.domain.EntryTotals
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceProjectSettings
 import com.zillit.desktop.feature.invoices.domain.PeriodLock
+import com.zillit.desktop.feature.invoices.domain.PoDeliveryAddress
 import com.zillit.desktop.feature.invoices.domain.QueryMessage
 import com.zillit.desktop.feature.invoices.domain.QueryThread
 import com.zillit.desktop.feature.invoices.domain.QuickEntry
@@ -39,13 +42,19 @@ internal fun parseCodedLines(obj: JsonObject): Pair<List<CodedLine>, TaxLine?> {
             account = line.text("account"),
             amount = line.number("total") ?: line.number("unit_price") ?: 0.0,
             overridden = true,
+            trackingCodes = parseTrackingCodes(line["tracking_codes"]),
+            tags = parseTags(line["tags"]),
         )
     }
     val lines = rows.filterNot { it.isTaxLine() }.mapIndexed { index, line -> parseCodedLine(line, index) }
     return lines to tax
 }
 
-/** One saved line; an id-less row gets a stable one from its position. */
+/**
+ * One saved line; an id-less row gets a stable one from its position. Its
+ * Layers, tags, custom fields and rental dates are read onto the line itself,
+ * so a save carries them back whether or not the row had an id (ZL parity H3).
+ */
 internal fun parseCodedLine(line: JsonObject, index: Int): CodedLine {
     val amount = line.number("total") ?: line.number("amount") ?: 0.0
     return CodedLine(
@@ -59,7 +68,68 @@ internal fun parseCodedLine(line: JsonObject, index: Int): CodedLine {
         taxType = line.text("tax_type", "taxType"),
         expenditureType = line.text("expenditure_type", "expenditureType"),
         splitParentId = line.text("split_parent_id", "splitParentId").ifBlank { null },
+        trackingCodes = parseTrackingCodes(line["tracking_codes"]),
+        tags = parseTags(line["tags"]),
+        carried = parseCarried(line),
     )
+}
+
+/** `tracking_codes` — set id → code, as an object or the same object JSON-encoded; non-text values are skipped. */
+internal fun parseTrackingCodes(raw: JsonElement?): Map<String, String> {
+    val obj = raw as? JsonObject ?: (raw as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+        ?.takeIf { it.startsWith("{") }
+        ?.let { runCatching { invoicesJson.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+        ?: return emptyMap()
+    return obj.mapNotNull { (set, value) ->
+        (value as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content?.takeIf { it.isNotBlank() }?.let { set to it }
+    }.toMap()
+}
+
+/** `tags` — the strings of the array; anything else is none. */
+internal fun parseTags(raw: JsonElement?): List<String> =
+    (raw as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+
+/** What a line carries but this client never edits, kept as the JSON it was read as. */
+internal fun parseCarried(line: JsonObject): CarriedFields {
+    val custom = line["custom_fields"] as? JsonArray ?: JsonArray(emptyList())
+    return CarriedFields(
+        customFieldsJson = custom.toString(),
+        rentalStartJson = (line["rental_start"] ?: JsonNull).toString(),
+        rentalEndJson = (line["rental_end"] ?: JsonNull).toString(),
+        customFields = customFieldValues(custom),
+    )
+}
+
+/**
+ * `custom_fields` as name → value — each entry is a field, or a group of them
+ * under `fields` (`EntryDetailModal.jsx:1033-1054`). The first value for a
+ * name wins.
+ */
+private fun customFieldValues(custom: JsonArray): List<Pair<String, String>> {
+    val seen = LinkedHashMap<String, String>()
+    custom.mapNotNull { it as? JsonObject }.forEach { entry ->
+        val fields = (entry["fields"] as? JsonArray)?.mapNotNull { it as? JsonObject } ?: listOf(entry)
+        fields.forEach { field ->
+            val name = field.text("name")
+            if (name.isNotBlank() && name !in seen) seen[name] = field.text("value")
+        }
+    }
+    return seen.toList()
+}
+
+/** A PO's `delivery_address`: an object with its parts, or one plain string. */
+internal fun parseDeliveryAddress(raw: JsonElement?): PoDeliveryAddress? = when (raw) {
+    is JsonObject -> PoDeliveryAddress(
+        name = raw.text("name"),
+        lines = listOf("line1", "line2", "city", "state", "postalCode")
+            .map { raw.text(it) }.filter { it.isNotBlank() }.joinToString(", "),
+        email = raw.text("email"),
+        phone = raw.text("phone").takeIf { it.isNotBlank() }
+            ?.let { "${raw.text("phoneCode")} $it".trim() }.orEmpty(),
+    )
+    is JsonPrimitive -> raw.takeUnless { it is JsonNull }?.content?.trim()?.takeIf { it.isNotEmpty() }
+        ?.let { PoDeliveryAddress(lines = it) }
+    else -> null
 }
 
 /** `20`, `"20"` and `"20%"` are all 20 — the web's `parseTaxRate`; anything else is no rate. */
@@ -85,11 +155,16 @@ private fun JsonObject.isTaxLine(): Boolean = flag("is_tax") == true || flag("is
  * writes the whole header, so an edit survives whichever button is pressed
  * (ZL-20476).
  *
- * Each line is written in the web's shape; the fields this client does not
- * edit — layers, tags, custom fields, rental dates — are carried over from the
- * line as it was read ([savedLinesJson]), and a split child inherits its
- * parent's layers and tags, as the web's `makeChild` copies them.
+ * Each line is written in the web's shape (`serializeLineItems`,
+ * `EntryDetailModal.jsx:898-915`): its Layers, tags, custom fields and rental
+ * dates are the line's own, as read or as edited here. A line built without
+ * them ([CodedLine.carried] null) falls back to the saved row with its id
+ * ([savedLinesJson]), a new child to its parent's Layers and tags.
+ *
+ * [amounts] — only when the currency was changed — rewrites the invoice's own
+ * net / tax / gross from the coded totals (`amountsPayload`, `invoicePayload.js:112`).
  */
+@Suppress("LongParameterList") // One argument per part of the web's payload.
 internal fun entryUpdateBody(
     header: EntryHeader,
     lines: List<CodedLine>?,
@@ -98,16 +173,22 @@ internal fun entryUpdateBody(
     savedLinesJson: String = "",
     chart: Set<String> = emptySet(),
     status: String? = null,
+    amounts: EntryTotals? = null,
 ): JsonObject = buildJsonObject {
     put("invoice_number", JsonPrimitive(header.invoiceNumber))
     InvoiceFormat.parseDateInput(header.invoiceDate)?.let { put("invoice_date", JsonPrimitive(it)) }
     InvoiceFormat.parseDateInput(header.dueDate)?.let { put("due_date", JsonPrimitive(it)) }
     InvoiceFormat.parseDateInput(header.effectiveDate)?.let { put("effective_date", JsonPrimitive(it)) }
-    put("pay_method", JsonPrimitive(header.payMethod.wire))
+    put("pay_method", JsonPrimitive(header.payWire))
     header.currency.trim().takeIf { it.isNotEmpty() }?.let { put("currency", JsonPrimitive(it)) }
     put("company_id", header.companyId.nullIfBlank())
     put("bank_id", header.bankId.nullIfBlank())
     put("episode", header.episode.nullIfBlank())
+    amounts?.let {
+        put("net_amount", JsonPrimitive(EntryCoding.round2(it.net)))
+        put("tax_amount", JsonPrimitive(EntryCoding.round2(it.tax)))
+        put("gross_amount", JsonPrimitive(EntryCoding.round2(it.gross)))
+    }
     status?.let { put("status", JsonPrimitive(it)) }
     if (lines != null) {
         val saved = savedLines(savedLinesJson)
@@ -115,7 +196,7 @@ internal fun entryUpdateBody(
             "line_items",
             buildJsonArray {
                 lines.forEach { add(lineWire(it, saved, chart)) }
-                if (tax != null) add(taxLineWire(tax, taxAmount, saved, chart))
+                if (tax != null) add(taxLineWire(tax, taxAmount, chart))
             },
         )
     }
@@ -127,9 +208,11 @@ private fun savedLines(json: String): List<JsonObject> =
         .orEmpty()
 
 private fun lineWire(line: CodedLine, saved: List<JsonObject>, chart: Set<String>): JsonObject {
-    val own = saved.firstOrNull { it.text("id") == line.id && !it.isTaxLine() }
-    // A new child has no saved row of its own; it takes its parent's layers and tags.
-    val inherited = own ?: line.splitParentId?.let { parent -> saved.firstOrNull { it.text("id") == parent } }
+    val carried = line.carried
+    val own = if (carried == null) saved.firstOrNull { it.text("id") == line.id && !it.isTaxLine() } else null
+    // A line built without its extras: a child takes its parent's saved Layers and tags.
+    val inherited = own ?: line.splitParentId?.takeIf { carried == null }
+        ?.let { parent -> saved.firstOrNull { it.text("id") == parent } }
     return buildJsonObject {
         put("id", JsonPrimitive(line.id))
         put("description", JsonPrimitive(line.description))
@@ -140,18 +223,45 @@ private fun lineWire(line: CodedLine, saved: List<JsonObject>, chart: Set<String
         put("expenditure_type", JsonPrimitive(line.expenditureType))
         put("tax_type", line.taxType.nullIfBlank())
         put("tax_rate", line.taxRate?.let(::JsonPrimitive) ?: JsonNull)
-        put("rental_start", own?.get("rental_start") ?: JsonNull)
-        put("rental_end", own?.get("rental_end") ?: JsonNull)
+        put("rental_start", carried?.rentalStartJson?.let(::jsonOrNull) ?: own?.get("rental_start") ?: JsonNull)
+        put("rental_end", carried?.rentalEndJson?.let(::jsonOrNull) ?: own?.get("rental_end") ?: JsonNull)
         put("split_parent_id", line.splitParentId.nullIfBlank())
-        put("tracking_codes", inherited?.get("tracking_codes") as? JsonObject ?: JsonObject(emptyMap()))
-        put("tags", inherited?.get("tags") as? JsonArray ?: JsonArray(emptyList()))
-        put("custom_fields", own?.get("custom_fields") as? JsonArray ?: JsonArray(emptyList()))
+        put(
+            "tracking_codes",
+            if (carried != null || line.trackingCodes.isNotEmpty()) {
+                codesJson(line.trackingCodes)
+            } else {
+                inherited?.get("tracking_codes") as? JsonObject ?: JsonObject(emptyMap())
+            },
+        )
+        put(
+            "tags",
+            if (carried != null || line.tags.isNotEmpty()) {
+                tagsJson(line.tags)
+            } else {
+                inherited?.get("tags") as? JsonArray ?: JsonArray(emptyList())
+            },
+        )
+        put(
+            "custom_fields",
+            carried?.customFieldsJson?.let(::jsonOrNull) as? JsonArray
+                ?: own?.get("custom_fields") as? JsonArray ?: JsonArray(emptyList()),
+        )
     }
 }
 
-/** The consolidated reclaimable-tax line, in the web's shape; its layers and tags are kept. */
-private fun taxLineWire(tax: TaxLine, amount: Double, saved: List<JsonObject>, chart: Set<String>): JsonObject {
-    val own = saved.firstOrNull { it.isTaxLine() }
+private fun codesJson(codes: Map<String, String>): JsonObject = JsonObject(codes.mapValues { JsonPrimitive(it.value) })
+
+private fun tagsJson(tags: List<String>): JsonArray = JsonArray(tags.map { JsonPrimitive(it) })
+
+private fun jsonOrNull(text: String): JsonElement? = runCatching { invoicesJson.parseToJsonElement(text) }.getOrNull()
+
+/**
+ * The consolidated reclaimable-tax line, in the web's shape, with the tax
+ * row's own Layers and tags — read off the saved row when the view opened,
+ * so they are what is on screen (`taxLineMeta`).
+ */
+private fun taxLineWire(tax: TaxLine, amount: Double, chart: Set<String>): JsonObject {
     return buildJsonObject {
         put("is_tax", JsonPrimitive(true))
         put("description", JsonPrimitive(""))
@@ -165,10 +275,20 @@ private fun taxLineWire(tax: TaxLine, amount: Double, saved: List<JsonObject>, c
         put("rental_start", JsonNull)
         put("rental_end", JsonNull)
         put("split_parent_id", JsonNull)
-        put("tracking_codes", own?.get("tracking_codes") as? JsonObject ?: JsonObject(emptyMap()))
-        put("tags", own?.get("tags") as? JsonArray ?: JsonArray(emptyList()))
+        put("tracking_codes", codesJson(tax.trackingCodes))
+        put("tags", tagsJson(tax.tags))
         put("custom_fields", JsonArray(emptyList()))
     }
+}
+
+/**
+ * Handing an invoice on — `{assigned_to, assignment_reason, updated_at}`, as
+ * both `EntryPage.jsx:923` and `EntryDetailModal.jsx:352-356` send it.
+ */
+internal fun assignBody(userId: String, reason: String, nowMs: Long): JsonObject = buildJsonObject {
+    put("assigned_to", JsonPrimitive(userId))
+    put("assignment_reason", JsonPrimitive(reason))
+    put("updated_at", JsonPrimitive(nowMs))
 }
 
 /** A bulk "Submit for Review": the status, and when (`EntryPage.jsx`). */
@@ -200,7 +320,7 @@ internal fun quickEntryBody(entry: QuickEntry): JsonObject = buildJsonObject {
     put("effective_date", entry.effectiveDate.trim().takeIf { it.isNotEmpty() }?.let(::JsonPrimitive) ?: JsonNull)
     put("pay_method", JsonPrimitive("bacs"))
     put("status", JsonPrimitive("ready_to_pay"))
-    put("tags", JsonArray(emptyList()))
+    put("tags", tagsJson(entry.tags))
 }
 
 // -- Production Setup, the close boundary and the chart ---------------------------
@@ -232,6 +352,9 @@ internal fun parseProjectSettings(data: JsonElement?): InvoiceProjectSettings {
             )
         },
         lock = PeriodLock(lockedThrough = locked, timeZone = settings.text("timezone")).takeIf { it.isSet },
+        assetTags = settings.arrayField("asset_tags").mapNotNull {
+            (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content?.trim()?.takeIf(String::isNotEmpty)
+        },
     )
 }
 

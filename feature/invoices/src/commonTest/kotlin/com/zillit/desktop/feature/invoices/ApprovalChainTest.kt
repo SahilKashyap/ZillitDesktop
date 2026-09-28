@@ -31,8 +31,6 @@ class ApprovalChainTest {
         scope = TierScope.Department,
         departmentId = "d-cam",
         tiers = listOf(
-            // Written out of order on purpose: the server's `order` wins over array position.
-            TierLevel(3, listOf(TierRule("default", userIds = listOf("fc")))),
             TierLevel(1, listOf(TierRule("default", userIds = listOf("cam-hod")))),
             TierLevel(
                 2,
@@ -41,6 +39,7 @@ class ApprovalChainTest {
                     TierRule("amount", amountThreshold = 5_000.0, userIds = listOf("upm")),
                 ),
             ),
+            TierLevel(3, listOf(TierRule("default", userIds = listOf("fc")))),
         ),
     )
 
@@ -80,7 +79,7 @@ class ApprovalChainTest {
             tiers = listOf(
                 TierLevel(1, listOf(TierRule("default", userIds = emptyList()))),
                 TierLevel(2, listOf(TierRule("amount", amountThreshold = 10_000.0, userIds = listOf("big")))),
-                TierLevel(3, listOf(TierRule("default", userIds = listOf("fc", "fc", "")))),
+                TierLevel(3, listOf(TierRule("default", userIds = listOf("fc", "fc")))),
             ),
         )
         val tiers = ApprovalChain.resolveTiers(gappy, 100.0)
@@ -88,6 +87,35 @@ class ApprovalChainTest {
         assertEquals(1, tiers.single().number)
         assertEquals(listOf("fc"), tiers.single().userIds)
         assertEquals(1, ApprovalChain.totalTiers(tiers))
+    }
+
+    /** The web reads the tiers in array order, not by `order` (`approval-helpers.js:199`). */
+    @Test
+    fun `tiers keep the server's array order`() {
+        val config = ApprovalTierConfig(
+            scope = TierScope.All,
+            tiers = listOf(
+                TierLevel(2, listOf(TierRule("default", userIds = listOf("second-listed")))),
+                TierLevel(1, listOf(TierRule("default", userIds = listOf("first-listed")))),
+            ),
+        )
+        val tiers = ApprovalChain.resolveTiers(config, 10.0)
+        assertEquals(listOf("second-listed"), tiers.first().userIds)
+        assertEquals(listOf(1, 2), tiers.map { it.number })
+    }
+
+    /** Only `default` and `amount` rules count; a rule of any other type — blank included — is ignored. */
+    @Test
+    fun `a rule with no known type counts for nobody`() {
+        val config = ApprovalTierConfig(
+            scope = TierScope.All,
+            tiers = listOf(
+                TierLevel(1, listOf(TierRule("", userIds = listOf("untyped")))),
+                TierLevel(2, listOf(TierRule("default", userIds = listOf("pm")))),
+            ),
+        )
+        val tiers = ApprovalChain.resolveTiers(config, 10.0)
+        assertEquals(listOf(listOf("pm")), tiers.map { it.userIds })
     }
 
     @Test

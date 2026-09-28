@@ -1032,7 +1032,7 @@
     <string name="desktop_drive_trash_empty_message">Usunięte pliki i foldery czekają tutaj, aż je przywrócisz albo usuniesz trwale.</string>
     <string name="desktop_email_forward_to">Przekazuj na</string>
     <string name="desktop_tools_drag_to_reorder">Przeciągnij, aby zmienić kolejność: %1$s</string>
-    <string name="desktop_call_line3_not_configured">Linia 3 nie jest skonfigurowana w tej instalacji</string>
+    <string name="desktop_call_line3_not_configured">Linia 1 nie jest skonfigurowana w tej instalacji</string>
     <string name="desktop_drive_favourite">Ulubione</string>
     <string name="desktop_drive_restore_tooltip">Przywróć do pierwotnej lokalizacji</string>
     <string name="desktop_turn_off">Wyłącz</string>

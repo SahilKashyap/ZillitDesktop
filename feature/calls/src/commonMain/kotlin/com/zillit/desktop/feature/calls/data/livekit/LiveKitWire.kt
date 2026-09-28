@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls.data.livekit
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
@@ -67,6 +68,14 @@ sealed interface LiveKitEvent {
         val userId: String,
         val status: CallStatus,
         val busy: Boolean = false,
+        /**
+         * `callUnreachable`: the server found no device registered for that
+         * identity, which is a different answer from a ring that timed out and
+         * a much more useful one — it is the signature of a wrong
+         * `primary_device_id` / `toUserId` registration. [CallStatus] collapses
+         * both to NotAnswered, so the distinction is carried here.
+         */
+        val unreachable: Boolean = false,
     ) : LiveKitEvent
 
     /** The caller hung up before anyone answered — dismiss the ring. */
@@ -335,7 +344,8 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
     "callAccepted" -> ringState(obj, CallStatus.InCall)
     "callDeclined" -> ringState(obj, CallStatus.Declined)
     "callBusy" -> ringState(obj, CallStatus.Declined, busy = true)
-    "callUnreachable", "callMissed" -> ringState(obj, CallStatus.NotAnswered)
+    "callUnreachable" -> ringState(obj, CallStatus.NotAnswered, unreachable = true)
+    "callMissed" -> ringState(obj, CallStatus.NotAnswered)
     "callCancelled" -> obj.text("callId")?.let(LiveKitEvent::Cancelled)
     "callHandledElsewhere" -> obj.text("callId")?.let(LiveKitEvent::HandledElsewhere)
     "callEnded" -> LiveKitEvent.Ended(obj.text("reason").orEmpty())
@@ -400,9 +410,14 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
     else -> null
 }
 
-private fun ringState(obj: JsonObject, status: CallStatus, busy: Boolean = false): LiveKitEvent? {
+private fun ringState(
+    obj: JsonObject,
+    status: CallStatus,
+    busy: Boolean = false,
+    unreachable: Boolean = false,
+): LiveKitEvent? {
     val callId = obj.text("callId") ?: return null
-    return LiveKitEvent.RingState(callId, obj.text("userId").orEmpty(), status, busy)
+    return LiveKitEvent.RingState(callId, obj.text("userId").orEmpty(), status, busy, unreachable)
 }
 
 /**
@@ -472,32 +487,107 @@ fun JsonObject.readLiveKitCredentials(): LiveKitCredentials? =
     }
 
 /**
- * `GET /v1/calls/{id}` style roster — `getCallRoster`'s `states`, as
- * participants the coordinator can hold. The caller's own row is stamped
- * Caller so the tiles know whose call it is.
+ * The whole roster answer — the socket's `getCallRoster` and the identical
+ * `GET /v1/calls/{id}/roster`, which is why there is one parser and not two.
+ *
+ * [participants] are the people the call is made of. [addable] are the
+ * `available` rows: the server's own list of who else could be rung, seeded
+ * from project membership by its `fillRoster`, and the ONLY list the users
+ * panel offers — the open production's crew is never it, because the call may
+ * belong to another production and the server is the authority on who exists.
+ *
+ * The socket-only extras are nullable so a caller can tell "the HTTP answer
+ * does not carry this" from "the server cleared it" — the web is explicit
+ * about that distinction and it matters for [policy] especially, where absent
+ * read as a fresh permissive policy would unlock a locked call.
  */
-fun readLiveKitRoster(data: JsonElement?, callerId: String): List<CallParticipant> {
-    val root = data as? JsonObject ?: return emptyList()
-    val states = root["states"] as? JsonArray ?: return emptyList()
-    return states.mapNotNull { row ->
-        val state = row as? JsonObject ?: return@mapNotNull null
-        val userId = state.text("userId") ?: return@mapNotNull null
-        val status = userStateStatus(state.text("state")) ?: return@mapNotNull null
-        CallParticipant(
-            userId = userId,
-            name = state.text("displayName").orEmpty(),
-            image = state.picture().orEmpty(),
-            status = if (userId == callerId && status == CallStatus.InCall) CallStatus.Caller else status,
-            // Omitted when not on hold — read absent as false, never unknown.
-            onHold = state.bool("onHold") ?: false,
-            isGuest = state.bool("isGuest") ?: userId.startsWith(GUEST_PREFIX),
-            // Spellings vary by backend; the web reads all three. A label key
-            // (`gaffer_label`) on every one of them, so it goes through the dictionary.
-            designation = (state.text("designationName") ?: state.text("designation_name")
-                ?: state.text("designation").orEmpty()).localised(),
-        )
-    }
+data class LiveKitRoster(
+    val participants: List<CallParticipant> = emptyList(),
+    val addable: List<CallCrewEntry> = emptyList(),
+    /** Whose call it is, when the answer says. */
+    val callerId: String = "",
+    /** Members of the chat group the call was rung from; everyone else was added ad hoc. */
+    val groupMemberIds: Set<String> = emptySet(),
+    val policy: LiveKitCallPolicy? = null,
+    val guests: List<LiveKitGuest>? = null,
+    val chatBlockedIds: List<String>? = null,
+)
+
+/**
+ * `getCallRoster` / `GET …/roster`, whole.
+ *
+ * The caller's own row is stamped Caller so the tiles know whose call it is;
+ * `available` rows are split off as [LiveKitRoster.addable] rather than
+ * dropped, which is what they used to be.
+ */
+fun readLiveKitRosterSnapshot(data: JsonElement?, callerId: String): LiveKitRoster {
+    val root = data as? JsonObject ?: return LiveKitRoster()
+    val states = (root["states"] as? JsonArray ?: return LiveKitRoster()).mapNotNull { it as? JsonObject }
+    val whose = root.text("callerId").orEmpty().ifBlank { callerId }
+    return LiveKitRoster(
+        participants = states.mapNotNull { it.asParticipant(whose) },
+        addable = states.mapNotNull { it.asAddable() },
+        callerId = whose,
+        groupMemberIds = (root["groupMemberIds"] as? JsonArray).orEmpty()
+            .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.toSet(),
+        policy = (root["policy"] as? JsonObject)?.let(::readLiveKitPolicy),
+        guests = (root["guests"] as? JsonArray)?.mapNotNull { row ->
+            val guest = row as? JsonObject ?: return@mapNotNull null
+            LiveKitGuest(guest.text("guestId") ?: return@mapNotNull null, guest.text("name").orEmpty())
+        },
+        chatBlockedIds = (root["chatBlockedIds"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+    )
 }
+
+/** One `states` row as somebody on the call, or null when they are not on it. */
+private fun JsonObject.asParticipant(callerId: String): CallParticipant? {
+    val userId = text("userId") ?: return null
+    val status = userStateStatus(text("state")) ?: return null
+    return CallParticipant(
+        userId = userId,
+        name = text("displayName").orEmpty(),
+        image = picture().orEmpty(),
+        status = if (userId == callerId && status == CallStatus.InCall) CallStatus.Caller else status,
+        // Omitted when not on hold — read absent as false, never unknown.
+        onHold = bool("onHold") ?: false,
+        isGuest = bool("isGuest") ?: userId.startsWith(GUEST_PREFIX),
+        handRaised = bool("handRaised") ?: bool("raise_hand") ?: false,
+        designation = designation(),
+    )
+}
+
+/**
+ * The same row as somebody who could be RUNG IN — `available`, and only that.
+ *
+ * [userStateStatus] deliberately refuses to turn `available` into a status, so
+ * it is read here instead. A word this build does not know is NOT addable:
+ * offering to ring somebody on the strength of an unreadable state is the kind
+ * of guess that rings the wrong person.
+ */
+private fun JsonObject.asAddable(): CallCrewEntry? {
+    val userId = text("userId") ?: return null
+    if (text("state")?.trim()?.lowercase() != "available") return null
+    return CallCrewEntry(
+        userId = userId,
+        deviceId = "",
+        name = text("displayName").orEmpty(),
+        designation = designation(),
+    )
+}
+
+/** Just the people on the call — [readLiveKitRosterSnapshot] for callers that want nothing else. */
+fun readLiveKitRoster(data: JsonElement?, callerId: String): List<CallParticipant> =
+    readLiveKitRosterSnapshot(data, callerId).participants
+
+/**
+ * Spellings vary by backend; the web reads all three. A label key
+ * (`gaffer_label`) on every one of them, so it goes through the dictionary —
+ * which is the whole of the web's `labelText(designation)` and ours.
+ */
+private fun JsonObject.designation(): String =
+    (text("designationName") ?: text("designation_name") ?: text("designation").orEmpty()).localised()
+
 
 /** Link guests are minted as `guest_<id>`; the tiles chip them off the prefix even when the roster forgets to. */
 const val GUEST_PREFIX = "guest_"

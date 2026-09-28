@@ -52,6 +52,19 @@ enum class PoReasonAction {
 }
 
 sealed interface PoEvent {
+    /**
+     * Which door this composition came through — the web's `?entry=tool`
+     * (`AuthContext.jsx`, read by `PurchaseOrdersRouter`).
+     *
+     * `true` is the Film Tools tile, where even an accountant gets the
+     * department view and raises their own orders; `false` is the Account
+     * Hub's own sidebar, which opens the accounts console. Sent before
+     * anything else a window does and again when it takes focus, so a shared
+     * view model follows whichever window the reader is looking at. A no-op
+     * when nothing changes.
+     */
+    data class Enter(val asTool: Boolean) : PoEvent
+
     data object Refresh : PoEvent
     data class Open(val destination: PoDestination) : PoEvent
 

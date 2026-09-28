@@ -39,6 +39,14 @@ data class ProfileSnapshot(
     val departmentName: String? = null,
     val designationId: String? = null,
     val designationName: String? = null,
+    /**
+     * The identifiers behind the two names (`department_accounts`,
+     * `designation_financial_controller_accounts`) — what role checks
+     * should compare. Not cached: null on an offline start, when readers
+     * fall back to the names.
+     */
+    val departmentIdentifier: String? = null,
+    val designationIdentifier: String? = null,
     /** Producers and main cast may withhold their name from the crew list. */
     val keepNamePrivate: Boolean = false,
     /**
@@ -102,6 +110,14 @@ data class ProjectSnapshot(
      * web's `getProjectLanguage` does.
      */
     val languageCode: String? = null,
+    /**
+     * The company's contact block — `company_address`, `company_phone`,
+     * `company_email` — for documents the production issues (a sales
+     * invoice's header). Not cached: null until the details are read.
+     */
+    val companyAddress: String? = null,
+    val companyPhone: String? = null,
+    val companyEmail: String? = null,
 )
 
 data class UserSnapshot(
@@ -139,6 +155,17 @@ data class UserSnapshot(
      * start falls back to [email] until the network answers.
      */
     val mailboxAddress: String? = null,
+    /**
+     * This crew member is on a deal — the production requires them to sign a
+     * deal memo (`signing_required`).
+     *
+     * Payroll's Production Report board rosters the crew WITH A DEAL rather
+     * than the crew with a timecard, which is what lets it estimate someone
+     * who has not filled a card in yet. Not cached, like [mailboxAddress]: an
+     * offline start simply has no roster until the crew list answers, which is
+     * better than one built from a stale flag.
+     */
+    val signingRequired: Boolean = false,
 )
 
 data class ToolSnapshot(
@@ -191,6 +218,8 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
             departmentName = profile.departmentName,
             designationId = profile.designationId,
             designationName = profile.designationName,
+            departmentIdentifier = profile.departmentIdentifier,
+            designationIdentifier = profile.designationIdentifier,
             keepNamePrivate = profile.keepNamePrivate.toDb(),
             email = profile.email,
             phone = profile.phone,
@@ -214,6 +243,8 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
                 departmentName = it.departmentName,
                 designationId = it.designationId,
                 designationName = it.designationName,
+                departmentIdentifier = it.departmentIdentifier,
+                designationIdentifier = it.designationIdentifier,
                 keepNamePrivate = it.keepNamePrivate.toBool(),
                 email = it.email,
                 phone = it.phone,

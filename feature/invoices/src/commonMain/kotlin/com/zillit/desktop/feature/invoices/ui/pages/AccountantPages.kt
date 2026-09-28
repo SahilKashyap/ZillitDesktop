@@ -5,33 +5,25 @@ package com.zillit.desktop.feature.invoices.ui.pages
 
 import com.zillit.desktop.feature.invoices.domain.InvoiceExport
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
-import com.zillit.desktop.feature.invoices.domain.AgeingWeek
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -43,33 +35,23 @@ import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDataTable
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.feature.invoices.domain.Accrual
-import com.zillit.desktop.feature.invoices.domain.AccrualFilter
-import com.zillit.desktop.feature.invoices.domain.AccrualStatus
-import com.zillit.desktop.feature.invoices.domain.AgeingBucket
 import com.zillit.desktop.feature.invoices.domain.ApprovalChain
-import com.zillit.desktop.feature.invoices.domain.CreditorRow
-import com.zillit.desktop.feature.invoices.domain.Creditors
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceRules
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.DateWindow
-import com.zillit.desktop.feature.invoices.domain.MoneyTotal
-import com.zillit.desktop.feature.invoices.domain.PayMethod
+import com.zillit.desktop.feature.invoices.domain.PoPills
 import com.zillit.desktop.feature.invoices.ui.AccountantPage
-import com.zillit.desktop.feature.invoices.ui.EntryEvent
 import com.zillit.desktop.feature.invoices.ui.InboxEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
-import com.zillit.desktop.feature.invoices.ui.PostedFilter
 import com.zillit.desktop.feature.invoices.ui.RegisterChip
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -86,10 +68,10 @@ internal fun ColumnScope.AccountantPageContent(
         AccountantPage.Overview -> OverviewPage(state, onEvent)
         AccountantPage.Register -> RegisterPage(state, onEvent, nowMs, searchFocus)
         AccountantPage.Inbox -> InboxPage(state, onEvent, searchFocus)
-        AccountantPage.ApprovalQueue -> ApprovalPage(state, onEvent, searchFocus)
+        AccountantPage.ApprovalQueue -> ApprovalPage(state, onEvent)
         // A posted invoice opens the coding screen frozen, as the web's Posted page does.
         AccountantPage.Posted -> state.ledger?.let { EntryLedgerView(state, it, onEvent) }
-            ?: PostedPage(state, onEvent, nowMs, searchFocus)
+            ?: PostedPage(state, onEvent, searchFocus)
         AccountantPage.Matching -> MatchingPage(state, onEvent, searchFocus)
         AccountantPage.Creditors -> CreditorsPage(state, onEvent, nowMs, searchFocus)
         // The coding screen takes the queue's place while an invoice is open on it.
@@ -97,7 +79,9 @@ internal fun ColumnScope.AccountantPageContent(
             ?: EntryPage(state, onEvent, searchFocus)
         AccountantPage.Payments -> PaymentsPage(state, onEvent, nowMs, searchFocus)
         AccountantPage.Vendors -> VendorsPage(state, onEvent, searchFocus)
-        AccountantPage.Sales -> SalesInvoicesPage(state, onEvent, searchFocus)
+        // New / Edit takes the list's place, as the web's form view does.
+        AccountantPage.Sales -> state.salesDraft?.let { SalesInvoiceFormView(state, it, onEvent) }
+            ?: SalesInvoicesPage(state, onEvent, nowMs, searchFocus)
         AccountantPage.Analytics -> AnalyticsPage(state)
         // New / Edit takes the list's place, as the web's form view does.
         AccountantPage.Credits -> state.credit.form?.let { CreditNoteFormView(state, it, onEvent) }
@@ -110,6 +94,11 @@ internal fun ColumnScope.AccountantPageContent(
 
 // Register -----------------------------------------------------------------
 
+/**
+ * Every invoice in one place — the web's `RegisterPage`: the search bar on its
+ * own line, then the status chips with the department, date and Export
+ * controls beside them, then the table in its panel.
+ */
 @Composable
 private fun ColumnScope.RegisterPage(
     state: InvoicesUiState,
@@ -117,35 +106,12 @@ private fun ColumnScope.RegisterPage(
     nowMs: Long,
     searchFocus: FocusRequester,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSearchField(
-            value = state.search,
-            onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = str(S.desktop_inv_search_ref_supplier_description_po),
-            modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
-        )
-        val options = listOf<String?>(null) + state.departmentOptions
-        ZillitSelect(
-            value = state.registerDepartment,
-            options = options,
-            onSelect = { onEvent(InvoicesEvent.SelectRegisterDepartment(it)) },
-            label = { id -> if (id == null) str(S.all_departments) else state.departmentName(id) },
-            modifier = Modifier.width(DEPARTMENT_SELECT_WIDTH),
-        )
-        ZillitSelect(
-            value = state.registerDate,
-            options = DateWindow.entries,
-            onSelect = { onEvent(InvoicesEvent.SelectRegisterDate(it)) },
-            label = { if (it == DateWindow.All) str(S.desktop_inv_all_dates) else it.label },
-            modifier = Modifier.width(DATE_SELECT_WIDTH),
-        )
-        Spacer(Modifier.weight(1f))
-        ExportActions(InvoiceExport.Register, state.busy, onEvent)
-    }
+    ZillitSearchField(
+        value = state.search,
+        onValueChange = { onEvent(InvoicesEvent.Search(it)) },
+        placeholder = str(S.desktop_inv_search_register),
+        modifier = Modifier.fillMaxWidth().focusRequester(searchFocus),
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -158,6 +124,21 @@ private fun ColumnScope.RegisterPage(
                 onClick = { onEvent(InvoicesEvent.SelectRegisterChip(chip)) },
             )
         }
+        Spacer(Modifier.weight(1f))
+        RegisterDepartmentFilter(
+            state = state,
+            value = state.registerDepartment,
+            onSelect = { onEvent(InvoicesEvent.SelectRegisterDepartment(it)) },
+            modifier = Modifier.width(DEPARTMENT_SELECT_WIDTH),
+        )
+        ZillitSelect(
+            value = state.registerDate,
+            options = DateWindow.entries,
+            onSelect = { onEvent(InvoicesEvent.SelectRegisterDate(it)) },
+            label = ::registerDateLabel,
+            modifier = Modifier.width(DATE_SELECT_WIDTH),
+        )
+        ExportMenu(InvoiceExport.Register, state.busy, onEvent)
     }
     // The Date filter counts back from now, so it is applied here, where now is.
     val rows = state.shownInvoices.filter { state.registerDate.keeps(it.invoiceDateMs, nowMs) }
@@ -168,7 +149,7 @@ private fun ColumnScope.RegisterPage(
     ) {
         ZillitDataTable(
             rows = rows,
-            columns = registerColumns(state, nowMs),
+            columns = registerPageColumns(state, nowMs),
             key = { it.id },
             // The web routes a register row by status: inbox rows open the
             // editable review, matching rows the PO matching overlay, and
@@ -182,20 +163,29 @@ private fun ColumnScope.RegisterPage(
                     },
                 )
             },
-            emptyTitle = str(S.desktop_inv_no_invoices_match),
+            emptyTitle = str(S.desktop_inv_register_empty),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
     }
 }
 
-private fun registerColumns(state: InvoicesUiState, nowMs: Long): List<TableColumn<Invoice>> = listOf(
-    TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) { CellText(it.displayNumber) },
-    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.vendorName(it)) },
-    TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
-        CellText(it.description.ifBlank { "—" }, muted = it.description.isBlank())
+/**
+ * The Register's columns (`RegisterPage.jsx:486-565`): the PO cell and the
+ * urgent status read the web's own rules ([PoPills]), and Due counts whole
+ * days past due on anything not yet settled.
+ */
+private fun registerPageColumns(state: InvoicesUiState, nowMs: Long): List<TableColumn<Invoice>> = listOf(
+    // The row's unread under `invoice_register` (`RegisterPage.jsx:527-538`) —
+    // shown, never read here: the Register is a history surface.
+    TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) {
+        CellTextWithUnread(it.displayNumber, state.pageRowUnread(AccountantPage.Register, it.id))
     },
-    poColumn(),
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.pageVendorName(it)) },
+    TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
+        CellText(it.description, muted = true)
+    },
+    TableColumn(str(S.desktop_po), ColumnWidth.Fixed(PO_WIDTH)) { BadgePill(PoPills.register(it)) },
     TableColumn(
         str(S.department),
         ColumnWidth.Weight(1f),
@@ -204,8 +194,8 @@ private fun registerColumns(state: InvoicesUiState, nowMs: Long): List<TableColu
     // Request", and a weighted column clips it to "No PO · Urgent Wir…" —
     // which drops the one word that says what the row is.
     TableColumn(str(S.status), ColumnWidth.Fixed(URGENT_STATUS_WIDTH)) { invoice ->
-        if (invoice.payMethod.isUrgent && invoice.status != InvoiceStatus.Override) {
-            BadgePill(InvoiceRules.urgentBadge(invoice))
+        if (invoice.isUrgentRaw && invoice.status != InvoiceStatus.Override) {
+            BadgePill(PoPills.registerUrgentStatus(invoice))
         } else {
             ZillitStatusPill(label = invoice.statusLabel, tone = invoice.status.statusTone())
         }
@@ -213,8 +203,8 @@ private fun registerColumns(state: InvoicesUiState, nowMs: Long): List<TableColu
     TableColumn(str(S.desktop_gross), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
         MoneyText(it.grossAmount, it.currency, state.projectCurrency)
     },
-    TableColumn(str(S.desktop_due), ColumnWidth.Fixed(DUE_WIDTH)) { invoice ->
-        val overdue = InvoiceRules.daysOverdue(invoice, nowMs)
+    TableColumn(str(S.desktop_due), ColumnWidth.Fixed(DUE_WIDTH), numeric = true) { invoice ->
+        val overdue = InvoiceRules.registerOverdueDays(invoice, nowMs)
         if (overdue != null) {
             ZillitText(
                 text = str(S.desktop_inv_n_days_overdue, overdue),
@@ -228,330 +218,15 @@ private fun registerColumns(state: InvoicesUiState, nowMs: Long): List<TableColu
     },
 )
 
-// Accruals ------------------------------------------------------------------
-
-/**
- * What is committed but not yet invoiced — the web's `AccrualsPage`.
- *
- * One row per purchase order: its total, what has been invoiced against it,
- * and the difference the period must carry. Recalculating is the server's
- * job; this page only asks for it.
- */
-@Composable
-private fun ColumnScope.AccrualsPage(
-    state: InvoicesUiState,
-    onEvent: (InvoicesEvent) -> Unit,
-    searchFocus: FocusRequester,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSearchField(
-            value = state.search,
-            onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = str(S.desktop_inv_search_po_vendor_description),
-            modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
-        )
-        val options = listOf<String?>(null) + state.accruals.map { it.departmentId }.filter { it.isNotBlank() }
-            .distinct()
-        ZillitSelect(
-            value = state.registerDepartment,
-            options = options,
-            onSelect = { onEvent(InvoicesEvent.SelectRegisterDepartment(it)) },
-            label = { id -> if (id == null) str(S.all_departments) else state.departmentName(id) },
-            modifier = Modifier.width(DEPARTMENT_SELECT_WIDTH),
-        )
-        ZillitButton(
-            text = str(S.desktop_regenerate_all),
-            onClick = { onEvent(InvoicesEvent.RegenerateAccruals) },
-            variant = ButtonVariant.Secondary,
-            size = ButtonSize.Small,
-            loading = state.busy,
-            enabled = !state.busy,
-        )
-        ExportActions(InvoiceExport.Accruals, state.busy, onEvent)
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AccrualFilter.entries.forEach { filter ->
-            ZillitChoiceChip(
-                label = filter.label,
-                selected = state.accrualFilter == filter,
-                onClick = { onEvent(InvoicesEvent.SelectAccrualFilter(filter)) },
-            )
-        }
-    }
-    val rows = state.shownAccruals
-    TableCard(
-        title = str(S.desktop_accruals),
-        icon = ZillitIcons.Ledger,
-        meta = countMeta(rows.size, S.desktop_accrual_count_one, S.desktop_accrual_count_other),
-    ) {
-        ZillitDataTable(
-            rows = rows,
-            columns = accrualColumns(state),
-            key = { it.id },
-            emptyTitle = str(S.desktop_inv_nothing_to_accrue),
-            emptyMessage = str(S.desktop_inv_accruals_empty_message),
-            loading = state.accrualsLoading && rows.isEmpty(),
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
-
-private fun accrualColumns(state: InvoicesUiState): List<TableColumn<Accrual>> = listOf(
-    TableColumn(str(S.desktop_po), ColumnWidth.Weight(1f)) { CellText(it.poNumber.ifBlank { "—" }) },
-    TableColumn(
-        str(S.ah_lbl_vendor),
-        ColumnWidth.Weight(WEIGHT_MEDIUM),
-    ) { CellText(it.vendorName.ifBlank { str(S.desktop_unknown) }) },
-    TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
-        CellText(it.description.ifBlank { "—" }, muted = it.description.isBlank())
-    },
-    TableColumn(str(S.desktop_po_total), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.poTotal, it.currency, state.projectCurrency)
-    },
-    TableColumn(str(S.desktop_invoiced), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.invoicedAmount, it.currency, state.projectCurrency)
-    },
-    TableColumn(str(S.desktop_accrual), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.accrualAmount, it.currency, state.projectCurrency)
-    },
-    TableColumn(str(S.desktop_used), ColumnWidth.Fixed(PAY_WIDTH)) { accrual ->
-        CellText("${(accrual.used * PERCENT).toInt()}%", muted = true)
-    },
-    TableColumn(str(S.status), ColumnWidth.Weight(WEIGHT_NARROW)) { accrual ->
-        ZillitStatusPill(
-            label = accrual.status.label,
-            tone = if (accrual.status == AccrualStatus.Reversed) StatusTone.Neutral else StatusTone.Pending,
-        )
-    },
-)
-
-// Creditors -----------------------------------------------------------------
-
-/**
- * What the production owes, by vendor and by age — the web's `CreditorsPage`.
- *
- * The buckets are measured from the invoice date, not the due date: this
- * report asks how long the money has been owed, not how late it is.
- */
-@Composable
-private fun ColumnScope.CreditorsPage(
-    state: InvoicesUiState,
-    onEvent: (InvoicesEvent) -> Unit,
-    nowMs: Long,
-    searchFocus: FocusRequester,
-) {
-    val rows = Creditors.rows(
-        invoices = state.shownInvoices,
-        nowMs = nowMs,
-        nameOf = { state.vendorName(it) },
-        termsOf = { state.vendors[it.vendorId]?.slaLabel },
-    )
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSearchField(
-            value = state.search,
-            onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = str(S.desktop_search_vendor),
-            modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
-        )
-    }
-    CreditorTotals(state, rows)
-    AgedDebtTrend(Creditors.trend(state.shownInvoices, nowMs))
-    TableCard(
-        title = str(S.desktop_vendor_balances),
-        icon = ZillitIcons.Bank,
-        meta = countMeta(rows.size, S.desktop_vendor_count_one, S.ah_run_detail_summary_vendors),
-    ) {
-        ZillitDataTable(
-            rows = rows,
-            columns = creditorColumns(state),
-            key = { it.vendor },
-            emptyTitle = str(S.desktop_payroll_nothing_outstanding),
-            emptyMessage = str(S.desktop_inv_creditors_empty_message),
-            loading = state.loading && rows.isEmpty(),
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
-
-/**
- * Six weeks of what was owed, by age — the web's "Aged Debt Trend".
- *
- * Three bars a week rather than a stack, as the web draws it: a stack hides
- * the one number this chart exists for, which is whether the oldest bucket is
- * growing.
- */
-@Composable
-private fun ColumnScope.AgedDebtTrend(weeks: List<AgeingWeek>) {
-    if (weeks.none { it.total > 0 }) return
-    val tallest = weeks.maxOf { it.tallest }.takeIf { it > 0 } ?: return
-    ZillitSectionCard(
-        modifier = Modifier.fillMaxWidth(),
-        title = str(S.desktop_inv_aged_debt_trend_title),
-        icon = ZillitIcons.BarChart,
-        meta = trendWord(weeks),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().height(TREND_HEIGHT),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            weeks.forEach { week -> TrendWeek(week, tallest, Modifier.weight(1f)) }
-        }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(ZillitTheme.colors.border))
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            AgeingBucket.entries.forEach { bucket -> LegendDot(bucket) }
-        }
-    }
-}
-
-/** "Trend: rising" / "falling" — measured on the oldest bucket, which is the worry. */
-private fun trendWord(weeks: List<AgeingWeek>): String {
-    val first = weeks.first().days60
-    val last = weeks.last().days60
-    return when {
-        last > first -> str(S.desktop_trend_rising)
-        last < first -> str(S.desktop_trend_falling)
-        else -> str(S.desktop_trend_flat)
-    }
-}
-
-@Composable
-private fun TrendWeek(week: AgeingWeek, tallest: Double, modifier: Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Bottom,
-    ) {
-        Row(
-            // Bars share the week's slot rather than sitting at a fixed width:
-            // three sticks in the middle of a wide pane read as a rendering
-            // fault, not as a chart.
-            modifier = Modifier.weight(1f).fillMaxWidth().widthIn(max = WEEK_MAX),
-            horizontalArrangement = Arrangement.spacedBy(BAR_GAP, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            AgeingBucket.entries.forEach { bucket ->
-                val amount = when (bucket) {
-                    AgeingBucket.Current -> week.current
-                    AgeingBucket.Days30 -> week.days30
-                    AgeingBucket.Days60 -> week.days60
-                }
-                val share = (amount / tallest).coerceIn(0.0, 1.0)
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight(share.toFloat().coerceAtLeast(BAR_FLOOR))
-                        .clip(ZillitTheme.shapes.small)
-                        .background(bucket.barColour()),
-                )
-            }
-        }
-        ZillitText(
-            text = week.label,
-            style = ZillitTheme.typography.labelSmall,
-            color = if (week.isNow) ZillitTheme.colors.accent else ZillitTheme.colors.textMuted,
-            modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
-        )
-    }
-}
-
-@Composable
-private fun LegendDot(bucket: AgeingBucket) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(LEGEND_DOT).clip(ZillitTheme.shapes.small).background(bucket.barColour()))
-        ZillitText(
-            text = bucket.label,
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-    }
-}
-
-/** The web's three colours: teal for current, amber at 30 days, red at 60. */
-@Composable
-private fun AgeingBucket.barColour(): Color = when (this) {
-    AgeingBucket.Current -> ZillitTheme.colors.success
-    AgeingBucket.Days30 -> ZillitTheme.colors.warning
-    AgeingBucket.Days60 -> ZillitTheme.colors.danger
-}
-
-@Composable
-private fun ColumnScope.CreditorTotals(state: InvoicesUiState, rows: List<CreditorRow>) {
-    Row(
-        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        val currency = rows.firstOrNull()?.currency.orEmpty().ifBlank { state.projectCurrency }
-        ZillitStatTile(
-            label = str(S.desktop_total_creditors),
-            value = Money.format(rows.sumOf { it.total }, currency),
-            sub = str(S.ah_run_detail_summary_vendors, rows.size),
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        ZillitStatTile(
-            label = AgeingBucket.Current.label,
-            value = Money.format(rows.sumOf { it.current }, currency),
-            tone = StatusTone.Done,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        ZillitStatTile(
-            label = AgeingBucket.Days30.label,
-            value = Money.format(rows.sumOf { it.days30 }, currency),
-            tone = StatusTone.Pending,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        ZillitStatTile(
-            label = AgeingBucket.Days60.label,
-            value = Money.format(rows.sumOf { it.days60 }, currency),
-            tone = StatusTone.Rejected,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-    }
-}
-
-private fun creditorColumns(state: InvoicesUiState): List<TableColumn<CreditorRow>> = listOf(
-    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(it.vendor) },
-    TableColumn(str(S.desktop_terms), ColumnWidth.Fixed(PAY_WIDTH)) { CellText(it.terms, muted = true) },
-    TableColumn(AgeingBucket.Current.label, ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.current, it.currency, state.projectCurrency)
-    },
-    TableColumn(AgeingBucket.Days30.label, ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.days30, it.currency, state.projectCurrency)
-    },
-    TableColumn(AgeingBucket.Days60.label, ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.days60, it.currency, state.projectCurrency)
-    },
-    TableColumn(str(S.ah_total_label), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
-        MoneyText(it.total, it.currency, state.projectCurrency)
-    },
-)
-
 // Pre-approval --------------------------------------------------------------
 
 /**
  * The pre-approval queue — the web's `MatchingPage`.
  *
- * Two statuses in one list: what is waiting to be checked, and what has been
- * held for query. A held row cannot be sent on, so the tick box and the bulk
- * bar leave it alone, exactly as the web's select-all does.
+ * Two statuses in one list: what is waiting to be checked, then what has
+ * been held for query, tinted amber and each with its own banner under the
+ * table. A held row cannot be sent on, so the tick box and the bulk bar leave
+ * it alone, exactly as the web's select-all does.
  */
 @Composable
 private fun ColumnScope.MatchingPage(
@@ -559,69 +234,62 @@ private fun ColumnScope.MatchingPage(
     onEvent: (InvoicesEvent) -> Unit,
     searchFocus: FocusRequester,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSearchField(
-            value = state.search,
-            onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = str(S.desktop_inv_search_pre_approval),
-            modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
-        )
-    }
     MatchingTiles(state)
-    if (state.selected.isNotEmpty()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitText(text = str(S.dd_n_selected, state.selected.size), style = ZillitTheme.typography.bodySmall)
-            ZillitButton(
-                text = str(S.av_send_for_approval),
-                onClick = { onEvent(InvoicesEvent.SendToApproval(null)) },
-                size = ButtonSize.Small,
-                loading = state.busy,
-            )
-            ZillitButton(
-                text = str(S.desktop_inv_hold_for_query),
-                onClick = { onEvent(InvoicesEvent.StartHold(null)) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-            )
-            ZillitButton(
-                text = str(S.ah_clear),
-                onClick = { onEvent(InvoicesEvent.ClearSelection) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-            )
-        }
-    }
+    ZillitSearchField(
+        value = state.search,
+        onValueChange = { onEvent(InvoicesEvent.Search(it)) },
+        placeholder = str(S.desktop_inv_search_matching),
+        modifier = Modifier.fillMaxWidth().focusRequester(searchFocus),
+    )
     val rows = state.shownInvoices
-    CountLine(rows.size)
-    Box(Modifier.weight(1f).fillMaxWidth()) {
+    val colors = ZillitTheme.colors
+    TableCard(
+        title = str(S.desktop_inv_pre_approval_queue),
+        icon = ZillitIcons.Link,
+        // The whole queue, not what the search left (`MatchingPage.jsx:636`).
+        meta = countMeta(state.invoices.size),
+    ) {
         ZillitDataTable(
             rows = rows,
             columns = matchingColumns(state, onEvent),
             key = { it.id },
-            // The web opens the side-by-side review here, not the read-only
-            // detail: this queue exists to judge an invoice against its order.
-            onRowClick = { onEvent(InvoicesEvent.OpenReview(it)) },
-            emptyTitle = str(S.desktop_inv_nothing_waiting_pre_approval),
-            emptyMessage = str(S.desktop_inv_pre_approval_empty_message),
+            // With a selection going, a click on a waiting row ticks it;
+            // otherwise — and always on a held row — it opens the review
+            // (`MatchingPage.jsx:682, 724`).
+            onRowClick = {
+                if (state.selected.isNotEmpty() && it.status != InvoiceStatus.Held) {
+                    onEvent(InvoicesEvent.ToggleSelect(it.id))
+                } else {
+                    onEvent(InvoicesEvent.OpenReview(it))
+                }
+            },
+            isSelected = { it.id in state.selected },
+            rowTint = { if (it.status == InvoiceStatus.Held) colors.warningSoft else null },
+            emptyTitle = str(S.desktop_inv_matching_empty),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
     }
+    rows.heldRows().forEach { HoldBanner(state, it, onEvent) }
+    if (state.selected.isNotEmpty()) MatchingBulkBar(state, onEvent)
 }
 
 private fun matchingColumns(
     state: InvoicesUiState,
     onEvent: (InvoicesEvent) -> Unit,
 ): List<TableColumn<Invoice>> = listOf(
-    TableColumn("", ColumnWidth.Fixed(TICK_WIDTH)) { invoice ->
+    TableColumn(
+        header = "",
+        width = ColumnWidth.Fixed(TICK_WIDTH),
+        // Ticked when every waiting row on screen is (`MatchingPage.jsx:641`).
+        headerContent = {
+            val waiting = state.shownInvoices.count { it.status != InvoiceStatus.Held }
+            ZillitCheckbox(
+                checked = waiting > 0 && state.selected.size == waiting,
+                onCheckedChange = { onEvent(InvoicesEvent.ToggleSelectAll) },
+            )
+        },
+    ) { invoice ->
         // A held invoice is not a candidate for the bulk actions.
         if (invoice.status != InvoiceStatus.Held) {
             ZillitCheckbox(
@@ -630,30 +298,24 @@ private fun matchingColumns(
             )
         }
     },
-    TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) { CellText(it.displayNumber) },
-    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.vendorName(it)) },
+    // Waiting and held rows alike carry their `invoice_matching` chip (`MatchingPage.jsx:688, 727`).
+    TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(1f)) {
+        CellTextWithUnread(it.displayNumber, state.pageRowUnread(AccountantPage.Matching, it.id))
+    },
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_MEDIUM)) { CellText(state.pageVendorName(it)) },
     TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
-        CellText(it.description.ifBlank { "—" }, muted = it.description.isBlank())
+        CellText(it.description, muted = true)
     },
     TableColumn(str(S.amount), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
         MoneyText(it.grossAmount, it.currency, state.projectCurrency)
     },
-    // A linked order shows as a tag; an unmatched row offers the server's
-    // suggestions instead — the web's `POSuggestionDropdown`.
-    TableColumn(str(S.desktop_po), ColumnWidth.Fixed(MATCH_PO_WIDTH)) { invoice ->
-        // Blue when linked, amber for a typed number nobody has confirmed, and
-        // the suggestions picker (a desktop extra) when there is nothing at all.
-        val label = invoice.poLabel
-        when {
-            invoice.hasMatchedPo -> ZillitStatusPill(label = label.orEmpty(), tone = StatusTone.Progress)
-            label != null -> ZillitStatusPill(label = label, tone = StatusTone.Pending)
-            else -> MatchButton(state, invoice, onEvent)
-        }
-    },
+    // Blue when matched, amber for a typed number nobody has confirmed, red
+    // for nothing — and never amber on a held row (`MatchingPage.jsx:695, 733-737`).
+    TableColumn(str(S.desktop_po), ColumnWidth.Fixed(MATCH_PO_WIDTH)) { BadgePill(PoPills.matching(it)) },
     TableColumn(str(S.desktop_pay_method_title), ColumnWidth.Fixed(PAY_WIDTH)) {
-        ZillitStatusPill(label = it.payMethod.label, tone = it.payMethod.tone())
+        ZillitStatusPill(label = it.payMethodLabel, tone = it.payMethod.tone())
     },
-    TableColumn(str(S.status), ColumnWidth.Fixed(URGENT_STATUS_WIDTH)) { invoice -> MatchStatus(invoice) },
+    TableColumn(str(S.status), ColumnWidth.Fixed(URGENT_STATUS_WIDTH)) { BadgePill(PoPills.matchingStatus(it)) },
     TableColumn("", ColumnWidth.Fixed(MATCH_ACTIONS_WIDTH)) { invoice ->
         MatchingActions(state, invoice, onEvent)
     },
@@ -661,7 +323,8 @@ private fun matchingColumns(
 
 /**
  * Matched, Unmatched and — when there are any — On Hold, as the web's stat
- * cards count them: held rows apart, the rest by whether an order is linked.
+ * cards count them: held rows apart, the rest by the server's `po_ids`
+ * (`MatchingPage.jsx:602-607`), over what the search leaves.
  */
 @Composable
 private fun MatchingTiles(state: InvoicesUiState) {
@@ -674,14 +337,14 @@ private fun MatchingTiles(state: InvoicesUiState) {
     ) {
         ZillitStatTile(
             label = str(S.desktop_matched),
-            value = open.count { it.hasMatchedPo }.toString(),
+            value = open.count { it.poIds.isNotEmpty() }.toString(),
             sub = str(S.desktop_inv_linked_to_a_po),
             tone = StatusTone.Done,
             modifier = Modifier.weight(1f).fillMaxHeight(),
         )
         ZillitStatTile(
             label = str(S.desktop_dm_unmatched),
-            value = open.count { !it.hasMatchedPo }.toString(),
+            value = open.count { it.poIds.isEmpty() }.toString(),
             sub = str(S.desktop_inv_need_a_po_match),
             tone = StatusTone.Rejected,
             modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -691,7 +354,7 @@ private fun MatchingTiles(state: InvoicesUiState) {
                 label = str(S.desktop_on_hold_title),
                 value = held.toString(),
                 sub = str(S.desktop_inv_awaiting_query),
-                tone = StatusTone.Escalated,
+                tone = StatusTone.Pending,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -699,44 +362,11 @@ private fun MatchingTiles(state: InvoicesUiState) {
 }
 
 /**
- * The web's status cell: an urgent wire or cheque says so (and "No PO ·" when
- * nothing is linked); otherwise On Hold, Matched or No PO.
+ * What can be done to one row, routed by the PO as the web routes it
+ * (`MatchingPage.jsx:708-714, 740-742`): held rows are released; a row with
+ * an order goes to the review; one without is overridden by whoever may, and
+ * sent for approval by everyone else.
  */
-@Composable
-private fun MatchStatus(invoice: Invoice) {
-    val urgent = invoice.payMethod == PayMethod.Wire || invoice.payMethod == PayMethod.Cheque
-    when {
-        urgent && invoice.status != InvoiceStatus.Held -> {
-            val request = str(
-                if (invoice.payMethod == PayMethod.Cheque) S.desktop_cheque_request else S.desktop_urgent_wire_request,
-            )
-            val label = if (invoice.hasMatchedPo) request else str(S.desktop_inv_no_po_request, request)
-            ZillitStatusPill(label = label, tone = StatusTone.Rejected)
-        }
-        invoice.status == InvoiceStatus.Held ->
-            ZillitStatusPill(label = str(S.desktop_on_hold_title), tone = StatusTone.Escalated)
-        invoice.hasMatchedPo -> ZillitStatusPill(label = str(S.desktop_matched), tone = StatusTone.Done)
-        else -> ZillitStatusPill(label = str(S.desktop_no_po), tone = StatusTone.Rejected)
-    }
-}
-
-/** The picker on an unmatched row, and the suggestions it drops. */
-@Composable
-private fun MatchButton(state: InvoicesUiState, invoice: Invoice, onEvent: (InvoicesEvent) -> Unit) {
-    val picker = state.poPicker?.takeIf { it.invoice.id == invoice.id }
-    Box {
-        ZillitButton(
-            text = str(S.desktop_match),
-            onClick = { onEvent(InvoicesEvent.OpenPoSuggestions(invoice)) },
-            variant = ButtonVariant.Secondary,
-            size = ButtonSize.Small,
-            enabled = !state.busy,
-        )
-        if (picker != null) PoSuggestionMenu(picker, state.projectCurrency, onEvent)
-    }
-}
-
-/** What can be done to one row: held rows are released, the rest are sent on or held. */
 @Composable
 private fun MatchingActions(state: InvoicesUiState, invoice: Invoice, onEvent: (InvoicesEvent) -> Unit) {
     Row(
@@ -744,170 +374,37 @@ private fun MatchingActions(state: InvoicesUiState, invoice: Invoice, onEvent: (
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (invoice.status == InvoiceStatus.Held) {
-            ZillitButton(
+        when {
+            invoice.status == InvoiceStatus.Held -> ZillitButton(
                 text = str(S.desktop_release),
                 onClick = { onEvent(InvoicesEvent.Release(invoice)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 enabled = !state.busy,
             )
-        } else if (invoice.hasMatchedPo) {
-            // With an order behind it the decision belongs in the review,
-            // where the two can be compared — the web's Review button.
-            ZillitButton(
+            invoice.hasMatchedPo -> ZillitButton(
                 text = str(S.av_review),
                 onClick = { onEvent(InvoicesEvent.OpenReview(invoice)) },
+                variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 trailingIcon = ZillitIcons.ChevronRight,
                 enabled = !state.busy,
             )
-        } else if (state.viewer.canOverride) {
-            // No order: whoever may override does so here; everyone else can
-            // only send it on. Hold lives in the bulk bar and the review.
-            ZillitButton(
+            state.viewer.canOverride -> ZillitButton(
                 text = str(S.dm_nom_table_override),
                 onClick = { onEvent(InvoicesEvent.Override(invoice)) },
                 variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 enabled = !state.busy,
             )
-        } else {
-            ZillitButton(
-                text = str(S.av_send_for_approval),
+            else -> ZillitButton(
+                text = str(S.cs_send_for_approval),
                 onClick = { onEvent(InvoicesEvent.SendToApproval(invoice)) },
                 size = ButtonSize.Small,
                 enabled = !state.busy,
             )
         }
-        if (invoice.poId.isNotBlank()) {
-            ZillitIconButton(
-                icon = ZillitIcons.Close,
-                contentDescription = str(S.desktop_remove_the_po),
-                onClick = { onEvent(InvoicesEvent.Unmatch(invoice)) },
-                enabled = !state.busy,
-            )
-        }
     }
-}
-
-// Posted -------------------------------------------------------------------
-
-/**
- * Invoices that have reached the ledger — the web's `PostedPage`.
- *
- * The same columns as the register, because it is the same question asked of
- * a later stage; the filter is the web's three, and the list is its own route
- * rather than a status query.
- */
-@Composable
-private fun ColumnScope.PostedPage(
-    state: InvoicesUiState,
-    onEvent: (InvoicesEvent) -> Unit,
-    nowMs: Long,
-    searchFocus: FocusRequester,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSearchField(
-            value = state.search,
-            onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = str(S.desktop_inv_search_ref_supplier_description_po),
-            modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
-        )
-        val options = listOf<String?>(null) + state.departmentOptions
-        ZillitSelect(
-            value = state.registerDepartment,
-            options = options,
-            onSelect = { onEvent(InvoicesEvent.SelectRegisterDepartment(it)) },
-            label = { id -> if (id == null) str(S.all_departments) else state.departmentName(id) },
-            modifier = Modifier.width(DEPARTMENT_SELECT_WIDTH),
-        )
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PostedFilter.entries.forEach { filter ->
-            ZillitChoiceChip(
-                label = filter.label,
-                selected = state.postedFilter == filter,
-                onClick = { onEvent(InvoicesEvent.SelectPostedFilter(filter)) },
-            )
-        }
-    }
-    PostedTiles(state)
-    val rows = state.shownInvoices
-    CountLine(rows.size)
-    Box(Modifier.weight(1f).fillMaxWidth()) {
-        ZillitDataTable(
-            rows = rows,
-            columns = registerColumns(state, nowMs),
-            key = { it.id },
-            onRowClick = { onEvent(EntryEvent.Open(it, readOnly = true)) },
-            emptyTitle = str(S.desktop_board_nothing_posted_yet),
-            loading = state.loading && rows.isEmpty(),
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
-
-/**
- * The Posted page's four cards — Awaiting Payment, Paid, and the Net / Tax
- * split — over the whole posted set, not the filtered one. A mixed-currency
- * sum is converted to the project's and says so. An invoice whose split was
- * never captured adds nothing to Net or Tax, and the sub-line counts them.
- */
-@Composable
-private fun PostedTiles(state: InvoicesUiState) {
-    val all = state.invoices
-    val awaiting = all.filter { it.status == InvoiceStatus.ReadyToPay }
-    val paid = all.filter { it.status == InvoiceStatus.Paid }
-    val split = all.count { it.netAmount != null || it.taxAmount != null }
-    Row(
-        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        MoneyTile(
-            label = str(S.desktop_inv_awaiting_payment),
-            total = state.rates.total(awaiting.map { it.grossAmount to it.currency }),
-            sub = str(S.desktop_payroll_ready_to_pay_count, awaiting.size),
-            tone = StatusTone.Ready,
-        )
-        MoneyTile(
-            label = str(S.desktop_paid),
-            total = state.rates.total(paid.map { it.grossAmount to it.currency }),
-            sub = str(S.desktop_inv_n_settled, paid.size),
-            tone = StatusTone.Done,
-        )
-        MoneyTile(
-            label = str(S.ah_lbl_net_total),
-            total = state.rates.total(all.map { (it.netAmount ?: 0.0) to it.currency }),
-            sub = str(S.desktop_inv_n_of_m_split, split, all.size),
-            tone = null,
-        )
-        MoneyTile(
-            label = str(S.desktop_inv_tax_total),
-            total = state.rates.total(all.map { (it.taxAmount ?: 0.0) to it.currency }),
-            sub = str(S.desktop_inv_recoverable_and_not),
-            tone = StatusTone.Pending,
-        )
-    }
-}
-
-@Composable
-private fun RowScope.MoneyTile(label: String, total: MoneyTotal, sub: String, tone: StatusTone?) {
-    ZillitStatTile(
-        label = label,
-        value = total.text,
-        sub = total.caveat?.let { "$sub · $it" } ?: sub,
-        tone = tone,
-        modifier = Modifier.weight(1f).fillMaxHeight(),
-    )
 }
 
 /** The web shows this here too — the section is being reworked on both clients. */
@@ -925,137 +422,142 @@ private fun ColumnScope.ComingSoon(title: String) {
 
 // Approval queue -----------------------------------------------------------
 
+/**
+ * The accountant's Approval Queue — the web's `ApprovalPage`: one panel, the
+ * awaiting and approved pills in its header, and every row's actions in the
+ * last column. No search and no ticks: the web's batch approve is never
+ * rendered (`ApprovalPage.jsx:524-710`).
+ */
 @Composable
 private fun ColumnScope.ApprovalPage(
     state: InvoicesUiState,
     onEvent: (InvoicesEvent) -> Unit,
-    searchFocus: FocusRequester,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSearchField(
-            value = state.search,
-            onValueChange = { onEvent(InvoicesEvent.Search(it)) },
-            placeholder = str(S.desktop_search_queue),
-            modifier = Modifier.width(SEARCH_WIDTH).focusRequester(searchFocus),
-        )
-        ZillitStatusPill(label = str(S.desktop_inv_n_awaiting, state.awaitingCount), tone = StatusTone.Pending)
-        ZillitStatusPill(label = str(S.desktop_inv_n_approved, state.approvedCount), tone = StatusTone.Done)
-    }
     val rows = state.shownInvoices
-    val canBatch = rows.any {
-        it.id in state.selected && ApprovalChain.canApprove(it, state.tiersOf(it), state.viewer.userId)
-    }
-    if (state.selected.isNotEmpty()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(ZillitTheme.colors.accentSoft, ZillitTheme.shapes.medium)
-                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitText(
-                text = str(S.dd_n_selected, state.selected.size),
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textPrimary,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitButton(
-                text = str(S.ah_clear),
-                onClick = { onEvent(InvoicesEvent.ClearSelection) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-            )
-            ZillitButton(
-                text = str(S.desktop_approve_selected),
-                onClick = { onEvent(InvoicesEvent.ApproveSelected) },
-                size = ButtonSize.Small,
-                enabled = canBatch && !state.busy,
-                loading = state.busy,
-            )
-        }
-    } else {
-        CountLine(rows.size)
-    }
-    Box(Modifier.weight(1f).fillMaxWidth()) {
+    val colors = ZillitTheme.colors
+    TableCard(
+        title = str(S.ah_approval_queue),
+        icon = ZillitIcons.Shield,
+        action = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitStatusPill(label = str(S.desktop_inv_n_awaiting, state.awaitingCount), tone = StatusTone.Pending)
+                if (state.approvedCount > 0) {
+                    ZillitStatusPill(
+                        label = str(S.desktop_inv_n_approved, state.approvedCount),
+                        tone = StatusTone.Ready,
+                    )
+                }
+            }
+        },
+    ) {
         ZillitDataTable(
             rows = rows,
             columns = approvalColumns(state, onEvent),
             key = { it.id },
             onRowClick = { onEvent(InvoicesEvent.Open(it)) },
-            emptyTitle = str(S.desktop_inv_nothing_awaiting_approval),
+            // An approved row is washed green (`ApprovalPage.jsx:578`).
+            rowTint = { if (it.isApprovedStatus) colors.successSoft else null },
+            emptyTitle = str(S.desktop_inv_approval_empty),
             loading = state.loading && rows.isEmpty(),
             modifier = Modifier.fillMaxSize(),
         )
     }
 }
 
+/** Invoice · Vendor · Gross · PO · Approval · SLA · Action — the web's seven (`ApprovalPage.jsx:543-549`). */
 private fun approvalColumns(
     state: InvoicesUiState,
     onEvent: (InvoicesEvent) -> Unit,
 ): List<TableColumn<Invoice>> = listOf(
-    TableColumn<Invoice>("", ColumnWidth.Fixed(CHECK_WIDTH)) { invoice ->
-        val tiers = state.tiersOf(invoice)
-        if (ApprovalChain.canApprove(invoice, tiers, state.viewer.userId)) {
-            ZillitCheckbox(
-                checked = invoice.id in state.selected,
-                onCheckedChange = { onEvent(InvoicesEvent.ToggleSelect(invoice.id)) },
-            )
-        }
+    // The row's `invoice_approval_queue` chip (`ApprovalPage.jsx:166-173, 580`).
+    TableColumn<Invoice>(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(WEIGHT_NARROW)) {
+        CellTextWithUnread(it.displayNumber, state.pageRowUnread(AccountantPage.ApprovalQueue, it.id))
     },
-) + leadingColumns(state) + poColumn() + approvalColumn(state, queue = true) + slaColumn(state) +
+    TableColumn(str(S.ah_lbl_vendor), ColumnWidth.Weight(WEIGHT_WIDE)) { CellText(state.pageVendorName(it)) },
+    TableColumn(str(S.desktop_gross), ColumnWidth.Fixed(GROSS_WIDTH), numeric = true) {
+        MoneyText(it.grossAmount, it.currency, state.projectCurrency)
+    },
+    TableColumn(str(S.desktop_po), ColumnWidth.Fixed(PO_WIDTH)) { BadgePill(PoPills.queue(it)) },
+    approvalColumn(state, queue = true),
+    slaPillColumn(state),
     TableColumn(
         str(S.txt_action),
         ColumnWidth.Fixed(QUEUE_ACTION_WIDTH),
-    ) { invoice -> QueueActions(state, invoice, onEvent) }
+        numeric = true,
+    ) { invoice -> QueueActions(state, invoice, onEvent) },
+)
 
+/**
+ * One row's actions, in the web's order (`ApprovalPage.jsx:613-703`).
+ *
+ * A row dated in a closed cost-report period keeps only Chase (H7: `row.locked`
+ * strips Override & Pay, Approve, Override and Delete). Override & Pay is the
+ * forward action for an override or urgent row that is not `status`
+ * approved; Approve otherwise, when the next tier is the reader's.
+ */
 @Composable
 private fun QueueActions(state: InvoicesUiState, invoice: Invoice, onEvent: (InvoicesEvent) -> Unit) {
     val tiers = state.tiersOf(invoice)
     val viewer = state.viewer
+    val locked = state.isLocked(invoice)
     Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        when {
-            InvoiceRules.showOverrideAndPay(invoice, viewer) && !invoice.isApproved -> ZillitButton(
-                text = str(S.desktop_override_and_pay),
-                onClick = { onEvent(InvoicesEvent.OverrideAndPay(invoice)) },
-                size = ButtonSize.Small,
-                enabled = !state.busy,
-            )
-            ApprovalChain.canApprove(invoice, tiers, viewer.userId) -> ZillitButton(
-                text = str(S.approve),
-                onClick = { onEvent(InvoicesEvent.Approve(invoice)) },
-                size = ButtonSize.Small,
-                enabled = !state.busy,
-            )
+        if (!locked) {
+            when {
+                InvoiceRules.showOverrideAndPay(invoice, viewer) && !invoice.isApprovedStatus -> ZillitButton(
+                    text = str(S.desktop_override_and_pay),
+                    onClick = { onEvent(InvoicesEvent.OverrideAndPay(invoice)) },
+                    variant = ButtonVariant.Danger,
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+                ApprovalChain.canApprove(invoice, tiers, viewer.userId) && !invoice.isApprovedStatus -> ZillitButton(
+                    text = str(S.approve),
+                    onClick = { onEvent(InvoicesEvent.Approve(invoice)) },
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Check,
+                    enabled = !state.busy,
+                )
+            }
+            if (InvoiceRules.showOverride(invoice, tiers, viewer)) {
+                ZillitButton(
+                    text = str(S.dm_nom_table_override),
+                    onClick = { onEvent(InvoicesEvent.Override(invoice)) },
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+            }
         }
-        if (InvoiceRules.showOverride(invoice, tiers, viewer)) {
+        if (InvoiceRules.showChase(invoice, tiers, viewer)) ChaseControl(state, invoice, onEvent)
+        if (queueCanDelete(state, invoice)) {
             ZillitButton(
-                text = str(S.dm_nom_table_override),
-                onClick = { onEvent(InvoicesEvent.Override(invoice)) },
-                variant = ButtonVariant.Secondary,
+                text = str(S.delete),
+                onClick = { onEvent(InvoicesEvent.RequestDelete(invoice)) },
+                variant = ButtonVariant.Danger,
                 size = ButtonSize.Small,
                 enabled = !state.busy,
-            )
-        }
-        if (InvoiceRules.showChase(invoice, tiers, viewer)) {
-            val chased = invoice.id in state.chased
-            ZillitButton(
-                text = if (chased) str(S.desktop_chased) else str(S.dm_row_action_chase),
-                onClick = { onEvent(InvoicesEvent.Chase(invoice)) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                enabled = !chased,
             )
         }
     }
 }
+
+/**
+ * The hard delete's gate on the accountant queue — the web's `canDeleteInvoice`
+ * with the console's own override right (`ApprovalPage.jsx:481-487`).
+ */
+internal fun queueCanDelete(state: InvoicesUiState, invoice: Invoice): Boolean = InvoiceRules.canDeleteFromQueue(
+    invoice = invoice,
+    tiers = state.tiersOf(invoice),
+    viewer = state.viewer,
+    canOverride = state.viewer.canOverride,
+    locked = state.isLocked(invoice),
+)
 
 internal val DEPARTMENT_SELECT_WIDTH = 220.dp
 private val DATE_SELECT_WIDTH = 150.dp
@@ -1063,13 +565,7 @@ internal val DUE_WIDTH = 110.dp
 internal val PAY_WIDTH = 120.dp
 internal const val PERCENT = 100
 internal val TICK_WIDTH = 40.dp
-private val TREND_HEIGHT = 170.dp
-private val WEEK_MAX = 120.dp
-private val BAR_GAP = 4.dp
-private val LEGEND_DOT = 10.dp
-private const val BAR_FLOOR = 0.015f
 private val MATCH_ACTIONS_WIDTH = 160.dp
 private val MATCH_PO_WIDTH = 104.dp
 private val URGENT_STATUS_WIDTH = 200.dp
-private val CHECK_WIDTH = 40.dp
-private val QUEUE_ACTION_WIDTH = 250.dp
+private val QUEUE_ACTION_WIDTH = 300.dp

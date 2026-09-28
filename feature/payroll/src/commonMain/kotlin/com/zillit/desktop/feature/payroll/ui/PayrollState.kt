@@ -6,9 +6,14 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.DealCoding
+import com.zillit.desktop.feature.payroll.domain.DealRates
+import com.zillit.desktop.feature.payroll.domain.EstimatedDay
+import com.zillit.desktop.feature.payroll.domain.PayrollCrewRow
+import com.zillit.desktop.feature.payroll.domain.PayrollCurrencyRates
 import com.zillit.desktop.feature.payroll.domain.Employment
 import com.zillit.desktop.feature.payroll.domain.JournalCoding
 import com.zillit.desktop.feature.payroll.domain.JournalEdit
+import com.zillit.desktop.feature.payroll.domain.JournalReference
 import com.zillit.desktop.feature.payroll.domain.OverrideFlags
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.domain.PayrollCompany
@@ -34,13 +39,36 @@ data class PayrollUiState(
     /** The last closed cost-report date, `YYYY-MM-DD`; null for no lock. */
     val lockedDate: String? = null,
     val companies: List<PayrollCompany> = emptyList(),
+    /**
+     * The production's default currency — the last tier of the timecard
+     * currency policy, and what a manual claim is saved in when the timecard
+     * itself states none.
+     */
+    val defaultCurrency: String? = null,
+    /** The project currencies' rates against the default, for converting a mixed-currency total. */
+    val currencyRates: PayrollCurrencyRates = PayrollCurrencyRates(),
     val people: Map<String, PayrollPerson> = emptyMap(),
     val projectName: String = "",
     /** Epoch millis of now, read when the tool opened — the current week and today's date. */
     val now: Long = 0L,
+    /**
+     * The production's pay engine is available. False leaves the surfaces that
+     * price locally saying so, which is what the web does when its own bundle
+     * fails to load.
+     */
+    val hasPayEngine: Boolean = false,
+    /**
+     * Each crew member's holiday-pay rate, once resolved. Holiday pay is never
+     * stored on a timecard — the only read endpoint is scoped to the
+     * requesting user — so any surface showing someone else's accrual derives
+     * it as `basic × rate` from their deal (the web's `useCrewHolidayPay`).
+     */
+    val holidayPayRates: Map<String, Double> = emptyMap(),
     val history: HistoryState = HistoryState(),
     val run: RunState = RunState(),
     val processing: ProcessingState = ProcessingState(),
+    val producer: ProducerBoardState = ProducerBoardState(),
+    val estimate: ProductionReportState = ProductionReportState(),
     /** Override Approval, over whichever screen asked for it. */
     val override: OverridePrompt? = null,
     /** Claims or deductions, over whichever screen asked for them. */
@@ -68,6 +96,18 @@ data class PayrollUiState(
     /** A crew member's department, translated, or "Unassigned". */
     fun departmentOf(userId: String): String =
         people[userId]?.department?.takeIf { it.isNotBlank() }?.localised() ?: str(S.unassigned)
+
+    /**
+     * The week's holiday-pay accrual for a timecard, or zero when the deal has
+     * no holiday-pay line (or the rate has not been resolved). Σ(basic × rate)
+     * is rate × Σ basic, so the weekly figure matches what the accrual
+     * collection records for the same week.
+     */
+    fun holidayPayFor(timecard: PayrollTimecard?): Double {
+        val rate = holidayPayRates[timecard?.userId] ?: return 0.0
+        val basic = timecard?.basicPay ?: return 0.0
+        return if (rate > 0 && basic > 0) PayrollTimecard.round2(basic * rate) else 0.0
+    }
 }
 
 // -- Payroll History -----------------------------------------------------------------------
@@ -168,6 +208,17 @@ data class JournalState(
     val alert: JournalAlert? = null,
     /** Rows whose missing fields are drawn red after a refused post. */
     val flagged: Set<String> = emptySet(),
+    /** The production's tracking sets and account tags, for the Layers and Tags cells. */
+    val reference: JournalReference = JournalReference(),
+    /**
+     * Timecards the accountant has added a tax line to, and removed one from.
+     *
+     * Held apart from the rows because a tax line's absence is not something
+     * the wire can state: the builder makes one for every timecard, and these
+     * two sets decide which are on screen until the next save settles it.
+     */
+    val taxAdded: Set<String> = emptySet(),
+    val taxRemoved: Set<String> = emptySet(),
 )
 
 data class JournalPostDialog(
@@ -221,6 +272,105 @@ data class OutstandingDetail(
     val loading: Boolean = true,
     val error: ZillitError? = null,
 )
+
+// -- Producer Board ------------------------------------------------------------------------
+
+/**
+ * Producer Board Payroll Status — the web's `ProducerBoardModule`: the week's
+ * timecards down the left, the one that is selected read-only on the right.
+ *
+ * Read-only by design. The web removed the board's override / approve /
+ * submit actions when the producer flow was respecified: "the producer
+ * reviews and adds claims; approval lives elsewhere in the chain"
+ * (`api/payroll/producer-board.js`).
+ */
+data class ProducerBoardState(
+    val weekStarting: Long? = null,
+    val loading: Boolean = false,
+    val error: ZillitError? = null,
+    val crew: List<PayrollCrewRow> = emptyList(),
+    /** The row open on the right — a timecard id. */
+    val selectedId: String? = null,
+    val timecard: PayrollTimecard? = null,
+    val timecardLoading: Boolean = false,
+) {
+    val selectedRow: PayrollCrewRow? get() = crew.firstOrNull { it.id == selectedId }
+}
+
+// -- Production Report Payroll -------------------------------------------------------------
+
+/**
+ * Production Report Payroll — the web's `ProductionReportPayrollModule`: every
+ * crew member who HAS A DEAL, week by week, whether or not they have a
+ * timecard yet. A blank day can be filled from the unit's production report
+ * and priced locally; nothing is ever saved.
+ */
+data class ProductionReportState(
+    val weekStarting: Long? = null,
+    val loading: Boolean = false,
+    val error: ZillitError? = null,
+    /** Project members with a deal — the roster, independent of timecards. */
+    val crew: List<PayrollPerson> = emptyList(),
+    /** The week's existing timecards, by crew member, from the slim crew list. */
+    val existing: Map<String, PayrollCrewRow> = emptyMap(),
+    val selectedUserId: String? = null,
+    /** The selected crew member's real timecard, when they have one. */
+    val timecard: PayrollTimecard? = null,
+    val timecardLoading: Boolean = false,
+    /** Their active deal, loaded so the estimate has rates. */
+    val deal: DealRates? = null,
+    val dealLoading: Boolean = false,
+    /** Filled days per crew member, seven slots each; null where nothing is filled. */
+    val filled: Map<String, List<EstimatedDay?>> = emptyMap(),
+    /** The day epoch currently being filled, or null. */
+    val fillingDate: Long? = null,
+    /** A whole-week fill is running for the selected crew member. */
+    val fillingAll: Boolean = false,
+    /**
+     * Auto-fill mode: each crew member opened from here on is estimated from
+     * the report on arrival. Session-scoped, as the web's is — it survives
+     * week paging, not a restart.
+     */
+    val autoFill: Boolean = false,
+    /** Crew attempted this week, whatever the outcome — the web's `autoFilledRef`. */
+    val attempted: Set<String> = emptySet(),
+) {
+    /** The selected crew member's filled days, seven slots. */
+    val selectedDays: List<EstimatedDay?> get() = filled[selectedUserId] ?: EMPTY_WEEK
+
+    val selectedExisting: PayrollCrewRow? get() = existing[selectedUserId]
+
+    val selectedPerson: PayrollPerson? get() = crew.firstOrNull { it.userId == selectedUserId }
+
+    /** Any fill in flight — every other action waits, because the pay engine is one engine. */
+    val fillBusy: Boolean get() = fillingAll || fillingDate != null
+
+    /** The status the sidebar pill shows — the web's `rowStatus`. */
+    fun rowStatus(userId: String): EstimateStatus {
+        existing[userId]?.let { return EstimateStatus.Real(it.status) }
+        if (filled[userId].orEmpty().any { it != null }) return EstimateStatus.Estimate
+        return if (autoFill) EstimateStatus.Auto else EstimateStatus.None
+    }
+
+    private companion object {
+        val EMPTY_WEEK: List<EstimatedDay?> = List(PayPeriod.DAYS_IN_WEEK) { null }
+    }
+}
+
+/** What a Production Report Payroll sidebar row says about a crew member's week. */
+sealed interface EstimateStatus {
+    /** They have a timecard; it speaks for itself. */
+    data class Real(val status: TimecardStatus) : EstimateStatus
+
+    /** Days have been priced from the report — money, locally computed. */
+    data object Estimate : EstimateStatus
+
+    /** Auto-fill is armed and will estimate them when they are opened. */
+    data object Auto : EstimateStatus
+
+    /** No timecard and no estimate. */
+    data object None : EstimateStatus
+}
 
 // -- dialogs over any screen ---------------------------------------------------------------
 

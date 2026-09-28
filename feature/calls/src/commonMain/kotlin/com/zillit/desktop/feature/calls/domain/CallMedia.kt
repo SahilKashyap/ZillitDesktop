@@ -101,6 +101,11 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.SelfMicMuted -> this
     // Pins are a viewing choice; the view model holds them.
     is CallEngineEvent.PinRequested -> this
+    // Diagnostics. Measurements ABOUT the media picture, never part of it —
+    // the whole point of `CallDiagnostics` is that nothing it carries can
+    // change how a call behaves.
+    is CallEngineEvent.Telemetry -> this
+    is CallEngineEvent.SelfSpeaking -> this
 }
 
 /** Upsert, never ignore: an event for an unseen uid creates that peer. */

@@ -36,6 +36,12 @@ interface PayrollRepository {
     /** `/weekly/{ws}/paid` — the history queue: paid rows, and the posted ones for the audit. */
     suspend fun paidCrew(weekStarting: Long): ZillitResult<List<PayrollTimecard>>
 
+    /**
+     * `/weekly/{ws}/crew` — every status, slim: the producer surfaces list a
+     * whole unit's week and open one document at a time.
+     */
+    suspend fun crew(weekStarting: Long): ZillitResult<List<PayrollCrewRow>>
+
     /** `/weekly/{ws}/processing` — the run's week, full documents. */
     suspend fun runQueue(weekStarting: Long): ZillitResult<List<PayrollTimecard>>
 
@@ -96,8 +102,29 @@ interface PayrollSettingsRepository {
     /** Production Setup → Companies: the legal entity a payslip is headed with. */
     suspend fun companies(): ZillitResult<List<PayrollCompany>>
 
+    /**
+     * The production's default currency code.
+     *
+     * The last tier of the timecard currency policy: a record's own currency
+     * wins, and this is what a record without one is in. It is what a manual
+     * claim is saved in when the timecard does not state a currency — without
+     * it the line is stored currency-less, which is not the same thing.
+     */
+    suspend fun defaultCurrency(): ZillitResult<String?>
+
+    /** The project currencies' rates against the default — for converting a mixed-currency total. */
+    suspend fun currencyRates(): ZillitResult<PayrollCurrencyRates>
+
     /** The crew member's active deal's nominal codes, or null for none. */
     suspend fun activeDealCoding(userId: String): ZillitResult<DealCoding?>
+
+    /**
+     * What the journal's Layers and Tags cells are drawn against: the
+     * production's tracking sets and its account tags. Either half failing
+     * leaves that half empty rather than taking the ledger down with it — the
+     * codes and the money are what the page is for.
+     */
+    suspend fun journalReference(): ZillitResult<JournalReference>
 }
 
 /** A production company — the payslip's letterhead. */
@@ -171,8 +198,16 @@ interface PayrollDocuments {
     /** `POST /runs/payslip {week_starting, user_id}` — one crew member's A4 payslip. */
     suspend fun payslip(weekStarting: Long, userId: String): ZillitResult<ByteArray>
 
-    /** `POST /runs/export-summary {week_starting, format}`. */
-    suspend fun runSummary(weekStarting: Long, format: ExportFormat): ZillitResult<ByteArray>
+    /**
+     * `POST /runs/export-summary {week_starting, format}`.
+     *
+     * The service answers one of three ways (2026-09-25): the file itself, a
+     * success envelope pointing at an S3 object (a CSV, or a ZIP once the run
+     * exports as several files), or a real refusal. [PayrollExportFile]
+     * carries back which of the first two happened, so the caller names the
+     * download by what it actually got rather than what it asked for.
+     */
+    suspend fun runSummary(weekStarting: Long, format: ExportFormat): ZillitResult<PayrollExportFile>
 
     /** `GET /timecards/weekly/payroll-processing/{ws}/csv`. */
     suspend fun weekWorkbook(weekStarting: Long): ZillitResult<ByteArray>
@@ -183,6 +218,24 @@ interface PayrollDocuments {
 
 /** The run summary's formats, as the web's `normalizeFormat` spells them. */
 enum class ExportFormat(val wire: String) { Pdf("pdf"), Excel("xlsx"), Csv("csv") }
+
+/**
+ * A rendered run summary — the bytes, and the extension they actually are,
+ * which is not always [ExportFormat.wire]: a streamed file is named from its
+ * own MIME type, and an S3 object (fetched when the service answers that way
+ * instead) from the attachment's `content_subtype`. Equality and hashing skip
+ * [bytes] — this is a transient value passed straight to a save dialog, never
+ * compared for content.
+ */
+class PayrollExportFile(val bytes: ByteArray, val extension: String) {
+    override fun equals(other: Any?): Boolean =
+        other is PayrollExportFile && other.extension == extension && other.bytes.size == bytes.size
+    override fun hashCode(): Int = extension.hashCode() * HASH_PRIME + bytes.size
+
+    private companion object {
+        const val HASH_PRIME = 31
+    }
+}
 
 /** Saves a rendered file and hands it to the OS. */
 fun interface PayrollFiles {

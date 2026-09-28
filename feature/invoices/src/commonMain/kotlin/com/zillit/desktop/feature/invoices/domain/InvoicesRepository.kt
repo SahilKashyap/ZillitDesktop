@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.invoices.domain
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +23,8 @@ data class InvoiceQuery(
     val statuses: List<InvoiceStatus> = emptyList(),
     val departmentId: String? = null,
     val search: String? = null,
-    val perPage: Int = DEFAULT_PER_PAGE,
+    /** Null sends no `perPage` at all — the department board's `list({ department_id })` sends none. */
+    val perPage: Int? = DEFAULT_PER_PAGE,
 ) {
     companion object {
         const val DEFAULT_PER_PAGE = 200
@@ -176,6 +178,67 @@ interface InvoicesRepository {
 
     suspend fun deletePaymentRun(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
+    // -- the same decisions, answering the server's own word ----------------
+    //
+    // [approve], [reject], [delete], [approvePaymentRun] and [rejectPaymentRun]
+    // again, answering the envelope's `message` key (null when it sent none) —
+    // what the web toasts through `showApiSuccess` (`DepartmentInvoiceModule.jsx`
+    // approveOne / rejectOne / handleDelete / handleApproveRun / handleRejectRun).
+    // The defaults delegate, so a fake that implements only the plain call
+    // still answers, with no message.
+
+    suspend fun approveWithMessage(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<String?> =
+        approve(id, tierNumber, totalTiers).map { null }
+
+    suspend fun rejectWithMessage(id: String, reason: String): ZillitResult<String?> =
+        reject(id, reason).map { null }
+
+    suspend fun deleteWithMessage(id: String): ZillitResult<String?> = delete(id).map { null }
+
+    suspend fun approvePaymentRunWithMessage(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<String?> =
+        approvePaymentRun(id, tierNumber, totalTiers).map { null }
+
+    suspend fun rejectPaymentRunWithMessage(id: String, reason: String): ZillitResult<String?> =
+        rejectPaymentRun(id, reason).map { null }
+
+    // -- Payment Runs' other writes, answering the server's word -------------
+    //
+    // `PaymentsPage.jsx` toasts `res.message` after creating a run, cancelling
+    // one and marking paid, and lands on the run it just created (`json.data.id`).
+    // Defaulted to the plain calls, so a fake with only those still answers.
+
+    /** [createPaymentRun], answering the new run's id and the envelope's `message`. */
+    suspend fun createPaymentRunWithMessage(
+        name: String,
+        number: String,
+        payMethod: PayMethod,
+        invoiceIds: List<String>,
+    ): ZillitResult<RunCreated> = createPaymentRun(name, number, payMethod, invoiceIds).map { RunCreated() }
+
+    suspend fun deletePaymentRunWithMessage(id: String): ZillitResult<String?> = deletePaymentRun(id).map { null }
+
+    suspend fun markPaidWithMessage(ids: List<String>): ZillitResult<String?> = markPaid(ids).map { null }
+
+    /**
+     * Files a bank confirmation on a paid wire —
+     * `POST /invoices/:id/wire-attachments` — answering the invoice's list as
+     * it now stands (`invoices.js:252-254`).
+     */
+    suspend fun uploadWireAttachment(
+        id: String,
+        attachment: InvoiceAttachment,
+        mimeType: String,
+        size: Long,
+    ): ZillitResult<WireAttachmentsChange> =
+        ZillitResult.Failure(ZillitError.Unknown("No wire attachments wired"))
+
+    /** `DELETE /invoices/:id/wire-attachments/:media` (`invoices.js:262-264`). */
+    suspend fun removeWireAttachment(id: String, media: String): ZillitResult<WireAttachmentsChange> =
+        ZillitResult.Failure(ZillitError.Unknown("No wire attachments wired"))
+
+    /** [postedInvoices] with the endpoint's `total`, for "Showing N of {total}". */
+    suspend fun postedLedger(): ZillitResult<PostedLedger> = postedInvoices().map { PostedLedger(it) }
+
     /** Money owed to the production — `GET /invoices/sales-invoices`. */
     suspend fun salesInvoices(): ZillitResult<List<SalesInvoice>> = ZillitResult.Success(emptyList())
 
@@ -187,6 +250,72 @@ interface InvoicesRepository {
     suspend fun markSalesInvoicePaid(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
     suspend fun deleteSalesInvoice(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    // -- sales invoices, credit notes, vendors, accruals and settings: the
+    // reads the previews make, and the writes again answering the envelope's
+    // `message` key (null when it sent none) — what the web toasts through
+    // `showApiSuccess`. The message variants delegate by default, so a fake
+    // that implements only the plain call still answers, with no message.
+
+    /** `GET /sales-invoices/:id` — the preview's full record (`SalesPage.jsx:958`). */
+    suspend fun salesInvoice(id: String): ZillitResult<SalesInvoice> =
+        ZillitResult.Failure(ZillitError.Unknown("No sales invoice read wired"))
+
+    /** `PATCH /sales-invoices/:id` — Update Invoice on a draft (`SalesPage.jsx:443-444`). */
+    suspend fun updateSalesInvoice(id: String, invoice: SalesInvoiceWrite): ZillitResult<Unit> =
+        ZillitResult.Success(Unit)
+
+    /** `GET /sales-invoices/:id/history`, newest first — the preview's History panel. */
+    suspend fun salesInvoiceHistory(id: String): ZillitResult<List<HistoryEntry>> = ZillitResult.Success(emptyList())
+
+    suspend fun createSalesInvoiceWithMessage(invoice: SalesInvoiceWrite): ZillitResult<String?> =
+        createSalesInvoice(invoice).map { null }
+
+    suspend fun updateSalesInvoiceWithMessage(id: String, invoice: SalesInvoiceWrite): ZillitResult<String?> =
+        updateSalesInvoice(id, invoice).map { null }
+
+    /** Mark Sent — `POST /sales-invoices/:id/send`. */
+    suspend fun sendSalesInvoiceWithMessage(id: String): ZillitResult<String?> = sendSalesInvoice(id).map { null }
+
+    suspend fun deleteSalesInvoiceWithMessage(id: String): ZillitResult<String?> = deleteSalesInvoice(id).map { null }
+
+    suspend fun createCreditNoteWithMessage(write: CreditNoteWrite): ZillitResult<String?> =
+        createCreditNote(write).map { null }
+
+    suspend fun updateCreditNoteWithMessage(id: String, write: CreditNoteWrite): ZillitResult<String?> =
+        updateCreditNote(id, write).map { null }
+
+    suspend fun deleteCreditNoteWithMessage(id: String): ZillitResult<String?> = deleteCreditNote(id).map { null }
+
+    suspend fun applyCreditNoteWithMessage(id: String): ZillitResult<String?> = applyCreditNote(id).map { null }
+
+    suspend fun saveTeamWithMessage(rows: List<InvoiceTeamRow>): ZillitResult<String?> = saveTeam(rows).map { null }
+
+    suspend fun saveAlertsWithMessage(alerts: Set<String>): ZillitResult<String?> = saveAlerts(alerts).map { null }
+
+    suspend fun saveRunAuthorisationWithMessage(levels: List<RunAuthLevel>): ZillitResult<String?> =
+        saveRunAuthorisation(levels).map { null }
+
+    /** `GET /invoices/accruals/:id` — `{accrual, po, vendor, invoices}` (`AccrualsPage.jsx:94`). */
+    suspend fun accrualDetail(id: String): ZillitResult<AccrualDetail> =
+        ZillitResult.Failure(ZillitError.Unknown("No accrual detail wired"))
+
+    /** `GET /api/v2/purchase-orders?per_page=200` — the vendor history's orders (`SuppliersPage.jsx:321`). */
+    suspend fun vendorPurchaseOrders(): ZillitResult<List<VendorPo>> = ZillitResult.Success(emptyList())
+
+    /** The Layers picker's sets — `GET /account-hub/tracking-sets?include_nodes=true&active_only=true`. */
+    suspend fun trackingSets(): ZillitResult<List<TrackingSet>> = ZillitResult.Success(emptyList())
+
+    /** The core `preset/isd-codes` countries — the sales address's Country select (`useIsdCodes`). */
+    suspend fun countries(): ZillitResult<List<ClientCountry>> = ZillitResult.Success(emptyList())
+
+    /**
+     * `GET /v2/preset/geonames/postalcode/{country}/{postcode}` — the city and
+     * state a postcode sits in (`lib/postcodeAutofill.js`). A confirmed empty
+     * answer is blanks; a refusal is a failure, which leaves the fields alone.
+     */
+    suspend fun postcodePlace(countryCode: String, postcode: String): ZillitResult<PostcodeMatch> =
+        ZillitResult.Failure(ZillitError.Unknown("No postcode lookup wired"))
 
     /** Posts an entered invoice to the ledger — the entry stage's last act. */
     suspend fun postInvoice(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
@@ -207,6 +336,30 @@ interface InvoicesRepository {
 
     /** Quick Entry — `POST /invoices` straight to ready-to-pay. */
     suspend fun quickEntry(entry: QuickEntry): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    // -- the ledger's writes, answering the server's own word -----------------
+    //
+    // [saveEntry], [postInvoice], [returnToApproval] and [quickEntry] again,
+    // answering the envelope's `message` key (null when it sent none) — what
+    // `EntryPage.jsx` toasts through `showApiSuccess(res)`. The defaults
+    // delegate, so a fake with only the plain calls still answers.
+
+    suspend fun saveEntryWithMessage(id: String, write: EntryWrite): ZillitResult<String?> =
+        saveEntry(id, write).map { null }
+
+    suspend fun postInvoiceWithMessage(id: String): ZillitResult<String?> = postInvoice(id).map { null }
+
+    suspend fun returnToApprovalWithMessage(id: String): ZillitResult<String?> =
+        returnToApproval(id).map { null }
+
+    suspend fun quickEntryWithMessage(entry: QuickEntry): ZillitResult<String?> = quickEntry(entry).map { null }
+
+    /**
+     * Invoice ids whose query thread another participant opened or answered
+     * — `query:opened` / `query:replied` on an `invoice` entity, which the web
+     * turns into `ah:query:entity:invoice:<id>` for an open `QueryPanel`.
+     */
+    val queryUpdates: Flow<String> get() = emptyFlow()
 
     /** Production Setup's companies and tax types, and the boundary it stores — the hub's project settings. */
     suspend fun projectSettings(): ZillitResult<InvoiceProjectSettings> = ZillitResult.Success(InvoiceProjectSettings())
@@ -242,6 +395,35 @@ interface InvoicesRepository {
 
     /** Every bulk batch the server is still tracking — Ongoing Uploads' server half. */
     suspend fun bulkBatches(): ZillitResult<List<ServerBatch>> = ZillitResult.Success(emptyList())
+
+    /**
+     * Every `invoice:bulk_upload_progress` frame as a batch snapshot — the
+     * one delivery of a finished batch's last counts, because the list drops
+     * the batch the moment it completes (`recordProgressFrame`).
+     */
+    val bulkProgress: Flow<ServerBatch> get() = emptyFlow()
+
+    /**
+     * [process], answering the server's own success `message` (a message key)
+     * when it sent one, so the toast can say what the web's does. Defaulted
+     * onto [process] for doubles that only override that.
+     */
+    suspend fun processWithMessage(ids: List<String>, accept: InboxAccept? = null): ZillitResult<String?> =
+        process(ids, accept).map { null }
+
+    /** [createEntered], answering the server's success `message` key when it sent one. */
+    suspend fun createEnteredWithMessage(entered: EnteredInvoice): ZillitResult<String?> =
+        createEntered(entered).map { null }
+
+    /**
+     * `POST {hub}/vendors {name}` — the vendor quick-add the Inbox review and
+     * Enter Invoice make at submit time (`usePendingVendor.resolveVendorId`).
+     */
+    suspend fun createVendor(name: String): ZillitResult<Vendor> =
+        ZillitResult.Failure(ZillitError.Unknown("No vendor create wired"))
+
+    /** The core `preset/currencies` catalogue — what a company's country resolves its currency through. */
+    suspend fun currencyCatalogue(): ZillitResult<List<CatalogueCurrency>> = ZillitResult.Success(emptyList())
 
     // -- queries ------------------------------------------------------------------
 
@@ -351,6 +533,32 @@ interface InvoicesRepository {
     /** The orders already linked, with their own figures — what the review compares against. */
     suspend fun linkedPos(id: String): ZillitResult<List<LinkedPoDetail>> = ZillitResult.Success(emptyList())
 
+    /**
+     * One purchase order, read-only — `GET /api/v2/purchase-orders/:id`, the
+     * web's `purchaseOrdersApi.getOne` behind `LinkedPoViewer` and the
+     * linked-PO cards (`useLinkedPoSummaries`).
+     */
+    suspend fun purchaseOrder(id: String): ZillitResult<PurchaseOrderRecord> =
+        ZillitResult.Failure(ZillitError.Unknown("No purchase-order read wired"))
+
+    /**
+     * Renders a purchase order's PDF and answers where it was stored —
+     * `POST /api/v2/purchase-orders/:id/pdf`, the web's `usePoPdfPreview`. The
+     * file is fetched like any other stored attachment.
+     */
+    suspend fun purchaseOrderPdf(id: String): ZillitResult<InvoiceAttachment> =
+        ZillitResult.Failure(ZillitError.Unknown("No purchase-order PDF wired"))
+
+    // The pre-approval and queue decisions again, answering the envelope's
+    // `message` for the toast (`showApiSuccess`); defaulted to the plain call
+    // with no message, as the decisions above are.
+
+    suspend fun overrideWithMessage(id: String): ZillitResult<String?> = override(id).map { null }
+
+    suspend fun sendToApprovalWithMessage(id: String): ZillitResult<String?> = sendToApproval(id).map { null }
+
+    suspend fun releaseWithMessage(id: String): ZillitResult<String?> = release(id).map { null }
+
     /** Account Hub host: `approval-tiers?module=invoices`. */
     suspend fun approvalTiers(): ZillitResult<List<ApprovalTierConfig>>
 
@@ -383,4 +591,12 @@ interface InvoiceFiles {
      */
     suspend fun export(export: InvoiceExport, format: InvoiceExportFormat): ZillitResult<ByteArray> =
         ZillitResult.Failure(ZillitError.Unknown("No exporter wired"))
+
+    /**
+     * `GET /invoices/sales-invoices/:id/pdf` — the server's rendering of a
+     * sales invoice (`salesInvoicesApi.getPdfBlobUrl`). A file, not an
+     * envelope, so the host makes the raw call as it does for [export].
+     */
+    suspend fun salesInvoicePdf(id: String): ZillitResult<ByteArray> =
+        ZillitResult.Failure(ZillitError.Unknown("No PDF reader wired"))
 }

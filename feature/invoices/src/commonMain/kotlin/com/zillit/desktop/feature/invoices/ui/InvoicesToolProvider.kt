@@ -51,6 +51,7 @@ class InvoicesToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is InvoicesEffect.Notice -> notice = effect.text
+                    is InvoicesEffect.Navigate -> navigator.navigate(WorkspaceRoute.Tool(effect.path))
                 }
             }
         }

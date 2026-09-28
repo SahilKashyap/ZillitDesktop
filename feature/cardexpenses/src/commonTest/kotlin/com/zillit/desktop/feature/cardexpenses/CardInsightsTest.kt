@@ -386,7 +386,7 @@ class CardInsightsTest {
     private val senior = CardViewer(
         userId = "senior-1",
         departmentIdentifier = "department_accounts",
-        designationIdentifier = "designation_production_accountant",
+        designationIdentifier = "designation_production_accountant_accounts",
     )
 
     private fun viewModel(repository: FakeCardRepository) =

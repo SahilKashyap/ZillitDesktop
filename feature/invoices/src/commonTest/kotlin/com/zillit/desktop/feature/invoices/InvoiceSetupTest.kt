@@ -105,6 +105,34 @@ class InvoiceSetupTest {
         assertEquals("0.0", (rows[1] as JsonObject)["posting_limit"]!!.jsonPrimitive.content)
     }
 
+    /**
+     * The web sends an untouched member back exactly as stored — extra keys, a
+     * string "unlimited" — and an edited one with its stored keys kept and the
+     * five this page edits written over them (`SettingsPage.jsx:524-526`).
+     */
+    @Test
+    fun `a team save keeps what the page does not edit`() {
+        val bundle = parse(
+            """
+            {"team_members":[
+               {"user_id":"u1","posting_limit":"unlimited","run_access":false,"note":"keep me","level":3},
+               {"user_id":"u2","posting_limit":500,"run_access":false,"override_access":false,"is_senior":false,"x":1}
+            ]}
+            """.trimIndent(),
+        )
+        val (untouched, stored) = bundle.setup.teamMembers
+        val edited = stored.copy(postingLimit = 750.0, runAccess = true)
+        val rows = teamBody(listOf(untouched, edited))["team_members"]!!.jsonArray.map { it as JsonObject }
+
+        assertEquals("unlimited", rows[0]["posting_limit"]!!.jsonPrimitive.content, "sent back exactly as stored")
+        assertEquals("keep me", rows[0]["note"]!!.jsonPrimitive.content)
+        assertFalse("is_senior" in rows[0], "no key the stored member did not have")
+
+        assertEquals("750.0", rows[1]["posting_limit"]!!.jsonPrimitive.content)
+        assertTrue(rows[1]["run_access"]!!.jsonPrimitive.content.toBoolean())
+        assertEquals("1", rows[1]["x"]!!.jsonPrimitive.content, "an edited member keeps its other keys")
+    }
+
     @Test
     fun `the alert and run-auth bodies keep their shapes`() {
         val alerts = alertsBody(setOf("invoice_overdue"))

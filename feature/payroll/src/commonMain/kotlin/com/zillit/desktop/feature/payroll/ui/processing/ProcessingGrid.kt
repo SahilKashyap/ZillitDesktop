@@ -113,16 +113,15 @@ internal fun OutstandingGrid(state: PayrollUiState, onEvent: (PayrollEvent) -> U
             (department == null || state.people[row.userId]?.department.orEmpty() == department) &&
             (query.isEmpty() || "${state.nameOf(row.userId)} ${state.roleOf(row.userId)}".lowercase().contains(query))
     }
-    val currency = state.processing.outstanding.firstNotNullOfOrNull { it.currency }
     ZillitDataTable(
         rows = rows,
         columns = listOf(
             crewColumn(state) { it.userId },
             textColumn(str(S.dm_ds_unit_days), ColumnWidth.Fixed(DAYS_COLUMN), numeric = true) { "${it.days}d" },
-            moneyColumn(str(S.desktop_payroll_basic_pay), currency) { it.basic },
-            moneyColumn(str(S.desktop_payroll_ots), currency) { it.ots },
-            moneyColumn(str(S.desktop_payroll_allowances_rental), currency) { it.allowances },
-            moneyColumn(str(S.desktop_payroll_total_pay), currency, bold = true) { it.total },
+            moneyColumn(str(S.desktop_payroll_basic_pay)) { it.basicMoney },
+            moneyColumn(str(S.desktop_payroll_ots)) { it.otsMoney },
+            moneyColumn(str(S.desktop_payroll_allowances_rental)) { it.allowancesMoney },
+            moneyColumn(str(S.desktop_payroll_total_pay), bold = true) { it.totalMoney },
         ),
         key = { it.id },
         onRowClick = { onEvent(ProcessingEvent.OpenOutstanding(it.userId)) },
@@ -278,15 +277,19 @@ private fun <T> crewColumn(state: PayrollUiState, userId: (T) -> String): TableC
         }
     }
 
+/**
+ * [value] returns the row's own (amount, currency) — never a column-wide
+ * currency, see the fix note in [OutstandingGrid].
+ */
 private fun <T> moneyColumn(
     header: String,
-    currency: String?,
     bold: Boolean = false,
-    value: (T) -> Double,
+    value: (T) -> Pair<Double, String?>,
 ): TableColumn<T> =
     TableColumn(header, ColumnWidth.Weight(1f), numeric = true) { row ->
+        val (amount, currency) = value(row)
         ZillitText(
-            text = Money.format(value(row), currency),
+            text = Money.format(amount, currency),
             style = ZillitTheme.typography.numeric.copy(fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal),
         )
     }

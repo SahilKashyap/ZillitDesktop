@@ -66,13 +66,13 @@ fun PayrollLandingPage(state: PayrollUiState, onEvent: (PayrollEvent) -> Unit, m
             description = str(S.desktop_payroll_landing_description),
         )
         if (tiles.isEmpty()) {
+            // Every tile is ported now, so an empty grid means one thing: the
+            // viewer is not an accountant and has no view access on the
+            // payroll tool. The web redirects them to Film Tools; here the
+            // tool IS the window, so it says so instead of closing itself.
             ZillitEmptyState(
                 title = str(S.desktop_payroll_no_views_title),
-                message = if (state.viewer.canView || !state.viewer.rightsLoaded) {
-                    str(S.desktop_payroll_producer_views_message)
-                } else {
-                    str(S.desktop_payroll_no_access_message)
-                },
+                message = str(S.desktop_payroll_no_access_message),
                 icon = ZillitIcons.Lock,
             )
         } else {
@@ -168,6 +168,8 @@ private val PayrollTile.icon: ImageVector
     get() = when (this) {
         PayrollTile.Processing -> ZillitIcons.BarChart
         PayrollTile.Run -> ZillitIcons.Calendar
+        PayrollTile.ProducerBoard -> ZillitIcons.Grid
+        PayrollTile.ProductionReport -> ZillitIcons.Clock
         PayrollTile.History -> ZillitIcons.Ledger
         PayrollTile.EntrySetup -> ZillitIcons.Settings
     }

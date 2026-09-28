@@ -547,6 +547,13 @@ class DistributionViewModel(
 
     private fun publish() {
         val document = state.value.confirmPublish ?: return
+        // Guarded here as well as on Publish, which only opens the confirm
+        // dialog — the commit is what writes, and ConfirmPublish is reachable
+        // directly whenever the dialog state exists.
+        if (!state.value.viewer.mayPublish) {
+            setState { copy(confirmPublish = null, error = str(S.desktop_dist_no_posting_rights_docdist)) }
+            return
+        }
         val tab = state.value.activeTab
         setState { copy(busy = true) }
         launch {

@@ -153,6 +153,25 @@ class InvoiceSetupFlowTest {
         assertFalse(vm.state.value.setup.isDirty(InvoiceSetupSection.Team))
     }
 
+    /**
+     * Add Member seeds `posting_limit: 0` (`SettingsPage.jsx:719`): Unlimited
+     * starts unticked, and an untouched save stores "Submit Only", never an
+     * unlimited grant.
+     */
+    @Test
+    fun `a new team member starts at submit only`() = runTest(dispatcher) {
+        val repo = FakeSetupRepo()
+        val vm = openSettings(repo)
+        vm.onEvent(InvoicesEvent.AddTeamMember)
+        val draft = assertNotNull(vm.state.value.setup.memberDraft)
+        assertFalse(draft.unlimited)
+        assertEquals("0", draft.limitText)
+        vm.onEvent(InvoicesEvent.ChangeTeamMemberDraft(draft.copy(row = draft.row.copy(userId = "u2"))))
+        vm.onEvent(InvoicesEvent.CommitTeamMember)
+        advanceUntilIdle()
+        assertEquals(0.0, repo.savedTeam.last().last().postingLimit)
+    }
+
     /** A refusal keeps the sheet open with what was typed. */
     @Test
     fun `a refused member save keeps the sheet`() = runTest(dispatcher) {
@@ -240,6 +259,32 @@ class InvoiceSetupFlowTest {
         assertNull(vm.state.value.review)
     }
 
+    /** No currency, no call: the web's `handleConfirmApproval` stops at "Currency is required". */
+    @Test
+    fun `sending for approval without a currency sends nothing`() = runTest(dispatcher) {
+        val repo = FakeSetupRepo()
+        val vm = viewModel(repo)
+        repo.currencyless = true
+        vm.onEvent(InvoicesEvent.OpenReview(repo.matching))
+        advanceUntilIdle()
+        vm.onEvent(InvoicesEvent.ReviewSendToApproval)
+        advanceUntilIdle()
+        assertTrue(repo.sent.isEmpty())
+        assertNotNull(vm.state.value.review, "the overlay stays open")
+    }
+
+    /** A typed PO number alone is not a PO: the overlay routes it as one without. */
+    @Test
+    fun `a bare typed po number is not a linked po in the review`() = runTest(dispatcher) {
+        val repo = FakeSetupRepo()
+        val vm = viewModel(repo)
+        vm.onEvent(InvoicesEvent.OpenReview(repo.unmatched))
+        advanceUntilIdle()
+        val review = assertNotNull(vm.state.value.review)
+        assertFalse(review.hasPo)
+        assertNull(review.activePo)
+    }
+
     /** Overriding takes the same row past the chain. */
     @Test
     fun `overriding from the review calls the override route`() = runTest(dispatcher) {
@@ -282,7 +327,8 @@ class InvoiceSetupFlowTest {
         val picker = assertNotNull(vm.state.value.poPicker)
         assertFalse(picker.loading)
         assertEquals(1, picker.suggestions.total)
-        assertEquals("v1", repo.suggestedFor.single().second)
+        // No vendor filter: the web's `poSuggestions(id)` sends none.
+        assertNull(repo.suggestedFor.single().second)
 
         vm.onEvent(InvoicesEvent.MatchToPo(picker.suggestions.vendorPos.single()))
         advanceUntilIdle()
@@ -323,10 +369,20 @@ class InvoiceSetupFlowTest {
             id = "i-match",
             invoiceNumber = "INV-1",
             vendorId = "v1",
+            currency = "GBP",
             status = InvoiceStatus.Matching,
             linkedPos = listOf(LinkedPo("p1", "PO-0042")),
         )
-        val unmatched = Invoice(id = "i-open", invoiceNumber = "INV-2", vendorId = "v1", currency = "GBP")
+        val unmatched = Invoice(
+            id = "i-open",
+            invoiceNumber = "INV-2",
+            vendorId = "v1",
+            currency = "GBP",
+            poNumber = "PO-TYPED",
+        )
+
+        /** Makes the re-read answer the matching invoice with no currency. */
+        var currencyless = false
 
         override suspend fun list(query: InvoiceQuery): ZillitResult<List<Invoice>> {
             listed += query
@@ -336,7 +392,8 @@ class InvoiceSetupFlowTest {
         override suspend fun mine() = ZillitResult.Success(emptyList<Invoice>())
         override suspend fun invoice(id: String): ZillitResult<Invoice> {
             read += id
-            return ZillitResult.Success(if (id == matching.id) matching else unmatched)
+            val found = if (id == matching.id) matching else unmatched
+            return ZillitResult.Success(if (currencyless) found.copy(currency = "") else found)
         }
         override suspend fun createEntered(entered: com.zillit.desktop.feature.invoices.domain.EnteredInvoice) =
             ZillitResult.Success<Invoice?>(null)

@@ -30,6 +30,7 @@ import com.zillit.desktop.core.designsystem.component.TableColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.feature.invoices.domain.ApprovalChain
 import com.zillit.desktop.feature.invoices.domain.BadgeTone
 import com.zillit.desktop.feature.invoices.domain.Invoice
@@ -39,6 +40,7 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceRules
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
+import com.zillit.desktop.feature.invoices.ui.AccountantPage
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -48,16 +50,26 @@ internal fun BadgeTone.statusTone(): StatusTone = when (this) {
     BadgeTone.Approved -> StatusTone.Done
     BadgeTone.Rejected -> StatusTone.Rejected
     BadgeTone.Override -> StatusTone.Escalated
+    BadgeTone.Info -> StatusTone.Progress
+    BadgeTone.Awaiting -> StatusTone.Escalated
+    BadgeTone.Success -> StatusTone.Ready
 }
 
+/**
+ * The web's `INVOICE_STATUS_MAP` colours (`lib/constants.jsx:82-97`), through
+ * its pill tones: inbox purple; matching, pending, entry and held amber;
+ * ready and posted teal; paid and approved green; disputed, rejected and
+ * override red; cancelled grey; under review blue; anything else amber.
+ */
 internal fun InvoiceStatus.statusTone(): StatusTone = when (this) {
-    InvoiceStatus.Approved, InvoiceStatus.Paid, InvoiceStatus.Posted -> StatusTone.Done
-    InvoiceStatus.Rejected, InvoiceStatus.Cancelled, InvoiceStatus.Disputed -> StatusTone.Rejected
-    InvoiceStatus.Approval, InvoiceStatus.UnderReview -> StatusTone.Pending
-    InvoiceStatus.Matching, InvoiceStatus.Entry -> StatusTone.Progress
-    InvoiceStatus.ReadyToPay -> StatusTone.Ready
-    InvoiceStatus.Held, InvoiceStatus.Override -> StatusTone.Escalated
-    InvoiceStatus.Inbox, InvoiceStatus.Unknown -> StatusTone.Neutral
+    InvoiceStatus.Inbox -> StatusTone.Escalated
+    InvoiceStatus.Matching, InvoiceStatus.Approval, InvoiceStatus.Entry -> StatusTone.Pending
+    InvoiceStatus.Held, InvoiceStatus.Unknown -> StatusTone.Pending
+    InvoiceStatus.ReadyToPay, InvoiceStatus.Posted -> StatusTone.Done
+    InvoiceStatus.Paid, InvoiceStatus.Approved -> StatusTone.Ready
+    InvoiceStatus.Disputed, InvoiceStatus.Rejected, InvoiceStatus.Override -> StatusTone.Rejected
+    InvoiceStatus.Cancelled -> StatusTone.Neutral
+    InvoiceStatus.UnderReview -> StatusTone.Progress
 }
 
 @Composable
@@ -97,6 +109,27 @@ internal fun CellText(text: String, muted: Boolean = false, maxLines: Int = 1) {
     )
 }
 
+/**
+ * A reference with its row's unread chip beside it — the web's
+ * `<span>{row.ref}{renderUnread(row.id)}</span>`, the chip being
+ * `getInvoiceTotalUnread(accountHubBadges, level_1, id)` and shown only above
+ * nothing (`RegisterPage.jsx:527-538`, `MatchingPage.jsx:363-370`).
+ */
+@Composable
+internal fun CellTextWithUnread(text: String, unread: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CellText(text)
+        ZillitBadge(count = unread)
+    }
+}
+
+/** One row's unread under [page]'s `level_1` — nothing for a page with none. */
+internal fun InvoicesUiState.pageRowUnread(page: AccountantPage, id: String): Int =
+    page.badgeKey?.let { rowUnread(it, id) } ?: 0
+
 /** Invoice · Vendor · Gross — the three columns every table starts with. */
 internal fun leadingColumns(state: InvoicesUiState): List<TableColumn<Invoice>> = listOf(
     TableColumn(str(S.ah_run_detail_col_invoice), ColumnWidth.Weight(WEIGHT_NARROW)) { CellText(it.displayNumber) },
@@ -113,6 +146,27 @@ internal fun slaColumn(state: InvoicesUiState): TableColumn<Invoice> =
     TableColumn(str(S.desktop_sla), ColumnWidth.Fixed(SLA_WIDTH)) {
         CellText(state.vendors[it.vendorId]?.slaLabel ?: "—", muted = true)
     }
+
+/**
+ * The Approval Queue's SLA pill (`ApprovalPage.jsx:441-445, 611`): the
+ * vendor's terms through `formatPaymentTerms` — a known `net_N` as "N days",
+ * anything else as stored — in blue, or a grey "—" when there are none.
+ */
+internal fun slaPillColumn(state: InvoicesUiState): TableColumn<Invoice> =
+    TableColumn(str(S.desktop_sla), ColumnWidth.Fixed(SLA_WIDTH)) { invoice ->
+        val terms = state.vendors[invoice.vendorId]?.terms.orEmpty()
+        if (terms.isBlank()) {
+            ZillitStatusPill(label = "—", tone = StatusTone.Neutral)
+        } else {
+            ZillitStatusPill(label = paymentTermsLabel(terms), tone = StatusTone.Progress)
+        }
+    }
+
+/** `formatPaymentTerms`: the four options the web knows, and any other value passed through. */
+internal fun paymentTermsLabel(terms: String): String = when (terms) {
+    "net_7", "net_14", "net_30", "net_60" -> str(S.ah_days_format, terms.removePrefix("net_").toInt())
+    else -> terms
+}
 
 internal fun approvalColumn(state: InvoicesUiState, queue: Boolean): TableColumn<Invoice> =
     TableColumn(str(S.ah_step_approval), ColumnWidth.Weight(WEIGHT_MEDIUM)) { invoice ->

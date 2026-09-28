@@ -14,7 +14,9 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallPhase
+import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
 import com.zillit.desktop.feature.calls.domain.CallProvider
+import com.zillit.desktop.feature.calls.domain.CallRingState
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.ShareSource
 import com.zillit.desktop.feature.calls.domain.CallStatus
@@ -147,6 +149,13 @@ data class CallUiState(
      */
     val rosterOpen: Boolean = false,
     val addableCrew: List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> = emptyList(),
+    /** A roster refresh is in flight, so the panel's Refresh can say so. */
+    val rosterRefreshing: Boolean = false,
+    /**
+     * How far each callee's ring has got, by user id — what the outgoing
+     * screen reads out. See [com.zillit.desktop.feature.calls.domain.CallRingState].
+     */
+    val ringStatuses: Map<String, CallRingState> = emptyMap(),
     /**
      * Bumped to ask the call's own window to come to the front, restored
      * and full size. The pill's expand button, pressed while the call has a
@@ -215,6 +224,18 @@ data class CallUiState(
     val stage: CallStageKind get() = if (videoSeen) CallStageKind.Video else CallStageKind.Avatars
 
     /**
+     * The outgoing screen's status line — `Calling…` → `Ringing…` →
+     * `Joining…`, or the real reason they did not pick up.
+     *
+     * Callee-centric and monotonic, as the web is explicit about: this side's
+     * own LiveKit connect is plumbing and is deliberately never surfaced
+     * (a "Connecting…" between the other two reads as a step backwards).
+     * Null before anything has been asked of the server, where the session's
+     * own fallback wording takes over.
+     */
+    val outgoingRing: CallRingState? get() = CallRingState.best(ringStatuses.values)
+
+    /**
      * Which line this call is on, as the phones label it.
      *
      * Worth showing rather than hiding: the two lines fail differently, and
@@ -222,9 +243,11 @@ data class CallUiState(
      */
     val lineLabel: String
         get() = when (session?.provider) {
-            CallProvider.Mediasoup -> str(S.txt_line_one)
+            // Crossed on purpose, as everywhere the numbers are shown: see
+            // `CallLine`. LiveKit is Line 1 and mediasoup Line 3.
+            CallProvider.LiveKit -> str(S.txt_line_one)
             CallProvider.Agora -> str(S.txt_line_two)
-            CallProvider.LiveKit -> str(S.txt_line_three)
+            CallProvider.Mediasoup -> str(S.txt_line_three)
             else -> ""
         }
 
@@ -403,6 +426,14 @@ sealed interface CallEvent {
     data object ToggleHostControls : CallEvent
     data object ToggleGuests : CallEvent
 
+    /**
+     * Re-reads the users panel from the server — its Refresh button.
+     *
+     * Line 3 only: it is the one line with a roster route, and the one whose
+     * add-user list is the server's rather than this client's.
+     */
+    data object RefreshRoster : CallEvent
+
     /** Opens or closes one roster row's ⋮ menu; blank closes. */
     data class ToggleRosterMenu(val userId: String) : CallEvent
 
@@ -433,16 +464,19 @@ class CallViewModel(
      */
     private val screenSources: com.zillit.desktop.feature.calls.domain.ScreenSources? = null,
     /**
-     * User id → the name we may show, for roster rows the server left
-     * nameless. Host-supplied and already keep-name-private filtered; see
-     * `callNameDirectory` in the desktop app.
+     * User id → the name and job title we may show, for the roster rows the
+     * server left blank. Host-supplied and already keep-name-private filtered;
+     * see `callNameDirectory` in the desktop app.
+     *
+     * A fallback only: the roster is the authority on both fields, because it
+     * knows people this client never fetched.
      *
      * A flow rather than a lambda: the crew arrives in stages — cache first,
      * then a network refresh — and the tiles are rebuilt only when one of the
      * combined flows emits. A pull-lambda would leave a stage full of "Guest"
      * until something unrelated happened to re-emit.
      */
-    private val nameDirectory: kotlinx.coroutines.flow.Flow<Map<String, String>> =
+    private val nameDirectory: kotlinx.coroutines.flow.Flow<Map<String, CallDirectoryEntry>> =
         kotlinx.coroutines.flow.flowOf(emptyMap()),
     /** Where "Copy invite link" puts the link. Host-supplied; null on a host without a clipboard. */
     private val copyToClipboard: ((String) -> Unit)? = null,
@@ -479,6 +513,18 @@ class CallViewModel(
         // folding it into the media projection would redraw the stage for it.
         launch { coordinator.devices.collect { list -> setState { copy(devices = list) } } }
         launch { coordinator.handRaised.collect { up -> setState { copy(handRaised = up) } } }
+        launch { coordinator.ringStatuses.collect { states -> setState { copy(ringStatuses = states) } } }
+        // On Line 3 the addable list is the SERVER's — the roster's
+        // `available` rows — and it arrives whenever the roster does, panel
+        // open or not. The other lines have no such list and keep the
+        // snapshot-at-open below.
+        launch {
+            coordinator.addableFromRoster.collect { listed ->
+                setState {
+                    if (session?.provider != CallProvider.LiveKit) this else copy(addableCrew = listed)
+                }
+            }
+        }
         launch {
             coordinator.line3State.collect { extras -> setState { copy(line3 = extras, isHost = coordinator.isHost) } }
         }
@@ -515,7 +561,7 @@ class CallViewModel(
                             micMuted = inputs.micMuted,
                             cameraOn = inputs.cameraOn,
                             selfName = coordinator.selfDisplayName,
-                            nameFor = { inputs.directory[it] },
+                            directory = { inputs.directory[it] },
                         ).copy(isHost = coordinator.isHost)
                     }
                 }
@@ -540,12 +586,42 @@ class CallViewModel(
         setState { copy(rosterOpen = true) }
         val call = state.session?.callUuid
         val provider = state.session?.provider
+        // Line 3 has a server-side add-user list (the roster's `available`
+        // rows) and it is the authority: it knows people this client never
+        // fetched, and the call may not even belong to the open production.
+        // Asking the local crew there would list the wrong production's people
+        // — which is what it used to do. Refreshed on open so the list is not
+        // whatever was true when the call started.
+        if (provider == CallProvider.LiveKit) {
+            onRefreshRoster(force = false)
+            return
+        }
         launch {
             val listed = crew().ringableOn(provider)
             setState {
                 // The call ended, or became another one, while its crew loaded.
                 if (session?.callUuid != call) this else copy(addableCrew = listed)
             }
+        }
+    }
+
+    /**
+     * The users panel's Refresh — and the hydrate when the panel opens.
+     *
+     * [force] is the button: the server re-seeds the list from project
+     * membership and reconciles it against the live media room, which is
+     * slower and is why an ordinary open does not ask for it.
+     */
+    private fun onRefreshRoster(force: Boolean) {
+        if (currentState.session?.provider != CallProvider.LiveKit) return
+        setState { copy(rosterRefreshing = true) }
+        coordinator.refreshRoster(force)
+        launch {
+            // Nothing to await: the answer arrives on `addableFromRoster` and
+            // the session, and a spinner that waits for a request that may
+            // never be answered would never stop. A beat is all it is for.
+            delay(ROSTER_REFRESH_SPINNER_MILLIS)
+            setState { copy(rosterRefreshing = false) }
         }
     }
 
@@ -686,7 +762,7 @@ class CallViewModel(
         val media: CallMedia,
         val micMuted: Boolean,
         val cameraOn: Boolean,
-        val directory: Map<String, String> = emptyMap(),
+        val directory: Map<String, CallDirectoryEntry> = emptyMap(),
     )
 
     // Exhaustive dispatch over the sealed event set — the branch count is the
@@ -712,6 +788,7 @@ class CallViewModel(
                 copy(pillOffsetX = pillOffsetX + event.dx, pillOffsetY = pillOffsetY + event.dy)
             }
             CallEvent.ToggleRoster -> toggleUsers()
+            CallEvent.RefreshRoster -> onRefreshRoster(force = true)
             CallEvent.ToggleScreenShare -> onToggleScreenShare()
             is CallEvent.ChooseShareSource -> setState {
                 copy(sharePicker = sharePicker?.copy(chosenId = event.id))
@@ -860,6 +937,11 @@ class CallViewModel(
         pins = emptyList(),
         // The next call may belong to another production, with other people.
         addableCrew = emptyList(),
+        rosterRefreshing = false,
+        // The coordinator clears these too; done here as well so the surface
+        // never draws one call's ring progress over the next call's card in
+        // the frame between the phase moving and the flow catching up.
+        ringStatuses = emptyMap(),
     )
 
     /**
@@ -920,6 +1002,9 @@ class CallViewModel(
          */
         const val MAX_REACTIONS_ON_SCREEN = 24
         const val MAX_CHAT_LINES = 300
+
+        /** How long the users panel's Refresh reads as busy. See `onRefreshRoster`. */
+        const val ROSTER_REFRESH_SPINNER_MILLIS = 600L
     }
 }
 

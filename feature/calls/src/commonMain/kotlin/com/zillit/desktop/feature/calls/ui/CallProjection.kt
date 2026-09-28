@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.calls.ui
 
+import com.zillit.desktop.feature.calls.domain.CallDirectoryEntry
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallSession
 
@@ -19,10 +20,9 @@ fun projectCallUi(
     cameraOn: Boolean,
     selfName: String,
     /** See [buildTiles]. Keep-name-private members are already filtered out. */
-    nameFor: (String) -> String? = { null },
+    directory: (String) -> CallDirectoryEntry? = { null },
 ): CallUiState {
-    val tiles =
-        buildTiles(session, media, selfName, micMuted, cameraOn, previous.handRaised, nameFor)
+    val tiles = buildTiles(session, media, selfName, micMuted, cameraOn, previous.handRaised, directory)
     // Latched, never unlatched mid-call: the stage swapping between a Compose
     // grid and a browser surface every time somebody toggled a camera would
     // move a native window between parents on each toggle.

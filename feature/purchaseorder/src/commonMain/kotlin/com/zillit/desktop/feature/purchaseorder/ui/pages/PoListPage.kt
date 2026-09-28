@@ -4,11 +4,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -102,33 +105,40 @@ internal fun PoStatRow(state: PoUiState, rows: List<PurchaseOrder>) {
         it.status == PoStatus.Approved || it.status == PoStatus.Queued || it.status == PoStatus.AccountsEntered
     }
     val posted = rows.count { it.status == PoStatus.Posted }
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+    // A fixed height, not each tile's own: Total Value can gain a currencies
+    // subtitle the other four never carry, and without this that one card
+    // taking a second line leaves the row uneven instead of aligned.
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        val tile = Modifier.weight(1f).fillMaxHeight()
         ZillitStatTile(
             label = str(S.ah_tab_all),
             value = rows.size.toString(),
             icon = ZillitIcons.File,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.pending),
             value = pending.toString(),
             tone = StatusTone.Pending,
             icon = ZillitIcons.Clock,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.approved),
             value = approved.toString(),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Shield,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.ah_posted_label),
             value = posted.toString(),
             tone = StatusTone.Done,
             icon = ZillitIcons.Ledger,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
         ZillitStatTile(
             label = str(S.ah_total_value),
@@ -136,7 +146,7 @@ internal fun PoStatRow(state: PoUiState, rows: List<PurchaseOrder>) {
             sub = rows.currencyNote(),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Bank,
-            modifier = Modifier.weight(1f),
+            modifier = tile,
         )
     }
 }
@@ -227,6 +237,9 @@ internal fun PoOrderTable(state: PoUiState, rows: List<PurchaseOrder>, onEvent: 
         key = { it.id },
         loading = state.loading,
         onRowClick = { onEvent(PoEvent.OpenOrder(it.id)) },
+        // All POs lists the whole production to an accounts assistant so the
+        // cards above it add up, but only lets them into their own orders.
+        rowEnabled = state::canOpen,
         // The page scrolls, so the table lays out every row rather than
         // virtualising inside a box of its own.
         virtualised = false,

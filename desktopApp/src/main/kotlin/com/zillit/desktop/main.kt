@@ -30,6 +30,7 @@ import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.currentPlatform
 import com.zillit.desktop.core.badges.BadgeCounts
@@ -377,10 +378,23 @@ private fun reportAlreadyRunning() {
         javax.swing.JOptionPane.showMessageDialog(
             null,
             str(S.desktop_already_running_body),
-            str(S.desktop_zillit_desktop_title),
+            appTitle(),
             javax.swing.JOptionPane.INFORMATION_MESSAGE,
         )
     }
+}
+
+/**
+ * The title a person sees on the main window, the tray icon and the
+ * "already running" dialog — with the build's own variant appended
+ * (" (QA)", " (Dev)") so a QA or develop install running alongside
+ * production is not an indistinguishable second "Zillit Desktop" in the
+ * Dock and Cmd+Tab. Blank, and so a no-op, for a production build.
+ */
+internal fun appTitle(): String {
+    val base = str(S.desktop_zillit_desktop_title)
+    val variant = ZillitVariant.label
+    return if (variant.isBlank()) base else "$base ($variant)"
 }
 
 /**
@@ -725,7 +739,7 @@ private fun ApplicationScope.ZillitWindows(
         onCloseRequest = onCloseMain,
         state = windowState,
         visible = mainVisible,
-        title = str(S.desktop_zillit_desktop_title),
+        title = appTitle(),
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         // Preview so shortcuts beat focused controls, but unhandled keys fall
         // through — a handler that swallows everything breaks typing.
@@ -894,9 +908,10 @@ private fun ApplicationScope.ZillitWindows(
  *
  * Two sources of number, because they count different things. Most badges are
  * unread counts from the server. Settings' is how many people are waiting to be
- * approved on its Admin Settings tab — shown to admins only — which the unread endpoint has nothing to say about: it is asked with
- * `section=tools_label`, so the approval queues report their own length back
- * through the settings state.
+ * approved on its Admin Settings tab — shown to admins only — which the unread
+ * endpoint has nothing to say about: it is asked with `section=tools_label`,
+ * so the approval queues report their own length back through the settings
+ * state.
  */
 private fun railItemsWith(
     badges: BadgeCounts,
@@ -1171,8 +1186,15 @@ private fun ApprovalCounts(ready: AppGraph.Ready, viewModels: AppViewModels) {
     // withdrawn — and then the row would wear a number nothing can clear.
     // Once a queue has answered, cleanly, with nobody in it, its unread rows
     // are read.
-    StaleApprovalNotifications(ready, approvalState.crew, ledger.unit(BadgeSections.JOIN_REQUEST_UNIT), BadgeSections.JOIN_REQUEST_UNIT)
-    StaleApprovalNotifications(ready, approvalState.profiles, ledger.unit(BadgeSections.PROFILE_CHANGE_UNIT), BadgeSections.PROFILE_CHANGE_UNIT)
+    StaleApprovalNotifications(
+        ready, approvalState.crew, ledger.unit(BadgeSections.JOIN_REQUEST_UNIT), BadgeSections.JOIN_REQUEST_UNIT,
+    )
+    StaleApprovalNotifications(
+        ready,
+        approvalState.profiles,
+        ledger.unit(BadgeSections.PROFILE_CHANGE_UNIT),
+        BadgeSections.PROFILE_CHANGE_UNIT,
+    )
 }
 
 @Composable
@@ -1186,6 +1208,26 @@ private fun StaleApprovalNotifications(ready: AppGraph.Ready, queue: ApprovalQue
         queue.items.isEmpty() && queue.loadedAtMillis > unreadSince && unreadSince > 0
     LaunchedEffect(stale) {
         if (stale) runCatching { emitSegmentRead(ready, segment = unit, module = unit) }
+    }
+}
+
+/**
+ * Re-arms the Bearer session once the QR scan has registered this device.
+ *
+ * The graph — and the token session with it — is built before anyone signs
+ * in, so its opening `POST /session/device` runs against a device the server
+ * does not know and comes back `libs_invalid_device_id`. That correctly turns
+ * token mode off; nothing but this turns it back on. Without it the desktop
+ * spent the whole session on `moduledata`, which develop now refuses
+ * (`libs_moduledata_not_accepted`) — every call 401, no data anywhere.
+ *
+ * Idempotent on both sides: the effect only fires on the transition, and
+ * `onDeviceRegistered` is a no-op unless the mode is actually off.
+ */
+@Composable
+private fun TokenSessionOnSignIn(ready: AppGraph.Ready, signedIn: Boolean) {
+    LaunchedEffect(signedIn) {
+        if (signedIn) ready.tokenSession.onDeviceRegistered()
     }
 }
 
@@ -1344,7 +1386,9 @@ private fun ProjectScopedLoads(
         // viewer is rather than carrying the previous production's answer.
         viewModels.cashExpenses?.onProjectChanged()
         viewModels.cardExpenses?.onProjectChanged()
+        viewModels.cardExpensesTool?.onProjectChanged()
         viewModels.purchaseOrders?.onProjectChanged()
+        viewModels.purchaseOrdersTool?.onProjectChanged()
         viewModels.timecards?.onProjectChanged()
         viewModels.payroll?.onProjectChanged()
         viewModels.dealMemos?.onProjectChanged()
@@ -1377,6 +1421,7 @@ private fun ProjectScopedLoads(
         }
         viewModels.cashExpenses?.onRightsChanged()
         viewModels.cardExpenses?.onRightsChanged()
+        viewModels.cardExpensesTool?.onRightsChanged()
         viewModels.dealMemos?.onRightsChanged()
         viewModels.payroll?.onRightsChanged()
         viewModels.accountHub?.onRightsChanged()
@@ -1385,6 +1430,7 @@ private fun ProjectScopedLoads(
         viewModels.adDashboard?.onRightsChanged()
         viewModels.saPortal?.onRightsChanged()
         viewModels.purchaseOrders?.onRightsChanged()
+        viewModels.purchaseOrdersTool?.onRightsChanged()
         viewModels.timecards?.onRightsChanged()
         viewModels.permissionGrid?.onRightsChanged(PermissionGridViewer.from(rights))
         viewModels.externalUsers?.onRightsChanged()
@@ -1410,6 +1456,7 @@ private fun BackgroundWork(
     val auth by authViewModel.state.collectAsState()
     SessionExpiry(ready, authViewModel)
     EndCallOnSignOut(ready, signedIn = auth.step == AuthStep.Complete)
+    TokenSessionOnSignIn(ready, signedIn = auth.step == AuthStep.Complete)
     AuthEffects(authViewModel, createViewModel, joinViewModel)
     BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
     ToolsRefresh(ready, viewModels.home)
@@ -1557,6 +1604,7 @@ private fun ZillitContent(
  * the sync queue's dialog. Split from [ZillitContent] so the auth branches
  * and the shell branch each read on their own.
  */
+@Suppress("LongMethod") // The signed-in frame, read top to bottom: rail, tabs, status bar, calls, sync dialog.
 @Composable
 private fun SignedInShell(
     ready: AppGraph.Ready,
@@ -2470,14 +2518,23 @@ private fun AppGraph.Ready.cashViewer(): CashViewer {
     )
 }
 
-private fun AppGraph.Ready.poViewer(permissions: ProjectPermissions): PoViewer {
+private fun AppGraph.Ready.poViewer(permissions: ProjectPermissions, asTool: Boolean = false): PoViewer {
     val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
+    val profile = context?.profile
+    val me = context?.user(profile?.userId)
     return PoViewer(
-        userId = context?.profile?.userId.orEmpty(),
-        departmentIdentifier = me?.department,
-        designationIdentifier = me?.designation,
+        userId = profile?.userId.orEmpty(),
+        // The profile's identifiers, not the crew row's display names. The
+        // profile is there from sign-in and the crew list arrives later, so
+        // an accountant resolved as crew until it landed and opened on the
+        // wrong page — the web reads the profile for this exact reason
+        // (`AuthContext.jsx:80`, the same guard the card tool carries). The
+        // crew row stays the fallback for a profile without them.
+        departmentIdentifier = profile?.departmentIdentifier ?: me?.department,
+        designationIdentifier = profile?.designationIdentifier ?: me?.designation,
         isProjectAdmin = context?.isAdmin == true,
+        // Which door this session came through — see purchaseOrderModel.
+        enteredAsTool = asTool,
         // The department view's All POs tab is gated on this: `is_admin` OR the
         // tool's own posting right, which is the web's `canSeeAllPOs_department`.
         canPostPurchaseOrders = permissions.canPost(PURCHASE_ORDER_TOOL),
@@ -2490,6 +2547,43 @@ private fun AppGraph.Ready.poViewer(permissions: ProjectPermissions): PoViewer {
 
 /** The tool-rights identifier for purchase orders, as the grid issues it. */
 private const val PURCHASE_ORDER_TOOL = "purchase_order_tool"
+
+/**
+ * One Purchase Orders view model for one door.
+ *
+ * [asTool] is the web's `?entry=tool` (`PurchaseOrdersRouter.jsx`): the Film
+ * Tools tile opens the **department view** — an accountant raises their own
+ * orders there, with no PO Entry, Posted or Settings — and the Account Hub's
+ * sidebar the **accounts console**. Each door keeps its own page, filters,
+ * selection and open form, as the web's two sessions do.
+ */
+private fun AppGraph.Ready.purchaseOrderModel(
+    permissions: () -> ProjectPermissions,
+    asTool: Boolean,
+): PurchaseOrderViewModel {
+    val graph = this
+    return PurchaseOrderViewModel(
+        repository = graph.purchaseOrderRepository,
+        viewer = { graph.poViewer(permissions(), asTool = asTool) },
+        offline = graph.offlineSupport,
+        // The form's configuration belongs to the account hub's service, not
+        // the purchase-order one, so it is handed in rather than fetched by
+        // the module's own repository.
+        formTemplate = graph.formTemplateFor(FormModule.PurchaseOrders),
+        // The Settings tab's pickers read the crew list, and its terms
+        // document rides the hub's document store.
+        people = graph.poSettingsPeople(),
+        termsFiles = graph.poTermsFiles(),
+        // Companies, tax types, departments and currencies — the web fetches
+        // all four once on PO entry and shares them between both role views;
+        // they are the hub's documents.
+        projectSettings = graph.poProjectSettings(),
+        // An order's own paperwork: the same store, a wider accept rule than
+        // the terms document's.
+        attachmentFiles = graph.poAttachmentFiles(),
+        badges = graph.purchaseOrderBadges(),
+    )
+}
 
 private fun AppGraph.Ready.timecardViewer(): TimecardViewer {
     val context = projectContext?.context?.value
@@ -2626,14 +2720,57 @@ private fun today(): kotlinx.datetime.LocalDate {
 
 private fun AppGraph.Ready.cardViewer(): CardViewer {
     val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
+    val profile = context?.profile
+    val me = context?.user(profile?.userId)
     return CardViewer(
-        userId = context?.profile?.userId.orEmpty(),
-        departmentIdentifier = me?.department,
-        designationIdentifier = me?.designation,
+        userId = profile?.userId.orEmpty(),
+        // The profile's identifiers, not the crew row's display names: the
+        // profile is there from sign-in, where the crew list arrives later —
+        // an accountant resolved as crew until it landed, and opened on the
+        // wrong page (`AuthContext.jsx:80` reads the profile for the same
+        // reason). The crew row is the fallback for a profile without them.
+        departmentIdentifier = profile?.departmentIdentifier ?: me?.department,
+        designationIdentifier = profile?.designationIdentifier ?: me?.designation,
         // Episode fields are a television production's (`useIsTelevisionProject`).
         isTelevision = context?.project?.subType?.contains("television", ignoreCase = true) == true,
     )
+}
+
+/**
+ * One Card Expenses view model for one door.
+ *
+ * [asTool] is the web's `?entry=tool` (`useIsCardAccountant.js`): the Film
+ * Tools tile opens the crew view — an accountant files their own receipts
+ * there — and the Account Hub's sidebar the accountant console. Each door
+ * keeps its own pages, data and badge scope, as the web's two sessions do.
+ */
+private fun AppGraph.Ready.cardExpensesModel(asTool: Boolean): CardExpensesViewModel {
+    val graph = this
+    var cardModel: CardExpensesViewModel? = null
+    return CardExpensesViewModel(
+        repository = graph.cardRepositoryWithExports(),
+        files = cardFiles(),
+        banks = { graph.cardBanks() },
+        // Currencies, rates, companies and banks — the hub's Production Setup
+        // documents, for the card forms and the dashboard's converted totals.
+        reference = { graph.cardReference() },
+        hub = graph.cardHub(),
+        events = graph.socketEvents,
+        // Both host seams: the crew belongs to the production and the picker
+        // to this machine, and the card service offers neither.
+        people = { graph.cardPeople() },
+        uploader = graph.cardAttachmentUploader(),
+        inboxHost = graph.cardInboxHost(),
+        // Companies, chart codes and the TV flag for the crew pages.
+        crewHost = graph.cardCrewHost(),
+        // An accountant's rows file under the account hub, a cardholder's
+        // under the card tool (`constants.js:189-193`).
+        badges = graph.cardBadges {
+            cardModel?.state?.value?.viewer?.isAccountant
+                ?: graph.cardViewer().copy(enteredAsTool = asTool).isAccountant
+        },
+        viewer = { graph.cardViewer().copy(enteredAsTool = asTool) },
+    ).also { cardModel = it }
 }
 
 /** Every screen's view model, built once per graph and shared by every window. */
@@ -2655,7 +2792,11 @@ internal class AppViewModels(
     /** The finance tools. Null before the graph is configured. */
     val cashExpenses: CashExpensesViewModel?,
     val cardExpenses: CardExpensesViewModel?,
+    /** The same tool opened from the Film Tools tile — the crew view; see [cardExpensesModel]. */
+    val cardExpensesTool: CardExpensesViewModel?,
     val purchaseOrders: PurchaseOrderViewModel?,
+    /** The same tool opened from the Film Tools tile — the department view; see [purchaseOrderModel]. */
+    val purchaseOrdersTool: PurchaseOrderViewModel?,
     val timecards: TimecardViewModel?,
     val payroll: PayrollViewModel?,
     val dealMemos: DealMemoViewModel?,
@@ -2949,58 +3090,20 @@ private fun rememberAppViewModels(
                     reference = graph.cashReferenceSources(),
                 ).also { cashModel = it }
             },
-            cardExpenses = ready?.let { graph ->
-                // The badge scope follows the view the tool is showing — see
-                // the cash tool's note above.
-                var cardModel: CardExpensesViewModel? = null
-                CardExpensesViewModel(
-                    repository = graph.cardRepositoryWithExports(),
-                    files = cardFiles(),
-                    banks = { graph.cardBanks() },
-                    // Currencies, rates, companies and banks — the hub's
-                    // Production Setup documents, for the card forms and the
-                    // dashboard's converted totals.
-                    reference = { graph.cardReference() },
-                    hub = graph.cardHub(),
-                    events = graph.socketEvents,
-                    // Both host seams: the crew belongs to the production and
-                    // the picker to this machine, and the card service offers
-                    // neither. See CardExpensesWiring.
-                    people = { graph.cardPeople() },
-                    uploader = graph.cardAttachmentUploader(),
-                    inboxHost = graph.cardInboxHost(),
-                    // Companies, chart codes and the TV flag for the crew pages.
-                    crewHost = graph.cardCrewHost(),
-                    // An accountant's rows file under the account hub, a
-                    // cardholder's under the card tool (`constants.js:189-193`).
-                    badges = graph.cardBadges {
-                        cardModel?.state?.value?.viewer?.isAccountant ?: graph.cardViewer().isAccountant
-                    },
-                    viewer = { graph.cardViewer() },
-                ).also { cardModel = it }
-            },
+            // Two instances, one per door, as the web's two entries are two
+            // sessions (`AuthContext.jsx:47-68`): the Account Hub's sidebar
+            // opens the accountant console, the Film Tools tile
+            // (`?entry=tool`) the crew view — even for an accountant.
+            cardExpenses = ready?.let { graph -> graph.cardExpensesModel(asTool = false) },
+            cardExpensesTool = ready?.let { graph -> graph.cardExpensesModel(asTool = true) },
+            // Two instances here for the same reason as the cards: the hub's
+            // sidebar opens the accounts console, the Film Tools tile the
+            // department view — even for an accountant.
             purchaseOrders = ready?.let { graph ->
-                PurchaseOrderViewModel(
-                    repository = graph.purchaseOrderRepository,
-                    viewer = { graph.poViewer(permissions()) },
-                    offline = graph.offlineSupport,
-                    // The form's configuration belongs to the account hub's
-                    // service, not the purchase-order one, so it is handed in
-                    // rather than fetched by the module's own repository.
-                    formTemplate = graph.formTemplateFor(FormModule.PurchaseOrders),
-                    // The Settings tab's pickers read the crew list, and its
-                    // terms document rides the hub's document store.
-                    people = graph.poSettingsPeople(),
-                    termsFiles = graph.poTermsFiles(),
-                    // Companies, tax types, departments and currencies — the
-                    // web fetches all four once on PO entry and shares them
-                    // between both role views; they are the hub's documents.
-                    projectSettings = graph.poProjectSettings(),
-                    // An order's own paperwork: the same store, a wider accept
-                    // rule than the terms document's.
-                    attachmentFiles = graph.poAttachmentFiles(),
-                    badges = graph.purchaseOrderBadges(),
-                )
+                graph.purchaseOrderModel(permissions, asTool = false)
+            },
+            purchaseOrdersTool = ready?.let { graph ->
+                graph.purchaseOrderModel(permissions, asTool = true)
             },
             timecards = ready?.let { graph ->
                 TimecardViewModel(
@@ -3609,6 +3712,7 @@ private fun buildRegistry(
     val cards = viewModels.cardExpenses?.let { vm ->
         CardExpensesToolProvider(
             viewModel = vm,
+            toolViewModel = viewModels.cardExpensesTool ?: vm,
             // Same routed store as the boards and the cash receipts: fetched
             // to Downloads, then handed to the OS.
             onOpenAttachment = { key ->
@@ -3626,6 +3730,7 @@ private fun buildRegistry(
     val orders = viewModels.purchaseOrders?.let { vm ->
         PurchaseOrderToolProvider(
             viewModel = vm,
+            toolViewModel = viewModels.purchaseOrdersTool ?: vm,
             // An order's paperwork goes through the same routed store the
             // boards read: fetched to Downloads, then handed to the OS.
             onOpenAttachment = { file ->
@@ -4218,13 +4323,19 @@ private val ZillitWidget.widgetDetail: String
         ZillitWidget.Crew -> str(S.desktop_widget_detail_crew)
     }
 
-/** The chat module names a line by its wire word; the calls module by its provider. */
-internal fun CallLine.toProvider(): CallProvider = when (this) {
-    CallLine.One -> CallProvider.Mediasoup
-    CallLine.Two -> CallProvider.Agora
-    CallLine.Three -> CallProvider.LiveKit
-}
+/**
+ * The chat module names a line by its wire word; the calls module by its
+ * provider, and the two use the same words — so the wire word is the mapping,
+ * not a `when` over the numbers. Said this way it survived the 2026-09-26
+ * swap of Line 1 and Line 3 without an edit, which a branch per constant
+ * would not have.
+ */
+internal fun CallLine.toProvider(): CallProvider = CallProvider.ofWire(wire)
 
-/** The lines a production offers. Line 3 only where the roll-out list names it — see LineThreeGate. */
+/**
+ * The lines a production offers. The LiveKit line — labelled Line 1 — only
+ * where the roll-out list names it; see LineThreeGate, whose name is the
+ * remote-config key's (`line_three_enabled_in`) and not the label's.
+ */
 internal fun AppGraph.Ready.callLines(projectId: String?): List<CallLine> =
-    if (lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT
+    if (lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.One else CallLine.DEFAULT

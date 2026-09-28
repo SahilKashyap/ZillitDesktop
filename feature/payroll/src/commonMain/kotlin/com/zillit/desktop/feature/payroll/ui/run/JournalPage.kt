@@ -1,11 +1,15 @@
 package com.zillit.desktop.feature.payroll.ui.run
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,14 +37,19 @@ import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.payroll.domain.Journal
 import com.zillit.desktop.feature.payroll.domain.JournalEdit
+import com.zillit.desktop.feature.payroll.domain.JournalReference
 import com.zillit.desktop.feature.payroll.domain.JournalRow
+import com.zillit.desktop.feature.payroll.domain.JournalSplit
+import com.zillit.desktop.feature.payroll.domain.JournalSplits
 import com.zillit.desktop.feature.payroll.domain.PayPeriod
 import com.zillit.desktop.feature.payroll.ui.JournalEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollEvent
@@ -177,18 +186,39 @@ private fun JournalTable(state: PayrollUiState, rows: List<JournalRow>, onEvent:
         val credit = rows.filter { it.timecardId == null }
         debit + if (credit.isEmpty()) emptyList() else listOf(str(S.desktop_payroll_accounts) to credit)
     }
-    Box(Modifier.fillMaxSize().padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm)) {
+    // Where "Add tax" sits: the LAST line of each timecard that has none, which
+    // is exactly where the tax line itself would be seated. The action belongs
+    // to the timecard rather than to any one of its lines, so it is offered
+    // once — the web merges a cell across the run to say the same thing.
+    val taxAnchors = remember(rows) {
+        val withoutTax = rows.filter { it.isTax }.mapNotNull { it.timecardId }.toSet()
+            .let { withTax -> rows.mapNotNull { it.timecardId }.toSet() - withTax }
+        rows.filter { it.timecardId in withoutTax }.groupBy { it.timecardId }
+            .values.mapNotNull { it.lastOrNull()?.id }.toSet()
+    }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
+    ) {
+        // Nine columns of coding do not fit a laptop, and a clipped Actions
+        // column is a Split button nobody can reach. The ledger scrolls
+        // sideways below its own width, as the web's table does.
+        val width = maxOf(maxWidth, TABLE_MIN_WIDTH)
         Column(
             Modifier.fillMaxSize()
                 .clip(ZillitTheme.shapes.large)
                 .border(1.dp, ZillitTheme.colors.border, ZillitTheme.shapes.large)
-                .background(ZillitTheme.colors.surface),
+                .background(ZillitTheme.colors.surface)
+                .horizontalScroll(rememberScrollState()),
         ) {
-            HeaderLine()
-            ZillitLazyColumn(Modifier.fillMaxSize()) {
-                groups.forEach { (title, list) ->
-                    item(key = "group-$title") { GroupLine(title, list.size) }
-                    items(list, key = { it.id }) { row -> JournalLine(state, row, onEvent) }
+            Column(Modifier.width(width)) {
+                HeaderLine()
+                ZillitLazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                    groups.forEach { (title, list) ->
+                        item(key = "group-$title") { GroupLine(title, list.size) }
+                        items(list, key = { it.id }) { row ->
+                            JournalLine(state, row, row.id in taxAnchors, onEvent)
+                        }
+                    }
                 }
             }
         }
@@ -205,8 +235,12 @@ private fun HeaderLine() {
         Header(str(S.description), Modifier.weight(1f))
         Header(str(S.code), Modifier.width(CODE_WIDTH))
         Header(str(S.desktop_payroll_effective_date_title), Modifier.width(DATE_WIDTH))
+        Header(str(S.desktop_layers), Modifier.width(LAYERS_WIDTH))
+        Header(str(S.drive_tags), Modifier.width(TAGS_WIDTH))
+        Header(str(S.ah_lbl_vat), Modifier.width(TAX_WIDTH))
         Header(str(S.desktop_debit), Modifier.width(AMOUNT_WIDTH), TextAlign.End)
         Header(str(S.desktop_credit), Modifier.width(AMOUNT_WIDTH), TextAlign.End)
+        Header(str(S.dd_actions), Modifier.width(ACTIONS_WIDTH))
     }
 }
 
@@ -244,7 +278,12 @@ private fun GroupLine(title: String, count: Int) {
  */
 @Suppress("LongMethod") // One row of five cells, each with its own edit rule.
 @Composable
-private fun JournalLine(state: PayrollUiState, row: JournalRow, onEvent: (PayrollEvent) -> Unit) {
+private fun JournalLine(
+    state: PayrollUiState,
+    row: JournalRow,
+    offersTax: Boolean,
+    onEvent: (PayrollEvent) -> Unit,
+) {
     val edit = state.run.journal.edits[row.id]
     val editable = row.editable(state.lockedDate) && state.viewer.seesAccountantViews
     val flagged = row.id in state.run.journal.flagged
@@ -252,59 +291,389 @@ private fun JournalLine(state: PayrollUiState, row: JournalRow, onEvent: (Payrol
     val date = Journal.dateOf(row, edit).orEmpty()
     val amount = Journal.amountOf(row, edit)
     val currency = state.run.timecards.firstOrNull { it.id == row.timecardId }?.currency
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            if (!editable) {
-                ZillitIcon(icon = ZillitIcons.Lock, size = LOCK_ICON, tint = ZillitTheme.colors.textMuted)
-                Spacer(Modifier.width(ZillitTheme.spacing.xs))
+    val splits = JournalSplits.splitsOf(row, edit)
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            DescriptionCell(row, edit, editable, Modifier.weight(1f), onEvent)
+            CodeCell(row, code, editable, flagged, onEvent)
+            ZillitTextField(
+                value = date,
+                onValueChange = { onEvent(JournalEvent.Date(row.id, it)) },
+                placeholder = "YYYY-MM-DD",
+                enabled = editable,
+                errorText = if (flagged && date.isBlank()) str(S.docusign_field_edit_required) else null,
+                modifier = Modifier.width(DATE_WIDTH),
+            )
+            LayersCell(
+                sets = state.run.journal.reference.trackingSets,
+                picked = Journal.layersOf(row, edit),
+                editable = editable,
+                modifier = Modifier.width(LAYERS_WIDTH),
+            ) { onEvent(JournalEvent.Layers(row.id, it)) }
+            TagsCell(
+                reference = state.run.journal.reference,
+                selected = Journal.tagsOf(row, edit),
+                editable = editable,
+                modifier = Modifier.width(TAGS_WIDTH),
+            ) { onEvent(JournalEvent.Tags(row.id, it)) }
+            if (row.isTax) TaxCell(row, edit, editable, onEvent) else Spacer(Modifier.width(TAX_WIDTH))
+            if (row.isCredit) {
+                ZillitText(
+                    text = "—",
+                    style = ZillitTheme.typography.numeric,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.width(AMOUNT_WIDTH),
+                )
+                AmountCell(row, edit, amount, editable, onEvent)
+            } else {
+                AmountCell(row, edit, amount, editable && row.amountEditable, onEvent, currency)
+                ZillitText(
+                    text = "—",
+                    style = ZillitTheme.typography.numeric,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.width(AMOUNT_WIDTH),
+                )
             }
-            ZillitText(text = row.description, style = ZillitTheme.typography.bodySmall, maxLines = 2)
+            RowActions(state, row, editable, offersTax, onEvent)
         }
+        splits.forEach { child ->
+            SplitLine(row, child, editable, currency, state.run.journal.reference, onEvent)
+        }
+    }
+}
+
+/**
+ * The line's wording. Derived from the week, the crew member and the pay break
+ * until the accountant types their own, which is then what posts.
+ */
+@Composable
+private fun DescriptionCell(
+    row: JournalRow,
+    edit: JournalEdit?,
+    editable: Boolean,
+    modifier: Modifier,
+    onEvent: (PayrollEvent) -> Unit,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (!editable) {
+            ZillitIcon(icon = ZillitIcons.Lock, size = LOCK_ICON, tint = ZillitTheme.colors.textMuted)
+            Spacer(Modifier.width(ZillitTheme.spacing.xs))
+            ZillitText(text = row.description, style = ZillitTheme.typography.bodySmall, maxLines = 2)
+            return@Row
+        }
+        ZillitTextField(
+            value = Journal.descriptionOf(row, edit),
+            onValueChange = { onEvent(JournalEvent.Describe(row.id, it)) },
+            placeholder = str(S.description),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * A payroll account's code comes from Payroll Entry Setup, so it reads as text
+ * even on an otherwise editable row — and the save ignores the edit buffer for
+ * it, which is what keeps a bulk edit from reaching it.
+ */
+@Composable
+private fun CodeCell(
+    row: JournalRow,
+    code: String,
+    editable: Boolean,
+    flagged: Boolean,
+    onEvent: (PayrollEvent) -> Unit,
+) {
+    if (row.codeLocked) {
+        ZillitTooltip(text = str(S.desktop_payroll_code_set_in_setup)) {
+            ZillitText(
+                text = code.ifBlank { "—" },
+                style = ZillitTheme.typography.numeric,
+                color = ZillitTheme.colors.textSecondary,
+                modifier = Modifier.width(CODE_WIDTH),
+            )
+        }
+    } else {
         ZillitTextField(
             value = code,
             onValueChange = { onEvent(JournalEvent.Code(row.id, it)) },
             placeholder = str(S.code),
-            enabled = editable && !row.codeLocked,
+            enabled = editable,
             errorText = if (flagged && code.isBlank()) str(S.docusign_field_edit_required) else null,
             modifier = Modifier.width(CODE_WIDTH),
         )
-        ZillitTextField(
-            value = date,
-            onValueChange = { onEvent(JournalEvent.Date(row.id, it)) },
-            placeholder = "YYYY-MM-DD",
-            enabled = editable,
-            errorText = if (flagged && date.isBlank()) str(S.docusign_field_edit_required) else null,
-            modifier = Modifier.width(DATE_WIDTH),
-        )
+    }
+}
+
+/**
+ * The tax line's rate, and the money it derives. Picking a rate re-derives the
+ * figure; typing a figure is an override that stands on its own.
+ */
+@Composable
+private fun TaxCell(row: JournalRow, edit: JournalEdit?, editable: Boolean, onEvent: (PayrollEvent) -> Unit) {
+    ZillitTextField(
+        value = Journal.rateOf(row, edit).percent(),
+        onValueChange = { onEvent(JournalEvent.TaxRate(row.id, it)) },
+        placeholder = str(S.desktop_payroll_tax_percentage),
+        keyboardType = KeyboardType.Decimal,
+        enabled = editable,
+        trailingContent = {
+            ZillitText(text = "%", style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
+        },
+        modifier = Modifier.width(TAX_WIDTH),
+    )
+}
+
+/** A whole rate reads as `20`, not `20.0`. */
+private fun Double?.percent(): String = when {
+    this == null -> ""
+    this == toLong().toDouble() -> toLong().toString()
+    else -> toString()
+}
+
+/** A typed figure — an account's credit, or an override of a tax line's derived debit. */
+@Composable
+private fun AmountCell(
+    row: JournalRow,
+    edit: JournalEdit?,
+    amount: Double?,
+    editable: Boolean,
+    onEvent: (PayrollEvent) -> Unit,
+    currency: String? = null,
+) {
+    if (!editable) {
         ZillitText(
-            text = if (row.isCredit) "" else amount?.let { Money.format(it, currency) } ?: "—",
+            text = amount?.let { Money.format(it, currency) } ?: "—",
             style = ZillitTheme.typography.numeric,
             textAlign = TextAlign.End,
             modifier = Modifier.width(AMOUNT_WIDTH),
         )
-        if (row.isCredit) CreditCell(row, edit, editable, onEvent) else Spacer(Modifier.width(AMOUNT_WIDTH))
+        return
     }
-}
-
-/** An account row's typed credit — blank until the accountant types one; it never defaults to zero. */
-@Composable
-private fun CreditCell(row: JournalRow, edit: JournalEdit?, editable: Boolean, onEvent: (PayrollEvent) -> Unit) {
     ZillitTextField(
         value = when {
-            edit?.amountCleared == true -> ""
+            edit?.amountCleared == true && !row.isTax -> ""
             edit?.amount != null -> edit.amount.toString()
-            else -> row.amount?.toString().orEmpty()
+            else -> amount?.toString().orEmpty()
         },
         onValueChange = { onEvent(JournalEvent.Credit(row.id, it)) },
         placeholder = "0.00",
         keyboardType = KeyboardType.Decimal,
-        enabled = editable,
         modifier = Modifier.width(AMOUNT_WIDTH),
     )
+}
+
+/**
+ * Split, and the tax line's own removal.
+ *
+ * A tax line is one line by definition, so it is never split — splitting it
+ * would give the timecard two of them.
+ */
+@Composable
+private fun RowActions(
+    state: PayrollUiState,
+    row: JournalRow,
+    editable: Boolean,
+    offersTax: Boolean,
+    onEvent: (PayrollEvent) -> Unit,
+) {
+    Row(
+        modifier = Modifier.width(ACTIONS_WIDTH),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!editable) return@Row
+        val timecardId = row.timecardId
+        // The tax line is one line by definition, so it is never split — it
+        // carries its own removal instead.
+        if (row.isTax) {
+            if (timecardId != null) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Trash,
+                    contentDescription = str(S.desktop_payroll_remove_tax_line),
+                    onClick = { onEvent(JournalEvent.RemoveTax(timecardId)) },
+                )
+            }
+            return@Row
+        }
+        // Split belongs to the LINE and Add tax to the TIMECARD, so a row can
+        // offer both — the anchor row does. Making them exclusive cost every
+        // timecard's last line its split.
+        if (row.splittable) SplitButton(state, row, onEvent)
+        if (offersTax && timecardId != null) AddTaxButton(timecardId, onEvent)
+    }
+}
+
+@Composable
+private fun SplitButton(state: PayrollUiState, row: JournalRow, onEvent: (PayrollEvent) -> Unit) {
+    val split = JournalSplits.splitsOf(row, state.run.journal.edits[row.id]).isNotEmpty()
+    ZillitTooltip(text = str(if (split) S.desktop_payroll_split_more_hint else S.desktop_payroll_split_hint)) {
+        ZillitButton(
+            text = str(S.desktop_payroll_split_line),
+            onClick = { onEvent(JournalEvent.Split(row.id)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Add,
+        )
+    }
+}
+
+/** One tax line per timecard: it posts against the week's total, not per pay break. */
+@Composable
+private fun AddTaxButton(timecardId: String, onEvent: (PayrollEvent) -> Unit) {
+    ZillitTooltip(text = str(S.desktop_payroll_add_tax_line)) {
+        ZillitButton(
+            text = str(S.desktop_payroll_add_tax),
+            onClick = { onEvent(JournalEvent.AddTax(timecardId)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Add,
+        )
+    }
+}
+
+/**
+ * One allocation of a split line. It sits on its parent's side, and its
+ * siblings re-spread whenever its amount changes, so they always sum to the
+ * parent's derived total — the server does not rebalance them.
+ */
+@Composable
+private fun SplitLine(
+    row: JournalRow,
+    child: JournalSplit,
+    editable: Boolean,
+    currency: String?,
+    reference: JournalReference,
+    onEvent: (PayrollEvent) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(ZillitTheme.colors.surfaceSunken)
+            .padding(
+                start = ZillitTheme.spacing.xl,
+                end = ZillitTheme.spacing.md,
+                top = ZillitTheme.spacing.xxs,
+                bottom = ZillitTheme.spacing.xxs,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(text = "↳", style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
+        ZillitTextField(
+            value = child.description,
+            onValueChange = { onEvent(JournalEvent.SplitDescribe(row.id, child.id, it)) },
+            placeholder = str(S.desktop_payroll_allocation_description),
+            enabled = editable,
+            modifier = Modifier.weight(1f),
+        )
+        // A locked code is configuration: an allocation inherits it and cannot
+        // be repointed, or Split would be a way around the lock.
+        if (row.codeLocked) {
+            ZillitText(
+                text = row.code.ifBlank { "—" },
+                style = ZillitTheme.typography.numeric,
+                color = ZillitTheme.colors.textMuted,
+                modifier = Modifier.width(CODE_WIDTH),
+            )
+        } else {
+            ZillitTextField(
+                value = child.nominalCode,
+                onValueChange = { onEvent(JournalEvent.SplitCode(row.id, child.id, it)) },
+                placeholder = str(S.code),
+                enabled = editable,
+                modifier = Modifier.width(CODE_WIDTH),
+            )
+        }
+        ZillitTextField(
+            value = child.effectiveDate.orEmpty(),
+            onValueChange = { onEvent(JournalEvent.SplitDate(row.id, child.id, it)) },
+            placeholder = "YYYY-MM-DD",
+            enabled = editable,
+            modifier = Modifier.width(DATE_WIDTH),
+        )
+        SplitCoding(row, child, editable, reference, onEvent)
+        // Tax is a per-timecard line, never a per-allocation one.
+        Spacer(Modifier.width(TAX_WIDTH))
+        SplitAmounts(row, child, editable, currency, onEvent)
+        Row(Modifier.width(ACTIONS_WIDTH)) {
+            if (editable) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Close,
+                    contentDescription = str(S.desktop_payroll_remove_allocation),
+                    onClick = { onEvent(JournalEvent.RemoveSplit(row.id, child.id)) },
+                )
+            }
+        }
+    }
+}
+
+/** An allocation's own layers and tags — the reason to split a line at all. */
+@Composable
+private fun RowScope.SplitCoding(
+    row: JournalRow,
+    child: JournalSplit,
+    editable: Boolean,
+    reference: JournalReference,
+    onEvent: (PayrollEvent) -> Unit,
+) {
+    LayersCell(
+        sets = reference.trackingSets,
+        picked = child.trackingCodes,
+        editable = editable,
+        modifier = Modifier.width(LAYERS_WIDTH),
+    ) { onEvent(JournalEvent.SplitLayers(row.id, child.id, it)) }
+    TagsCell(
+        reference = reference,
+        selected = child.tags,
+        editable = editable,
+        modifier = Modifier.width(TAGS_WIDTH),
+    ) { onEvent(JournalEvent.SplitTags(row.id, child.id, it)) }
+}
+
+/** The allocation's money, on whichever side its parent sits. */
+@Composable
+private fun SplitAmounts(
+    row: JournalRow,
+    child: JournalSplit,
+    editable: Boolean,
+    currency: String?,
+    onEvent: (PayrollEvent) -> Unit,
+) {
+    val field: @Composable () -> Unit = {
+        if (editable) {
+            ZillitTextField(
+                value = child.amount.toString(),
+                onValueChange = { onEvent(JournalEvent.SplitAmount(row.id, child.id, it)) },
+                keyboardType = KeyboardType.Decimal,
+                modifier = Modifier.width(AMOUNT_WIDTH),
+            )
+        } else {
+            ZillitText(
+                text = Money.format(child.amount, currency),
+                style = ZillitTheme.typography.numeric,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(AMOUNT_WIDTH),
+            )
+        }
+    }
+    val dash: @Composable () -> Unit = {
+        ZillitText(
+            text = "—",
+            style = ZillitTheme.typography.numeric,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(AMOUNT_WIDTH),
+        )
+    }
+    if (row.isCredit) {
+        dash()
+        field()
+    } else {
+        field()
+        dash()
+    }
 }
 
 /** Why a post cannot go yet — and, where this viewer can fix it, the fix. */
@@ -399,6 +768,12 @@ internal fun JournalPostDialog(state: PayrollUiState, onEvent: (PayrollEvent) ->
 }
 
 private val HEADER_DATE_WIDTH = 170.dp
+/** Description + code + date + layers + tags + tax + both money columns + actions. */
+private val TABLE_MIN_WIDTH = 1320.dp
+private val LAYERS_WIDTH = 150.dp
+private val TAGS_WIDTH = 150.dp
+private val TAX_WIDTH = 96.dp
+private val ACTIONS_WIDTH = 210.dp
 private val CODE_WIDTH = 120.dp
 private val DATE_WIDTH = 140.dp
 private val AMOUNT_WIDTH = 120.dp

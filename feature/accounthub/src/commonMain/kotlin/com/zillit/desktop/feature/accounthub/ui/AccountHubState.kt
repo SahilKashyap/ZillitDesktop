@@ -109,29 +109,6 @@ data class SectionEdit<T>(
         if (dirty) copy(saved = next) else SectionEdit(saved = next, edited = next)
 }
 
-/** Production Setup's two tabs, as the web groups them. */
-enum class SetupTab(val slug: String, private val labelKey: String) {
-    Accounting("acct", S.desktop_accounting_setup),
-    DealMemo("deal", S.dm_setup_title),
-    ;
-
-    val label: String get() = str(labelKey)
-
-    /**
-     * The count on the tab's mono chip — the web's `TAB_DEFS`: nine accounting
-     * sections plus Companies and Bank Accounts, and seven deal-memo ones.
-     */
-    val count: Int get() = when (this) {
-        Accounting -> ACCOUNTING_SECTIONS
-        DealMemo -> DEAL_SECTIONS
-    }
-
-    private companion object {
-        const val ACCOUNTING_SECTIONS = 11
-        const val DEAL_SECTIONS = 7
-    }
-}
-
 /**
  * A field the user types into that the domain stores as something else.
  *
@@ -454,7 +431,6 @@ data class SliceLoads(
 
 /** Everything Production Setup holds. */
 data class SetupState(
-    val tab: SetupTab = SetupTab.Accounting,
     val loading: Boolean = false,
     /** True once every slice has been asked for — the tour's "unknown ≠ missing" gate. */
     val loaded: Boolean = false,
