@@ -137,12 +137,6 @@ data class PayrollTimecard(
     /** Gross less deductions. */
     val net: Double get() = round2(gross - deductionsTotal)
 
-    /**
-     * The history queue's gross (`AccountantPayrollModule.jsx` 280-284): the
-     * slim paid list carries only the three scalars and the claims.
-     */
-    val slimGross: Double get() = basicPay + overtimePay + totalAllowances + claimsTotal
-
     companion object {
         fun round2(value: Double): Double = kotlin.math.round(value * HUNDRED) / HUNDRED
         private const val HUNDRED = 100.0
