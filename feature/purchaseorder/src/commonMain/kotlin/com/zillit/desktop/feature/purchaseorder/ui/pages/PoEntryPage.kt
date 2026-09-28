@@ -49,6 +49,8 @@ import com.zillit.desktop.feature.purchaseorder.ui.PoPrompt
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
 import com.zillit.desktop.feature.purchaseorder.ui.ledger
 import com.zillit.desktop.feature.purchaseorder.ui.mayQuery
+import com.zillit.desktop.feature.purchaseorder.ui.redistributeSplitAmount
+import com.zillit.desktop.feature.purchaseorder.ui.rescaleSplitChildren
 
 /**
  * PO Entry — the accountant's processing page, the web's `POEntry`.
@@ -434,7 +436,8 @@ private fun EntryHeaderCell(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-@Suppress("LongMethod") // One coded line's controls; a table row reads as a row.
+// One coded line's controls, split-child aware; a table row reads as a row.
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 private fun EntryLineRow(
     state: PoUiState,
@@ -454,6 +457,21 @@ private fun EntryLineRow(
             ),
         )
     }
+    // Quantity/unit-price are only editable on a parent, so a change here can
+    // only be the PARENT's own total moving — rescale its children
+    // unconditionally; a no-op on a line with none.
+    val setAndRescale = { next: PoLine ->
+        onEvent(
+            PoEvent.EditEntry(
+                entry.copy(
+                    lines = entry.lines
+                        .mapIndexed { at, row -> if (at == index) next else row }
+                        .rescaleSplitChildren(index),
+                    missingCodes = entry.missingCodes - (index + 1),
+                ),
+            ),
+        )
+    }
     // The last Post named this row for want of a nominal.
     val flagged = (index + 1) in entry.missingCodes
     Row(
@@ -467,20 +485,29 @@ private fun EntryLineRow(
             leadingIcon = if (line.isSplitChild) ZillitIcons.ArrowRight else null,
             modifier = Modifier.weight(1f),
         )
-        ZillitTextField(
-            value = line.quantity.trimmed(),
-            onValueChange = { set(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-            placeholder = str(S.ah_lbl_qty),
-            keyboardType = KeyboardType.Decimal,
-            modifier = Modifier.width(QTY_FIELD),
-        )
-        ZillitTextField(
-            value = line.unitPrice.trimmed(),
-            onValueChange = { set(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null)) },
-            placeholder = str(S.dm_step2_unit),
-            keyboardType = KeyboardType.Decimal,
-            modifier = Modifier.width(PRICE_FIELD),
-        )
+        if (line.isSplitChild) {
+            // The web locks a split child's own qty/price/tax — its total
+            // exists only to be redistributed from the parent's.
+            EntryLockedCell(line.quantity.trimmed(), Modifier.width(QTY_FIELD))
+            EntryLockedCell(line.unitPrice.trimmed(), Modifier.width(PRICE_FIELD))
+        } else {
+            ZillitTextField(
+                value = line.quantity.trimmed(),
+                onValueChange = { setAndRescale(line.copy(quantity = it.toDoubleOrNull() ?: 0.0, amount = null)) },
+                placeholder = str(S.ah_lbl_qty),
+                keyboardType = KeyboardType.Decimal,
+                modifier = Modifier.width(QTY_FIELD),
+            )
+            ZillitTextField(
+                value = line.unitPrice.trimmed(),
+                onValueChange = {
+                    setAndRescale(line.copy(unitPrice = it.toDoubleOrNull() ?: 0.0, amount = null))
+                },
+                placeholder = str(S.dm_step2_unit),
+                keyboardType = KeyboardType.Decimal,
+                modifier = Modifier.width(PRICE_FIELD),
+            )
+        }
         ZillitTextField(
             value = line.nominalCode.orEmpty(),
             onValueChange = { set(line.copy(nominalCode = it.takeIf { code -> code.isNotBlank() })) },
@@ -488,25 +515,74 @@ private fun EntryLineRow(
             errorText = if (flagged) str(S.desktop_po_nominal_required) else null,
             modifier = Modifier.width(CODE_FIELD),
         )
-        ZillitSelect(
-            value = line.taxType,
-            options = listOf(null) + state.taxTypes.map { it.id },
-            onSelect = { id ->
-                val tax = state.taxTypes.firstOrNull { it.id == id }
-                set(line.copy(taxType = id, vatRate = tax?.rate))
-            },
-            label = { id ->
-                id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key } ?: str(S.ah_lbl_vat_tax)
-            },
-            modifier = Modifier.width(TAX_FIELD),
-        )
-        ZillitText(
-            text = Money.format(line.total, state.detail?.currency),
-            style = ZillitTheme.typography.numeric,
-            modifier = Modifier.width(AMOUNT_WIDTH),
-        )
+        if (line.isSplitChild) {
+            EntryLockedCell(
+                state.taxTypes.firstOrNull { it.id == line.taxType }?.name ?: str(S.ah_lbl_vat_tax),
+                Modifier.width(TAX_FIELD),
+            )
+        } else {
+            ZillitSelect(
+                value = line.taxType,
+                options = listOf(null) + state.taxTypes.map { it.id },
+                onSelect = { id ->
+                    // Children inherit the parent's tax at split time; a later
+                    // edit here has to keep reaching them or they quote a
+                    // stale rate.
+                    val tax = state.taxTypes.firstOrNull { it.id == id }
+                    val parentKey = line.id ?: "line-$index"
+                    val lines = entry.lines.mapIndexed { at, row ->
+                        when {
+                            at == index -> row.copy(taxType = id, vatRate = tax?.rate)
+                            row.splitParentId == parentKey -> row.copy(taxType = id, vatRate = tax?.rate)
+                            else -> row
+                        }
+                    }
+                    val next = entry.copy(lines = lines, missingCodes = entry.missingCodes - (index + 1))
+                    onEvent(PoEvent.EditEntry(next))
+                },
+                label = { id ->
+                    id?.let { key -> state.taxTypes.firstOrNull { it.id == key }?.name ?: key }
+                        ?: str(S.ah_lbl_vat_tax)
+                },
+                modifier = Modifier.width(TAX_FIELD),
+            )
+        }
+        if (line.isSplitChild) {
+            // The one editable figure on a split child: typing here
+            // redistributes the remainder across its siblings.
+            ZillitTextField(
+                value = line.total.trimmed(),
+                onValueChange = {
+                    onEvent(
+                        PoEvent.EditEntry(
+                            entry.copy(lines = entry.lines.redistributeSplitAmount(index, it.toDoubleOrNull() ?: 0.0)),
+                        ),
+                    )
+                },
+                keyboardType = KeyboardType.Decimal,
+                modifier = Modifier.width(AMOUNT_WIDTH),
+            )
+        } else {
+            ZillitText(
+                text = Money.format(line.total, state.detail?.currency),
+                style = ZillitTheme.typography.numeric,
+                modifier = Modifier.width(AMOUNT_WIDTH),
+            )
+        }
         LineActions(line, index, onEvent)
     }
+}
+
+/** A split child's own qty/price/tax cell — shown, not editable. */
+@Composable
+private fun EntryLockedCell(text: String, modifier: Modifier = Modifier) {
+    ZillitText(
+        text = text.ifBlank { "—" },
+        style = ZillitTheme.typography.bodyMedium,
+        color = ZillitTheme.colors.textMuted,
+        modifier = modifier,
+        maxLines = 1,
+    )
 }
 
 /**
@@ -519,17 +595,18 @@ private fun LineActions(line: PoLine, index: Int, onEvent: (PoEvent) -> Unit) {
         modifier = Modifier.width(LINE_ACTIONS),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        if (!line.isSplitChild) {
-            val byPeriod = line.isDivisibleRental
-            ZillitButton(
-                text = if (byPeriod) str(S.desktop_po_split_by_period) else str(S.desktop_po_split_line),
-                onClick = {
-                    onEvent(if (byPeriod) PoEvent.SplitEntryLineByPeriod(index) else PoEvent.SplitEntryLine(index))
-                },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-            )
-        }
+        // Enabled on a child too — clicking it resolves up to the parent and
+        // adds another share (`splitLine`'s own resolution, PoFormActions.kt).
+        val byPeriod = line.isDivisibleRental
+        ZillitButton(
+            text = if (byPeriod) str(S.desktop_po_split_by_period) else str(S.desktop_po_split_line),
+            onClick = {
+                onEvent(if (byPeriod) PoEvent.SplitEntryLineByPeriod(index) else PoEvent.SplitEntryLine(index))
+            },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            enabled = byPeriod || line.total > 0,
+        )
         ZillitButton(
             text = str(S.remove),
             onClick = { onEvent(PoEvent.RemoveEntryLine(index)) },
