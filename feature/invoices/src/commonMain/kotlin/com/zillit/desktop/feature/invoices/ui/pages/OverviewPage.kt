@@ -798,7 +798,12 @@ private fun DuplicatesPanel(state: InvoicesUiState, onEvent: (InvoicesEvent) -> 
 }
 
 @Composable
-private fun DuplicateRow(state: InvoicesUiState, flag: DuplicateFlag, isLast: Boolean, onEvent: (InvoicesEvent) -> Unit) {
+private fun DuplicateRow(
+    state: InvoicesUiState,
+    flag: DuplicateFlag,
+    isLast: Boolean,
+    onEvent: (InvoicesEvent) -> Unit,
+) {
     SectionListRow(isLast = isLast) {
         Column(modifier = Modifier.weight(1f)) {
             Row(
