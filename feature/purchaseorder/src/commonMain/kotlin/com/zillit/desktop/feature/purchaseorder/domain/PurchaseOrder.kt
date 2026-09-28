@@ -836,6 +836,9 @@ interface PurchaseOrderRepository {
     /** The production's line-item tags, for the asset register rule. */
     suspend fun assetTags(): ZillitResult<List<String>> = noSettings()
 
+    /** The Layers picker's sets — `GET /account-hub/tracking-sets?include_nodes=true&active_only=true`. */
+    suspend fun trackingSets(): ZillitResult<List<TrackingSet>> = noSettings()
+
     private fun <T> noSettings(): ZillitResult<T> =
         ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_po_settings_unavailable)))
 }

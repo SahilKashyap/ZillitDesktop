@@ -159,6 +159,7 @@ class PurchaseOrderViewModel(
         launch { loadTeam() }
         launch { loadProjectSettings() }
         launch { loadNominals() }
+        launch { loadTrackingSets() }
         launch { loadPoSettings() }
         loadWorkflow()
         launch { formActions.restoreDraft() }
@@ -616,6 +617,11 @@ class PurchaseOrderViewModel(
      */
     private suspend fun loadNominals() {
         repository.nominalCodes().getOrNull()?.let { rows -> setState { copy(nominals = rows) } }
+    }
+
+    /** The Layers picker's sets — loaded once, like the nominal codes it sits beside on a line. */
+    private suspend fun loadTrackingSets() {
+        repository.trackingSets().getOrNull()?.let { rows -> setState { copy(trackingSets = rows) } }
     }
 
     /**

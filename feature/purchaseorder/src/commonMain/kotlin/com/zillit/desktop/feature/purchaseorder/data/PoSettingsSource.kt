@@ -15,6 +15,8 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoNominal
 import com.zillit.desktop.feature.purchaseorder.domain.PoSettings
 import com.zillit.desktop.feature.purchaseorder.domain.PoSettingsBundle
 import com.zillit.desktop.feature.purchaseorder.domain.PoSplitType
+import com.zillit.desktop.feature.purchaseorder.domain.TrackingNode
+import com.zillit.desktop.feature.purchaseorder.domain.TrackingSet
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -122,6 +124,15 @@ internal class PoSettingsSource(private val apiClient: ApiClient, config: AppCon
         serializer = ValueListDto.serializer(String.serializer()),
         module = RequestModule.ProjectUser,
     ).map { it.value.orEmpty().filter(String::isNotBlank) }
+
+    /** The Layers picker's sets — the web's `trackingSetsApi.listSets`. */
+    suspend fun trackingSets(): ZillitResult<List<TrackingSet>> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = "$hubBase/tracking-sets",
+        serializer = ListSerializer(TrackingSetDto.serializer()),
+        module = RequestModule.ProjectUser,
+        queryParameters = mapOf("active_only" to "true", "include_nodes" to "true"),
+    ).map { rows -> rows.mapNotNull { it.toDomain() } }
 }
 
 /** The settings document as the service sends it; the rules ride along on a GET. */
@@ -231,6 +242,51 @@ internal fun List<CoaRowDto>.leaves(): List<PoNominal> {
     val typed = active.any { !it.lineType.isNullOrBlank() }
     val leaves = if (typed) active.filter { it.lineType == "category" || it.lineType == "sub_category" } else active
     return leaves.map { PoNominal(code = it.code.orEmpty(), name = it.name.orEmpty()) }
+}
+
+/** One `GET /account-hub/tracking-sets` row, with its nodes bundled (`include_nodes=true`). */
+@Serializable
+internal data class TrackingSetDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("_id") val altId: String? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("prefix") val prefix: String? = null,
+    @SerialName("color") val color: String? = null,
+    @SerialName("colour") val colour: String? = null,
+    @SerialName("active") val active: Boolean? = null,
+    @SerialName("nodes") val nodes: List<TrackingNodeDto> = emptyList(),
+) {
+    fun toDomain(): TrackingSet? = (id ?: altId)?.takeIf { it.isNotBlank() }?.let {
+        TrackingSet(
+            id = it,
+            name = name.orEmpty(),
+            prefix = prefix.orEmpty(),
+            color = color ?: colour.orEmpty(),
+            active = active != false,
+            nodes = nodes.mapNotNull(TrackingNodeDto::toDomain),
+        )
+    }
+}
+
+@Serializable
+internal data class TrackingNodeDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("_id") val altId: String? = null,
+    @SerialName("code") val code: String? = null,
+    @SerialName("label") val label: String? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("is_header") val isHeader: Boolean? = null,
+    @SerialName("active") val active: Boolean? = null,
+) {
+    fun toDomain(): TrackingNode? = (id ?: altId)?.takeIf { it.isNotBlank() }?.let {
+        TrackingNode(
+            id = it,
+            code = code.orEmpty(),
+            label = label ?: name.orEmpty(),
+            isHeader = isHeader == true,
+            active = active != false,
+        )
+    }
 }
 
 /** The web's `mapRuleToApi`. */

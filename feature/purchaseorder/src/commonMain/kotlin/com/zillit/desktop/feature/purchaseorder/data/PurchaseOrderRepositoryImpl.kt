@@ -336,6 +336,8 @@ class PurchaseOrderRepositoryImpl(
 
     override suspend fun assetTags() = settingsSource.assetTags()
 
+    override suspend fun trackingSets() = settingsSource.trackingSets()
+
     // -- the hub's workflow reads: PoWorkflowSource's --------------------------
 
     override suspend fun approvalTiers() = workflowSource.approvalTiers()

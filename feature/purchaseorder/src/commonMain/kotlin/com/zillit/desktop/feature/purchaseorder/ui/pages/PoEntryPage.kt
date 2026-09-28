@@ -40,6 +40,8 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
+import com.zillit.desktop.feature.purchaseorder.domain.trackingJson
+import com.zillit.desktop.feature.purchaseorder.domain.trackingPicks
 import com.zillit.desktop.feature.purchaseorder.ui.PoConfirmAction
 import com.zillit.desktop.feature.purchaseorder.ui.PoEntryLedger
 import com.zillit.desktop.feature.purchaseorder.ui.PoEntryState
@@ -420,6 +422,7 @@ private fun EntryLineHeader() {
         EntryHeaderCell(str(S.dm_step2_unit), Modifier.width(PRICE_FIELD))
         EntryHeaderCell(str(S.code), Modifier.width(CODE_FIELD))
         EntryHeaderCell(str(S.ah_lbl_vat_tax), Modifier.width(TAX_FIELD))
+        EntryHeaderCell(str(S.desktop_layers), Modifier.width(PO_LAYERS_WIDTH))
         EntryHeaderCell(str(S.amount), Modifier.width(AMOUNT_WIDTH))
         EntryHeaderCell("", Modifier.width(LINE_ACTIONS))
     }
@@ -547,6 +550,12 @@ private fun EntryLineRow(
                 modifier = Modifier.width(TAX_FIELD),
             )
         }
+        PoLineLayersField(
+            sets = state.trackingSets,
+            picked = line.trackingCodes.trackingPicks(),
+            enabled = true,
+            modifier = Modifier.width(PO_LAYERS_WIDTH),
+        ) { picks -> set(line.copy(trackingCodes = picks.trackingJson())) }
         if (line.isSplitChild) {
             // The one editable figure on a split child: typing here
             // redistributes the remainder across its siblings.

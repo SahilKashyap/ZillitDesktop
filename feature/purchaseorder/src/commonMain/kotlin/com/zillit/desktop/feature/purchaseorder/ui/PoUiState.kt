@@ -34,6 +34,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PoTotals
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.TrackingSet
 import com.zillit.desktop.feature.purchaseorder.domain.Vendor
 
 /** Everything the purchase order tool is showing. */
@@ -60,6 +61,8 @@ data class PoUiState(
     val countries: List<PoCountry> = emptyList(),
     /** The chart's postable leaves — the form's Nominal Code typeahead. */
     val nominals: List<PoNominal> = emptyList(),
+    /** The Layers picker's sets — an accountant's line-level analysis codes. */
+    val trackingSets: List<TrackingSet> = emptyList(),
     /** The accounts team — who a reassignment may hand an order to. */
     val team: List<PoTeamMember> = emptyList(),
     /** Everyone on the production, for turning a stored id into a name. */

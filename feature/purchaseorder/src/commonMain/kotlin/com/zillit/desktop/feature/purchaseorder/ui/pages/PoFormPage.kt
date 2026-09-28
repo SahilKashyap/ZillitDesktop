@@ -49,6 +49,8 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.RENTAL_EXPENDITURE_TYPE
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
 import com.zillit.desktop.feature.purchaseorder.domain.splitCadence
+import com.zillit.desktop.feature.purchaseorder.domain.trackingJson
+import com.zillit.desktop.feature.purchaseorder.domain.trackingPicks
 import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
 import com.zillit.desktop.feature.purchaseorder.ui.PoFormMode
 import com.zillit.desktop.feature.purchaseorder.ui.PoFormState
@@ -619,7 +621,7 @@ private fun LineItemsSection(state: PoUiState, form: PoFormState, onEvent: (PoEv
             )
         },
     ) {
-        LineHeader()
+        LineHeader(showLayers = state.viewer.isAccountant)
         form.lines.forEachIndexed { index, line ->
             LineRow(
                 state = state,
@@ -651,7 +653,7 @@ private fun LineItemsSection(state: PoUiState, form: PoFormState, onEvent: (PoEv
  * own field order, and they are what makes a row of bare inputs legible.
  */
 @Composable
-private fun LineHeader() {
+private fun LineHeader(showLayers: Boolean) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -662,6 +664,7 @@ private fun LineHeader() {
         HeaderCell(str(S.ah_lbl_unit_price), Modifier.width(PRICE_WIDTH))
         HeaderCell(str(S.code), Modifier.width(CODE_COLUMN))
         HeaderCell(str(S.ah_lbl_vat_tax), Modifier.width(TAX_WIDTH))
+        if (showLayers) HeaderCell(str(S.desktop_layers), Modifier.width(PO_LAYERS_WIDTH))
         HeaderCell(str(S.amount), Modifier.width(AMOUNT_WIDTH))
     }
     ZillitDivider()
@@ -816,6 +819,14 @@ private fun LineRow(
                     },
                     modifier = Modifier.width(TAX_WIDTH),
                 )
+            }
+            if (state.viewer.isAccountant) {
+                PoLineLayersField(
+                    sets = state.trackingSets,
+                    picked = line.trackingCodes.trackingPicks(),
+                    enabled = true,
+                    modifier = Modifier.width(PO_LAYERS_WIDTH),
+                ) { picks -> set(line.copy(trackingCodes = picks.trackingJson())) }
             }
             if (line.isSplitChild) {
                 // The one editable figure on a split child: typing here

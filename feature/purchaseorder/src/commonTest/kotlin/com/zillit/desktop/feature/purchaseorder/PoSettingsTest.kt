@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.purchaseorder
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.purchaseorder.data.CoaRowDto
 import com.zillit.desktop.feature.purchaseorder.data.PoSettingsDto
+import com.zillit.desktop.feature.purchaseorder.data.TrackingNodeDto
+import com.zillit.desktop.feature.purchaseorder.data.TrackingSetDto
 import com.zillit.desktop.feature.purchaseorder.data.leaves
 import com.zillit.desktop.feature.purchaseorder.data.poRefreshFor
 import com.zillit.desktop.feature.purchaseorder.data.toJson
@@ -11,10 +13,13 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoAssignmentRule
 import com.zillit.desktop.feature.purchaseorder.domain.PoDescriptionFormat
 import com.zillit.desktop.feature.purchaseorder.domain.PoRefresh
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
+import com.zillit.desktop.feature.purchaseorder.domain.trackingJson
+import com.zillit.desktop.feature.purchaseorder.domain.trackingPicks
 import com.zillit.desktop.feature.purchaseorder.ui.PoDestination
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -147,5 +152,52 @@ class PoSettingsTest {
 
         val untyped = listOf(CoaRowDto(code = "1"), CoaRowDto(code = "2"))
         assertEquals(2, untyped.leaves().size)
+    }
+
+    /**
+     * The Layers picker's sets — a row with neither `id` nor the legacy `_id`
+     * names nothing and is dropped, same as every other id-keyed row this
+     * module reads (`PoAssignmentRule`, `PoDeliveryAddress`).
+     */
+    @Test
+    fun `a tracking set parses its nodes and drops rows with no id`() {
+        val set = TrackingSetDto(
+            id = "set-1",
+            name = "Locations",
+            prefix = "LOC",
+            colour = "#336699",
+            nodes = listOf(
+                TrackingNodeDto(id = "n-1", code = "STAGE", label = "Stage"),
+                TrackingNodeDto(id = "n-2", code = "GRP", isHeader = true),
+                TrackingNodeDto(id = null, code = "no-id"),
+            ),
+        ).toDomain()
+        assertEquals("set-1", set?.id)
+        assertEquals("#336699", set?.color)
+        assertEquals(listOf("STAGE", "GRP"), set?.nodes?.map { it.code })
+        // The header groups its codes; it is not itself one the line can pick.
+        assertEquals(listOf("STAGE"), set?.pickable?.map { it.code })
+        assertNull(TrackingSetDto(id = null, altId = null).toDomain())
+    }
+
+    /**
+     * [trackingPicks]/[trackingJson] round-trip a line's `tracking_codes` —
+     * the picker's edits back to the JsonObject shape [PoLine] carries, and
+     * that JsonObject back to the plain map the picker itself reads. A blank
+     * or non-string value is not a pick, same as the web's own reads of a
+     * line that predates a set being renamed out from under it.
+     */
+    @Test
+    fun `a line's tracking codes round-trip through the picker's map`() {
+        val wire = JsonObject(
+            mapOf(
+                "set-1" to JsonPrimitive("STAGE"),
+                "set-2" to JsonPrimitive(""),
+                "set-3" to JsonNull,
+            ),
+        )
+        assertEquals(mapOf("set-1" to "STAGE"), wire.trackingPicks())
+        assertEquals(mapOf("set-1" to "STAGE"), mapOf("set-1" to "STAGE").trackingJson().trackingPicks())
+        assertEquals(emptyMap(), (null as JsonObject?).trackingPicks())
     }
 }
