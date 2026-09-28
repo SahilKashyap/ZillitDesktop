@@ -105,16 +105,31 @@ data class PayrollTimecard(
         get() = weeklyExtras.sumOf { it.lineAmount } + days.sumOf { day -> day.extras.sumOf { it.lineAmount } }
 
     /**
-     * The week's gross as the run grid computes it (`PayrollRunModule.jsx`
-     * 543-553): the day summaries when the projection carries them, else the
-     * three scalars — plus weekly allowances, extras and claims either way.
+     * The week's gross — the web's `transformApprovedTimecardsToCrew`
+     * (`payrollData.js` 745-810, the function that actually feeds
+     * Processing/Outstanding, not `PayrollRunModule.jsx`'s own row-gross):
+     * the slim projection's day summaries when present, else — for a full
+     * document — every day's `rates_ots`/`allowances` lines walked directly
+     * (basic vs. everything else, same split `TimecardDay.basicPay`/`otTotal`
+     * already use for display), else the three raw scalars for a truly slim
+     * paid-list row that carries neither. Plus weekly allowances, extras and
+     * claims in every case.
+     *
+     * The middle branch matters: a raw scalar like `overtime_pay` is only
+     * the "overtime" line — a day's premium and penalty lines (a "Pre-Dawn"
+     * early call, a broken-meal penalty) live in `days[].rates_ots[]` but
+     * never reach `overtime_pay`, so skipping straight to the scalars here
+     * silently dropped them from gross/net/totalPay while the OTs/Premiums
+     * display column (which already walks `days[]`) kept showing them —
+     * found live on Payroll Processing → Outstanding, where a card's own
+     * Basic + OTs/Premiums didn't sum to its own Total Pay.
      */
     val gross: Double
         get() {
-            val dayPart = if (daySummary.isNotEmpty()) {
-                daySummary.sumOf { it.basic + it.ots + it.allowancesRentals }
-            } else {
-                basicPay + overtimePay + totalAllowances
+            val dayPart = when {
+                daySummary.isNotEmpty() -> daySummary.sumOf { it.basic + it.ots + it.allowancesRentals }
+                days.isNotEmpty() -> days.sumOf { it.dayTotal }
+                else -> basicPay + overtimePay + totalAllowances
             }
             return round2(dayPart + weeklyAllowRent + extrasTotal + claimsTotal)
         }
