@@ -2,6 +2,7 @@ package com.zillit.desktop.core.database
 
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.database.sync.SyncDatabase
 import com.zillit.desktop.core.security.DatabaseKeyManager
@@ -54,6 +55,6 @@ class SyncDatabaseFactory(
         private const val TAG = "SyncDatabase"
 
         fun defaultPath(): String =
-            File(System.getProperty("user.home"), ".zillit/zillit-sync.db").absolutePath
+            File(ZillitVariant.dataDir, "zillit-sync.db").absolutePath
     }
 }

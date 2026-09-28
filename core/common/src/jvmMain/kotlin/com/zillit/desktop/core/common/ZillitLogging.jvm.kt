@@ -27,7 +27,7 @@ import java.time.format.DateTimeFormatter
 object ZillitLogging {
 
     /** Where the log file lives. Printed at startup so it is easy to find. */
-    val logFile: File get() = File(System.getProperty("user.home"), ".zillit/logs/zillit.log")
+    val logFile: File get() = File(ZillitVariant.dataDir, "logs/zillit.log")
 
     fun initialise(verbose: Boolean) {
         Napier.takeLogarithm() // Idempotent: re-initialising must not double every line.

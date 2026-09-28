@@ -30,6 +30,7 @@ import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.currentPlatform
 import com.zillit.desktop.core.badges.BadgeCounts
@@ -377,10 +378,23 @@ private fun reportAlreadyRunning() {
         javax.swing.JOptionPane.showMessageDialog(
             null,
             str(S.desktop_already_running_body),
-            str(S.desktop_zillit_desktop_title),
+            appTitle(),
             javax.swing.JOptionPane.INFORMATION_MESSAGE,
         )
     }
+}
+
+/**
+ * The title a person sees on the main window, the tray icon and the
+ * "already running" dialog — with the build's own variant appended
+ * (" (QA)", " (Dev)") so a QA or develop install running alongside
+ * production is not an indistinguishable second "Zillit Desktop" in the
+ * Dock and Cmd+Tab. Blank, and so a no-op, for a production build.
+ */
+internal fun appTitle(): String {
+    val base = str(S.desktop_zillit_desktop_title)
+    val variant = ZillitVariant.label
+    return if (variant.isBlank()) base else "$base ($variant)"
 }
 
 /**
@@ -725,7 +739,7 @@ private fun ApplicationScope.ZillitWindows(
         onCloseRequest = onCloseMain,
         state = windowState,
         visible = mainVisible,
-        title = str(S.desktop_zillit_desktop_title),
+        title = appTitle(),
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         // Preview so shortcuts beat focused controls, but unhandled keys fall
         // through — a handler that swallows everything breaks typing.

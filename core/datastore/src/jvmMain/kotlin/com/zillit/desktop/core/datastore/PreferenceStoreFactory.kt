@@ -3,6 +3,7 @@ package com.zillit.desktop.core.datastore
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import com.zillit.desktop.core.common.ZillitVariant
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import okio.Path.Companion.toOkioPath
@@ -34,7 +35,7 @@ object PreferenceStoreFactory {
     private fun dataStore(file: File): DataStore<Preferences> =
         PreferenceDataStoreFactory.createWithPath { file.toOkioPath() }
 
-    fun defaultFile(): File = File(System.getProperty("user.home"), ".zillit/$FILE_NAME")
+    fun defaultFile(): File = File(ZillitVariant.dataDir, FILE_NAME)
 
     /**
      * Visible for tests: drops the cache so a test can use a fresh temp file.

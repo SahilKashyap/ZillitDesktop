@@ -2,6 +2,7 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.OperatingSystem
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.common.currentPlatform
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.ZillitPreferences
@@ -25,7 +26,8 @@ import java.util.concurrent.TimeUnit
  * the single-instance lock every time the switch is turned on.
  */
 object LoginItem {
-    const val LABEL = "com.zillit.desktop"
+    /** Must match the variant's own bundle id (macOS `bundleID` in the Gradle build). */
+    val LABEL: String = ZillitVariant.bundleId
 
     /** The packaged launcher, or null under Gradle where there is nothing the OS could start. */
     fun launcher(): File? = System.getProperty("jpackage.app-path")?.let(::File)?.takeIf { it.canExecute() }
@@ -144,7 +146,8 @@ object LoginItem {
         process.exitValue()
     }.onFailure { ZillitLog.d(TAG) { "${command.first()} failed: $it" } }.getOrDefault(-1)
 
-    private const val WINDOWS_VALUE = "Zillit"
+    /** The `Run` value name — variant-suffixed so a QA/Dev login item cannot overwrite prod's. */
+    private val WINDOWS_VALUE = "Zillit" + ZillitVariant.label
     private const val RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
     private const val COMMAND_TIMEOUT_SECONDS = 10L
     private const val TAG = "LoginItem"

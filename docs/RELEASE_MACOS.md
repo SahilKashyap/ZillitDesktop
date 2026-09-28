@@ -72,9 +72,17 @@ A bundled-config build carries the AES header key in plain text inside the app.
 That is the accepted trade for a build a tester can install with nothing to copy
 — keep those artifacts on internal distribution only.
 
-Gradle names every DMG `Zillit-Desktop-<zillit.version>.dmg` regardless of
-environment. Rename anything that leaves the machine, or a develop build will
-eventually reach a real user.
+**Build variants.** `-PzillitEnv` also picks the DMG's **variant** (override on
+its own with `-PzillitVariant=qa`/`develop` if it should ever need to differ
+from the server it talks to). A `develop` build above is named
+`Zillit-Desktop-Dev-<zillit.version>.dmg`, carries its own bundle id
+(`com.zillit.desktop.develop`) and installs its own `Zillit-Desktop-Dev.app` —
+so it sits in `/Applications` beside a production install rather than
+overwriting it, and it keeps its own data directory (`~/.zillit-develop`),
+Keychain entries and login item. Only a plain `packageDmg`/`notarizeDmg` with
+neither flag builds the exact same production app as before this existed —
+still worth renaming before it leaves the machine, since the DMG's own name is
+the only thing that tells a tester which is which before they open it.
 
 ## Telling installs about it
 

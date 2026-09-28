@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileLock
@@ -108,7 +109,7 @@ object SingleInstance {
         runCatching { ZillitLog.i(TAG) { message } }
     }
 
-    private fun defaultDirectory() = File(System.getProperty("user.home"), ".zillit")
+    private fun defaultDirectory() = ZillitVariant.dataDir
 
     private const val LOCK_FILE = "zillit.lock"
     private const val TAG = "SingleInstance"

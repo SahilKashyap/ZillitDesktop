@@ -5,6 +5,7 @@ import com.github.javakeyring.PasswordAccessException
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.ZillitVariant
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,7 +35,7 @@ import kotlinx.coroutines.withContext
  * means binding `SecItemAdd`/`CredWriteW` directly against byte buffers.
  */
 class KeychainSecureStore(
-    private val service: String = SecureKey.SERVICE,
+    private val service: String = ZillitVariant.keychainService,
 ) : SecureStore {
 
     /**

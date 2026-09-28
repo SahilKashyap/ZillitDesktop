@@ -753,6 +753,7 @@ class PurchaseOrderViewModel(
      *   when the page is on that order, and never a locked order.
      * - A rule is a senior's.
      */
+    @Suppress("CyclomaticComplexMethod") // One branch per confirm action.
     private fun refusesPrompt(prompt: PoPrompt): Boolean {
         val state = currentState
         val targetId = when (prompt) {
@@ -761,11 +762,15 @@ class PurchaseOrderViewModel(
         }
         val order = state.orderById(targetId)
         val decides = { order != null && state.approvalStep(order).canApprove && !state.isLocked(order) }
+        val mayAmend = {
+            order != null && PoAccess.canEdit(order, state.viewer, state.projectSettings.allowAmendAfterApproval)
+        }
         val allowed = when (prompt) {
             is PoPrompt.Confirm -> when (prompt.action) {
                 PoConfirmAction.Approve -> decides()
                 PoConfirmAction.Delete -> order != null && state.mayDelete(order)
                 PoConfirmAction.RemoveRule -> state.viewer.isSeniorAccountant
+                PoConfirmAction.AmendOrder -> mayAmend()
                 else -> true
             }
 
