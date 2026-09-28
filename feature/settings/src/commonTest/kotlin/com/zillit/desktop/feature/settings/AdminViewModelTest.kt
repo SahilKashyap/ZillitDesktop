@@ -715,4 +715,43 @@ class AdminViewModelTest {
         assertNotNull(model.state.value.error)
     }
 
+    /**
+     * `RightsToggled` reaches `onRightsToggled` directly from `onEvent`,
+     * bypassing `mutate()` — the one choke point every other write in this
+     * file is guarded through. It needs its own `isAdmin()` check, or a
+     * directly-dispatched event changes another crew member's rights with
+     * no client-side gate at all (the screen still refuses to render the
+     * Rights panel for a non-admin, but that is not this test's subject).
+     *
+     * A selection has to be read first: with nothing picked,
+     * `onRightsToggled` returns on its own for lack of a `userId` and the
+     * test would pass without the guard it exists to prove.
+     */
+    @Test
+    fun `a non-admin cannot toggle rights`() = runTest {
+        val repository = Recorder()
+        val model = AdminViewModel(
+            repository,
+            productionName = { "Feature One" },
+            isAdmin = { false },
+        )
+
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+        repository.calls.clear()
+
+        model.onEvent(
+            AdminEvent.RightsToggled(
+                RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(
+            repository.rightsChanges.isEmpty(),
+            "a non-admin changed rights: ${repository.rightsChanges}",
+        )
+        assertNotNull(model.state.value.error)
+    }
+
 }
