@@ -13,9 +13,11 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
+import com.zillit.desktop.feature.purchaseorder.domain.addCivilMonths
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayNumber
 import com.zillit.desktop.feature.purchaseorder.domain.toIsoDay
 import com.zillit.desktop.feature.purchaseorder.domain.splitCadence
+import com.zillit.desktop.feature.purchaseorder.domain.PoSplitType
 import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
@@ -202,7 +204,7 @@ internal class PoFormActions(
             vm.fail(str(S.desktop_po_period_split_needs_rent))
             return
         }
-        val split = form.lines.splitByPeriod(index, vm.ui.projectSettings.splitCadence.days)
+        val split = form.lines.splitByPeriod(index, vm.ui.projectSettings.splitCadence)
         if (split == null) {
             vm.fail(
                 str(S.desktop_po_rental_window_too_short, vm.ui.projectSettings.splitCadence.label.lowercase()),
@@ -614,9 +616,9 @@ internal fun List<PoLine>.rescaleSplitChildren(parentIndex: Int): List<PoLine> {
  * (`lineItemPeriods.jsx:197-201`), so the children still add to the parent to
  * the penny — a rental split that loses 2p reconciles wrong.
  */
-internal fun List<PoLine>.splitByPeriod(index: Int, days: Int): List<PoLine>? {
+internal fun List<PoLine>.splitByPeriod(index: Int, cadence: PoSplitType): List<PoLine>? {
     val parent = getOrNull(index)?.takeIf { it.isDivisibleRental } ?: return null
-    val periods = periodsIn(parent, days)
+    val periods = periodsIn(parent, cadence)
     if (periods.size < 2) return null
     val parentKey = parent.id ?: "line-$index"
     val pennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
@@ -795,28 +797,79 @@ internal fun PoFormState.toStored() = PoStoredDraft(
 )
 
 /**
- * The windows a rental line divides into, at [days] apiece.
+ * The windows a rental line divides into at [cadence] — the web's
+ * `computePeriodSplits` (`lineItemPeriods.jsx:139-205`).
  *
- * Dates are ISO days, the shape the editor and the wire both use. The last
- * window is clipped to the line's own end rather than running past it: a 10-day
- * hire split weekly is 7 days and 3, not 7 and 7.
+ * Dates are ISO days, the shape the editor and the wire both use. Every
+ * cadence clips its last window to the line's own end rather than running
+ * past it: a 10-day hire split weekly is 7 days and 3, not 7 and 7.
  */
-internal fun periodsIn(line: PoLine, days: Int): List<Pair<String, String>> {
-    val start = line.rentalStart?.isoDayNumber() ?: return emptyList()
-    val end = line.rentalEnd?.isoDayNumber() ?: return emptyList()
-    if (end <= start || days <= 0) return emptyList()
+@Suppress("ReturnCount") // One early return per way the line's own dates can fail to be a window.
+internal fun periodsIn(line: PoLine, cadence: PoSplitType): List<Pair<String, String>> {
+    val start = line.rentalStart ?: return emptyList()
+    val end = line.rentalEnd ?: return emptyList()
+    val startNum = start.isoDayNumber() ?: return emptyList()
+    val endNum = end.isoDayNumber() ?: return emptyList()
+    if (endNum <= startNum) return emptyList()
+    return if (cadence == PoSplitType.Monthly) {
+        monthlyPeriods(start, end, endNum)
+    } else {
+        dayPeriods(startNum, endNum, cadence.days)
+    }
+}
+
+/**
+ * Daily/Weekly/FourWeek — a fixed [step] days apiece, INCLUSIVE
+ * (`[cursor, cursor + step - 1]`, clamped to the line's end), matching the
+ * web's day-stepped cadences (`lineItemPeriods.jsx:150-162`) rather than the
+ * half-open windows an exclusive `cursor..<cursor+step` would give.
+ */
+private fun dayPeriods(startNum: Int, endNum: Int, step: Int): List<Pair<String, String>> {
+    if (step <= 0) return emptyList()
     val windows = mutableListOf<Pair<String, String>>()
-    var cursor = start
-    while (cursor < end && windows.size < MAX_PERIODS) {
-        val next = minOf(cursor + days, end)
-        windows += cursor.toIsoDay() to next.toIsoDay()
-        cursor = next
+    var cursor = startNum
+    while (cursor <= endNum) {
+        if (windows.size >= MAX_PERIODS) return emptyList()
+        val periodEnd = minOf(cursor + step - 1, endNum)
+        windows += cursor.toIsoDay() to periodEnd.toIsoDay()
+        cursor += step
     }
     return windows
 }
 
-/** A guard, not a rule: a mis-typed year should not produce ten thousand lines. */
-private const val MAX_PERIODS = 104
+/**
+ * Monthly — NOT a fixed day count. Genuine calendar-month windows anchored to
+ * the rental start's own day-of-month (`lineItemPeriods.jsx:163-179`): a 15
+ * Jan start steps 15 Feb, 15 Mar, … whatever the target month's length, via
+ * [String.addCivilMonths]'s rollover. A trailing window covers whatever the
+ * calendar-month diff undercounts — a 15 Jan → 20 Mar rental is 2 calendar
+ * months (15 Jan–14 Mar) plus a 6-day tail (15–20 Mar); without it those last
+ * six days were silently dropped (`lineItemPeriods.jsx:180-191`).
+ */
+@Suppress("ReturnCount") // The guard and each rollover failure mode return on their own line.
+private fun monthlyPeriods(start: String, end: String, endNum: Int): List<Pair<String, String>> {
+    val (startYear, startMonth) = start.take(ISO_YEAR_MONTH_LENGTH).split('-').let { it[0].toInt() to it[1].toInt() }
+    val (endYear, endMonth) = end.take(ISO_YEAR_MONTH_LENGTH).split('-').let { it[0].toInt() to it[1].toInt() }
+    val months = ((endYear - startYear) * MONTHS_PER_YEAR + (endMonth - startMonth)).coerceAtLeast(1)
+    val windows = mutableListOf<Pair<String, String>>()
+    for (i in 0 until months) {
+        if (windows.size >= MAX_PERIODS) return emptyList()
+        val periodStart = start.addCivilMonths(i) ?: return emptyList()
+        val nextMonthStart = start.addCivilMonths(i + 1)?.isoDayNumber() ?: return emptyList()
+        val periodEndNum = (nextMonthStart - 1).coerceAtMost(endNum)
+        windows += periodStart to periodEndNum.toIsoDay()
+    }
+    val lastEndNum = windows.last().second.isoDayNumber() ?: return windows
+    if (lastEndNum < endNum) {
+        windows += (lastEndNum + 1).toIsoDay() to end
+    }
+    return windows
+}
+
+/** A guard, not a rule: a mis-typed year should not produce thousands of lines — the web's own MAX_PERIODS. */
+private const val MAX_PERIODS = 400
+private const val MONTHS_PER_YEAR = 12
+private const val ISO_YEAR_MONTH_LENGTH = 7
 
 /** Money is divided in pennies so the children always add back to the parent. */
 private const val PENNIES_PER_UNIT = 100.0

@@ -53,6 +53,31 @@ internal fun utcMidnight(year: Int, month: Int, day: Int): Long =
 internal fun String.isoDayToUtcMidnight(): Long? = isoDayNumber()?.let { it.toLong() * MILLIS_PER_DAY }
 
 /**
+ * The day [monthsToAdd] calendar months after this ISO day, preserving the
+ * day-of-month and OVERFLOWING into later months when the target month is
+ * shorter — the web's `Date.setMonth` rollover (31 Jan + 1 month is 3 Mar,
+ * not 28/29 Feb), needed to match its "Split by Period" monthly windows
+ * exactly. Reached by taking the target month's first day as a day number and
+ * adding the original day-of-month minus one — the same linear day-number
+ * space [daysFromCivil]/[civilFromDays] already give every other date on this
+ * page, so the rollover falls out for free rather than needing a month-length
+ * table. Null when this string is not a date.
+ */
+@Suppress("ReturnCount") // One early return per way the string can fail to be a date, as isoDayNumber().
+internal fun String.addCivilMonths(monthsToAdd: Int): String? {
+    val parts = take(ISO_LENGTH).split('-')
+    if (parts.size != 3) return null
+    val year = parts[0].toIntOrNull() ?: return null
+    val month = parts[1].toIntOrNull() ?: return null
+    val day = parts[2].toIntOrNull() ?: return null
+    val zeroBasedTotal = (month - 1) + monthsToAdd
+    val targetYear = year + zeroBasedTotal.floorDiv(12)
+    val targetMonth = zeroBasedTotal.mod(12) + 1
+    val firstOfTargetMonth = daysFromCivil(targetYear, targetMonth, 1)
+    return (firstOfTargetMonth + (day - 1)).toIsoDay()
+}
+
+/**
  * Epoch milliseconds as the UTC calendar day they fall in — the inverse of
  * [isoDayToUtcMidnight], and the day the cost-report lock is compared on.
  */

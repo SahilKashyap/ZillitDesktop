@@ -117,7 +117,7 @@ internal class PoProcessActions(
             return
         }
         val cadence = vm.ui.projectSettings.splitCadence
-        val split = entry.lines.splitByPeriod(index, cadence.days)
+        val split = entry.lines.splitByPeriod(index, cadence)
         if (split == null) {
             vm.fail(str(S.desktop_po_rental_window_too_short, cadence.label.lowercase()))
             return

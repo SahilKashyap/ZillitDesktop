@@ -67,10 +67,9 @@ enum class PoDescriptionFormat(val wire: String, private val labelKey: String, p
 enum class PoSplitType(val wire: String, private val labelKey: String, val days: Int) {
     Weekly("weekly", S.ce_weekly, days = 7),
     Daily("daily", S.daily, days = 1),
-    // A calendar month is not a fixed number of days, and a rental split does
-    // not need it to be: the web divides the window evenly and clips the last
-    // period to the line's own end, so 30 is the cadence, not a claim about
-    // February.
+    // Monthly splits by genuine calendar months (see periodsIn/monthlyPeriods
+    // in PoFormActions.kt), not this fixed day count — `days` is unused for
+    // this entry and kept only so every cadence has one.
     Monthly("monthly", S.ce_monthly, days = 30),
     FourWeek("four_week", S.desktop_four_week, days = 28),
     ;

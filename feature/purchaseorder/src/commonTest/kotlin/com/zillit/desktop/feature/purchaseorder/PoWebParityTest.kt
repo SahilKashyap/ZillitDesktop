@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.purchaseorder.ui.PoDestination
 import com.zillit.desktop.feature.purchaseorder.ui.PoQueueScope
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
 import com.zillit.desktop.feature.purchaseorder.ui.periodsIn
+import com.zillit.desktop.feature.purchaseorder.ui.splitByPeriod
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -464,9 +465,101 @@ class PoWebParityTest {
             rentalEnd = "2026-03-11",
         )
         assertEquals(
-            listOf("2026-03-01" to "2026-03-08", "2026-03-08" to "2026-03-11"),
-            periodsIn(line, days = 7),
+            listOf("2026-03-01" to "2026-03-07", "2026-03-08" to "2026-03-11"),
+            periodsIn(line, cadence = PoSplitType.Weekly),
         )
+    }
+
+    /**
+     * Monthly windows are genuine calendar months anchored to the start's own
+     * day-of-month, with a trailing window for whatever the calendar-month
+     * diff undercounts — 15 Jan to 20 Mar is 2 calendar months (15 Jan–14 Mar)
+     * plus a 6-day tail (15–20 Mar), not 3 even thirds.
+     */
+    @Test
+    fun `a monthly period split anchors to the start day and tails the remainder`() {
+        val line = PoLine(
+            null,
+            "Equipment hire",
+            1.0,
+            1_000.0,
+            null,
+            null,
+            expenditureType = RENTAL_EXPENDITURE_TYPE,
+            rentalStart = "2026-01-15",
+            rentalEnd = "2026-03-20",
+        )
+        assertEquals(
+            listOf(
+                "2026-01-15" to "2026-02-14",
+                "2026-02-15" to "2026-03-14",
+                "2026-03-15" to "2026-03-20",
+            ),
+            periodsIn(line, cadence = PoSplitType.Monthly),
+        )
+    }
+
+    /**
+     * A monthly window overflows into a later, shorter-named month exactly as
+     * JS `Date.setMonth` does: 31 Jan + 1 month is 3 Mar, not 28 Feb.
+     */
+    @Test
+    fun `a monthly period split rolls a short month over like Date-setMonth`() {
+        val line = PoLine(
+            null,
+            "Equipment hire",
+            1.0,
+            1_000.0,
+            null,
+            null,
+            expenditureType = RENTAL_EXPENDITURE_TYPE,
+            rentalStart = "2026-01-31",
+            rentalEnd = "2026-04-05",
+        )
+        assertEquals(
+            listOf(
+                "2026-01-31" to "2026-03-02",
+                "2026-03-03" to "2026-03-30",
+                "2026-03-31" to "2026-04-05",
+            ),
+            periodsIn(line, cadence = PoSplitType.Monthly),
+        )
+    }
+
+    /**
+     * `splitByPeriod` end to end at the Monthly cadence: the parent becomes
+     * one row per calendar-month window, each a split child carrying its own
+     * slice of the parent's pennies and the window's own rental dates — the
+     * rows the line-items table actually draws, not just the windows
+     * [periodsIn] computes.
+     */
+    @Test
+    fun `a monthly split turns the parent into one child per calendar month`() {
+        val line = PoLine(
+            null,
+            "Equipment hire",
+            1.0,
+            1_002.0,
+            null,
+            null,
+            expenditureType = RENTAL_EXPENDITURE_TYPE,
+            rentalStart = "2026-01-15",
+            rentalEnd = "2026-03-20",
+        )
+        val split = listOf(line).splitByPeriod(0, PoSplitType.Monthly)
+        assertEquals(4, split?.size)
+        val parent = split?.get(0)
+        val children = split?.drop(1)
+        assertEquals(3, children?.size)
+        assertEquals(
+            listOf("2026-01-15" to "2026-02-14", "2026-02-15" to "2026-03-14", "2026-03-15" to "2026-03-20"),
+            children?.map { it.rentalStart to it.rentalEnd },
+        )
+        assertTrue(children?.all { it.splitParentId == parent?.id } == true)
+        // 1,002.00 in pennies over 3 children: 334.00 + 334.00 + 334.00 — the
+        // remainder rides the last child, and every child still sums to the
+        // parent to the penny.
+        assertEquals(listOf(334.0, 334.0, 334.0), children?.map { it.amount })
     }
 
     /** Auto-split off means the legacy monthly cadence, whatever type is stored. */
