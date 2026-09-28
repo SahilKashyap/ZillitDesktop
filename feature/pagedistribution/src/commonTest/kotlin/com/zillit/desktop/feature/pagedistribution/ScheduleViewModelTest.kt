@@ -76,6 +76,7 @@ class ScheduleViewModelTest {
     private class Repo(private val schedule: DistDocument) : DistributionRepository {
         val drafts = mutableListOf<UploadDraft>()
         var searches = 0
+        var published = 0
         override fun refreshes(tool: DistributionTool): Flow<Unit> = emptyFlow()
         override suspend fun documents(tab: DistributionTab, mode: ListMode) =
             ZillitResult.Success(if (tab.key == "full_script") listOf(schedule) else emptyList())
@@ -116,7 +117,10 @@ class ScheduleViewModelTest {
             tab: DistributionTab,
             document: DistDocument,
             todayYmd: String,
-        ) = ZillitResult.Success(Unit)
+        ): ZillitResult<Unit> {
+            published++
+            return ZillitResult.Success(Unit)
+        }
     }
 
     private object Transfer : DistributionTransfer {
@@ -260,5 +264,51 @@ class ScheduleViewModelTest {
         runCurrent()
         assertNull(vm.state.value.searchResults)
         assertNull(vm.state.value.searchColour)
+    }
+
+    /**
+     * `publish()` reaches `repository.publish` straight from `ConfirmPublish`,
+     * bypassing the `mayPublish` check that only guards *opening* the confirm
+     * dialog (`Publish`) — the same "guard on the wrong step" shape the
+     * upload/move/delete handlers were already fixed for. A rights change
+     * while the confirm dialog is open (it has no auto-dismiss) must not let
+     * a directly-dispatched `ConfirmPublish` through.
+     */
+    @Test
+    fun `losing publish rights mid-session blocks a direct ConfirmPublish`() = runTest(dispatcher) {
+        var canPublish = true
+        val repo = Repo(schedule)
+        val vm = DistributionViewModel(
+            tool = tool,
+            repository = repo,
+            transfer = Transfer,
+            resolveViewer = {
+                DistributionViewer(
+                    userId = "me",
+                    canPost = true,
+                    canDownload = true,
+                    canPublish = canPublish,
+                    ready = true,
+                )
+            },
+            nowMillis = { 1_800_000_000_000L },
+            tabUnread = emptyFlow(),
+        )
+        vm.start()
+        runCurrent()
+
+        vm.onEvent(DistributionEvent.Publish(schedule))
+        runCurrent()
+        assertNotNull(vm.state.value.confirmPublish, "the confirm dialog needs to be open for the race to matter")
+
+        canPublish = false
+        vm.start() // the only way this engine re-reads rights mid-session
+        runCurrent()
+
+        vm.onEvent(DistributionEvent.ConfirmPublish)
+        runCurrent()
+
+        assertEquals(0, repo.published, "a viewer who lost publish rights published a page")
+        assertNotNull(vm.state.value.error)
     }
 }
