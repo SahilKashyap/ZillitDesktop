@@ -13,14 +13,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitDimens
@@ -51,13 +48,9 @@ fun ZillitSectionCard(
     val colors = ZillitTheme.colors
     Column(
         modifier = modifier
-            // The web's panel shadow (`0 1px 2px rgba(10,12,16,.03)`) and 14px
-            // radius — its own shape rather than `shapes.large` (10dp), which
-            // dialogs and other chrome also key off and shouldn't move with it.
-            .shadow(CARD_ELEVATION, SECTION_CARD_SHAPE)
-            .clip(SECTION_CARD_SHAPE)
+            .clip(ZillitTheme.shapes.large)
             .background(colors.surface)
-            .border(CARD_HAIRLINE, colors.border, SECTION_CARD_SHAPE),
+            .border(CARD_HAIRLINE, colors.border, ZillitTheme.shapes.large),
     ) {
         if (title != null) {
             SectionHeader(title = title, icon = icon, meta = meta, action = action)
@@ -80,18 +73,12 @@ private fun SectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = HEADER_PADDING_H, vertical = HEADER_PADDING_V),
+            .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         icon?.let { ZillitIcon(it, tint = colors.accent, size = ZillitDimens.iconSmall) }
-        // The web's panel titles are `font-extrabold` (800) — visibly bolder
-        // than `titleSmall`'s own weight, which other callers still want.
-        ZillitText(
-            text = title,
-            style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold),
-            maxLines = 1,
-        )
+        ZillitText(text = title, style = ZillitTheme.typography.titleSmall, maxLines = 1)
         Spacer(Modifier.weight(1f))
         meta?.let {
             ZillitText(
@@ -155,7 +142,3 @@ fun ZillitSectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 internal val CARD_HAIRLINE: Dp = 1.dp
-private val SECTION_CARD_SHAPE = RoundedCornerShape(14.dp)
-private val CARD_ELEVATION = 1.dp
-private val HEADER_PADDING_H = 18.dp
-private val HEADER_PADDING_V = 14.dp
