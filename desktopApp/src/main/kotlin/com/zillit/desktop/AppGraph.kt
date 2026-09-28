@@ -5,6 +5,7 @@
 
 package com.zillit.desktop
 
+import com.zillit.desktop.core.appupdate.InstallerHandoff
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.config.AppConfig
@@ -565,6 +566,8 @@ sealed interface AppGraph {
         val inAppUpdater: InAppUpdater,
         /** The latest verdict, shared by the banner's poll and Settings' manual check. */
         val appUpdateStatus: MutableStateFlow<UpdateStatus> = MutableStateFlow(UpdateStatus.Unknown),
+        /** Settings' Download clicks, counted — each re-shows a dismissed update strip. */
+        val appUpdateRequests: MutableStateFlow<Int> = MutableStateFlow(0),
         /** The notification list's source — see `NotificationsToolProvider`. */
         val notificationsRepository: NotificationsRepository,
         val homeRealtime: HomeRealtimeSource,
@@ -1983,6 +1986,9 @@ private fun inAppUpdater(scope: CoroutineScope): InAppUpdater {
             workDir = workDir,
         ),
         scope = scope,
+        // Where a download the person installs themselves belongs. Works in a
+        // Gradle run too: it needs no packaged app to replace.
+        handoff = InstallerHandoff(File(System.getProperty("user.home"), "Downloads")),
     )
 }
 

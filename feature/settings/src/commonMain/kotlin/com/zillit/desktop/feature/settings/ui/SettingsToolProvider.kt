@@ -61,6 +61,8 @@ class SettingsToolProvider(
      * anything but http(s).
      */
     private val onOpenExternal: (String) -> Unit = {},
+    /** Settings › About › Download. Null keeps the browser. */
+    private val onGetUpdate: ((String) -> Unit)? = null,
     /**
      * The account pages, when there is a session behind them.
      *
@@ -121,6 +123,7 @@ class SettingsToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is SettingsEffect.OpenExternal -> onOpenExternal(effect.url)
+                    is SettingsEffect.GetUpdate -> (onGetUpdate ?: onOpenExternal)(effect.url)
 
                     // Zillit Help is a page of this app's own, so it opens the
                     // way the account pages do rather than in a browser.

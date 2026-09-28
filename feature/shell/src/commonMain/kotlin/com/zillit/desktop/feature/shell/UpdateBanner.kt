@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,6 +19,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitProgressBar
+import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -64,6 +66,8 @@ internal fun UpdateBanner(
     modifier: Modifier = Modifier,
     onInstall: () -> Unit = {},
     onRestart: () -> Unit = {},
+    onCancel: () -> Unit = {},
+    onOpenDownloaded: () -> Unit = {},
 ) {
     val accent = if (notice.mandatory) ZillitTheme.colors.danger else ZillitTheme.colors.info
     ZillitNotice(
@@ -78,7 +82,7 @@ internal fun UpdateBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                InstallAction(notice, accent, onInstall, onRestart)
+                InstallAction(notice, accent, onInstall, onRestart, onCancel, onOpenDownloaded)
                 // The page link stays wherever the app cannot finish the job
                 // itself: no installer, or an install that stopped.
                 if (notice.install == null || notice.install is UpdateInstall.Failed) {
@@ -87,7 +91,10 @@ internal fun UpdateBanner(
                         // The URL came out of a remote console, so nothing here may
                         // hand it to the OS directly.
                         ZillitButton(
-                            text = str(S.download),
+                            // Says where it goes. Once the app can download
+                            // in place, the only button that leaves it must
+                            // not look like the one that does not.
+                            text = if (notice.manual) str(S.desktop_update_open_in_browser) else str(S.download),
                             onClick = { onDownload(url) },
                             size = ButtonSize.Small,
                             variant = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Secondary,
@@ -96,7 +103,9 @@ internal fun UpdateBanner(
                 }
                 // Absent when mandatory: there is no "later" for a build the
                 // server will stop serving.
-                if (!notice.mandatory) {
+                // Nor while downloading: dismissing would hide a download
+                // that is still running, with no way back to cancel it.
+                if (!notice.mandatory && notice.install !is UpdateInstall.Downloading) {
                     ZillitIconButton(
                         icon = ZillitIcons.Close,
                         contentDescription = str(S.desktop_dismiss_update),
@@ -119,6 +128,7 @@ private fun bannerText(notice: UpdateNotice): String {
             ?: str(S.desktop_update_downloading, version)
         UpdateInstall.Preparing -> str(S.desktop_update_preparing, version)
         UpdateInstall.Ready -> str(S.desktop_update_ready, version)
+        UpdateInstall.Downloaded -> str(S.desktop_update_downloaded, version)
         is UpdateInstall.Failed -> when {
             install.retryable -> str(S.desktop_update_failed_network, version)
             install.verification -> str(S.desktop_update_failed_verify, version)
@@ -135,22 +145,57 @@ private fun bannerText(notice: UpdateNotice): String {
 
 /** Update now, the progress bar, Restart now or Try Again — whichever the step calls for. */
 @Composable
-private fun InstallAction(notice: UpdateNotice, accent: Color, onInstall: () -> Unit, onRestart: () -> Unit) {
+private fun InstallAction(
+    notice: UpdateNotice,
+    accent: Color,
+    onInstall: () -> Unit,
+    onRestart: () -> Unit,
+    onCancel: () -> Unit,
+    onOpenDownloaded: () -> Unit,
+) {
     val primary = if (notice.mandatory) ButtonVariant.Danger else ButtonVariant.Primary
     when (val install = notice.install) {
         UpdateInstall.Offer -> ZillitButton(
-            text = str(S.update_now),
+            // "Download" when the app fetches the file and hands it over;
+            // "Update now" only when it can install it itself.
+            text = if (notice.manual) str(S.download) else str(S.update_now),
             onClick = onInstall,
             size = ButtonSize.Small,
             variant = primary,
             modifier = Modifier.testTag(INSTALL_TAG),
         )
-        is UpdateInstall.Downloading -> ZillitProgressBar(
-            // No length from the server: an empty track still says "working"
-            // better than a bar that never moves.
-            fraction = (install.percent ?: 0) / PERCENT,
-            modifier = Modifier.width(PROGRESS_WIDTH),
-            fillColor = accent,
+        is UpdateInstall.Downloading -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            val percent = install.percent
+            if (percent != null) {
+                ZillitProgressBar(
+                    fraction = percent / PERCENT,
+                    // Read out as progress, not an unlabeled shape.
+                    modifier = Modifier.width(PROGRESS_WIDTH).progressSemantics(percent / PERCENT)
+                        .testTag(PROGRESS_TAG),
+                    fillColor = accent,
+                )
+            } else {
+                // No length from the server: a spinner says "working" where a
+                // bar would sit empty and look stuck.
+                ZillitSpinner(modifier = Modifier.testTag(PROGRESS_TAG), color = accent)
+            }
+            ZillitButton(
+                text = str(S.cancel),
+                onClick = onCancel,
+                size = ButtonSize.Small,
+                variant = ButtonVariant.Secondary,
+                modifier = Modifier.testTag(CANCEL_TAG),
+            )
+        }
+        UpdateInstall.Downloaded -> ZillitButton(
+            text = str(S.desktop_update_open_installer),
+            onClick = onOpenDownloaded,
+            size = ButtonSize.Small,
+            variant = primary,
+            modifier = Modifier.testTag(OPEN_INSTALLER_TAG),
         )
         UpdateInstall.Ready -> ZillitButton(
             text = str(S.desktop_update_restart_now),
@@ -173,6 +218,15 @@ private fun InstallAction(notice: UpdateNotice, accent: Color, onInstall: () -> 
 
 private const val PERCENT = 100f
 private val PROGRESS_WIDTH = 120.dp
+
+/** The progress bar, or the spinner when the size is unknown. */
+internal const val PROGRESS_TAG = "update-progress"
+
+/** "Cancel", while downloading. */
+internal const val CANCEL_TAG = "update-cancel"
+
+/** "Show installer", once downloaded. */
+internal const val OPEN_INSTALLER_TAG = "update-open-installer"
 
 /** "Update now". */
 internal const val INSTALL_TAG = "update-install"

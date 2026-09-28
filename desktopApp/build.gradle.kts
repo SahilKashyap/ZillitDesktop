@@ -952,6 +952,8 @@ compose.desktop {
                         <string>Zillit uses your microphone for production calls.</string>
                         <key>NSCameraUsageDescription</key>
                         <string>Zillit uses your camera for production video calls.</string>
+                        <key>NSDownloadsFolderUsageDescription</key>
+                        <string>Zillit saves app updates and files you download to your Downloads folder.</string>
                         <key>CFBundleURLTypes</key>
                         <array>
                             <dict>

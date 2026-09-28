@@ -1578,7 +1578,6 @@ private fun SignedInShell(
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
     val updateStatus = rememberUpdateStatus(ready)
-    val installState by ready.inAppUpdater.state.collectAsState()
 
     // Whether the rail offers Admin at all, and what is waiting behind it.
     // Read from the settings state rather than the project: it is the same
@@ -1614,10 +1613,12 @@ private fun SignedInShell(
         projectName = authState.activeProject?.name,
         statusText = statusText(socketState, syncStatus),
         statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
-        updateNotice = updateStatus.toNotice(installedAppVersion(), ready.inAppUpdater, installState),
+        updateNotice = currentUpdateNotice(ready, updateStatus),
         // The guarded launcher — https only, as the auth links use.
         onDownloadUpdate = ::openInBrowser,
-        onInstallUpdate = { ready.inAppUpdater.startFor(updateStatus) },
+        onInstallUpdate = { ready.inAppUpdater.installOrDownload(updateStatus) },
+        onCancelUpdate = { ready.inAppUpdater.cancel() },
+        onOpenUpdate = { ready.inAppUpdater.openDownloaded() },
         // Quits only once the helper is running; if it would not start, the
         // state turns to Failed and the strip says so.
         onRestartToUpdate = { if (ready.inAppUpdater.launchInstaller()) onQuit() },
@@ -1697,9 +1698,40 @@ private fun rememberUpdateStatus(ready: AppGraph.Ready): UpdateStatus {
         }
     }
     LaunchedEffect(updateStatus) {
+        ready.inAppUpdater.cancelUnless(updateStatus.latestVersionOrNull())
         if (updateStatus is UpdateStatus.Required) ready.inAppUpdater.startFor(updateStatus)
     }
     return updateStatus
+}
+
+/**
+ * Stops a download of a version [latest] no longer names. The strip only shows
+ * the current version, so an older one would run on unseen — and, being the
+ * download-and-open path, end by opening a stale installer nobody asked for.
+ */
+private fun InAppUpdater.cancelUnless(latest: String?) {
+    val running = state.value
+    if (running is InstallState.Downloading && running.version != latest) cancel()
+}
+
+private fun UpdateStatus.latestVersionOrNull(): String? = when (this) {
+    is UpdateStatus.Available -> latestVersion
+    is UpdateStatus.Required -> latestVersion
+    UpdateStatus.Unknown, UpdateStatus.UpToDate -> null
+}
+
+private fun UpdateStatus.downloadUrlOrNull(): String? = when (this) {
+    is UpdateStatus.Available -> downloadUrl
+    is UpdateStatus.Required -> downloadUrl
+    UpdateStatus.Unknown, UpdateStatus.UpToDate -> null
+}
+
+/** The strip's notice for [status], with the updater's progress and Settings' asks to see it. */
+@Composable
+private fun currentUpdateNotice(ready: AppGraph.Ready, status: UpdateStatus): UpdateNotice? {
+    val installState by ready.inAppUpdater.state.collectAsState()
+    val requests by ready.appUpdateRequests.collectAsState()
+    return status.toNotice(installedAppVersion(), ready.inAppUpdater, installState)?.copy(requests = requests)
 }
 
 /**
@@ -1708,6 +1740,46 @@ private fun rememberUpdateStatus(ready: AppGraph.Ready): UpdateStatus {
  */
 private suspend fun AppGraph.Ready.checkForUpdatesNow(): UpdateStatus =
     appUpdateChecker.check().also { status -> if (status != UpdateStatus.Unknown) appUpdateStatus.value = status }
+
+/** The update button: install in place where it can, else download in the app and open the installer. */
+private fun InAppUpdater.installOrDownload(status: UpdateStatus) {
+    if (canInstall(status.installer)) startFor(status) else downloadFor(status)
+}
+
+/**
+ * Downloads [status]'s installer inside the app and opens it for the person to
+ * install — what the update button does when [startFor] cannot install here.
+ *
+ * Only ever from the button. Unlike [startFor], nothing calls this on its own
+ * at launch: fetching a file is fine to do unasked, but opening an installer
+ * window on someone who did not ask for it is not.
+ */
+private fun InAppUpdater.downloadFor(status: UpdateStatus) {
+    val (version, url) = when (status) {
+        is UpdateStatus.Available -> status.latestVersion to status.downloadUrl
+        is UpdateStatus.Required -> status.latestVersion to status.downloadUrl
+        UpdateStatus.Unknown, UpdateStatus.UpToDate -> return
+    }
+    downloadAndOpen(version, url ?: return)
+}
+
+/**
+ * Settings › About › Download — the same choice the banner's button makes:
+ * install in place, else download inside the app and open the installer, and
+ * only when neither is possible, the browser.
+ *
+ * Goes by the live status, not [url]: Settings' answer may be from a check
+ * hours old, and pairing its link with the current version would save one
+ * installer under another's name. [url] is only the browser's fallback.
+ */
+private fun AppGraph.Ready.getUpdate(url: String) {
+    val status = appUpdateStatus.value
+    val inApp = inAppUpdater.canInstall(status.installer) || inAppUpdater.canDownload(status.downloadUrlOrNull())
+    if (!inApp) return openInBrowser(url)
+    // The strip is where the progress and the result show; bring it back if dismissed.
+    appUpdateRequests.value += 1
+    inAppUpdater.installOrDownload(status)
+}
 
 /** Starts the in-app download for [status], when it names an installer this machine can use. */
 private fun InAppUpdater.startFor(status: UpdateStatus) {
@@ -2436,8 +2508,12 @@ private fun UpdateStatus.toNotice(installed: String, updater: InAppUpdater, stat
         is UpdateStatus.Required -> Triple(latestVersion, true, downloadUrl)
         UpdateStatus.Unknown, UpdateStatus.UpToDate -> return null
     }
-    val install = if (updater.canInstall(installer)) state.toInstall(version) else null
-    return UpdateNotice(version, mandatory, url, installedVersion = installed, install = install)
+    // Install in place where possible; failing that, download in the app and
+    // hand over; only with neither does the strip fall back to a browser link.
+    val installable = updater.canInstall(installer)
+    val downloadable = !installable && updater.canDownload(url)
+    val install = if (installable || downloadable) state.toInstall(version) else null
+    return UpdateNotice(version, mandatory, url, installedVersion = installed, install = install, manual = downloadable)
 }
 
 /** The updater's state for [version]; a state about another version reads as not started. */
@@ -2446,6 +2522,7 @@ private fun InstallState.toInstall(version: String): UpdateInstall = when {
     this is InstallState.Downloading -> UpdateInstall.Downloading(fraction?.let { (it * PERCENT).toInt() })
     this is InstallState.Preparing -> UpdateInstall.Preparing
     this is InstallState.Ready -> UpdateInstall.Ready
+    this is InstallState.Downloaded -> UpdateInstall.Downloaded
     this is InstallState.Failed -> UpdateInstall.Failed(
         retryable = reason == UpdateFailure.Reason.Network,
         verification = reason == UpdateFailure.Reason.Checksum || reason == UpdateFailure.Reason.Signature,
@@ -3407,6 +3484,7 @@ private fun buildRegistry(
     val settings = SettingsToolProvider(
         viewModel = settingsViewModel,
         onOpenExternal = ::openInBrowser,
+        onGetUpdate = { url -> (graph as? AppGraph.Ready)?.getUpdate(url) ?: openInBrowser(url) },
         account = viewModels.account,
         onCopy = ::copyToClipboard,
         approvals = viewModels.approvals,
