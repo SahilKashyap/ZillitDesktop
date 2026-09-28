@@ -107,7 +107,7 @@ internal fun OutstandingGrid(state: PayrollUiState, onEvent: (PayrollEvent) -> U
     val week = state.processing.weekStarting ?: state.currentWeek
     val query = state.processing.search.trim().lowercase()
     val department = state.processing.department
-    val rows = OutstandingRow.of(state.processing.outstanding, week, state.currencyRates).filter { row ->
+    val rows = OutstandingRow.of(state.processing.outstanding, week).filter { row ->
         row.status != TimecardStatus.Paid &&
             navMatches(state.processing.nav, row.weeks.firstOrNull()?.timecard?.processingBucket) &&
             (department == null || state.people[row.userId]?.department.orEmpty() == department) &&

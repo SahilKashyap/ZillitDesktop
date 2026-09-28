@@ -102,39 +102,37 @@ data class ProcessingRow(val timecard: PayrollTimecard, val weekStarting: Long) 
  * One crew member's unsettled weeks summed — the web's
  * `aggregateOutstandingByUser`: one row per user, the heaviest first.
  */
-data class OutstandingRow(
-    val userId: String,
-    val weeks: List<ProcessingRow>,
-    val rates: PayrollCurrencyRates = PayrollCurrencyRates(),
-) {
+data class OutstandingRow(val userId: String, val weeks: List<ProcessingRow>) {
     val id: String get() = "outstanding-$userId"
     val status: TimecardStatus get() = weeks.firstOrNull()?.timecard?.status ?: TimecardStatus.Unknown
     val days: Int get() = weeks.sumOf { it.timecard.totalDays.takeIf { days -> days > 0 } ?: it.daysWorked }
 
     /**
-     * Converted across the crew member's own weeks — most people are paid
-     * in one currency throughout, but a rate/currency change mid-production
-     * is exactly the "add pounds to yen" trap the summary strip and
-     * Processing's KPI tiles hit too.
+     * Face-value across the crew member's own weeks, labelled with the
+     * first week's currency — the web's `aggregateOutstandingByUser`
+     * (`payrollData.js` 980-991: plain `+=`, no `exr` conversion). Unlike
+     * the summary strip and Processing's KPI tiles, which aggregate ACROSS
+     * crew and do convert, this aggregates one person's OWN weeks and the
+     * web deliberately does not — confirmed by reading `aggregateOutstandingByUser`
+     * directly rather than assuming it matches the other screens' pattern.
+     * Fixes only the *label*: the original per-field getters here picked
+     * one currency for the whole grid (`firstNotNullOfOrNull` in
+     * `ProcessingGrid.kt`), not this row's own.
      */
     private fun moneyOf(amount: (ProcessingRow) -> Double): Pair<Double, String?> =
-        payrollMoneyTotal(weeks.map { amount(it) to it.timecard.currency }, rates)
+        weeks.sumOf(amount) to weeks.firstNotNullOfOrNull { it.timecard.currency }
     val basicMoney: Pair<Double, String?> get() = moneyOf { it.basicTotal }
     val otsMoney: Pair<Double, String?> get() = moneyOf { it.otTotal }
     val allowancesMoney: Pair<Double, String?> get() = moneyOf { it.allowanceTotal }
     val totalMoney: Pair<Double, String?> get() = moneyOf { it.totalPay }
 
-    /** The raw figure, in [rates]'s default — for sorting only; use `*Money` to display. */
+    /** The raw face-value figure — for sorting only; use `*Money` to display. */
     val total: Double get() = totalMoney.first
 
     companion object {
-        fun of(
-            timecards: List<PayrollTimecard>,
-            weekStarting: Long,
-            rates: PayrollCurrencyRates,
-        ): List<OutstandingRow> =
+        fun of(timecards: List<PayrollTimecard>, weekStarting: Long): List<OutstandingRow> =
             timecards.groupBy { it.userId }
-                .map { (userId, cards) -> OutstandingRow(userId, cards.map { ProcessingRow(it, weekStarting) }, rates) }
+                .map { (userId, cards) -> OutstandingRow(userId, cards.map { ProcessingRow(it, weekStarting) }) }
                 .sortedByDescending { it.total }
     }
 }
