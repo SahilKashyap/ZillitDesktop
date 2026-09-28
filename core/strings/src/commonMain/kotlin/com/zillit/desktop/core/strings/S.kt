@@ -12206,6 +12206,8 @@ object S {
     const val desktop_search_members: String = "desktop_search_members"
     const val desktop_search_modules: String = "desktop_search_modules"
     const val desktop_search_pages: String = "desktop_search_pages"
+    const val desktop_search_select_option_count_one: String = "desktop_search_select_option_count_one"
+    const val desktop_search_select_option_count_other: String = "desktop_search_select_option_count_other"
     const val desktop_search_projects_placeholder: String = "desktop_search_projects_placeholder"
     const val desktop_search_queue: String = "desktop_search_queue"
     const val desktop_search_ref_or_client: String = "desktop_search_ref_or_client"

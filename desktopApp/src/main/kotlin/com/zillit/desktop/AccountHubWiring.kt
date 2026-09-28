@@ -17,6 +17,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
+import com.zillit.desktop.feature.accounthub.domain.IsdCountries
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.feature.purchaseorder.domain.PoTermsFiles
 import com.zillit.desktop.feature.purchaseorder.domain.PoTeamMember
@@ -24,6 +25,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoSettingsPeople
 import com.zillit.desktop.feature.purchaseorder.domain.PoPickedFile
 import com.zillit.desktop.feature.purchaseorder.domain.PoDepartment
 import com.zillit.desktop.feature.purchaseorder.domain.PoCompany
+import com.zillit.desktop.feature.purchaseorder.domain.PoCountry
 import com.zillit.desktop.feature.purchaseorder.domain.PoProjectSettings
 import com.zillit.desktop.feature.purchaseorder.domain.PoTaxType
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
@@ -550,4 +552,10 @@ internal fun AppGraph.Ready.poProjectSettings(): PoProjectSettings = object : Po
         val default = settings.defaultCode?.takeIf { it.isNotBlank() }
         return if (default != null) listOf(default) + codes.filterNot { it == default } else codes
     }
+
+    // The service's list, or the web's own copy when the service cannot be
+    // reached — the same fallback ExternalUsersWiring/CrewListWiring use.
+    override suspend fun countries(): List<PoCountry> =
+        accountHubRepository.isdCodes().getOrNull().orEmpty().ifEmpty { IsdCountries.bundled }
+            .map { PoCountry(name = it.name, dialCode = it.dialCode, isoCode = it.code) }
 }

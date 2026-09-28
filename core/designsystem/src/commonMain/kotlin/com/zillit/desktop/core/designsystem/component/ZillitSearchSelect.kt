@@ -3,6 +3,9 @@ package com.zillit.desktop.core.designsystem.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,8 +27,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
@@ -49,8 +55,14 @@ import com.zillit.desktop.core.strings.str
  * gives an option a muted second line; [searchText] widens what the search
  * matches beyond the label. [isError] draws the danger border, as a field
  * with a validation error does.
+ *
+ * [renderOption], set, replaces the built-in label/subtitle row entirely —
+ * the web's `renderOption`, for a picker whose rows need more than two lines
+ * (an avatar, a status badge, a contact line — the vendor picker's own row).
+ * Every row still gets the shared container: the hover wash, the selected
+ * row's accent bar, the hairline between rows.
  */
-@Suppress("LongParameterList", "LongMethod")
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun <T> ZillitSearchSelect(
     value: T?,
@@ -65,6 +77,7 @@ fun <T> ZillitSearchSelect(
     subtitle: ((T) -> String?)? = null,
     onCreate: ((String) -> Unit)? = null,
     dropdownWidth: Dp? = null,
+    renderOption: (@Composable (T, selected: Boolean) -> Unit)? = null,
 ) {
     val colors = ZillitTheme.colors
     var expanded by remember { mutableStateOf(false) }
@@ -112,7 +125,13 @@ fun <T> ZillitSearchSelect(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             modifier = Modifier
-                .background(colors.surfaceRaised, RoundedCornerShape(MENU_RADIUS))
+                // The web's floating card: a soft, layered shadow and a
+                // wider radius than the trigger's own — it reads as
+                // detached from the page, not as another form control.
+                .shadow(MENU_ELEVATION, RoundedCornerShape(MENU_RADIUS))
+                .clip(RoundedCornerShape(MENU_RADIUS))
+                .background(colors.surfaceRaised)
+                .border(HAIRLINE, colors.border, RoundedCornerShape(MENU_RADIUS))
                 .let { if (dropdownWidth != null) it.width(dropdownWidth) else it.widthIn(min = MIN_WIDTH) },
         ) {
             val focus = remember { FocusRequester() }
@@ -137,9 +156,10 @@ fun <T> ZillitSearchSelect(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs)
+                    .padding(horizontal = MENU_PADDING_H, vertical = ZillitTheme.spacing.sm)
                     .focusRequester(focus),
             )
+            ZillitDivider()
             LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
             when {
                 create != null -> DropdownMenuItem(
@@ -162,44 +182,164 @@ fun <T> ZillitSearchSelect(
                     color = colors.textMuted,
                     modifier = Modifier.padding(ZillitTheme.spacing.md),
                 )
-                else -> filtered.take(MAX_SHOWN).forEach { option ->
-                    val selected = option == shown
-                    DropdownMenuItem(
-                        onClick = {
-                            expanded = false
-                            onSelect(option)
-                        },
-                        modifier = Modifier.background(if (selected) colors.surfaceSelected else colors.surfaceRaised),
-                        text = {
-                            Column {
-                                ZillitText(
-                                    text = label(option),
-                                    style = ZillitTheme.typography.bodyMedium,
-                                    color = if (selected) colors.accentText else colors.textPrimary,
-                                    maxLines = 1,
-                                )
-                                subtitle?.invoke(option)?.takeIf { it.isNotBlank() }?.let {
-                                    ZillitText(
-                                        text = it,
-                                        style = ZillitTheme.typography.labelSmall,
-                                        color = colors.textMuted,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                        },
-                    )
+                else -> {
+                    val shownRows = filtered.take(MAX_SHOWN)
+                    shownRows.forEachIndexed { index, option ->
+                        SearchOptionRow(
+                            option = option,
+                            selected = option == shown,
+                            isLast = index == shownRows.lastIndex,
+                            label = label,
+                            subtitle = subtitle,
+                            renderOption = renderOption,
+                            onClick = {
+                                expanded = false
+                                onSelect(option)
+                            },
+                        )
+                    }
                 }
+            }
+            if (filtered.isNotEmpty()) {
+                ZillitDivider()
+                SearchSelectFooter(filtered.size)
             }
         }
     }
+}
+
+/**
+ * One row of the popup — the web's `RichSelect` row: a hover wash, the
+ * selected row's left accent bar and soft fill, a hairline under all but the
+ * last. [renderOption] takes over the row's whole content when set; the
+ * label/subtitle pair otherwise.
+ */
+@Composable
+private fun <T> SearchOptionRow(
+    option: T,
+    selected: Boolean,
+    isLast: Boolean,
+    label: (T) -> String,
+    subtitle: ((T) -> String?)?,
+    renderOption: (@Composable (T, Boolean) -> Unit)?,
+    onClick: () -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .hoverable(interaction)
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                .background(
+                    when {
+                        selected -> colors.accentSoft
+                        hovered -> colors.surfaceHover
+                        else -> Color.Transparent
+                    },
+                )
+                .drawBehind { if (selected) drawRect(colors.accent, size = size.copy(width = SELECTED_BAR.toPx())) }
+                .padding(
+                    start = MENU_PADDING_H + SELECTED_BAR,
+                    end = MENU_PADDING_H,
+                    top = ZillitTheme.spacing.sm,
+                    bottom = ZillitTheme.spacing.sm,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (renderOption != null) {
+                renderOption(option, selected)
+            } else {
+                Column(modifier = Modifier.weight(1f)) {
+                    ZillitText(
+                        text = label(option),
+                        style = ZillitTheme.typography.bodyMedium,
+                        color = if (selected) colors.accentText else colors.textPrimary,
+                        maxLines = 1,
+                    )
+                    subtitle?.invoke(option)?.takeIf { it.isNotBlank() }?.let {
+                        ZillitText(
+                            text = it,
+                            style = ZillitTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+        if (!isLast) ZillitDivider()
+    }
+}
+
+/** "N option(s)" and the arrow/enter hints — the web's popup footer. */
+@Composable
+private fun SearchSelectFooter(count: Int) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = MENU_PADDING_H, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        val countKey = if (count == 1) {
+            S.desktop_search_select_option_count_one
+        } else {
+            S.desktop_search_select_option_count_other
+        }
+        ZillitText(
+            text = str(countKey, count),
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textMuted,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Kbd("↑↓")
+            HintText(str(S.drive_cd_navigate))
+            Kbd("↵")
+            HintText(str(S.select))
+        }
+    }
+}
+
+@Composable
+private fun Kbd(text: String) {
+    val colors = ZillitTheme.colors
+    Box(
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.small)
+            .background(colors.surfaceSunken)
+            .border(HAIRLINE, colors.border, ZillitTheme.shapes.small)
+            .padding(horizontal = ZillitTheme.spacing.xs),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitText(text = text, style = ZillitTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
+    }
+}
+
+@Composable
+private fun HintText(text: String) {
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.labelSmall,
+        color = ZillitTheme.colors.textMuted,
+        maxLines = 1,
+    )
 }
 
 private val FIELD_HEIGHT = 36.dp
 private val MIN_WIDTH = 170.dp
 private val ICON_SIZE = 16.dp
 private val HAIRLINE = 1.dp
-private val MENU_RADIUS = 8.dp
+private val MENU_RADIUS = 14.dp
+private val MENU_ELEVATION = 8.dp
+private val MENU_PADDING_H = 14.dp
+private val SELECTED_BAR = 3.dp
 
 /** A long list is searched, not scrolled; this keeps the popup a sane height. */
 private const val MAX_SHOWN = 200

@@ -131,6 +131,9 @@ data class PoTaxType(
     val recoverable: Boolean = false,
 )
 
+/** One row of the ISD list — the delivery address's country and phone-code pickers share it. */
+data class PoCountry(val name: String, val dialCode: String, val isoCode: String)
+
 /** Everything the host lends the purchase-order tool from the account hub's settings. */
 interface PoProjectSettings {
     suspend fun companies(): List<PoCompany> = emptyList()
@@ -141,4 +144,7 @@ interface PoProjectSettings {
 
     /** Currencies the production trades in, most-used first; the default leads. */
     suspend fun currencies(): List<String> = emptyList()
+
+    /** The ISD list backing the delivery address's Country and phone code-fields. */
+    suspend fun countries(): List<PoCountry> = emptyList()
 }

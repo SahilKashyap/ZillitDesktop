@@ -158,6 +158,7 @@ class PurchaseOrderViewModel(
         launch { loadVendors() }
         launch { loadTeam() }
         launch { loadProjectSettings() }
+        launch { loadNominals() }
         launch { loadPoSettings() }
         loadWorkflow()
         launch { formActions.restoreDraft() }
@@ -599,11 +600,21 @@ class PurchaseOrderViewModel(
         runCatching { settings.companies() }.getOrNull()?.let { rows -> setState { copy(companies = rows) } }
         runCatching { settings.taxTypes() }.getOrNull()?.let { rows -> setState { copy(taxTypes = rows) } }
         runCatching { settings.currencies() }.getOrNull()?.let { rows -> setState { copy(currencies = rows) } }
+        runCatching { settings.countries() }.getOrNull()?.let { rows -> setState { copy(countries = rows) } }
         // The hub's departments where the roster gave none — the form needs a
         // picker whether or not this viewer is on the accounts team.
         if (currentState.departments.isEmpty()) {
             runCatching { settings.departments() }.getOrNull()?.let { rows -> setState { copy(departments = rows) } }
         }
+    }
+
+    /**
+     * The chart's postable leaves, for the New PO form's Nominal Code field —
+     * the same fetch Settings' Approval Rules already loads, now also loaded
+     * eagerly so the form has it too, not just Settings.
+     */
+    private suspend fun loadNominals() {
+        repository.nominalCodes().getOrNull()?.let { rows -> setState { copy(nominals = rows) } }
     }
 
     /**

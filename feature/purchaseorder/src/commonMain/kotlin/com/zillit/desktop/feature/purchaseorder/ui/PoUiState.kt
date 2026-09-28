@@ -15,10 +15,12 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoCurrencyRates
 import com.zillit.desktop.feature.purchaseorder.domain.PoPeriodLock
 import com.zillit.desktop.feature.purchaseorder.domain.PoQueryThread
 import com.zillit.desktop.feature.purchaseorder.domain.PoCompany
+import com.zillit.desktop.feature.purchaseorder.domain.PoCountry
 import com.zillit.desktop.feature.purchaseorder.domain.PoDeliveryAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoDepartment
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
+import com.zillit.desktop.feature.purchaseorder.domain.PoNominal
 import com.zillit.desktop.feature.purchaseorder.domain.PoQuickFilter
 import com.zillit.desktop.feature.purchaseorder.domain.PoSettings
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortColumn
@@ -54,6 +56,10 @@ data class PoUiState(
     val companies: List<PoCompany> = emptyList(),
     val taxTypes: List<PoTaxType> = emptyList(),
     val currencies: List<String> = emptyList(),
+    /** The ISD list — the delivery address's Country and phone-code pickers. */
+    val countries: List<PoCountry> = emptyList(),
+    /** The chart's postable leaves — the form's Nominal Code typeahead. */
+    val nominals: List<PoNominal> = emptyList(),
     /** The accounts team — who a reassignment may hand an order to. */
     val team: List<PoTeamMember> = emptyList(),
     /** Everyone on the production, for turning a stored id into a name. */

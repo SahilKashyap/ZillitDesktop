@@ -167,6 +167,8 @@
     <string name="desktop_workspace_maximize_or_restore_window">Maximize or restore %1$s</string>
     <string name="desktop_multiselect_option_count_one">%1$d option · %2$d selected</string>
     <string name="desktop_multiselect_option_count_other">%1$d options · %2$d selected</string>
+    <string name="desktop_search_select_option_count_one">%1$d option</string>
+    <string name="desktop_search_select_option_count_other">%1$d options</string>
     <string name="desktop_notifications_blocked">Zillit is not allowed to show notifications on this computer.</string>
     <string name="desktop_open_notification_settings">Open Notification Settings</string>
     <string name="desktop_notifications_blocked_body">Calls, messages and notices arrive silently while the window is behind something else. Turn on Allow Notifications for Zillit in System Settings, then come back.</string>

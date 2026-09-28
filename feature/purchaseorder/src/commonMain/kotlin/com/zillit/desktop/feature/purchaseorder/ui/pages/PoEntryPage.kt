@@ -26,6 +26,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
+import com.zillit.desktop.core.designsystem.component.ZillitSearchSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
@@ -300,29 +301,32 @@ private fun HeaderCard(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent)
     ZillitSectionCard(title = str(S.desktop_header), icon = ZillitIcons.File) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             LabelledSelect(str(S.ah_lbl_vendor), Modifier.weight(1f)) {
-                ZillitSelect(
+                ZillitSearchSelect(
                     value = entry.vendorId,
-                    options = listOf(null) + state.vendors.map { it.id },
+                    options = state.vendors.map { it.id },
                     onSelect = { set(entry.copy(vendorId = it)) },
-                    label = { id -> id?.let { key -> state.vendors.firstOrNull { it.id == key }?.name } ?: "—" },
+                    label = { id -> state.vendors.firstOrNull { it.id == id }?.name ?: id },
+                    placeholder = "—",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             LabelledSelect(str(S.company), Modifier.weight(1f)) {
-                ZillitSelect(
+                ZillitSearchSelect(
                     value = entry.companyId,
-                    options = listOf(null) + state.companies.map { it.id },
+                    options = state.companies.map { it.id },
                     onSelect = { set(entry.copy(companyId = it)) },
-                    label = { id -> id?.let { key -> state.companies.firstOrNull { it.id == key }?.name } ?: "—" },
+                    label = { id -> state.companies.firstOrNull { it.id == id }?.name ?: id },
+                    placeholder = "—",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             LabelledSelect(str(S.department), Modifier.weight(1f)) {
-                ZillitSelect(
+                ZillitSearchSelect(
                     value = entry.departmentId,
-                    options = listOf(null) + state.departments.map { it.id },
+                    options = state.departments.map { it.id },
                     onSelect = { set(entry.copy(departmentId = it)) },
-                    label = { id -> id?.let { state.departmentName(it) }?.ifBlank { null } ?: "—" },
+                    label = { id -> state.departmentName(id).ifBlank { id } },
+                    placeholder = "—",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -351,13 +355,20 @@ private fun HeaderCard(state: PoUiState, entry: PoEntryState, onEvent: (PoEvent)
                 label = str(S.delivery_date),
                 modifier = Modifier.width(DATE_FIELD),
             )
-            ZillitTextField(
-                value = entry.nominalCode,
-                onValueChange = { set(entry.copy(nominalCode = it)) },
-                label = str(S.ah_lbl_nominal_code),
-                placeholder = str(S.desktop_po_search_or_enter_code),
-                modifier = Modifier.weight(1f),
-            )
+            LabelledSelect(str(S.ah_lbl_nominal_code), Modifier.weight(1f)) {
+                val nominalOptions = (
+                    state.nominals.map { it.code } + listOfNotNull(entry.nominalCode.takeIf { it.isNotBlank() })
+                    ).distinct()
+                ZillitSearchSelect(
+                    value = entry.nominalCode.takeIf { it.isNotBlank() },
+                    options = nominalOptions,
+                    onSelect = { set(entry.copy(nominalCode = it)) },
+                    label = { code -> state.nominals.firstOrNull { it.code == code }?.label ?: code },
+                    onCreate = { typed -> set(entry.copy(nominalCode = typed)) },
+                    placeholder = str(S.desktop_po_search_or_enter_code),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
