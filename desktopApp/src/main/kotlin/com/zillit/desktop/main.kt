@@ -1602,10 +1602,10 @@ private fun ZillitContent(
 
 /**
  * The frame around a signed-in session: rail, tabs, status bar, calls, and
- * the sync queue's dialog. Split from [ZillitContent] so the auth branches
+ * the sync failure toast. Split from [ZillitContent] so the auth branches
  * and the shell branch each read on their own.
  */
-@Suppress("LongMethod") // The signed-in frame, read top to bottom: rail, tabs, status bar, calls, sync dialog.
+@Suppress("LongMethod") // The signed-in frame, read top to bottom: rail, tabs, status bar, calls, sync toast.
 @Composable
 private fun SignedInShell(
     ready: AppGraph.Ready,
@@ -1625,7 +1625,6 @@ private fun SignedInShell(
     val socketState by ready.socketEvents.connectionState.collectAsState()
     val scope = rememberCoroutineScope()
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
-    var pendingChangesOpen by remember { mutableStateOf(false) }
     val updateStatus = rememberUpdateStatus(ready)
     // The open production's deletion deadline, as the socket last left it.
     val projectDeletionDueAt = ready.projectContext?.context?.collectAsState()?.value?.deletionDueAtMillis
@@ -1672,7 +1671,6 @@ private fun SignedInShell(
         // context is re-read on `project:(un)marked:for:deletion`.
         deletionDueAtMillis = projectDeletionDueAt,
         statusText = statusText(socketState, syncStatus),
-        statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
         updateNotice = currentUpdateNotice(ready, updateStatus, onQuit),
         // The guarded launcher — https only, as the auth links use.
         onDownloadUpdate = ::openInBrowser,
@@ -1722,14 +1720,7 @@ private fun SignedInShell(
         // flow, hosted once here because no tool window can float a dialog
         // over the frame or reach the chat socket.
         RightsRequestSurface(ready, ready.rightsRequests)
-        ready.syncEngine?.let { engine ->
-            PendingChangesDialog(
-                engine = engine,
-                connectivity = ready.connectivity,
-                visible = pendingChangesOpen,
-                onDismiss = { pendingChangesOpen = false },
-            )
-        }
+        ready.syncEngine?.let { engine -> SyncFailureToast(engine) }
     }
 }
 
