@@ -23,6 +23,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.strings.S
@@ -134,6 +135,29 @@ private fun Person(
  * here is to read them and press Approve; the pickers exist for when one of
  * them is wrong.
  */
+/**
+ * Only the profile-change queue asks for this: a join request has no name form
+ * on the web either, because there is nothing yet to correct a typo in — the
+ * person is not on the crew list until this approval seats them.
+ */
+@Composable
+private fun NameFields(review: ReviewState, onEvent: (ApprovalsEvent) -> Unit) {
+    Field(label = str(S.first_name_label)) {
+        ZillitTextField(
+            value = review.firstName,
+            onValueChange = { onEvent(ApprovalsEvent.Review.FirstNameChanged(it)) },
+            modifier = Modifier.width(FIELD_WIDTH),
+        )
+    }
+    Field(label = str(S.last_name_label)) {
+        ZillitTextField(
+            value = review.lastName,
+            onValueChange = { onEvent(ApprovalsEvent.Review.LastNameChanged(it)) },
+            modifier = Modifier.width(FIELD_WIDTH),
+        )
+    }
+}
+
 @Composable
 private fun Placement(
     review: ReviewState,
@@ -148,6 +172,8 @@ private fun Placement(
     val units = presets.units.includingUnit(review.unitId, review.request.unitName)
 
     if (presets.isLoading) ReadingChoices()
+
+    if (review.queue == ApprovalQueue.ProfileChanges) NameFields(review, onEvent)
 
     Field(label = str(S.department)) {
         ZillitSelect(

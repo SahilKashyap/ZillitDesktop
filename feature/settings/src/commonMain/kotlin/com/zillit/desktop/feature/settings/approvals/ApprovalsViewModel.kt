@@ -84,6 +84,13 @@ data class ReviewState(
     val roleId: String?,
     val unitId: String?,
     val keepNamePrivate: Boolean,
+    /**
+     * Editable only on [ApprovalQueue.ProfileChanges] — the web lets an admin
+     * fix a typo in the name being requested while approving it, but a join
+     * request carries no such form.
+     */
+    val firstName: String = "",
+    val lastName: String = "",
     /** Why the form will not submit yet. */
     val error: String? = null,
 ) {
@@ -106,6 +113,8 @@ data class ReviewState(
         unitName = presets.unit(unitId)?.name
             ?: request.unitName.takeIf { unitId == request.unitId },
         keepNamePrivate = keepNamePrivate,
+        firstName = if (queue == ApprovalQueue.ProfileChanges) firstName.trim() else request.firstName,
+        lastName = if (queue == ApprovalQueue.ProfileChanges) lastName.trim() else request.lastName,
     )
 
     companion object {
@@ -117,6 +126,8 @@ data class ReviewState(
             roleId = request.designationId,
             unitId = request.unitId,
             keepNamePrivate = request.keepNamePrivate,
+            firstName = request.firstName.orEmpty(),
+            lastName = request.lastName.orEmpty(),
         )
     }
 }
@@ -182,6 +193,10 @@ sealed interface ApprovalsEvent {
         data class RoleChosen(val id: String?) : Review
         data class UnitChosen(val id: String?) : Review
         data class PrivacyChanged(val on: Boolean) : Review
+
+        /** Only reachable on the profile-change queue — see [ReviewState.firstName]. */
+        data class FirstNameChanged(val value: String) : Review
+        data class LastNameChanged(val value: String) : Review
 
         /** Approves with whatever the form now says, not what was asked for. */
         data object Approve : Review
@@ -347,6 +362,12 @@ class ApprovalsViewModel(
             is ApprovalsEvent.Review.PrivacyChanged ->
                 setState { copy(review = review?.copy(keepNamePrivate = event.on)) }
 
+            is ApprovalsEvent.Review.FirstNameChanged ->
+                setState { copy(review = review?.copy(firstName = event.value, error = null)) }
+
+            is ApprovalsEvent.Review.LastNameChanged ->
+                setState { copy(review = review?.copy(lastName = event.value, error = null)) }
+
             ApprovalsEvent.Review.Approve -> approveReviewed()
 
             ApprovalsEvent.Review.Decline -> currentState.review?.let { review ->
@@ -411,6 +432,14 @@ class ApprovalsViewModel(
         val presets = currentState.presets
         val department = presets.department(review.departmentId)
 
+        if (review.queue == ApprovalQueue.ProfileChanges) {
+            val nameError = nameError(review.firstName, review.lastName)
+            if (nameError != null) {
+                setState { copy(review = review.copy(error = nameError)) }
+                return
+            }
+        }
+
         // The one rule the phone clients enforce: a department with roles in it
         // must have one chosen, or the person lands on the crew list with a
         // department and no job.
@@ -420,6 +449,20 @@ class ApprovalsViewModel(
         }
 
         decide(review.queue, review.applyTo(presets), approved = true)
+    }
+
+    /**
+     * The web's own rule for a profile-change approval: both names required,
+     * 3–15 characters. Checked here rather than left to the server, because the
+     * server's `first_name_is_required` on a 200 with `status: 0` would surface
+     * as a generic failure banner instead of pointing at the field.
+     */
+    private fun nameError(firstName: String, lastName: String): String? = when {
+        firstName.trim().isEmpty() -> str(S.first_name_cannot_be_empty)
+        firstName.trim().length !in NAME_LENGTH -> str(S.first_name_validate)
+        lastName.trim().isEmpty() -> str(S.last_name_cannot_be_empty)
+        lastName.trim().length !in NAME_LENGTH -> str(S.last_name_validate)
+        else -> null
     }
 
     private fun find(queue: ApprovalQueue, id: String): PendingApproval? =
@@ -569,3 +612,6 @@ class ApprovalsViewModel(
         }
     }
 }
+
+/** The web's own bound on a profile-change name — see [ApprovalsViewModel.nameError]. */
+private val NAME_LENGTH = 3..15

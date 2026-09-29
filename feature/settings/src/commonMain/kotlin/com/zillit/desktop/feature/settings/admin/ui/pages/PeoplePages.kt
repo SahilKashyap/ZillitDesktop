@@ -33,10 +33,13 @@ import com.zillit.desktop.feature.settings.admin.domain.CrewMember
 import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.ToolRights
+import com.zillit.desktop.feature.settings.admin.domain.isEditable
+import com.zillit.desktop.feature.settings.admin.domain.shownAs
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminEvent
 import com.zillit.desktop.feature.settings.admin.ui.AdminUiState
+import com.zillit.desktop.feature.settings.admin.ui.RightsCell
 import com.zillit.desktop.feature.settings.admin.ui.RightsToggle
 
 /**
@@ -217,17 +220,10 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
         return
     }
 
-    if (person.isAdmin) {
-        // An admin passes every check by definition. Saying so beats a page of
-        // ticked boxes that spring back — their access is changed by taking
-        // their admin rights away, not here.
-        RowCard(modifier) {
-            EmptyRow(str(S.desktop_admin_reaches_everything, person.fullName))
-        }
-        return
-    }
-
-    if (state.selection.isLoadingRights) {
+    // Only on the first read. A re-read after a write leaves the page where it
+    // is: taking it away to say "Reading access" loses the admin's place in a
+    // long list to tell them something they can already see.
+    if (state.selection.isLoadingRights && state.selection.rights.isEmpty()) {
         RowCard(modifier) { EmptyRow(str(S.desktop_reading_access, person.fullName)) }
         return
     }
@@ -238,6 +234,17 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
+        // An administrator passes every check already, so the boxes are theirs
+        // to read and not to move — bar one. The web shows the same grid
+        // disabled rather than a sentence in its place (`AccessGrid.jsx:150`),
+        // and excepts transportation posting, which is still an admin's to be
+        // given (`:185`) and has no other door.
+        if (person.isAdmin) {
+            item(key = "admin-notice") {
+                RowCard { EmptyRow(str(S.desktop_admin_reaches_everything, person.fullName)) }
+            }
+        }
+
         RightsSection.entries.forEach { section ->
             val tools = state.rights(section)
             if (tools.isEmpty()) return@forEach
@@ -249,7 +256,13 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
                 RowCard {
                     tools.forEachIndexed { index, rights ->
                         if (index > 0) RowRule()
-                        RightsRow(rights, onEvent)
+                        RightsRow(
+                            rights = rights,
+                            among = tools,
+                            isAdmin = person.isAdmin,
+                            saving = state.selection.savingRights,
+                            onEvent = onEvent,
+                        )
                     }
                 }
             }
@@ -262,7 +275,13 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
 }
 
 @Composable
-private fun RightsRow(rights: ToolRights, onEvent: (AdminEvent) -> Unit) {
+private fun RightsRow(
+    rights: ToolRights,
+    among: List<ToolRights>,
+    isAdmin: Boolean,
+    saving: Set<RightsCell>,
+    onEvent: (AdminEvent) -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -275,8 +294,11 @@ private fun RightsRow(rights: ToolRights, onEvent: (AdminEvent) -> Unit) {
             maxLines = 1,
         )
         AccessType.entries.forEach { access ->
+            val cell = RightsCell(rights.toolIdentifier, rights.section, access)
             ZillitCheckbox(
-                checked = rights.granted(access),
+                // Not always this row's own flag: a department budget's rights
+                // are held through the main budget — see [shownAs].
+                checked = rights.shownAs(access, among),
                 onCheckedChange = { on ->
                     onEvent(
                         AdminEvent.RightsToggled(
@@ -286,8 +308,9 @@ private fun RightsRow(rights: ToolRights, onEvent: (AdminEvent) -> Unit) {
                 },
                 label = access.label,
                 // The server says which of these are not this admin's to
-                // change. Disabled rather than springing back after the call.
-                enabled = !rights.locked(access),
+                // change, and some columns are nobody's — see [isEditable].
+                // Disabled rather than springing back after the call.
+                enabled = rights.isEditable(access, isAdmin) && cell !in saving,
             )
         }
     }

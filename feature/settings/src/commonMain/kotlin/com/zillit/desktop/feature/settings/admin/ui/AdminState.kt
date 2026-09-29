@@ -119,6 +119,15 @@ data class AdminSelection(
     val rights: List<ToolRights> = emptyList(),
     val isLoadingRights: Boolean = false,
     /**
+     * The boxes with a write in flight.
+     *
+     * Per box rather than one flag for the row or the page: the web made the
+     * same move deliberately (`AccessGrid.jsx:543-546`) because a single flag
+     * greyed View, Post and Download together on every click. Only the box
+     * being written needs the double-click guard.
+     */
+    val savingRights: Set<RightsCell> = emptySet(),
+    /**
      * The order being arranged, before it is saved.
      *
      * Local until Save, matching all three clients: reordering is a series of
@@ -318,6 +327,16 @@ data class RightsToggle(
     val section: RightsSection,
     val access: AccessType,
     val enable: Boolean,
+) {
+    /** Which box this moved, whichever way it moved it. */
+    val cell: RightsCell get() = RightsCell(toolIdentifier, section, access)
+}
+
+/** One box on the grid: a tool, in a section, and one of the three rights. */
+data class RightsCell(
+    val toolIdentifier: String,
+    val section: RightsSection,
+    val access: AccessType,
 )
 
 /** A row of the company form's repeatable field list. */

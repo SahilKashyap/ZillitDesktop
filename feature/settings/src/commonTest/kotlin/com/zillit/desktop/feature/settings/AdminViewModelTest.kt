@@ -423,13 +423,16 @@ class AdminViewModelTest {
     }
 
     /**
-     * One click, three calls, then a re-read.
+     * One click, one call, then a re-read.
      *
-     * Revoking view has to take posting and downloading with it, and the server
-     * does none of that.
+     * The server cascades view/post/download itself (`ZL-17812` on the web —
+     * see [com.zillit.desktop.feature.settings.admin.domain.RightsChange]'s
+     * doc); this client no longer chains extra calls by hand, so revoking view
+     * sends only the view change and relies on the re-read to show whatever the
+     * server did to posting and downloading.
      */
     @Test
-    fun `revoking view sends the whole cascade and re-reads`() = runTest {
+    fun `revoking view sends a single change and re-reads`() = runTest {
         val repository = Recorder()
         val model = viewModel(repository)
 
@@ -446,11 +449,123 @@ class AdminViewModelTest {
         )
         advanceUntilIdle()
 
-        assertEquals(
-            listOf(AccessType.Download, AccessType.Post, AccessType.View),
-            repository.rightsChanges.map { it.access },
-        )
+        assertEquals(listOf(AccessType.View), repository.rightsChanges.map { it.access })
+        assertEquals(false, repository.rightsChanges.single().enable)
         assertEquals("rights:u1", repository.calls.last())
+    }
+
+    /**
+     * The box moves on the click, not on the answer.
+     *
+     * This used to write and then re-read the whole person, which emptied the
+     * panel to a "Reading access" line and rebuilt it scrolled to the top — one
+     * click appeared to do nothing except throw the page away.
+     */
+    @Test
+    fun `a toggle paints at once and keeps the panel`() = runTest {
+        val repository = Recorder()
+        repository.mutationAnswer = ZillitResult.Success(Unit)
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+
+        model.onEvent(
+            AdminEvent.RightsToggled(
+                RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false),
+            ),
+        )
+
+        // Before the call has answered: the box has moved and the list is still there.
+        val mid = model.state.value.selection
+        assertFalse(mid.rights.single().canView)
+        assertEquals(1, mid.rights.size)
+        assertFalse(mid.isLoadingRights)
+
+        advanceUntilIdle()
+    }
+
+    /** A refusal puts the box back where the admin left it. */
+    @Test
+    fun `a refused toggle rolls the box back`() = runTest {
+        val repository = Recorder()
+        repository.mutationAnswer = ZillitResult.Failure(ZillitError.Validation("Not yours to change."))
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+
+        model.onEvent(
+            AdminEvent.RightsToggled(
+                RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.selection.rights.single().canView)
+        assertNotNull(model.state.value.error)
+    }
+
+    /** One box at a time, not one page at a time. */
+    @Test
+    fun `a second click on the same box while it is in flight is ignored`() = runTest {
+        val repository = Recorder()
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+        repository.rightsChanges.clear()
+
+        val toggle = RightsToggle("budget_tool", RightsSection.Tools, AccessType.View, enable = false)
+        model.onEvent(AdminEvent.RightsToggled(toggle))
+        model.onEvent(AdminEvent.RightsToggled(toggle))
+        advanceUntilIdle()
+
+        assertEquals(1, repository.rightsChanges.size)
+    }
+
+    /**
+     * `ZL-16376` costs no second call: the cascade is the server's, and this
+     * client only moves the tick to where the next read will confirm it. The
+     * rule itself is asserted in `RightsGridDisplayTest`, where it is a pure
+     * function rather than a race against the read that follows.
+     */
+    @Test
+    fun `granting a deal memo's viewing sends one call, not two`() = runTest {
+        val repository = Recorder()
+        repository.rightsAnswer = ZillitResult.Success(
+            listOf(
+                ToolRights(
+                    toolIdentifier = "deal_memo_label",
+                    toolName = "deal_memo_label",
+                    unitId = "unit-1",
+                    section = RightsSection.Tools,
+                ),
+            ),
+        )
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+        repository.rightsChanges.clear()
+
+        model.onEvent(
+            AdminEvent.RightsToggled(
+                RightsToggle("deal_memo_label", RightsSection.Tools, AccessType.View, enable = true),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, repository.rightsChanges.size)
+        assertEquals(AccessType.View, repository.rightsChanges.single().access)
     }
 
     /** A right the server says is not ours to change is not sent. */
@@ -690,6 +805,94 @@ class AdminViewModelTest {
         advanceUntilIdle()
 
         assertTrue(repository.calls.contains("cancelDeletion"))
+    }
+
+    /**
+     * The page opened offering the three delays however the production stood,
+     * so an admin who had already scheduled a deletion — before this app was
+     * started, or from another device — saw no sign of it and nothing to call
+     * it off with. It read exactly as though the deletion had never happened.
+     */
+    @Test
+    fun `the page opens knowing a deletion is already counting down`() = runTest {
+        val model = AdminViewModel(
+            Recorder(),
+            productionName = { "Feature One" },
+            markedForDeletion = { true },
+        )
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.DeleteProduction))
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.deletion.isScheduled)
+    }
+
+    /** Read on every visit: the answer can change while the admin is elsewhere. */
+    @Test
+    fun `revisiting the page reads the schedule again`() = runTest {
+        var scheduled = false
+        val model = AdminViewModel(
+            Recorder(),
+            productionName = { "Feature One" },
+            markedForDeletion = { scheduled },
+        )
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.DeleteProduction))
+        advanceUntilIdle()
+        assertFalse(model.state.value.deletion.isScheduled)
+
+        scheduled = true
+        model.onEvent(AdminEvent.Opened(AdminDestination.Crew))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.Opened(AdminDestination.DeleteProduction))
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.deletion.isScheduled)
+    }
+
+    /**
+     * The schedule this screen just set outlives the reload that follows it.
+     *
+     * `mutate` reloads the page on success, and the production snapshot behind
+     * `markedForDeletion` is read when the production is opened — so it still
+     * says "no deletion" for a moment after one is scheduled. Re-seeding from
+     * it there would blank the notice the admin just earned.
+     */
+    @Test
+    fun `scheduling survives the reload that follows it`() = runTest {
+        val model = AdminViewModel(
+            Recorder(),
+            productionName = { "Feature One" },
+            markedForDeletion = { false },
+        )
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.DeleteProduction))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.Ask(AdminConfirmation.DeleteProduction(24, "Feature One")))
+        model.onEvent(AdminEvent.ConfirmAction)
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.deletion.isScheduled)
+        assertEquals(24, model.state.value.deletion.hours)
+    }
+
+    /** The notice and its button used to survive the call that called it off. */
+    @Test
+    fun `calling off a deletion clears the notice`() = runTest {
+        val model = AdminViewModel(
+            Recorder(),
+            productionName = { "Feature One" },
+            markedForDeletion = { true },
+        )
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.DeleteProduction))
+        advanceUntilIdle()
+        assertTrue(model.state.value.deletion.isScheduled)
+
+        model.onEvent(AdminEvent.CancelDeletion)
+        advanceUntilIdle()
+
+        assertFalse(model.state.value.deletion.isScheduled)
     }
     /**
      * Every write on this surface rewrites the production's own rights —

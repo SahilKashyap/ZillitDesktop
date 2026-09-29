@@ -453,6 +453,71 @@ data class ToolRights(
         AccessType.Post -> copy(canPost = on)
         AccessType.Download -> copy(canDownload = on)
     }
+
+    /** True when this row is [name], however the route spelled it. */
+    fun isTool(name: String): Boolean {
+        val wanted = name.toolKey()
+        return toolName.toolKey().equals(wanted, ignoreCase = true) ||
+            toolIdentifier.toolKey().equals(wanted, ignoreCase = true)
+    }
+}
+
+/**
+ * The same tool is `x_label` on one route and `x_tool` on another, and the
+ * columns come from the server rather than from here — so the suffix is
+ * stripped before comparing rather than a spelling being guessed at.
+ */
+private fun String.toolKey(): String = removeSuffix("_label").removeSuffix("_tool")
+
+/** Account Hub access follows the person's department and role, not this grid. */
+const val ACCOUNT_HUB_TOOL = "account_hub"
+
+/** A department budget's rights are derived from the main budget's. */
+const val MAIN_BUDGET_TOOL = "main_budget_label"
+const val DEPARTMENT_BUDGET_TOOL = "department_budget_label"
+
+/** The one tool an administrator can still be given posting rights on. */
+const val TRANSPORTATION_TOOL = "transportation_label"
+
+/** Granting this one's viewing grants downloading with it. */
+const val DEAL_MEMO_TOOL = "deal_memo_label"
+
+/**
+ * What the box shows, which is not always what this row carries.
+ *
+ * A department budget's right is granted through the **main** budget, and the
+ * server's own row for it can still say false — the cascade may not have
+ * propagated, the data may predate the backend doing it at all, or the server
+ * may have refused the direct write because it is not the department's to
+ * take. Drawing the raw row leaves the box disabled *and* empty, which reads
+ * as "no rights" when the right is in fact held (`AccessGrid.jsx:109-138`).
+ */
+fun ToolRights.shownAs(access: AccessType, among: List<ToolRights>): Boolean {
+    if (!isTool(DEPARTMENT_BUDGET_TOOL)) return granted(access)
+    val main = among.firstOrNull { it.isTool(MAIN_BUDGET_TOOL) } ?: return granted(access)
+    val throughMain = when (access) {
+        AccessType.View -> main.canView
+        // Posting through the main budget means *full* access to it.
+        AccessType.Post -> main.canPost && main.canView
+        AccessType.Download -> main.canDownload
+    }
+    return throughMain || granted(access)
+}
+
+/**
+ * Whether this admin may move the box at all.
+ *
+ * Three reasons it is fixed, in the web's own order (`AccessGrid.jsx:143-230`):
+ * the Account Hub column is never configurable here (`ZL-20803` — its access
+ * comes from the department and designation, so a switch could only ever
+ * disagree with the tool the person actually sees); an administrator already
+ * passes every check, except that transportation posting is still theirs to be
+ * given; and the server's own `*_updatable` flags have the final say.
+ */
+fun ToolRights.isEditable(access: AccessType, isAdmin: Boolean): Boolean {
+    if (isTool(ACCOUNT_HUB_TOOL)) return false
+    if (isAdmin && !(access == AccessType.Post && isTool(TRANSPORTATION_TOOL))) return false
+    return !locked(access)
 }
 
 /** The three rights a grid cell can grant. `access_type` on the wire. */
@@ -470,8 +535,19 @@ enum class AccessType(val wire: String, private val labelKey: String) {
  *
  * Carried as a value rather than five loose parameters because the page applies
  * it to its own state *and* sends it, and the two must not be able to disagree
- * about which right moved. [cascadeFrom] builds the follow-up changes the
- * server does not make for you.
+ * about which right moved.
+ *
+ * One of these is the whole consequence of a click, not just its own field.
+ * The three rights are not independent — **downloading implies viewing**, and
+ * taking viewing away has to take posting and downloading with it — and
+ * Android still chains three calls by hand from each success handler. The web
+ * tried that here too (`ZL-17812`) and removed it: the extra client-side
+ * POSTs raced the backend's own `access-grid:*-rights:update:sync` broadcast
+ * of the cascade it already performs for the *same* call, producing a
+ * "revoked right comes back" flicker. This client sends exactly one
+ * [RightsChange] per toggle and trusts the server's cascade plus the
+ * `*Updatable` lock flags it sends back (see [ToolRights.locked]) to keep a
+ * dependent right from being edited directly.
  */
 data class RightsChange(
     val userId: String,
@@ -480,38 +556,3 @@ data class RightsChange(
     val access: AccessType,
     val enable: Boolean,
 )
-
-/**
- * What one click really has to send.
- *
- * The three rights are not independent in one direction: **downloading implies
- * viewing**, and taking viewing away has to take posting and downloading with
- * it. The server does not do this — Android chains the calls by hand from each
- * success handler, and a failure part-way leaves the production with a right
- * nobody asked for.
- *
- * Computed up front instead, as an ordered list, so the whole consequence of a
- * click is one value the page can send, retry, and reason about. The order is
- * the safe one: rights are **removed before** the one they depend on, and
- * **added after** it, so an interrupted run never leaves posting rights on a
- * tool the person cannot see.
- */
-fun RightsChange.cascadeFrom(current: ToolRights): List<RightsChange> = when {
-    access == AccessType.View && !enable -> listOfNotNull(
-        // Strip the dependants first: if this run stops after one call, the
-        // person has lost a right rather than kept an orphaned one.
-        takeIf { current.canDownload }?.copy(access = AccessType.Download, enable = false),
-        takeIf { current.canPost }?.copy(access = AccessType.Post, enable = false),
-        this,
-    )
-
-    // Downloading something you cannot see is not a state the server keeps, so
-    // granting it grants viewing too rather than silently doing nothing.
-    access == AccessType.Download && enable && !current.canView ->
-        listOf(copy(access = AccessType.View, enable = true), this)
-
-    access == AccessType.Post && enable && !current.canView ->
-        listOf(copy(access = AccessType.View, enable = true), this)
-
-    else -> listOf(this)
-}

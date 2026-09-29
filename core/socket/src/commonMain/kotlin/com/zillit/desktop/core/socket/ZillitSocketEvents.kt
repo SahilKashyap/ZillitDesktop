@@ -262,6 +262,26 @@ object ZillitSocketEvents {
         val DownloadRights = SocketEventName("access-grid:download-rights:update")
 
         val All = listOf(ViewingRights, PostingRights, DownloadRights)
+
+        /**
+         * The same three, told to whoever is *watching* the grid rather than to
+         * the person whose rights moved.
+         *
+         * A separate family on the wire (`listenerSocket.js:1301-1314`), and
+         * the one the rights page needs: the `:update` trio above says "your
+         * own access changed", which is why the tools grid listens to it. This
+         * one says "somebody's access changed", which is what a second
+         * coordinator's edit looks like to the admin watching the page.
+         *
+         * The server does not send these back to the device that made the
+         * change — it excepts the originating device from the broadcast — so
+         * this is only ever somebody else's work arriving.
+         */
+        val ViewingRightsSync = SocketEventName("access-grid:viewing-rights:update:sync")
+        val PostingRightsSync = SocketEventName("access-grid:posting-rights:update:sync")
+        val DownloadRightsSync = SocketEventName("access-grid:download-rights:update:sync")
+
+        val AllSync = listOf(ViewingRightsSync, PostingRightsSync, DownloadRightsSync)
     }
 
     /**

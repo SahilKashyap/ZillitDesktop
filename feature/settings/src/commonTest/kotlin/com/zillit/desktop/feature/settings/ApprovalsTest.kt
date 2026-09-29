@@ -400,7 +400,23 @@ class ApprovalsTest {
 
         assertEquals("req-9", body["request_id"]?.jsonPrimitive?.content)
         assertNull(body["user_id"])
-        assertEquals("Aisha Khan", body["full_name"]?.jsonPrimitive?.content)
+        // No `full_name` — the web never sends one on this endpoint, only
+        // `first_name`/`last_name`.
+        assertNull(body["full_name"])
+    }
+
+    @Test
+    fun `a profile change sends keep_name_private as a string`() {
+        // The one endpoint where the web sends this as text rather than a
+        // boolean — every other queue and route sends a real boolean.
+        val body = approvalBody(
+            ApprovalQueue.ProfileChanges,
+            request("req-9").copy(keepNamePrivate = true),
+            approved = true,
+            createsMailbox = true,
+        )
+
+        assertEquals("true", body["keep_name_private"]?.jsonPrimitive?.content)
     }
 
     // -- the review form ---------------------------------------------------
@@ -423,15 +439,16 @@ class ApprovalsTest {
     private fun TestScope.opened(
         repository: FakeRepository,
         loaded: ZillitResult<CrewPresets> = ZillitResult.Success(presets),
+        queue: ApprovalQueue = ApprovalQueue.NewCrew,
     ): ApprovalsViewModel {
         val approvals = ApprovalsViewModel(
             repository,
             presets = { loaded },
             nowMillis = { NOW },
         )
-        approvals.onEvent(ApprovalsEvent.Opened(ApprovalQueue.NewCrew))
+        approvals.onEvent(ApprovalsEvent.Opened(queue))
         advanceUntilIdle()
-        approvals.onEvent(ApprovalsEvent.Review.Open(ApprovalQueue.NewCrew, "a"))
+        approvals.onEvent(ApprovalsEvent.Review.Open(queue, "a"))
         advanceUntilIdle()
         return approvals
     }
@@ -510,6 +527,75 @@ class ApprovalsTest {
         assertEquals("role-2", sent.designationId)
         assertEquals("unit-2", sent.unitId)
         assertTrue(sent.keepNamePrivate)
+    }
+
+    @Test
+    fun `the review form seeds the editable name from the request`() = runTest {
+        val approvals = opened(
+            FakeRepository(ZillitResult.Success(listOf(request("a")))),
+            queue = ApprovalQueue.ProfileChanges,
+        )
+
+        assertEquals("Aisha", approvals.state.value.review?.firstName)
+        assertEquals("Khan", approvals.state.value.review?.lastName)
+    }
+
+    @Test
+    fun `a blank name will not approve a profile change`() = runTest {
+        val repository = FakeRepository(ZillitResult.Success(listOf(request("a"))))
+        val approvals = opened(repository, queue = ApprovalQueue.ProfileChanges)
+
+        approvals.onEvent(ApprovalsEvent.Review.FirstNameChanged(""))
+        approvals.onEvent(ApprovalsEvent.Review.Approve)
+        advanceUntilIdle()
+
+        assertTrue(repository.decided.isEmpty())
+        assertEquals("First Name cannot be empty", approvals.state.value.review?.error)
+    }
+
+    @Test
+    fun `a two-letter name will not approve a profile change`() = runTest {
+        val repository = FakeRepository(ZillitResult.Success(listOf(request("a"))))
+        val approvals = opened(repository, queue = ApprovalQueue.ProfileChanges)
+
+        approvals.onEvent(ApprovalsEvent.Review.LastNameChanged("Ko"))
+        approvals.onEvent(ApprovalsEvent.Review.Approve)
+        advanceUntilIdle()
+
+        assertTrue(repository.decided.isEmpty())
+        val expected = "Last Name should be of at least 3 characters or at most 15 characters."
+        assertEquals(expected, approvals.state.value.review?.error)
+    }
+
+    @Test
+    fun `approving a profile change sends the edited name, trimmed`() = runTest {
+        val repository = FakeRepository(ZillitResult.Success(listOf(request("a"))))
+        val approvals = opened(repository, queue = ApprovalQueue.ProfileChanges)
+
+        approvals.onEvent(ApprovalsEvent.Review.FirstNameChanged(" Aisha "))
+        approvals.onEvent(ApprovalsEvent.Review.LastNameChanged(" Khanna "))
+        approvals.onEvent(ApprovalsEvent.Review.Approve)
+        advanceUntilIdle()
+
+        val sent = repository.decided.single()
+        assertEquals("Aisha", sent.firstName)
+        assertEquals("Khanna", sent.lastName)
+    }
+
+    /**
+     * The web has no name form on this queue — a join request seats someone
+     * with the name they showed up with, not one an admin edits on the way in.
+     */
+    @Test
+    fun `a join request needs no name to approve`() = runTest {
+        val repository = FakeRepository(ZillitResult.Success(listOf(request("a"))))
+        val approvals = opened(repository, queue = ApprovalQueue.NewCrew)
+
+        approvals.onEvent(ApprovalsEvent.Review.FirstNameChanged(""))
+        approvals.onEvent(ApprovalsEvent.Review.Approve)
+        advanceUntilIdle()
+
+        assertEquals(listOf(Triple(ApprovalQueue.NewCrew, "a", true)), repository.decisions)
     }
 
     @Test

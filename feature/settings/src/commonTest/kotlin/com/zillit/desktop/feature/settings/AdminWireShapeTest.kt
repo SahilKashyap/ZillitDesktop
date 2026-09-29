@@ -190,10 +190,52 @@ class AdminWireShapeTest {
             assertTrue(row.canView)
             assertFalse(row.canPost)
             assertTrue(row.canDownload)
-            // An explicit false is what locks it.
+            // An explicit false is what locks viewing.
             assertTrue(row.viewLocked)
-            assertFalse(row.postLocked)
+            // Posting is the exception — see the test below.
+            assertTrue(row.postLocked)
         }
+    }
+
+    /**
+     * Posting locks on a missing flag; viewing and downloading do not.
+     *
+     * Not symmetry the wire earned, and not a reading to tidy up: the web's
+     * grid asks `viewingUpdatable === false` and `downloadUpdatable === false`
+     * but a bare `!postingUpdatable` (`AccessGrid.jsx:150,191,221`). Offering a
+     * posting box the server then refuses springs back on the next read.
+     */
+    @Test
+    fun `a missing updatable flag locks posting only`() {
+        val row = json.decodeFromString(
+            ToolAccessDto.serializer(),
+            """
+            {
+              "unit_id": "unit-9", "identifier": "budget_tool", "unit_name": "main_budget_label",
+              "view_access": true, "tool": true
+            }
+            """.trimIndent(),
+        ).toDomain().single()
+
+        assertTrue(row.postLocked)
+        assertFalse(row.viewLocked)
+        assertFalse(row.downloadLocked)
+    }
+
+    @Test
+    fun `an explicit posting flag is honoured both ways`() {
+        fun rowWith(posting: Boolean) = json.decodeFromString(
+            ToolAccessDto.serializer(),
+            """
+            {
+              "unit_id": "unit-9", "identifier": "budget_tool", "unit_name": "main_budget_label",
+              "posting_updatable": $posting, "tool": true
+            }
+            """.trimIndent(),
+        ).toDomain().single()
+
+        assertFalse(rowWith(true).postLocked)
+        assertTrue(rowWith(false).postLocked)
     }
 
     /** A row belonging to neither section has nowhere to render. */

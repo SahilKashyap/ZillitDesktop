@@ -3140,6 +3140,12 @@ private fun rememberAppViewModels(
                     productionName = {
                         graph.projectContext?.context?.value?.project?.name.orEmpty()
                     },
+                    // So the delete page opens knowing a deletion is already
+                    // counting down — after a restart, or when another admin
+                    // scheduled it.
+                    markedForDeletion = {
+                        graph.projectContext?.context?.value?.project?.markedForDeletion == true
+                    },
                     // The grid rereads at once; its own socket echo may not come.
                     onToolsChanged = { home?.onEvent(HomeEvent.Reload) },
                     // Crew, departments and the join queues move under a second

@@ -122,8 +122,9 @@ private fun profileChangeBody(request: PendingApproval, approved: Boolean): Json
         request.designationId?.let { put("designation_id", it) }
         request.firstName?.let { put("first_name", it) }
         request.lastName?.let { put("last_name", it) }
-        put("full_name", request.displayName)
-        put("keep_name_private", request.keepNamePrivate)
+        // A string here, not a boolean — the web's only inconsistent field.
+        // Every other queue and endpoint sends this one as a real boolean.
+        put("keep_name_private", request.keepNamePrivate.toString())
     }
 
 private const val YES = "yes"

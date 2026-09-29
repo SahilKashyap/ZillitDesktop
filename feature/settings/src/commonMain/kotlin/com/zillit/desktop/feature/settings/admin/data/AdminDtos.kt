@@ -427,11 +427,16 @@ internal data class ToolAccessDto(
                 canView = viewAccess == true,
                 canPost = postingAccess == true,
                 canDownload = downloadAccess == true,
-                // Only an explicit `false` locks a right. Treating absence as
-                // locked would grey out the whole page on any production whose
-                // server predates the flag.
+                // Viewing and downloading lock on an explicit `false` only:
+                // treating absence as locked would grey out the whole page on
+                // a production whose server predates the flag. **Posting locks
+                // on absence too**, which is not symmetry the wire earned —
+                // the web's grid reads `viewingUpdatable === false` and
+                // `downloadUpdatable === false` but a bare `!postingUpdatable`
+                // (`AccessGrid.jsx:150,191,221`), and a box this client offers
+                // that the server then refuses springs back on the next read.
                 viewLocked = viewingUpdatable == false,
-                postLocked = postingUpdatable == false,
+                postLocked = postingUpdatable != true,
                 downloadLocked = downloadUpdatable == false,
             )
         }

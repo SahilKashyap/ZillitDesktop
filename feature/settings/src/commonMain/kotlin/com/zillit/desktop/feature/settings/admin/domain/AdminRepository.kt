@@ -157,8 +157,8 @@ interface AdminRepository {
     /**
      * Applies one right.
      *
-     * One call per right. A single click can be more than one of these — see
-     * [cascadeFrom] — and the caller sends them in the order it gives.
+     * One call per click — see [RightsChange]'s doc for why this stopped being
+     * more than one.
      */
     suspend fun changeRights(change: RightsChange): ZillitResult<Unit>
 
