@@ -79,6 +79,12 @@ class ProjectContextLoader(
      * gracefully without the crew list, which follows with the refresh.
      */
     fun publishCached(projectId: String): Boolean {
+        // Re-reading the production already open keeps whatever deadline was
+        // last published: the refresh right behind this will correct it, and
+        // blanking it here made a rename flash the countdown off and on.
+        // A different production starts with none, which is right — nothing
+        // is known about it yet.
+        val carried = state.value.deletionDueAtMillis?.takeIf { currentProject == projectId }
         currentProject = projectId
         val cached = ProjectContext(
             profile = cache?.profile(projectId),
@@ -87,6 +93,7 @@ class ProjectContextLoader(
             // still holds whatever the server repeated.
             users = cache?.users(projectId).orEmpty().onePerUser(),
             isFromCache = true,
+            deletionDueAtMillis = carried,
         )
         state.value = cached
         return cached.profile != null && cached.project != null
@@ -135,7 +142,14 @@ class ProjectContextLoader(
         when (val result = fetch("${api}project/$projectId", ProjectDetailDto.serializer())) {
             is ZillitResult.Success -> result.data.toSnapshot(projectId).let { project ->
                 cache?.saveProject(project)
-                publishIfCurrent(projectId) { it.copy(project = project, isFromCache = false) }
+                // The deadline rides with this answer rather than the cache, and
+                // is republished every time the record is re-read — which is what
+                // a deletion called off elsewhere relies on to clear the shell's
+                // countdown without a project switch.
+                val dueAt = result.data.deletionDueAtMillis()
+                publishIfCurrent(projectId) {
+                    it.copy(project = project, isFromCache = false, deletionDueAtMillis = dueAt)
+                }
             }
             is ZillitResult.Failure -> warn("project details", result)
         }
@@ -224,6 +238,16 @@ data class ProjectContext(
     val users: List<UserSnapshot> = emptyList(),
     /** True while showing cached answers the network has not yet confirmed. */
     val isFromCache: Boolean = false,
+    /**
+     * When this production's scheduled deletion falls due, in epoch millis, or
+     * null when none is scheduled. The shell counts down to it.
+     *
+     * Here rather than on [project] because it is deliberately **not** cached:
+     * a deadline is only true at the moment it was read, and a stale one from
+     * a previous session would count down to an hour that has already passed.
+     * It arrives with the refresh, a moment after the cached context opens.
+     */
+    val deletionDueAtMillis: Long? = null,
 ) {
     fun user(userId: String?): UserSnapshot? =
         userId?.let { id -> users.firstOrNull { it.userId == id } }
@@ -333,6 +357,10 @@ internal data class ProjectDetailDto(
     @SerialName("parent_project_name") val parentProjectName: String? = null,
     /** A scheduled deletion, still counting down and still stoppable. */
     @SerialName("mark_deleted") val markDeleted: Boolean? = null,
+    /** Epoch millis the deletion was scheduled at; pairs with [deleteInHours]. */
+    @SerialName("mark_deleted_on") val markDeletedOn: Long? = null,
+    /** How long after [markDeletedOn] the production actually goes. */
+    @SerialName("delete_in_hours") val deleteInHours: Long? = null,
     /**
      * The production's working language. The web reads `language_code`
      * first (`commonUtils.js` `getProjectLanguage`) and its chat edit path
@@ -359,6 +387,21 @@ internal data class ProjectDetailDto(
         languageCode = (languageCode ?: projectLanguage)?.takeIf { it.isNotBlank() },
     )
 }
+
+/**
+ * When the scheduled deletion falls due, or null when nothing is scheduled or
+ * the server named no dates — the flag arrives on its own for a production
+ * marked before it began stamping them.
+ */
+internal fun ProjectDetailDto.deletionDueAtMillis(): Long? {
+    if (markDeleted != true) return null
+    val markedOn = markDeletedOn?.takeIf { it > 0 } ?: return null
+    val hours = deleteInHours?.takeIf { it > 0 } ?: return null
+    return markedOn + hours * MILLIS_PER_HOUR
+}
+
+/** `delete_in_hours` is in hours; the deadline is wanted in millis. */
+private const val MILLIS_PER_HOUR = 60L * 60L * 1000L
 
 /** A string value, or an object's parts joined (an address, `{country_code, number}`); null when there is none. */
 private fun plainText(element: JsonElement?): String? = when (element) {

@@ -508,6 +508,9 @@ private fun ProjectCardFooter(project: Project) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            // First of the row: a production on its way out is the one thing
+            // about it worth knowing before anything else.
+            if (project.isMarkedDeleted) ZillitTag(str(S.desktop_marked_delete), tone = TagTone.Danger)
             if (project.isAdmin) ZillitTag(str(S.admin), tone = TagTone.Accent)
             if (project.isPersonal) ZillitTag(str(S.personal), tone = TagTone.Info)
             if (project.isPending) ZillitTag(str(S.av_subtab_awaiting_approval), tone = TagTone.Warning)

@@ -113,6 +113,22 @@ class AppShellTest {
     }
 
     /**
+     * The phones' own format: `HH:MM:SS` with the hours left uncapped, so a
+     * three-day window reads 71:59:58 rather than folding into days and
+     * needing a unit beside it to be read right.
+     */
+    @Test
+    fun `the deletion countdown reads as the phones write it`() {
+        assertEquals("71:59:58", countdownText(71 * HOUR + 59 * MINUTE + 58 * SECOND))
+        assertEquals("00:00:09", countdownText(9 * SECOND))
+        // Uncapped: a long window is hours, not days.
+        assertEquals("720:00:00", countdownText(30 * 24 * HOUR))
+        // Past due, and a clock that went backwards, both read as nothing left.
+        assertEquals("00:00:00", countdownText(0))
+        assertEquals("00:00:00", countdownText(-5 * SECOND))
+    }
+
+    /**
      * Three bare glyphs in the corner told nobody what they did. Each control
      * says so in words, and the production's name is captioned so it cannot be
      * read as a label of its own.
@@ -403,6 +419,11 @@ class AppShellTest {
 
 /** Anything shorter than this is a crushed control, not a button. */
 private val MIN_DIALOG_BUTTON_HEIGHT = 24.dp
+
+/** Countdown units, in millis. */
+private const val SECOND = 1_000L
+private const val MINUTE = 60 * SECOND
+private const val HOUR = 60 * MINUTE
 
 /** The notification list, for a frame whose real one lives in another module. */
 private const val TEST_NOTIFICATIONS_PATH = "/notifications"

@@ -70,8 +70,19 @@ data class Project(
     val unreadCount: Int = 0,
     /** Epoch millis; null when the server omits it. */
     val createdOnMillis: Long? = null,
+    /**
+     * A coordinator has scheduled this production for deletion. It is still
+     * listed and still openable — an admin has to be able to get in and stop
+     * it, which is exactly what the phones allow.
+     */
+    val isMarkedDeleted: Boolean = false,
 ) {
-    /** Whether the production can be entered. */
+    /**
+     * Whether the production can be entered.
+     *
+     * A production marked for deletion still is: the admin who has to cancel
+     * the deletion can only do it from inside.
+     */
     val isOpenable: Boolean get() = !isPending
 
     /**

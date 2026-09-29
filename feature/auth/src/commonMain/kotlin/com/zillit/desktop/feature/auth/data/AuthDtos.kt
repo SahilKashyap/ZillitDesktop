@@ -124,17 +124,20 @@ internal data class ProjectDto(
             isPending = status.equals(STATUS_PENDING, ignoreCase = true),
             unreadCount = unread.coerceAtLeast(0),
             createdOnMillis = dateCreated,
+            isMarkedDeleted = markDeleted,
         )
     }
 
     /**
      * Deleted or disabled projects come back in the list but must not be shown.
      *
-     * `mark_deleted` is the soft-delete flag the web renders greyed out; the
-     * desktop drops them, because a production scheduled for deletion is not
-     * something to invite someone to open.
+     * `mark_deleted` is *not* among them. A production scheduled for deletion
+     * is listed, badged and still openable, because the admin who has to call
+     * the deletion off can only do it from inside — the shape the phones use.
+     * It used to be dropped here, which left a desktop-only admin no way to
+     * stop one.
      */
-    val isSelectable: Boolean get() = enabled && !deleted && !markDeleted
+    val isSelectable: Boolean get() = enabled && !deleted
 }
 
 // Top-level, not a companion: @Serializable generates its own companion to hold

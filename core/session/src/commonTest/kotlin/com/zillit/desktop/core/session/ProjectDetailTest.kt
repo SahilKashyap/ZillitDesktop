@@ -3,6 +3,8 @@ package com.zillit.desktop.core.session
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -30,6 +32,56 @@ class ProjectDetailTest {
         assertEquals("Call testing", snapshot.name)
         assertEquals("S3", snapshot.storageType)
         assertTrue(snapshot.storageFolders.isEmpty())
+    }
+
+    /**
+     * The countdown's deadline. It is read from the production's own record
+     * rather than the list, because that record is re-read whenever the
+     * production changes — which is what clears the shell's countdown the
+     * moment a deletion is called off, with no project switch.
+     */
+    @Test
+    fun `a scheduled deletion yields its deadline`() {
+        val dto = json.decodeFromString(
+            ProjectDetailDto.serializer(),
+            """{"project_name":"P","mark_deleted":true,
+               "mark_deleted_on":1700000000000,"delete_in_hours":72}""",
+        )
+
+        assertTrue(dto.toSnapshot("p1").markedForDeletion)
+        assertEquals(1700000000000L + 72 * 60 * 60 * 1000L, dto.deletionDueAtMillis())
+    }
+
+    /** Called off, so there is nothing left to count down to. */
+    @Test
+    fun `an unmarked production has no deadline`() {
+        val dto = json.decodeFromString(
+            ProjectDetailDto.serializer(),
+            """{"project_name":"P","mark_deleted":false,
+               "mark_deleted_on":1700000000000,"delete_in_hours":72}""",
+        )
+
+        assertFalse(dto.toSnapshot("p1").markedForDeletion)
+        assertNull(dto.deletionDueAtMillis())
+    }
+
+    /**
+     * The flag without its dates, which is what a production marked before the
+     * server began stamping them sends. Marked, but nothing to count.
+     */
+    @Test
+    fun `a mark with no usable dates is marked but has no deadline`() {
+        for (body in listOf(
+            """{"mark_deleted":true}""",
+            """{"mark_deleted":true,"mark_deleted_on":1700000000000}""",
+            """{"mark_deleted":true,"delete_in_hours":72}""",
+            """{"mark_deleted":true,"mark_deleted_on":0,"delete_in_hours":72}""",
+            """{"mark_deleted":true,"mark_deleted_on":1700000000000,"delete_in_hours":0}""",
+        )) {
+            val dto = json.decodeFromString(ProjectDetailDto.serializer(), body)
+            assertTrue(dto.toSnapshot("p1").markedForDeletion, body)
+            assertNull(dto.deletionDueAtMillis(), body)
+        }
     }
 
     @Test

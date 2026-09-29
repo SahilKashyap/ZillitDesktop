@@ -1627,6 +1627,8 @@ private fun SignedInShell(
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
     val updateStatus = rememberUpdateStatus(ready)
+    // The open production's deletion deadline, as the socket last left it.
+    val projectDeletionDueAt = ready.projectContext?.context?.collectAsState()?.value?.deletionDueAtMillis
     // Open until this device says otherwise, as the web's side menu is.
     val railCollapsed by ready.preferences
         .observe(ZillitPreferences.RailCollapsed)
@@ -1664,6 +1666,11 @@ private fun SignedInShell(
         language = language,
         onLanguageChange = onLanguageChange,
         projectName = authState.activeProject?.name,
+        // From the live project context, not the production record picked at
+        // sign-in: that one is a snapshot, so a deletion called off elsewhere
+        // left the countdown running until the user switched production. The
+        // context is re-read on `project:(un)marked:for:deletion`.
+        deletionDueAtMillis = projectDeletionDueAt,
         statusText = statusText(socketState, syncStatus),
         statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
         updateNotice = currentUpdateNotice(ready, updateStatus, onQuit),

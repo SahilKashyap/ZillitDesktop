@@ -21,6 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import com.zillit.desktop.core.workspace.ui.Workspace
 import com.zillit.desktop.core.workspace.ui.WorkspaceTabStrip
+import kotlinx.coroutines.delay
 
 /**
  * The application frame (plan §3.3): top bar, left rail, workspace, status bar.
@@ -147,6 +149,14 @@ fun AppShell(
     onRestartToUpdate: () -> Unit = {},
     /** Quit, offered on [ForceUpdateScreen]; null leaves it off. */
     onQuit: (() -> Unit)? = null,
+    /**
+     * When this production's scheduled deletion falls due, in epoch millis —
+     * `ProjectContext.deletionDueAtMillis`, which is re-read whenever the
+     * production's record changes, so a deletion called off elsewhere clears
+     * this without a project switch. Null for the overwhelming majority of
+     * productions, which are not going anywhere.
+     */
+    deletionDueAtMillis: Long? = null,
     /** Whether the rail is narrowed to icons. Open by default — see [NavigationRail]. */
     railCollapsed: Boolean = false,
     /** Null hides the rail's collapse arrow. */
@@ -170,6 +180,7 @@ fun AppShell(
             Column(Modifier.fillMaxSize()) {
                 TopBar(
                     projectName = projectName,
+                    deletionDueAtMillis = deletionDueAtMillis,
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
                     language = language,
@@ -304,6 +315,7 @@ private fun RailAndWorkspace(
 @Composable
 private fun TopBar(
     projectName: String?,
+    deletionDueAtMillis: Long?,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     language: String,
@@ -334,6 +346,9 @@ private fun TopBar(
                 modifier = Modifier.height(BAR_DIVIDER_HEIGHT),
             )
             ProjectSwitcher(projectName = projectName, onClick = onSwitchProject)
+            // Beside the name it applies to, not in the corner with the app's
+            // own controls: it is a fact about this production.
+            deletionDueAtMillis?.let { DeletionCountdown(dueAtMillis = it) }
         }
 
         // Language and theme, nothing else. Search and Profile stood here
@@ -474,6 +489,72 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
         )
     }
 }
+
+/**
+ * How long this production has left before the scheduled deletion runs.
+ *
+ * The phones put the same clock in their toolbar
+ * (`PersonalProjectPage.startCountdownTimer`), in the same `HH:MM:SS`, with
+ * the hours left uncapped — a three-day window reads `71:59:58` rather than
+ * being folded into days, so the number never needs a unit beside it to be
+ * read correctly.
+ *
+ * It renders nothing once the deadline passes. Nothing here evicts anybody:
+ * the server stops answering for a production that is gone, and inventing a
+ * client-side eviction would throw someone out of work the server would still
+ * have accepted.
+ */
+@Composable
+private fun DeletionCountdown(dueAtMillis: Long) {
+    var remaining by remember(dueAtMillis) { mutableStateOf(dueAtMillis - nowMillis()) }
+    LaunchedEffect(dueAtMillis) {
+        // Re-read the clock each tick rather than subtracting a second: a
+        // machine that slept would otherwise keep counting from where it
+        // dozed off and show a deadline that has long since passed.
+        while (true) {
+            remaining = dueAtMillis - nowMillis()
+            if (remaining <= 0) break
+            delay(COUNTDOWN_TICK_MILLIS)
+        }
+    }
+    if (remaining <= 0) return
+
+    val colors = ZillitTheme.colors
+    ZillitTooltip(text = str(S.desktop_marked_delete)) {
+        Row(
+            modifier = Modifier
+                .clip(ZillitTheme.shapes.medium)
+                .background(colors.dangerSoft)
+                .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Clock,
+                contentDescription = null,
+                tint = colors.danger,
+                size = SWITCHER_CHEVRON,
+            )
+            ZillitText(
+                text = str(S.desktop_deleted_in, countdownText(remaining)),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.danger,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** `HH:MM:SS`, hours uncapped — the phones' own format. */
+internal fun countdownText(remainingMillis: Long): String {
+    val total = (remainingMillis / MILLIS_PER_SECOND).coerceAtLeast(0)
+    val hours = total / SECONDS_PER_HOUR
+    val minutes = (total % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE
+    val seconds = total % SECONDS_PER_MINUTE
+    return listOf(hours, minutes, seconds).joinToString(":") { it.toString().padStart(2, '0') }
+}
+
+private fun nowMillis(): Long = kotlin.time.Clock.System.now().toEpochMilliseconds()
 
 @Composable
 private fun ThemeToggle(themeMode: ThemeMode, onChange: (ThemeMode) -> Unit) {
@@ -667,3 +748,8 @@ private val SWITCHER_NAME_MAX = 260.dp
 
 /** The rule between the app's mark and the production's name. */
 private val BAR_DIVIDER_HEIGHT = 24.dp
+
+private const val COUNTDOWN_TICK_MILLIS = 1_000L
+private const val MILLIS_PER_SECOND = 1_000L
+private const val SECONDS_PER_MINUTE = 60L
+private const val SECONDS_PER_HOUR = 60L * 60L
