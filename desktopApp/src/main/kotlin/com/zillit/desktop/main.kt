@@ -1627,6 +1627,10 @@ private fun SignedInShell(
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
     val updateStatus = rememberUpdateStatus(ready)
+    // Open until this device says otherwise, as the web's side menu is.
+    val railCollapsed by ready.preferences
+        .observe(ZillitPreferences.RailCollapsed)
+        .collectAsState(initial = false)
 
     // Whether the rail offers Admin at all, and what is waiting behind it.
     // Read from the settings state rather than the project: it is the same
@@ -1673,6 +1677,10 @@ private fun SignedInShell(
         onRestartToUpdate = { scope.launch { ready.restartToUpdate(onQuit) } },
         // The force-update screen's way out that is not the update.
         onQuit = onQuit,
+        railCollapsed = railCollapsed,
+        onRailCollapsedChange = { collapsed ->
+            scope.launch { ready.preferences.set(ZillitPreferences.RailCollapsed, collapsed) }
+        },
         railItems = railItemsWith(
             badges = badges,
             isAdmin = settingsState.account.isAdmin,

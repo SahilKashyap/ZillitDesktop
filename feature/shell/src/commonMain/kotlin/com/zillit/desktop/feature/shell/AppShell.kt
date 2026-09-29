@@ -138,6 +138,10 @@ fun AppShell(
     onRestartToUpdate: () -> Unit = {},
     /** Quit, offered on [ForceUpdateScreen]; null leaves it off. */
     onQuit: (() -> Unit)? = null,
+    /** Whether the rail is narrowed to icons. Open by default — see [NavigationRail]. */
+    railCollapsed: Boolean = false,
+    /** Null hides the rail's collapse arrow. */
+    onRailCollapsedChange: ((Boolean) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     // The rail asks; the frame confirms. A dialog composed inside the rail is
@@ -191,6 +195,8 @@ fun AppShell(
                     onRequestSignOut = onSignOut?.let { { confirmingSignOut = true } },
                     onViewModeChange = onViewModeChange,
                     badgeFor = badgeFor,
+                    railCollapsed = railCollapsed,
+                    onRailCollapsedChange = onRailCollapsedChange,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
 
@@ -241,6 +247,8 @@ private fun RailAndWorkspace(
     onRequestSignOut: (() -> Unit)?,
     onViewModeChange: ((ViewMode) -> Unit)?,
     badgeFor: (WorkspaceRoute) -> Int,
+    railCollapsed: Boolean,
+    onRailCollapsedChange: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
@@ -255,6 +263,8 @@ private fun RailAndWorkspace(
             onToggleViewMode = {
                 onViewModeChange?.invoke(if (classic) ViewMode.Windowed else ViewMode.Classic)
             },
+            collapsed = railCollapsed,
+            onToggleCollapsed = onRailCollapsedChange?.let { change -> { change(!railCollapsed) } },
         )
         VerticalDivider(color = ZillitTheme.colors.divider)
 

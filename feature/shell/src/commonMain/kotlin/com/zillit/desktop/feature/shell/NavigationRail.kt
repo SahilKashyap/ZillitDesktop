@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -114,20 +115,21 @@ val AppRailItems: List<RailItem> = listOf(
 fun railItemsFor(isAdmin: Boolean): List<RailItem> = DefaultRailItems + AppRailItems
 
 /**
- * The left rail, collapsed to icons until the pointer enters it.
+ * The left rail: open, with its labels showing, until the reader collapses it.
  *
- * ## Hover to expand, rather than a pinned toggle
+ * ## A pinned toggle, not hover
  *
- * The web keeps a click-toggled collapse state in `localStorage`
- * (`SideMenu.jsx`), which means a user who wants a label has to spend a click,
- * change a persistent setting, and spend another click to put it back. On
- * desktop the pointer is already there, so hovering is free — the labels appear
- * when you go looking for them and the rail is narrow the rest of the time.
+ * This used to widen on hover and shrink again when the pointer left. It read
+ * as a rail that would not hold still: crossing it on the way to a window
+ * pushed the workspace sideways, and no label could be pointed at, only
+ * glanced at. The web's click toggle, kept in `localStorage` (`SideMenu.jsx`),
+ * is the behaviour that survives daily use, so this matches it — open by
+ * default, [collapsed] the reader's own choice, and persisted by the app.
  *
- * The icon column keeps its exact width and position in both states, so nothing
- * moves under the pointer as the panel grows. The web has an open CSS bug here
- * (icons shift left when collapsed) precisely because its icons live inside the
- * flexible label slot.
+ * The icon column keeps its exact width and position in both states, so
+ * nothing moves under the pointer as the panel grows. The web has an open CSS
+ * bug here (icons shift left when collapsed) precisely because its icons live
+ * inside the flexible label slot.
  */
 @Composable
 fun NavigationRail(
@@ -148,10 +150,13 @@ fun NavigationRail(
      */
     classicView: Boolean? = null,
     onToggleViewMode: () -> Unit = {},
+    /** Narrowed to icons. Open is the default; the app persists what the reader picks. */
+    collapsed: Boolean = false,
+    /** Null hides the collapse arrow, leaving the rail fixed at [collapsed]. */
+    onToggleCollapsed: (() -> Unit)? = null,
     footer: @Composable ColumnFooterScope.() -> Unit = {},
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val expanded by interaction.collectIsHoveredAsState()
+    val expanded = !collapsed
 
     val width by animateDpAsState(
         targetValue = if (expanded) ZillitDimens.railWidthExpanded else ZillitDimens.railWidth,
@@ -164,7 +169,6 @@ fun NavigationRail(
             .width(width)
             .fillMaxHeight()
             .background(ZillitTheme.colors.railBackground)
-            .hoverable(interaction)
             .padding(vertical = ZillitTheme.spacing.sm),
         // Start, not centre: the icon must sit at the same x in both states, and
         // centring would slide every icon right as the rail grows.
@@ -190,32 +194,73 @@ fun NavigationRail(
                 onClick = { onOpen(item.route) },
             )
         }
-        // Below the spacer: the view switch, then Logout — the web's order.
-        // Neither goes anywhere; they change how, or whether, the app runs.
         Box(Modifier.weight(1f))
-        classicView?.let { classic ->
-            RailButton(
-                item = RailItem(
-                    id = "view-mode",
-                    labelKey = if (classic) S.desktop_windowed_view else S.desktop_classic_view,
-                    icon = if (classic) ZillitIcons.LayoutTabs else ZillitIcons.Maximize,
-                    route = WorkspaceRoute.Tool("/toggle-view-mode"),
-                ),
-                isActive = false,
-                expanded = expanded,
-                onClick = onToggleViewMode,
-            )
-        }
-        onSignOut?.let { requestSignOut ->
-            RailButton(
-                item = RailItem("logout", S.logout, ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
-                isActive = false,
-                expanded = expanded,
-                onClick = requestSignOut,
-            )
-        }
-        ColumnFooterScope.footer()
+        RailFoot(
+            expanded = expanded,
+            onToggleCollapsed = onToggleCollapsed,
+            classicView = classicView,
+            onToggleViewMode = onToggleViewMode,
+            onSignOut = onSignOut,
+            footer = footer,
+        )
     }
+}
+
+/**
+ * Below the spacer: the collapse arrow, the view switch, then Logout.
+ *
+ * None of the three goes anywhere — they change how, or whether, the app runs,
+ * which is why they are parted from the entries that open windows. Logout stays
+ * last, as it is on the web, so the most destructive of them is the furthest
+ * from the run of things people click all day.
+ */
+@Composable
+private fun RailFoot(
+    expanded: Boolean,
+    onToggleCollapsed: (() -> Unit)?,
+    classicView: Boolean?,
+    onToggleViewMode: () -> Unit,
+    onSignOut: (() -> Unit)?,
+    footer: @Composable ColumnFooterScope.() -> Unit,
+) {
+    onToggleCollapsed?.let { toggle ->
+        RailButton(
+            item = RailItem(
+                id = "rail-collapse",
+                // Named for what the click does, not for the state it is in.
+                labelKey = if (expanded) S.desktop_collapse_sidebar else S.desktop_expand_sidebar,
+                // Points the way the rail edge will move.
+                icon = if (expanded) ZillitIcons.ChevronLeft else ZillitIcons.ChevronRight,
+                route = WorkspaceRoute.Tool("/toggle-rail"),
+            ),
+            isActive = false,
+            expanded = expanded,
+            onClick = toggle,
+            modifier = Modifier.testTag(RAIL_COLLAPSE_TAG),
+        )
+    }
+    classicView?.let { classic ->
+        RailButton(
+            item = RailItem(
+                id = "view-mode",
+                labelKey = if (classic) S.desktop_windowed_view else S.desktop_classic_view,
+                icon = if (classic) ZillitIcons.LayoutTabs else ZillitIcons.Maximize,
+                route = WorkspaceRoute.Tool("/toggle-view-mode"),
+            ),
+            isActive = false,
+            expanded = expanded,
+            onClick = onToggleViewMode,
+        )
+    }
+    onSignOut?.let { requestSignOut ->
+        RailButton(
+            item = RailItem("logout", S.logout, ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
+            isActive = false,
+            expanded = expanded,
+            onClick = requestSignOut,
+        )
+    }
+    ColumnFooterScope.footer()
 }
 
 /**
@@ -260,6 +305,7 @@ private fun RailButton(
     isActive: Boolean,
     expanded: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -280,7 +326,7 @@ private fun RailButton(
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = RAIL_GUTTER)
             .fillMaxWidth()
             .height(RAIL_BUTTON)
@@ -352,6 +398,9 @@ private fun RailLabel(item: RailItem, visible: Boolean, contentColor: Color) {
         }
     }
 }
+
+/** The arrow at the rail's foot that opens and closes it. */
+const val RAIL_COLLAPSE_TAG = "rail-collapse"
 
 private val RAIL_BUTTON = 40.dp
 private val SIGN_OUT_DIALOG_WIDTH = 380.dp

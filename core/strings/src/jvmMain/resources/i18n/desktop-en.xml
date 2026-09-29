@@ -10307,4 +10307,6 @@
     <string name="desktop_update_restart_after_call">Version %1$s is ready. Zillit will restart to finish updating when your call ends.</string>
     <string name="desktop_update_required_title">Update required</string>
     <string name="desktop_update_required_detail">This version of Zillit is no longer supported. Zillit will update itself and reopen.</string>
+    <string name="desktop_collapse_sidebar">Collapse sidebar</string>
+    <string name="desktop_expand_sidebar">Expand sidebar</string>
 </resources>

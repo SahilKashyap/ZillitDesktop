@@ -65,6 +65,14 @@ object ZillitPreferences {
     /** `Windowed` | `Classic` — the rail's view switch, per device as the web's `mdi_view_mode`. */
     val WorkspaceViewMode = PreferenceKey.StringKey("workspace.view_mode", "Windowed", PreferenceScope.Device)
 
+    /**
+     * Whether the left rail is narrowed to icons. Open by default, and the
+     * reader's own choice thereafter — as the web keeps it in `localStorage`
+     * (`SideMenu.jsx`). Per device: it answers how wide this screen is, not
+     * who is signed in.
+     */
+    val RailCollapsed = PreferenceKey.BooleanKey("workspace.rail_collapsed", false, PreferenceScope.Device)
+
     // -- the Drive widget (device-scoped: a window, not an account) --------
 
     /** Whether the always-on-top Drive widget was open when the app last quit. */
@@ -272,7 +280,7 @@ object ZillitPreferences {
     val all: List<PreferenceKey<*>> = listOf(
         ThemeMode, UiScalePercent, Language,
         WindowWidth, WindowHeight, WindowX, WindowY, WindowMaximized,
-        WorkspaceLayoutMode, RestoreWorkspaceOnLaunch, WorkspaceViewMode,
+        WorkspaceLayoutMode, RestoreWorkspaceOnLaunch, WorkspaceViewMode, RailCollapsed,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
         UpdateAutoRestartTried,

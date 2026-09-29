@@ -11,6 +11,8 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
@@ -211,35 +213,69 @@ class AppShellTest {
         assertEquals(1, switched, "clicking the project name should offer the picker")
     }
 
+    /** Open is the default: the labels are there to be read without asking for them. */
     @Test
-    fun `rail labels are hidden until the rail is hovered`() = runComposeUiTest {
-        // Collapsed, the rail is icons only — the label exists as an accessible
-        // description but must not be rendered as text, or it would be laid out
-        // inside a 60pt column.
+    fun `the rail starts open with its labels showing`() = runComposeUiTest {
         setShell()
-
-        onNodeWithContentDescription("Film Tools").assertIsDisplayed()
-        onAllNodesWithText("Film Tools").assertCountEquals(0)
-    }
-
-    @Test
-    fun `hovering the rail reveals the titles`() = runComposeUiTest {
-        setShell()
-
-        // Collapsed: the label is an accessible description only.
-        onAllNodesWithText("Film Tools").assertCountEquals(0)
-
-        onNodeWithContentDescription("Film Tools").performMouseInput { moveTo(center) }
-        // The width and the label both animate; settle before asserting.
-        mainClock.advanceTimeBy(railSettleMillis)
 
         onNodeWithText("Film Tools").assertIsDisplayed()
         onNodeWithText("Transportation").assertIsDisplayed()
+        onNodeWithTag(RAIL_COLLAPSE_TAG).assertIsDisplayed()
     }
 
-    /** Logout is all the rail's foot holds, and it asks before it fires. */
+    /**
+     * The rail used to widen on hover and shrink again on the way out, which
+     * moved the workspace whenever the pointer crossed it. Only the arrow
+     * changes the width now.
+     */
     @Test
-    fun `Logout sits alone at the foot and asks first`() = runComposeUiTest {
+    fun `hovering the rail neither opens nor closes it`() = runComposeUiTest {
+        setShell()
+        val before = onNodeWithContentDescription("Film Tools").getUnclippedBoundsInRoot()
+
+        onNodeWithContentDescription("Film Tools").performMouseInput { moveTo(center) }
+        mainClock.advanceTimeBy(railSettleMillis)
+
+        onNodeWithText("Film Tools").assertIsDisplayed()
+        assertEquals(before, onNodeWithContentDescription("Film Tools").getUnclippedBoundsInRoot())
+    }
+
+    /** Collapsed is the reader's own click, and nothing else. */
+    @Test
+    fun `the arrow asks for the collapse, and collapsed hides the labels`() = runComposeUiTest {
+        var asked: Boolean? = null
+        setShell(onRailCollapsedChange = { asked = it })
+
+        onNodeWithTag(RAIL_COLLAPSE_TAG).performClick()
+
+        assertEquals(true, asked, "the arrow asks the app to collapse; it does not collapse itself")
+    }
+
+    /**
+     * Collapsed, the rail is icons only: the label stays as an accessible
+     * description but must not be laid out as text inside a 60pt column.
+     */
+    @Test
+    fun `a collapsed rail keeps its icons and drops its labels`() = runComposeUiTest {
+        setShell(railCollapsed = true)
+
+        onNodeWithContentDescription("Film Tools").assertIsDisplayed()
+        onAllNodesWithText("Film Tools").assertCountEquals(0)
+        // Still escapable: the arrow is the way back.
+        onNodeWithTag(RAIL_COLLAPSE_TAG).assertIsDisplayed()
+    }
+
+    /** Without a handler the rail is fixed, so nothing can strand it narrow. */
+    @Test
+    fun `no collapse handler means no arrow`() = runComposeUiTest {
+        setShell(onRailCollapsedChange = null)
+
+        onAllNodesWithTag(RAIL_COLLAPSE_TAG).assertCountEquals(0)
+    }
+
+    /** Logout is the last thing at the rail's foot, and it asks before it fires. */
+    @Test
+    fun `Logout sits at the foot and asks first`() = runComposeUiTest {
         var signedOut = 0
         setShell(onSignOut = { signedOut++ })
 
@@ -295,6 +331,7 @@ class AppShellTest {
         onNodeWithText("0 open").assertIsDisplayed()
     }
 
+    @Suppress("LongParameterList") // one per knob the frame exposes
     private fun ComposeUiTest.setShell(
         initialMode: ThemeMode = ThemeMode.System,
         language: String = "",
@@ -303,6 +340,8 @@ class AppShellTest {
         onSignOut: (() -> Unit)? = null,
         notificationsRoute: WorkspaceRoute? = null,
         notificationBadge: Int = 0,
+        railCollapsed: Boolean = false,
+        onRailCollapsedChange: ((Boolean) -> Unit)? = {},
     ) {
         setContent {
             var mode by remember { mutableStateOf(initialMode) }
@@ -333,6 +372,8 @@ class AppShellTest {
                     onSignOut = onSignOut,
                     notificationsRoute = notificationsRoute,
                     notificationBadge = notificationBadge,
+                    railCollapsed = railCollapsed,
+                    onRailCollapsedChange = onRailCollapsedChange,
                 )
             }
         }
