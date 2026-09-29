@@ -6,9 +6,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -29,6 +33,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * What it does *not* do is know anything about cash, orders or timecards.
  * That knowledge is in the [SyncHandler]s the modules register.
  */
+/** An operation the engine gave up on — what to tell the user, once, in their own words. */
+data class SyncFailure(val label: String, val message: String)
+
 @Suppress("TooManyFunctions", "LongParameterList") // One method per verb the shell and modules use; wired once.
 class SyncEngine(
     private val store: OutboxStore,
@@ -44,6 +51,12 @@ class SyncEngine(
 
     private val _status = MutableStateFlow(SyncStatus())
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
+
+    // Rare and transient — a toast, not a list, so a slow collector should
+    // see the latest failure rather than back up the whole history.
+    private val _failures =
+        MutableSharedFlow<SyncFailure>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val failures: SharedFlow<SyncFailure> = _failures.asSharedFlow()
 
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private var worker: Job? = null
@@ -190,6 +203,9 @@ class SyncEngine(
                 updatedAt = now,
             )
         }
+        // Pending stays quiet — it will retry itself. Failed will not, so
+        // this is the only chance the user gets to hear about it.
+        if (outcome is SyncOutcome.Failed) _failures.tryEmit(SyncFailure(operation.label, outcome.error.userMessage))
         ZillitLog.i(TAG) {
             val why = next.lastError?.let { " — $it" }.orEmpty()
             "${operation.kind} attempt ${operation.attempts}: ${next.state}$why"

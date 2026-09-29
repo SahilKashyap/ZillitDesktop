@@ -53,7 +53,7 @@ import kotlinx.coroutines.launch
  * somewhere to float a dialog over a tool window, none of which a feature
  * module has. So a module raises a [RightsRequest] in its own words on
  * [RightsRequestBus] and this answers it, the same way the call overlay and
- * the pending-changes dialog are hosted here.
+ * the sync failure toast are hosted here.
  *
  * ## The flow, as the phones run it
  *
