@@ -359,6 +359,23 @@ class AdminScreenRenderTest {
         }
     }
 
+    /**
+     * Grace Hopper is off the production in this fixture. The crew page still
+     * has to list her — putting somebody back is done there — but granting her
+     * rights would open a production she cannot reach.
+     */
+    @Test
+    fun `the rights picker leaves out crew who are off the production`() {
+        render(AdminDestination.Rights) {
+            onNodeWithText("Ada Lovelace").assertExists()
+            onNodeWithText("Grace Hopper").assertDoesNotExist()
+        }
+
+        render(AdminDestination.Crew) {
+            onNodeWithText("Grace Hopper").assertExists()
+        }
+    }
+
     @Test
     fun `the tools page marks the ones that cannot be switched off`() {
         render(AdminDestination.ToolAvailability) {

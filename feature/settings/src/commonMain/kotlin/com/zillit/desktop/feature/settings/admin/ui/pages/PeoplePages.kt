@@ -177,7 +177,8 @@ fun RightsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () ->
 
 @Composable
 private fun CrewPicker(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modifier: Modifier) {
-    val rows = state.crewMatching
+    // Only people actually on the production — see [activeCrewMatching].
+    val rows = state.activeCrewMatching
     RowCard(modifier) {
         if (rows.isEmpty() && state.hasLoaded) {
             EmptyRow(if (state.query.isBlank()) str(S.desktop_no_crew_yet) else str(S.desktop_nobody_matches))
@@ -191,6 +192,14 @@ private fun CrewPicker(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modif
                     selected = person.userId == state.selection.userId,
                     onClick = { onEvent(AdminEvent.SelectCrew(person.userId)) },
                 ) {
+                    // Faces, as Contacts lists them: an admin picking between
+                    // forty names recognises a face faster than a job title,
+                    // and the loader is shared, so this costs one cached fetch.
+                    ZillitAvatar(
+                        name = person.fullName,
+                        userId = person.userId,
+                        size = PICKER_AVATAR,
+                    )
                     Column(Modifier.weight(1f)) {
                         ZillitText(
                             text = person.fullName,
@@ -480,3 +489,6 @@ fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Un
 }
 
 private val PICKER_WIDTH = 260.dp
+
+/** Small enough that a name and a role still fit beside it at [PICKER_WIDTH]. */
+private val PICKER_AVATAR = 28.dp

@@ -455,6 +455,34 @@ class AdminViewModelTest {
     }
 
     /**
+     * The rights grid offers only people actually on the production.
+     *
+     * The crew page has to keep the removed and the not-yet-accepted — putting
+     * somebody back is done from there — but setting rights on them grants
+     * access to a production they cannot open, and it pads a picker an admin
+     * scrolls. Contacts draws its own list the same way.
+     */
+    @Test
+    fun `the rights picker lists only active crew`() = runTest {
+        val repository = Recorder()
+        repository.crewAnswer = ZillitResult.Success(
+            listOf(
+                CrewMember("u1", "Ada Lovelace", deviceId = "dev-1"),
+                CrewMember("u2", "Grace Hopper", deviceId = "dev-2", status = CrewStatus.Removed),
+                CrewMember("u3", "Katherine Johnson", deviceId = "dev-3", status = CrewStatus.Pending),
+            ),
+        )
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+
+        assertEquals(listOf("Ada Lovelace"), model.state.value.activeCrewMatching.map { it.fullName })
+        // The crew page still sees all three.
+        assertEquals(3, model.state.value.crewMatching.size)
+    }
+
+    /**
      * The box moves on the click, not on the answer.
      *
      * This used to write and then re-read the whole person, which emptied the

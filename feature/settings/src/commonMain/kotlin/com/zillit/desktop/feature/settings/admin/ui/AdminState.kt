@@ -74,6 +74,18 @@ data class AdminUiState(
 
     val crewMatching: List<CrewMember> get() = crew.filter { it.matches(query) }
 
+    /**
+     * Who the rights grid offers, which is not everyone the crew page lists.
+     *
+     * Only people actually on the production. The crew page has to keep the
+     * removed and the not-yet-accepted — putting somebody back is done from
+     * there — but setting rights on them grants access to a production they
+     * cannot open, and it pads a picker an admin has to scroll. This is the
+     * set Contacts shows for the same reason (`ChatScreen.kt:484` drops the
+     * ones who left; the host drops those who never joined).
+     */
+    val activeCrewMatching: List<CrewMember> get() = crewMatching.filter { it.isActive }
+
     val preApprovedMatching: List<PreApprovedCrew> get() = preApproved.filter { it.matches(query) }
 
     val toolsMatching: List<ProductionTool>
