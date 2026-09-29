@@ -23,7 +23,7 @@
     <string name="desktop_sign_out_body">You\'ll be signed out on this computer and need to sign in again to continue.</string>
     <string name="desktop_sign_out_note">Anything waiting to be sent will stay on this computer until you sign in again.</string>
     <string name="desktop_no_project">No project selected</string>
-    <string name="desktop_switch_project">Switch project</string>
+    <string name="desktop_switch_project">Switch Project</string>
     <string name="desktop_unsaved_changes">Unsaved changes</string>
     <string name="desktop_update_required">Zillit must be updated to continue. Version %1$s is required.</string>
     <string name="desktop_update_available">Version %1$s is available.</string>
@@ -10309,4 +10309,6 @@
     <string name="desktop_update_required_detail">This version of Zillit is no longer supported. Zillit will update itself and reopen.</string>
     <string name="desktop_collapse_sidebar">Collapse sidebar</string>
     <string name="desktop_expand_sidebar">Expand sidebar</string>
+    <string name="desktop_switch_language">Switch Language</string>
+    <string name="desktop_switch_theme">Switch Theme</string>
 </resources>

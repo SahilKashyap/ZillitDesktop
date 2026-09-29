@@ -4,14 +4,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -21,15 +25,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.workspace.InMemoryWorkspaceSessionStore
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.workspace.WorkspaceRoute
-import com.zillit.desktop.core.workspace.ToolRegistry
-import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import com.zillit.desktop.core.strings.AppLanguage
 import com.zillit.desktop.core.strings.BundledCatalogSource
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.Strings
+import com.zillit.desktop.core.workspace.InMemoryWorkspaceSessionStore
+import com.zillit.desktop.core.workspace.ToolRegistry
+import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -108,18 +112,31 @@ class AppShellTest {
         onNodeWithText("1 open").assertIsDisplayed()
     }
 
+    /**
+     * Three bare glyphs in the corner told nobody what they did. Each control
+     * says so in words, and the production's name is captioned so it cannot be
+     * read as a label of its own.
+     */
+    @Test
+    fun `the bar names what each of its controls does`() = runComposeUiTest {
+        setShell()
+
+        onNodeWithText("Switch Project").assertIsDisplayed()
+        onNodeWithText("No project selected").assertIsDisplayed()
+        onNodeWithText("Switch Language").assertIsDisplayed()
+        onNodeWithText("Switch Theme").assertIsDisplayed()
+    }
+
     @Test
     fun `the theme toggle cycles light to dark to system`() = runComposeUiTest {
         setShell(initialMode = ThemeMode.Light)
 
-        onNodeWithContentDescription("Light theme").performClick()
-        onNodeWithContentDescription("Dark theme").assertIsDisplayed()
-
-        onNodeWithContentDescription("Dark theme").performClick()
-        onNodeWithContentDescription("Following system theme").assertIsDisplayed()
-
-        onNodeWithContentDescription("Following system theme").performClick()
-        onNodeWithContentDescription("Light theme").assertIsDisplayed()
+        // One label all the way round — the mode it is in is the button's
+        // state, which is what a reader who cannot see the icon is given.
+        onNodeWithText("Switch Theme").assertThemeIs("Light theme").performClick()
+        onNodeWithText("Switch Theme").assertThemeIs("Dark theme").performClick()
+        onNodeWithText("Switch Theme").assertThemeIs("Following system theme").performClick()
+        onNodeWithText("Switch Theme").assertThemeIs("Light theme")
     }
 
     @Test
@@ -127,7 +144,7 @@ class AppShellTest {
         var chosen: String? = null
         setShell(onLanguageChange = { chosen = it })
 
-        onNodeWithContentDescription("Language").performClick()
+        onNodeWithText("Switch Language").performClick()
 
         onNodeWithText("Follow the system language").assertIsDisplayed()
         onNodeWithText("Français").assertIsDisplayed()
@@ -142,7 +159,7 @@ class AppShellTest {
         var chosen: String? = "fr"
         setShell(language = "fr", onLanguageChange = { chosen = it })
 
-        onNodeWithContentDescription("Language").performClick()
+        onNodeWithText("Switch Language").performClick()
         onNodeWithText("Follow the system language").performClick()
 
         assertEquals("", chosen)
@@ -330,6 +347,10 @@ class AppShellTest {
 
         onNodeWithText("0 open").assertIsDisplayed()
     }
+
+    /** The theme the toggle is announcing, which is the only place its mode is stated. */
+    private fun SemanticsNodeInteraction.assertThemeIs(mode: String) =
+        assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, mode))
 
     @Suppress("LongParameterList") // one per knob the frame exposes
     private fun ComposeUiTest.setShell(

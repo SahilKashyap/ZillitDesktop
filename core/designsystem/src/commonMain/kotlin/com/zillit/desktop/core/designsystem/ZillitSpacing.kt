@@ -46,7 +46,7 @@ val LocalZillitShapes = staticCompositionLocalOf { ZillitShapes() }
  * clients look like the same product side by side.
  */
 object ZillitDimens {
-    val topBarHeight: Dp = 48.dp
+    val topBarHeight: Dp = 56.dp
     val tabStripHeight: Dp = 46.dp
     val statusBarHeight: Dp = 26.dp
     val railWidth: Dp = 60.dp

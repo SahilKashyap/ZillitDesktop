@@ -1,21 +1,21 @@
 package com.zillit.desktop.feature.shell
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
@@ -26,17 +26,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import androidx.compose.foundation.layout.Box
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLanguageMenu
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -318,6 +327,12 @@ private fun TopBar(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             BrandMark(badge = notificationBadge, onOpenNotifications = onOpenNotifications)
+            // The mark is about the app, everything right of it about the
+            // production — the rule the bar is divided on.
+            VerticalDivider(
+                color = ZillitTheme.colors.divider,
+                modifier = Modifier.height(BAR_DIVIDER_HEIGHT),
+            )
             ProjectSwitcher(projectName = projectName, onClick = onSwitchProject)
         }
 
@@ -326,11 +341,18 @@ private fun TopBar(
         // opened nobody. Search lives in each tool that has something to
         // search, and the account is in Settings; two dead controls in the
         // app's most-looked-at corner taught people the bar is decorative.
+        //
+        // Both wear their words: a globe and a monitor side by side were two
+        // grey glyphs nobody could tell apart without clicking one.
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
-            ZillitLanguageMenu(selected = language, onSelect = onLanguageChange)
+            ZillitLanguageMenu(
+                selected = language,
+                onSelect = onLanguageChange,
+                label = str(S.desktop_switch_language),
+            )
             ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
         }
     }
@@ -403,11 +425,19 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val outline by animateColorAsState(
+        if (hovered) colors.accent else colors.border,
+        label = "projectSwitcherOutline",
+    )
 
     Row(
         modifier = Modifier
             .clip(ZillitTheme.shapes.medium)
-            .background(if (hovered) colors.surfaceHover else Color.Transparent)
+            .background(if (hovered) colors.surfaceHover else colors.surfaceSunken)
+            // Drawn as the field it behaves like. Unbordered it read as a
+            // caption someone had left in the corner, and the chevron alone
+            // was not enough to say the name could be changed.
+            .border(SWITCHER_OUTLINE, outline, ZillitTheme.shapes.medium)
             .hoverable(interaction)
             .clickable(
                 interactionSource = interaction,
@@ -415,20 +445,31 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
                 onClickLabel = str(S.desktop_switch_project),
                 onClick = onClick,
             )
-            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(
-            text = projectName ?: str(S.desktop_no_project),
-            style = ZillitTheme.typography.bodySmall,
-            color = if (hovered) colors.textPrimary else colors.textSecondary,
-            maxLines = 1,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(SWITCHER_LINE_GAP)) {
+            // What the control does, above what it currently holds — so the
+            // production's name is never mistaken for a label of its own.
+            ZillitText(
+                text = str(S.desktop_switch_project),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+            ZillitText(
+                text = projectName ?: str(S.desktop_no_project),
+                style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.textPrimary,
+                maxLines = 1,
+                modifier = Modifier.widthIn(max = SWITCHER_NAME_MAX),
+            )
+        }
         ZillitIcon(
             icon = ZillitIcons.ChevronDown,
             contentDescription = str(S.desktop_switch_project),
-            tint = if (hovered) colors.textPrimary else colors.textMuted,
+            tint = if (hovered) colors.accent else colors.textMuted,
             size = SWITCHER_CHEVRON,
         )
     }
@@ -436,16 +477,25 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
 
 @Composable
 private fun ThemeToggle(themeMode: ThemeMode, onChange: (ThemeMode) -> Unit) {
-    val (icon, label, next) = when (themeMode) {
+    val (icon, mode, next) = when (themeMode) {
         ThemeMode.Light -> Triple(ZillitIcons.Sun, str(S.desktop_theme_light), ThemeMode.Dark)
         ThemeMode.Dark -> Triple(ZillitIcons.Moon, str(S.desktop_theme_dark), ThemeMode.System)
         ThemeMode.System -> Triple(ZillitIcons.Monitor, str(S.desktop_theme_system), ThemeMode.Light)
     }
-    ZillitIconButton(
-        icon = icon,
-        contentDescription = label,
-        onClick = { onChange(next) },
-    )
+    // The label says what the button does; the icon says which theme is on.
+    // A reader who cannot see the icon would be left with a button that never
+    // changes, so the mode is the button's state: the tooltip names it in
+    // words on hover, and `stateDescription` announces it.
+    ZillitTooltip(text = str(S.theme_mode) + " · " + mode) {
+        ZillitButton(
+            text = str(S.desktop_switch_theme),
+            onClick = { onChange(next) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = icon,
+            modifier = Modifier.semantics { stateDescription = mode },
+        )
+    }
 }
 
 /**
@@ -607,3 +657,13 @@ sealed interface UpdateInstall {
 }
 
 private val SWITCHER_CHEVRON = 14.dp
+
+/** The switcher's outline, and how far its two lines sit apart. */
+private val SWITCHER_OUTLINE = 1.dp
+private val SWITCHER_LINE_GAP = 1.dp
+
+/** A long production name is cut rather than pushing the bar's right half off. */
+private val SWITCHER_NAME_MAX = 260.dp
+
+/** The rule between the app's mark and the production's name. */
+private val BAR_DIVIDER_HEIGHT = 24.dp

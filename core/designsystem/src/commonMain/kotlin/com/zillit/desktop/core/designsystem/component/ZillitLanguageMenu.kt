@@ -52,22 +52,39 @@ import com.zillit.desktop.core.strings.str
  * the only name its speaker is guaranteed to recognise, with the English name
  * beside it for whoever is helping them. Sits next to the theme toggle in the
  * app bar and inside Settings › Appearance; both hand it the same preference.
+ *
+ * [label] spells the control out in words beside the globe, for the app bar,
+ * where a row of bare glyphs left people guessing. Null keeps the icon alone,
+ * which is what a crowded corner like the sign-in screen's wants.
  */
 @Composable
 fun ZillitLanguageMenu(
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    label: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val current = Strings.language
 
     Box(modifier) {
-        ZillitTooltip(text = str(S.desktop_language) + " · " + current.nativeName) {
-            ZillitIconButton(
-                icon = ZillitIcons.Globe,
-                contentDescription = str(S.desktop_language),
+        if (label == null) {
+            ZillitTooltip(text = str(S.desktop_language) + " · " + current.nativeName) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Globe,
+                    contentDescription = str(S.desktop_language),
+                    onClick = { expanded = true },
+                )
+            }
+        } else {
+            // The words already say what it is, so no tooltip: one would only
+            // repeat the label the pointer is sitting on.
+            ZillitButton(
+                text = label,
                 onClick = { expanded = true },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Globe,
             )
         }
         ZillitMenuSurface(expanded = expanded, onDismissRequest = { expanded = false }) {
