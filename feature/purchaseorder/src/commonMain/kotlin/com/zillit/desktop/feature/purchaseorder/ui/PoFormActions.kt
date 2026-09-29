@@ -14,6 +14,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.addCivilMonths
+import com.zillit.desktop.feature.purchaseorder.domain.customFieldPicks
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayNumber
 import com.zillit.desktop.feature.purchaseorder.domain.toIsoDay
 import com.zillit.desktop.feature.purchaseorder.domain.splitCadence
@@ -410,6 +411,7 @@ internal class PoFormActions(
         if (form.lines.any { it.isDivisibleRental && it.rentalEnd!! <= it.rentalStart!! }) {
             add(str(S.desktop_po_rental_end_after_start))
         }
+        addAll(lineProblems(form, layout))
         if (!layout.isLoaded) return@buildList
         val required = { label: String -> layout.isRequired(PoFormFields.DETAILS, label) }
         if (required(PoFormFields.ACCOUNT_CODE) && form.nominalCode.isBlank()) {
@@ -678,6 +680,54 @@ private fun headerProblems(request: NewPurchaseOrder, form: PoFormState, layout:
             add(str(if (loaded) S.desktop_po_requires_description else S.desktop_po_needs_description))
         }
     }
+
+/**
+ * Every line's own refusals — the web's `validate()` line-item loop
+ * (`POForm.jsx:816-852`), named to the line the person sees rather than a
+ * filtered index: [form.lines] still carries a blank scratch row the create
+ * body has already dropped, and the web numbers against that same
+ * unfiltered list.
+ *
+ * A split child is skipped entirely, as the web's own `if (li.splitParentId)
+ * return` is — its qty/price/tax are locked to its parent's split, not its
+ * own to satisfy or fail. A line with no description yet is skipped for
+ * every check but the overflow guard, which the web runs first and
+ * unconditionally: a blank row's total is 0 either way, so this only ever
+ * fires on a row someone has actually typed a price into.
+ */
+internal fun lineProblems(form: PoFormState, layout: FormLayout): List<String> = buildList {
+    val required = { label: String -> layout.isRequired(PoFormFields.LINE_ITEMS, label) }
+    form.lines.forEachIndexed { index, line ->
+        if (line.isSplitChild) return@forEachIndexed
+        val lineNumber = (index + 1).toString()
+        // Unconditional and first, as the web's is (`POForm.jsx:824-833`,
+        // ZL-20601): without it the backend's own rejection is a raw Joi
+        // error naming a JSON path, not a line a person can find on screen.
+        val lineTotal = line.quantity * line.unitPrice
+        if (!lineTotal.isFinite() || kotlin.math.abs(lineTotal) > MAX_SAFE_INTEGER) {
+            add(str(S.desktop_po_line_total_too_large, lineNumber))
+        }
+        if (line.description.isBlank()) return@forEachIndexed
+        if (required(PoFormFields.LINE_QUANTITY) && line.quantity <= 0) {
+            add(str(S.desktop_po_line_qty_required, lineNumber))
+        }
+        if (required(PoFormFields.LINE_UNIT_PRICE) && line.unitPrice < 0) {
+            add(str(S.desktop_po_line_price_required, lineNumber))
+        }
+        if (required(PoFormFields.EXP_TYPE) && line.expenditureType.isNullOrBlank()) {
+            add(str(S.desktop_po_line_exp_type_required, lineNumber))
+        }
+        val picks = line.customFields.customFieldPicks()
+        layout.custom(PoFormFields.LINE_ITEMS).forEach { field ->
+            if (field.required && picks[field.label].isNullOrBlank()) {
+                add(str(S.desktop_po_line_custom_required, lineNumber, field.name))
+            }
+        }
+    }
+}
+
+/** JS's `Number.MAX_SAFE_INTEGER` (2^53 − 1) — the web's own overflow bound (`POForm.jsx:825`). */
+private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991.0
 
 /** The production's default currency, or sterling where it has not said. */
 internal fun PoUiState.defaultCurrency(): String = currencies.firstOrNull() ?: "GBP"

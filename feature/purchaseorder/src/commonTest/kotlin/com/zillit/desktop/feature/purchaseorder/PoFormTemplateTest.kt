@@ -5,6 +5,8 @@ import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.forms.FormSection
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.data.PO_FORM_MODULE
 import com.zillit.desktop.feature.purchaseorder.data.PO_FORM_SYNC_EVENTS
 import com.zillit.desktop.feature.purchaseorder.data.PO_SYNC_EVENTS
@@ -16,6 +18,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.customFieldPicks
 import com.zillit.desktop.feature.purchaseorder.domain.customFieldsJson
 import com.zillit.desktop.feature.purchaseorder.ui.PoFormMode
 import com.zillit.desktop.feature.purchaseorder.ui.PoFormState
+import com.zillit.desktop.feature.purchaseorder.ui.lineProblems
 import com.zillit.desktop.feature.purchaseorder.ui.pages.LineColumns
 import com.zillit.desktop.feature.purchaseorder.ui.toRequest
 import kotlinx.serialization.json.JsonArray
@@ -244,5 +247,126 @@ class PoFormTemplateTest {
             mapOf("serial_no" to "SN-42", "po_ref" to "").customFieldsJson().customFieldPicks(),
         )
         assertEquals(emptyMap(), (null as JsonArray?).customFieldPicks())
+    }
+
+    /**
+     * [lineProblems] — the web's line-item loop (`POForm.jsx:816-852`). Every
+     * required-field check is gated the same way the header's are: only when
+     * the template marks that field required, and only for a line someone
+     * has started typing a description into.
+     */
+    @Test
+    fun `a required quantity must be greater than zero`() {
+        val line = PoLine(null, "Camera body", 0.0, 100.0, null, null)
+        val required = FormLayout(
+            lineTemplate(FormField(label = PoFormFields.LINE_QUANTITY, systemDefault = true, required = true)),
+        )
+        assertEquals(
+            listOf(str(S.desktop_po_line_qty_required, "1")),
+            lineProblems(draft.copy(lines = listOf(line)), required),
+        )
+
+        val notRequired = FormLayout(
+            lineTemplate(FormField(label = PoFormFields.LINE_QUANTITY, systemDefault = true, required = false)),
+        )
+        assertTrue(lineProblems(draft.copy(lines = listOf(line)), notRequired).isEmpty())
+    }
+
+    /** `li.unitPrice == null || li.unitPrice < 0` — a Kotlin `Double` is never null, so this is just the sign. */
+    @Test
+    fun `a required unit price must not be negative`() {
+        val layout = FormLayout(
+            lineTemplate(FormField(label = PoFormFields.LINE_UNIT_PRICE, systemDefault = true, required = true)),
+        )
+        val line = PoLine(null, "Camera body", 1.0, -5.0, null, null)
+        assertEquals(
+            listOf(str(S.desktop_po_line_price_required, "1")),
+            lineProblems(draft.copy(lines = listOf(line)), layout),
+        )
+    }
+
+    @Test
+    fun `a required expenditure type must be set`() {
+        val layout = FormLayout(
+            lineTemplate(FormField(label = PoFormFields.EXP_TYPE, systemDefault = true, required = true)),
+        )
+        val line = PoLine(null, "Camera body", 1.0, 100.0, null, null, expenditureType = null)
+        assertEquals(
+            listOf(str(S.desktop_po_line_exp_type_required, "1")),
+            lineProblems(draft.copy(lines = listOf(line)), layout),
+        )
+    }
+
+    /** A production's own extra field on a line — the web's generic `default:` branch. */
+    @Test
+    fun `a required custom field on a line must be answered`() {
+        val layout = FormLayout(
+            lineTemplate(FormField(label = "serial_no", name = "Serial No", systemDefault = false, required = true)),
+        )
+        val line = PoLine(null, "Camera body", 1.0, 100.0, null, null)
+        assertEquals(
+            listOf(str(S.desktop_po_line_custom_required, "1", "Serial No")),
+            lineProblems(draft.copy(lines = listOf(line)), layout),
+        )
+
+        val answered = line.copy(customFields = mapOf("serial_no" to "SN-1").customFieldsJson())
+        assertTrue(lineProblems(draft.copy(lines = listOf(answered)), layout).isEmpty())
+    }
+
+    /**
+     * The overflow guard (`POForm.jsx:824-833`, ZL-20601) is the one check the
+     * web runs unconditionally — not gated by any `required` flag, and not
+     * skipped for a line with no description yet, since a blank row's total
+     * is always 0 either way.
+     */
+    @Test
+    fun `the overflow guard fires unconditionally, even with no template loaded`() {
+        val huge = PoLine(null, "Camera body", 1_000_000_000.0, 1_000_000_000.0, null, null)
+        assertEquals(
+            listOf(str(S.desktop_po_line_total_too_large, "1")),
+            lineProblems(draft.copy(lines = listOf(huge)), FormLayout(FormTemplate())),
+        )
+    }
+
+    /**
+     * `if (li.splitParentId) return` (`POForm.jsx:817`) skips a split child
+     * from every check in one shot — not just the required-field switch, the
+     * overflow guard too.
+     */
+    @Test
+    fun `a split child is skipped entirely, whatever the template requires and however large its total`() {
+        val layout = FormLayout(
+            lineTemplate(
+                FormField(label = PoFormFields.LINE_QUANTITY, systemDefault = true, required = true),
+                FormField(label = PoFormFields.EXP_TYPE, systemDefault = true, required = true),
+            ),
+        )
+        val child = PoLine(
+            null,
+            "Camera body",
+            1_000_000_000.0,
+            1_000_000_000.0,
+            null,
+            null,
+            expenditureType = null,
+            splitParentId = "line-0",
+        )
+        assertTrue(lineProblems(draft.copy(lines = listOf(child)), layout).isEmpty())
+    }
+
+    /** `if (!li.description?.trim()) return` (`POForm.jsx:834`) — placed after the overflow check, not before it. */
+    @Test
+    fun `a line with no description yet is skipped for required checks but not the overflow guard`() {
+        val layout = FormLayout(
+            lineTemplate(FormField(label = PoFormFields.LINE_QUANTITY, systemDefault = true, required = true)),
+        )
+        val blank = PoLine(null, "", 0.0, 0.0, null, null)
+        assertTrue(lineProblems(draft.copy(lines = listOf(blank)), layout).isEmpty())
+
+        val blankButHuge = PoLine(null, "", 1_000_000_000.0, 1_000_000_000.0, null, null)
+        assertEquals(
+            listOf(str(S.desktop_po_line_total_too_large, "1")),
+            lineProblems(draft.copy(lines = listOf(blankButHuge)), layout),
+        )
     }
 }

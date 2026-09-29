@@ -5727,6 +5727,11 @@
     <string name="desktop_po_needs_a_line">Add at least one line.</string>
     <string name="desktop_po_line_needs_description">Every line needs a description.</string>
     <string name="desktop_po_line_needs_qty_price">Every line needs a quantity and a price.</string>
+    <string name="desktop_po_line_qty_required">Line %1$s: Quantity must be greater than 0.</string>
+    <string name="desktop_po_line_price_required">Line %1$s: Unit Price is required.</string>
+    <string name="desktop_po_line_exp_type_required">Line %1$s: Expenditure Type is required.</string>
+    <string name="desktop_po_line_custom_required">Line %1$s: %2$s is required.</string>
+    <string name="desktop_po_line_total_too_large">Line %1$s: Quantity × Unit Price is too large — reduce the quantity or the unit price.</string>
     <string name="desktop_po_register_unavailable">This purchase-order register is not available here.</string>
     <string name="desktop_po_settings_unavailable">Purchase order settings are not available here.</string>
     <string name="desktop_dm_loan_out_company_sub">The company you\'re engaged through</string>
