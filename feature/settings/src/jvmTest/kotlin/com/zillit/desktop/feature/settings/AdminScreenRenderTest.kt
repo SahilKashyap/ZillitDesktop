@@ -278,6 +278,35 @@ class AdminScreenRenderTest {
     }
 
     /**
+     * A refused read used to be captioned "This project has no tools to grant
+     * access to" — over a production with thirty-eight of them, which sends an
+     * admin looking for the wrong fault entirely.
+     */
+    @Test
+    fun `a refused read names the person, not an empty production`() {
+        val refused = state(AdminDestination.Rights).copy(
+            selection = AdminSelection(userId = "user-3", rights = emptyList(), rightsUnreadable = true),
+        )
+
+        render(AdminDestination.Rights, state = refused) {
+            onNodeWithText("Katherine Johnson's access could not be read.").assertExists()
+            onNodeWithText("This project has no tools to grant access to.").assertDoesNotExist()
+        }
+    }
+
+    /** A production that really has no tools still says so. */
+    @Test
+    fun `a production with no tools says so`() {
+        val empty = state(AdminDestination.Rights).copy(
+            selection = AdminSelection(userId = "user-3", rights = emptyList()),
+        )
+
+        render(AdminDestination.Rights, state = empty) {
+            onNodeWithText("This project has no tools to grant access to.").assertExists()
+        }
+    }
+
+    /**
      * `ZL-20803` — Account Hub access follows the person's department and
      * designation, so none of its three boxes is this page's to set.
      */

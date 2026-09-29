@@ -283,7 +283,22 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
         }
 
         if (RightsSection.entries.all { state.rights(it).isEmpty() }) {
-            item { RowCard { EmptyRow(str(S.desktop_no_tools_to_grant)) } }
+            item {
+                RowCard {
+                    // Nothing back and nothing wrong are different answers:
+                    // the server refuses a read about somebody whose
+                    // membership has lapsed, and saying the production has no
+                    // tools over one with thirty-eight of them sends an admin
+                    // looking for the wrong fault.
+                    EmptyRow(
+                        if (state.selection.rightsUnreadable) {
+                            str(S.desktop_access_unreadable, person.fullName)
+                        } else {
+                            str(S.desktop_no_tools_to_grant)
+                        },
+                    )
+                }
+            }
         }
     }
 }

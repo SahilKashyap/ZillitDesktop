@@ -131,6 +131,16 @@ data class AdminSelection(
     val rights: List<ToolRights> = emptyList(),
     val isLoadingRights: Boolean = false,
     /**
+     * The read was refused or failed, rather than answering with nothing.
+     *
+     * An empty list means two opposite things — a production with no tools,
+     * and a person the server would not answer about (`project_no_access` is
+     * a real answer here, for somebody whose membership has lapsed). Told
+     * apart because the page said "This project has no tools to grant access
+     * to" over a production with thirty-eight of them.
+     */
+    val rightsUnreadable: Boolean = false,
+    /**
      * The boxes with a write in flight.
      *
      * Per box rather than one flag for the row or the page: the web made the

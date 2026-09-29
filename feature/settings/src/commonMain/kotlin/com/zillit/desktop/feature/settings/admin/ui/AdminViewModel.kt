@@ -560,7 +560,18 @@ class AdminViewModel(
      */
     private fun selectCrew(userId: String?) {
         setState {
-            copy(selection = selection.copy(userId = userId, rights = emptyList(), savingRights = emptySet()))
+            copy(
+                // Whatever went wrong reading the *last* person is not news
+                // about this one. The banner used to survive the switch and
+                // sit over a grid that had loaded perfectly well.
+                error = null,
+                selection = selection.copy(
+                    userId = userId,
+                    rights = emptyList(),
+                    savingRights = emptySet(),
+                    rightsUnreadable = false,
+                ),
+            )
         }
         val resolved = userId ?: return
 
@@ -588,13 +599,25 @@ class AdminViewModel(
                 if (selection.userId != userId || selection.savingRights.isNotEmpty()) {
                     copy(selection = selection.copy(isLoadingRights = false))
                 } else {
-                    copy(selection = selection.copy(rights = result.data, isLoadingRights = false))
+                    copy(
+                        selection = selection.copy(
+                            rights = result.data,
+                            isLoadingRights = false,
+                            rightsUnreadable = false,
+                        ),
+                    )
                 }
             }
 
             is ZillitResult.Failure -> setState {
+                // Marked unreadable only while this is still the person on
+                // screen: a refusal about somebody the admin has already moved
+                // on from must not caption the page they are looking at now.
                 copy(
-                    selection = selection.copy(isLoadingRights = false),
+                    selection = selection.copy(
+                        isLoadingRights = false,
+                        rightsUnreadable = selection.userId == userId,
+                    ),
                     error = result.error.readable,
                 )
             }

@@ -10311,4 +10311,8 @@
     <string name="desktop_expand_sidebar">Expand sidebar</string>
     <string name="desktop_switch_language">Switch Language</string>
     <string name="desktop_switch_theme">Switch Theme</string>
+    <string name="desktop_sync_failed_toast">%1$s could not be sent — %2$s</string>
+    <string name="desktop_marked_delete">Marked Delete</string>
+    <string name="desktop_deleted_in">Deleted in %1$s</string>
+    <string name="desktop_access_unreadable">%1$s\'s access could not be read.</string>
 </resources>

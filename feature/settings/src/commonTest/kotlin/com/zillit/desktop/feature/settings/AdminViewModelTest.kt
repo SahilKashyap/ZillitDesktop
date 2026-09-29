@@ -596,6 +596,78 @@ class AdminViewModelTest {
         assertEquals(AccessType.View, repository.rightsChanges.single().access)
     }
 
+    /**
+     * Nothing back and nothing wrong are different answers.
+     *
+     * The server refuses a read about somebody whose membership has lapsed
+     * (`project_no_access`), and the page captioned that "This project has no
+     * tools to grant access to" — over a production with thirty-eight of them.
+     */
+    @Test
+    fun `a refused read is not an empty production`() = runTest {
+        val repository = Recorder()
+        repository.rightsAnswer = ZillitResult.Failure(ZillitError.Validation("project_no_access"))
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+
+        assertTrue(model.state.value.selection.rightsUnreadable)
+        assertTrue(model.state.value.selection.rights.isEmpty())
+    }
+
+    /** A production that really has no tools still reads as empty, not broken. */
+    @Test
+    fun `an empty answer is not a refusal`() = runTest {
+        val repository = Recorder()
+        repository.rightsAnswer = ZillitResult.Success(emptyList())
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+
+        assertFalse(model.state.value.selection.rightsUnreadable)
+    }
+
+    /**
+     * Whatever went wrong reading the last person is not news about this one.
+     * The banner used to survive the switch and sit over a grid that had
+     * loaded perfectly well.
+     */
+    @Test
+    fun `picking someone else clears the last one's error`() = runTest {
+        val repository = Recorder()
+        repository.rightsAnswer = ZillitResult.Failure(ZillitError.Validation("project_no_access"))
+        val model = viewModel(repository)
+
+        model.onEvent(AdminEvent.Opened(AdminDestination.Rights))
+        advanceUntilIdle()
+        model.onEvent(AdminEvent.SelectCrew("u1"))
+        advanceUntilIdle()
+        assertNotNull(model.state.value.error)
+
+        repository.rightsAnswer = ZillitResult.Success(
+            listOf(
+                ToolRights(
+                    toolIdentifier = "budget_tool",
+                    toolName = "Budget",
+                    unitId = "unit-1",
+                    section = RightsSection.Tools,
+                ),
+            ),
+        )
+        model.onEvent(AdminEvent.SelectCrew("u2"))
+        advanceUntilIdle()
+
+        assertNull(model.state.value.error)
+        assertFalse(model.state.value.selection.rightsUnreadable)
+        assertEquals(1, model.state.value.selection.rights.size)
+    }
+
     /** A right the server says is not ours to change is not sent. */
     @Test
     fun `a locked right sends nothing`() = runTest {
