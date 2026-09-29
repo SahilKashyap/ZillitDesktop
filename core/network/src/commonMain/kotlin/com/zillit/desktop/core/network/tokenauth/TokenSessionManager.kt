@@ -111,6 +111,22 @@ class TokenSessionManager(
     private val tokensLock = Mutex()
     private val projectTokens = mutableMapOf<String, CachedToken>()
     private val mintLocks = mutableMapOf<String, Mutex>()
+
+    /**
+     * Quiet period per production after a transient mint failure — the
+     * [establishBackoffUntil] of project tokens, and for the same reason.
+     *
+     * A mint that fails caches nothing, so without this every call needing
+     * that production's token re-attempts the mint immediately. The calls
+     * themselves keep working (they fall back to `moduledata`), which is
+     * what makes it invisible: a develop 502 on 2026-09-29 turned into 172
+     * mint attempts a minute, forever, and showed up only in the log.
+     *
+     * Per production rather than global: one production being unreachable
+     * says nothing about another, and a call about a second production must
+     * not be silenced by the first's outage.
+     */
+    private val mintBackoffUntil = mutableMapOf<String, Long>()
     val tokenMode: Boolean
         get() = !killSwitched && !noDeviceYet
 
@@ -144,7 +160,12 @@ class TokenSessionManager(
     fun onAppForegrounded() {
         if (killSwitched) return
         establishBackoffUntil = 0L
-        scope.launch { warmUp() }
+        scope.launch {
+            // The mint quiet periods go too: coming back to the window is the
+            // clearest signal we have that the network may be different now.
+            tokensLock.withLock { mintBackoffUntil.clear() }
+            warmUp()
+        }
     }
 
     /**
@@ -266,7 +287,12 @@ class TokenSessionManager(
 
     private suspend fun clearTokens() {
         deviceToken = null
-        tokensLock.withLock { projectTokens.clear() }
+        tokensLock.withLock {
+            projectTokens.clear()
+            // A new session is a new set of memberships: whatever the old one
+            // could not mint says nothing about what this one can.
+            mintBackoffUntil.clear()
+        }
         store.clearRefreshToken()
     }
 
@@ -413,7 +439,11 @@ class TokenSessionManager(
      */
     private suspend fun mintProjectTokenLocked(projectId: String): String? {
         val startEpoch = epoch
-        var device = ensureDeviceToken() ?: return null
+        // The quiet-period check belongs here, inside the mint lock: calls
+        // that queued behind a failing mint then see the backoff it set,
+        // instead of each firing one request of its own as they come through.
+        val ready = nowMillis() >= mintBackoffUntil(projectId)
+        var device = (if (ready) ensureDeviceToken() else null) ?: return null
         var result = api.mintProjectToken(device, projectId)
         if (result.isNoAccess()) {
             // Not an auth problem: the device has no usable membership there.
@@ -435,13 +465,27 @@ class TokenSessionManager(
         return when (result) {
             is SessionCallResult.Success -> adoptProjectToken(projectId, result.data, startEpoch)
             is SessionCallResult.Failure -> {
-                if (result.serverMessage == MSG_TOKEN_AUTH_DISABLED) killSwitch()
+                // The kill switch needs no quiet period — it stops token mode
+                // outright. Anything else is transient as far as this can
+                // tell, and gets one: a server that is down is then asked
+                // once per period rather than once per call.
+                val killed = result.serverMessage == MSG_TOKEN_AUTH_DISABLED
+                if (killed) killSwitch() else startMintBackoff(projectId)
                 ZillitLog.w(TAG) {
-                    "project token not minted for $projectId: ${result.httpStatus} ${result.serverMessage}"
+                    val quiet = if (killed) "" else "; not retrying for ${MINT_BACKOFF_MILLIS / MILLIS_PER_SECOND}s"
+                    "project token not minted for $projectId: ${result.httpStatus} ${result.serverMessage}$quiet"
                 }
                 null
             }
         }
+    }
+
+    private suspend fun mintBackoffUntil(projectId: String): Long =
+        tokensLock.withLock { mintBackoffUntil[projectId] ?: 0L }
+
+    private suspend fun startMintBackoff(projectId: String) {
+        val until = nowMillis() + MINT_BACKOFF_MILLIS
+        tokensLock.withLock { mintBackoffUntil[projectId] = until }
     }
 
     private suspend fun adoptProjectToken(projectId: String, data: ProjectSession, startEpoch: Int): String? {
@@ -450,7 +494,10 @@ class TokenSessionManager(
             return null
         }
         val token = CachedToken(data.accessToken, nowMillis(), data.expiresInSeconds ?: DEFAULT_TTL_SECONDS)
-        tokensLock.withLock { projectTokens[projectId] = token }
+        tokensLock.withLock {
+            projectTokens[projectId] = token
+            mintBackoffUntil.remove(projectId)
+        }
         ZillitLog.i(TAG) { "project token minted for $projectId (scope=${data.scope})" }
         return token.value
     }
@@ -486,6 +533,15 @@ class TokenSessionManager(
 
         /** Quiet period after a transient establish failure — see [establish]. */
         private const val ESTABLISH_BACKOFF_MILLIS = 30_000L
+
+        /**
+         * Quiet period after a transient mint failure — see [mintBackoffUntil].
+         *
+         * The same thirty seconds the establish path uses. Long enough that a
+         * server outage costs two attempts a minute instead of two hundred,
+         * short enough that nobody waits on a production coming back.
+         */
+        private const val MINT_BACKOFF_MILLIS = 30_000L
 
         /**
          * No device record the server recognises. Matched on ordinary 401s

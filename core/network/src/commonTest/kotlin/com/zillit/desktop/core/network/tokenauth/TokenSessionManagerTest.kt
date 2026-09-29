@@ -67,7 +67,7 @@ class TokenSessionManagerTest {
     }
 
     /** Any device-scoped route; only the project-scoped list in TokenScope cares which. */
-    private val PATH = "https://projectapi-dev.zillit.com/api/v2/user/profile"
+    private val path = "https://projectapi-dev.zillit.com/api/v2/user/profile"
 
     /**
      * Built and probed, which is what the host does: `AppGraph` calls
@@ -96,7 +96,7 @@ class TokenSessionManagerTest {
         runCurrent()
 
         assertTrue(manager.tokenMode)
-        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, path))
     }
 
     /**
@@ -114,7 +114,7 @@ class TokenSessionManagerTest {
         runCurrent()
 
         assertFalse(manager.tokenMode)
-        assertNull(manager.bearerFor(RequestModule.Default, null, PATH))
+        assertNull(manager.bearerFor(RequestModule.Default, null, path))
 
         api.establish = { SessionCallResult.Success(DeviceSession("dev-1", "ref-1", HOUR)) }
         manager.onDeviceRegistered()
@@ -133,7 +133,7 @@ class TokenSessionManagerTest {
         val manager = manager(FakeApi(), FakeStore(), project = null)
         runCurrent()
 
-        assertEquals("dev-1", manager.bearerFor(RequestModule.ProjectUser, null, PATH))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.ProjectUser, null, path))
         assertNull(
             manager.bearerFor(RequestModule.Project, null, "https://projectapi-dev.zillit.com/api/v2/project/users"),
         )
@@ -146,7 +146,7 @@ class TokenSessionManagerTest {
         val manager = manager(api, store)
         runCurrent()
 
-        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, path))
         assertEquals("ref-1", store.refresh)
         assertEquals(1, api.count("establish"), "the warm-up's session is the one every call reuses")
     }
@@ -161,7 +161,7 @@ class TokenSessionManagerTest {
         assertEquals("refresh:ref-0", api.calls.first())
         assertEquals(0, api.count("establish"))
         assertEquals("ref-2", store.refresh, "the rotated token is on disk")
-        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null, PATH))
+        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null, path))
     }
 
     @Test
@@ -174,7 +174,7 @@ class TokenSessionManagerTest {
         runCurrent()
 
         assertEquals(listOf("refresh:ref-0", "establish"), api.calls.take(2))
-        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, path))
         assertEquals("ref-1", store.refresh)
     }
 
@@ -185,7 +185,7 @@ class TokenSessionManagerTest {
         val manager = manager(api, store)
         runCurrent()
 
-        assertNull(manager.bearerFor(RequestModule.Default, null, PATH), "no token, so the call sends moduledata")
+        assertNull(manager.bearerFor(RequestModule.Default, null, path), "no token, so the call sends moduledata")
         assertEquals("ref-0", store.refresh)
         assertEquals(0, api.count("establish"), "a timeout is not a dead token")
     }
@@ -206,7 +206,7 @@ class TokenSessionManagerTest {
         runCurrent()
 
         assertFalse(manager.tokenMode)
-        assertNull(manager.bearerFor(RequestModule.Default, null, PATH))
+        assertNull(manager.bearerFor(RequestModule.Default, null, path))
         // A probe after the switch does not re-arm it, and asks for nothing.
         val before = api.count("establish")
         manager.probeDeviceSession()
@@ -221,13 +221,17 @@ class TokenSessionManagerTest {
         val manager = manager(api, FakeStore())
         runCurrent()
 
-        assertEquals("proj-p1", manager.bearerFor(RequestModule.ProjectUser, "p1", PATH))
-        assertEquals("proj-p1", manager.bearerFor(RequestModule.Chat, "p1", PATH))
+        assertEquals("proj-p1", manager.bearerFor(RequestModule.ProjectUser, "p1", path))
+        assertEquals("proj-p1", manager.bearerFor(RequestModule.Chat, "p1", path))
         assertEquals(1, api.count("mint:p1"), "the warm-up minted it; nothing since")
-        assertEquals("proj-p2", manager.bearerFor(RequestModule.ProjectUser, "p2", PATH), "another project, its own token")
+        assertEquals(
+            "proj-p2",
+            manager.bearerFor(RequestModule.ProjectUser, "p2", path),
+            "another project, its own token",
+        )
         assertEquals(
             "dev-1",
-            manager.bearerFor(RequestModule.ProjectUser, "", PATH),
+            manager.bearerFor(RequestModule.ProjectUser, "", path),
             "no production in context: the device token, not moduledata",
         )
     }
@@ -246,8 +250,77 @@ class TokenSessionManagerTest {
         val manager = manager(api, FakeStore())
         runCurrent()
 
-        assertNull(manager.bearerFor(RequestModule.ProjectUser, "p9", PATH))
+        assertNull(manager.bearerFor(RequestModule.ProjectUser, "p9", path))
         assertEquals(1, api.count("mint:p9"))
+    }
+
+    /**
+     * A 502 on develop (2026-09-29) became 172 mint attempts a minute,
+     * forever: a failed mint caches nothing, so every call that wanted that
+     * production's token re-attempted it. The calls kept working on
+     * `moduledata`, so only the log showed it.
+     */
+    @Test
+    fun `a server error stops the mint being retried once per call`() = runTest {
+        val api = FakeApi().apply { mint = { _, _ -> SessionCallResult.Failure(502, null) } }
+        val manager = manager(api, FakeStore())
+        runCurrent()
+
+        repeat(20) { assertNull(manager.bearerFor(RequestModule.ProjectUser, "p1", path)) }
+
+        // The warm-up's own mint, and nothing from the twenty calls behind it.
+        assertEquals(1, api.count("mint:p1"))
+    }
+
+    @Test
+    fun `the mint is tried again once the quiet period is over`() = runTest {
+        val api = FakeApi().apply { mint = { _, _ -> SessionCallResult.Failure(502, null) } }
+        val manager = manager(api, FakeStore())
+        runCurrent()
+        manager.bearerFor(RequestModule.ProjectUser, "p1", path)
+        val duringOutage = api.count("mint:p1")
+
+        advanceTimeBy(BACKOFF + 1)
+        // Back up: the next call mints and the production works again.
+        api.mint = { _, project -> SessionCallResult.Success(ProjectSession("proj-$project", "project", QUARTER)) }
+
+        assertEquals("proj-p1", manager.bearerFor(RequestModule.ProjectUser, "p1", path))
+        assertEquals(duringOutage + 1, api.count("mint:p1"))
+    }
+
+    /** One production being unreachable says nothing about another. */
+    @Test
+    fun `a production in its quiet period does not silence the others`() = runTest {
+        val api = FakeApi().apply {
+            mint = { _, project ->
+                if (project == "p1") {
+                    SessionCallResult.Failure(502, null)
+                } else {
+                    SessionCallResult.Success(ProjectSession("proj-$project", "project", QUARTER))
+                }
+            }
+        }
+        val manager = manager(api, FakeStore())
+        runCurrent()
+        manager.bearerFor(RequestModule.ProjectUser, "p1", path)
+
+        assertEquals("proj-p2", manager.bearerFor(RequestModule.ProjectUser, "p2", path))
+    }
+
+    /** Coming back to the window is the clearest sign the network may differ now. */
+    @Test
+    fun `returning to the front retries a production that was failing`() = runTest {
+        val api = FakeApi().apply { mint = { _, _ -> SessionCallResult.Failure(502, null) } }
+        val manager = manager(api, FakeStore())
+        runCurrent()
+        manager.bearerFor(RequestModule.ProjectUser, "p1", path)
+        val duringOutage = api.count("mint:p1")
+
+        api.mint = { _, project -> SessionCallResult.Success(ProjectSession("proj-$project", "project", QUARTER)) }
+        manager.onAppForegrounded()
+        runCurrent()
+
+        assertTrue(api.count("mint:p1") > duringOutage, "the wake seam must clear the quiet period")
     }
 
     @Test
@@ -256,12 +329,12 @@ class TokenSessionManagerTest {
         val store = FakeStore()
         val manager = manager(api, store)
         runCurrent()
-        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, PATH))
+        assertEquals("dev-1", manager.bearerFor(RequestModule.Default, null, path))
 
-        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, PATH, failedToken = "dev-1"))
+        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, path, failedToken = "dev-1"))
         assertEquals("ref-2", store.refresh)
         // A second call that carried the same dead token finds the renewal done.
-        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, PATH, failedToken = "dev-1"))
+        assertEquals("dev-2", manager.recoverFromUnauthorized(RequestModule.Default, null, path, failedToken = "dev-1"))
         assertEquals(1, api.count("refresh"), "one rotation, however many 401s carried the old token")
     }
 
@@ -274,7 +347,7 @@ class TokenSessionManagerTest {
             SessionCallResult.Success(ProjectSession("proj-$project-fresh", "project", QUARTER))
         }
 
-        assertEquals("proj-p1-fresh", manager.recoverFromUnauthorized(RequestModule.ProjectUser, "p1", PATH, "proj-p1"))
+        assertEquals("proj-p1-fresh", manager.recoverFromUnauthorized(RequestModule.ProjectUser, "p1", path, "proj-p1"))
         assertEquals(0, api.count("refresh"), "a project mint rotates nothing")
     }
 
@@ -329,7 +402,7 @@ class TokenSessionManagerTest {
         assertEquals(0, api.count("refresh"), "no timer: time passing alone rotates nothing")
 
         // Using it is what renews it.
-        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null, PATH))
+        assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null, path))
         assertEquals(1, api.count("refresh"))
     }
 
@@ -350,5 +423,8 @@ class TokenSessionManagerTest {
     private companion object {
         const val HOUR = 3600L
         const val QUARTER = 900L
+
+        /** The manager's own quiet period after a failed mint, in millis. */
+        const val BACKOFF = 30_000L
     }
 }
