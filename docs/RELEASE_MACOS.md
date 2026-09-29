@@ -51,6 +51,10 @@ update check compares against Remote Config. Bump it there before packaging
 (or pass `-Pzillit.version=1.0.3` for a one-off). Nothing in
 `desktopApp/build.gradle.kts` needs editing.
 
+The number must be **above every version already published** in Remote Config
+(`desktop_latest_version`) — see *Releasing an update* below for what goes
+wrong otherwise.
+
 QA — bundles `~/.zillit/zillit.properties` inside the app and points at develop,
 so testers install and sign in with nothing to configure:
 
@@ -84,27 +88,102 @@ neither flag builds the exact same production app as before this existed —
 still worth renaming before it leaves the machine, since the DMG's own name is
 the only thing that tells a tester which is which before they open it.
 
-## Telling installs about it
+## Telling installs about it — and updating them
 
-The app asks Firebase Remote Config (the same project as the calling plane's
-config) whether it is out of date, once at sign-in and every six hours, and
-Settings ▸ About has a *Check for updates* button that asks on demand. After
-uploading a build, publish in the console — **plain values, no quotes** (the
-console takes a string; typing `"1.0.3"` stores the quotes and, until
-2026-09-14, that read as version 0.0.3 and no banner ever showed):
+The app asks Firebase Remote Config whether it is out of date, once at sign-in
+and every six hours; Settings ▸ About ▸ *Check for updates* asks on demand.
+Where it can, it then updates itself with no click:
+
+1. **Download** the installer in the background to `~/.zillit/updates/downloads`,
+   hashing it as it arrives. A digest that does not match
+   `desktop_installer_sha256` throws the file away.
+2. **Verify** it: the `.app` inside must have this install's bundle id, pass
+   `codesign --verify --deep --strict`, carry the **same Team ID** as the
+   running build, and be built for this Mac's architecture (`lipo -archs`).
+   Anything else is refused and nothing is installed.
+3. **Restart** after a countdown in the update strip — 30 s, or 10 s for a
+   mandatory update — held while a call is in progress. A helper script waits
+   for Zillit to quit, swaps the bundle in `/Applications` (asking for an
+   administrator's password if the folder is not writable), and reopens it.
+
+The automatic restart runs once per version. If Zillit comes back still needing
+it (the password prompt was cancelled), that version waits for *Restart now*
+rather than prompting on every launch. `~/.zillit/updates/install-update.log`
+records what the helper did.
+
+A mandatory update — below `desktop_min_version`, or `desktop_force_update` on
+and behind `desktop_latest_version` — covers the whole window with an *Update
+required* screen whose only other exit is *Quit Zillit*. A Gradle run (`run`,
+the IDE) keeps the red strip instead, so a raised floor never locks out a
+developer.
+
+### What each install needs before any of this happens
+
+- **The update check needs the Firebase app id.** The `zillit.properties` the app
+  reads — bundled with `-PzillitBundleConfig`, or `~/.zillit/zillit.properties`
+  on an install without one — must carry `<ENV>_FIREBASE_PROJECT_ID`,
+  `<ENV>_FIREBASE_API_KEY` **and `<ENV>_FIREBASE_APP_ID`**. Without the app id
+  the check is silently off: no banner, no forced update, nothing.
+- **Only builds that have the auto-install code update themselves.** Anything
+  older shows the banner at most. The first release carrying it still has to
+  reach people the old way.
+
+### Releasing an update, in order
+
+1. **Bump `zillit.version`** above every version already published. The check
+   compares numbers only: installs already on a higher number never see the
+   new build as newer, and the new build, once installed, is offered the old
+   higher-numbered one as an "update".
+2. **Build signed and notarized** (see *Building*). An unsigned or ad-hoc
+   signed DMG fails step 2 above and is never installed in-app. Always sign
+   with the same Developer ID certificate: a different Team ID is refused.
+3. **One DMG per environment.** A `develop` build has its own bundle id
+   (`com.zillit.desktop.develop`), so STG pointed at the production DMG fails
+   verification. Upload each variant's DMG to its own URL.
+4. **Hash what you uploaded:**
+
+   ```bash
+   shasum -a 256 Zillit-Desktop-1.0.9.dmg
+   ```
+
+5. **Publish in Remote Config last**, after the upload has fully finished. Keys
+   published first send clients to a file that fails its digest, and that
+   version is then not retried automatically.
+
+### The keys
+
+**Plain values, no quotes.** The console takes a string, and typing `"1.0.3"`
+stores the quotes too (until 2026-09-14 that read as version 0.0.3, and no
+banner ever showed; the app now forgives it, but don't rely on that).
 
 | Key | Value | Effect |
 |---|---|---|
-| `desktop_latest_version` | `1.0.3` | older installs see a dismissible "Version 1.0.3 is available" strip |
-| `desktop_min_version` | `1.0.1` | installs below this see a non-dismissible "must update" strip |
-| `desktop_download_url` | `https://…` | the Download button; https only |
+| `desktop_latest_version` | `1.0.9` | older installs get the update: a banner, then download → install → restart |
+| `desktop_min_version` | `1.0.5` | installs below this are blocked by *Update required* until they update |
+| `desktop_force_update` | `true` / `false` | `true` makes **every** install behind `desktop_latest_version` mandatory. An install already current is never forced |
+| `desktop_download_url` | `https://…` | the browser fallback; https only. If it links straight to a `.dmg`/`.msi`, it doubles as the installer link |
+| `desktop_installer_url` | `https://…/Zillit-Desktop.dmg` | the installer file itself, not a page. Set it even when the download URL is the file: builds from before 2026-09-28 read only this key |
+| `desktop_installer_sha256` | 64 hex characters | `shasum -a 256` of that file. **Required** for in-app install, and **must change with every release**, because the URL stays the same while the file behind it does not |
 
-Mac and Windows builds rarely ship together, so each key also takes a
-platform suffix that wins on that platform: `desktop_download_url_mac`,
-`desktop_download_url_windows` (and `_linux`), likewise
-`desktop_latest_version_windows` / `desktop_min_version_windows`. The plain
-key is the fallback for everyone. Without the Windows URL, a Windows install
-is offered whatever the plain key points at — a `.dmg`.
+Mac and Windows builds rarely ship together, so each key also takes a platform
+suffix that wins on that platform: `_mac`, `_windows`, `_linux` (for example
+`desktop_installer_sha256_mac` or `desktop_force_update_windows`). The plain key
+is the fallback for everyone. Without a `_windows` download URL, a Windows
+install is offered whatever the plain key points at — a `.dmg`.
+
+**Windows cannot install in-app yet.** The `.msi` is unsigned (see
+`WINDOWS_BUILD.md`), and the Windows installer refuses anything that is not
+Authenticode-`Valid` from the running build's publisher. Until the MSI is
+signed, Windows downloads the installer and opens it for the person to run.
+
+Probe what an environment actually serves before blaming the app — the raw
+characters matter:
+
+```bash
+curl -s -X POST "https://firebaseremoteconfig.googleapis.com/v1/projects/<PROJECT_ID>/namespaces/firebase:fetch?key=<API_KEY>" \
+  -H 'Content-Type: application/json' \
+  -d '{"appId":"<APP_ID>","appInstanceId":"probe","languageCode":"en"}'
+```
 
 ## Verifying
 
