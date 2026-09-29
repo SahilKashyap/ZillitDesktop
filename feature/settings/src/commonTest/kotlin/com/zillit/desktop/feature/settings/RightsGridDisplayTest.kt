@@ -101,6 +101,21 @@ class RightsGridDisplayTest {
         assertFalse(department.shownAs(AccessType.View, listOf(department)))
     }
 
+    /**
+     * The two rows need not be in the same section.
+     *
+     * A tool appears under the dashboard, the grid, or both, and those are
+     * separate rows — so a lookup scoped to the section being drawn would miss
+     * the main budget whenever it was listed under the other one.
+     */
+    @Test
+    fun `a department budget finds the main budget in the other section`() {
+        val main = tool("main_budget_label", view = true).copy(section = RightsSection.Home)
+        val department = tool("department_budget_label")
+
+        assertTrue(department.shownAs(AccessType.View, listOf(main, department)))
+    }
+
     // -- whether the box moves ---------------------------------------------
 
     @Test

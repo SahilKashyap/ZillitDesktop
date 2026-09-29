@@ -258,7 +258,12 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
                         if (index > 0) RowRule()
                         RightsRow(
                             rights = rights,
-                            among = tools,
+                            // The whole person, not this section: the main
+                            // budget a department budget derives from is a row
+                            // in its own right and may be listed under the
+                            // other one. The web reads across the person's
+                            // whole row for the same reason.
+                            among = state.selection.rights,
                             isAdmin = person.isAdmin,
                             saving = state.selection.savingRights,
                             onEvent = onEvent,
