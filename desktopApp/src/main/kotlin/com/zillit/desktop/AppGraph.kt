@@ -450,6 +450,8 @@ private suspend fun onProjectOpened(
     onSocketAuthRejected: (detail: String) -> Unit,
     projectContext: ProjectContextLoader?,
     scope: CoroutineScope,
+    isCallActive: () -> Boolean = { false },
+    onSocketReconnectSkippedForCall: () -> Unit = {},
 ) {
     // Point project-scoped preferences at the new production before anything
     // can read them, and make subsequent requests carry the new project.
@@ -487,7 +489,16 @@ private suspend fun onProjectOpened(
         }
     }
 
-    socket.connect(SocketConfig(url = socketUrl, authHeaders = socketAuth, onAuthRejected = onSocketAuthRejected))
+    // Reconnecting tears down the transport an in-progress LiveKit call rides
+    // for its signalling (see SocketIoClient.openConnection) — switching
+    // production mid-call must not hang up the call. Leave the socket as it is
+    // and let the call-end watcher installed alongside the call coordinator
+    // catch it up to this production once the call is over.
+    if (isCallActive()) {
+        onSocketReconnectSkippedForCall()
+    } else {
+        socket.connect(SocketConfig(url = socketUrl, authHeaders = socketAuth, onAuthRejected = onSocketAuthRejected))
+    }
     // Counts never gate the open; the rail draws them when they land. The
     // ledger's own rows come first (last session's badges, instantly), then
     // the page of what the server has since.
@@ -1153,6 +1164,17 @@ sealed interface AppGraph {
                 isAdmin = { activeProject.value?.isAdmin == true },
             )
 
+            // Set once the call coordinator is built below (it needs collaborators
+            // that are only ready after project-switch handling is wired). Read by
+            // onProjectOpened, which must not tear down the socket an in-progress
+            // LiveKit call rides while this is non-null and mid-call.
+            var callCoordinatorForProjectSwitch: CallCoordinator? = null
+
+            // Set when onProjectOpened skips its socket reconnect because a call
+            // was active; the watcher installed after the call coordinator exists
+            // below clears it by reconnecting once that call ends.
+            val socketResyncNeededAfterCall = MutableStateFlow(false)
+
             val projectRepository = ProjectRepositoryImpl(
                 apiClient = apiClient,
                 config = config,
@@ -1173,6 +1195,12 @@ sealed interface AppGraph {
                         onSocketAuthRejected = socketTokenRejected,
                         projectContext = projectContext,
                         scope = appScope,
+                        isCallActive = {
+                            callCoordinatorForProjectSwitch?.phase?.value?.let {
+                                it != com.zillit.desktop.feature.calls.domain.CallPhase.Idle
+                            } == true
+                        },
+                        onSocketReconnectSkippedForCall = { socketResyncNeededAfterCall.value = true },
                     )
                     // Line 3, per production: which productions offer it, and
                     // the region warm the phones fire on every switch.
@@ -1460,6 +1488,27 @@ sealed interface AppGraph {
                 // file goes to the conversation, not only to this disk.
                 share = callRecordingShare(attachmentUploader, chatRepository),
             )
+            callCoordinatorForProjectSwitch = callCoordinator
+
+            // A production switched mid-call leaves the socket where it was so the
+            // call's own signalling is not cut (see onProjectOpened); once the call
+            // ends, catch the socket up to whichever production is open by then.
+            appScope.launch {
+                callCoordinator.phase
+                    .map { it == com.zillit.desktop.feature.calls.domain.CallPhase.Idle }
+                    .distinctUntilChanged()
+                    .filter { isIdle -> isIdle && socketResyncNeededAfterCall.value }
+                    .collect {
+                        socketResyncNeededAfterCall.value = false
+                        socketClient.connect(
+                            SocketConfig(
+                                url = config.baseUrl(ZillitService.Chat),
+                                authHeaders = socketHandshake,
+                                onAuthRejected = socketTokenRejected,
+                            ),
+                        )
+                    }
+            }
 
             com.zillit.desktop.feature.calls.data.CallRinger(
                 coordinator = callCoordinator,
