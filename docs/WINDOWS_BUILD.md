@@ -57,8 +57,66 @@ From the repo root, in PowerShell or `cmd`:
   `-PzillitBundleConfig=C:\path\to\zillit.properties`). Omit it for an
   installer that expects the user to provide the config.
 
-The installer is **unsigned** (SmartScreen will warn once; "More info → Run
-anyway"). Authenticode signing is a later milestone.
+## Signing
+
+Both installers are **unsigned unless a certificate is named**. SmartScreen
+warns once on an unsigned one ("More info → Run anyway") — and, more
+importantly, the in-app updater refuses to install an unsigned `.msi` at all
+(see *In-app updates* below). One flag signs:
+
+```powershell
+.\gradlew.bat :desktopApp:packageMsi -PzillitBundleConfig -PzillitWindowsSigningCert="Zillit Pvt Ltd"
+```
+
+It signs the installer once jpackage has written it — SHA-256, RFC 3161
+timestamped — then verifies it with `signtool verify /pa`. The certificate can
+be named four ways:
+
+| Flag | For |
+|---|---|
+| `-PzillitWindowsSigningCert="<subject>"` | a certificate in the store — **prefer this** |
+| `-PzillitWindowsSigningCert=<40 hex>` | the same certificate, by thumbprint |
+| `-PzillitWindowsSigningCert=C:\x.pfx` plus `-PzillitWindowsSigningPassword` | a file |
+| `-PzillitWindowsSigningDlib=… -PzillitWindowsSigningDmdf=…` | Azure Trusted Signing |
+
+Prefer the subject. `WindowsInstaller` (in `core/appupdate`) compares the
+*subject* on an incoming package against the one on the running build's
+launcher, so a build signed under a renewed certificate still reaches installs
+that remember the old one — keep `CN=`/`O=` identical across renewals.
+
+**Known gap: the launcher inside the package is not signed.** `packageMsi` does
+not consume `createDistributable`; jpackage lays the payload out itself from
+the runtime image, so there is no signed `Zillit-Desktop.exe` for it to carry.
+The subject comparison above therefore never engages — an install with an
+unsigned launcher accepts any validly signed package whose digest matches
+`desktop_installer_sha256_windows`, which is the gate that actually holds.
+Closing it means packaging from an already-signed app image through jpackage's
+`--app-image` instead of the Compose task.
+
+`signtool.exe` is found in the Windows SDK automatically; name it with
+`-PzillitSigntool=<path>` if it lives elsewhere. A password belongs in
+`%USERPROFILE%\.gradle\gradle.properties` or the environment, never in the
+repo's `gradle.properties` — and note that one given this way is written into
+Gradle's configuration cache under `build/`, which the store-based forms avoid.
+
+**Getting a certificate.** Since June 2023 the CA/Browser Forum has required
+code-signing keys to be generated on FIPS 140-2 Level 2 hardware, so no public
+CA issues a downloadable `.pfx` any more. The routes are a USB token (OV,
+~$200–400/yr), a cloud HSM (DigiCert KeyLocker, SSL.com eSigner, ~$300–600/yr),
+or Azure Trusted Signing (~$10/mo, but the organisation needs three years of
+verifiable history). EV earns SmartScreen reputation immediately; OV builds it
+over a few hundred installs. A self-signed certificate does satisfy the
+updater — its check only asks that the status read `Valid` — but only on
+machines that trust it, so it is for exercising the update path, never for
+distribution.
+
+## In-app updates
+
+**The updater installs `.msi` only.** `WindowsInstaller.accepts` matches on the
+extension, so `desktop_installer_url_windows` has to point at the `.msi`; an
+`.exe` is merely downloaded and handed to the person to run. A Windows release
+that people receive in-app is therefore `:desktopApp:packageMsi`, signed, with
+`desktop_installer_sha256_windows` published alongside it.
 
 After uploading it, publish `desktop_download_url_windows` (and, if the
 Windows build's number differs from the Mac's, `desktop_latest_version_windows`

@@ -733,6 +733,159 @@ if (File(jbrBin, "jcef_helper.exe").isFile) {
 }
 
 /*
+ * Authenticode signing, Windows.
+ *
+ * Opt-in exactly as the macOS identity above is: with no certificate named,
+ * the task graph is untouched and a developer without one packages as before.
+ * Name one and every installer this build writes is signed and timestamped
+ * before it can be handed to anybody.
+ *
+ * ## What this buys, and what it does not
+ *
+ * `WindowsInstaller` (core:appupdate) refuses any package that
+ * `Get-AuthenticodeSignature` does not call `Valid`, so signing the installer
+ * is what makes an in-app update possible at all. Unsigned, the app can only
+ * download the file and ask the person to run it themselves.
+ *
+ * It does NOT put a signature on the launcher *inside* the package, so the
+ * second half of that check — the incoming package's signer subject against
+ * the signature on the running build's launcher — never engages, and installs
+ * fall back to accepting any valid signature whose digest matches the one
+ * published in Remote Config. The reason is that `packageMsi` does not
+ * consume `createDistributable`: jpackage lays out the payload itself from the
+ * runtime image, which is the same fact `copyCefResources` above exists for.
+ * There is therefore no signed launcher for it to carry, and no amount of
+ * signing the app image changes what ships. Closing that gap means packaging
+ * from an already-signed app image through jpackage's `--app-image`, which is
+ * a task of its own rather than a flag here.
+ *
+ * ## Naming the certificate
+ *
+ * Since June 2023 the CA/Browser Forum has required code-signing keys to be
+ * generated on FIPS 140-2 Level 2 hardware, so a public CA no longer issues a
+ * .pfx at all: an OV certificate arrives on a USB token, an HSM-backed one is
+ * reached over the network. Each shape below is what `signtool` wants for one
+ * of those, and a .pfx remains for the self-signed certificate used to
+ * exercise the update path before a real one is bought.
+ *
+ *     -PzillitWindowsSigningCert=3A7F…               by thumbprint, 40 hex
+ *     -PzillitWindowsSigningCert="Zillit Pvt Ltd"    by subject
+ *     -PzillitWindowsSigningCert=C:\zillit.pfx       a file, with …Password
+ *     -PzillitWindowsSigningDlib=…  -PzillitWindowsSigningDmdf=…
+ *                                                    Azure Trusted Signing
+ *
+ * Prefer the subject. Once the launcher gap above is closed the updater will
+ * compare subjects rather than thumbprints — precisely so that renewing the
+ * certificate, which every one of them needs yearly, does not strand every
+ * install on the release before it — and a build pinned here to a thumbprint
+ * would hand out packages those installs no longer recognise.
+ *
+ * No secret belongs in the repo's gradle.properties. A password, where the
+ * shape needs one at all, goes in ~/.gradle/gradle.properties or the
+ * environment — and note that one given here is written into Gradle's
+ * configuration cache under `build/`, while the thumbprint and subject forms
+ * need no password and leave nothing behind.
+ */
+val windowsSigningCert = providers.gradleProperty("zillitWindowsSigningCert")
+val windowsSigningDlib = providers.gradleProperty("zillitWindowsSigningDlib")
+
+if (windowsSigningCert.isPresent || windowsSigningDlib.isPresent) {
+    val signtool = providers.gradleProperty("zillitSigntool").orNull?.let(::File)
+        ?: File("C:\\Program Files (x86)\\Windows Kits\\10\\bin")
+            .listFiles { entry: File -> entry.isDirectory && entry.name.startsWith("10.") }
+            .orEmpty()
+            // Newest SDK first. Every one of these is `10.0.<five digits>.0`,
+            // so plain string order is version order.
+            .sortedByDescending { it.name }
+            .firstNotNullOfOrNull { File(it, "x64\\signtool.exe").takeIf(File::isFile) }
+    requireNotNull(signtool) {
+        "Windows signing was asked for but signtool.exe was not found. Install the Windows " +
+            "SDK's Signing Tools feature, or name it with -PzillitSigntool=<path>."
+    }
+    require(signtool.isFile) { "-PzillitSigntool does not name a file: ${signtool.path}" }
+
+    val credential: List<String> = if (windowsSigningDlib.isPresent) {
+        listOf("/dlib", windowsSigningDlib.get()) +
+            providers.gradleProperty("zillitWindowsSigningDmdf").orNull
+                ?.let { listOf("/dmdf", it) }.orEmpty()
+    } else {
+        val named = windowsSigningCert.get()
+        when {
+            // A thumbprint as both the certificate console and `Get-ChildItem
+            // Cert:\CurrentUser\My` print it.
+            named.matches(Regex("[0-9a-fA-F]{40}")) -> listOf("/sha1", named)
+            named.endsWith(".pfx", ignoreCase = true) || named.endsWith(".p12", ignoreCase = true) ->
+                listOf("/f", named) +
+                    providers.gradleProperty("zillitWindowsSigningPassword").orNull
+                        ?.let { listOf("/p", it) }.orEmpty()
+            else -> listOf("/n", named)
+        }
+    }
+
+    // RFC 3161, and not optional. An untimestamped signature stops verifying
+    // the day the certificate expires, and every install in the field would
+    // then refuse its next update rather than merely showing its age.
+    val timestampUrl = providers.gradleProperty("zillitWindowsSigningTimestampUrl")
+        .getOrElse("http://timestamp.digicert.com")
+
+    // Captured as plain values for the execution bodies below — a String, a
+    // List<String> and a Provider all serialise; reaching back into the
+    // project from a task action is what the configuration cache rejects.
+    val signtoolPath = signtool.absolutePath
+    val signArgs = listOf("sign", "/fd", "SHA256", "/tr", timestampUrl, "/td", "SHA256") + credential
+
+    val binaries = layout.buildDirectory.dir("compose/binaries/main")
+
+    // `finalizedBy` rather than a task to remember: a `packageMsi` that quietly
+    // produced an unsigned installer is exactly the accident this exists to
+    // design out.
+    listOf(
+        Triple("packageMsi", "signWindowsMsi", "msi"),
+        Triple("packageExe", "signWindowsExe", "exe"),
+    ).forEach { (packager, signerName, format) ->
+        val target = binaries.map { it.file("$format/$desktopPackageName-$zillitVersion.$format") }
+        val signer = tasks.register(signerName) {
+            description = "Authenticode-signs the packaged .$format."
+            // jpackage rewrites the installer, so an up-to-date verdict here
+            // can be about a file that is already gone.
+            outputs.upToDateWhen { false }
+
+            val label = signerName
+            val tool = signtoolPath
+            val arguments = signArgs
+
+            doLast {
+                val file = target.get().asFile
+                if (!file.isFile) {
+                    // Reached when the packaging task this finalises failed.
+                    // That failure is the error worth reading, not a second
+                    // one stacked on top of it.
+                    logger.lifecycle("$label: no ${file.name} — packaging did not produce it.")
+                    return@doLast
+                }
+                listOf(
+                    arguments + file.absolutePath,
+                    listOf("verify", "/pa", file.absolutePath),
+                ).forEach { step ->
+                    val process = ProcessBuilder(listOf(tool) + step).redirectErrorStream(true).start()
+                    val output = process.inputStream.bufferedReader().readText().trim()
+                    val code = process.waitFor()
+                    // signtool's own output and nothing else: Gradle prints an
+                    // Exec task's entire command line when it fails, and
+                    // `/p <password>` has no business in a build log or a CI
+                    // transcript. That is why this is not an Exec task.
+                    check(code == 0) { "signtool ${step.first()} failed on ${file.name} (exit $code):\n$output" }
+                }
+                logger.lifecycle("$label: signed and verified ${file.name}")
+            }
+        }
+        tasks.matching { it.name == packager }.configureEach { finalizedBy(signer) }
+    }
+
+    logger.lifecycle("Windows packages will be Authenticode-signed and timestamped at $timestampUrl")
+}
+
+/*
  * Shipping the configuration inside the app.
  *
  * `JvmConfigLoader` looks for `zillit.properties` beside the executable, but

@@ -171,10 +171,13 @@ suffix that wins on that platform: `_mac`, `_windows`, `_linux` (for example
 is the fallback for everyone. Without a `_windows` download URL, a Windows
 install is offered whatever the plain key points at — a `.dmg`.
 
-**Windows cannot install in-app yet.** The `.msi` is unsigned (see
-`WINDOWS_BUILD.md`), and the Windows installer refuses anything that is not
-Authenticode-`Valid` from the running build's publisher. Until the MSI is
-signed, Windows downloads the installer and opens it for the person to run.
+**Windows installs in-app only from a signed `.msi`.** The installer refuses
+anything that is not Authenticode-`Valid` from the running build's publisher,
+and it matches on the extension, so the `_windows` keys must point at a signed
+`.msi` — not the `.exe`. Build it with `-PzillitWindowsSigningCert=…` (see
+`WINDOWS_BUILD.md`). An unsigned package is downloaded and opened for the
+person to run instead, which is what happens today: no certificate has been
+bought yet.
 
 Probe what an environment actually serves before blaming the app — the raw
 characters matter:
