@@ -317,7 +317,13 @@ fun main(args: Array<String>) {
             wantsWidget != null -> WidgetLaunch.signalRunningApp(wantsWidget)
             // The login item found Zillit already up: a dialog at every sign-in is worse than none.
             startHidden -> Unit
-            else -> reportAlreadyRunning()
+            // Someone launched Zillit while Zillit was running, which almost
+            // always means they want to see it — and with CloseToTray on by
+            // default, "already running" routinely means "in the tray, with no
+            // window to switch to". Ask the running copy to show itself; the
+            // dialog is for when nothing answers.
+            !MainWindowRequest.ask() -> reportAlreadyRunning()
+            else -> Unit
         }
         return
     }
@@ -483,7 +489,11 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     val crewName: (String) -> String? = { id ->
         (graph as? AppGraph.Ready)?.projectContext?.context?.value?.user(id)?.fullName
     }
+    // The same request, by the only two routes a platform offers: macOS hands
+    // the running app a reopen event, while Windows and Linux start a second
+    // process that leaves a note and exits.
     LaunchedEffect(Unit) { DockReopen.watch(showMain) }
+    LaunchedEffect(Unit) { MainWindowRequest.watch(onShow = showMain) }
     LaunchedEffect(preferences) { LoginItem.reconcile(preferences) }
 
     val trayState = rememberTrayState()

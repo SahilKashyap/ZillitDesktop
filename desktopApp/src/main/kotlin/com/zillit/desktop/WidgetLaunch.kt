@@ -112,3 +112,89 @@ internal object WidgetLaunch {
     private const val POLL_MILLIS = 1_000L
     private const val TAG = "WidgetLaunch"
 }
+
+/**
+ * Launching Zillit when Zillit is already running: show the window.
+ *
+ * Closing the window puts Zillit in the tray rather than quitting it
+ * (`CloseToTray`, on by default), so "it is already running" and "you can see
+ * it" are different things. Double-clicking the icon then used to produce a
+ * dialog saying to switch to the window that is already open — advice nobody
+ * could take, because there was no window, only a tray icon they had not
+ * noticed. That is the dead end this removes: the second copy asks the
+ * running one to show itself, which is what the person meant by launching it.
+ *
+ * macOS reaches a running app through [DockReopen] instead; it gets a reopen
+ * event and never starts a second process at all. Windows and Linux do start
+ * one, so they need this.
+ *
+ * The same marker-file mechanism as [WidgetLaunch], for the same reasons — no
+ * firewall prompt, and a stale marker is consumed harmlessly on the next poll.
+ * [ask] waits to see its marker taken, so a copy that is *not* watching for
+ * one — anything built before this existed — still gets the old dialog rather
+ * than exiting silently and looking broken.
+ */
+internal object MainWindowRequest {
+
+    /**
+     * From the copy that could not start. True when the running copy took the
+     * request, which means the window is coming up and nothing more is owed to
+     * the person; false when nobody answered, and the caller should say so.
+     */
+    fun ask(directory: File = ZillitVariant.dataDir): Boolean {
+        val marker = File(directory, MARKER)
+        val written = runCatching {
+            directory.mkdirs()
+            marker.writeText("show")
+        }.isFailure.not()
+        if (!written) {
+            System.err.println("[$TAG] could not signal the running app")
+            return false
+        }
+        val deadline = System.currentTimeMillis() + ACK_TIMEOUT_MILLIS
+        while (System.currentTimeMillis() < deadline) {
+            if (!marker.exists()) return true
+            Thread.sleep(ACK_POLL_MILLIS)
+        }
+        // Nobody is watching. Clear it rather than leave a request that a
+        // later, newer copy would act on at a moment nobody asked for.
+        runCatching { marker.delete() }
+        return false
+    }
+
+    /** In the running app: true once, for each request left behind. */
+    fun consume(directory: File): Boolean = File(directory, MARKER).let { it.exists() && it.delete() }
+
+    /**
+     * In the running app: calls [onShow] each time a second launch asks for the
+     * window. Never returns.
+     *
+     * Beside [DockReopen.watch] rather than folded into [WidgetLaunch.watch],
+     * which polls the same directory: the two are the same idea on different
+     * platforms — macOS is handed a reopen event, Windows and Linux start a
+     * second process that has to leave a note — and reading them side by side
+     * at the call site is worth one more `exists()` per second.
+     */
+    suspend fun watch(directory: File = ZillitVariant.dataDir, onShow: () -> Unit) {
+        while (true) {
+            if (withContext(Dispatchers.IO) { consume(directory) }) {
+                ZillitLog.i(TAG) { "a second launch asked for the main window" }
+                onShow()
+            }
+            delay(POLL_MILLIS)
+        }
+    }
+
+    private const val MARKER = "show-main-window"
+
+    /**
+     * Comfortably longer than [WidgetLaunch]'s one-second poll, so a running
+     * copy that is simply between polls is not mistaken for one that is not
+     * listening — and short enough that the fallback dialog still feels like a
+     * response to the double-click rather than an afterthought.
+     */
+    private const val ACK_TIMEOUT_MILLIS = 3_000L
+    private const val ACK_POLL_MILLIS = 100L
+    private const val POLL_MILLIS = 1_000L
+    private const val TAG = "MainWindowRequest"
+}
