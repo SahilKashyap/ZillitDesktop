@@ -64,7 +64,7 @@ internal object DesktopDevice {
     }
 
     /**
-     * `Zillit-Desktop/1.0.6 (macOS 26.5.1; aarch64; Mac15,3)`.
+     * `Zillit-Desktop/1.0.7 (macOS 26.5.1; aarch64; Mac15,3)`.
      *
      * Sent on every API call so the library's own agent is never what the
      * server sees: `okhttp/…` and `ktor-client` are what an Android app sends.
