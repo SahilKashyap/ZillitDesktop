@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.feature.maps.data.MapCanvasWire
 import com.zillit.desktop.feature.maps.domain.MapCanvasHost
 import com.zillit.desktop.core.strings.S
@@ -240,7 +241,7 @@ class KcefMapEngine(
      * launch so a stale copy cannot survive an upgrade.
      */
     private fun extractPage(): File {
-        val dir = File(System.getProperty("user.home"), ".zillit/mapengine").apply { mkdirs() }
+        val dir = File(ZillitVariant.dataDir, "mapengine").apply { mkdirs() }
         PAGE_FILES.forEach { name ->
             val resource = checkNotNull(javaClass.getResourceAsStream("/mapengine/$name")) {
                 "missing bundled resource mapengine/$name"

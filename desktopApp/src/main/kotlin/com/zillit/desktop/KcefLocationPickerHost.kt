@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPickerEvent
 import com.zillit.desktop.core.locationpicker.LocationPickerWire
@@ -332,7 +333,7 @@ class KcefLocationPickerHost(
      * engine's directory and no filename with it.
      */
     private fun extractPage(): File {
-        val dir = File(System.getProperty("user.home"), ".zillit/mapengine").apply { mkdirs() }
+        val dir = File(ZillitVariant.dataDir, "mapengine").apply { mkdirs() }
         val resource = checkNotNull(javaClass.getResourceAsStream("/mapengine/$PAGE_FILE")) {
             "missing bundled resource mapengine/$PAGE_FILE"
         }

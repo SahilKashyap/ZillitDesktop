@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.EngineBridge
@@ -912,7 +913,7 @@ private class OffscreenHolder {
  * cannot leave last version's page behind.
  */
 private fun extractPage(): File {
-    val dir = File(System.getProperty("user.home"), ".zillit/callengine").apply { mkdirs() }
+    val dir = File(ZillitVariant.dataDir, "callengine").apply { mkdirs() }
     PAGE_FILES.forEach { name ->
         val resource = checkNotNull(KcefCallEngine::class.java.getResourceAsStream("/callengine/$name")) {
             "missing bundled resource callengine/$name"

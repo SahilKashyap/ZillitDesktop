@@ -2,6 +2,7 @@ package com.zillit.desktop
 
 import com.jetbrains.cef.JCefAppConfig
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitVariant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -9,6 +10,7 @@ import kotlinx.coroutines.withContext
 import org.cef.CefApp
 import org.cef.CefClient
 import org.cef.SystemBootstrap
+import java.io.File
 
 /**
  * The embedded Chromium behind the call media engine, brought up once.
@@ -70,7 +72,14 @@ internal object KcefRuntime {
             SystemBootstrap.setLoader(config.getLoader())
             val args = config.appArgsAsList + MEDIA_ARGS
             check(CefApp.startup(args.toTypedArray())) { "CefApp.startup refused" }
-            app = CefApp.getInstance(args.toTypedArray(), config.cefSettings)
+            // JBR leaves the profile unset, so every copy of the app shares
+            // Chromium's default one. Chromium allows one process per profile:
+            // with prod and develop both open, the second one's browser hands
+            // off to the first and quits, and its call page never loads.
+            val settings = config.cefSettings.apply {
+                cache_path = File(ZillitVariant.dataDir, "cef").apply { mkdirs() }.absolutePath
+            }
+            app = CefApp.getInstance(args.toTypedArray(), settings)
             ZillitLog.i(TAG) { "chromium up (jcef ${JCefAppConfig.getVersion()})" }
         }.onFailure { thrown ->
             failure = Failure.Broken(thrown.message ?: thrown::class.simpleName ?: "unknown")
