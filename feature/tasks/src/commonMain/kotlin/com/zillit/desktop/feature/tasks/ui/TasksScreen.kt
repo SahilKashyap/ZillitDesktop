@@ -13,26 +13,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.tasks.domain.Task
@@ -57,17 +51,14 @@ fun TasksScreen(
     mentionable: (Task) -> List<TaskPerson>,
     modifier: Modifier = Modifier,
 ) {
-    // The tool's own light/dark switch (the sidebar's foot); until it is used, the app's.
-    var dark by remember { mutableStateOf<Boolean?>(null) }
-    TasksThemeProvider(dark) {
+    TasksThemeProvider(dark = null) {
         val k = TasksTheme.c
         val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
         val counts = state.counts
-        val isDark = k.isDark
 
         Box(modifier.fillMaxSize().background(k.bg)) {
             Row(Modifier.fillMaxSize()) {
-                Sidebar(state, counts.mine, counts.self, isDark, onEvent) { dark = !isDark }
+                Sidebar(state, counts.mine, counts.self, onEvent)
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when {
                         !state.viewer.resolved -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
@@ -105,9 +96,9 @@ private fun Gate(title: String, hint: String, action: String?, onEvent: (TasksEv
 
 private val FontWeightSemi = androidx.compose.ui.text.font.FontWeight.SemiBold
 
-/** The dark sidebar (`.zt-side`): the three views, then the theme switch. */
+/** The dark sidebar (`.zt-side`): the three views. The tool follows the app's light/dark, so it has no switch of its own. */
 @Composable
-private fun Sidebar(state: TasksUiState, mine: Int, self: Int, isDark: Boolean, onEvent: (TasksEvent) -> Unit, toggleTheme: () -> Unit) {
+private fun Sidebar(state: TasksUiState, mine: Int, self: Int, onEvent: (TasksEvent) -> Unit) {
     val k = TasksTheme.c
     Column(Modifier.width(240.dp).fillMaxHeight().background(k.side).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -131,15 +122,6 @@ private fun Sidebar(state: TasksUiState, mine: Int, self: Int, isDark: Boolean, 
                     }
                 }
             }
-        }
-        Box(Modifier.weight(1f, fill = true).height(1.dp))
-        val shape = RoundedCornerShape(8.dp)
-        Row(
-            Modifier.fillMaxWidth().height(34.dp).clip(shape).border(BorderStroke(1.dp, Color(0xFF3A4157)), shape).clickable(onClick = toggleTheme),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        ) {
-            ZillitIcon(if (isDark) ZillitIcons.Sun else ZillitIcons.Moon, tint = k.sideFg, size = 14.dp)
-            TText(str(if (isDark) S.desktop_theme_light else S.desktop_theme_dark), 12, color = k.sideFg)
         }
     }
 }
