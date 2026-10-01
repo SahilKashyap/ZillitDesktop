@@ -1,0 +1,160 @@
+package com.zillit.desktop.feature.costumesetsync.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitQrCode
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.ui.Await
+import com.zillit.desktop.feature.costumesetsync.ui.FilterSelect
+import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
+import com.zillit.desktop.feature.costumesetsync.ui.MonoText
+import com.zillit.desktop.feature.costumesetsync.ui.MutedText
+import com.zillit.desktop.feature.costumesetsync.ui.PageHead
+import com.zillit.desktop.feature.costumesetsync.ui.RowTitle
+import com.zillit.desktop.feature.costumesetsync.ui.SectionCard
+import com.zillit.desktop.feature.costumesetsync.ui.enumOptions
+import com.zillit.desktop.feature.costumesetsync.ui.mapRows
+import com.zillit.desktop.feature.costumesetsync.ui.rememberResource
+import com.zillit.desktop.feature.costumesetsync.ui.rememberRows
+import com.zillit.desktop.feature.costumesetsync.ui.t
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private const val LABEL_PAGE_SIZE = 200
+private const val SEARCH_DEBOUNCE_MS = 250L
+private val LABEL_WIDTH = 300.dp
+private val QR_PREVIEW = 96.dp
+
+/**
+ * QR labels: pick costumes, then print garment tags and wrap-box labels. Each label carries the
+ * asset number, description, source and character. `?ids=a,b` arrives preselected (from a costume
+ * page), and `&print=1` prints straight away. The QR is drawn here from the asset number (what the
+ * service's own `qr.png` carries); Print writes a label sheet and opens it in the browser, which
+ * shows its print dialog.
+ */
+@Composable
+fun LabelsScreen() {
+    val ctx = LocalSync.current
+    val route = ctx.nav.current
+    val scope = rememberCoroutineScope()
+    var q by remember { mutableStateOf("") }
+    var debouncedQ by remember { mutableStateOf("") }
+    var characterId by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(route.arg("ids").split(',').filter { it.isNotBlank() }.toSet()) }
+    // Every costume seen, so a selection survives a narrower search.
+    var known by remember { mutableStateOf(emptyMap<String, Rec>()) }
+    var printedOnce by remember { mutableStateOf(false) }
+    LaunchedEffect(q) {
+        delay(SEARCH_DEBOUNCE_MS)
+        debouncedQ = q
+    }
+    val characters = rememberResource { api.get("/characters").mapRows() }
+    val items = rememberRows(debouncedQ, characterId, status) {
+        api.get(
+            "/costumes",
+            mapOf("pageSize" to LABEL_PAGE_SIZE, "q" to debouncedQ, "characterId" to characterId, "status" to status, "includeRetired" to true),
+        )
+    }
+    val listed = items.value.orEmpty()
+    LaunchedEffect(listed) { known = known + listed.associateBy { it.id } }
+    // A costume page's pre-selection may sit beyond the first 200: fetch what the list did not carry.
+    LaunchedEffect(selected.size) {
+        selected.filter { it !in known }.forEach { id ->
+            (ctx.api.get("/costumes/$id") as? ZillitResult.Success)?.data?.rec?.let { known = known + (it.id to it) }
+        }
+    }
+    val printable = selected.mapNotNull { known[it] }
+    val print: () -> Unit = {
+        ctx.whenDownload {
+            scope.launch { ctx.host.open("qr-labels.html", labelSheetHtml(t("csync_qr_labels"), printable).encodeToByteArray()) }
+        }
+    }
+    // Arriving with ?print=1: print once the labels are known, and only with download rights.
+    LaunchedEffect(printable.size, ctx.canDownload) {
+        if (ctx.canDownload && route.arg("print") == "1" && !printedOnce && printable.isNotEmpty() && printable.size == selected.size) {
+            printedOnce = true
+            print()
+        }
+    }
+
+    PageHead(
+        title = t("csync_qr_labels"),
+        sub = t("csync_qr_labels_sub"),
+        actions = {
+            val label = if (printable.size == 1) t("csync_print_one_label") else t("csync_print_n_labels", "n" to printable.size)
+            ZillitButton(label, onClick = print, enabled = printable.isNotEmpty(), leadingIcon = ZillitIcons.Print)
+        },
+    )
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSearchField(q, { q = it }, Modifier.weight(1f), t("csync_search"))
+        FilterSelect(characterId, characters.value.orEmpty().map { it.id to it.str("name") }, t("csync_any_character"), { characterId = it })
+        FilterSelect(status, enumOptions(ctx.metaList("costume_statuses")), t("csync_any_status"), { status = it })
+        ZillitButton(
+            t("csync_select_all_n", "n" to listed.size),
+            onClick = { selected = selected + listed.map { it.id } },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        )
+        ZillitButton(t("csync_clear"), onClick = { selected = emptySet() }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+    }
+    SectionCard(Modifier.fillMaxWidth(), flush = true) {
+        Await(items) { rows ->
+            Column {
+                rows.forEach { c ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.xs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+                        ZillitCheckbox(c.id in selected, { on -> selected = if (on) selected + c.id else selected - c.id })
+                        MonoText(c.str("asset_number"))
+                        RowTitle(c.str("name"), Modifier.weight(1f))
+                        MutedText(c.rec("character")?.str("name").orEmpty())
+                    }
+                }
+            }
+        }
+    }
+    ZillitText(t("csync_preview_n", "n" to printable.size), style = ZillitTheme.typography.titleSmall, modifier = Modifier.padding(top = ZillitTheme.spacing.md))
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        printable.forEach { LabelPreview(it) }
+    }
+}
+
+@Composable
+private fun LabelPreview(c: Rec) {
+    Row(Modifier.width(LABEL_WIDTH), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
+        ZillitQrCode(qrPayload(c), size = QR_PREVIEW)
+        Column(Modifier.weight(1f)) {
+            MonoText(c.str("asset_number"))
+            labelLines(c).filter { it.isNotBlank() }.forEachIndexed { i, line ->
+                if (i == 0) RowTitle(line) else MutedText(line)
+            }
+        }
+    }
+}

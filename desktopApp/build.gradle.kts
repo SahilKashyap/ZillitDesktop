@@ -89,6 +89,7 @@ dependencies {
     implementation(project(":feature:saportal"))
     implementation(project(":core:forms"))
     implementation(project(":feature:taxfiling"))
+    implementation(project(":feature:costumesetsync"))
     implementation(project(":feature:bankrec"))
     implementation(project(":feature:invoices"))
     implementation(project(":feature:transportation"))

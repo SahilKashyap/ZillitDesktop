@@ -234,6 +234,7 @@ import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.bankrec.ui.BankRecViewModel
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
+import com.zillit.desktop.feature.costumesetsync.ui.SyncOnsetViewModel
 import com.zillit.desktop.feature.weather.ui.WeatherViewModel
 import com.zillit.desktop.feature.budget.ui.DEPARTMENT_BUDGET_PATH
 import com.zillit.desktop.feature.budget.ui.MAIN_BUDGET_PATH
@@ -3030,6 +3031,8 @@ internal class AppViewModels(
     val budget: BudgetViewModels?,
     /** The forecast where the unit is. */
     val weather: WeatherViewModel?,
+    /** Costumes & Set Sync: breakdown, inventory, fittings, sink, continuity. */
+    val costumeSetSync: SyncOnsetViewModel?,
     /** Characters and who is up for them — one board, both casting lists. */
     val casting: CastingViewModel?,
     /** The same board, for costumes. */
@@ -3424,6 +3427,7 @@ private fun rememberAppViewModels(
             adDashboard = ready?.buildAdDashboard(permissions),
             budget = ready?.buildBudget(permissions, scope),
             weather = ready?.buildWeather(permissions),
+            costumeSetSync = ready?.buildCostumeSetSync(permissions),
             casting = ready?.buildCastBoard(BoardTool.Casting, permissions),
             wardrobe = ready?.buildCastBoard(BoardTool.Wardrobe, permissions),
             invoices = ready?.buildInvoices(permissions, scope),
@@ -3605,6 +3609,7 @@ private fun buildRegistry(
     val saPortal = viewModels.saPortal?.let { vm -> saPortalProviders(vm) }.orEmpty()
     val adDashboard = viewModels.adDashboard?.let { vm -> adDashboardProvider(vm) }
     val weather = viewModels.weather?.let { vm -> (graph as? AppGraph.Ready)?.weatherProvider(vm) }
+    val costumeSetSync = viewModels.costumeSetSync?.let(::costumeSetSyncProvider)
     // Three casting tiles, one board: whichever tile is clicked, the lists
     // this viewer's rights allow are what open.
     val castingTools = viewModels.casting?.let { vm ->
@@ -4005,7 +4010,7 @@ private fun buildRegistry(
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
         assetRegister, transport, location, continuity, costReport, costReportWorksheet, costReportAnalytics,
         invoices, draft,
-        mainBudget, departmentBudget, weather, adDashboard,
+        mainBudget, departmentBudget, weather, costumeSetSync, adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()

@@ -70,6 +70,8 @@ PROD_COST_REPORT_BASE_URL=
 # there yet. Set it anyway — an absent key throws on first use, where a host
 # that is not there reports a readable failure.
 PROD_TAX_FILING_BASE_URL=
+# Costumes & Set Sync (synconsetapi). Answers in all three environments.
+PROD_SYNC_ONSET_BASE_URL=
 # Bank Reconciliation. Its own host; answers in all three environments.
 PROD_BANK_RECONCILIATION_BASE_URL=
 

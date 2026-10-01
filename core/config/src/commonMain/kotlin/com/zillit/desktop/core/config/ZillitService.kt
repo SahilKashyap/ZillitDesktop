@@ -139,6 +139,15 @@ enum class ZillitService(val configKey: String) {
      */
     BankReconciliation("BANK_RECONCILIATION_BASE_URL"),
     Transportation("TRANSPORTATION_BASE_URL"),
+
+    /**
+     * Costumes & Set Sync (`synconsetapi`), a brand-new service live in all
+     * three environments (`synconsetapi-dev` / `-qa` / unsuffixed, probed
+     * 2026-10-01: every `/api/v2/health` answers 200). The web's
+     * `VITE_SYNC_ONSET_BASE_URL` ends at `/api`; every route is
+     * `/api/v2/projects/{projectId}/...`.
+     */
+    SyncOnset("SYNC_ONSET_BASE_URL"),
     Units("UNITS_BASE_URL"),
     Wardrobe("WARDROBE_BASE_URL"),
     ;
