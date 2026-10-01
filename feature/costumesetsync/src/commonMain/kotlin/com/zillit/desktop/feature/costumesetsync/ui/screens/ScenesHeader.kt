@@ -66,7 +66,13 @@ internal class HeaderActions(
 )
 
 /** What the header needs to know besides the scenes. */
-internal class HeaderState(val view: String, val canPost: Boolean, val busyEditing: Boolean, val hasScript: Boolean, val hasSchedule: Boolean)
+internal class HeaderState(
+    val view: String,
+    val canPost: Boolean,
+    val busyEditing: Boolean,
+    val hasScript: Boolean,
+    val hasSchedule: Boolean,
+)
 
 /** The draft heading and sub-line, as the reference reads them. */
 @Composable
@@ -87,7 +93,11 @@ internal fun ScenesHeader(scenes: List<Rec>, filters: SceneFilterState, state: H
         else -> t("csync_scenes_sub")
     }
     val ctx = com.zillit.desktop.feature.costumesetsync.ui.LocalSync.current
-    ScenesHead(draftTitle, sub, onBack = { ctx.nav.backOr("dashboard") }) { HeaderButtons(revisions, filters, state, actions) }
+    ScenesHead(
+        draftTitle,
+        sub,
+        onBack = { ctx.nav.backOr("dashboard") },
+    ) { HeaderButtons(revisions, filters, state, actions) }
 }
 
 /** A text button wider than its stack sits centred on one line and overflows both sides (the web's flex column). */
@@ -97,32 +107,97 @@ private val OVERFLOW = Modifier.wrapContentWidth(unbounded = true)
 private val LARGE = Modifier.defaultMinSize(minHeight = 40.dp)
 
 @Composable
-private fun HeaderButtons(revisions: List<String>, filters: SceneFilterState, state: HeaderState, actions: HeaderActions) {
+private fun HeaderButtons(
+    revisions: List<String>,
+    filters: SceneFilterState,
+    state: HeaderState,
+    actions: HeaderActions,
+) {
     if (revisions.isNotEmpty()) {
-        FilterSelect(filters.revision, revisions.map { it to it }, t("csync_all_drafts"), { filters.revision = it; filters.page = 1 }, Modifier.width(REV_W).height(40.dp))
+        FilterSelect(
+            filters.revision,
+            revisions.map { it to it },
+            t("csync_all_drafts"),
+            { filters.revision = it; filters.page = 1 },
+            Modifier.width(REV_W).height(40.dp),
+        )
     }
     // Editing keeps the bar to the job in hand: no uploads until it is put down.
     if (!state.canPost || state.busyEditing) return
-    if (state.view == "breakdown") {
-        ZillitButton(t("csync_collapse_scene_number"), onClick = { actions.setView("scenes") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Collapse, modifier = LARGE)
+    ViewToggleButton(state.view, actions.setView)
+    UploadButtons(state, actions)
+    ZillitButton(
+        t("csync_add_to_breakdown"),
+        onClick = actions.addToBreakdown,
+        variant = ButtonVariant.Secondary,
+        leadingIcon = ZillitIcons.Add,
+        modifier = LARGE,
+    )
+}
+
+@Composable
+private fun ViewToggleButton(view: String, setView: (String) -> Unit) {
+    if (view == "breakdown") {
+        ZillitButton(
+            t("csync_collapse_scene_number"),
+            onClick = { setView("scenes") },
+            variant = ButtonVariant.Secondary,
+            leadingIcon = ZillitIcons.Collapse,
+            modifier = LARGE,
+        )
     } else {
-        ZillitButton(t("csync_expand_scene_number"), onClick = { actions.setView("breakdown") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Expand, modifier = LARGE)
+        ZillitButton(
+            t("csync_expand_scene_number"),
+            onClick = { setView("breakdown") },
+            variant = ButtonVariant.Secondary,
+            leadingIcon = ZillitIcons.Expand,
+            modifier = LARGE,
+        )
+    }
+}
+
+/** The script and schedule upload buttons, each with its "view uploaded" link once a document exists. */
+@Composable
+private fun UploadButtons(state: HeaderState, actions: HeaderActions) {
+    ButtonStack {
+        ZillitButton(
+            t("csync_upload_script"),
+            onClick = actions.uploadScript,
+            leadingIcon = ZillitIcons.Upload,
+            modifier = LARGE,
+        )
+        if (state.hasScript) ZillitButton(
+            t("csync_view_uploaded_script"),
+            onClick = actions.viewScript,
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Eye,
+            modifier = OVERFLOW,
+        )
     }
     ButtonStack {
-        ZillitButton(t("csync_upload_script"), onClick = actions.uploadScript, leadingIcon = ZillitIcons.Upload, modifier = LARGE)
-        if (state.hasScript) ZillitButton(t("csync_view_uploaded_script"), onClick = actions.viewScript, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye, modifier = OVERFLOW)
-    }
-    ButtonStack {
-        ZillitButton(t("csync_upload_schedule"), onClick = actions.uploadSchedule, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Calendar, modifier = LARGE)
+        ZillitButton(
+            t("csync_upload_schedule"),
+            onClick = actions.uploadSchedule,
+            variant = ButtonVariant.Secondary,
+            leadingIcon = ZillitIcons.Calendar,
+            modifier = LARGE,
+        )
         ZillitText(
             t("csync_upload_schedule_hint"),
             style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 14.sp),
             color = ZillitTheme.colors.danger,
             textAlign = TextAlign.Center,
         )
-        if (state.hasSchedule) ZillitButton(t("csync_view_uploaded_schedule"), onClick = actions.viewSchedule, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Eye, modifier = OVERFLOW)
+        if (state.hasSchedule) ZillitButton(
+            t("csync_view_uploaded_schedule"),
+            onClick = actions.viewSchedule,
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Eye,
+            modifier = OVERFLOW,
+        )
     }
-    ZillitButton(t("csync_add_to_breakdown"), onClick = actions.addToBreakdown, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add, modifier = LARGE)
 }
 
 private val REV_W = 160.dp
@@ -131,7 +206,13 @@ private val CHARACTER_W = 170.dp
 
 /** Search, episode and character filters, and the shoot-date chips (hidden while editing). */
 @Composable
-internal fun ScenesFilterBar(scenes: List<Rec>, episodes: Boolean, filters: SceneFilterState, editingMode: Boolean, end: @Composable () -> Unit) {
+internal fun ScenesFilterBar(
+    scenes: List<Rec>,
+    episodes: Boolean,
+    filters: SceneFilterState,
+    editingMode: Boolean,
+    end: @Composable () -> Unit,
+) {
     val episodeList = episodesOf(scenes)
     val cast = castOptions(scenes)
     FlowRow(
@@ -140,17 +221,30 @@ internal fun ScenesFilterBar(scenes: List<Rec>, episodes: Boolean, filters: Scen
         verticalArrangement = Arrangement.spacedBy(8.dp),
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
-        SearchWithButton(filters.query, { filters.query = it; filters.page = 1 }, t("csync_scenes_search"), Modifier.width(SEARCH_W))
+        SearchWithButton(
+            filters.query,
+            { filters.query = it; filters.page = 1 },
+            t("csync_scenes_search"),
+            Modifier.width(SEARCH_W),
+        )
         if (episodes && episodeList.isNotEmpty()) {
             FilterSelect(
                 filters.episode, episodeList.map { it to "${t("csync_field_episode")} $it" }, t("csync_all_episodes"),
                 { filters.episode = it; filters.page = 1 }, Modifier.width(EPISODE_W),
             )
         }
-        if (cast.isNotEmpty()) FilterSelect(filters.characterId, cast, t("csync_all_characters"), { filters.characterId = it; filters.page = 1 }, Modifier.width(CHARACTER_W))
+        if (cast.isNotEmpty()) FilterSelect(
+            filters.characterId,
+            cast,
+            t("csync_all_characters"),
+            { filters.characterId = it; filters.page = 1 },
+            Modifier.width(CHARACTER_W),
+        )
         if (!editingMode) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                WHEN_KEYS.forEach { key -> InkChip(t("csync_when_$key"), filters.shoot == key) { filters.shoot = key; filters.page = 1 } }
+                WHEN_KEYS.forEach { key ->
+                    InkChip(t("csync_when_$key"), filters.shoot == key) { filters.shoot = key; filters.page = 1 }
+                }
             }
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { end() }
@@ -172,8 +266,9 @@ internal fun SceneEmpty(filters: SceneFilterState, canPost: Boolean, onAdd: () -
         "upcoming" -> t("csync_scenes_empty_upcoming_hint")
         else -> t("csync_scenes_empty_hint")
     }
+    val unfiltered = filters.shoot == "all" && filters.query.isEmpty() && filters.revision.isEmpty()
     com.zillit.desktop.feature.costumesetsync.ui.EmptyState(title, hint) {
-        if (canPost && filters.shoot == "all" && filters.query.isEmpty() && filters.revision.isEmpty()) {
+        if (canPost && unfiltered) {
             ZillitButton(t("csync_add_scene"), onClick = onAdd, leadingIcon = ZillitIcons.Add)
         }
     }
@@ -181,7 +276,10 @@ internal fun SceneEmpty(filters: SceneFilterState, canPost: Boolean, onAdd: () -
 
 @Composable
 internal fun SingleToolbar(picked: Rec?, onEdit: () -> Unit, onDelete: () -> Unit, onCancel: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (picked != null) {
             MutedText("${t("csync_field_scene")} ${picked.str("number")}")
             ZillitButton(t("csync_edit"), onClick = onEdit)
@@ -194,10 +292,32 @@ internal fun SingleToolbar(picked: Rec?, onEdit: () -> Unit, onDelete: () -> Uni
 }
 
 @Composable
-internal fun EditAllToolbar(count: Int, problem: String?, busy: Boolean, saving: Boolean, onSaveAll: () -> Unit, onCancel: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-        problem?.let { ZillitText(it, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.danger, modifier = Modifier.widthIn(max = PROBLEM_W)) }
-        ZillitButton("${t("csync_save_all")} ($count)", onClick = onSaveAll, enabled = !busy && count > 0 && problem == null, loading = saving)
+internal fun EditAllToolbar(
+    count: Int,
+    problem: String?,
+    busy: Boolean,
+    saving: Boolean,
+    onSaveAll: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        problem?.let {
+            ZillitText(
+                it,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.danger,
+                modifier = Modifier.widthIn(max = PROBLEM_W),
+            )
+        }
+        ZillitButton(
+            "${t("csync_save_all")} ($count)",
+            onClick = onSaveAll,
+            enabled = !busy && count > 0 && problem == null,
+            loading = saving,
+        )
         ZillitButton(t("csync_cancel"), onClick = onCancel, variant = ButtonVariant.Secondary, enabled = !busy)
     }
 }

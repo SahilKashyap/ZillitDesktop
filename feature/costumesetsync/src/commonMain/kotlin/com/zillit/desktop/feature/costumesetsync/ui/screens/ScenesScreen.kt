@@ -63,7 +63,11 @@ fun ScenesScreen(initialView: String) {
             when (val s = scenes.await()) {
                 is ZillitResult.Failure -> s
                 is ZillitResult.Success -> ZillitResult.Success(
-                    ScenesData(s.data, (characters.await() as? ZillitResult.Success)?.data.orEmpty(), (actors.await() as? ZillitResult.Success)?.data.orEmpty()),
+                    ScenesData(
+                        s.data,
+                        (characters.await() as? ZillitResult.Success)?.data.orEmpty(),
+                        (actors.await() as? ZillitResult.Success)?.data.orEmpty(),
+                    ),
                 )
             }
         }
@@ -75,7 +79,9 @@ fun ScenesScreen(initialView: String) {
         scriptDocs.reload()
         scheduleDocs.reload()
     }
-    Await(data) { loaded -> ScenesBody(loaded, view, DocLists(scriptDocs, scheduleDocs)) { data.reload(silent = true) } }
+    Await(data) { loaded ->
+        ScenesBody(loaded, view, DocLists(scriptDocs, scheduleDocs)) { data.reload(silent = true) }
+    }
 }
 
 @Composable
@@ -91,13 +97,11 @@ private fun ScenesBody(data: ScenesData, view: String, docs: DocLists, reload: (
 
     val charById = remember(data.characters) { data.characters.associateBy { it.id } }
     val sceneById = remember(data.scenes) { data.scenes.associateBy { it.id } }
-    // A series shows its Episode column from the start, so the first episode can be typed in;
-    // any other production shows it once a scene carries one.
-    val episodes = ctx.project.rec?.str("type") == "EPISODIC" || data.scenes.any { it.str("episode").trim().isNotEmpty() }
+    val episodes = showsEpisodes(ctx, data.scenes)
     val intExt = ctx.metaList("int_ext").ifEmpty { INT_EXT_FALLBACK }
 
     val list = filterScenes(data.scenes, filters.toFilters(), charById, todayKey(ctx.now())) { it.id in editor.drafts }
-    val draftKeys = (if (NEW_KEY in editor.drafts) listOf(NEW_KEY) else emptyList()) + list.filter { it.id in editor.drafts }.map { it.id }
+    val draftKeys = draftKeysOf(list, editor)
     val problems = draftProblems(data.scenes, editor.drafts, draftKeys)
 
     UnsavedGuard(editor, sceneById)
@@ -109,32 +113,36 @@ private fun ScenesBody(data: ScenesData, view: String, docs: DocLists, reload: (
         view, episodes, shown, shown.associate { it.id to sceneLines(it, charById, filters.characterId) }, charById,
         data.characters, data.actors, intExt, problems, ctx.canPost,
     )
-    val actions = tableActions(ctx, editor, sceneById, filters.revision, ask = { confirm = it }, principals = { principalsFor = it }, reload = reload)
+    val actions = tableActions(
+        ctx,
+        editor,
+        sceneById,
+        filters.revision,
+        ask = { confirm = it },
+        principals = { principalsFor = it },
+        reload = reload,
+    )
 
     ScenesHeader(
-        data.scenes, filters,
-        HeaderState(view, ctx.canPost, editor.editAll || editor.picking, docs.script.docs.isNotEmpty(), docs.schedule.docs.isNotEmpty()),
-        HeaderActions(
-            setView = { ctx.nav.setQuery("view", it) },
-            uploadScript = { uploads = uploads.copy(script = true) },
-            uploadSchedule = { uploads = uploads.copy(schedule = true) },
-            viewScript = { uploads = uploads.copy(viewing = "SCRIPT") },
-            viewSchedule = { uploads = uploads.copy(viewing = "SCHEDULE") },
-            addToBreakdown = { addOpen = true },
+        data.scenes,
+        filters,
+        HeaderState(
+            view,
+            ctx.canPost,
+            editor.editAll || editor.picking,
+            docs.script.docs.isNotEmpty(),
+            docs.schedule.docs.isNotEmpty(),
         ),
+        headerActions(ctx, { uploads }, { uploads = it }) { addOpen = true },
     )
     ScenesFilterBar(data.scenes, episodes, filters, editor.editAll || editor.picking) {
-        if (ctx.canPost) EditEnd(EditEndState(editor, view, filters, list, draftKeys, problems, sceneById), reload) { confirm = it }
+        if (ctx.canPost) EditEnd(
+            EditEndState(editor, view, filters, list, draftKeys, problems, sceneById),
+            reload,
+        ) { confirm = it }
     }
 
-    SectionCard(flush = true, modifier = Modifier.fillMaxWidth()) {
-        if (list.isEmpty() && NEW_KEY !in editor.drafts) {
-            SceneEmpty(filters, ctx.canPost) { editor.startNew() }
-        } else {
-            ScenesTable(input, editor, actions)
-            if (!editor.editAll) Pager(page, pages, onPage = { filters.page = it })
-        }
-    }
+    ScenesListCard(list, filters, editor, input, actions, page, pages)
 
     SceneDialogsHost(
         RowDialogData(data.scenes, data.characters, data.actors, episodes, intExt), editor, principalsFor, addOpen,
@@ -143,6 +151,55 @@ private fun ScenesBody(data: ScenesData, view: String, docs: DocLists, reload: (
     ConfirmDialog(confirm) { confirm = null }
     UploadsHost(uploads, data.scenes, docs, { uploads = it }, filters, reload)
 }
+
+/**
+ * A series shows its Episode column from the start, so the first episode can be typed in;
+ * any other production shows it once a scene carries one.
+ */
+private fun showsEpisodes(ctx: SyncCtx, scenes: List<Rec>): Boolean =
+    ctx.project.rec?.str("type") == "EPISODIC" || scenes.any { it.str("episode").trim().isNotEmpty() }
+
+/** The scenes table with its pager, or the empty state when nothing matches. */
+@Composable
+private fun ScenesListCard(
+    list: List<Rec>,
+    filters: SceneFilterState,
+    editor: SceneEditor,
+    input: TableInput,
+    actions: TableActions,
+    page: Int,
+    pages: Int,
+) {
+    val ctx = LocalSync.current
+    SectionCard(flush = true, modifier = Modifier.fillMaxWidth()) {
+        if (list.isEmpty() && NEW_KEY !in editor.drafts) {
+            SceneEmpty(filters, ctx.canPost) { editor.startNew() }
+        } else {
+            ScenesTable(input, editor, actions)
+            if (!editor.editAll) Pager(page, pages, onPage = { filters.page = it })
+        }
+    }
+}
+
+/** The header's buttons: the view switch, the two uploads, the two viewers and "Add to breakdown". */
+private fun headerActions(
+    ctx: SyncCtx,
+    uploads: () -> UploadsState,
+    setUploads: (UploadsState) -> Unit,
+    onAdd: () -> Unit,
+) = HeaderActions(
+    setView = { ctx.nav.setQuery("view", it) },
+    uploadScript = { setUploads(uploads().copy(script = true)) },
+    uploadSchedule = { setUploads(uploads().copy(schedule = true)) },
+    viewScript = { setUploads(uploads().copy(viewing = "SCRIPT")) },
+    viewSchedule = { setUploads(uploads().copy(viewing = "SCHEDULE")) },
+    addToBreakdown = onAdd,
+)
+
+/** The rows being edited: a new one first, then each listed scene that has a draft. */
+private fun draftKeysOf(list: List<Rec>, editor: SceneEditor): List<String> =
+    (if (NEW_KEY in editor.drafts) listOf(NEW_KEY) else emptyList()) +
+        list.filter { it.id in editor.drafts }.map { it.id }
 
 /** The two document lists (script, schedule) the header's View buttons and the upload dialogs share. */
 internal class DocLists(val script: ProjectDocuments, val schedule: ProjectDocuments)
@@ -175,17 +232,42 @@ private fun EditEnd(s: EditEndState, reload: () -> Unit, ask: (Confirm?) -> Unit
                 editor.single = null
             },
             onDelete = {
-                ask(Confirm(t("csync_delete_scene_confirm"), "", t("csync_delete"), danger = true) { editor.single?.let { editor.deleteScene(it, reload) } })
+                ask(
+                    Confirm(
+                        t("csync_delete_scene_confirm"),
+                        "",
+                        t("csync_delete"),
+                        danger = true,
+                    ) { editor.single?.let { editor.deleteScene(it, reload) } },
+                )
             },
             onCancel = { editor.single = null },
         )
-        else -> Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            // The expanded view is one row per character, edited row by row with its pencil, so Edit All lives only in the collapsed view.
+        else -> Row(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The expanded view is one row per character, edited row by row with its pencil, so Edit All lives only in
+            // the collapsed view.
             if (s.view == "scenes") {
-                ZillitButton(t("csync_edit_all"), onClick = { editor.startEditAll(s.list) }, variant = ButtonVariant.Secondary, enabled = s.list.isNotEmpty() && !editor.busy)
-                ZillitButton(t("csync_edit_single"), onClick = { editor.single = "" }, variant = ButtonVariant.Secondary, enabled = s.list.isNotEmpty() && !editor.busy)
+                ZillitButton(
+                    t("csync_edit_all"),
+                    onClick = { editor.startEditAll(s.list) },
+                    variant = ButtonVariant.Secondary,
+                    enabled = s.list.isNotEmpty() && !editor.busy,
+                )
+                ZillitButton(
+                    t("csync_edit_single"),
+                    onClick = { editor.single = "" },
+                    variant = ButtonVariant.Secondary,
+                    enabled = s.list.isNotEmpty() && !editor.busy,
+                )
             }
-            BlueButton(t("csync_add"), onClick = { editor.startNew() }, enabled = NEW_KEY !in editor.drafts && !editor.busy)
+            BlueButton(
+                t("csync_add"),
+                onClick = { editor.startNew() },
+                enabled = NEW_KEY !in editor.drafts && !editor.busy,
+            )
         }
     }
 }
@@ -193,9 +275,18 @@ private fun EditEnd(s: EditEndState, reload: () -> Unit, ask: (Confirm?) -> Unit
 private fun cancelAllConfirm(editor: SceneEditor, sceneById: Map<String, Rec>): Confirm {
     val edited = editor.drafts.keys.count { editor.changed(it, sceneById) }
     return if (edited > 0) {
-        Confirm(t("csync_discard_changes_title"), pluralMany("csync_discard_scenes", edited, "n" to edited), t("csync_discard"), danger = true) { editor.leaveEditAll() }
+        Confirm(
+            t("csync_discard_changes_title"),
+            pluralMany("csync_discard_scenes", edited, "n" to edited),
+            t("csync_discard"),
+            danger = true,
+        ) { editor.leaveEditAll() }
     } else {
-        Confirm(t("csync_stop_editing_title"), t("csync_stop_editing_body"), t("csync_stop_editing")) { editor.leaveEditAll() }
+        Confirm(
+            t("csync_stop_editing_title"),
+            t("csync_stop_editing_body"),
+            t("csync_stop_editing"),
+        ) { editor.leaveEditAll() }
     }
 }
 
@@ -224,7 +315,14 @@ private fun tableActions(
         if (!editor.changed(key, sceneById)) {
             editor.drop(key)
         } else {
-            ask(Confirm(t("csync_discard_changes_title"), t("csync_discard_changes_body"), t("csync_discard"), danger = true) { editor.drop(key) })
+            ask(
+                Confirm(
+                    t("csync_discard_changes_title"),
+                    t("csync_discard_changes_body"),
+                    t("csync_discard"),
+                    danger = true,
+                ) { editor.drop(key) },
+            )
         }
     },
 )
@@ -249,7 +347,12 @@ private fun UnsavedGuard(editor: SceneEditor, sceneById: Map<String, Rec>) {
     }
     LaunchedEffect(dirty) { if (!dirty) ask = false }
     ConfirmDialog(
-        if (ask) Confirm(t("csync_discard_changes_title"), t("csync_leave_unsaved_body"), t("csync_discard"), danger = true) { editor.leaveEditAll() } else null,
+        if (ask) Confirm(
+            t("csync_discard_changes_title"),
+            t("csync_leave_unsaved_body"),
+            t("csync_discard"),
+            danger = true,
+        ) { editor.leaveEditAll() } else null,
     ) { ask = false }
 }
 
@@ -270,7 +373,9 @@ private fun SceneDialogsHost(
     // lands on the row's dialog again rather than on a closed table.
     val target = remember(rowParam, data.scenes) {
         val (sceneId, characterId) = rowParam.substringBefore('.') to rowParam.substringAfter('.', "")
-        val found = data.scenes.firstOrNull { it.id == sceneId }?.recs("characters")?.any { it.str("character_id") == characterId } == true
+        val found = data.scenes.firstOrNull { it.id == sceneId }
+            ?.recs("characters")
+            ?.any { it.str("character_id") == characterId } == true
         if (rowParam.isNotEmpty() && found) RowTarget(sceneId, characterId) else null
     }
     LaunchedEffect(rowParam, target) { if (rowParam.isNotEmpty() && target == null) ctx.nav.setQuery("row", null) }
@@ -289,6 +394,8 @@ private fun SceneDialogsHost(
         onClose = onClosePrincipals,
         characters = data.characters,
         value = principalsFor?.let { editor.drafts[it]?.principals }.orEmpty(),
-        onChange = { ids -> principalsFor?.let { key -> editor.drafts[key]?.let { editor.set(key, it.copy(principals = ids)) } } },
+        onChange = { ids ->
+            principalsFor?.let { key -> editor.drafts[key]?.let { editor.set(key, it.copy(principals = ids)) } }
+        },
     )
 }

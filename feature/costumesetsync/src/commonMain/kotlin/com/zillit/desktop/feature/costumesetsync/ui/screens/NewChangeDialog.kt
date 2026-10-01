@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
  * picked so it can never ride along to the next change. [onCreated] fires after every attempt so the
  * caller's list catches up.
  */
+@Suppress("LongMethod")
 @Composable
 fun NewChangeDialog(open: Boolean, onClose: () -> Unit, character: Rec, onCreated: () -> Unit = {}) {
     val ctx = LocalSync.current
@@ -61,7 +62,10 @@ fun NewChangeDialog(open: Boolean, onClose: () -> Unit, character: Rec, onCreate
             var id = changeId
             if (id.isEmpty()) {
                 val answer = ctx.write {
-                    ctx.api.post("/changes", body("character_id" to character.id, "name" to name.trim(), "description" to description))
+                    ctx.api.post(
+                        "/changes",
+                        body("character_id" to character.id, "name" to name.trim(), "description" to description)
+                    )
                 }
                 id = answer?.rec?.id.orEmpty()
                 if (id.isEmpty()) {
@@ -70,7 +74,9 @@ fun NewChangeDialog(open: Boolean, onClose: () -> Unit, character: Rec, onCreate
                 }
                 changeId = id
             }
-            val left = pieces.toList().filterNot { c -> ctx.quietWrite { ctx.api.post("/changes/$id/items", body("costume_id" to c.id)) } }
+            val left = pieces.toList().filterNot { c ->
+                ctx.quietWrite { ctx.api.post("/changes/$id/items", body("costume_id" to c.id)) }
+            }
             pieces.clear()
             pieces.addAll(left)
             val failed = ctx.attachMedia(media, "CHANGE", id, "REFERENCE", keep = { media = it })
@@ -98,15 +104,34 @@ fun NewChangeDialog(open: Boolean, onClose: () -> Unit, character: Rec, onCreate
         TextInput(name, { name = it }, t("csync_field_name"), FormWide, help = t("csync_change_name_hint"))
         TextInput(description, { description = it }, t("csync_change_description"), FormWide, multiline = true)
         Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            ZillitText(t("csync_pieces"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-            pieces.toList().forEach { c -> CostumeRow(c, onClick = { pieces.remove(c) }, end = { MutedText(t("csync_remove_lower")) }) }
-            if (stuck && pieces.isNotEmpty()) MutedText(t("csync_change_pieces_failed", "n" to pieces.size), maxLines = 2)
+            ZillitText(
+                t("csync_pieces"),
+                style = ZillitTheme.typography.label,
+                color = ZillitTheme.colors.textSecondary
+            )
+            pieces.toList().forEach { c ->
+                CostumeRow(c, onClick = { pieces.remove(c) }, end = { MutedText(t("csync_remove_lower")) })
+            }
+            if (stuck && pieces.isNotEmpty()) MutedText(
+                t("csync_change_pieces_failed", "n" to pieces.size),
+                maxLines = 2
+            )
             Row {
-                ZillitButton(t("csync_add_piece"), onClick = { picking = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+                ZillitButton(
+                    t("csync_add_piece"),
+                    onClick = { picking = true },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add
+                )
             }
         }
         Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+            ZillitText(
+                t("csync_photos_and_video"),
+                style = ZillitTheme.typography.label,
+                color = ZillitTheme.colors.textSecondary
+            )
             MediaPicker(media, { media = it }, enabled = !busy, help = t("csync_shoot_look_hint"))
         }
     }

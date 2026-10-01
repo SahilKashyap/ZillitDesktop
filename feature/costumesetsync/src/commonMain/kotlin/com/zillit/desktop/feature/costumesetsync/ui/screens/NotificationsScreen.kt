@@ -82,7 +82,11 @@ fun NotificationsScreen() {
 @Composable
 private fun NotificationRow(ctx: SyncCtx, n: Rec, reload: () -> Unit) {
     val time = NotificationsModel.time(n)
-    Row(Modifier.fillMaxWidth().then(if (n.bool("read")) Modifier else Modifier.background(ZillitTheme.colors.accentSoft))) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(if (n.bool("read")) Modifier else Modifier.background(ZillitTheme.colors.accentSoft))
+    ) {
         ListRow(
             onClick = { open(ctx, n, reload) },
             leading = { ReadinessDot(n.str("severity")) },

@@ -47,6 +47,7 @@ private fun cueTone(kind: String): String = when (kind) {
  * Costume cues read out of the scene's script text: extract, then accept or dismiss
  * each one (or all the suggested ones at once). Dismissed cues stay behind a toggle.
  */
+@Suppress("CyclomaticComplexMethod")
 @Composable
 internal fun CuesCard(scene: Rec, reload: () -> Unit) {
     val ctx = LocalSync.current
@@ -55,7 +56,8 @@ internal fun CuesCard(scene: Rec, reload: () -> Unit) {
     val cues = scene.recs("cues")
     val suggested = cues.filter { it.str("status") == "SUGGESTED" }
     val dismissed = cues.filter { it.str("status") == "DISMISSED" }
-    val visible = suggested + cues.filter { it.str("status") == "ACCEPTED" } + if (showDismissed) dismissed else emptyList()
+    val accepted = cues.filter { it.str("status") == "ACCEPTED" }
+    val visible = suggested + accepted + if (showDismissed) dismissed else emptyList()
     val extracting = extraction.progress.running
     val hasScript = scene.bool("has_script")
     val extract = {
@@ -70,14 +72,19 @@ internal fun CuesCard(scene: Rec, reload: () -> Unit) {
         actions = {
             if (ctx.canPost && hasScript) {
                 ZillitButton(
-                    if (extracting) t("csync_reading") else if (cues.isNotEmpty()) t("csync_reextract") else t("csync_extract"),
+                    if (extracting) t("csync_reading") else if (
+                        cues.isNotEmpty()
+                    ) t("csync_reextract") else t("csync_extract"),
                     onClick = extract, size = ButtonSize.Small, variant = ButtonVariant.Secondary, loading = extracting,
                 )
             }
         },
     ) {
         CueProgressView(extraction.progress)
-        if (cues.isEmpty() && !extracting) MutedText(t(if (hasScript) "csync_cues_press_extract" else "csync_cues_no_script"), maxLines = 3)
+        if (cues.isEmpty() && !extracting) MutedText(
+            t(if (hasScript) "csync_cues_press_extract" else "csync_cues_no_script"),
+            maxLines = 3
+        )
         if (suggested.isNotEmpty() && ctx.canPost) SuggestedBar(suggested, reload)
         visible.forEach { CueRow(it, reload) }
         if (dismissed.isNotEmpty()) {
@@ -93,21 +100,44 @@ internal fun CuesCard(scene: Rec, reload: () -> Unit) {
 @Composable
 private fun SuggestedBar(suggested: List<Rec>, reload: () -> Unit) {
     val ctx = LocalSync.current
-    fun setAll(status: String) = ctx.launchWrite({ ctx.api.post("/cues/bulk", body("ids" to JsonArray(suggested.map { JsonPrimitive(it.id) }), "status" to status)) }) { reload() }
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+    fun setAll(status: String) = ctx.launchWrite({ ctx.api.post(
+        "/cues/bulk",
+        body("ids" to JsonArray(suggested.map { JsonPrimitive(it.id) }), "status" to status)
+    ) }) {
+        reload()
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         MutedText(plural("csync_cues_to_review", suggested.size, "n" to suggested.size), maxLines = 2)
-        ZillitButton(t("csync_accept_all"), onClick = { setAll("ACCEPTED") }, size = ButtonSize.Small, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Check)
-        ZillitButton(t("csync_dismiss_all"), onClick = { setAll("DISMISSED") }, size = ButtonSize.Small, variant = ButtonVariant.Tertiary)
+        ZillitButton(
+            t("csync_accept_all"),
+            onClick = { setAll("ACCEPTED") },
+            size = ButtonSize.Small,
+            variant = ButtonVariant.Secondary,
+            leadingIcon = ZillitIcons.Check
+        )
+        ZillitButton(
+            t("csync_dismiss_all"),
+            onClick = { setAll("DISMISSED") },
+            size = ButtonSize.Small,
+            variant = ButtonVariant.Tertiary
+        )
     }
 }
 
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 @Composable
 private fun CueRow(c: Rec, reload: () -> Unit) {
     val ctx = LocalSync.current
     val status = c.str("status")
     fun set(next: String) = ctx.launchWrite({ ctx.api.patch("/cues/${c.id}", body("status" to next)) }) { reload() }
     Row(
-        Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs).alpha(if (status == "DISMISSED") DISMISSED_ALPHA else 1f),
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = ZillitTheme.spacing.xs)
+            .alpha(if (status == "DISMISSED") DISMISSED_ALPHA else 1f),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
@@ -116,8 +146,14 @@ private fun CueRow(c: Rec, reload: () -> Unit) {
                 val who = c.rec("character")
                 when {
                     who != null && who.id.isNotEmpty() ->
-                        ZillitText(who.str("name"), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.info)
-                    c.str("character_name").isNotEmpty() -> ZillitText(c.str("character_name"), style = ZillitTheme.typography.labelSmall)
+                        ZillitText(
+                            who.str("name"),
+                            style = ZillitTheme.typography.labelSmall,
+                            color = ZillitTheme.colors.info
+                        )
+                    c
+                        .str("character_name")
+                        .isNotEmpty() -> ZillitText(c.str("character_name"), style = ZillitTheme.typography.labelSmall)
                     else -> MutedText(t("csync_scene"))
                 }
                 if (status == "ACCEPTED") StatusBadge("READY", t("csync_accepted"))
@@ -127,13 +163,30 @@ private fun CueRow(c: Rec, reload: () -> Unit) {
             }
             ZillitText(c.str("text"))
             c.str("quote").takeIf { it.isNotEmpty() }?.let {
-                ZillitText("“$it”", style = ZillitTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = ZillitTheme.colors.textSecondary, maxLines = 3)
+                ZillitText(
+                    "“$it”",
+                    style = ZillitTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                    color = ZillitTheme.colors.textSecondary,
+                    maxLines = 3
+                )
             }
         }
         if (ctx.canPost) {
             Row {
-                if (status != "ACCEPTED") ZillitButton("", onClick = { set("ACCEPTED") }, size = ButtonSize.Small, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Check)
-                if (status != "DISMISSED") ZillitButton("", onClick = { set("DISMISSED") }, size = ButtonSize.Small, variant = ButtonVariant.Tertiary, leadingIcon = ZillitIcons.Close)
+                if (status != "ACCEPTED") ZillitButton(
+                    "",
+                    onClick = { set("ACCEPTED") },
+                    size = ButtonSize.Small,
+                    variant = ButtonVariant.Secondary,
+                    leadingIcon = ZillitIcons.Check
+                )
+                if (status != "DISMISSED") ZillitButton(
+                    "",
+                    onClick = { set("DISMISSED") },
+                    size = ButtonSize.Small,
+                    variant = ButtonVariant.Tertiary,
+                    leadingIcon = ZillitIcons.Close
+                )
             }
         }
     }

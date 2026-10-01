@@ -31,8 +31,14 @@ class DocumentsTest {
     @Test
     fun namesTheSourceOfADocument() {
         assertEquals("csync_doc_source_upload", docSourceKey(sceneRec("""{"source":"UPLOAD"}""")))
-        assertEquals("csync_doc_source_script_distribution", docSourceKey(sceneRec("""{"source":"ZILLIT","kind":"SCRIPT"}""")))
-        assertEquals("csync_doc_source_home_callsheet", docSourceKey(sceneRec("""{"source":"ZILLIT","kind":"CALLSHEET"}""")))
+        assertEquals(
+            "csync_doc_source_script_distribution",
+            docSourceKey(sceneRec("""{"source":"ZILLIT","kind":"SCRIPT"}""")),
+        )
+        assertEquals(
+            "csync_doc_source_home_callsheet",
+            docSourceKey(sceneRec("""{"source":"ZILLIT","kind":"CALLSHEET"}""")),
+        )
     }
 
     @Test
@@ -43,7 +49,15 @@ class DocumentsTest {
         assertEquals("f.pdf", docName(sceneRec("""{"attachment":{"name":"f.pdf"}}""")))
     }
 
-    private fun scene(id: String, number: String, intExt: String = "", location: String = "", name: String = "", status: String = "DRAFT", date: String = "") =
+    private fun scene(
+        id: String,
+        number: String,
+        intExt: String = "",
+        location: String = "",
+        name: String = "",
+        status: String = "DRAFT",
+        date: String = "",
+    ) =
         sceneRec(
             """{"_id":"$id","number":"$number","int_ext":"$intExt","location":"$location","name":"$name","status":"$status",
             |"shoot_date":${if (date.isEmpty()) 0 else dateMs(date)}}""".trimMargin(),
@@ -60,20 +74,29 @@ class DocumentsTest {
     @Test
     fun scriptListsEverySceneNotOmittedWithItsLocationLine() {
         val out = docSceneRows("SCRIPT", scenes)
-        assertEquals(listOf("1" to "INT. Kitchen", "2" to "Chase", "4" to "EXT. Park", "5" to ""), out.rows.map { it.scene.str("number") to it.note })
+        assertEquals(
+            listOf("1" to "INT. Kitchen", "2" to "Chase", "4" to "EXT. Park", "5" to ""),
+            out.rows.map { it.scene.str("number") to it.note },
+        )
         assertEquals(0, out.undated)
     }
 
     @Test
     fun scheduleListsDatedScenesByDayAndCountsTheUndated() {
         val out = docSceneRows("SCHEDULE", scenes)
-        assertEquals(listOf("2" to "2026-10-01", "5" to "2026-10-01", "1" to "2026-10-03"), out.rows.map { it.scene.str("number") to it.note })
+        assertEquals(
+            listOf("2" to "2026-10-01", "5" to "2026-10-01", "1" to "2026-10-03"),
+            out.rows.map { it.scene.str("number") to it.note },
+        )
         assertEquals(1, out.undated)
     }
 
     @Test
     fun callSheetListsOnlyTheScenesOnItsDay() {
-        assertEquals(listOf("2", "5"), docSceneRows("CALLSHEET", scenes, "2026-10-01").rows.map { it.scene.str("number") })
+        assertEquals(
+            listOf("2", "5"),
+            docSceneRows("CALLSHEET", scenes, "2026-10-01").rows.map { it.scene.str("number") },
+        )
         assertTrue(docSceneRows("CALLSHEET", scenes, "").rows.isEmpty())
     }
 }

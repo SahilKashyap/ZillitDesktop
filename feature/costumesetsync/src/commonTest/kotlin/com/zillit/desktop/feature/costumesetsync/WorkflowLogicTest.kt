@@ -61,7 +61,10 @@ class WorkflowLogicTest {
         val today = 1_000_000L
         val fittings = listOf(
             rec("""{"_id":"a","status":"SCHEDULED","scheduled_at":${today - 10},"character":{"name":"Ann"}}"""),
-            rec("""{"_id":"b","status":"IN_PROGRESS","scheduled_at":${today + 10},"character":{"name":"Bo"},"actor":{"name":"Bea"}}"""),
+            rec(
+                """{"_id":"b","status":"IN_PROGRESS","scheduled_at":${today + 10},"character":{"name":"Bo"},""" +
+                    """"actor":{"name":"Bea"}}""",
+            ),
             rec("""{"_id":"c","status":"COMPLETED","scheduled_at":${today + 20},"character":{"name":"Cy"}}"""),
         )
         val draft = fittingChase(fittings, today, "Show", say)
@@ -83,7 +86,10 @@ class WorkflowLogicTest {
     fun cleaningChasePutsEmergenciesFirst() {
         val tickets = listOf(
             rec("""{"status":"CLEANING","problem":"wine","costume":{"asset_number":"CST-1","name":"Coat"}}"""),
-            rec("""{"status":"REQUESTED","problem":"mud","is_emergency":true,"costume":{"asset_number":"CST-2","name":"Shirt"}}"""),
+            rec(
+                """{"status":"REQUESTED","problem":"mud","is_emergency":true,""" +
+                    """"costume":{"asset_number":"CST-2","name":"Shirt"}}""",
+            ),
         )
         val lines = cleaningChase(tickets, "Show", say) { it.orEmpty() }.body.lines().filter { it.startsWith("·") }
         assertTrue(lines[0].contains("🚨") && lines[0].contains("CST-2"))
@@ -92,7 +98,9 @@ class WorkflowLogicTest {
 
     @Test
     fun ticketChaseCapsTheListAndSaysHowManyMore() {
-        val rows = (1..25).map { rec("""{"status":"OPEN","description":"d$it","costume":{"asset_number":"A$it","name":"N"}}""") }
+        val rows = (1..25).map {
+            rec("""{"status":"OPEN","description":"d$it","costume":{"asset_number":"A$it","name":"N"}}""")
+        }
         val body = ticketChase(TicketBoard.Damages, rows, "Show", say) { it.orEmpty() }.body
         assertEquals(20, body.lines().count { it.startsWith("· A") })
         assertTrue(body.contains("csync_and_n_more"))

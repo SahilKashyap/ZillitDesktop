@@ -63,6 +63,7 @@ private class EmergencyOutcome(val request: Rec, val alternatives: List<Rec>, va
  * opens straight on the emergency form (the Dashboard and the Sink use it once a piece is picked);
  * [onClosed] then tells them it has gone.
  */
+@Suppress("CyclomaticComplexMethod", "UnusedParameter")
 @Composable
 fun CostumeActions(
     costume: Rec,
@@ -92,7 +93,7 @@ fun CostumeActions(
         form = ActionForm.Move
     }
     if (only == null) {
-        ActionButtons(costume, modifier, openCleaningId, openAlterationId, go, move) { form = it }
+        ActionButtons(costume, modifier, openCleaningId, go, move) { form = it }
     }
     when (form) {
         ActionForm.Move -> MovementDialog(costume, movement, sceneId, takeNumber, close, done)
@@ -105,7 +106,11 @@ fun CostumeActions(
             onFiled = { filedId, created ->
                 if (form == ActionForm.Emergency) {
                     val raised = created?.rec ?: Rec.Empty
-                    outcome = EmergencyOutcome(raised.rec("request") ?: raised, raised.recs("alternatives"), raised.rec("replacement"))
+                    outcome = EmergencyOutcome(
+                        raised.rec("request") ?: raised,
+                        raised.recs("alternatives"),
+                        raised.rec("replacement")
+                    )
                     onChanged()
                     form = ActionForm.EmergencyResult
                 } else {
@@ -114,7 +119,9 @@ fun CostumeActions(
                 }
             },
         )
-        ActionForm.EmergencyResult -> outcome?.let { EmergencyResultDialog(costume, it, close, go) { next -> outcome = next } }
+        ActionForm.EmergencyResult -> outcome?.let {
+            EmergencyResultDialog(costume, it, close, go) { next -> outcome = next }
+        }
         ActionForm.Damage -> DamageDialog(costume, sceneId, takeNumber, close, done)
         ActionForm.Alteration -> AlterationDialog(costume, close, done)
         ActionForm.Missing -> MissingDialog(costume, close, done)
@@ -122,12 +129,12 @@ fun CostumeActions(
     }
 }
 
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 @Composable
 private fun ActionButtons(
     costume: Rec,
     modifier: Modifier,
     openCleaningId: String,
-    openAlterationId: String,
     go: (String) -> Unit,
     move: (String, String) -> Unit,
     open: (ActionForm) -> Unit,
@@ -137,14 +144,22 @@ private fun ActionButtons(
     // `.csync-buttonrow`: 6dp between buttons. Ink-filled ones are the status's main action.
     ChipRow(modifier, gap = BUTTON_GAP) {
         if (status == "CLEANING") {
-            InkButton(t("csync_in_cleaning_view"), onClick = { go(if (openCleaningId.isNotBlank()) "cleaning/$openCleaningId" else "cleaning") }, icon = AhIcons.Refresh)
+            InkButton(
+                t("csync_in_cleaning_view"),
+                onClick = { go(if (openCleaningId.isNotBlank()) "cleaning/$openCleaningId" else "cleaning") },
+                icon = AhIcons.Refresh
+            )
         }
         if (status == "ALTERATION") {
             InkButton(t("csync_with_tailor_view"), onClick = { go("alterations") }, icon = AhIcons.Cut)
         }
         if (ctx.canPost) {
             @Composable fun button(label: String, icon: ImageVector, ink: Boolean = false, onClick: () -> Unit) =
-                if (ink) InkButton(label, onClick = onClick, icon = icon) else ZillitButton(label, onClick = onClick, variant = ButtonVariant.Secondary, leadingIcon = icon)
+                if (ink) InkButton(
+                    label,
+                    onClick = onClick,
+                    icon = icon
+                ) else ZillitButton(label, onClick = onClick, variant = ButtonVariant.Secondary, leadingIcon = icon)
             // The movements this status allows, in the reference's order.
             when (status) {
                 "AVAILABLE" -> {
@@ -155,23 +170,45 @@ private fun ActionButtons(
                     button(t("csync_act_on_set"), AhIcons.Video, ink = true) { move("TO_SET", "Set") }
                     button(t("csync_act_return"), ZillitIcons.Inbox) { move("RETURN", "Wardrobe Truck") }
                 }
-                "ON_SET" -> button(t("csync_act_return_to_wardrobe"), ZillitIcons.Inbox, ink = true) { move("RETURN", "Wardrobe Truck") }
-                "MISSING" -> button(t("csync_act_found"), AhIcons.MapPin, ink = true) { move("FOUND", "Wardrobe Truck") }
-                "DAMAGED" -> button(t("csync_act_repaired"), ZillitIcons.Inbox, ink = true) { move("REPAIRED", "Wardrobe Truck") }
-                "RETURNED_TO_VENDOR", "RETIRED" -> button(t("csync_act_receive_back"), ZillitIcons.Inbox, ink = true) { move("RECEIVED", "Warehouse") }
+                "ON_SET" -> button(t("csync_act_return_to_wardrobe"), ZillitIcons.Inbox, ink = true) {
+                    move("RETURN", "Wardrobe Truck")
+                }
+                "MISSING" -> button(t("csync_act_found"), AhIcons.MapPin, ink = true) {
+                    move("FOUND", "Wardrobe Truck")
+                }
+                "DAMAGED" -> button(t("csync_act_repaired"), ZillitIcons.Inbox, ink = true) {
+                    move("REPAIRED", "Wardrobe Truck")
+                }
+                "RETURNED_TO_VENDOR", "RETIRED" -> button(t("csync_act_receive_back"), ZillitIcons.Inbox, ink = true) {
+                    move("RECEIVED", "Warehouse")
+                }
             }
             if (status in ACTIVE) {
-                ZillitButton(t("csync_act_emergency_clean"), onClick = { open(ActionForm.Emergency) }, variant = ButtonVariant.Danger, leadingIcon = ZillitIcons.Siren)
+                ZillitButton(
+                    t("csync_act_emergency_clean"),
+                    onClick = { open(ActionForm.Emergency) },
+                    variant = ButtonVariant.Danger,
+                    leadingIcon = ZillitIcons.Siren
+                )
                 button(t("csync_act_move"), ZillitIcons.Forward) { move("MOVE", "") }
             }
-            if (status in ACTIVE || status == "DAMAGED") button(t("csync_act_report_damage"), AhIcons.AlertTriangle) { open(ActionForm.Damage) }
-            if (status != "MISSING" && status != "RETIRED") button(t("csync_act_mark_missing"), AhIcons.AlertCircle) { open(ActionForm.Missing) }
+            if (status in ACTIVE || status == "DAMAGED") button(t("csync_act_report_damage"), AhIcons.AlertTriangle) {
+                open(ActionForm.Damage)
+            }
+            if (status != "MISSING" && status != "RETIRED") button(t("csync_act_mark_missing"), AhIcons.AlertCircle) {
+                open(ActionForm.Missing)
+            }
             if (status in ACTIVE) {
                 button(t("csync_act_request_cleaning"), AhIcons.Refresh) { open(ActionForm.Cleaning) }
                 button(t("csync_act_alteration"), AhIcons.Cut) { open(ActionForm.Alteration) }
             }
             // Managers only, as the reference (its FINANCE_ROLES are its manager roles).
-            if (ctx.isFinance && status in setOf("AVAILABLE", "DAMAGED")) button(t("csync_act_retire"), AhIcons.Archive) { move("RETIRE", "") }
+            if (ctx.isFinance && status in setOf("AVAILABLE", "DAMAGED")) button(
+                t("csync_act_retire"),
+                AhIcons.Archive
+            ) {
+                move("RETIRE", "")
+            }
         }
     }
 }
@@ -179,8 +216,16 @@ private fun ActionButtons(
 private val BUTTON_GAP = 6.dp
 
 /** Issue / return / move / to-set / found / repaired / receive / retire: `POST /costumes/{id}/actions`. */
+@Suppress("LongMethod")
 @Composable
-private fun MovementDialog(costume: Rec, movement: Movement, sceneId: String, takeNumber: String, onClose: () -> Unit, onDone: () -> Unit) {
+private fun MovementDialog(
+    costume: Rec,
+    movement: Movement,
+    sceneId: String,
+    takeNumber: String,
+    onClose: () -> Unit,
+    onDone: () -> Unit
+) {
     val ctx = LocalSync.current
     val scope = rememberCoroutineScope()
     var location by remember { mutableStateOf(movement.location) }
@@ -203,7 +248,13 @@ private fun MovementDialog(costume: Rec, movement: Movement, sceneId: String, ta
                 val answer = ctx.write {
                     ctx.api.post(
                         "/costumes/${costume.id}/actions",
-                        body("action" to action, "to_location" to location, "scene_id" to scene, "take_number" to numOrNull(take)?.toLong(), "note" to note),
+                        body(
+                            "action" to action,
+                            "to_location" to location,
+                            "scene_id" to scene,
+                            "take_number" to numOrNull(take)?.toLong(),
+                            "note" to note
+                        ),
                     )
                 }
                 busy = false
@@ -216,11 +267,21 @@ private fun MovementDialog(costume: Rec, movement: Movement, sceneId: String, ta
     ) {
         FormGrid {
             if (action != "RETIRE") {
-                StackedPick(location, options, { location = it }, location, { location = it }, t("csync_to_location"), FormWide, placeholder = t("csync_choose_dash"))
+                StackedPick(
+                    location,
+                    options,
+                    { location = it },
+                    location,
+                    { location = it },
+                    t("csync_to_location"),
+                    FormWide,
+                    placeholder = t("csync_choose_dash")
+                )
             }
             if (action in setOf("ISSUE", "TO_SET", "RETURN")) {
                 val sceneOptions = scenes.value.orEmpty().map { s ->
-                    s.id to "${t("csync_sc")} ${s.str("number")}${s.str("name").takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}"
+                    val name = s.str("name").takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+                    s.id to "${t("csync_sc")} ${s.str("number")}$name"
                 }
                 PickInput(scene, sceneOptions, { scene = it }, t("csync_field_scene"), placeholder = "—")
                 TextInput(take, { take = it }, t("csync_field_take"), number = true)
@@ -230,9 +291,19 @@ private fun MovementDialog(costume: Rec, movement: Movement, sceneId: String, ta
     }
 }
 
-/** The emergency's outcome: the piece is now in cleaning, a replacement if one was issued, and the alternatives to assign. */
+/**
+ * The emergency's outcome: the piece is now in cleaning, a replacement if one was issued, and the alternatives to
+ * assign.
+ */
+@Suppress("LongMethod")
 @Composable
-private fun EmergencyResultDialog(costume: Rec, outcome: EmergencyOutcome, onClose: () -> Unit, go: (String) -> Unit, onOutcome: (EmergencyOutcome) -> Unit) {
+private fun EmergencyResultDialog(
+    costume: Rec,
+    outcome: EmergencyOutcome,
+    onClose: () -> Unit,
+    go: (String) -> Unit,
+    onOutcome: (EmergencyOutcome) -> Unit
+) {
     val ctx = LocalSync.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -252,18 +323,30 @@ private fun EmergencyResultDialog(costume: Rec, outcome: EmergencyOutcome, onClo
             val replacement = outcome.replacement
             if (replacement != null) {
                 MutedText(
-                    t("csync_replacement_issued", "asset" to replacement.str("asset_number"), "name" to replacement.str("name")),
+                    t(
+                        "csync_replacement_issued",
+                        "asset" to replacement.str("asset_number"),
+                        "name" to replacement.str("name")
+                    ),
                     maxLines = 3,
                 )
             } else if (outcome.alternatives.isEmpty()) {
-                MutedText(t("csync_no_replacement", "time" to fmtTime(outcome.request.long("expected_ready_at")).ifBlank { "—" }), maxLines = 3)
+                MutedText(
+                    t(
+                        "csync_no_replacement",
+                        "time" to fmtTime(outcome.request.long("expected_ready_at")).ifBlank { "—" }
+                    ),
+                    maxLines = 3
+                )
             }
             if (outcome.alternatives.isNotEmpty()) {
                 ZillitText(t("csync_available_alternatives"), style = ZillitTheme.typography.titleSmall)
                 outcome.alternatives.forEach { alt ->
                     CostumeRow(
                         alt,
-                        extra = alt.doubleOrNull("match_score")?.let { " · " + t("csync_match_n", "n" to it.toLong()) }.orEmpty(),
+                        extra = alt
+                            .doubleOrNull("match_score")?.let { " · " + t("csync_match_n", "n" to it.toLong()) }
+                            .orEmpty(),
                         end = {
                             if (replacement?.id == alt.id) {
                                 StatusBadge("READY", t("csync_assigned"))
@@ -273,9 +356,18 @@ private fun EmergencyResultDialog(costume: Rec, outcome: EmergencyOutcome, onClo
                                     onClick = {
                                         scope.launch {
                                             busy = true
-                                            val answer = ctx.write { ctx.api.post("/cleaning/${outcome.request.id}/replacement", body("costume_id" to alt.id)) }
+                                            val answer = ctx.write {
+                                                ctx.api.post(
+                                                    "/cleaning/${outcome.request.id}/replacement",
+                                                    body("costume_id" to alt.id)
+                                                )
+                                            }
                                             busy = false
-                                            if (answer != null) onOutcome(EmergencyOutcome(outcome.request, outcome.alternatives, answer.rec ?: alt))
+                                            if (answer != null) onOutcome(EmergencyOutcome(
+                                                outcome.request,
+                                                outcome.alternatives,
+                                                answer.rec ?: alt
+                                            ))
                                         }
                                     },
                                     size = ButtonSize.Small,

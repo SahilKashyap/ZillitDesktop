@@ -42,6 +42,7 @@ import kotlinx.serialization.json.contentOrNull
  * enum feed (`/meta`), the production record, navigation, toasts, and the
  * realtime frames. Screens read it with [LocalSync].
  */
+@Suppress("LongParameterList")
 @Stable
 class SyncCtx(
     val api: SyncOnsetApi,
@@ -153,7 +154,9 @@ class Resource<T>(private val scope: CoroutineScope, private val loader: suspend
             when (answer) {
                 is ZillitResult.Success -> state = Load.Ready(answer.data)
                 // A failed background refresh keeps the figures already on screen.
-                is ZillitResult.Failure -> if (!silent || state !is Load.Ready) state = Load.Failed(answer.error.localised())
+                is ZillitResult.Failure -> if (
+                    !silent || state !is Load.Ready
+                ) state = Load.Failed(answer.error.localised())
             }
         }
     }

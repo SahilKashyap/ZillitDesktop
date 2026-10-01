@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import com.zillit.desktop.feature.costumesetsync.ui.Resource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -71,50 +72,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
-/** The take form's draft: one per open scene + character, so switching away starts a fresh one. */
-@Stable
-internal class TakeDraft {
-    var takeNumber by mutableStateOf("1")
-    var details by mutableStateOf(listOf<Pair<String, String>>())
-    var accessories by mutableStateOf(listOf<Pair<String, Boolean>>())
-    var notes by mutableStateOf("")
-    var media by mutableStateOf(listOf<MediaEntry>())
-
-    /** Edited by hand: a fresh read of the last take no longer overwrites it. */
-    var touched by mutableStateOf(false)
-    var saving by mutableStateOf(false)
-
-    fun apply(fill: ContinuityModel.TakeFill) {
-        takeNumber = fill.takeNumber
-        details = fill.details
-        accessories = fill.accessories
-        notes = ""
-    }
-
-    inline fun edit(block: TakeDraft.() -> Unit) {
-        touched = true
-        block()
-    }
-
-    /** The `POST /continuity` body for this draft. */
-    fun toBody(sceneId: String, characterId: String, changeId: String): JsonObject = body(
-        "scene_id" to sceneId,
-        "character_id" to characterId,
-        "change_id" to changeId,
-        "take_number" to (takeNumber.trim().toDoubleOrNull()?.toLong() ?: 1L),
-        "notes" to JsonPrimitive(notes),
-        "details" to buildJsonObject { details.filter { it.first.isNotBlank() }.forEach { (k, v) -> put(k.trim(), JsonPrimitive(v)) } },
-        "accessories" to JsonArray(
-            accessories.filter { it.first.isNotBlank() }.map { (name, present) ->
-                buildJsonObject {
-                    put("name", JsonPrimitive(name))
-                    put("present", JsonPrimitive(present))
-                }
-            },
-        ),
-    )
-}
-
 /**
  * On set: the shooting day as wardrobe sees it — the scenes a call sheet put on
  * the date, who is in them and whether their pieces are ready — with the
@@ -134,6 +91,106 @@ fun ContinuityOnSetScreen() {
     val characterId = route.arg("characterId")
     val project = ctx.project.rec
 
+    val data = rememberOnSetData(sceneId, characterId)
+    val refresh = data::refresh
+    SocketRefresh(SyncEvents.Scene + SyncEvents.Continuity) { refresh() }
+
+    val sheetDay = DayKeys.of(project?.long("callsheet_date"))
+    var picked by remember { mutableStateOf<String?>(null) }
+    val today = todayParam(ctx.now())
+    val day = picked ?: sheetDay.ifEmpty { today }
+    val sceneRec = data.scene.value?.rec
+    OpenSceneEffects(sceneRec, characterId) { picked = it }
+
+    val draft = remember(sceneId, characterId) { TakeDraft() }
+    var discardOpen by remember { mutableStateOf(false) }
+    val state = OnSetState(sceneId, characterId, sceneRec, data.compare.value?.rec, draft, refresh) {
+        if (draft.touched) discardOpen = true else closeScene(ctx)
+    }
+
+    val sheet = rememberCallSheetUi()
+    OnSetHeader(sheet)
+
+    Await(data.scenes) { all ->
+        CallSheetDialogs(sheet, all, { d -> d?.takeIf { it.isNotEmpty() }?.let { picked = it } }, refresh)
+        DayBoard(all, day, sheetDay, state, { picked = it.ifEmpty { today } }) { picked = sheetDay }
+        if (sceneId.isEmpty()) {
+            SectionCard(modifier = Modifier.padding(top = ZillitTheme.spacing.md)) {
+                EmptyState(t("csync_click_scene_above"), t("csync_click_scene_above_hint"))
+            }
+        }
+        // A scene with no shoot date never appears on a day board, so its form opens on its own.
+        val onBoard = sceneRec != null && DayKeys.of(sceneRec.long("shoot_date")) == day &&
+            sceneRec.str("status") != "OMITTED"
+        if (sceneId.isNotEmpty() && !onBoard) OffBoardScene(state)
+    }
+    KitConfirm(
+        open = discardOpen,
+        title = t("csync_discard_changes_title"),
+        body = t("csync_take_discard_body"),
+        confirmLabel = t("csync_discard"),
+        onConfirm = { discardOpen = false; closeScene(ctx) },
+        onDismiss = { discardOpen = false },
+    )
+}
+
+/**
+ * The page head and the red hint under it. The call sheet the day works from: View (once one exists) and Upload,
+ * ahead of the book link, as the web orders them.
+ */
+@Composable
+private fun OnSetHeader(sheet: CallSheetUi) {
+    val ctx = LocalSync.current
+    PageHead(
+        title = t("csync_on_set"),
+        sub = t("csync_on_set_sub"),
+        actions = {
+            if (sheet.docs.docs.isNotEmpty() || ctx.project.rec?.rec("callsheet_document") != null) {
+                ZillitButton(
+                    t("csync_view_callsheet"),
+                    onClick = { sheet.view = true },
+                    variant = ButtonVariant.Secondary,
+                    leadingIcon = ZillitIcons.Eye,
+                )
+            }
+            if (ctx.canPost) {
+                ZillitButton(
+                    t("csync_upload_callsheet"),
+                    onClick = { sheet.upload = true },
+                    variant = ButtonVariant.Secondary,
+                    leadingIcon = ZillitIcons.File,
+                )
+            }
+            ZillitButton(
+                "${t("csync_continuity_book")} →",
+                onClick = { ctx.nav.go("continuity/book") },
+                variant = ButtonVariant.Secondary,
+            )
+        },
+    )
+    ZillitText(
+        t("csync_on_set_hint"),
+        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+        color = ZillitTheme.colors.danger,
+        modifier = Modifier.padding(bottom = ZillitTheme.spacing.md),
+    )
+}
+
+/** The three reads the on-set screen is built on: the day's scenes, the open scene and its comparison. */
+private class OnSetData(
+    val scenes: Resource<List<Rec>>,
+    val scene: Resource<Answer>,
+    val compare: Resource<Answer>,
+) {
+    fun refresh() {
+        scenes.reload(silent = true)
+        scene.reload(silent = true)
+        compare.reload(silent = true)
+    }
+}
+
+@Composable
+private fun rememberOnSetData(sceneId: String, characterId: String): OnSetData {
     val scenes = rememberRows { api.get("/scenes") }
     val scene = rememberResource(sceneId) {
         if (sceneId.isEmpty()) ZillitResult.Success(Answer(null, null)) else api.get("/scenes/$sceneId")
@@ -145,137 +202,177 @@ fun ContinuityOnSetScreen() {
             api.get("/continuity/compare", mapOf("sceneId" to sceneId, "characterId" to characterId))
         }
     }
-    val refresh = {
-        scenes.reload(silent = true)
-        scene.reload(silent = true)
-        compare.reload(silent = true)
+    return remember(scenes, scene, compare) { OnSetData(scenes, scene, compare) }
+}
+
+/** The open scene's own panel, for a scene that is not on the day board. */
+@Composable
+private fun OffBoardScene(state: OnSetState) {
+    val ctx = LocalSync.current
+    Column(
+        Modifier.padding(top = ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        ZillitButton(
+            t("csync_close"),
+            onClick = state.onClose,
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        )
+        OpenScene(ctx, state.sceneRec, state.characterId, state.compare, state.draft, state.refresh)
     }
-    SocketRefresh(SyncEvents.Scene + SyncEvents.Continuity) { refresh() }
+}
 
-    val sheetDay = DayKeys.of(project?.long("callsheet_date"))
-    var picked by remember { mutableStateOf<String?>(null) }
-    val today = todayParam(ctx.now())
-    val day = picked ?: sheetDay.ifEmpty { today }
-    val sceneRec = scene.value?.rec
+/** What the on-set board needs to know about the open scene, gathered so the pieces take one argument. */
+private class OnSetState(
+    val sceneId: String,
+    val characterId: String,
+    val sceneRec: Rec?,
+    val compare: Rec?,
+    val draft: TakeDraft,
+    val refresh: () -> Unit,
+    val onClose: () -> Unit,
+)
 
+private fun closeScene(ctx: SyncCtx) {
+    ctx.nav.setQuery("sceneId", null)
+    ctx.nav.setQuery("characterId", null)
+}
+
+private fun openScene(ctx: SyncCtx, s: Rec) {
+    ctx.nav.setQuery("sceneId", s.id)
+    ctx.nav.setQuery("characterId", s.recs("characters").firstOrNull()?.str("character_id"))
+}
+
+/** The route-driven effects: a linked scene on another day moves the board; a scene with nobody chosen picks one. */
+@Composable
+private fun OpenSceneEffects(sceneRec: Rec?, characterId: String, onDay: (String) -> Unit) {
+    val ctx = LocalSync.current
     // A scene opened by a link may sit on another day: the board follows it in.
     LaunchedEffect(sceneRec?.id) {
-        DayKeys.of(sceneRec?.long("shoot_date")).takeIf { it.isNotEmpty() }?.let { picked = it }
+        DayKeys.of(sceneRec?.long("shoot_date")).takeIf { it.isNotEmpty() }?.let(onDay)
     }
     // A scene opened with nobody chosen yet: the first character in it.
     LaunchedEffect(sceneRec?.id, characterId) {
         if (sceneRec != null && characterId.isEmpty()) {
-            sceneRec.recs("characters").firstOrNull()?.str("character_id")?.takeIf { it.isNotEmpty() }?.let { ctx.nav.setQuery("characterId", it) }
+            sceneRec.recs("characters")
+                .firstOrNull()
+                ?.str("character_id")
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { ctx.nav.setQuery("characterId", it) }
         }
     }
+}
 
-    val draft = remember(sceneId, characterId) { TakeDraft() }
-    var discardOpen by remember { mutableStateOf(false) }
-    fun closeScene() {
-        ctx.nav.setQuery("sceneId", null)
-        ctx.nav.setQuery("characterId", null)
-    }
-    fun openScene(s: Rec) {
-        ctx.nav.setQuery("sceneId", s.id)
-        ctx.nav.setQuery("characterId", s.recs("characters").firstOrNull()?.str("character_id"))
-    }
+/** The call-sheet documents and the two dialogs' open state (upload, viewer) plus the document picked to read. */
+@Stable
+private class CallSheetUi(val docs: ProjectDocuments) {
+    var upload by mutableStateOf(false)
+    var view by mutableStateOf(false)
+    var read by mutableStateOf<Rec?>(null)
 
-    // The call sheet the day works from: View (once one exists) and Upload, ahead of the book link, as the web orders them.
-    val sheetDocs = rememberProjectDocuments("CALLSHEET")
-    var sheetUpload by remember { mutableStateOf(false) }
-    var sheetView by remember { mutableStateOf(false) }
-    var sheetRead by remember { mutableStateOf<Rec?>(null) }
-    PageHead(
-        title = t("csync_on_set"),
-        sub = t("csync_on_set_sub"),
-        actions = {
-            if (sheetDocs.docs.isNotEmpty() || project?.rec("callsheet_document") != null) {
-                ZillitButton(t("csync_view_callsheet"), onClick = { sheetView = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Eye)
-            }
-            if (ctx.canPost) {
-                ZillitButton(t("csync_upload_callsheet"), onClick = { sheetUpload = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.File)
-            }
-            ZillitButton("${t("csync_continuity_book")} →", onClick = { ctx.nav.go("continuity/book") }, variant = ButtonVariant.Secondary)
+    fun closeUpload() {
+        upload = false
+        read = null
+    }
+}
+
+@Composable
+private fun rememberCallSheetUi(): CallSheetUi {
+    val docs = rememberProjectDocuments("CALLSHEET")
+    return remember(docs) { CallSheetUi(docs) }
+}
+
+@Composable
+private fun CallSheetDialogs(sheet: CallSheetUi, all: List<Rec>, onDay: (String?) -> Unit, refresh: () -> Unit) {
+    val ctx = LocalSync.current
+    val sheetImport = rememberScheduleUpload(
+        open = sheet.upload,
+        kind = "CALLSHEET",
+        docs = sheet.docs,
+        breakdown = all,
+        onApplied = { d ->
+            onDay(d)
+            refresh()
+            sheet.docs.reload()
+            ctx.changed()
         },
+        onClose = { sheet.closeUpload() },
     )
-    ZillitText(
-        t("csync_on_set_hint"),
-        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-        color = ZillitTheme.colors.danger,
-        modifier = Modifier.padding(bottom = ZillitTheme.spacing.md),
-    )
-
-    Await(scenes) { all ->
-        val sheetImport = rememberScheduleUpload(
-            open = sheetUpload,
+    // Opened from the viewer's "Read this": start straight on that document, once per opening.
+    LaunchedEffect(sheet.upload, sheet.read?.id) {
+        sheet.read?.takeIf { sheet.upload }?.let { sheetImport.pickDoc(it) }
+    }
+    ScheduleUploadDialog(sheet.upload, sheetImport, sheet.docs) { sheet.closeUpload() }
+    if (sheet.view) {
+        DocumentViewerDialog(
+            open = true,
             kind = "CALLSHEET",
-            docs = sheetDocs,
-            breakdown = all,
-            onApplied = { d ->
-                d?.takeIf { it.isNotEmpty() }?.let { picked = it }
-                refresh()
-                sheetDocs.reload()
-                ctx.changed()
+            docs = sheet.docs,
+            scenes = all,
+            onClose = { sheet.view = false },
+            onRead = { d ->
+                sheet.view = false
+                sheet.read = d
+                sheet.upload = true
             },
-            onClose = { sheetUpload = false; sheetRead = null },
         )
-        // Opened from the viewer's "Read this": start straight on that document, once per opening.
-        LaunchedEffect(sheetUpload, sheetRead?.id) { sheetRead?.takeIf { sheetUpload }?.let { sheetImport.pickDoc(it) } }
-        ScheduleUploadDialog(sheetUpload, sheetImport, sheetDocs) { sheetUpload = false; sheetRead = null }
-        if (sheetView) {
-            DocumentViewerDialog(
-                open = true,
-                kind = "CALLSHEET",
-                docs = sheetDocs,
-                scenes = all,
-                onClose = { sheetView = false },
-                onRead = { d -> sheetView = false; sheetRead = d; sheetUpload = true },
+    }
+}
+
+/** The day's card: the date picker, the call-sheet line, the stats and one board card per scene. */
+@Composable
+private fun DayBoard(
+    all: List<Rec>,
+    day: String,
+    sheetDay: String,
+    state: OnSetState,
+    onDate: (String) -> Unit,
+    onSheetDay: () -> Unit,
+) {
+    val ctx = LocalSync.current
+    val project = ctx.project.rec
+    val dayScenes = ContinuityModel.onDay(all, day)
+    SectionCard(
+        title = "${t("csync_on_set")} · ${DayKeys.short(day)}" +
+            (project?.long("shooting_day")?.takeIf { it > 0 }?.let { " · " + t("csync_day_n", "n" to it) } ?: ""),
+        // No visible label, as the web's DatePicker (its label is the aria-label only).
+        actions = {
+            com.zillit.desktop.core.designsystem.component.ZillitDateField(
+                day,
+                onDate,
+                Modifier.width(KIT_DAY_FIELD),
             )
+        },
+    ) {
+        if (project?.long("callsheet_at")?.let { it > 0 } == true) {
+            CallSheetLine(project, sheetDay, day, onSheetDay)
         }
-        val dayScenes = ContinuityModel.onDay(all, day)
-        val onBoard = sceneRec != null && DayKeys.of(sceneRec.long("shoot_date")) == day && sceneRec.str("status") != "OMITTED"
-        SectionCard(
-            title = "${t("csync_on_set")} · ${DayKeys.short(day)}" + (project?.long("shooting_day")?.takeIf { it > 0 }?.let { " · " + t("csync_day_n", "n" to it) } ?: ""),
-            // No visible label, as the web's DatePicker (its label is the aria-label only).
-            actions = { com.zillit.desktop.core.designsystem.component.ZillitDateField(day, { picked = it.ifEmpty { today } }, Modifier.width(KIT_DAY_FIELD)) },
-        ) {
-            if (project?.long("callsheet_at")?.let { it > 0 } == true) CallSheetLine(project, sheetDay, day) { picked = sheetDay }
-            if (dayScenes.isEmpty()) {
-                EmptyState(t("csync_nothing_scheduled_day"), t("csync_nothing_scheduled_day_hint"))
-            } else {
-                DayStats(dayScenes)
-                Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                    dayScenes.forEach { s ->
-                        val open = sceneId == s.id
-                        SceneBoardCard(s, open, characterId, onOpen = { cid -> ctx.nav.setQuery("sceneId", s.id); ctx.nav.setQuery("characterId", cid) }, onOpenFirst = { openScene(s) }) {
-                            if (draft.touched) discardOpen = true else closeScene()
-                        }
-                        if (open) OpenScene(ctx, sceneRec, characterId, compare.value?.rec, draft, refresh)
+        if (dayScenes.isEmpty()) {
+            EmptyState(t("csync_nothing_scheduled_day"), t("csync_nothing_scheduled_day_hint"))
+        } else {
+            DayStats(dayScenes)
+            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+                dayScenes.forEach { s ->
+                    val open = state.sceneId == s.id
+                    SceneBoardCard(
+                        s,
+                        open,
+                        state.characterId,
+                        onOpen = { cid ->
+                            ctx.nav.setQuery("sceneId", s.id)
+                            ctx.nav.setQuery("characterId", cid)
+                        },
+                        onOpenFirst = { openScene(ctx, s) },
+                        onClose = state.onClose,
+                    )
+                    if (open) {
+                        OpenScene(ctx, state.sceneRec, state.characterId, state.compare, state.draft, state.refresh)
                     }
                 }
             }
         }
-        if (sceneId.isEmpty()) {
-            SectionCard(modifier = Modifier.padding(top = ZillitTheme.spacing.md)) {
-                EmptyState(t("csync_click_scene_above"), t("csync_click_scene_above_hint"))
-            }
-        }
-        // A scene with no shoot date never appears on a day board, so its form opens on its own.
-        if (sceneId.isNotEmpty() && !onBoard) {
-            Column(Modifier.padding(top = ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                ZillitButton(t("csync_close"), onClick = { if (draft.touched) discardOpen = true else closeScene() }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-                OpenScene(ctx, sceneRec, characterId, compare.value?.rec, draft, refresh)
-            }
-        }
     }
-    KitConfirm(
-        open = discardOpen,
-        title = t("csync_discard_changes_title"),
-        body = t("csync_take_discard_body"),
-        confirmLabel = t("csync_discard"),
-        onConfirm = { discardOpen = false; closeScene() },
-        onDismiss = { discardOpen = false },
-    )
 }
 
 private val KIT_DAY_FIELD = KIT_DATE_WIDTH
@@ -283,14 +380,27 @@ private val KIT_DAY_FIELD = KIT_DATE_WIDTH
 @Composable
 private fun CallSheetLine(project: Rec, sheetDay: String, day: String, onShow: () -> Unit) {
     val file = project.str("callsheet_file")
-    Row(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         MutedText(
-            t("csync_callsheet") + (if (file.isNotBlank()) " $file" else "") + (if (sheetDay.isNotEmpty()) " · ${t("csync_callsheet_for")} ${DayKeys.short(sheetDay)}" else "") +
-                " · " + t("csync_callsheet_uploaded_ago", "when" to fmtDateTime(project.long("callsheet_at"))) + " · " + t("csync_callsheet_stays"),
+            t("csync_callsheet") + (if (file.isNotBlank()) " $file" else "") +
+                (if (sheetDay.isNotEmpty()) " · ${t("csync_callsheet_for")} ${DayKeys.short(sheetDay)}" else "") +
+                " · " + t("csync_callsheet_uploaded_ago", "when" to fmtDateTime(project.long("callsheet_at"))) +
+                    " · " + t(
+                    "csync_callsheet_stays",
+                ),
             maxLines = 2,
         )
         if (sheetDay.isNotEmpty() && sheetDay != day) {
-            ZillitButton(t("csync_show_callsheet_day"), onClick = onShow, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            ZillitButton(
+                t("csync_show_callsheet_day"),
+                onClick = onShow,
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
         }
     }
 }
@@ -306,7 +416,12 @@ internal fun DayStats(dayScenes: List<Rec>) {
     fun stat(n: Int, label: String) {
         ZillitText(
             androidx.compose.ui.text.buildAnnotatedString {
-                pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = colors.textPrimary))
+                pushStyle(
+                    androidx.compose.ui.text.SpanStyle(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        color = colors.textPrimary,
+                    ),
+                )
                 append(n.toString())
                 pop()
                 append(" $label")
@@ -329,13 +444,22 @@ internal fun DayStats(dayScenes: List<Rec>) {
                 ZillitText("$notReady " + t("csync_count_not_ready"), style = base, color = colors.danger)
             }
         }
-        ContinuityModel.locations(dayScenes).takeIf { it.isNotEmpty() }?.let { ZillitText(it.joinToString(" · "), style = base, color = colors.textSecondary) }
+        ContinuityModel.locations(dayScenes)
+            .takeIf { it.isNotEmpty() }
+            ?.let { ZillitText(it.joinToString(" · "), style = base, color = colors.textSecondary) }
     }
 }
 
 /** One scene on the board: its heading, its characters as readiness chips. */
 @Composable
-private fun SceneBoardCard(s: Rec, open: Boolean, characterId: String, onOpen: (String) -> Unit, onOpenFirst: () -> Unit, onClose: () -> Unit) {
+private fun SceneBoardCard(
+    s: Rec,
+    open: Boolean,
+    characterId: String,
+    onOpen: (String) -> Unit,
+    onOpenFirst: () -> Unit,
+    onClose: () -> Unit,
+) {
     // The web's `.csync-scenecard`: a 10dp-radius box with a 12dp pad; the open scene's edge turns ink.
     val box = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
     Column(
@@ -345,14 +469,32 @@ private fun SceneBoardCard(s: Rec, open: Boolean, characterId: String, onOpen: (
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
             ZillitButton(
-                "${t("csync_sc")} ${s.str("number")}" + s.str("name").takeIf { it.isNotBlank() }.let { if (it == null) "" else " · $it" },
+                "${t("csync_sc")} ${s.str("number")}" + s.str("name")
+                    .takeIf { it.isNotBlank() }
+                    .let { if (it == null) "" else " · $it" },
                 onClick = onOpenFirst,
                 variant = ButtonVariant.Tertiary,
             )
-            MutedText(listOf(s.str("int_ext"), s.str("location"), tEnum(s.str("time_of_day"))).filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f))
-            if (open) ZillitButton(t("csync_close"), onClick = onClose, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            MutedText(
+                listOf(s.str("int_ext"), s.str("location"), tEnum(s.str("time_of_day")))
+                    .filter { it.isNotBlank() }
+                    .joinToString(
+                    " · ",
+                ),
+                Modifier.weight(1f),
+            )
+            if (open) ZillitButton(
+                t("csync_close"),
+                onClick = onClose,
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
         }
         val chars = s.recs("characters")
         if (chars.isEmpty()) {
@@ -373,10 +515,15 @@ private fun ChipRowOf(chars: List<Rec>, open: Boolean, characterId: String, onOp
         chars.forEach { c ->
             val r = ContinuityModel.readiness(c)
             val on = open && characterId == c.str("character_id")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
                 ReadinessDot(r.level)
                 ZillitChoiceChip(
-                    label = c.rec("character")?.str("name").orEmpty() + " " + (if (r.total > 0) "${r.ready}/${r.total}" else t("csync_no_change_short")),
+                    label = c.rec("character")
+                        ?.str("name")
+                        .orEmpty() + " " + (if (r.total > 0) "${r.ready}/${r.total}" else t("csync_no_change_short")),
                     selected = on,
                     onClick = { onOpen(c.str("character_id")) },
                 )
@@ -396,7 +543,14 @@ internal fun blockerLine(r: Readiness): String = r.blockers.joinToString(" · ")
 
 /** What opens under a scene: who is selected, the continuity flags, the take form and the takes so far. */
 @Composable
-private fun OpenScene(ctx: SyncCtx, scene: Rec?, characterId: String, compare: Rec?, draft: TakeDraft, refresh: () -> Unit) {
+private fun OpenScene(
+    ctx: SyncCtx,
+    scene: Rec?,
+    characterId: String,
+    compare: Rec?,
+    draft: TakeDraft,
+    refresh: () -> Unit,
+) {
     if (scene == null) {
         LoadingView()
         return
@@ -404,11 +558,16 @@ private fun OpenScene(ctx: SyncCtx, scene: Rec?, characterId: String, compare: R
     val sc = scene.recs("characters").firstOrNull { it.str("character_id") == characterId }
     val records = compare?.recs("records").orEmpty()
     val flags = compare?.recs("flags").orEmpty()
-    Column(Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
         if (sc != null) SelectedNotice(ctx, scene, sc)
         if (flags.isNotEmpty()) {
             ZillitNotice(
-                text = t("csync_continuity_flags") + "\n" + flags.joinToString("\n") { "${t("csync_take")} ${it.str("take")}: ${it.str("message")}" },
+                text = t("csync_continuity_flags") + "\n" + flags.joinToString("\n") {
+                    "${t("csync_take")} ${it.str("take")}: ${it.str("message")}"
+                },
                 tone = StatusTone.Pending,
             )
         }
@@ -432,8 +591,15 @@ private fun SelectedNotice(ctx: SyncCtx, scene: Rec, sc: Rec) {
     val pieces = change?.recs("items").orEmpty().joinToString(", ") { i ->
         i.rec("costume")?.str("name").orEmpty() + i.str("wear_notes").let { if (it.isBlank()) "" else " ($it)" }
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitText("${sc.rec("character")?.str("name").orEmpty()} ${t("csync_in")} ${t("csync_sc")} ${scene.str("number")}:", style = ZillitTheme.typography.titleSmall)
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(
+            "${sc.rec("character")?.str("name").orEmpty()} ${t("csync_in")} ${t("csync_sc")} ${scene.str("number")}:",
+            style = ZillitTheme.typography.titleSmall,
+        )
         if (change != null) {
             ZillitButton(
                 "${t("csync_change")} #${change.str("change_number")} ${change.str("name")}",
@@ -452,7 +618,11 @@ private fun SelectedNotice(ctx: SyncCtx, scene: Rec, sc: Rec) {
 private fun NobodyInScene(ctx: SyncCtx, scene: Rec) {
     SectionCard(title = "${t("csync_sc")} ${scene.str("number")} · ${t("csync_nobody_in_scene")}") {
         MutedText(t("csync_nobody_in_scene_hint"), maxLines = 3)
-        ZillitButton(t("csync_add_characters_to_scene"), onClick = { ctx.nav.go("scenes/${scene.id}") }, modifier = Modifier.padding(top = ZillitTheme.spacing.sm))
+        ZillitButton(
+            t("csync_add_characters_to_scene"),
+            onClick = { ctx.nav.go("scenes/${scene.id}") },
+            modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
+        )
     }
 }
 
@@ -472,15 +642,36 @@ private fun TakeForm(ctx: SyncCtx, scene: Rec, sc: Rec?, last: Rec?, draft: Take
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            TextInput(draft.takeNumber, { v -> draft.edit { takeNumber = v } }, t("csync_take_number"), Modifier.width(KIT_FIELD_WIDTH), number = true)
+            TextInput(
+                draft.takeNumber,
+                { v -> draft.edit { takeNumber = v } },
+                t("csync_take_number"),
+                Modifier.width(KIT_FIELD_WIDTH),
+                number = true,
+            )
             DetailRows(draft)
             if (last != null) MutedText(t("csync_prefilled_from_take", "n" to last.long("take_number")))
             AccessoryRows(draft)
             Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ZillitText(t("csync_photos_videos"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-                MediaPicker(draft.media, { v -> draft.edit { media = v } }, enabled = !draft.saving, help = t("csync_photos_videos_hint"))
+                ZillitText(
+                    t("csync_photos_videos"),
+                    style = ZillitTheme.typography.label,
+                    color = ZillitTheme.colors.textSecondary,
+                )
+                MediaPicker(
+                    draft.media,
+                    { v -> draft.edit { media = v } },
+                    enabled = !draft.saving,
+                    help = t("csync_photos_videos_hint"),
+                )
             }
-            TextInput(draft.notes, { v -> draft.edit { notes = v } }, t("csync_field_notes"), Modifier.fillMaxWidth(), multiline = true)
+            TextInput(
+                draft.notes,
+                { v -> draft.edit { notes = v } },
+                t("csync_field_notes"),
+                Modifier.fillMaxWidth(),
+                multiline = true,
+            )
         }
     }
 }
@@ -488,30 +679,91 @@ private fun TakeForm(ctx: SyncCtx, scene: Rec, sc: Rec?, last: Rec?, draft: Take
 @Composable
 private fun DetailRows(draft: TakeDraft) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        ZillitText(t("csync_wear_details"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+        ZillitText(
+            t("csync_wear_details"),
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
         draft.details.forEachIndexed { i, (k, v) ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(k, { n -> draft.edit { details = details.mapIndexed { j, p -> if (j == i) n to p.second else p } } }, Modifier.width(KIT_FIELD_WIDTH), placeholder = t("csync_detail"))
-                ZillitTextField(v, { n -> draft.edit { details = details.mapIndexed { j, p -> if (j == i) p.first to n else p } } }, Modifier.weight(1f), placeholder = k.ifBlank { t("csync_value") })
-                ZillitButton(t("csync_remove"), onClick = { draft.edit { details = details.filterIndexed { j, _ -> j != i } } }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitTextField(
+                    k,
+                    { n -> draft.edit { details = details.mapIndexed { j, p -> if (j == i) n to p.second else p } } },
+                    Modifier.width(KIT_FIELD_WIDTH),
+                    placeholder = t("csync_detail"),
+                )
+                ZillitTextField(
+                    v,
+                    { n -> draft.edit { details = details.mapIndexed { j, p -> if (j == i) p.first to n else p } } },
+                    Modifier.weight(1f),
+                    placeholder = k.ifBlank { t("csync_value") },
+                )
+                ZillitButton(
+                    t("csync_remove"),
+                    onClick = { draft.edit { details = details.filterIndexed { j, _ -> j != i } } },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
             }
         }
-        ButtonRow { ZillitButton(t("csync_detail"), onClick = { draft.edit { details = details + ("" to "") } }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add) }
+        ButtonRow {
+            ZillitButton(
+                t("csync_detail"),
+                onClick = { draft.edit { details = details + ("" to "") } },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Add,
+            )
+        }
     }
 }
 
 @Composable
 private fun AccessoryRows(draft: TakeDraft) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        ZillitText(t("csync_pieces_accessories"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+        ZillitText(
+            t("csync_pieces_accessories"),
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
         draft.accessories.forEachIndexed { i, (name, present) ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitCheckbox(present, { on -> draft.edit { accessories = accessories.mapIndexed { j, p -> if (j == i) p.first to on else p } } })
-                ZillitTextField(name, { n -> draft.edit { accessories = accessories.mapIndexed { j, p -> if (j == i) n to p.second else p } } }, Modifier.weight(1f))
-                ZillitButton(t("csync_remove"), onClick = { draft.edit { accessories = accessories.filterIndexed { j, _ -> j != i } } }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitCheckbox(
+                    present,
+                    { on ->
+                        draft.edit { accessories = accessories.mapIndexed { j, p -> if (j == i) p.first to on else p } }
+                    },
+                )
+                ZillitTextField(
+                    name,
+                    { n ->
+                        draft.edit { accessories = accessories.mapIndexed { j, p -> if (j == i) n to p.second else p } }
+                    },
+                    Modifier.weight(1f),
+                )
+                ZillitButton(
+                    t("csync_remove"),
+                    onClick = { draft.edit { accessories = accessories.filterIndexed { j, _ -> j != i } } },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
             }
         }
-        ButtonRow { ZillitButton(t("csync_accessory"), onClick = { draft.edit { accessories = accessories + ("" to true) } }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add) }
+        ButtonRow {
+            ZillitButton(
+                t("csync_accessory"),
+                onClick = { draft.edit { accessories = accessories + ("" to true) } },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Add,
+            )
+        }
     }
 }
 
@@ -524,11 +776,19 @@ private fun saveTake(ctx: SyncCtx, scene: Rec, sc: Rec?, draft: TakeDraft, refre
             is ZillitResult.Failure -> ctx.toast(result.error.localised(), false)
             is ZillitResult.Success -> {
                 val id = result.data.rec?.id.orEmpty()
-                val failed = if (draft.media.isEmpty() || id.isEmpty()) 0 else ctx.attachMedia(draft.media, "CONTINUITY", id, kind = "OTHER")
+                val failed = if (draft.media.isEmpty() || id.isEmpty()) 0 else ctx.attachMedia(
+                    draft.media,
+                    "CONTINUITY",
+                    id,
+                    kind = "OTHER",
+                )
                 // One toast, as the web: the take is in, some of its media is not.
                 if (failed > 0) {
                     ctx.changed()
-                    ctx.toast(t(if (failed == 1) "csync_take_media_failed_one" else "csync_take_media_failed", "n" to failed), false)
+                    ctx.toast(
+                        t(if (failed == 1) "csync_take_media_failed_one" else "csync_take_media_failed", "n" to failed),
+                        false,
+                    )
                 } else {
                     result.data.message?.takeIf { it.isNotBlank() }?.let { ctx.toast(it.localisedMessage(), true) }
                     ctx.changed()
@@ -551,9 +811,16 @@ private fun TakesSoFar(ctx: SyncCtx, scene: Rec, records: List<Rec>, flags: List
             EmptyState(t("csync_no_takes_yet"), t("csync_no_takes_yet_hint"))
         } else {
             records.reversed().forEach { r ->
-                val summary = r.rec("details")?.let { d -> d.keys.take(2).joinToString(" · ") { "$it: ${d.str(it)}" } }.orEmpty()
-                ListRow(onClick = { ctx.nav.go("continuity/book?tab=shot" + if (shootDay.isNotEmpty()) "&day=$shootDay" else "") }, end = {
-                    if (flags.any { it.long("take") == r.long("take_number") }) StatusBadge("WARNING", t("csync_flagged"))
+                val summary = r.rec("details")
+                    ?.let { d -> d.keys.take(2).joinToString(" · ") { "$it: ${d.str(it)}" } }
+                    .orEmpty()
+                ListRow(onClick = {
+                    ctx.nav.go("continuity/book?tab=shot" + if (shootDay.isNotEmpty()) "&day=$shootDay" else "")
+                }, end = {
+                    if (flags.any { it.long("take") == r.long("take_number") }) StatusBadge(
+                        "WARNING",
+                        t("csync_flagged"),
+                    )
                 }) {
                     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
                         RowTitle("${t("csync_take")} ${r.long("take_number")}")

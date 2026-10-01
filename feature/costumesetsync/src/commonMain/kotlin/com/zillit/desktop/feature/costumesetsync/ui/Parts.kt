@@ -99,6 +99,7 @@ fun ReadinessDot(level: String?, modifier: Modifier = Modifier, pulse: Boolean =
  * The heading block of every page, as the web draws it: a square back arrow, the
  * title large with its sub-line under it, and the page's actions at the right.
  */
+@Suppress("LongMethod")
 @Composable
 fun PageHead(
     title: String,
@@ -129,15 +130,41 @@ fun PageHead(
             contentAlignment = Alignment.Center,
         ) { ZillitIcon(ZillitIcons.ArrowLeft, tint = colors.textPrimary, size = BACK_ICON) }
         Column(Modifier.weight(1f).widthIn(min = TITLE_MIN_WIDTH)) {
-            crumbs?.takeIf { it.isNotBlank() }?.let { ZillitText(it, Modifier.padding(bottom = 2.dp), style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1) }
+            crumbs?.takeIf { it.isNotBlank() }?.let {
+                ZillitText(
+                    it,
+                    Modifier.padding(bottom = 2.dp),
+                    style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = colors.textMuted,
+                    maxLines = 1
+                )
+            }
             if (titleContent != null) {
                 titleContent()
             } else {
-                ZillitText(title, style = ZillitTheme.typography.titleLarge.copy(fontSize = TITLE_SIZE, lineHeight = TITLE_LINE, fontWeight = FontWeight.Bold), maxLines = 2)
+                ZillitText(
+                    title,
+                    style = ZillitTheme.typography.titleLarge.copy(
+                        fontSize = TITLE_SIZE,
+                        lineHeight = TITLE_LINE,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 2
+                )
             }
-            sub?.takeIf { it.isNotBlank() }?.let { ZillitText(it, style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 2) }
+            sub?.takeIf { it.isNotBlank() }?.let {
+                ZillitText(it, style = ZillitTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 2)
+            }
             // The web's `.csync-pagehead__note`: a red helper line under the sub-line.
-            note?.takeIf { it.isNotBlank() }?.let { ZillitText(it, Modifier.padding(top = 4.dp), style = ZillitTheme.typography.bodyMedium, color = colors.danger, maxLines = 2) }
+            note?.takeIf { it.isNotBlank() }?.let {
+                ZillitText(
+                    it,
+                    Modifier.padding(top = 4.dp),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.danger,
+                    maxLines = 2
+                )
+            }
         }
         actions?.let {
             Row(
@@ -184,11 +211,22 @@ fun StatCard(
     }
     val shape = ZillitTheme.shapes.large
     // `.csync-stats--compact`: 10/12 padding, a 10.5 label, a 20 figure; the Dashboard's tiles.
-    val labelStyle = if (compact) ZillitTheme.typography.labelSmall.copy(fontSize = COMPACT_LABEL, letterSpacing = COMPACT_TRACK) else ZillitTheme.typography.labelSmall
+    val labelStyle = if (compact) ZillitTheme.typography.labelSmall.copy(
+        fontSize = COMPACT_LABEL,
+        letterSpacing = COMPACT_TRACK
+    ) else ZillitTheme.typography.labelSmall
     val valueStyle = if (compact) {
-        ZillitTheme.typography.titleLarge.copy(fontSize = COMPACT_VALUE, lineHeight = COMPACT_VALUE_LINE, fontWeight = FontWeight.Bold)
+        ZillitTheme.typography.titleLarge.copy(
+            fontSize = COMPACT_VALUE,
+            lineHeight = COMPACT_VALUE_LINE,
+            fontWeight = FontWeight.Bold
+        )
     } else {
-        ZillitTheme.typography.titleLarge.copy(fontSize = TITLE_SIZE, lineHeight = TITLE_LINE, fontWeight = FontWeight.Bold)
+        ZillitTheme.typography.titleLarge.copy(
+            fontSize = TITLE_SIZE,
+            lineHeight = TITLE_LINE,
+            fontWeight = FontWeight.Bold
+        )
     }
     Column(
         modifier
@@ -196,19 +234,34 @@ fun StatCard(
             .background(colors.surface)
             .statBorder(active, colors.textPrimary, colors.border, shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = if (compact) 12.dp else ZillitTheme.spacing.lg, vertical = if (compact) 10.dp else ZillitTheme.spacing.md),
+            .padding(
+                horizontal = if (compact) 12.dp else ZillitTheme.spacing.lg,
+                vertical = if (compact) 10.dp else ZillitTheme.spacing.md
+            ),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         ZillitText(label.uppercase(), style = labelStyle, color = colors.textSecondary, maxLines = 2)
         ZillitText(value?.toString() ?: "0", style = valueStyle, color = ink)
-        hint?.let { ZillitText(it, style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp), color = colors.textSecondary, maxLines = 2) }
+        hint?.let {
+            ZillitText(
+                it,
+                style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = colors.textSecondary,
+                maxLines = 2
+            )
+        }
     }
 }
 
 private val COMPACT_LABEL = 10.5.sp
 private val COMPACT_TRACK = 0.06.em
 /** A tile's edge: hairline normally, a doubled ink edge when it is the current filter. */
-private fun Modifier.statBorder(active: Boolean, ink: androidx.compose.ui.graphics.Color, edge: androidx.compose.ui.graphics.Color, shape: androidx.compose.ui.graphics.Shape): Modifier =
+private fun Modifier.statBorder(
+    active: Boolean,
+    ink: androidx.compose.ui.graphics.Color,
+    edge: androidx.compose.ui.graphics.Color,
+    shape: androidx.compose.ui.graphics.Shape
+): Modifier =
     if (active) border(2.dp, ink, shape) else border(1.dp, edge, shape)
 
 private val COMPACT_VALUE = 20.sp
@@ -232,25 +285,48 @@ fun SectionCard(
     val head = title != null || actions != null
     val edge = if (flush) 14.dp else ZillitTheme.spacing.lg
     Column(
-        modifier.fillMaxWidth().shadow(CARD_SHADOW, shape).clip(shape).background(colors.surface).border(1.dp, colors.border, shape),
+        modifier
+            .fillMaxWidth()
+            .shadow(CARD_SHADOW, shape)
+            .clip(shape)
+            .background(colors.surface)
+            .border(1.dp, colors.border, shape),
     ) {
         if (head) {
             Row(
-                Modifier.fillMaxWidth().padding(start = edge, end = edge, top = edge, bottom = if (flush) ZillitTheme.spacing.md else 0.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = edge,
+                        end = edge,
+                        top = edge,
+                        bottom = if (flush) ZillitTheme.spacing.md else 0.dp
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 ZillitText(
                     title.orEmpty(),
                     Modifier.weight(1f),
-                    style = ZillitTheme.typography.titleSmall.copy(fontSize = CARD_TITLE, lineHeight = CARD_TITLE_LINE, fontWeight = FontWeight.Bold),
+                    style = ZillitTheme.typography.titleSmall.copy(
+                        fontSize = CARD_TITLE,
+                        lineHeight = CARD_TITLE_LINE,
+                        fontWeight = FontWeight.Bold
+                    ),
                     maxLines = 1,
                 )
-                meta?.let { ZillitText(it, style = ZillitTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1) }
+                meta?.let {
+                    ZillitText(it, style = ZillitTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
+                }
                 actions?.invoke(this)
             }
         }
-        val body = if (flush) Modifier else Modifier.padding(start = ZillitTheme.spacing.lg, end = ZillitTheme.spacing.lg, bottom = ZillitTheme.spacing.lg, top = if (head) ZillitTheme.spacing.md else ZillitTheme.spacing.lg)
+        val body = if (flush) Modifier else Modifier.padding(
+            start = ZillitTheme.spacing.lg,
+            end = ZillitTheme.spacing.lg,
+            bottom = ZillitTheme.spacing.lg,
+            top = if (head) ZillitTheme.spacing.md else ZillitTheme.spacing.lg
+        )
         Column(body, content = content)
     }
 }
@@ -261,7 +337,12 @@ private val CARD_TITLE = 15.sp
 private val CARD_TITLE_LINE = 22.sp
 
 @Composable
-fun EmptyState(title: String, hint: String? = null, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
+fun EmptyState(
+    title: String,
+    hint: String? = null,
+    modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)? = null
+) {
     val emoji = emojiFor(title)
     if (emoji == null) {
         ZillitEmptyState(title = title, message = hint, modifier = modifier, action = action)
@@ -273,9 +354,26 @@ fun EmptyState(title: String, hint: String? = null, modifier: Modifier = Modifie
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // `.csync-empty--icon`: a 32 emoji, a 15 title, a 13 muted hint, then the action 16 below.
-        ZillitText(emoji, Modifier.padding(bottom = 10.dp), style = ZillitTheme.typography.titleLarge.copy(fontSize = EMOJI_SIZE, lineHeight = EMOJI_SIZE))
-        ZillitText(title, style = ZillitTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        hint?.let { ZillitText(it, Modifier.padding(top = 6.dp), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textMuted, maxLines = 3, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+        ZillitText(
+            emoji,
+            Modifier.padding(bottom = 10.dp),
+            style = ZillitTheme.typography.titleLarge.copy(fontSize = EMOJI_SIZE, lineHeight = EMOJI_SIZE)
+        )
+        ZillitText(
+            title,
+            style = ZillitTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        hint?.let {
+            ZillitText(
+                it,
+                Modifier.padding(top = 6.dp),
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 3,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
         action?.let { Box(Modifier.padding(top = ZillitTheme.spacing.lg)) { it() } }
     }
 }
@@ -324,7 +422,10 @@ private val EMPTY_EMOJI: Map<String, String> = mapOf(
 
 @Composable
 fun LoadingView(modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+    Column(
+        modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)
+    ) {
         repeat(SKELETON_ROWS) { ZillitSkeletonBar(Modifier.fillMaxWidth()) }
     }
 }
@@ -338,7 +439,11 @@ fun LoadingView(modifier: Modifier = Modifier) {
 fun <T> Await(resource: Resource<T>, modifier: Modifier = Modifier, content: @Composable (T) -> Unit) {
     when (val state = resource.state) {
         Load.Loading -> LoadingView(modifier)
-        is Load.Failed -> ZillitErrorState(message = state.message, onRetry = { resource.reload() }, modifier = modifier)
+        is Load.Failed -> ZillitErrorState(
+            message = state.message,
+            onRetry = { resource.reload() },
+            modifier = modifier
+        )
         is Load.Ready -> content(state.value)
     }
 }
@@ -376,9 +481,25 @@ fun Pager(page: Int, pages: Int, onPage: (Int) -> Unit, modifier: Modifier = Mod
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitButton(t("csync_previous"), onClick = { onPage(page - 1) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, enabled = page > 1)
-        ZillitText(t("csync_page_of", "page" to page, "pages" to pages), style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
-        ZillitButton(t("csync_next"), onClick = { onPage(page + 1) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, enabled = page < pages)
+        ZillitButton(
+            t("csync_previous"),
+            onClick = { onPage(page - 1) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = page > 1
+        )
+        ZillitText(
+            t("csync_page_of", "page" to page, "pages" to pages),
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted
+        )
+        ZillitButton(
+            t("csync_next"),
+            onClick = { onPage(page + 1) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = page < pages
+        )
     }
 }
 
@@ -389,7 +510,9 @@ fun FieldRow(label: String, value: String, modifier: Modifier = Modifier, mono: 
         ZillitText(label.uppercase(), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted)
         ZillitText(
             value.ifBlank { "—" },
-            style = if (mono) ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace) else ZillitTheme.typography.bodyMedium,
+            style = if (mono) ZillitTheme.typography.bodyMedium.copy(
+                fontFamily = FontFamily.Monospace
+            ) else ZillitTheme.typography.bodyMedium,
         )
     }
 }
@@ -433,18 +556,37 @@ fun ListRow(
 /** A thin bold line of text — a row's title. */
 @Composable
 fun RowTitle(text: String, modifier: Modifier = Modifier) {
-    ZillitText(text, modifier, style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
+    ZillitText(
+        text,
+        modifier,
+        style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+        maxLines = 1
+    )
 }
 
 @Composable
 fun MutedText(text: String, modifier: Modifier = Modifier, maxLines: Int = 1) {
-    ZillitText(text, modifier, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textSecondary, maxLines = maxLines)
+    ZillitText(
+        text,
+        modifier,
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.textSecondary,
+        maxLines = maxLines
+    )
 }
 
 /** Monospace asset numbers (`CST-000245`). */
 @Composable
 fun MonoText(text: String, modifier: Modifier = Modifier) {
-    ZillitText(text, modifier, style = ZillitTheme.typography.titleSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold), maxLines = 1)
+    ZillitText(
+        text,
+        modifier,
+        style = ZillitTheme.typography.titleSmall.copy(
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold
+        ),
+        maxLines = 1
+    )
 }
 
 /** The reference's category marks: shoes, accessories and jewellery, and a shirt for everything else. */
@@ -463,8 +605,16 @@ fun categoryIcon(category: String?): String = when (category) {
  * piece list); [noStatus] drops the badge where every row would say the same;
  * [extra] is appended to the detail line (" · match 3" on a replacement).
  */
+@Suppress("LongMethod")
 @Composable
-fun CostumeRow(c: Rec, onClick: (() -> Unit)? = null, end: (@Composable RowScope.() -> Unit)? = null, noStatus: Boolean = false, extra: String = "", last: Boolean = false) {
+fun CostumeRow(
+    c: Rec,
+    onClick: (() -> Unit)? = null,
+    end: (@Composable RowScope.() -> Unit)? = null,
+    noStatus: Boolean = false,
+    extra: String = "",
+    last: Boolean = false
+) {
     val colors = ZillitTheme.colors
     val detail = listOfNotNull(
         c.str("type").ifBlank { null },
@@ -479,7 +629,11 @@ fun CostumeRow(c: Rec, onClick: (() -> Unit)? = null, end: (@Composable RowScope
             Modifier
                 .fillMaxWidth()
                 .background(if (onClick != null && hovered) colors.surfaceHover else Color.Transparent)
-                .then(if (onClick != null) Modifier.clickable(interactionSource = interaction, indication = null, onClick = onClick) else Modifier)
+                .then(if (onClick != null) Modifier.clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClick = onClick
+                ) else Modifier)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -487,13 +641,39 @@ fun CostumeRow(c: Rec, onClick: (() -> Unit)? = null, end: (@Composable RowScope
             GlyphAvatar(categoryIcon(c.str("category")))
             Column(Modifier.weight(1f)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ZillitText(c.str("asset_number"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 12.9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Clip)
-                    ZillitText(c.str("name"), Modifier.weight(1f, fill = false), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp), maxLines = 1)
+                    ZillitText(
+                        c.str("asset_number"),
+                        style = ZillitTheme.typography.bodyLarge.copy(
+                            fontSize = 12.9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Clip
+                    )
+                    ZillitText(
+                        c.str("name"),
+                        Modifier.weight(1f, fill = false),
+                        style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+                        maxLines = 1
+                    )
                 }
-                if (detail.isNotBlank()) ZillitText(detail, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
+                if (detail.isNotBlank()) ZillitText(
+                    detail,
+                    style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = colors.textMuted,
+                    maxLines = 1
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                c.str("location").takeIf { it.isNotBlank() }?.let { ZillitText(it, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1) }
+                c.str("location").takeIf { it.isNotBlank() }?.let {
+                    ZillitText(
+                        it,
+                        style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = colors.textMuted,
+                        maxLines = 1
+                    )
+                }
                 if (!noStatus && c.str("status").isNotBlank()) StatusBadge(c.str("status"))
                 end?.invoke(this)
             }
@@ -509,7 +689,9 @@ fun CostumeRow(c: Rec, onClick: (() -> Unit)? = null, end: (@Composable RowScope
 @Composable
 fun Timeline(entries: List<Rec>, modifier: Modifier = Modifier) {
     val colors = ZillitTheme.colors
-    val windowHeight = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp() }
+    val windowHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
+        androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp()
+    }
     val cap = (windowHeight * TIMELINE_MAX_VIEWPORT).coerceAtLeast(MIN_TIMELINE_HEIGHT)
     Column(
         modifier.fillMaxWidth().heightIn(max = cap).verticalScroll(rememberScrollState()),
@@ -519,9 +701,25 @@ fun Timeline(entries: List<Rec>, modifier: Modifier = Modifier) {
             Row(Modifier.height(IntrinsicSize.Min)) {
                 Box(Modifier.width(2.dp).fillMaxHeight().background(colors.border))
                 Column(Modifier.padding(start = 12.dp)) {
-                    val when_ = listOf(com.zillit.desktop.feature.costumesetsync.domain.fmtDateTime(entry.long("at")), entry.str("by")).filter { it.isNotBlank() }.joinToString(" · ")
-                    ZillitText(when_, style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace), color = colors.textMuted)
-                    ZillitText(entry.str("title"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold))
+                    val whenText = listOf(
+                        com.zillit.desktop.feature.costumesetsync.domain.fmtDateTime(entry.long("at")),
+                        entry.str("by")
+                    ).filter { it.isNotBlank() }.joinToString(" · ")
+                    ZillitText(
+                        whenText,
+                        style = ZillitTheme.typography.bodySmall.copy(
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        color = colors.textMuted
+                    )
+                    ZillitText(
+                        entry.str("title"),
+                        style = ZillitTheme.typography.bodyLarge.copy(
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    )
                     entry.str("detail").takeIf { it.isNotBlank() }?.let { MutedText(it, maxLines = 3) }
                 }
             }
@@ -534,7 +732,11 @@ private val MIN_TIMELINE_HEIGHT = 200.dp
 
 /** A row of wrapping chips / buttons. */
 @Composable
-fun ChipRow(modifier: Modifier = Modifier, gap: androidx.compose.ui.unit.Dp = ZillitTheme.spacing.sm, content: @Composable () -> Unit) {
+fun ChipRow(
+    modifier: Modifier = Modifier,
+    gap: androidx.compose.ui.unit.Dp = ZillitTheme.spacing.sm,
+    content: @Composable () -> Unit
+) {
     FlowRow(
         modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(gap),

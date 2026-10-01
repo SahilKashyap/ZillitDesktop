@@ -41,8 +41,15 @@ class SetupRulesTest {
     @Test
     fun `not set up means the counts are all zero, never an unanswered record`() {
         assertFalse(SyncProject(null, emptySet()).notSetUp)
-        assertTrue(SyncProject(rec("""{"counts":{"scenes":0,"characters":0,"costumes":0,"actors":0,"members":3}}"""), emptySet()).notSetUp)
-        assertFalse(SyncProject(rec("""{"counts":{"scenes":2,"characters":0,"costumes":0,"actors":0}}"""), emptySet()).notSetUp)
+        assertTrue(
+            SyncProject(
+                rec("""{"counts":{"scenes":0,"characters":0,"costumes":0,"actors":0,"members":3}}"""),
+                emptySet(),
+            ).notSetUp,
+        )
+        assertFalse(
+            SyncProject(rec("""{"counts":{"scenes":2,"characters":0,"costumes":0,"actors":0}}"""), emptySet()).notSetUp,
+        )
     }
 
     @Test

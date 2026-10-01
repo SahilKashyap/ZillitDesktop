@@ -43,8 +43,16 @@ import com.zillit.desktop.feature.costumesetsync.ui.StatusBadge
 import com.zillit.desktop.feature.costumesetsync.ui.t
 
 private val CARD_WIDTH = 760.dp
-private val STEPS = listOf("dates" to ZillitIcons.Calendar, "script" to ZillitIcons.Upload, "breakdown" to ZillitIcons.Grid)
-private val GETS = listOf("breakdown" to ZillitIcons.Grid, "costumes" to ZillitIcons.Tag, "continuity" to ZillitIcons.Camera)
+private val STEPS = listOf(
+    "dates" to ZillitIcons.Calendar,
+    "script" to ZillitIcons.Upload,
+    "breakdown" to ZillitIcons.Grid,
+)
+private val GETS = listOf(
+    "breakdown" to ZillitIcons.Grid,
+    "costumes" to ZillitIcons.Tag,
+    "continuity" to ZillitIcons.Camera,
+)
 
 /**
  * The tool's landing page for a Zillit project with nothing in Costumes & Set Sync yet (the web's `FirstRun`):
@@ -67,72 +75,174 @@ fun FirstRun(onChanged: () -> Unit, onDone: () -> Unit) {
         else -> null
     }
     val shape = RoundedCornerShape(18.dp)
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Column(
-            Modifier.widthIn(max = CARD_WIDTH).fillMaxWidth().background(colors.surface, shape).border(1.dp, colors.border, shape).padding(horizontal = 40.dp, vertical = 34.dp),
+            Modifier.widthIn(max = CARD_WIDTH).fillMaxWidth().background(colors.surface, shape).border(
+                1.dp,
+                colors.border,
+                shape,
+            ).padding(
+                horizontal = 40.dp,
+                vertical = 34.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier.size(64.dp).background(colors.accentSoft, RoundedCornerShape(18.dp)).border(1.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(18.dp)),
-                    contentAlignment = Alignment.Center,
-                ) { ZillitIcon(ZillitIcons.Tag, tint = colors.accentText, size = 30.dp) }
+            FirstRunHero(name, typeKey)
+            FirstRunSteps()
+            FirstRunGets()
+            FirstRunCreate(allowed) { open = true }
+        }
+    }
+    ProductionSetupWizard(
+        open,
+        project,
+        edit = false,
+        onClose = { open = false },
+        onChanged = onChanged,
+        onDone = { open = false; onDone() },
+    )
+}
+
+@Composable
+private fun FirstRunHero(name: String, typeKey: String?) {
+    val colors = ZillitTheme.colors
+Column(
+    Modifier.fillMaxWidth(),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(10.dp),
+) {
+    Box(
+        Modifier.size(64.dp).background(colors.accentSoft, RoundedCornerShape(18.dp)).border(
+            1.dp,
+            colors.accent.copy(alpha = 0.35f),
+            RoundedCornerShape(18.dp),
+        ),
+        contentAlignment = Alignment.Center,
+    ) { ZillitIcon(ZillitIcons.Tag, tint = colors.accentText, size = 30.dp) }
+    ZillitText(
+        t("csync_first_run_title"),
+        style = ZillitTheme.typography.titleLarge.copy(
+            fontSize = 24.sp,
+            lineHeight = 30.sp,
+            fontWeight = FontWeight.Bold,
+        ),
+        textAlign = TextAlign.Center,
+    )
+    if (name.isNotEmpty()) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitText(
+                name,
+                style = ZillitTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            )
+            typeKey?.let { StatusBadge("MUTED", t(it)) }
+        }
+    }
+    ZillitText(
+        t("csync_first_run_sub", "project" to name.ifEmpty { t("csync_production") }),
+        modifier = Modifier.widthIn(max = 560.dp),
+        style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 22.sp),
+        color = colors.textSecondary,
+        textAlign = TextAlign.Center,
+    )
+}
+}
+
+@Composable
+private fun FirstRunSteps() {
+Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    SectionLabel(t("csync_first_run_how"))
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        STEPS.forEachIndexed { i, (key, icon) ->
+            StepTile(
+                i + 1,
+                icon,
+                t("csync_first_run_step_$key"),
+                t("csync_first_run_step_${key}_hint"),
+                Modifier.weight(1f).fillMaxHeight(),
+            )
+        }
+    }
+}
+}
+
+@Composable
+private fun FirstRunGets() {
+    val colors = ZillitTheme.colors
+Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    SectionLabel(t("csync_first_run_get"))
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        GETS.forEach { (key, icon) ->
+            Row(
+                Modifier.border(1.dp, colors.border, CircleShape).padding(
+                    horizontal = 12.dp,
+                    vertical = 6.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitIcon(icon, tint = colors.accentText, size = 16.dp)
                 ZillitText(
-                    t("csync_first_run_title"),
-                    style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-                    textAlign = TextAlign.Center,
+                    t("csync_first_run_get_$key"),
+                    style = ZillitTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                 )
-                if (name.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ZillitText(name, style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
-                        typeKey?.let { StatusBadge("MUTED", t(it)) }
-                    }
-                }
-                ZillitText(
-                    t("csync_first_run_sub", "project" to name.ifEmpty { t("csync_production") }),
-                    modifier = Modifier.widthIn(max = 560.dp),
-                    style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 22.sp),
-                    color = colors.textSecondary,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SectionLabel(t("csync_first_run_how"))
-                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    STEPS.forEachIndexed { i, (key, icon) -> StepTile(i + 1, icon, t("csync_first_run_step_$key"), t("csync_first_run_step_${key}_hint"), Modifier.weight(1f).fillMaxHeight()) }
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SectionLabel(t("csync_first_run_get"))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GETS.forEach { (key, icon) ->
-                        Row(
-                            Modifier.border(1.dp, colors.border, CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            ZillitIcon(icon, tint = colors.accentText, size = 16.dp)
-                            ZillitText(t("csync_first_run_get_$key"), style = ZillitTheme.typography.bodyMedium.copy(fontSize = 13.sp))
-                        }
-                    }
-                }
-            }
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                ZillitDivider()
-                if (allowed) {
-                    ZillitButton(t("csync_first_run_create"), onClick = { open = true }, leadingIcon = ZillitIcons.Add, modifier = Modifier.widthIn(min = 200.dp))
-                } else {
-                    ZillitNotice(t("csync_first_run_no_rights"), tone = StatusTone.Progress, icon = ZillitIcons.Info, modifier = Modifier.fillMaxWidth())
-                }
             }
         }
     }
-    ProductionSetupWizard(open, project, edit = false, onClose = { open = false }, onChanged = onChanged, onDone = { open = false; onDone() })
+}
+}
+
+@Composable
+private fun FirstRunCreate(allowed: Boolean, onCreate: () -> Unit) {
+Column(
+    Modifier.fillMaxWidth(),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(20.dp),
+) {
+    ZillitDivider()
+    if (allowed) {
+        ZillitButton(
+            t("csync_first_run_create"),
+            onClick = onCreate,
+            leadingIcon = ZillitIcons.Add,
+            modifier = Modifier.widthIn(min = 200.dp),
+        )
+    } else {
+        ZillitNotice(
+            t("csync_first_run_no_rights"),
+            tone = StatusTone.Progress,
+            icon = ZillitIcons.Info,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
 }
 
 @Composable
 private fun SectionLabel(text: String) {
-    ZillitText(text.uppercase(), style = ZillitTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.72.sp), color = ZillitTheme.colors.textMuted)
+    ZillitText(
+        text.uppercase(),
+        style = ZillitTheme.typography.labelSmall.copy(
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.72.sp,
+        ),
+        color = ZillitTheme.colors.textMuted,
+    )
 }
 
 /** One setup step: an icon tile, the step's title and hint, its number in a ring at the top right. */
@@ -142,15 +252,42 @@ private fun StepTile(n: Int, icon: ImageVector, title: String, hint: String, mod
     val shape = RoundedCornerShape(12.dp)
     Box(modifier.background(colors.surfaceSunken, shape).border(1.dp, colors.border, shape).padding(16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.size(36.dp).background(colors.surface, RoundedCornerShape(10.dp)).border(1.dp, colors.border, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(36.dp).background(colors.surface, RoundedCornerShape(10.dp)).border(
+                    1.dp,
+                    colors.border,
+                    RoundedCornerShape(10.dp),
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
                 ZillitIcon(icon, tint = colors.accentText, size = 20.dp)
             }
-            ZillitText(title, style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
-            ZillitText(hint, style = ZillitTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 19.sp), color = colors.textSecondary)
+            ZillitText(
+                title,
+                style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
+            )
+            ZillitText(
+                hint,
+                style = ZillitTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 19.sp),
+                color = colors.textSecondary,
+            )
         }
         Box(
-            Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).size(22.dp).background(colors.surface, CircleShape).border(1.dp, colors.border, CircleShape),
+            Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).size(22.dp).background(
+                colors.surface,
+                CircleShape,
+            ).border(
+                1.dp,
+                colors.border,
+                CircleShape,
+            ),
             contentAlignment = Alignment.Center,
-        ) { ZillitText(n.toString(), style = ZillitTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold), color = colors.textMuted) }
+        ) {
+            ZillitText(
+                n.toString(),
+                style = ZillitTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                color = colors.textMuted,
+            )
+        }
     }
 }

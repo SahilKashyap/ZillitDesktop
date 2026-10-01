@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -73,7 +74,9 @@ fun EmergencyCleanDialog(open: Boolean, onClose: () -> Unit, onChanged: () -> Un
         if (!open) return@LaunchedEffect
         val scenes = (ctx.api.get("/scenes") as? ZillitResult.Success)?.data?.rows.orEmpty()
         val today = todayParam(ctx.now())
-        val now = scenes.firstOrNull { it.str("status") == "SHOOTING" } ?: scenes.firstOrNull { sameDay(it, ctx.now(), today) }
+        val now = scenes.firstOrNull { it.str("status") == "SHOOTING" } ?: scenes.firstOrNull {
+            sameDay(it, ctx.now(), today)
+        }
         sceneId = now?.id.orEmpty()
     }
     val done = {
@@ -106,6 +109,52 @@ private fun sameDay(scene: Rec, now: Long, today: String): Boolean {
     return if (ms != 0L) isSameDay(ms, now) else scene.str("shoot_date").startsWith(today)
 }
 
+/** POSTs the emergency (`ticket` = problem, cleaning type, scene id); null when the server refused. */
+private suspend fun raiseEmergency(
+    ctx: SyncCtx,
+    costume: Rec,
+    ticket: List<String>,
+    take: Long?,
+    auto: Boolean,
+): Raised? {
+    val answer = ctx.write {
+        ctx.api.post(
+            "/cleaning/emergency",
+            body(
+                "costume_id" to costume.id,
+                "problem" to ticket[0],
+                "cleaning_type" to ticket[1],
+                "scene_id" to ticket[2],
+                "take_number" to take,
+                "auto_assign_replacement" to auto,
+            ),
+        )
+    }
+    val data = answer?.rec ?: return null
+    return Raised(data.rec("request") ?: data, data.recs("alternatives"), data.rec("replacement"))
+}
+
+/** A form column: the field's label over its control. */
+@Composable
+private fun LabelledField(label: String, modifier: Modifier, content: @Composable () -> Unit) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        ZillitText(label, style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+        content()
+    }
+}
+
+@Composable
+private fun EmergencyButtons(onClose: () -> Unit, busy: Boolean, canRaise: Boolean, onRaise: () -> Unit) {
+    ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary, enabled = !busy)
+    ZillitButton(
+        t("csync_raise_emergency"),
+        onClick = onRaise,
+        variant = ButtonVariant.Danger,
+        enabled = canRaise && !busy,
+        loading = busy,
+    )
+}
+
 @Composable
 private fun EmergencyForm(costume: Rec, initialScene: String, onClose: () -> Unit, onRaised: (Raised) -> Unit) {
     val ctx = LocalSync.current
@@ -124,25 +173,12 @@ private fun EmergencyForm(costume: Rec, initialScene: String, onClose: () -> Uni
         ctx.scope.launch {
             var result = filed
             if (result == null) {
-                val answer = ctx.write {
-                    ctx.api.post(
-                        "/cleaning/emergency",
-                        body(
-                            "costume_id" to costume.id,
-                            "problem" to problem.trim(),
-                            "cleaning_type" to type,
-                            "scene_id" to sceneId,
-                            "take_number" to numOrNull(take)?.toLong(),
-                            "auto_assign_replacement" to auto,
-                        ),
-                    )
-                }
-                val data = answer?.rec
-                if (data == null) {
+                val ticket = listOf(problem.trim(), type, sceneId)
+                result = raiseEmergency(ctx, costume, ticket, numOrNull(take)?.toLong(), auto)
+                if (result == null) {
                     busy = false
                     return@launch
                 }
-                result = Raised(data.rec("request") ?: data, data.recs("alternatives"), data.rec("replacement"))
                 filed = result
             }
             val failed = ctx.attachMedia(media, "CLEANING", result.request.id, "STAIN", keep = { media = it })
@@ -156,27 +192,43 @@ private fun EmergencyForm(costume: Rec, initialScene: String, onClose: () -> Uni
         title = "${t("csync_emergency_cleaning")} · ${costume.str("asset_number")}",
         icon = ZillitIcons.Siren,
         onDismiss = onClose,
-        actions = {
-            ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary, enabled = !busy)
-            ZillitButton(t("csync_raise_emergency"), onClick = { submit() }, variant = ButtonVariant.Danger, enabled = problem.isNotBlank() && !busy, loading = busy)
-        },
+        actions = { EmergencyButtons(onClose, busy, problem.isNotBlank()) { submit() } },
     ) {
         WfNotice(t("csync_emergency_explainer"))
         FormGrid {
             TextInput(problem, { problem = it }, t("csync_field_problem"), FormWide)
             EnumInput(type, ctx.metaList("cleaning_types"), { type = it }, t("csync_field_cleaning_type"))
-            Column(FormCell, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ZillitText(t("csync_field_priority"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+            LabelledField(t("csync_field_priority"), FormCell) {
                 StatusBadge("URGENT", label = tEnum("URGENT"), large = true)
             }
             SceneSelect(sceneId, { sceneId = it }, t("csync_field_scene"))
             TextInput(take, { take = it.filter(Char::isDigit) }, t("csync_field_take"), number = true)
-            Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+            LabelledField(t("csync_photos_and_video"), FormWide) {
                 MediaPicker(media, { media = it }, enabled = !busy, help = t("csync_shoot_stain_hint"))
             }
             ZillitCheckbox(auto, { auto = it }, FormWide, label = t("csync_auto_assign_replacement"))
         }
+    }
+}
+
+/** What happened to the replacement: issued already, or none on the shelf and when the piece is back. */
+@Composable
+private fun ReplacementNotice(issued: Rec?, result: Raised) {
+    when {
+        issued != null -> WfNotice(
+            fill(
+                t("csync_replacement_issued"),
+                "asset" to issued.str("asset_number"),
+                "name" to issued.str("name"),
+            ),
+            info = true,
+        )
+        result.alternatives.isEmpty() -> WfNotice(
+            fill(
+                t("csync_no_replacement"),
+                "time" to fmtTime(result.request.long("expected_ready_at")).ifBlank { "—" },
+            ),
+        )
     }
 }
 
@@ -192,48 +244,61 @@ private fun EmergencyResult(costume: Rec, result: Raised, onClose: () -> Unit, o
         actions = {
             ZillitButton(t("csync_close"), onClick = onClose, variant = ButtonVariant.Secondary)
             if (result.request.id.isNotBlank()) {
-                ZillitButton(t("csync_open_ticket"), onClick = { onClose(); ctx.nav.go("cleaning/${result.request.id}") }, variant = ButtonVariant.Secondary)
+                ZillitButton(
+                    t("csync_open_ticket"),
+                    onClick = { onClose(); ctx.nav.go("cleaning/${result.request.id}") },
+                    variant = ButtonVariant.Secondary,
+                )
             }
         },
     ) {
         WfNotice(fill(t("csync_emergency_now_cleaning"), "asset" to costume.str("asset_number")), ok = true)
         val issued = replacement
-        when {
-            issued != null -> WfNotice(fill(t("csync_replacement_issued"), "asset" to issued.str("asset_number"), "name" to issued.str("name")), info = true)
-            result.alternatives.isEmpty() -> WfNotice(fill(t("csync_no_replacement"), "time" to fmtTime(result.request.long("expected_ready_at")).ifBlank { "—" }))
-        }
+        ReplacementNotice(issued, result)
         if (result.alternatives.isNotEmpty()) {
-            ZillitText(t("csync_available_alternatives"), style = ZillitTheme.typography.titleSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
+            ZillitText(
+                t("csync_available_alternatives"),
+                style = ZillitTheme.typography.titleSmall.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                ),
+            )
             result.alternatives.forEach { a ->
-                CostumeRow(
-                    a,
-                    extra = if (a.has("match_score")) " · ${fill(t("csync_match_n"), "n" to a.str("match_score"))}" else "",
-                    end = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (issued?.id == a.id) {
-                                StatusBadge("READY", label = t("csync_assigned"))
-                            } else {
-                                WfInkButton(
-                                    t("csync_assign"),
-                                    on = true,
-                                    onClick = {
-                                        busy = true
-                                        ctx.scope.launch {
-                                            val answer = ctx.write { ctx.api.post("/cleaning/${result.request.id}/replacement", body("costume_id" to a.id)) }
-                                            busy = false
-                                            if (answer != null) {
-                                                replacement = answer.rec ?: a
-                                                onChanged()
-                                            }
-                                        }
-                                    },
-                                    enabled = !busy && issued == null,
-                                )
-                            }
+                AlternativeRow(a, issued, busy) {
+                    busy = true
+                    ctx.scope.launch {
+                        val answer = ctx.write {
+                            ctx.api.post("/cleaning/${result.request.id}/replacement", body("costume_id" to a.id))
                         }
-                    },
-                )
+                        busy = false
+                        if (answer != null) {
+                            replacement = answer.rec ?: a
+                            onChanged()
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+/** One suggested replacement with its match score, and the button that assigns it (or the badge once it is). */
+@Composable
+private fun AlternativeRow(a: Rec, issued: Rec?, busy: Boolean, onAssign: () -> Unit) {
+    CostumeRow(
+        a,
+        extra = if (a.has("match_score")) {
+            " · ${fill(t("csync_match_n"), "n" to a.str("match_score"))}"
+        } else {
+            ""
+        },
+        end = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (issued?.id == a.id) {
+                    StatusBadge("READY", label = t("csync_assigned"))
+                } else {
+                    WfInkButton(t("csync_assign"), on = true, onClick = onAssign, enabled = !busy && issued == null)
+                }
+            }
+        },
+    )
 }

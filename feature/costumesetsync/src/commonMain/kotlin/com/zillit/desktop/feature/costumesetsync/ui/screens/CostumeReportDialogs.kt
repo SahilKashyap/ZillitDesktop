@@ -50,44 +50,12 @@ import kotlinx.serialization.json.JsonObject
  * pressing the button again retries only the photos ([ReportFiling]).
  */
 
-/** Files one report and then its photos; a retry re-sends only what failed. */
-@Stable
-internal class ReportFiling(private val ctx: SyncCtx, private val entityType: String, private val kind: String) {
-    var media by mutableStateOf(emptyList<MediaEntry>())
-    var busy by mutableStateOf(false)
-
-    /** The answer that filed the report, once it has. */
-    var created: Answer? by mutableStateOf(null)
-        private set
-
-    /** The filed report's id (empty until filed). */
-    val filedId: String get() = created?.rec?.let { it.rec("request") ?: it }?.id.orEmpty()
-
-    /** True when the report and every photo are in; false leaves the form open to retry. */
-    suspend fun file(path: String, request: JsonObject): Boolean {
-        busy = true
-        if (created == null) {
-            created = ctx.write { ctx.api.post(path, request) }
-            if (created == null) {
-                busy = false
-                return false
-            }
-        }
-        val failed = ctx.attachMedia(media, entityType, filedId, kind) { media = it }
-        busy = false
-        if (failed > 0) {
-            ctx.toast(t("csync_saved_media_failed", "n" to failed), false)
-            return false
-        }
-        return true
-    }
-}
-
 @Composable
 private fun SceneTakeFields(sceneId: String, onScene: (String) -> Unit, take: String, onTake: (String) -> Unit) {
     val scenes = rememberResource { api.get("/scenes").mapRows() }
     val options = scenes.value.orEmpty().map { scene ->
-        scene.id to "${t("csync_sc")} ${scene.str("number")}${scene.str("name").takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}"
+        val suffix = scene.str("name").takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+        scene.id to "${t("csync_sc")} ${scene.str("number")}$suffix"
     }
     PickInput(sceneId, options, onScene, t("csync_field_scene"), placeholder = "—")
     TextInput(take, onTake, t("csync_field_take"), number = true)
@@ -95,11 +63,42 @@ private fun SceneTakeFields(sceneId: String, onScene: (String) -> Unit, take: St
 
 @Composable
 private fun ReportMedia(filing: ReportFiling, help: String) {
-    ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+    ZillitText(
+        t("csync_photos_and_video"),
+        style = ZillitTheme.typography.label,
+        color = ZillitTheme.colors.textSecondary,
+    )
     MediaPicker(filing.media, { filing.media = it }, enabled = !filing.busy, help = help)
 }
 
 private fun takeOf(text: String): Long? = numOrNull(text)?.toLong()
+
+@Composable
+private fun EmergencyNotice() {
+    Notice {
+        ZillitText(
+            t("csync_emergency_explainer"),
+            style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+        )
+    }
+}
+
+/** An emergency is always urgent, so it shows the badge; a normal request picks a priority. */
+@Composable
+private fun CleaningPriority(emergency: Boolean, priority: String, onPriority: (String) -> Unit) {
+    if (emergency) {
+        Column(FormCell, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitText(
+                t("csync_field_priority"),
+                style = ZillitTheme.typography.label,
+                color = ZillitTheme.colors.textSecondary,
+            )
+            StatusBadge("URGENT", tEnum("URGENT"), large = true)
+        }
+    } else {
+        EnumInput(priority, LocalSync.current.metaList("priorities"), onPriority, t("csync_field_priority"))
+    }
+}
 
 /** "Request cleaning" (priority chosen) and "Emergency cleaning" (always URGENT, offers a replacement). */
 @Composable
@@ -123,7 +122,7 @@ internal fun CleaningDialog(
     val asset = costume.str("asset_number")
     FormDialog(
         open = true,
-        title = if (emergency) "${t("csync_emergency_cleaning")} · $asset" else "${t("csync_act_request_cleaning")} · $asset",
+        title = "${t(if (emergency) "csync_emergency_cleaning" else "csync_act_request_cleaning")} · $asset",
         onDismiss = onClose,
         confirmLabel = if (emergency) t("csync_raise_emergency") else t("csync_request"),
         onConfirm = {
@@ -137,7 +136,10 @@ internal fun CleaningDialog(
                     "take_number" to takeOf(take),
                     "auto_assign_replacement" to if (emergency) autoAssign else null,
                 )
-                if (filing.file(if (emergency) "/cleaning/emergency" else "/cleaning", request)) onFiled(filing.filedId, filing.created)
+                if (filing.file(if (emergency) "/cleaning/emergency" else "/cleaning", request)) onFiled(
+                    filing.filedId,
+                    filing.created,
+                )
             }
         },
         confirmEnabled = problem.isNotBlank(),
@@ -146,18 +148,16 @@ internal fun CleaningDialog(
         ink = !emergency,
         icon = if (emergency) ZillitIcons.Siren else null,
     ) {
-        if (emergency) Notice { ZillitText(t("csync_emergency_explainer"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp)) }
+        if (emergency) EmergencyNotice()
         FormGrid {
             TextInput(problem, { problem = it }, t("csync_field_problem"), FormWide)
-            EnumInput(type, ctx.metaList("cleaning_types"), { type = it.ifBlank { type } }, t("csync_field_cleaning_type"))
-            if (emergency) {
-                Column(FormCell, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                    ZillitText(t("csync_field_priority"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-                    StatusBadge("URGENT", tEnum("URGENT"), large = true)
-                }
-            } else {
-                EnumInput(priority, ctx.metaList("priorities"), { priority = it.ifBlank { priority } }, t("csync_field_priority"))
-            }
+            EnumInput(
+                type,
+                ctx.metaList("cleaning_types"),
+                { type = it.ifBlank { type } },
+                t("csync_field_cleaning_type"),
+            )
+            CleaningPriority(emergency, priority) { priority = it.ifBlank { priority } }
             SceneTakeFields(scene, { scene = it }, take, { take = it })
         }
         ReportMedia(filing, t("csync_shoot_stain_hint"))
@@ -202,7 +202,12 @@ internal fun DamageDialog(costume: Rec, sceneId: String, takeNumber: String, onC
             TextInput(description, { description = it }, t("csync_damage"), FormWide)
             SceneTakeFields(scene, { scene = it }, take, { take = it })
             if (ctx.isFinance) TextInput(repair, { repair = it }, t("csync_field_est_repair"), number = true)
-            EnumInput(responsible, ctx.metaList("damage_responsible"), { responsible = it.ifBlank { responsible } }, t("csync_field_responsible"))
+            EnumInput(
+                responsible,
+                ctx.metaList("damage_responsible"),
+                { responsible = it.ifBlank { responsible } },
+                t("csync_field_responsible"),
+            )
         }
         ReportMedia(filing, t("csync_shoot_pick_scan"))
     }
@@ -247,8 +252,19 @@ internal fun AlterationDialog(costume: Rec, onClose: () -> Unit, onFiled: () -> 
             TextInput(issue, { issue = it }, t("csync_field_issue"), FormWide)
             TextInput(work, { work = it }, t("csync_field_required"), FormWide)
             TextInput(tailor, { tailor = it }, t("csync_field_tailor"))
-            EnumInput(priority, ctx.metaList("priorities"), { priority = it.ifBlank { priority } }, t("csync_field_priority"))
-            com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput(date, time, { date = it }, { time = it }, t("csync_field_deadline"))
+            EnumInput(
+                priority,
+                ctx.metaList("priorities"),
+                { priority = it.ifBlank { priority } },
+                t("csync_field_priority"),
+            )
+            com.zillit.desktop.feature.costumesetsync.ui.DateTimeInput(
+                date,
+                time,
+                { date = it },
+                { time = it },
+                t("csync_field_deadline"),
+            )
         }
         ReportMedia(filing, t("csync_shoot_pick_scan"))
     }
@@ -258,7 +274,10 @@ internal fun AlterationDialog(costume: Rec, onClose: () -> Unit, onFiled: () -> 
 internal fun deadlineIso(date: String, time: String): String? {
     if (date.isBlank()) return null
     val clock = time.trim().ifBlank { "00:00" }
-    return runCatching { LocalDateTime.parse("${date.trim()}T$clock").toInstant(TimeZone.currentSystemDefault()).toString() }.getOrNull()
+    return runCatching {
+        LocalDateTime.parse("${date.trim()}T$clock").toInstant(TimeZone.currentSystemDefault()).toString()
+    }
+        .getOrNull()
 }
 
 /** "Mark missing": where it was last seen and a note. */

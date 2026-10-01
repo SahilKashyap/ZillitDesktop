@@ -22,7 +22,18 @@ import kotlinx.serialization.json.buildJsonObject
  * the service's own convention, and what it echoes back), and measurements
  * split into the ten standard ones plus any the costume team names themselves.
  */
-internal val ActorMeasures = listOf("height", "chest", "bust", "waist", "hips", "inseam", "sleeve", "collar", "shoe", "head")
+internal val ActorMeasures = listOf(
+    "height",
+    "chest",
+    "bust",
+    "waist",
+    "hips",
+    "inseam",
+    "sleeve",
+    "collar",
+    "shoe",
+    "head",
+)
 
 /** A user-named row: a measurement ("Thigh") or a talent-rep detail ("Assistant"). */
 internal data class LabelValue(val label: String = "", val value: String = "")
@@ -96,8 +107,12 @@ internal fun toActorForm(actor: Rec?): ActorFormState {
  * measurement or detail row is dropped rather than saved as an empty value.
  */
 internal fun toActorBody(f: ActorFormState): JsonObject {
-    val age = f.age.trim().toDoubleOrNull()?.let { if (it % 1.0 == 0.0) JsonPrimitive(it.toLong()) else JsonPrimitive(it) }
-    val measures = (f.measurements.map { it.key to it.value } + f.extraMeasures.map { it.label.trim() to it.value.trim() })
+    val age = f.age.trim().toDoubleOrNull()?.let {
+        if (it % 1.0 == 0.0) JsonPrimitive(it.toLong()) else JsonPrimitive(it)
+    }
+    val measures = (f.measurements.map { it.key to it.value } + f.extraMeasures.map {
+        it.label.trim() to it.value.trim()
+    })
         .filter { (k, v) -> k.isNotEmpty() && v.trim().isNotEmpty() }
     return buildJsonObject {
         put("name", JsonPrimitive("${f.first.trim()} ${f.last.trim()}".trim()))
@@ -119,8 +134,15 @@ internal fun toActorBody(f: ActorFormState): JsonObject {
         put(
             "talent_rep_details",
             JsonArray(
-                f.talentRepDetails.map { LabelValue(it.label.trim(), it.value.trim()) }.filter { it.label.isNotEmpty() }
-                    .map { buildJsonObject { put("label", JsonPrimitive(it.label)); put("value", JsonPrimitive(it.value)) } },
+                f.talentRepDetails
+                    .map { LabelValue(it.label.trim(), it.value.trim()) }
+                    .filter { it.label.isNotEmpty() }
+                    .map {
+                        buildJsonObject {
+                            put("label", JsonPrimitive(it.label))
+                            put("value", JsonPrimitive(it.value))
+                        }
+                    },
             ),
         )
         put("measurements", buildJsonObject { measures.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
@@ -142,7 +164,8 @@ internal sealed interface CastChange {
 /** A cast number typed on the list (0 is a valid number, as in the reference). */
 internal fun typedCastNumber(raw: String, current: Long?): CastChange {
     val v = raw.trim()
-    val next: Long? = if (v.isEmpty()) null else v.toDoubleOrNull()?.takeIf { it % 1.0 == 0.0 && it >= 0 }?.toLong() ?: return CastChange.Invalid
+    val whole = v.toDoubleOrNull()?.takeIf { it % 1.0 == 0.0 && it >= 0 }?.toLong()
+    val next: Long? = if (v.isEmpty()) null else whole ?: return CastChange.Invalid
     return if (next == current) CastChange.Unchanged else CastChange.To(next)
 }
 
@@ -159,12 +182,15 @@ internal fun actorTimeText(ms: Long, zone: TimeZone = TimeZone.currentSystemDefa
     return "${t.hour.toString().padStart(2, '0')}:${t.minute.toString().padStart(2, '0')}"
 }
 
+private const val MAX_HOUR = 23
+private const val MAX_MINUTE = 59
+
 /** Epoch ms of a `YYYY-MM-DD` date plus an optional `HH:mm`; 0 when the date is blank or unreadable. */
 internal fun actorDateMs(date: String, time: String = "", zone: TimeZone = TimeZone.currentSystemDefault()): Long {
     val day = runCatching { LocalDate.parse(date.trim()) }.getOrNull() ?: return 0
     val parts = time.trim().split(':')
-    val hour = parts.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..23 }
-    val minute = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..59 } ?: 0
+    val hour = parts.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..MAX_HOUR }
+    val minute = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..MAX_MINUTE } ?: 0
     if (hour == null) return day.atStartOfDayIn(zone).toEpochMilliseconds()
     return LocalDateTime(day.year, day.monthNumber, day.dayOfMonth, hour, minute).toInstant(zone).toEpochMilliseconds()
 }

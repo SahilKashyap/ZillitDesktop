@@ -74,15 +74,27 @@ fun FormDialog(
             if (ink && !danger) {
                 InkButton(if (busy) "…" else confirmLabel, onClick = onConfirm, enabled = confirmEnabled && !busy)
             } else {
-                ZillitButton(confirmLabel, onClick = onConfirm, variant = if (danger) ButtonVariant.Danger else ButtonVariant.Primary, enabled = confirmEnabled && !busy, loading = busy)
+                ZillitButton(
+                    confirmLabel,
+                    onClick = onConfirm,
+                    variant = if (danger) ButtonVariant.Danger else ButtonVariant.Primary,
+                    enabled = confirmEnabled && !busy,
+                    loading = busy,
+                )
             }
         },
     ) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), content = content)
+        Column(
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            content = content,
+        )
     }
 }
 
-/** Fields in a wrapping two-up grid; give a field `Modifier.fillMaxWidth()`-style width with [FormCell] or [FormWide]. */
+/**
+ * Fields in a wrapping two-up grid; give a field `Modifier.fillMaxWidth()`-style width with [FormCell] or [FormWide].
+ */
 @Composable
 fun FormGrid(content: @Composable () -> Unit) {
     FlowRow(
@@ -156,7 +168,12 @@ fun DateTimeInput(
         trailingExtra = {
             Box(Modifier.width(1.dp).height(18.dp).background(colors.border))
             Box(Modifier.width(68.dp).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterStart) {
-                if (time.isEmpty()) ZillitText("HH:mm", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted, maxLines = 1)
+                if (time.isEmpty()) ZillitText(
+                    "HH:mm",
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
                 BasicTextField(
                     value = time,
                     onValueChange = { onTime(it.take(TIME_MAX)) },
@@ -176,7 +193,14 @@ fun DateTimeInput(
 fun DateTimeInput(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = FormCell) {
     val date = value.substringBefore('T')
     val time = value.substringAfter('T', "")
-    DateTimeInput(date, time, { onChange(if (time.isEmpty()) it else "${it}T$time") }, { onChange(if (date.isEmpty()) "" else if (it.isEmpty()) date else "${date}T$it") }, label, modifier)
+    DateTimeInput(
+        date,
+        time,
+        { onChange(if (time.isEmpty()) it else "${it}T$time") },
+        { onChange(if (date.isEmpty()) "" else if (it.isEmpty()) date else "${date}T$it") },
+        label,
+        modifier,
+    )
 }
 
 private const val TIME_MAX = 5
@@ -208,7 +232,14 @@ fun PickInput(
 
 /** A pick-one over a `/meta` enum list, shown in the service's own words. */
 @Composable
-fun EnumInput(value: String, values: List<String>, onChange: (String) -> Unit, label: String, modifier: Modifier = FormCell, placeholder: String = "") {
+fun EnumInput(
+    value: String,
+    values: List<String>,
+    onChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = FormCell,
+    placeholder: String = "",
+) {
     PickInput(value, enumOptions(values), onChange, label, modifier, placeholder)
 }
 

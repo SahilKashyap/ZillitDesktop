@@ -161,9 +161,16 @@ internal class ScheduleUpload(
     val manualDuplicate: Boolean get() = manualKey.isNotEmpty() && rows.any { it.number.uppercase() == manualKey }
     val canAddManual: Boolean get() = result != null && manualKey.isNotEmpty() && !manualDuplicate
 
-    /** The date a hand-added scene starts on: what was typed, else the earliest in the file, else the file's own, else today. */
+    /**
+     * The date a hand-added scene starts on: what was typed, else the earliest in the file, else the file's own, else
+     * today.
+     */
     val defaultManualDate: String
-        get() = manualDate.ifEmpty { dates.values.filter { it.isNotEmpty() }.minOrNull() ?: result?.str("date")?.ifEmpty { null } ?: dateKey(ctx.now()) }
+        get() = manualDate.ifEmpty {
+            dates.values.filter { it.isNotEmpty() }.minOrNull()
+                ?: result?.str("date")?.ifEmpty { null }
+                ?: dateKey(ctx.now())
+        }
 
     /** A scene the file missed: matched to the breakdown by number if it is there. */
     fun addManual() {
@@ -210,7 +217,9 @@ internal class ScheduleUpload(
     fun apply() {
         applying = true
         val inc = included
-        val sheetDay = inc.mapNotNull { dates[it.number]?.takeIf(String::isNotEmpty) }.minOrNull() ?: result?.str("date")?.ifEmpty { null }
+        val sheetDay = inc.mapNotNull { dates[it.number]?.takeIf(String::isNotEmpty) }.minOrNull() ?: result?.str(
+            "date",
+        )?.ifEmpty { null }
         ctx.scope.launch {
             val res = ctx.api.post("/schedule/apply", applyBody(inc, sheetDay))
             applying = false

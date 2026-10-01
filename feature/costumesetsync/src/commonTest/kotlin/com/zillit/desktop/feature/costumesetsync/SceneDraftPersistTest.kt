@@ -29,9 +29,14 @@ private class Recorder(var createdId: String = "new1", var failStep: String? = n
         }
     }
 
-    override suspend fun createScene(body: JsonObject) = answer("create", """{"_id":"$createdId"}""").also { bodies += body }
+    override suspend fun createScene(body: JsonObject) =
+        answer("create", """{"_id":"$createdId"}""").also { bodies += body }
     override suspend fun updateScene(id: String, body: JsonObject) = answer("update:$id").also { bodies += body }
-    override suspend fun setSceneCharacter(sceneId: String, characterId: String, body: JsonObject) = answer("add:$characterId")
+    override suspend fun setSceneCharacter(
+        sceneId: String,
+        characterId: String,
+        body: JsonObject
+    ) = answer("add:$characterId")
     override suspend fun removeSceneCharacter(sceneId: String, characterId: String) = answer("remove:$characterId")
     override suspend fun updateCharacter(id: String, body: JsonObject) = answer("character:$id").also { bodies += body }
 }
@@ -65,7 +70,12 @@ class SceneDraftPersistTest {
         val out = persistDraft(w, emptyDraft().copy(number = "9", location = "Roof"))
         assertEquals("new1", out.sceneId)
         val body = w.bodies.single().toString()
-        assertTrue(body.contains("\"number\":\"9\"") && body.contains("\"name\":\"Roof\"") && body.contains("\"status\":\"PLANNED\""))
+        assertTrue(
+            body
+                .contains("\"number\":\"9\"") && body
+                .contains("\"name\":\"Roof\"") && body
+                .contains("\"status\":\"PLANNED\"")
+        )
     }
 
     @Test
@@ -85,7 +95,11 @@ class SceneDraftPersistTest {
     @Test
     fun aBadCastNumberFailsWithoutWritingTheCharacter() = runTest {
         val w = Recorder()
-        val draft = emptyDraft().copy(number = "1", principals = listOf("c1"), cast = mapOf("c1" to CastEdit(castNumber = "x")))
+        val draft = emptyDraft().copy(
+            number = "1",
+            principals = listOf("c1"),
+            cast = mapOf("c1" to CastEdit(castNumber = "x"))
+        )
         val out = persistDraft(w, draft, problemText = { "bad number" })
         assertFalse(out.ok)
         assertEquals("new1", out.sceneId)

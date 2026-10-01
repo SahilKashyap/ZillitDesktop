@@ -60,24 +60,37 @@ internal fun InkTabs(
             tabs.forEach { (id, label) ->
                 val on = id == activeId
                 Column(Modifier.width(IntrinsicSize.Max).clickable { onSelect(id) }) {
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         ZillitText(
                             label,
-                            style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
+                            style = ZillitTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp,
+                                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                            ),
                             color = if (on) colors.textPrimary else colors.textMuted,
                             maxLines = 1,
                         )
                         badges[id]?.let { badge ->
                             ZillitText(
                                 badge,
-                                Modifier.clip(RoundedCornerShape(999.dp)).background(colors.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp),
+                                Modifier.clip(RoundedCornerShape(999.dp)).background(colors.accentSoft).padding(
+                                    horizontal = 8.dp,
+                                    vertical = 2.dp,
+                                ),
                                 style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                                 color = colors.accentText,
                                 maxLines = 1,
                             )
                         }
                     }
-                    Box(Modifier.fillMaxWidth().height(2.dp).background(if (on) colors.textPrimary else androidx.compose.ui.graphics.Color.Transparent))
+                    Box(
+                        Modifier.fillMaxWidth().height(2.dp)
+                            .background(if (on) colors.textPrimary else androidx.compose.ui.graphics.Color.Transparent),
+                    )
                 }
             }
         }
@@ -86,17 +99,31 @@ internal fun InkTabs(
 
 /** antd's `Input.Search`: a 32dp field whose right edge is a joined button carrying the magnifier. */
 @Composable
-internal fun SearchWithButton(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
+internal fun SearchWithButton(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
     val colors = ZillitTheme.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
     val shape = RoundedCornerShape(6.dp)
     Row(
-        modifier.height(32.dp).clip(shape).background(colors.surface).border(1.dp, if (focused) colors.accent else colors.border, shape),
+        modifier.height(32.dp).clip(shape).background(colors.surface).border(
+            1.dp,
+            if (focused) colors.accent else colors.border,
+            shape,
+        ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.weight(1f).padding(horizontal = 11.dp), contentAlignment = Alignment.CenterStart) {
-            if (value.isEmpty()) ZillitText(placeholder, style = ZillitTheme.typography.bodyMedium, color = colors.textMuted, maxLines = 1)
+            if (value.isEmpty()) ZillitText(
+                placeholder,
+                style = ZillitTheme.typography.bodyMedium,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
             BasicTextField(
                 value = value,
                 onValueChange = onChange,
@@ -108,7 +135,10 @@ internal fun SearchWithButton(value: String, onChange: (String) -> Unit, placeho
             )
         }
         Box(Modifier.width(1.dp).fillMaxHeight().background(colors.border))
-        Box(Modifier.width(38.dp).fillMaxHeight().background(colors.surfaceSunken), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.width(38.dp).fillMaxHeight().background(colors.surfaceSunken),
+            contentAlignment = Alignment.Center,
+        ) {
             ZillitIcon(ZillitIcons.Search, tint = colors.textSecondary, size = 16.dp)
         }
     }
@@ -119,7 +149,10 @@ internal fun SearchWithButton(value: String, onChange: (String) -> Unit, placeho
 internal fun SquareAvatar(text: String, modifier: Modifier = Modifier) {
     val colors = ZillitTheme.colors
     val shape = RoundedCornerShape(10.dp)
-    Box(modifier.size(38.dp).clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.size(38.dp).clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape),
+        contentAlignment = Alignment.Center,
+    ) {
         ZillitText(
             text.ifBlank { "–" },
             style = ZillitTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
@@ -144,17 +177,38 @@ internal fun CharListRow(
     val colors = ZillitTheme.colors
     Column {
         Row(
-            modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier.fillMaxWidth()
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             leading()
             Column(Modifier.weight(1f)) {
-                ZillitText(title, style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
-                if (sub.isNotBlank()) ZillitText(sub, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
-                if (extra.isNotBlank()) ZillitText(extra, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
+                ZillitText(
+                    title,
+                    style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                if (sub.isNotBlank()) ZillitText(
+                    sub,
+                    style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+                if (extra.isNotBlank()) ZillitText(
+                    extra,
+                    style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
             }
-            if (end.isNotEmpty()) ZillitText(end, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
+            if (end.isNotEmpty()) ZillitText(
+                end,
+                style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = colors.textMuted,
+                maxLines = 1,
+            )
         }
         if (!last) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
     }
@@ -185,7 +239,9 @@ internal fun BackSquare(onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     val shape = RoundedCornerShape(10.dp)
     Box(
-        Modifier.size(38.dp).clip(shape).background(colors.surface).border(1.dp, colors.border, shape).clickable(onClick = onClick),
+        Modifier.size(38.dp).clip(shape).background(colors.surface).border(1.dp, colors.border, shape).clickable(
+            onClick = onClick,
+        ),
         contentAlignment = Alignment.Center,
     ) { ZillitIcon(ZillitIcons.ArrowLeft, tint = colors.textPrimary, size = 18.dp) }
 }
@@ -206,13 +262,26 @@ internal fun ScenesHead(title: String, sub: String, onBack: () -> Unit, actions:
                 Column(Modifier.weight(1f, fill = false).widthIn(min = 160.dp)) {
                     ZillitText(
                         title,
-                        style = ZillitTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold),
+                        style = ZillitTheme.typography.titleLarge.copy(
+                            fontSize = 18.sp,
+                            lineHeight = 23.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
                         maxLines = 1,
                     )
-                    if (sub.isNotBlank()) ZillitText(sub, Modifier.padding(top = 2.dp), style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted)
+                    if (sub.isNotBlank()) ZillitText(
+                        sub,
+                        Modifier.padding(top = 2.dp),
+                        style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = colors.textMuted,
+                    )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top, content = actions)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+                content = actions,
+            )
         },
         Modifier.fillMaxWidth().padding(top = 12.dp),
     ) { (head, act), constraints ->
@@ -224,7 +293,11 @@ internal fun ScenesHead(title: String, sub: String, onBack: () -> Unit, actions:
         val actPlaced = act.measure(
             androidx.compose.ui.unit.Constraints(maxWidth = if (beside) width - headPlaced.width - gap else width),
         )
-        val height = if (beside) maxOf(headPlaced.height, actPlaced.height) else headPlaced.height + 12.dp.roundToPx() + actPlaced.height
+        val height = if (beside) {
+            maxOf(headPlaced.height, actPlaced.height)
+        } else {
+            headPlaced.height + 12.dp.roundToPx() + actPlaced.height
+        }
         layout(width, height) {
             headPlaced.placeRelative(0, 0)
             actPlaced.placeRelative(width - actPlaced.width, if (beside) 0 else headPlaced.height + 12.dp.roundToPx())
@@ -240,7 +313,9 @@ internal fun ScenesHead(title: String, sub: String, onBack: () -> Unit, actions:
 internal fun ButtonStack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     androidx.compose.ui.layout.Layout(content, modifier) { measurables, constraints ->
         val head = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
-        val rest = measurables.drop(1).map { it.measure(constraints.copy(minWidth = 0, minHeight = 0, maxWidth = head.width)) }
+        val rest = measurables.drop(1).map { it.measure(
+            constraints.copy(minWidth = 0, minHeight = 0, maxWidth = head.width),
+        ) }
         val gap = 2.dp.roundToPx()
         val height = head.height + rest.sumOf { it.height + gap }
         layout(head.width, height) {
@@ -269,11 +344,19 @@ internal fun BlueButton(text: String, onClick: () -> Unit, enabled: Boolean = tr
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         ZillitIcon(ZillitIcons.Add, tint = androidx.compose.ui.graphics.Color.White, size = 16.dp)
-        ZillitText(text, style = ZillitTheme.typography.button, color = androidx.compose.ui.graphics.Color.White, maxLines = 1)
+        ZillitText(
+            text,
+            style = ZillitTheme.typography.button,
+            color = androidx.compose.ui.graphics.Color.White,
+            maxLines = 1,
+        )
     }
 }
 
-/** The web's `.csync-dropzone` (its later rule wins): a full-width, centred panel with a 1.5dp dashed border, 18/12 padding, 4dp gap and the page fill. */
+/**
+ * The web's `.csync-dropzone` (its later rule wins): a full-width, centred panel with a 1.5dp dashed border, 18/12
+ * padding, 4dp gap and the page fill.
+ */
 @Composable
 internal fun DropZone(title: String, formats: String, busy: Boolean, busyText: String, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
@@ -284,7 +367,7 @@ internal fun DropZone(title: String, formats: String, busy: Boolean, busyText: S
             .fillMaxWidth()
             .clip(shape)
             .background(colors.surfaceSunken)
-            .androidx_drawDashed(border)
+            .drawDashed(border)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -294,12 +377,16 @@ internal fun DropZone(title: String, formats: String, busy: Boolean, busyText: S
             ZillitText(busyText, style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
         } else {
             ZillitText(title, style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-            ZillitText(formats, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted)
+            ZillitText(
+                formats,
+                style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = colors.textMuted,
+            )
         }
     }
 }
 
-private fun Modifier.androidx_drawDashed(color: androidx.compose.ui.graphics.Color): Modifier = this.drawBehind {
+private fun Modifier.drawDashed(color: androidx.compose.ui.graphics.Color): Modifier = this.drawBehind {
     drawRoundRect(
         color = color,
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),

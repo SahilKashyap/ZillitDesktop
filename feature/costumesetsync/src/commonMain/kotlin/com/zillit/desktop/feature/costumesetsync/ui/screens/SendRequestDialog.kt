@@ -45,6 +45,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormGrid
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.RowTitle
+import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.body
 import com.zillit.desktop.feature.costumesetsync.ui.t
@@ -99,23 +100,9 @@ fun SendRequestDialog(
     var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf<Sent?>(null) }
     var adding by remember { mutableStateOf("") }
-    val picked = remember { mapOf(GROUP_CREW to mutableStateListOf<String>(), GROUP_VENDORS to mutableStateListOf(), GROUP_CONTACTS to mutableStateListOf()) }
-    var crew by remember { mutableStateOf<List<CrewMember>?>(null) }
-    var vendors by remember { mutableStateOf<List<Rec>?>(null) }
-    var contacts by remember { mutableStateOf<List<Rec>?>(null) }
-    var reload by remember { mutableStateOf(0) }
-
-    LaunchedEffect(Unit) { crew = ctx.host.crew() }
-    LaunchedEffect(reload) {
-        vendors = (ctx.api.get("/vendors") as? ZillitResult.Success)?.data?.rows.orEmpty()
-        contacts = (ctx.api.get("/contacts") as? ZillitResult.Success)?.data?.rows.orEmpty()
-    }
-
-    val toggle = { g: String, id: String ->
-        val list = picked.getValue(g)
-        if (id in list) list.remove(id) else list.add(id)
-    }
-    val rows = recipients(group, q, crew.orEmpty(), vendors.orEmpty(), contacts.orEmpty())
+    val picked = rememberPicked()
+    val book = rememberRecipientBook()
+    val rows = recipients(group, q, book.crew.orEmpty(), book.vendors.orEmpty(), book.contacts.orEmpty())
     val count = picked.values.sumOf { it.size }
     val canSend = count > 0 && subject.isNotBlank() && message.isNotBlank()
     val text = "${subject.trim()}\n\n${message.trim()}"
@@ -123,25 +110,11 @@ fun SendRequestDialog(
     val send: () -> Unit = {
         sending = true
         ctx.scope.launch {
-            val answer = ctx.write {
-                ctx.api.post(
-                    "/requests",
-                    body(
-                        "title" to subject.trim(),
-                        "body" to message.trim(),
-                        "entity_type" to entityType,
-                        "entity_id" to entityId,
-                        "crew_user_ids" to picked.getValue(GROUP_CREW).toList(),
-                        "vendor_ids" to picked.getValue(GROUP_VENDORS).toList(),
-                        "contact_ids" to picked.getValue(GROUP_CONTACTS).toList(),
-                    ),
-                )
-            }
+            val outcome = ctx.sendRequest(subject, message, entityType, entityId, picked)
             sending = false
-            val r = answer?.rec ?: return@launch
-            val offApp = r.recs("off_app")
+            if (outcome == null) return@launch
             // Close only on a clean send to people who were reached; anything else has something left to say.
-            if (offApp.isEmpty() && r.int("notified") > 0) onClose() else sent = Sent(r.int("notified"), r.bool("skipped_self"), offApp)
+            if (outcome.offApp.isEmpty() && outcome.notified > 0) onClose() else sent = outcome
         }
     }
 
@@ -150,83 +123,239 @@ fun SendRequestDialog(
         visible = true,
         onDismiss = onClose,
         width = DIALOG_WIDTH.dp,
-        actions = {
-            if (sent != null) {
-                ZillitButton(t("csync_done"), onClick = onClose)
-            } else {
-                ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary)
-                // Ink once it can be pressed, as the reference's primary button here.
-                WfInkButton(
-                    fill(t("csync_send_to_n"), "n" to if (count > 0) count else "…"),
-                    onClick = send,
-                    on = canSend && !sending,
-                    icon = ZillitIcons.Send,
-                    enabled = canSend && !sending,
-                    large = true,
-                )
-            }
-        },
+        actions = { SendActions(sent != null, count, canSend && !sending, onClose, send) },
     ) {
         val result = sent
         if (result != null) {
             SentView(result, text, subject, message)
         } else {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                TextInput(subject, { subject = it.take(MAX_TITLE) }, t("csync_request_subject"), Modifier.fillMaxWidth())
-                TextInput(
-                    message,
-                    { message = it.take(MAX_BODY) },
-                    t("csync_request_message"),
-                    Modifier.fillMaxWidth(),
-                    multiline = true,
-                    help = if (message.length > MAX_BODY - BODY_WARN) t("csync_chars_left", "n" to MAX_BODY - message.length) else null,
-                )
-                ZillitText(
-                    t("csync_send_to") + if (count > 0) " ($count)" else "",
-                    style = ZillitTheme.typography.label,
-                    color = ZillitTheme.colors.textSecondary,
-                )
-                InkTabs(
-                    tabs = GROUPS.map { g -> g to (t("csync_request_group_$g") + picked.getValue(g).size.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()) },
-                    activeId = group,
-                    onSelect = { group = it; q = "" },
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SearchWithButton(q, { q = it }, t("csync_request_search_$group"), Modifier.width(340.dp))
-                    if (group == GROUP_CREW) MutedText(t("csync_request_everyone"))
-                    if (ctx.canPost && group == GROUP_VENDORS) {
-                        ZillitButton(t("csync_new_vendor"), onClick = { adding = GROUP_VENDORS }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
-                    }
-                    if (ctx.canPost && group == GROUP_CONTACTS) {
-                        ZillitButton(t("csync_new_contact"), onClick = { adding = GROUP_CONTACTS }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
-                    }
-                }
-                RecipientList(rows, picked.getValue(group)) { toggle(group, it) }
-                MutedText(t("csync_request_how"), maxLines = 3)
-            }
+            SendForm(
+                subject = subject,
+                onSubject = { subject = it.take(MAX_TITLE) },
+                message = message,
+                onMessage = { message = it.take(MAX_BODY) },
+                count = count,
+                group = group,
+                onGroup = { group = it; q = "" },
+                search = q,
+                onSearch = { q = it },
+                picked = picked,
+                rows = rows,
+                onAdd = { adding = it },
+                onToggle = { picked.toggle(group, it) },
+            )
         }
     }
 
-    QuickAddContact(adding == GROUP_CONTACTS, { adding = "" }) { id ->
-        reload++
-        toggle(GROUP_CONTACTS, id)
-    }
-    NewVendorDialog(adding == GROUP_VENDORS, { adding = "" }) { vendor ->
-        reload++
-        toggle(GROUP_VENDORS, vendor.id)
+    AddRecipientDialogs(adding, { adding = "" }) { g, id ->
+        book.reload++
+        picked.toggle(g, id)
     }
 }
 
-private fun recipients(group: String, q: String, crew: List<CrewMember>, vendors: List<Rec>, contacts: List<Rec>): List<Recipient> {
+/** Who is ticked in each group, kept for as long as the dialog is open. */
+@Composable
+private fun rememberPicked(): Map<String, MutableList<String>> = remember {
+    mapOf(
+        GROUP_CREW to mutableStateListOf<String>(),
+        GROUP_VENDORS to mutableStateListOf(),
+        GROUP_CONTACTS to mutableStateListOf(),
+    )
+}
+
+private fun Map<String, MutableList<String>>.toggle(group: String, id: String) {
+    val list = getValue(group)
+    if (id in list) list.remove(id) else list.add(id)
+}
+
+/** The two "name someone new" dialogs; [onAdded] gets the group and the new id so it can be ticked. */
+@Composable
+private fun AddRecipientDialogs(adding: String, onClose: () -> Unit, onAdded: (String, String) -> Unit) {
+    QuickAddContact(adding == GROUP_CONTACTS, onClose) { id -> onAdded(GROUP_CONTACTS, id) }
+    NewVendorDialog(adding == GROUP_VENDORS, onClose) { vendor -> onAdded(GROUP_VENDORS, vendor.id) }
+}
+
+/** The people a request can go to: crew from the host, vendors and outside contacts from the service. */
+private class RecipientBook {
+    var crew by mutableStateOf<List<CrewMember>?>(null)
+    var vendors by mutableStateOf<List<Rec>?>(null)
+    var contacts by mutableStateOf<List<Rec>?>(null)
+
+    /** Bumped when a vendor or contact is added, so the lists are read again. */
+    var reload by mutableStateOf(0)
+}
+
+@Composable
+private fun rememberRecipientBook(): RecipientBook {
+    val ctx = LocalSync.current
+    val book = remember { RecipientBook() }
+    LaunchedEffect(Unit) { book.crew = ctx.host.crew() }
+    LaunchedEffect(book.reload) {
+        book.vendors = (ctx.api.get("/vendors") as? ZillitResult.Success)?.data?.rows.orEmpty()
+        book.contacts = (ctx.api.get("/contacts") as? ZillitResult.Success)?.data?.rows.orEmpty()
+    }
+    return book
+}
+
+/** `POST /requests` for what the form holds; what the service answered, or null when it was refused. */
+private suspend fun SyncCtx.sendRequest(
+    subject: String,
+    message: String,
+    entityType: String,
+    entityId: String?,
+    picked: Map<String, List<String>>,
+): Sent? = write {
+    api.post(
+        "/requests",
+        body(
+            "title" to subject.trim(),
+            "body" to message.trim(),
+            "entity_type" to entityType,
+            "entity_id" to entityId,
+            "crew_user_ids" to picked.getValue(GROUP_CREW).toList(),
+            "vendor_ids" to picked.getValue(GROUP_VENDORS).toList(),
+            "contact_ids" to picked.getValue(GROUP_CONTACTS).toList(),
+        ),
+    )
+}?.rec?.let { Sent(it.int("notified"), it.bool("skipped_self"), it.recs("off_app")) }
+
+@Composable
+private fun SendActions(done: Boolean, count: Int, canSend: Boolean, onClose: () -> Unit, onSend: () -> Unit) {
+    if (done) {
+        ZillitButton(t("csync_done"), onClick = onClose)
+        return
+    }
+    ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary)
+    // Ink once it can be pressed, as the reference's primary button here.
+    WfInkButton(
+        fill(t("csync_send_to_n"), "n" to if (count > 0) count else "…"),
+        onClick = onSend,
+        on = canSend,
+        icon = ZillitIcons.Send,
+        enabled = canSend,
+        large = true,
+    )
+}
+
+/** The compose form: subject, message, who to send to (crew, vendors, outside contacts) and the list to pick from. */
+@Composable
+private fun SendForm(
+    subject: String,
+    onSubject: (String) -> Unit,
+    message: String,
+    onMessage: (String) -> Unit,
+    count: Int,
+    group: String,
+    onGroup: (String) -> Unit,
+    search: String,
+    onSearch: (String) -> Unit,
+    picked: Map<String, List<String>>,
+    rows: List<Recipient>,
+    onAdd: (String) -> Unit,
+    onToggle: (String) -> Unit,
+) {
+    val ctx = LocalSync.current
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        TextInput(subject, onSubject, t("csync_request_subject"), Modifier.fillMaxWidth())
+        TextInput(
+            message,
+            onMessage,
+            t("csync_request_message"),
+            Modifier.fillMaxWidth(),
+            multiline = true,
+            help = if (message.length > MAX_BODY - BODY_WARN) {
+                t("csync_chars_left", "n" to MAX_BODY - message.length)
+            } else {
+                null
+            },
+        )
+        ZillitText(
+            t("csync_send_to") + if (count > 0) " ($count)" else "",
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        InkTabs(
+            tabs = GROUPS.map { g ->
+                val n = picked.getValue(g).size.takeIf { it > 0 }?.let { " ($it)" }.orEmpty()
+                g to (t("csync_request_group_$g") + n)
+            },
+            activeId = group,
+            onSelect = onGroup,
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SearchWithButton(search, onSearch, t("csync_request_search_$group"), Modifier.width(340.dp))
+            if (group == GROUP_CREW) MutedText(t("csync_request_everyone"))
+            if (ctx.canPost && group == GROUP_VENDORS) AddButton(t("csync_new_vendor")) { onAdd(GROUP_VENDORS) }
+            if (ctx.canPost && group == GROUP_CONTACTS) AddButton(t("csync_new_contact")) { onAdd(GROUP_CONTACTS) }
+        }
+        RecipientList(rows, picked.getValue(group), onToggle)
+        MutedText(t("csync_request_how"), maxLines = 3)
+    }
+}
+
+@Composable
+private fun AddButton(label: String, onClick: () -> Unit) {
+    ZillitButton(
+        label,
+        onClick = onClick,
+        variant = ButtonVariant.Secondary,
+        size = ButtonSize.Small,
+        leadingIcon = ZillitIcons.Add,
+    )
+}
+
+private fun recipients(
+    group: String,
+    q: String,
+    crew: List<CrewMember>,
+    vendors: List<Rec>,
+    contacts: List<Rec>,
+): List<Recipient> {
     val needle = q.trim().lowercase()
     fun match(vararg parts: String) = needle.isEmpty() || parts.any { it.lowercase().contains(needle) }
     return when (group) {
         GROUP_CREW -> crew.filter { match(it.name, it.email, it.department) }
-            .map { Recipient(it.id, it.name, listOf(it.department, it.email).filter(String::isNotBlank).joinToString(" · ")) }
-        GROUP_VENDORS -> vendors.filter { match(it.str("name"), it.str("contact_name"), it.str("email"), it.str("phone")) }
-            .map { Recipient(it.id, it.str("name"), listOf(it.str("contact_name"), it.str("phone"), it.str("email")).filter(String::isNotBlank).joinToString(" · ")) }
-        else -> contacts.filter { match(it.str("name"), it.str("company"), it.str("role"), it.str("email"), it.str("phone")) }
-            .map { Recipient(it.id, it.str("name"), listOf(it.str("role"), it.str("company"), it.str("phone"), it.str("email")).filter(String::isNotBlank).joinToString(" · ")) }
+            .map { Recipient(
+                it.id,
+                it.name,
+                listOf(it.department, it.email).filter(String::isNotBlank).joinToString(" · "),
+            ) }
+        GROUP_VENDORS -> vendors.filter { match(
+            it.str("name"),
+            it.str("contact_name"),
+            it.str("email"),
+            it.str("phone"),
+        ) }
+            .map { Recipient(
+                it.id,
+                it.str("name"),
+                listOf(
+                    it.str("contact_name"),
+                    it.str("phone"),
+                    it.str("email"),
+                ).filter(String::isNotBlank).joinToString(" · "),
+            ) }
+        else -> contacts.filter { match(
+            it.str("name"),
+            it.str("company"),
+            it.str("role"),
+            it.str("email"),
+            it.str("phone"),
+        ) }
+            .map { Recipient(
+                it.id,
+                it.str("name"),
+                listOf(
+                    it.str("role"),
+                    it.str("company"),
+                    it.str("phone"),
+                    it.str("email"),
+                ).filter(String::isNotBlank).joinToString(" · "),
+            ) }
     }
 }
 
@@ -240,7 +369,11 @@ private fun RecipientList(rows: List<Recipient>, picked: List<String>, onToggle:
     val colors = ZillitTheme.colors
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
     Column(
-        Modifier.fillMaxWidth().heightIn(max = LIST_MAX).clip(shape).background(colors.surface).border(1.dp, colors.border, shape).verticalScroll(rememberScrollState()),
+        Modifier.fillMaxWidth().heightIn(max = LIST_MAX).clip(shape).background(colors.surface).border(
+            1.dp,
+            colors.border,
+            shape,
+        ).verticalScroll(rememberScrollState()),
     ) {
         rows.forEachIndexed { index, r ->
             if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
@@ -250,8 +383,19 @@ private fun RecipientList(rows: List<Recipient>, picked: List<String>, onToggle:
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ZillitCheckbox(r.id in picked, { onToggle(r.id) })
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ZillitText(r.name, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1)
+                Row(
+                    Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ZillitText(
+                        r.name,
+                        Modifier.weight(1f, fill = false),
+                        style = ZillitTheme.typography.bodyMedium.copy(
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        ),
+                        maxLines = 1,
+                    )
                     if (r.sub.isNotBlank()) MutedText(r.sub, Modifier.weight(1f, fill = false))
                 }
             }
@@ -262,10 +406,12 @@ private fun RecipientList(rows: List<Recipient>, picked: List<String>, onToggle:
 /** After a send: how many were told, and for anyone off the app the message to pass on (WhatsApp, email, copy). */
 @Composable
 private fun SentView(sent: Sent, text: String, subject: String, message: String) {
-    val ctx = LocalSync.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         val line = when {
-            sent.notified > 0 -> fill(t(if (sent.notified == 1) "csync_request_notified_one" else "csync_request_notified"), "n" to sent.notified)
+            sent.notified > 0 -> fill(
+                t(if (sent.notified == 1) "csync_request_notified_one" else "csync_request_notified"),
+                "n" to sent.notified,
+            )
             sent.skippedSelf -> t("csync_request_only_you")
             sent.offApp.isNotEmpty() -> t("csync_request_no_crew")
             else -> t("csync_request_nothing_sent")
@@ -273,43 +419,57 @@ private fun SentView(sent: Sent, text: String, subject: String, message: String)
         WfNotice(line, ok = true)
         if (sent.offApp.isNotEmpty()) {
             MutedText(t("csync_request_pass_on"), maxLines = 3)
-            sent.offApp.forEach { r ->
-                val phone = r.str("phone")
-                val email = r.str("email")
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                    Column(Modifier.weight(1f)) {
-                        RowTitle(r.str("name"))
-                        MutedText(listOf(phone, email).filter(String::isNotBlank).joinToString(" · ").ifBlank { t("csync_no_contact_details") })
-                    }
-                    if (phone.isNotBlank()) {
-                        ZillitButton(
-                            "WhatsApp",
-                            onClick = { ctx.host.openUrl("https://wa.me/${digitsOnly(phone)}?text=${urlEncode(text)}") },
-                            variant = ButtonVariant.Secondary,
-                            size = ButtonSize.Small,
-                        )
-                    }
-                    if (email.isNotBlank()) {
-                        ZillitButton(
-                            t("csync_email"),
-                            onClick = { ctx.host.openUrl("mailto:$email?subject=${urlEncode(subject)}&body=${urlEncode(message)}") },
-                            variant = ButtonVariant.Secondary,
-                            size = ButtonSize.Small,
-                        )
-                    }
-                    ZillitButton(
-                        t("csync_copy"),
-                        onClick = {
-                            copyTextToClipboard(text)
-                            ctx.toast(t("csync_copied"), true)
-                        },
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Small,
-                        leadingIcon = ZillitIcons.Copy,
-                    )
-                }
-            }
+            sent.offApp.forEach { OffAppRow(it, text, subject, message) }
         }
+    }
+}
+
+/** One person who is not on the app: who they are, and the ways to pass the message on. */
+@Composable
+private fun OffAppRow(r: Rec, text: String, subject: String, message: String) {
+    val ctx = LocalSync.current
+    val phone = r.str("phone")
+    val email = r.str("email")
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Column(Modifier.weight(1f)) {
+            RowTitle(r.str("name"))
+            MutedText(
+                listOf(phone, email).filter(String::isNotBlank).joinToString(" · ")
+                    .ifBlank { t("csync_no_contact_details") },
+            )
+        }
+        if (phone.isNotBlank()) {
+            ZillitButton(
+                "WhatsApp",
+                onClick = { ctx.host.openUrl("https://wa.me/${digitsOnly(phone)}?text=${urlEncode(text)}") },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
+        }
+        if (email.isNotBlank()) {
+            ZillitButton(
+                t("csync_email"),
+                onClick = {
+                    ctx.host.openUrl("mailto:$email?subject=${urlEncode(subject)}&body=${urlEncode(message)}")
+                },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
+        }
+        ZillitButton(
+            t("csync_copy"),
+            onClick = {
+                copyTextToClipboard(text)
+                ctx.toast(t("csync_copied"), true)
+            },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Copy,
+        )
     }
 }
 
@@ -334,7 +494,13 @@ private fun QuickAddContact(open: Boolean, onClose: () -> Unit, onCreated: (Stri
                 val answer = ctx.write {
                     ctx.api.post(
                         "/contacts",
-                        body("name" to name.trim(), "company" to company.trim(), "role" to role.trim(), "email" to email.trim(), "phone" to phone.trim()),
+                        body(
+                            "name" to name.trim(),
+                            "company" to company.trim(),
+                            "role" to role.trim(),
+                            "email" to email.trim(),
+                            "phone" to phone.trim(),
+                        ),
                     )
                 }
                 saving = false

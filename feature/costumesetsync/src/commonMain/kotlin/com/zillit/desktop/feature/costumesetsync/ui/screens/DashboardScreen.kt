@@ -66,6 +66,7 @@ private const val POLL_MS = 30_000L
  * readiness, and whatever the service flagged as a priority. Re-read every 30 s
  * (rentals falling due and the day turning over send no socket event).
  */
+@Suppress("LongMethod")
 @Composable
 fun DashboardScreen() {
     val ctx = LocalSync.current
@@ -93,12 +94,26 @@ fun DashboardScreen() {
         Page {
             PageHead(
                 title = ctx.project.name.ifBlank { t("csync_production") },
-                sub = listOf("${t("csync_shooting_day")} ${project?.long("shooting_day") ?: 0}", phase, longDay(root.str("date")))
+                sub = listOf(
+                    "${t("csync_shooting_day")} ${project?.long("shooting_day") ?: 0}",
+                    phase,
+                    longDay(root.str("date"))
+                )
                     .filter { it.isNotBlank() }.joinToString(" · "),
                 actions = {
                     if (ctx.canPost) {
-                        ZillitButton(t("csync_emergency"), onClick = { emergency = true }, variant = ButtonVariant.Danger, leadingIcon = ZillitIcons.Siren)
-                        ZillitButton(t("csync_costume"), onClick = { ctx.nav.go("costumes?new=1") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Add)
+                        ZillitButton(
+                            t("csync_emergency"),
+                            onClick = { emergency = true },
+                            variant = ButtonVariant.Danger,
+                            leadingIcon = ZillitIcons.Siren
+                        )
+                        ZillitButton(
+                            t("csync_costume"),
+                            onClick = { ctx.nav.go("costumes?new=1") },
+                            variant = ButtonVariant.Secondary,
+                            leadingIcon = ZillitIcons.Add
+                        )
                     }
                 },
                 bottomPadding = 0.dp,
@@ -109,21 +124,57 @@ fun DashboardScreen() {
                 Tile(t("csync_dash_characters"), counts.long("characters"), go = "characters"),
                 Tile(t("csync_dash_costumes"), counts.long("costumes"), go = "costumes"),
                 Tile(t("csync_dash_todays_scenes"), counts.long("todays_scenes"), go = "scenes"),
-                Tile(t("csync_dash_todays_costumes"), counts.long("todays_costumes"), hint = t("csync_dash_across_changes")),
+                Tile(
+                    t("csync_dash_todays_costumes"),
+                    counts.long("todays_costumes"),
+                    hint = t("csync_dash_across_changes")
+                ),
                 Tile(t("csync_dash_issued_today"), counts.long("issued_today"), tone = Tone.Info),
                 Tile(t("csync_dash_returned_today"), counts.long("returned_today"), tone = Tone.Ok),
-                Tile(t("csync_dash_cleaning"), counts.long("cleaning"), tone = Tone.Info.takeIf { counts.long("cleaning") > 0 }, go = "cleaning"),
-                Tile(t("csync_dash_alteration"), counts.long("alteration"), tone = Tone.Warn.takeIf { counts.long("alteration") > 0 }, go = "alterations"),
-                Tile(t("csync_dash_missing"), counts.long("missing"), tone = Tone.Danger.takeIf { counts.long("missing") > 0 }, go = "missing"),
-                Tile(t("csync_dash_damaged"), counts.long("damaged"), tone = Tone.Danger.takeIf { counts.long("damaged") > 0 }, go = "damages"),
+                Tile(
+                    t("csync_dash_cleaning"),
+                    counts.long("cleaning"),
+                    tone = Tone.Info.takeIf { counts.long("cleaning") > 0 },
+                    go = "cleaning"
+                ),
+                Tile(
+                    t("csync_dash_alteration"),
+                    counts.long("alteration"),
+                    tone = Tone.Warn.takeIf { counts.long("alteration") > 0 },
+                    go = "alterations"
+                ),
+                Tile(
+                    t("csync_dash_missing"),
+                    counts.long("missing"),
+                    tone = Tone.Danger.takeIf { counts.long("missing") > 0 },
+                    go = "missing"
+                ),
+                Tile(
+                    t("csync_dash_damaged"),
+                    counts.long("damaged"),
+                    tone = Tone.Danger.takeIf { counts.long("damaged") > 0 },
+                    go = "damages"
+                ),
             )
             AutoFillGrid(tiles.size, TILE_MIN, TILE_GAP) { i, cell ->
                 val tile = tiles[i]
-                StatCard(tile.label, tile.value, cell, tone = tile.tone, hint = tile.hint, compact = true, onClick = tile.go?.let { target -> { ctx.nav.go(target) } })
+                StatCard(
+                    tile.label,
+                    tile.value,
+                    cell,
+                    tone = tile.tone,
+                    hint = tile.hint,
+                    compact = true,
+                    onClick = tile.go?.let { target -> { ctx.nav.go(target) } }
+                )
             }
 
             // `.csync-columns`: 1.25fr beside 1fr, 16 apart, each column as tall as its own content.
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.Top
+            ) {
                 SectionCard(
                     title = t("csync_dash_todays_scenes"),
                     modifier = Modifier.weight(1.25f),
@@ -146,11 +197,19 @@ fun DashboardScreen() {
                         }
                     }
                     SectionCard(title = t("csync_dash_by_status")) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             byStatus?.keys?.map { it to byStatus.long(it) }
                                 ?.sortedByDescending { it.second }
                                 ?.forEach { (status, n) ->
-                                    StatusBadge(status, "${tEnum(status)} · $n", Modifier.clickable { ctx.nav.go("costumes?status=$status") }, large = true)
+                                    StatusBadge(
+                                        status,
+                                        "${tEnum(status)} · $n",
+                                        Modifier.clickable { ctx.nav.go("costumes?status=$status") },
+                                        large = true
+                                    )
                                 }
                         }
                     }
@@ -161,7 +220,9 @@ fun DashboardScreen() {
                             t("csync_dash_fittings") to counts.long("fittings_today").toString(),
                             t("csync_dash_rentals_due") to counts.long("rentals_due").toString(),
                         )
-                        AutoFillGrid(glance.size, 180.dp, 16.dp, rowGap = 12.dp) { i, cell -> GlanceField(glance[i].first, glance[i].second, cell) }
+                        AutoFillGrid(glance.size, 180.dp, 16.dp, rowGap = 12.dp) { i, cell ->
+                            GlanceField(glance[i].first, glance[i].second, cell)
+                        }
                     }
                 }
             }
@@ -170,7 +231,13 @@ fun DashboardScreen() {
     EmergencyCleanDialog(open = emergency, onClose = { emergency = false }, onChanged = { data.reload(silent = true) })
 }
 
-private class Tile(val label: String, val value: Long, val tone: Tone? = null, val hint: String? = null, val go: String? = null)
+private class Tile(
+    val label: String,
+    val value: Long,
+    val tone: Tone? = null,
+    val hint: String? = null,
+    val go: String? = null
+)
 
 /** `.csync-textlink`: a quiet bold text button with a trailing caret. */
 @Composable
@@ -180,11 +247,19 @@ private fun TextLink(text: String, onClick: () -> Unit) {
     val hovered by interaction.collectIsHoveredAsState()
     Row(
         Modifier.clip(RoundedCornerShape(6.dp)).background(if (hovered) colors.surfaceHover else Color.Transparent)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            ).padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ZillitText(text, style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
+        ZillitText(
+            text,
+            style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+            maxLines = 1
+        )
         ZillitIcon(ZillitIcons.ChevronRight, tint = colors.textPrimary, size = 14.dp)
     }
 }
@@ -201,13 +276,20 @@ private fun PriorityRow(priority: Rec, divided: Boolean) {
     Row(
         Modifier.fillMaxWidth()
             .background(if (link.isNotBlank() && hovered) colors.surfaceHover else Color.Transparent)
-            .then(if (link.isNotBlank()) Modifier.clickable(interactionSource = interaction, indication = null) { ctx.nav.go(link) } else Modifier)
+            .then(if (link.isNotBlank()) Modifier.clickable(
+                interactionSource = interaction,
+                indication = null
+            ) { ctx.nav.go(link) } else Modifier)
             .padding(horizontal = 4.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ReadinessDot(priority.str("severity"), pulse = priority.str("severity") == "CRITICAL")
-        ZillitText(priority.str("text"), Modifier.weight(1f), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp))
+        ZillitText(
+            priority.str("text"),
+            Modifier.weight(1f),
+            style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp)
+        )
         if (link.isNotBlank()) ZillitIcon(ZillitIcons.ChevronRight, tint = colors.textMuted, size = 15.dp)
     }
 }
@@ -216,12 +298,22 @@ private fun PriorityRow(priority: Rec, divided: Boolean) {
 @Composable
 private fun GlanceField(label: String, value: String, modifier: Modifier) {
     Column(modifier) {
-        ZillitText(label.uppercase(), style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, letterSpacing = 0.04.em, fontWeight = FontWeight.Normal), color = ZillitTheme.colors.textMuted, maxLines = 1)
+        ZillitText(
+            label.uppercase(),
+            style = ZillitTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                letterSpacing = 0.04.em,
+                fontWeight = FontWeight.Normal
+            ),
+            color = ZillitTheme.colors.textMuted,
+            maxLines = 1
+        )
         ZillitText(value, Modifier.padding(top = 2.dp), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp))
     }
 }
 
 /** One of today's scenes (`.csync-scene`): a bordered card, its title and status, then each character's readiness. */
+@Suppress("LongMethod")
 @Composable
 private fun SceneCard(scene: Rec) {
     val ctx = LocalSync.current
@@ -235,16 +327,26 @@ private fun SceneCard(scene: Rec) {
             .clickable(interactionSource = interaction, indication = null) { ctx.nav.go("scenes/${scene.id}") }
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Row(Modifier.padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.padding(bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             ReadinessDot(scene.str("level"), pulse = scene.str("level") == "MISSING")
             Column(Modifier.weight(1f)) {
                 ZillitText(
-                    listOf(scene.str("number").takeIf { it.isNotBlank() }?.let { "${t("csync_sc")} $it" }.orEmpty(), scene.str("name")).filter { it.isNotBlank() }.joinToString(" · "),
+                    listOf(
+                        scene.str("number").takeIf { it.isNotBlank() }?.let { "${t("csync_sc")} $it" }.orEmpty(),
+                        scene.str("name")
+                    ).filter { it.isNotBlank() }.joinToString(" · "),
                     style = ZillitTheme.typography.bodyLarge.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                 )
                 ZillitText(
-                    listOf(scene.str("location"), scene.str("time_of_day").takeIf { it.isNotBlank() }?.let(::tEnum).orEmpty()).filter { it.isNotBlank() }.joinToString(" · "),
+                    listOf(
+                        scene.str("location"),
+                        scene.str("time_of_day").takeIf { it.isNotBlank() }?.let(::tEnum).orEmpty()
+                    ).filter { it.isNotBlank() }.joinToString(" · "),
                     style = ZillitTheme.typography.bodyLarge.copy(fontSize = 13.sp),
                     color = colors.textMuted,
                     maxLines = 1,
@@ -255,11 +357,27 @@ private fun SceneCard(scene: Rec) {
         scene.recs("characters").forEachIndexed { index, ch ->
             // `.csync-readinessline + .csync-readinessline`: a dashed rule between rows only.
             if (index > 0) DashedRule(colors.border)
-            Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 ReadinessDot(ch.str("level"), pulse = ch.str("level") == "MISSING")
                 Column(Modifier.weight(1f)) {
-                    ZillitText(ch.str("name"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
-                    ZillitText(ch.str("change").ifBlank { t("csync_dash_no_change") }, style = ZillitTheme.typography.bodyLarge.copy(fontSize = 13.sp), color = colors.textMuted, maxLines = 1)
+                    ZillitText(
+                        ch.str("name"),
+                        style = ZillitTheme.typography.bodyLarge.copy(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        maxLines = 1
+                    )
+                    ZillitText(
+                        ch.str("change").ifBlank { t("csync_dash_no_change") },
+                        style = ZillitTheme.typography.bodyLarge.copy(fontSize = 13.sp),
+                        color = colors.textMuted,
+                        maxLines = 1
+                    )
                 }
                 StatusBadge(ch.str("level"))
             }
@@ -270,7 +388,13 @@ private fun SceneCard(scene: Rec) {
 @Composable
 private fun DashedRule(color: Color) {
     Canvas(Modifier.fillMaxWidth().height(1.dp)) {
-        drawLine(color, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))
+        drawLine(
+            color,
+            Offset(0f, 0f),
+            Offset(size.width, 0f),
+            strokeWidth = 1.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
+        )
     }
 }
 

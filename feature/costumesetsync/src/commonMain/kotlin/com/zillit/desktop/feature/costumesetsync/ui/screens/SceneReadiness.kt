@@ -64,7 +64,12 @@ internal fun ReadinessCard(scene: Rec, readiness: Rec?, characters: List<Rec>, r
     SectionCard(
         title = t("csync_scene_readiness"),
         actions = {
-            if (ctx.canPost) ZillitButton("+ ${t("csync_character")}", onClick = { addOpen = true }, size = ButtonSize.Small, variant = ButtonVariant.Secondary)
+            if (ctx.canPost) ZillitButton(
+                "+ ${t("csync_character")}",
+                onClick = { addOpen = true },
+                size = ButtonSize.Small,
+                variant = ButtonVariant.Secondary,
+            )
         },
     ) {
         if (rows.isEmpty()) EmptyState(t("csync_no_characters_in_scene"))
@@ -77,7 +82,6 @@ internal fun ReadinessCard(scene: Rec, readiness: Rec?, characters: List<Rec>, r
 
 @Composable
 private fun CharacterReadiness(scene: Rec, r: Rec, reload: () -> Unit) {
-    val ctx = LocalSync.current
     val character = r.rec("character") ?: Rec.Empty
     val sc = scene.recs("characters").firstOrNull { it.str("character_id") == character.id }
     val change = r.rec("change")
@@ -87,51 +91,8 @@ private fun CharacterReadiness(scene: Rec, r: Rec, reload: () -> Unit) {
             .border(1.dp, ZillitTheme.colors.border, RoundedCornerShape(10.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            Column(Modifier.weight(1f)) {
-                ZillitText(
-                    character.str("name"),
-                    Modifier.clickable { ctx.nav.go("characters/${character.id}") },
-                    style = ZillitTheme.typography.titleSmall,
-                    color = ZillitTheme.colors.info,
-                    maxLines = 1,
-                )
-                MutedText(character.rec("actor")?.str("name")?.ifEmpty { null } ?: t("csync_no_actor_short"))
-            }
-            StatusBadge(r.str("level"), levelLabel(r.str("level")))
-            // Straight away, as the reference: the character is put back with "+ Character", and nothing else is lost.
-            if (ctx.canPost) {
-                ZillitButton(
-                    "", onClick = { ctx.launchWrite({ ctx.api.delete("/scenes/${scene.id}/characters/${character.id}") }) { reload() } },
-                    variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Trash,
-                )
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            MutedText("${t("csync_change")}:")
-            if (ctx.canPost) {
-                ChangeSelect(
-                    value = sc?.str("change_id").orEmpty(),
-                    characterId = character.id,
-                    changes = sc?.rec("character")?.recs("changes").orEmpty(),
-                    placeholder = t("csync_not_assigned"),
-                    onChange = { id ->
-                        ctx.launchWrite({ ctx.api.put("/scenes/${scene.id}/characters/${character.id}", body("change_id" to (id.ifEmpty { null } ?: Clear))) }) { reload() }
-                    },
-                )
-            } else if (change != null) {
-                ZillitText(
-                    "#${change.str("change_number")} ${change.str("name")}",
-                    Modifier.clickable { ctx.nav.go("changes/${change.id}") },
-                    color = ZillitTheme.colors.info,
-                )
-            } else {
-                ZillitText(t("csync_not_assigned"))
-            }
-            if (change != null) {
-                ZillitButton(t("csync_open_look"), onClick = { ctx.nav.go("changes/${change.id}") }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
-            }
-        }
+        ReadinessHead(scene, r, character, reload)
+        ReadinessChange(scene, character, sc, change, reload)
         val items = r.recs("items")
         if (items.isNotEmpty()) {
             items.forEach { PieceLine(it) }
@@ -142,12 +103,92 @@ private fun CharacterReadiness(scene: Rec, r: Rec, reload: () -> Unit) {
     }
 }
 
+/** The character's name (opens their page), their actor, the level and the remove button. */
+@Composable
+private fun ReadinessHead(scene: Rec, r: Rec, character: Rec, reload: () -> Unit) {
+    val ctx = LocalSync.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Column(Modifier.weight(1f)) {
+            ZillitText(
+                character.str("name"),
+                Modifier.clickable { ctx.nav.go("characters/${character.id}") },
+                style = ZillitTheme.typography.titleSmall,
+                color = ZillitTheme.colors.info,
+                maxLines = 1,
+            )
+            MutedText(character.rec("actor")?.str("name")?.ifEmpty { null } ?: t("csync_no_actor_short"))
+        }
+        StatusBadge(r.str("level"), levelLabel(r.str("level")))
+        // Straight away, as the reference: the character is put back with "+ Character", and nothing else is lost.
+        if (ctx.canPost) {
+            ZillitButton(
+                "",
+                onClick = {
+                    ctx.launchWrite({
+                        ctx.api.delete("/scenes/${scene.id}/characters/${character.id}")
+                    }) { reload() }
+                },
+                variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Trash,
+            )
+        }
+    }
+}
+
+/** Who picks the look: a picker for those who can post, else the look's name, and a link to open it. */
+@Composable
+private fun ReadinessChange(scene: Rec, character: Rec, sc: Rec?, change: Rec?, reload: () -> Unit) {
+    val ctx = LocalSync.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        MutedText("${t("csync_change")}:")
+        if (ctx.canPost) {
+            ChangeSelect(
+                value = sc?.str("change_id").orEmpty(),
+                characterId = character.id,
+                changes = sc?.rec("character")?.recs("changes").orEmpty(),
+                placeholder = t("csync_not_assigned"),
+                onChange = { id ->
+                    ctx.launchWrite(
+                        { ctx.api.put(
+                            "/scenes/${scene.id}/characters/${character.id}",
+                            body("change_id" to (id.ifEmpty { null } ?: Clear)),
+                        ) },
+                    ) { reload() }
+                },
+            )
+        } else if (change != null) {
+            ZillitText(
+                "#${change.str("change_number")} ${change.str("name")}",
+                Modifier.clickable { ctx.nav.go("changes/${change.id}") },
+                color = ZillitTheme.colors.info,
+            )
+        } else {
+            ZillitText(t("csync_not_assigned"))
+        }
+        if (change != null) {
+            ZillitButton(
+                t("csync_open_look"),
+                onClick = { ctx.nav.go("changes/${change.id}") },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+        }
+    }
+}
+
 /** One line per piece: dot, name over where it is, and its level. */
 @Composable
 private fun PieceLine(it: Rec) {
     val ctx = LocalSync.current
     Row(
-        Modifier.fillMaxWidth().clickable { ctx.nav.go("costumes/${it.str("costume_id")}") }.padding(vertical = ZillitTheme.spacing.xs),
+        Modifier.fillMaxWidth().clickable { ctx.nav.go("costumes/${it.str("costume_id")}") }.padding(
+            vertical = ZillitTheme.spacing.xs,
+        ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
@@ -157,7 +198,9 @@ private fun PieceLine(it: Rec) {
                 MonoText(it.str("asset_number"))
                 RowTitle(it.str("name"), Modifier.weight(1f, fill = false))
             }
-            val where = listOf(it.str("location"), it.str("wear_notes")).filter { s -> s.isNotEmpty() }.joinToString(" · ")
+            val where = listOf(it.str("location"), it.str("wear_notes")).filter { s -> s.isNotEmpty() }.joinToString(
+                " · ",
+            )
             if (where.isNotEmpty()) MutedText(where)
         }
         StatusBadge(it.str("level"), levelLabel(it.str("level")))
@@ -183,9 +226,20 @@ internal fun ChangeSelect(
     var name by remember(newOpen) { mutableStateOf("") }
     var saving by remember(newOpen) { mutableStateOf(false) }
     val options = listOf("" to placeholder) +
-        (if (ctx.canPost && characterId.isNotEmpty()) listOf(NEW_CHANGE to "+ ${t("csync_new_change")}") else emptyList()) +
+        (if (ctx.canPost && characterId.isNotEmpty()) {
+            listOf(NEW_CHANGE to "+ ${t("csync_new_change")}")
+        } else {
+            emptyList()
+        }) +
         changes.map { it.id to "#${it.str("change_number")} ${it.str("name")}" }
-    CellPick(value, options, { if (it == NEW_CHANGE) newOpen = true else onChange(it) }, CHANGE_SELECT_W, placeholder = placeholder, enabled = enabled)
+    CellPick(
+        value,
+        options,
+        { if (it == NEW_CHANGE) newOpen = true else onChange(it) },
+        CHANGE_SELECT_W,
+        placeholder = placeholder,
+        enabled = enabled,
+    )
     FormDialog(
         open = newOpen,
         title = t("csync_new_change"),
@@ -195,19 +249,36 @@ internal fun ChangeSelect(
         busy = saving,
         onConfirm = {
             saving = true
-            ctx.launchWrite({ ctx.api.post("/changes", body("character_id" to characterId, "name" to name.trim())) }) { answer ->
+            ctx.launchWrite({ ctx.api.post(
+                "/changes",
+                body("character_id" to characterId, "name" to name.trim()),
+            ) }) { answer ->
                 saving = false
                 newOpen = false
                 onCreated()
                 answer.rec?.id?.takeIf { it.isNotEmpty() }?.let(onChange)
             }
         },
-    ) { TextInput(name, { name = it }, t("csync_field_name"), Modifier.fillMaxWidth(), help = t("csync_change_name_hint")) }
+    ) {
+        TextInput(
+            name,
+            { name = it },
+            t("csync_field_name"),
+            Modifier.fillMaxWidth(),
+            help = t("csync_change_name_hint"),
+        )
+    }
 }
 
 /** "+ Character": put somebody in this scene, optionally with the look they wear. */
 @Composable
-private fun AddCharacterDialog(open: Boolean, scene: Rec, characters: List<Rec>, onClose: () -> Unit, reload: () -> Unit) {
+private fun AddCharacterDialog(
+    open: Boolean,
+    scene: Rec,
+    characters: List<Rec>,
+    onClose: () -> Unit,
+    reload: () -> Unit,
+) {
     val ctx = LocalSync.current
     var characterId by remember(open) { mutableStateOf("") }
     var changeId by remember(open) { mutableStateOf("") }
@@ -216,7 +287,10 @@ private fun AddCharacterDialog(open: Boolean, scene: Rec, characters: List<Rec>,
     val candidates = characters.filter { it.id !in inScene }
     // The character list carries counts, not looks: fetch the chosen one's.
     val changes = rememberResource(characterId) {
-        if (characterId.isEmpty()) ZillitResult.Success(emptyList<Rec>()) else api.get("/changes", mapOf("characterId" to characterId)).mapRows()
+        if (characterId.isEmpty()) ZillitResult.Success(emptyList<Rec>()) else api.get(
+            "/changes",
+            mapOf("characterId" to characterId),
+        ).mapRows()
     }
     FormDialog(
         open = open,
@@ -227,17 +301,54 @@ private fun AddCharacterDialog(open: Boolean, scene: Rec, characters: List<Rec>,
         busy = saving,
         onConfirm = {
             saving = true
-            ctx.launchWrite({ ctx.api.put("/scenes/${scene.id}/characters/$characterId", body("change_id" to (changeId.ifEmpty { null } ?: Clear))) }) {
+            ctx.launchWrite(
+                { ctx.api.put(
+                    "/scenes/${scene.id}/characters/$characterId",
+                    body("change_id" to (changeId.ifEmpty { null } ?: Clear)),
+                ) },
+            ) {
                 saving = false
                 onClose()
                 reload()
             }
         },
     ) {
-        RecInput(characterId, candidates, { characterId = it; changeId = "" }, t("csync_field_character"), Modifier.fillMaxWidth(), t("csync_select_ellipsis"), ::castLabel)
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            ZillitText(t("csync_change_look"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-            ChangeSelect(changeId, characterId, changes.value.orEmpty(), t("csync_assign_later"), { changeId = it }, enabled = characterId.isNotEmpty(), onCreated = { changes.reload(silent = true) })
-        }
+        RecInput(
+            characterId,
+            candidates,
+            { characterId = it; changeId = "" },
+            t("csync_field_character"),
+            Modifier.fillMaxWidth(),
+            t("csync_select_ellipsis"),
+            ::castLabel,
+        )
+        LookField(changeId, characterId, changes.value.orEmpty(), { changeId = it }) { changes.reload(silent = true) }
+    }
+}
+
+/** The "Change (look)" field of the add-character form: a labelled look picker, "assign later" when empty. */
+@Composable
+private fun LookField(
+    changeId: String,
+    characterId: String,
+    changes: List<Rec>,
+    onChange: (String) -> Unit,
+    onCreated: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        ZillitText(
+            t("csync_change_look"),
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        ChangeSelect(
+            changeId,
+            characterId,
+            changes,
+            t("csync_assign_later"),
+            onChange,
+            enabled = characterId.isNotEmpty(),
+            onCreated = onCreated,
+        )
     }
 }

@@ -11,7 +11,10 @@ import kotlin.test.assertNull
 private fun rec(json: String) = Rec(Json.parseToJsonElement(json).jsonObject)
 
 private fun n(entityType: String?, entityId: String?, type: String = "GENERAL"): Rec =
-    rec("""{"type":"$type"${entityType?.let { ""","entity_type":"$it"""" } ?: ""}${entityId?.let { ""","entity_id":"$it"""" } ?: ""}}""")
+    rec(
+        """{"type":"$type"${entityType?.let { ""","entity_type":"$it"""" } ?: ""}""" +
+            """${entityId?.let { ""","entity_id":"$it"""" } ?: ""}}""",
+    )
 
 class NotificationsModelTest {
     @Test
@@ -58,7 +61,10 @@ class NotificationsModelTest {
 
     @Test
     fun `search matches scenes by number prefix and characters by cast number`() {
-        val scenes = listOf(rec("""{"_id":"s1","number":"12","name":"Kitchen"}"""), rec("""{"_id":"s2","number":"3","location":"Garden 12"}"""))
+        val scenes = listOf(
+            rec("""{"_id":"s1","number":"12","name":"Kitchen"}"""),
+            rec("""{"_id":"s2","number":"3","location":"Garden 12"}"""),
+        )
         assertEquals(listOf("ss1", "ss2"), NotificationsModel.sceneHits(scenes, "12", "Sc", "Scene").map { it.key })
         val chars = listOf(rec("""{"_id":"c1","name":"Meera","cast_number":4}"""))
         assertEquals("4. Meera", NotificationsModel.characterHits(chars, "4", "Character").single().label)

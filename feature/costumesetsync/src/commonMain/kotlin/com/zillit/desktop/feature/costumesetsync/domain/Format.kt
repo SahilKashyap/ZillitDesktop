@@ -8,9 +8,15 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-/** Formatting for Costumes & Set Sync — the web's `lib/format.js`. The service sends SCREAMING_SNAKE enums and epoch-millisecond dates. */
+/**
+ * Formatting for Costumes & Set Sync — the web's `lib/format.js`. The service sends SCREAMING_SNAKE enums and
+ * epoch-millisecond dates.
+ */
 
-/** `DRY_CLEANING` → `Dry Cleaning`: every word capitalised, as the reference. Used for any enum the backend has no label for. */
+/**
+ * `DRY_CLEANING` → `Dry Cleaning`: every word capitalised, as the reference. Used for any enum the backend has no label
+ * for.
+ */
 fun humanize(value: String?): String {
     if (value.isNullOrBlank()) return ""
     return value.replace('_', ' ').lowercase().split(' ').joinToString(" ") { word ->
@@ -39,7 +45,9 @@ fun fmtDate(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String
 
 /** `12 Mar 2026, 14:05`. */
 fun fmtDateTime(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String =
-    localTime(ms, zone)?.let { "${it.dayOfMonth} ${it.month.short()} ${it.year}, ${two(it.hour)}:${two(it.minute)}" }.orEmpty()
+    localTime(ms, zone)
+        ?.let { "${it.dayOfMonth} ${it.month.short()} ${it.year}, ${two(it.hour)}:${two(it.minute)}" }
+        .orEmpty()
 
 /** `14:05`. */
 fun fmtTime(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String =
@@ -102,9 +110,40 @@ const val DASH = "—"
 enum class Tone { Ok, Info, Warn, Danger, Accent, Muted }
 
 fun statusTone(status: String?): Tone = when (status) {
-    "AVAILABLE", "READY", "COMPLETED", "FITTED", "PASS", "SHOT", "FOUND", "REPAIRED", "RETURNED", "OK", "SUCCESS" -> Tone.Ok
-    "ISSUED", "ON_SET", "CLEANING", "RECEIVED", "DRYING", "IRONING", "IN_PROGRESS", "SHOOTING", "PICKED_UP", "INFO", "SCHEDULED" -> Tone.Info
-    "ALTERATION", "ALTERATION_REQUIRED", "QUALITY_CHECK", "HIGH", "WARNING", "REPAIRING", "PENDING", "BOOKED", "REQUESTED", "ASSIGNED", "DUE", "PARTIAL" -> Tone.Warn
+    "AVAILABLE",
+    "READY",
+    "COMPLETED",
+    "FITTED",
+    "PASS",
+    "SHOT",
+    "FOUND",
+    "REPAIRED",
+    "RETURNED",
+    "OK",
+    "SUCCESS" -> Tone.Ok
+    "ISSUED",
+    "ON_SET",
+    "CLEANING",
+    "RECEIVED",
+    "DRYING",
+    "IRONING",
+    "IN_PROGRESS",
+    "SHOOTING",
+    "PICKED_UP",
+    "INFO",
+    "SCHEDULED" -> Tone.Info
+    "ALTERATION",
+    "ALTERATION_REQUIRED",
+    "QUALITY_CHECK",
+    "HIGH",
+    "WARNING",
+    "REPAIRING",
+    "PENDING",
+    "BOOKED",
+    "REQUESTED",
+    "ASSIGNED",
+    "DUE",
+    "PARTIAL" -> Tone.Warn
     "MISSING", "DAMAGED", "URGENT", "CRITICAL", "FAIL", "REJECTED", "OVERDUE", "OPEN", "WRITTEN_OFF" -> Tone.Danger
     "LEAD" -> Tone.Accent
     else -> Tone.Muted

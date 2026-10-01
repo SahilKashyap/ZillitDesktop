@@ -17,7 +17,11 @@ private fun rec(json: String) = Rec(Json.parseToJsonElement(json).jsonObject)
 class BudgetModelTest {
     @Test
     fun `sums are per currency, never across`() {
-        val lines = listOf(rec("""{"amount":100}"""), rec("""{"amount":50,"currency":"INR"}"""), rec("""{"amount":20}"""))
+        val lines = listOf(
+            rec("""{"amount":100}"""),
+            rec("""{"amount":50,"currency":"INR"}"""),
+            rec("""{"amount":20}"""),
+        )
         assertEquals("£120 + ₹50", BudgetModel.sumByCurrency(lines, "GBP"))
         assertEquals("£0", BudgetModel.sumByCurrency(emptyList(), "GBP"))
     }
@@ -52,7 +56,11 @@ class BudgetModelTest {
 
     @Test
     fun `after an add the account and payee stay`() {
-        val next = BudgetModel.formAfterAdd(BudgetForm(accountCode = "30-040", payee = "Dry Co", amount = "9", description = "x", category = "LAUNDRY"), "GBP", "2026-10-01")
+        val next = BudgetModel.formAfterAdd(
+            BudgetForm(accountCode = "30-040", payee = "Dry Co", amount = "9", description = "x", category = "LAUNDRY"),
+            "GBP",
+            "2026-10-01",
+        )
         assertEquals("30-040", next.accountCode)
         assertEquals("Dry Co", next.payee)
         assertEquals("", next.amount)
@@ -76,7 +84,12 @@ class BudgetModelTest {
     @Test
     fun `department groups run in chart order with uncoded last`() {
         val groups = BudgetModel.departmentGroups(
-            listOf(rec("""{"account_code":"110-1"}"""), rec("""{"account_code":"30-1"}"""), rec("{}"), rec("""{"account_code":"12-3"}""")),
+            listOf(
+                rec("""{"account_code":"110-1"}"""),
+                rec("""{"account_code":"30-1"}"""),
+                rec("{}"),
+                rec("""{"account_code":"12-3"}"""),
+            ),
             "No code",
         )
         assertEquals(listOf("12", "30", "110", BudgetModel.NONE), groups.map { it.key })
@@ -86,7 +99,8 @@ class BudgetModelTest {
     @Test
     fun `top sheet reads sections then the rest then the grand total`() {
         val text = BudgetModel.topSheetText(
-            "Film", listOf(rec("""{"account_code":"30-001","amount":100}"""), rec("""{"category":"OTHER","amount":5}""")),
+            "Film", listOf(rec("""{"account_code":"30-001","amount":100}"""), rec("""{"category":"OTHER",
+            "amount":5}""")),
             "GBP", { "SECTION $it" }, "Grand total", "Budget",
         )
         val lines = text.lines()

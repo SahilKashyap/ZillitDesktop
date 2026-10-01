@@ -31,6 +31,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.t
 
 /** What one editor row needs: the draft, who is in it, and how to save it. */
+@Suppress("LongParameterList")
 internal class EditRowInput(
     val key: String,
     val draft: SceneDraft,
@@ -48,7 +49,10 @@ internal class EditRowInput(
     val actions: TableActions,
 )
 
-/** One stacked per-character line: the controls are 24dp (antd small); lines sit 16dp apart, as table rows with 8dp padding do. */
+/**
+ * One stacked per-character line: the controls are 24dp (antd small); lines sit 16dp apart, as table rows with 8dp
+ * padding do.
+ */
 private val ITEM_H = 24.dp
 private val ITEM_GAP = 16.dp
 
@@ -72,11 +76,15 @@ internal fun SceneEditRow(row: EditRowInput) {
     Row(Modifier.background(ZillitTheme.colors.surfaceSunken), verticalAlignment = Alignment.Top) {
         if (input.expanded) TCell(actionsWidth(true)) { SaveCancel(row, canSave) }
         TCell(Col.dot) {}
-        if (input.episodes) TCell(Col.episode) { CellField(d.episode, { set(d.copy(episode = it)) }, EPISODE_W, !row.busy, onEnter = save) }
+        if (input.episodes) TCell(Col.episode) {
+            CellField(d.episode, { set(d.copy(episode = it)) }, EPISODE_W, !row.busy, onEnter = save)
+        }
         TCell(Col.scene) { NumberCell(row, save) }
         TCell(Col.day) { DayCell(row) }
         TCell(Col.location) { LocationCell(row, save) }
-        TCell(Col.description) { CellField(d.synopsis, { set(d.copy(synopsis = it)) }, Dp.Unspecified, !row.busy, onEnter = save) }
+        TCell(Col.description) {
+            CellField(d.synopsis, { set(d.copy(synopsis = it)) }, Dp.Unspecified, !row.busy, onEnter = save)
+        }
         PeopleCells(row, castProblem)
         TCell(Col.shootDate) { CellDate(d.shootDate, { set(d.copy(shootDate = it)) }, Dp.Unspecified, !row.busy) }
         TCell(tailWidth(input.expanded)) { if (!input.expanded) SaveCancel(row, canSave) }
@@ -101,16 +109,32 @@ private fun SaveCancel(row: EditRowInput, canSave: Boolean) {
             size = ButtonSize.Small,
             enabled = canSave,
         )
-        ZillitButton(t("csync_cancel"), onClick = { row.actions.cancel(row.key) }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, enabled = !row.busy)
+        ZillitButton(
+            t("csync_cancel"),
+            onClick = { row.actions.cancel(row.key) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            enabled = !row.busy
+        )
     }
 }
 
-/** A scene keeps its number: it is what the script, schedule and call sheets match on. Only a new scene takes one here. */
+/**
+ * A scene keeps its number: it is what the script, schedule and call sheets match on. Only a new scene takes one here.
+ */
 @Composable
 private fun NumberCell(row: EditRowInput, save: () -> Unit) {
     val d = row.draft
     if (row.isNew) {
-        CellField(d.number, { row.onChange(d.copy(number = it)) }, NUMBER_W, !row.busy, row.error, save, autoFocus = true)
+        CellField(
+            d.number,
+            { row.onChange(d.copy(number = it)) },
+            NUMBER_W,
+            !row.busy,
+            row.error,
+            save,
+            autoFocus = true
+        )
     } else {
         ZillitText(d.number, style = ZillitTheme.typography.titleSmall, maxLines = 1)
     }
@@ -140,10 +164,27 @@ private fun LocationCell(row: EditRowInput, save: () -> Unit) {
     val d = row.draft
     // Keep this row's INT/EXT selectable even when it is not in the configured list,
     // so an imported scene is never silently re-labelled on save.
-    val options = (row.input.intExtOptions + listOfNotNull(d.intExt.takeIf { it.isNotEmpty() })).distinct().map { it to it }
+    val options = (row.input.intExtOptions + listOfNotNull(d.intExt.takeIf { it.isNotEmpty() })).distinct().map {
+        it to it
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
-        CellPick(d.intExt, listOf("" to "—") + options, { row.onChange(d.copy(intExt = it)) }, INT_EXT_W, placeholder = "—", enabled = !row.busy, searchable = false)
-        CellField(d.location, { row.onChange(d.copy(location = it)) }, Dp.Unspecified, !row.busy, onEnter = save, modifier = Modifier.weight(1f))
+        CellPick(
+            d.intExt,
+            listOf("" to "—") + options,
+            { row.onChange(d.copy(intExt = it)) },
+            INT_EXT_W,
+            placeholder = "—",
+            enabled = !row.busy,
+            searchable = false
+        )
+        CellField(
+            d.location,
+            { row.onChange(d.copy(location = it)) },
+            Dp.Unspecified,
+            !row.busy,
+            onEnter = save,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -172,19 +213,30 @@ private fun PeopleCells(row: EditRowInput, castProblem: CastProblem?) {
                 )
             }
         }
-        castProblem?.let { ZillitText(castProblemText(it), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.danger) }
+        castProblem?.let {
+            ZillitText(
+                castProblemText(it),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.danger
+            )
+        }
     }
     TCell(Col.castName) {
         if (people.isEmpty()) {
             MutedText("—")
         } else {
-            PersonStack(people, split) { c -> CellActorPick(actorFor(d, c), actorOptions, { row.onChange(d.withCastActor(c, it)) }, !row.busy) }
+            PersonStack(people, split) { c ->
+                CellActorPick(actorFor(d, c), actorOptions, { row.onChange(d.withCastActor(c, it)) }, !row.busy)
+            }
         }
     }
     TCell(Col.change) { ChangeCell(row, split) }
 }
 
-/** The Character cell: one name per row (Add/Remove on the first) in the breakdown, "A, B" with Add/Remove beside it collapsed. */
+/**
+ * The Character cell: one name per row (Add/Remove on the first) in the breakdown, "A, B" with Add/Remove beside it
+ * collapsed.
+ */
 @Composable
 private fun CharacterCell(row: EditRowInput, split: Boolean) {
     val people = row.people
@@ -200,7 +252,11 @@ private fun CharacterCell(row: EditRowInput, split: Boolean) {
         }
         return
     }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically
+    ) {
         val names = people.joinToString(", ") { it.str("name") }
         if (names.isEmpty()) MutedText(t("csync_none")) else ZillitText(names, style = CELL_TEXT, maxLines = 2)
         AddRemove(row)
@@ -234,14 +290,22 @@ private fun AddRemove(row: EditRowInput) {
     )
 }
 
-/** Per person: a tiny name over the control when the cell holds several (the web's `csync-stack`), or lines in line with the rows. */
+/**
+ * Per person: a tiny name over the control when the cell holds several (the web's `csync-stack`), or lines in line with
+ * the rows.
+ */
 @Composable
 private fun PersonStack(people: List<Rec>, aligned: Boolean, control: @Composable (Rec) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(if (aligned) ITEM_GAP else 6.dp)) {
         people.forEach { c ->
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 if (people.size > 1 && !aligned) {
-                    ZillitText(c.str("name"), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted, maxLines = 1)
+                    ZillitText(
+                        c.str("name"),
+                        style = ZillitTheme.typography.labelSmall,
+                        color = ZillitTheme.colors.textMuted,
+                        maxLines = 1
+                    )
                 }
                 control(c)
             }
@@ -251,13 +315,21 @@ private fun PersonStack(people: List<Rec>, aligned: Boolean, control: @Composabl
 
 @Composable
 private fun Item(content: @Composable () -> Unit) {
-    Row(Modifier.height(ITEM_H), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { content() }
+    Row(
+        Modifier.height(ITEM_H),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        content()
+    }
 }
 
 /** The full actor list, plus the actors already attached to these people so the picker is never empty. */
 private fun actorOptions(row: EditRowInput): List<Pair<String, String>> {
     val byId = LinkedHashMap<String, String>()
     row.input.actors.forEach { byId[it.id] = it.str("name") }
-    row.people.forEach { c -> c.rec("actor")?.let { a -> if (a.id.isNotEmpty() && a.id !in byId) byId[a.id] = a.str("name") } }
+    row.people.forEach { c ->
+        c.rec("actor")?.let { a -> if (a.id.isNotEmpty() && a.id !in byId) byId[a.id] = a.str("name") }
+    }
     return byId.entries.map { it.key to it.value }
 }

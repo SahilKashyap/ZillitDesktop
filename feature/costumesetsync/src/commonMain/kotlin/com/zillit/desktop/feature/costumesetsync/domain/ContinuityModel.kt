@@ -32,7 +32,11 @@ object ContinuityModel {
         val levels = items.map { itemLevel(it.rec("costume")?.str("status")) }
         val blockers = items.filter { itemLevel(it.rec("costume")?.str("status")) != "READY" }.map { item ->
             val costume = item.rec("costume")
-            Blocker("piece", costume?.str("name")?.ifBlank { null } ?: costume?.str("asset_number").orEmpty(), costume?.str("status").orEmpty())
+            Blocker(
+                "piece",
+                costume?.str("name")?.ifBlank { null } ?: costume?.str("asset_number").orEmpty(),
+                costume?.str("status").orEmpty(),
+            )
         }
         return Readiness(worst(levels), levels.count { it == "READY" }, items.size, blockers)
     }
@@ -58,7 +62,9 @@ object ContinuityModel {
     fun shootDays(scenes: List<Rec>, records: List<Rec>, today: String): List<ShootDay> {
         val dayOfScene = scenes.associate { it.id to DayKeys.of(it.long("shoot_date")) }
         val takes = HashMap<String, Int>()
-        records.forEach { r -> dayOfScene[r.str("scene_id")]?.takeIf { it.isNotEmpty() }?.let { takes[it] = (takes[it] ?: 0) + 1 } }
+        records.forEach { r ->
+            dayOfScene[r.str("scene_id")]?.takeIf { it.isNotEmpty() }?.let { takes[it] = (takes[it] ?: 0) + 1 }
+        }
         val byDay = LinkedHashMap<String, MutableList<Rec>>()
         scenes.forEach { s ->
             val d = dayOfScene[s.id].orEmpty()
@@ -71,7 +77,11 @@ object ContinuityModel {
 
     /** Prep opens on today, or — when nothing is scheduled today — the next day that is. */
     fun nextPrepDay(scenes: List<Rec>, today: String): String {
-        val dates = scenes.filter { it.str("status") != "OMITTED" }.map { DayKeys.of(it.long("shoot_date")) }.filter { it.isNotEmpty() }.sorted()
+        val dates = scenes
+            .filter { it.str("status") != "OMITTED" }
+            .map { DayKeys.of(it.long("shoot_date")) }
+            .filter { it.isNotEmpty() }
+            .sorted()
         return if (today in dates) today else dates.firstOrNull { it > today } ?: today
     }
 
@@ -80,15 +90,23 @@ object ContinuityModel {
         records.filter { it.str("scene_id") == sceneId }.sortedBy { it.long("take_number") }
 
     /** The wear details and accessories a new take starts from: the last take's, else the defaults. */
-    data class TakeFill(val takeNumber: String, val details: List<Pair<String, String>>, val accessories: List<Pair<String, Boolean>>)
+    data class TakeFill(
+        val takeNumber: String,
+        val details: List<Pair<String, String>>,
+        val accessories: List<Pair<String, Boolean>>,
+    )
 
     val DEFAULT_DETAILS = listOf("Shirt", "Sleeves", "Collar", "Trousers", "Hair", "Accessories")
 
     /** [sc] is the open scene's character entry (its change's accessory / jewellery pieces seed a first take). */
     fun fill(last: Rec?, sc: Rec?): TakeFill {
-        val details = last?.rec("details")?.let { d -> d.keys.map { it to d.str(it) } } ?: DEFAULT_DETAILS.map { it to "" }
+        val details = last?.rec("details")?.let { d -> d.keys.map { it to d.str(it) } } ?: DEFAULT_DETAILS.map {
+            it to ""
+        }
         val accessories = if (last != null) {
-            last.recs("accessories").map { it.str("name") to (it.json["present"]?.let { _ -> it.bool("present") } ?: true) }
+            last.recs("accessories").map {
+                it.str("name") to (it.json["present"]?.let { _ -> it.bool("present") } ?: true)
+            }
         } else {
             sc?.rec("change")?.recs("items").orEmpty()
                 .mapNotNull { it.rec("costume") }

@@ -80,5 +80,8 @@ object NoHost : SyncHost {
     override suspend fun save(suggestedName: String, bytes: ByteArray): Boolean = false
 }
 
-/** One person on the production: [id] is the Zillit user id the request endpoint takes; [department] is already readable. */
+/**
+ * One person on the production: [id] is the Zillit user id the request endpoint takes; [department] is already
+ * readable.
+ */
 data class CrewMember(val id: String, val name: String, val department: String = "", val email: String = "")

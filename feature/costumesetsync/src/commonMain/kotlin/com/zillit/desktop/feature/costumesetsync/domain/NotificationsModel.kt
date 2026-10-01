@@ -8,7 +8,11 @@ object NotificationsModel {
     /** Where each kind of record lives, relative to the tool root — the reference's `open()` map. */
     private val PAGE = mapOf(
         "COSTUME" to "costumes", "CLEANING" to "cleaning", "ALTERATION" to "alterations", "DAMAGE" to "damages",
-        "FITTING" to "fittings", "RENTAL" to "vendors", "MISSING" to "missing", "EXPENSE" to "budget", "BUDGET" to "budget",
+        "FITTING" to "fittings",
+        "RENTAL" to "vendors",
+        "MISSING" to "missing",
+        "EXPENSE" to "budget",
+        "BUDGET" to "budget",
     )
 
     /** Kinds with a page of their own; the rest live on a list page. */
@@ -24,14 +28,19 @@ object NotificationsModel {
         val id = n.str("entity_id")
         val page = PAGE[type] ?: return null
         return when {
-            n.str("type") == "CHAT" && id.isNotEmpty() -> if (type in HAS_DETAIL) "$page/$id?chat=$id" else "$page?chat=$id"
+            n.str("type") == "CHAT" &&
+                id.isNotEmpty() -> if (type in HAS_DETAIL) "$page/$id?chat=$id" else "$page?chat=$id"
             id.isNotEmpty() && type in HAS_DETAIL -> "$page/$id"
             else -> page
         }
     }
 
     /** A notification's timestamp, whichever name the service used for it. */
-    fun time(n: Rec): Long = n.long("created").takeIf { it != 0L } ?: n.long("created_at").takeIf { it != 0L } ?: n.long("createdAt")
+    fun time(n: Rec): Long = n.long("created")
+        .takeIf { it != 0L } ?: n.long("created_at")
+        .takeIf { it != 0L } ?: n.long(
+        "createdAt",
+    )
 
     /** The header badge's text: the count, "99+" past 99, nothing for none. */
     fun badge(unread: Int): String = when {
@@ -48,17 +57,41 @@ object NotificationsModel {
     /** Scenes and characters are matched here (the web's `GlobalSearch`); costume hits come from the service. */
     fun sceneHits(scenes: List<Rec>, needle: String, sceneWord: String, kind: String): List<Hit> {
         val s = needle.lowercase()
-        return scenes.filter { it.str("number").lowercase().startsWith(s) || it.str("name").lowercase().contains(s) || it.str("location").lowercase().contains(s) }
+        return scenes.filter {
+            it.str("number")
+                .lowercase()
+                .startsWith(s) || it.str("name")
+                .lowercase()
+                .contains(s) || it.str("location")
+                .lowercase()
+                .contains(
+                s,
+            )
+        }
             .take(MAX_KIND).map { sc ->
-                Hit("s${sc.id}", "$sceneWord ${sc.str("number")}" + sc.str("name").let { if (it.isEmpty()) "" else " · $it" }, listOf(sc.str("int_ext"), sc.str("location")).filter { it.isNotEmpty() }.joinToString(". "), "scenes/${sc.id}", kind)
+                Hit(
+                    "s${sc.id}",
+                    "$sceneWord ${sc.str("number")}" + sc.str("name").let { if (it.isEmpty()) "" else " · $it" },
+                    listOf(sc.str("int_ext"), sc.str("location")).filter { it.isNotEmpty() }.joinToString(". "),
+                    "scenes/${sc.id}",
+                    kind,
+                )
             }
     }
 
     fun characterHits(characters: List<Rec>, needle: String, kind: String): List<Hit> {
         val s = needle.lowercase()
-        return characters.filter { it.str("name").lowercase().contains(s) || (it.has("cast_number") && it.str("cast_number") == needle) }
+        return characters.filter {
+            it.str("name").lowercase().contains(s) || (it.has("cast_number") && it.str("cast_number") == needle)
+        }
             .take(MAX_KIND).map { c ->
-                Hit("c${c.id}", (if (c.has("cast_number")) "${c.str("cast_number")}. " else "") + c.str("name"), c.rec("actor")?.str("name").orEmpty(), "characters/${c.id}", kind)
+                Hit(
+                    "c${c.id}",
+                    (if (c.has("cast_number")) "${c.str("cast_number")}. " else "") + c.str("name"),
+                    c.rec("actor")?.str("name").orEmpty(),
+                    "characters/${c.id}",
+                    kind,
+                )
             }
     }
 
@@ -66,7 +99,14 @@ object NotificationsModel {
         costumes.take(MAX_COSTUMES).map { c ->
             Hit(
                 "k${c.id}", "${c.str("asset_number")} ${c.str("name")}".trim(),
-                listOf(c.rec("character")?.str("name").orEmpty(), c.str("status").takeIf { it.isNotEmpty() }?.let(statusWord).orEmpty()).filter { it.isNotEmpty() }.joinToString(" · "),
+                listOf(
+                    c.rec("character")?.str("name").orEmpty(),
+                    c.str("status").takeIf { it.isNotEmpty() }?.let(statusWord).orEmpty(),
+                )
+                    .filter { it.isNotEmpty() }
+                    .joinToString(
+                    " · ",
+                ),
                 "costumes/${c.id}", kind,
             )
         }

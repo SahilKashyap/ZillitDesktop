@@ -90,7 +90,11 @@ internal fun WfFormDialog(
         width = width,
         actions = actions,
     ) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), content = content)
+        Column(
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            content = content,
+        )
     }
 }
 
@@ -111,7 +115,13 @@ internal fun RowScope.WfSaveActions(
     danger: Boolean = false,
 ) {
     ZillitButton(t("csync_cancel"), onClick = onCancel, variant = ButtonVariant.Secondary, enabled = !busy)
-    ZillitButton(sendLabel, onClick = onSend, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Send, enabled = canSave && !busy)
+    ZillitButton(
+        sendLabel,
+        onClick = onSend,
+        variant = ButtonVariant.Secondary,
+        leadingIcon = ZillitIcons.Send,
+        enabled = canSave && !busy,
+    )
     ZillitButton(
         saveLabel,
         onClick = onSave,
@@ -164,9 +174,17 @@ internal fun WfCostumePicker(
         // The web's picker has no footer: its close cross is the way out. 520 is antd's default modal width.
         width = 520.dp,
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             SearchWithButton(q, { q = it }, t("csync_picker_search"), Modifier.weight(1f))
-            if (characterId.isNotBlank()) ZillitCheckbox(onlyCharacter, { onlyCharacter = it }, label = t("csync_this_character_only"))
+            if (characterId.isNotBlank()) ZillitCheckbox(
+                onlyCharacter,
+                { onlyCharacter = it },
+                label = t("csync_this_character_only"),
+            )
         }
         val shown = items?.filterNot(exclude)
         when {
@@ -185,7 +203,11 @@ internal fun WfCostumePicker(
 @Composable
 internal fun WfCostumeField(costume: Rec?, onOpen: () -> Unit, locked: Boolean = false) {
     Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        ZillitText(t("csync_field_costume"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+        ZillitText(
+            t("csync_field_costume"),
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
         if (costume != null) {
             CostumeRow(
                 costume,
@@ -193,7 +215,14 @@ internal fun WfCostumeField(costume: Rec?, onOpen: () -> Unit, locked: Boolean =
                 end = { MutedText(t("csync_change_lower")) },
             )
         } else {
-            Row { ZillitButton(t("csync_choose_costume"), onClick = onOpen, variant = ButtonVariant.Secondary, size = ButtonSize.Small) }
+            Row {
+                ZillitButton(
+                    t("csync_choose_costume"),
+                    onClick = onOpen,
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                )
+            }
         }
     }
 }
@@ -206,52 +235,72 @@ internal fun WfCostumeField(costume: Rec?, onOpen: () -> Unit, locked: Boolean =
 @Composable
 internal fun WfPipeline(steps: List<String>, current: String, modifier: Modifier = Modifier) {
     val index = if (current.isBlank()) -1 else steps.indexOf(current)
-    val colors = ZillitTheme.colors
     androidx.compose.foundation.layout.FlowRow(
         modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         steps.forEachIndexed { i, step ->
-            val done = i < index
-            val now = i == index
-            val last = i == steps.lastIndex
-            val line = if (done) colors.success else colors.border
-            // The web's step: a node over its label, joined to the next by a 2dp line (centre + 14 to next centre - 12).
-            Column(
-                Modifier
-                    .widthIn(min = 72.dp)
-                    .drawBehind {
-                        if (!last) {
-                            drawRect(line, Offset(size.width / 2 + 14.dp.toPx(), 10.dp.toPx()), Size(size.width - 26.dp.toPx(), 2.dp.toPx()))
-                        }
-                    },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Box(
-                    Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(if (done) colors.success else if (now) colors.textPrimary else colors.surface)
-                        .border(1.5.dp, if (done) colors.success else if (now) colors.textPrimary else colors.border, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ZillitText(
-                        if (done) "\u2713" else (i + 1).toString(),
-                        style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
-                        color = if (done) androidx.compose.ui.graphics.Color.White else if (now) colors.surface else colors.textMuted,
+            PipelineStep(step, i + 1, done = i < index, now = i == index, last = i == steps.lastIndex)
+        }
+    }
+}
+
+/** The web's step: a node over its label, joined to the next by a 2dp line (centre + 14 to next centre - 12). */
+@Composable
+private fun PipelineStep(step: String, number: Int, done: Boolean, now: Boolean, last: Boolean) {
+    val colors = ZillitTheme.colors
+    val line = if (done) colors.success else colors.border
+    Column(
+        Modifier
+            .widthIn(min = 72.dp)
+            .drawBehind {
+                if (!last) {
+                    drawRect(
+                        line,
+                        Offset(size.width / 2 + 14.dp.toPx(), 10.dp.toPx()),
+                        Size(size.width - 26.dp.toPx(), 2.dp.toPx()),
                     )
                 }
-                ZillitText(
-                    tEnum(step),
-                    style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = if (done || now) FontWeight.SemiBold else FontWeight.Normal),
-                    color = if (done || now) colors.textPrimary else colors.textMuted,
-                    maxLines = 2,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-        }
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        StepNode(number, done, now)
+        ZillitText(
+            tEnum(step),
+            style = ZillitTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = if (done || now) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+            color = if (done || now) colors.textPrimary else colors.textMuted,
+            maxLines = 2,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun StepNode(number: Int, done: Boolean, now: Boolean) {
+    val colors = ZillitTheme.colors
+    val ink = if (done) colors.success else if (now) colors.textPrimary else null
+    Box(
+        Modifier
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(ink ?: colors.surface)
+            .border(1.5.dp, ink ?: colors.border, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitText(
+            if (done) "\u2713" else number.toString(),
+            style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+            color = when {
+                done -> androidx.compose.ui.graphics.Color.White
+                now -> colors.surface
+                else -> colors.textMuted
+            },
+        )
     }
 }
 
@@ -260,7 +309,14 @@ internal fun WfPipeline(steps: List<String>, current: String, modifier: Modifier
  * the amber one; otherwise it is the quiet grey well.
  */
 @Composable
-internal fun WfNotice(text: String, modifier: Modifier = Modifier, info: Boolean = false, warn: Boolean = false, ok: Boolean = false, trailing: (@Composable () -> Unit)? = null) {
+internal fun WfNotice(
+    text: String,
+    modifier: Modifier = Modifier,
+    info: Boolean = false,
+    warn: Boolean = false,
+    ok: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null,
+) {
     val colors = ZillitTheme.colors
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
     val (bg, edge) = when {
@@ -269,9 +325,19 @@ internal fun WfNotice(text: String, modifier: Modifier = Modifier, info: Boolean
         ok -> colors.successSoft to colors.success.copy(alpha = 0.3f)
         else -> colors.surfaceSunken to androidx.compose.ui.graphics.Color.Transparent
     }
-    Box(modifier.fillMaxWidth().clip(shape).background(bg).border(1.dp, edge, shape).padding(horizontal = 14.dp, vertical = 10.dp)) {
+    Box(
+        modifier.fillMaxWidth().clip(shape).background(bg).border(1.dp, edge, shape).padding(
+            horizontal = 14.dp,
+            vertical = 10.dp,
+        ),
+    ) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(text, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp), color = if (ok) colors.success else colors.textPrimary)
+            ZillitText(
+                text,
+                Modifier.weight(1f, fill = false),
+                style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                color = if (ok) colors.success else colors.textPrimary,
+            )
             trailing?.invoke()
         }
     }
@@ -279,10 +345,21 @@ internal fun WfNotice(text: String, modifier: Modifier = Modifier, info: Boolean
 
 /** A text-only button in a chosen colour (antd `type="text"`, e.g. the red Cancel request). */
 @Composable
-internal fun WfTextButton(text: String, color: androidx.compose.ui.graphics.Color, onClick: () -> Unit, enabled: Boolean = true) {
+internal fun WfTextButton(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
     ZillitText(
         text,
-        Modifier.defaultMinSize(minHeight = 32.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 15.dp, vertical = 6.dp),
+        Modifier.defaultMinSize(minHeight = 32.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(
+            horizontal = 15.dp,
+            vertical = 6.dp,
+        ),
         style = ZillitTheme.typography.button,
         color = if (enabled) color else color.copy(alpha = 0.4f),
     )
@@ -293,8 +370,16 @@ internal fun WfTextButton(text: String, color: androidx.compose.ui.graphics.Colo
 internal fun WfLargeAvatar(text: String) {
     val colors = ZillitTheme.colors
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
-    Box(Modifier.size(56.dp).clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape), contentAlignment = Alignment.Center) {
-        ZillitText(text.ifBlank { "\u2013" }, style = ZillitTheme.typography.bodyMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold), color = colors.textMuted, maxLines = 1)
+    Box(
+        Modifier.size(56.dp).clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitText(
+            text.ifBlank { "\u2013" },
+            style = ZillitTheme.typography.bodyMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+            color = colors.textMuted,
+            maxLines = 1,
+        )
     }
 }
 
@@ -322,7 +407,9 @@ internal fun WfInkButton(
         horizontalArrangement = Arrangement.spacedBy(if (large) 8.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        icon?.let { com.zillit.desktop.core.designsystem.component.ZillitIcon(it, tint = fg, size = if (large) 15.dp else 14.dp) }
+        icon?.let {
+            com.zillit.desktop.core.designsystem.component.ZillitIcon(it, tint = fg, size = if (large) 15.dp else 14.dp)
+        }
         ZillitText(text, style = ZillitTheme.typography.button, color = fg, maxLines = 1)
     }
 }
@@ -335,7 +422,9 @@ internal fun wfInitials(name: String): String =
  * A follow-up write whose success needs no toast of its own (adding each piece to a freshly booked
  * fitting): a refusal is toasted in the server's words, success is silent. True when it went through.
  */
-internal suspend fun SyncCtx.quietWrite(call: suspend () -> ZillitResult<Answer>): Boolean = when (val result = call()) {
+internal suspend fun SyncCtx.quietWrite(
+    call: suspend () -> ZillitResult<Answer>,
+): Boolean = when (val result = call()) {
     is ZillitResult.Success -> true
     is ZillitResult.Failure -> {
         toast(result.error.localised(), false)
@@ -373,7 +462,14 @@ internal fun WfDraftRequestDialog(draft: RequestDraft?, entityType: String, titl
 
 /** A short yes/no question in a dialog — discard a note, cancel a ticket, write a piece off. */
 @Composable
-internal fun WfConfirm(open: Boolean, title: String, body: String, confirmLabel: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun WfConfirm(
+    open: Boolean,
+    title: String,
+    body: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     FormDialog(
         open = open,
         title = title,
@@ -401,7 +497,11 @@ internal fun WfViewToggle(icon: androidx.compose.ui.graphics.vector.ImageVector,
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        com.zillit.desktop.core.designsystem.component.ZillitIcon(icon, tint = if (on) colors.surface else colors.textPrimary, size = 14.dp)
+        com.zillit.desktop.core.designsystem.component.ZillitIcon(
+            icon,
+            tint = if (on) colors.surface else colors.textPrimary,
+            size = 14.dp,
+        )
     }
 }
 
@@ -424,7 +524,16 @@ internal fun WfPriorityPill(priority: String, label: String, emergency: Boolean)
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (emergency) com.zillit.desktop.core.designsystem.component.ZillitIcon(ZillitIcons.Siren, tint = fg, size = 12.dp)
-        ZillitText(label, style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1)
+        if (emergency) com.zillit.desktop.core.designsystem.component.ZillitIcon(
+            ZillitIcons.Siren,
+            tint = fg,
+            size = 12.dp,
+        )
+        ZillitText(
+            label,
+            style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+            color = fg,
+            maxLines = 1,
+        )
     }
 }

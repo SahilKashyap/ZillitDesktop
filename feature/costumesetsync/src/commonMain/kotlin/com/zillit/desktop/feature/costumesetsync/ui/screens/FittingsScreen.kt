@@ -50,6 +50,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.tEnum
  * "Send reminder request" covers every fitting still open — not what the filters show. What is still to
  * come leads (that is what people are asked to confirm); a slot already gone by follows, marked missed.
  */
+@Suppress("LongMethod")
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FittingsScreen() {
@@ -103,7 +104,9 @@ fun FittingsScreen() {
             if (shown.isEmpty()) {
                 EmptyState(if (q.isNotBlank()) t("csync_fittings_none_match") else t("csync_fittings_empty_title"))
             } else {
-                androidx.compose.runtime.CompositionLocalProvider(LocalRecordCounts provides rememberCommentCounts("FITTING")) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalRecordCounts provides rememberCommentCounts("FITTING")
+                ) {
                     shown.forEach { x ->
                         FittingRow(x, projectName, onRequest = { request = it })
                     }
@@ -125,7 +128,9 @@ fun FittingsScreen() {
     WfDraftRequestDialog(
         draft = request,
         entityType = "FITTING",
-        title = if (request?.entityId != null) t("csync_send_request_this_fitting") else t("csync_send_reminder_fittings"),
+        title = if (
+            request?.entityId != null
+        ) t("csync_send_request_this_fitting") else t("csync_send_reminder_fittings"),
         onClose = { request = null },
     )
 }
@@ -149,10 +154,18 @@ private fun FittingRow(x: Rec, projectName: String, onRequest: (RequestDraft) ->
         leading = { SquareAvatar(wfInitials(character)) },
         end = {
             val summary = "${t("csync_fitting")}: $character" + (if (actor.isNotBlank()) " ($actor)" else "") +
-                "\n${fmtDateTime(x.long("scheduled_at"))}" + (if (x.str("location").isNotBlank()) " · ${x.str("location")}" else "")
+                "\n${fmtDateTime(x.long("scheduled_at"))}" + (
+                    if (x.str("location").isNotBlank()) " · ${x.str("location")}" else ""
+                )
             WfSendRequestButton {
                 onRequest(
-                    recordRequestDraft(x.id, "${t("csync_fitting")} · $character", summary, t("csync_ask_fitting"), projectName),
+                    recordRequestDraft(
+                        x.id,
+                        "${t("csync_fitting")} · $character",
+                        summary,
+                        t("csync_ask_fitting"),
+                        projectName
+                    ),
                 )
             }
             RecordActions("FITTING", x.id, "${t("csync_fitting")} · $character", summary)

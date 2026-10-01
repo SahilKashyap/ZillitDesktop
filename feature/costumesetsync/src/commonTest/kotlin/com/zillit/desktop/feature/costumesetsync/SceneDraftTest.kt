@@ -124,7 +124,8 @@ class SceneDraftTest {
     fun toDraftFlattensASceneAndStartsWithNoCastEdits() {
         val d = toDraft(
             sceneRec(
-                """{"number":"12A","episode":"","script_day":"Day 2","int_ext":"INT","location":"Kitchen","synopsis":"Tea.",
+                """{"number":"12A","episode":"","script_day":"Day 2","int_ext":"INT","location":"Kitchen",
+                "synopsis":"Tea.",
                 |"shoot_date":0,"characters":[{"character_id":"c1"},{"character_id":"c2"}]}""".trimMargin(),
             ),
         )
@@ -181,7 +182,9 @@ class SceneDraftTest {
 
     @Test
     fun readinessReportsTheWorstOfTheFourProblemStatuses() {
-        val worse = sceneRec("""{"change":{"items":[{"costume":{"status":"CLEANING"}},{"costume":{"status":"MISSING"}}]}}""")
+        val worse = sceneRec(
+            """{"change":{"items":[{"costume":{"status":"CLEANING"}},{"costume":{"status":"MISSING"}}]}}""",
+        )
         assertEquals("MISSING", readinessOf(worse))
         val ready = sceneRec("""{"change":{"items":[{"costume":{"status":"READY"}}]}}""")
         assertEquals("READY", readinessOf(ready))
@@ -190,7 +193,9 @@ class SceneDraftTest {
     @Test
     fun aLookWithNoPiecesReadsReady() {
         assertEquals("READY", readinessOf(sceneRec("""{"change":{"items":[]}}""")))
-        val retired = sceneRec("""{"change":{"items":[{"costume":{"status":"RETIRED"}},{"costume":{"status":"RETURNED_TO_VENDOR"}}]}}""")
+        val retired = sceneRec(
+            """{"change":{"items":[{"costume":{"status":"RETIRED"}},{"costume":{"status":"RETURNED_TO_VENDOR"}}]}}""",
+        )
         assertEquals("READY", readinessOf(retired))
     }
 
@@ -203,8 +208,10 @@ class SceneDraftTest {
     }
 
     private val reviewed = sceneRec(
-        """{"number":"4","name":"Kitchen - Day","int_ext":"INT","location":"Kitchen","time_of_day":"DAY","script_day":"Day 1",
-        |"pages":"1","synopsis":"Tea.","previous":{"int_ext":"INT","location":"kitchen ","time_of_day":"DAY","script_day":"Day 1",
+        """{"number":"4","name":"Kitchen - Day","int_ext":"INT","location":"Kitchen","time_of_day":"DAY",
+        "script_day":"Day 1",
+        |"pages":"1","synopsis":"Tea.","previous":{"int_ext":"INT","location":"kitchen ","time_of_day":"DAY",
+        "script_day":"Day 1",
         |"pages":"1","synopsis":"Tea."}}""".trimMargin(),
     )
 
@@ -237,8 +244,17 @@ class SceneDraftTest {
     @Test
     fun scriptReviewRenamesASceneWhoseLocationOrTimeWasCorrected() {
         assertEquals("Kitchen - Day", editedName(reviewed, sceneRec("""{"location":"Kitchen","time_of_day":"DAY"}""")))
-        assertEquals("Garden - Night", editedName(reviewed, sceneRec("""{"location":"Garden","time_of_day":"NIGHT"}""")))
-        assertEquals("Tea time", editedName(sceneRec("""{"name":"Tea time","location":"Kitchen","time_of_day":"DAY"}"""), sceneRec("""{"location":"kitchen","time_of_day":"DAY"}""")))
+        assertEquals(
+            "Garden - Night",
+            editedName(reviewed, sceneRec("""{"location":"Garden","time_of_day":"NIGHT"}""")),
+        )
+        assertEquals(
+            "Tea time",
+            editedName(
+                sceneRec("""{"name":"Tea time","location":"Kitchen","time_of_day":"DAY"}"""),
+                sceneRec("""{"location":"kitchen","time_of_day":"DAY"}"""),
+            ),
+        )
         assertNotNull(editedName(reviewed, null))
     }
 }

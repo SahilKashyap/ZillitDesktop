@@ -28,18 +28,32 @@ object DayKeys {
     fun parse(key: String): LocalDate? = runCatching { LocalDate.parse(key.trim()) }.getOrNull()
 
     /** `Tue 29 Sep` (the on-set heading's `ddd DD MMM`). */
-    fun short(key: String): String = parse(key)?.let { "${weekday(it.dayOfWeek, long = false)} ${two(it.dayOfMonth)} ${month(it.month, long = false)}" }.orEmpty()
+    fun short(key: String): String = parse(key)
+        ?.let { "${weekday(it.dayOfWeek, long = false)} ${two(it.dayOfMonth)} ${month(it.month, long = false)}" }
+        .orEmpty()
 
     /** `Tue, 29 Sep 2026` (the book's `ddd, DD MMM YYYY`). */
     fun medium(key: String): String =
-        parse(key)?.let { "${weekday(it.dayOfWeek, long = false)}, ${two(it.dayOfMonth)} ${month(it.month, long = false)} ${it.year}" }.orEmpty()
+        parse(key)
+            ?.let {
+                "${weekday(it.dayOfWeek, long = false)}, ${two(it.dayOfMonth)} " +
+                    "${month(it.month, long = false)} ${it.year}"
+            }
+            .orEmpty()
 
     /** `Tuesday, 29 September 2026` (the printed book's cover). */
     fun long(key: String): String =
-        parse(key)?.let { "${weekday(it.dayOfWeek, long = true)}, ${two(it.dayOfMonth)} ${month(it.month, long = true)} ${it.year}" }.orEmpty()
+        parse(key)
+            ?.let {
+                "${weekday(it.dayOfWeek, long = true)}, ${two(it.dayOfMonth)} " +
+                    "${month(it.month, long = true)} ${it.year}"
+            }
+            .orEmpty()
 
     /** `DD/MM/YYYY`, the web date pickers' display. */
-    fun slashed(key: String): String = parse(key)?.let { "${two(it.dayOfMonth)}/${two(it.monthNumber)}/${it.year}" }.orEmpty()
+    fun slashed(key: String): String = parse(key)
+        ?.let { "${two(it.dayOfMonth)}/${two(it.monthNumber)}/${it.year}" }
+        .orEmpty()
 
     private fun two(n: Int) = n.toString().padStart(2, '0')
 

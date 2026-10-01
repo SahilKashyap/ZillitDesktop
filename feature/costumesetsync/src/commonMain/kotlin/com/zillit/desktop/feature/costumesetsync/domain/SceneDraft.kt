@@ -27,6 +27,13 @@ val INT_EXT_FALLBACK = listOf("INT", "EXT", "INT/EXT")
 /** The largest cast number the service stores (a 32-bit integer). */
 private const val CAST_NUMBER_MAX = 2147483647L
 
+/** Year, month and day: the three parts of a date key. */
+private const val DATE_PARTS = 3
+
+/** The save-order loop runs at most this many passes per draft, plus slack, so it can never spin. */
+private const val GUARD_FACTOR = 2
+private const val GUARD_SLACK = 4
+
 // -- dates -----------------------------------------------------------------
 
 /**
@@ -43,8 +50,12 @@ fun dateKey(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String
 /** `YYYY-MM-DD` → epoch ms at local midnight. An empty or unreadable key clears the date (0). */
 fun dateMs(key: String?, zone: TimeZone = TimeZone.currentSystemDefault()): Long {
     val parts = key.orEmpty().split('-').map { it.toIntOrNull() }
-    if (parts.size < 3 || parts.any { it == null || it == 0 }) return 0L
-    return runCatching { LocalDate(parts[0] ?: 0, parts[1] ?: 0, parts[2] ?: 0).atStartOfDayIn(zone).toEpochMilliseconds() }
+    if (parts.size < DATE_PARTS || parts.any { it == null || it == 0 }) return 0L
+    return runCatching { LocalDate(
+        parts[0] ?: 0,
+        parts[1] ?: 0,
+        parts[2] ?: 0,
+    ).atStartOfDayIn(zone).toEpochMilliseconds() }
         .getOrDefault(0L)
 }
 
@@ -67,7 +78,10 @@ private val DAY_SHORT = Regex("^([dn])\\s*(\\d+[a-z]?)$", RegexOption.IGNORE_CAS
 fun parseScriptDay(value: String?): DayParts {
     val raw = value.orEmpty().trim()
     DAY_WORD.find(raw)?.let { m ->
-        return DayParts(if (m.groupValues[1].startsWith("d", ignoreCase = true)) "Day" else "Night", m.groupValues[2].trim())
+        return DayParts(
+            if (m.groupValues[1].startsWith("d", ignoreCase = true)) "Day" else "Night",
+            m.groupValues[2].trim(),
+        )
     }
     DAY_SHORT.find(raw)?.let { m ->
         return DayParts(if (m.groupValues[1].startsWith("d", ignoreCase = true)) "Day" else "Night", m.groupValues[2])
@@ -121,7 +135,9 @@ fun toDraft(scene: Rec?): SceneDraft {
 }
 
 /** `DAY` → `Day`, the way the parser writes the time into a scene's name. */
-private fun timeWord(v: String?): String = v?.takeIf { it.isNotEmpty() }?.let { it.take(1) + it.drop(1).lowercase() }.orEmpty()
+internal fun timeWord(v: String?): String = v?.takeIf { it.isNotEmpty() }
+    ?.let { it.take(1) + it.drop(1).lowercase() }
+    .orEmpty()
 
 /**
  * The parser names a scene "Location - Time", so an edited location renames it
@@ -181,7 +197,11 @@ data class SaveStep(val key: String, val tempNumber: String? = null)
  *
  * [sceneNumbers] maps a scene id to the number it holds now.
  */
-fun planSaveOrder(keys: List<String>, drafts: Map<String, SceneDraft>, sceneNumbers: Map<String, String>): List<SaveStep> {
+fun planSaveOrder(
+    keys: List<String>,
+    drafts: Map<String, SceneDraft>,
+    sceneNumbers: Map<String, String>,
+): List<SaveStep> {
     val pending = LinkedHashSet(keys)
     val holder = HashMap<String, String>() // number currently in the database -> the draft holding it
     keys.forEach { k -> sceneNumbers[k]?.let { holder[it] = k } }
@@ -190,7 +210,7 @@ fun planSaveOrder(keys: List<String>, drafts: Map<String, SceneDraft>, sceneNumb
         return h?.takeIf { it != k && it in pending }
     }
     val steps = ArrayList<SaveStep>()
-    var guard = keys.size * 2 + 4
+    var guard = keys.size * GUARD_FACTOR + GUARD_SLACK
     while (pending.isNotEmpty() && guard-- > 0) {
         val ready = pending.filter { blockedBy(it) == null }
         if (ready.isNotEmpty()) {
@@ -211,183 +231,3 @@ fun planSaveOrder(keys: List<String>, drafts: Map<String, SceneDraft>, sceneNumb
 }
 
 private const val TEMP_KEY_CHARS = 6
-
-// -- display helpers ---------------------------------------------------------
-
-/** `"3. Priya"` when the character has a cast number, otherwise just the name. */
-fun castLabel(c: Rec?): String {
-    if (c == null) return ""
-    val number = c.str("cast_number")
-    return if (c.has("cast_number") && number.isNotEmpty()) "$number. ${c.str("name")}" else c.str("name")
-}
-
-private val CAST_ORDER = Comparator<Pair<Long?, String>> { a, b ->
-    val byNumber = (a.first ?: Long.MAX_VALUE).compareTo(b.first ?: Long.MAX_VALUE)
-    if (byNumber != 0) byNumber else a.second.compareTo(b.second, ignoreCase = true)
-}
-
-/** Cast-number order; characters without a number come last, alphabetically. */
-fun <T> sortByCast(list: List<T>, number: (T) -> Long?, name: (T) -> String): List<T> =
-    list.sortedWith { a, b -> CAST_ORDER.compare(number(a) to name(a), number(b) to name(b)) }
-
-fun sortByCast(list: List<Rec>): List<Rec> =
-    sortByCast(list, { c -> c.long("cast_number").takeIf { c.has("cast_number") } }, { it.str("name") })
-
-fun initials(name: String?): String =
-    name.orEmpty().split(Regex("\\s+")).filter { it.isNotEmpty() }.take(2).joinToString("") { it.take(1).uppercase() }
-
-/** `INT. LIVING ROOM` — the script-location column. */
-fun scriptLoc(s: Rec): String =
-    listOf(s.str("int_ext").takeIf { it.isNotEmpty() }?.let { "$it." }.orEmpty(), s.str("location").uppercase())
-        .filter { it.isNotEmpty() }.joinToString(" ")
-
-fun truncate(s: String?, n: Int = TRUNCATE_AT): String = when {
-    s.isNullOrEmpty() -> ""
-    s.length > n -> s.take(n - 1).trimEnd() + "…"
-    else -> s
-}
-
-private const val TRUNCATE_AT = 60
-
-/** A text/tooltip pair for a table cell listing several characters. */
-data class CellText(val text: String, val title: String)
-
-/** A scene character, resolved against the full character list. */
-data class CastRow(
-    val characterId: String,
-    val name: String,
-    val castNumber: Long?,
-    val actor: String?,
-    val change: Rec?,
-)
-
-/** A scene's characters resolved in cast order, whatever order the service sent them. */
-fun resolveCast(chars: List<Rec>, byId: Map<String, Rec>): List<CastRow> = sortByCast(
-    chars.map { c ->
-        val full = byId[c.str("character_id")]
-        val embedded = c.rec("character")
-        CastRow(
-            characterId = c.str("character_id"),
-            name = embedded?.str("name")?.ifEmpty { null } ?: full?.str("name").orEmpty(),
-            castNumber = (embedded?.takeIf { it.has("cast_number") } ?: full?.takeIf { it.has("cast_number") })?.long("cast_number"),
-            actor = full?.rec("actor")?.str("name")?.ifEmpty { null },
-            change = c.rec("change"),
-        )
-    },
-    { it.castNumber },
-    { it.name },
-)
-
-/** Resolved straight from character records (a draft's principals, which are ids). */
-fun castRowsOfIds(ids: List<String>, byId: Map<String, Rec>): List<CastRow> = sortByCast(
-    ids.mapNotNull { byId[it] }.map { c ->
-        CastRow(c.id, c.str("name"), c.long("cast_number").takeIf { c.has("cast_number") }, c.rec("actor")?.str("name")?.ifEmpty { null }, null)
-    },
-    { it.castNumber },
-    { it.name },
-)
-
-private fun CastRow.label(): String = if (castNumber != null) "$castNumber. $name" else name
-
-fun namesOf(rows: List<CastRow>) = CellText(rows.joinToString(", ") { it.name }, rows.joinToString("\n") { it.label() })
-
-/** Their cast numbers, in the same order. A character without one is left out. */
-fun castNumbersOf(rows: List<CastRow>): CellText {
-    val numbered = rows.filter { it.castNumber != null }
-    return CellText(numbered.joinToString(", ") { it.castNumber.toString() }, numbered.joinToString("\n") { it.label() })
-}
-
-/** The actors playing them, in the same order. A part with nobody cast is left out. */
-fun castMembersOf(rows: List<CastRow>): CellText {
-    val cast = rows.filter { !it.actor.isNullOrEmpty() }
-    return CellText(cast.joinToString(", ") { it.actor.orEmpty() }, cast.joinToString("\n") { "${it.actor} · ${it.name}" })
-}
-
-/** The change number each one wears ("#13, #8"). A character with no change yet is left out. */
-fun changesOf(rows: List<CastRow>): CellText {
-    val worn = rows.filter { it.change != null }
-    return CellText(
-        worn.joinToString(", ") { "#${it.change?.str("change_number")}" },
-        worn.joinToString("\n") { "${it.name} · #${it.change?.str("change_number")} ${it.change?.str("name")}" },
-    )
-}
-
-/** `#13 Rain coat`, the label a breakdown row shows in the Change column. */
-fun changeLabel(change: Rec?): String = if (change == null) "" else "#${change.str("change_number")} ${change.str("name")}".trim()
-
-private val ROW_PROBLEMS = listOf("MISSING", "DAMAGED", "ALTERATION", "CLEANING")
-
-/**
- * A breakdown row's dot, by the reference's row rule: no look is unassigned,
- * otherwise the worst of the four problem statuses among its pieces, else
- * ready. Unlike the scene-level readiness, a look with no pieces reads ready.
- */
-fun readinessOf(sceneCharacter: Rec): String {
-    val change = sceneCharacter.rec("change") ?: return "NOT_ASSIGNED"
-    val statuses = change.recs("items").map { it.rec("costume")?.str("status").orEmpty() }
-    return ROW_PROBLEMS.firstOrNull { it in statuses } ?: "READY"
-}
-
-// -- script review -------------------------------------------------------------
-
-/** The fields a script upload compares with what each scene says now. */
-val REVIEW_FIELDS = listOf("int_ext", "location", "script_day", "time_of_day", "pages", "synopsis")
-
-private fun norm(v: String?): String = v.orEmpty().replace(Regex("\\s+"), " ").trim().lowercase()
-
-fun sameText(a: String?, b: String?): Boolean = norm(a) == norm(b)
-
-/** The compared fields the script (or the hand edit) would change; none for a new scene. */
-fun changedFields(scene: Rec, edited: Rec? = null): List<String> {
-    val previous = scene.rec("previous") ?: return emptyList()
-    val next = edited ?: scene
-    return REVIEW_FIELDS.filter { !sameText(previous.str(it), next.str(it)) }
-}
-
-/** `INT. Kitchen`, the slugline a review row shows. */
-fun slugOf(f: Rec?): String = if (f == null) "" else listOf(f.str("int_ext"), f.str("location")).filter { it.isNotEmpty() }.joinToString(". ")
-
-/** A hand-corrected location or time renames the scene "Location - Time", as the parser names it. */
-fun editedName(scene: Rec, edit: Rec?): String {
-    if (edit == null) return scene.str("name")
-    if (sameText(edit.str("location"), scene.str("location")) && sameText(edit.str("time_of_day"), scene.str("time_of_day"))) {
-        return scene.str("name")
-    }
-    return listOf(edit.str("location"), timeWord(edit.str("time_of_day"))).filter { it.isNotEmpty() }.joinToString(" - ")
-        .ifEmpty { scene.str("name") }
-}
-
-/**
- * The service leaves a scene whose script text has not moved alone, so a row
- * the review shows as changing (corrected by hand, or with fields that differ
- * from the scene now) must be forced, or Replace would quietly do nothing.
- */
-fun forceImport(scene: Rec, edited: Boolean): Boolean = edited || changedFields(scene).isNotEmpty()
-
-// -- per-character cast edits ----------------------------------------------------------
-
-/** The cast number a character has now, as the text a field shows. */
-fun castNumberText(c: Rec): String = if (c.has("cast_number")) c.str("cast_number") else ""
-
-/** The id of the actor playing a character now (`actor_id`, else the embedded actor). */
-fun actorIdOf(c: Rec): String = c.str("actor_id").ifEmpty { c.rec("actor")?.id.orEmpty() }
-
-/**
- * Cast edits are per character, so each is merged into the draft's map rather
- * than replacing it — and a value typed back to what the character already has
- * stops being an edit, so the row does not stay dirty and no pointless write is sent.
- */
-fun SceneDraft.withCastNumber(c: Rec, typed: String): SceneDraft {
-    val now = cast[c.id] ?: CastEdit()
-    val next = now.copy(castNumber = typed.takeIf { it.trim() != castNumberText(c) })
-    return withCastEdit(c.id, next)
-}
-
-fun SceneDraft.withCastActor(c: Rec, actorId: String): SceneDraft {
-    val now = cast[c.id] ?: CastEdit()
-    val next = now.copy(actorId = actorId.takeIf { it != actorIdOf(c) })
-    return withCastEdit(c.id, next)
-}
-
-private fun SceneDraft.withCastEdit(characterId: String, edit: CastEdit): SceneDraft =
-    copy(cast = if (edit.isEmpty) cast - characterId else cast + (characterId to edit))

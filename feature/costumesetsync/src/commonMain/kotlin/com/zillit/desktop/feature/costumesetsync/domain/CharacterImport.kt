@@ -8,7 +8,12 @@ package com.zillit.desktop.feature.costumesetsync.domain
  * editable; [deleted] FLAGS rather than removes, which is what lets Delete All
  * be undone row by row with Restore.
  */
-data class ImportRow(val name: String, val castNumber: String = "", val deleted: Boolean = false, val manual: Boolean = false)
+data class ImportRow(
+    val name: String,
+    val castNumber: String = "",
+    val deleted: Boolean = false,
+    val manual: Boolean = false
+)
 
 /** The two maps the import endpoint takes. A null name in [characterMap] says "not a character at all". */
 data class CharacterImport(val characterMap: Map<String, String?>, val castNumbers: Map<String, Long>)
@@ -49,11 +54,11 @@ fun buildCharacterImport(rows: List<ImportRow>, existing: List<Rec> = emptyList(
         if (name.isEmpty()) continue
         if (r.deleted) {
             map[name] = null
-            continue
+        } else {
+            val target = known[name.lowercase()]?.str("name")?.ifEmpty { null } ?: name
+            map[name] = target
+            castNumberOf(r)?.let { numbers[target] = it }
         }
-        val target = known[name.lowercase()]?.str("name")?.ifEmpty { null } ?: name
-        map[name] = target
-        castNumberOf(r)?.let { numbers[target] = it }
     }
     return CharacterImport(map, numbers)
 }
@@ -63,13 +68,17 @@ fun buildCharacterImport(rows: List<ImportRow>, existing: List<Rec> = emptyList(
  * never speaks. The breakdown import only creates the names it finds IN scenes,
  * so these have to be created on their own.
  */
-fun manualCharacters(rows: List<ImportRow>, existing: List<Rec> = emptyList(), detected: List<Rec> = emptyList()): List<ManualCharacter> {
+fun manualCharacters(
+    rows: List<ImportRow>,
+    existing: List<Rec> = emptyList(),
+    detected: List<Rec> = emptyList()
+): List<ManualCharacter> {
     val known = (existing + detected).map { it.str("name").lowercase() }.toMutableSet()
     val out = ArrayList<ManualCharacter>()
     for (r in rows) {
         val name = r.name.trim()
-        if (!r.manual || r.deleted || name.isEmpty()) continue
-        if (!known.add(name.lowercase())) continue
+        val skip = !r.manual || r.deleted || name.isEmpty()
+        if (skip || !known.add(name.lowercase())) continue
         out.add(ManualCharacter(name, castNumberOf(r)))
     }
     return out

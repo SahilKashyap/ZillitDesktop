@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costumesetsync.ui.screens
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,7 @@ import com.zillit.desktop.feature.costumesetsync.domain.relativeTime
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.SocketRefresh
+import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.SyncDialogShell
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.body
@@ -63,7 +65,10 @@ fun rememberCommentCounts(entityType: String): Map<String, Int> {
     var counts by remember(entityType) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var tick by remember(entityType) { mutableStateOf(0) }
     LaunchedEffect(entityType, tick) {
-        val rec = ((ctx.api.get("/comments/counts", mapOf("entityType" to entityType)) as? ZillitResult.Success)?.data)?.rec
+        val rec = ((ctx.api.get(
+            "/comments/counts",
+            mapOf("entityType" to entityType),
+        ) as? ZillitResult.Success)?.data)?.rec
         counts = rec?.json?.keys.orEmpty().associateWith { rec!!.int(it) }
     }
     SocketRefresh(SyncEvents.Comment) { tick++ }
@@ -103,7 +108,13 @@ fun RecordActions(
             tint = ZillitTheme.colors.textSecondary,
             size = 28.dp,
         )
-        ZillitIconButton(ZillitIcons.Chat, "${t("csync_chat")} — $title", onClick = { chatOpen = true }, tint = ZillitTheme.colors.textSecondary, size = 28.dp)
+        ZillitIconButton(
+            ZillitIcons.Chat,
+            "${t("csync_chat")} — $title",
+            onClick = { chatOpen = true },
+            tint = ZillitTheme.colors.textSecondary,
+            size = 28.dp,
+        )
         if (live > 0) {
             ZillitText(
                 live.toString(),
@@ -117,7 +128,68 @@ fun RecordActions(
 }
 
 @Composable
-internal fun RecordChatDialog(entityType: String, entityId: String, title: String, onClose: () -> Unit, onCount: (Int) -> Unit) {
+private fun ChatMessages(messages: List<Rec>?, scroll: ScrollState, onAskDelete: (String) -> Unit) {
+    val ctx = LocalSync.current
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = CHAT_MIN_HEIGHT, max = CHAT_MAX_HEIGHT).verticalScroll(scroll),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        val list = messages
+        when {
+            list == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                MutedText("…")
+            }
+            list.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                MutedText(t("csync_chat_empty"), maxLines = 3)
+            }
+            else -> list.forEach { m -> ChatMessage(m, ctx.currentUserId, ctx.now()) { onAskDelete(m.id) } }
+        }
+    }
+}
+
+@Composable
+private fun ChatComposer(text: String, onText: (String) -> Unit, canSend: Boolean, onSend: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        TextInput(
+            text,
+            onText,
+            label = "",
+            modifier = Modifier.weight(1f).onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && !e.isShiftPressed) {
+                    onSend()
+                    true
+                } else {
+                    false
+                }
+            },
+            placeholder = t("csync_chat_placeholder"),
+            multiline = true,
+        )
+        ZillitIconButton(ZillitIcons.Send, t("csync_send"), onSend, enabled = canSend, size = 36.dp, filled = canSend)
+    }
+}
+
+private suspend fun SyncCtx.loadComments(entityType: String, entityId: String): List<Rec> =
+    (api.get("/comments", mapOf("entityType" to entityType, "entityId" to entityId)) as? ZillitResult.Success)
+        ?.data?.rows.orEmpty()
+
+private suspend fun SyncCtx.postComment(entityType: String, entityId: String, text: String): Boolean =
+    write {
+        api.post("/comments", body("entity_type" to entityType, "entity_id" to entityId, "body" to text))
+    } != null
+
+@Composable
+internal fun RecordChatDialog(
+    entityType: String,
+    entityId: String,
+    title: String,
+    onClose: () -> Unit,
+    onCount: (Int) -> Unit,
+) {
     val ctx = LocalSync.current
     var messages by remember { mutableStateOf<List<Rec>?>(null) }
     var text by remember { mutableStateOf("") }
@@ -127,21 +199,26 @@ internal fun RecordChatDialog(entityType: String, entityId: String, title: Strin
     val scroll = rememberScrollState()
 
     LaunchedEffect(tick) {
-        val list = (ctx.api.get("/comments", mapOf("entityType" to entityType, "entityId" to entityId)) as? ZillitResult.Success)?.data?.rows.orEmpty()
+        val list = ctx.loadComments(entityType, entityId)
         messages = list
         onCount(list.size)
     }
     LaunchedEffect(messages?.size) { scroll.scrollTo(scroll.maxValue) }
-    SocketRefresh(SyncEvents.Comment, predicate = { it.str("entity_id").let { id -> id.isBlank() || id == entityId } }) { tick++ }
+    SocketRefresh(
+        SyncEvents.Comment,
+        predicate = { it.str("entity_id").let { id -> id.isBlank() || id == entityId } },
+    ) {
+        tick++
+    }
 
     val canSend = text.isNotBlank() && !sending
     val send: () -> Unit = {
         if (canSend) {
             sending = true
             ctx.scope.launch {
-                val ok = ctx.write { ctx.api.post("/comments", body("entity_type" to entityType, "entity_id" to entityId, "body" to text.trim())) }
+                val ok = ctx.postComment(entityType, entityId, text.trim())
                 sending = false
-                if (ok != null) {
+                if (ok) {
                     text = ""
                     tick++
                 }
@@ -149,34 +226,16 @@ internal fun RecordChatDialog(entityType: String, entityId: String, title: Strin
         }
     }
 
-    SyncDialogShell(title = "${t("csync_chat")} · $title", visible = true, onDismiss = onClose, width = CHAT_WIDTH.dp, scrollable = false) {
-        Column(Modifier.fillMaxWidth().heightIn(min = CHAT_MIN_HEIGHT, max = CHAT_MAX_HEIGHT).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val list = messages
-            when {
-                list == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { MutedText("…") }
-                list.isEmpty() -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { MutedText(t("csync_chat_empty"), maxLines = 3) }
-                else -> list.forEach { m -> ChatMessage(m, ctx.currentUserId, ctx.now()) { confirm = m.id } }
-            }
-        }
+    SyncDialogShell(
+        title = "${t("csync_chat")} · $title",
+        visible = true,
+        onDismiss = onClose,
+        width = CHAT_WIDTH.dp,
+        scrollable = false,
+    ) {
+        ChatMessages(messages, scroll) { confirm = it }
         Box(Modifier.fillMaxWidth().padding(vertical = 12.dp).size(1.dp).background(ZillitTheme.colors.border))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
-            TextInput(
-                text,
-                { text = it },
-                label = "",
-                modifier = Modifier.weight(1f).onPreviewKeyEvent { e ->
-                    if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && !e.isShiftPressed) {
-                        send()
-                        true
-                    } else {
-                        false
-                    }
-                },
-                placeholder = t("csync_chat_placeholder"),
-                multiline = true,
-            )
-            ZillitIconButton(ZillitIcons.Send, t("csync_send"), send, enabled = canSend, size = 36.dp, filled = canSend)
-        }
+        ChatComposer(text, { text = it }, canSend, send)
     }
     WfConfirm(
         open = confirm != null,
@@ -208,7 +267,9 @@ private fun ChatMessage(m: Rec, me: String, now: Long, onDelete: () -> Unit) {
             Box(Modifier.size(8.dp))
         }
         Column(
-            Modifier.widthIn(max = 460.dp).clip(RoundedCornerShape(10.dp)).background(if (mine) colors.accentSoft else colors.surfaceSunken).padding(horizontal = 10.dp, vertical = 8.dp),
+            Modifier.widthIn(max = 460.dp).clip(RoundedCornerShape(10.dp)).background(
+                if (mine) colors.accentSoft else colors.surfaceSunken,
+            ).padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 ZillitText(
@@ -216,7 +277,13 @@ private fun ChatMessage(m: Rec, me: String, now: Long, onDelete: () -> Unit) {
                     style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp),
                     color = colors.textMuted,
                 )
-                if (mine) ZillitIconButton(ZillitIcons.Trash, t("csync_delete"), onDelete, tint = colors.textMuted, size = 20.dp)
+                if (mine) ZillitIconButton(
+                    ZillitIcons.Trash,
+                    t("csync_delete"),
+                    onDelete,
+                    tint = colors.textMuted,
+                    size = 20.dp,
+                )
             }
             ZillitText(m.str("body"), style = ZillitTheme.typography.bodyMedium)
         }

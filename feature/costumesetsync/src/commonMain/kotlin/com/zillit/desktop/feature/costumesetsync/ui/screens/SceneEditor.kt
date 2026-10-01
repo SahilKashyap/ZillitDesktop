@@ -86,7 +86,12 @@ internal class SceneEditor(private val ctx: SyncCtx, private val writes: SceneWr
         savingKey = key
         ctx.scope.launch {
             val outcome = persistDraft(
-                writes, draft, if (key == NEW_KEY) null else key, sceneById[key], revision.ifEmpty { null }, ::castProblemText,
+                writes,
+                draft,
+                if (key == NEW_KEY) null else key,
+                sceneById[key],
+                revision.ifEmpty { null },
+                ::castProblemText,
             )
             savingKey = null
             ctx.report(outcome.result)
@@ -108,35 +113,45 @@ internal class SceneEditor(private val ctx: SyncCtx, private val writes: SceneWr
      * failed, so the user sees exactly what still needs saving; the first failure
      * is the news, even when a later row saved.
      */
+    @Suppress("CyclomaticComplexMethod")
     fun saveAll(keys: List<String>, sceneById: Map<String, Rec>, revision: String, onSaved: () -> Unit) {
         savingAll = true
         ctx.scope.launch {
-            val failed = LinkedHashMap<String, String?>() // draft key -> id of a scene created before a later step failed
+            // draft key -> id of a scene created before a later step failed
+            val failed = LinkedHashMap<String, String?>()
             var firstFailure: ZillitResult<Answer>? = null
             var lastOk: ZillitResult<Answer>? = null
             val numbers = sceneById.mapValues { it.value.str("number") }
             for (step in planSaveOrder(keys, drafts, numbers)) {
                 if (step.key in failed) continue
+                val draft = drafts[step.key]
                 if (step.tempNumber != null) {
                     val res = writes.updateScene(step.key, mapOf<String, Any>("number" to step.tempNumber).toJsonBody())
                     if (res !is ZillitResult.Success) {
                         failed[step.key] = null
                         firstFailure = firstFailure ?: res
                     }
-                    continue
-                }
-                val draft = drafts[step.key] ?: continue
-                val outcome = persistDraft(
-                    writes, draft, if (step.key == NEW_KEY) null else step.key, sceneById[step.key], revision.ifEmpty { null }, ::castProblemText,
-                )
-                if (outcome.ok) {
-                    lastOk = outcome.result ?: lastOk
-                } else {
-                    failed[step.key] = outcome.sceneId
-                    firstFailure = firstFailure ?: outcome.result
+                } else if (draft != null) {
+                    val existingId = if (step.key == NEW_KEY) null else step.key
+                    val outcome = persistDraft(
+                        writes,
+                        draft,
+                        existingId,
+                        sceneById[step.key],
+                        revision.ifEmpty { null },
+                        ::castProblemText,
+                    )
+                    if (outcome.ok) {
+                        lastOk = outcome.result ?: lastOk
+                    } else {
+                        failed[step.key] = outcome.sceneId
+                        firstFailure = firstFailure ?: outcome.result
+                    }
                 }
             }
-            val kept = failed.entries.associate { (key, createdId) -> (if (key == NEW_KEY && createdId != null) createdId else key) to drafts.getValue(key) }
+            val kept = failed.entries.associate { (key, createdId) ->
+                (if (key == NEW_KEY && createdId != null) createdId else key) to drafts.getValue(key)
+            }
             drafts = kept
             savingAll = false
             if (failed.isEmpty()) editAll = false
@@ -158,7 +173,11 @@ internal class SceneEditor(private val ctx: SyncCtx, private val writes: SceneWr
  * Per-draft problems that stop a save: a scene number is required, and must be
  * unique against other drafts and against the scenes that are not being edited.
  */
-internal fun draftProblems(scenes: List<Rec>, drafts: Map<String, SceneDraft>, keys: List<String>): Map<String, String> {
+internal fun draftProblems(
+    scenes: List<Rec>,
+    drafts: Map<String, SceneDraft>,
+    keys: List<String>
+): Map<String, String> {
     val taken = scenes.filter { it.id !in drafts }.map { it.str("number") }.toSet()
     val seen = HashSet<String>()
     val out = LinkedHashMap<String, String>()

@@ -70,7 +70,13 @@ import kotlinx.serialization.json.buildJsonObject
 private val FITTING_CLOSED = setOf("COMPLETED", "CANCELLED")
 
 /** The "Alteration required" form of one piece. */
-private data class AlterationDraft(val costumeId: String, val issue: String = "", val required: String = "", val date: String = "", val time: String = "") {
+private data class AlterationDraft(
+    val costumeId: String,
+    val issue: String = "",
+    val required: String = "",
+    val date: String = "",
+    val time: String = "",
+) {
     val valid: Boolean get() = issue.isNotBlank() && required.isNotBlank()
 }
 
@@ -87,14 +93,18 @@ private data class NoteEdit(val costumeId: String, val text: String)
 fun FittingDetailScreen(fittingId: String) {
     val ctx = LocalSync.current
     val fitting = rememberResource(fittingId) { api.get("/fittings/$fittingId") }
-    SocketRefresh(SyncEvents.Fitting, predicate = { it.str("entity_id") == fittingId }) { fitting.reload(silent = true) }
+    SocketRefresh(SyncEvents.Fitting, predicate = { it.str("entity_id") == fittingId }) {
+        fitting.reload(silent = true)
+    }
 
     when (val state = fitting.state) {
         Load.Loading -> LoadingView()
         is Load.Failed -> FittingNotFound { ctx.nav.back() }
         is Load.Ready -> {
             val rec = state.value.rec
-            if (rec == null) FittingNotFound { ctx.nav.back() } else FittingBody(rec, fittingId) { fitting.reload(silent = true) }
+            if (rec == null) FittingNotFound { ctx.nav.back() } else FittingBody(rec, fittingId) {
+                fitting.reload(silent = true)
+            }
         }
     }
 }
@@ -108,135 +118,233 @@ private fun FittingNotFound(onBack: () -> Unit) {
     )
 }
 
-@Composable
-private fun FittingBody(fitting: Rec, fittingId: String, reload: () -> Unit) {
-    val ctx = LocalSync.current
-    var busy by remember { mutableStateOf(false) }
-    var pickerOpen by remember { mutableStateOf(false) }
-    var alt by remember { mutableStateOf<AlterationDraft?>(null) }
-    var note by remember { mutableStateOf<NoteEdit?>(null) }
-    var discard by remember { mutableStateOf(false) }
-    var request by remember { mutableStateOf<RequestDraft?>(null) }
+/** The editable state of the open fitting, held in one place so the pieces of the screen can share it. */
+private class FittingDetailState {
+    var busy by mutableStateOf(false)
+    var pickerOpen by mutableStateOf(false)
+    var alt by mutableStateOf<AlterationDraft?>(null)
+    var note by mutableStateOf<NoteEdit?>(null)
+    var discard by mutableStateOf(false)
+    var request by mutableStateOf<RequestDraft?>(null)
+}
 
-    /** A write that reloads on success and clears [busy] either way; [after] runs on success. */
-    val run = { call: suspend () -> ZillitResult<Answer>, after: () -> Unit ->
-        busy = true
+/** The writes the fitting screen makes; each reloads on success and clears `busy` either way. */
+private class FittingWrites(
+    val ctx: SyncCtx,
+    val fittingId: String,
+    val ui: FittingDetailState,
+    val reload: () -> Unit,
+) {
+    /** A write that reloads on success and clears busy either way; [after] runs on success. */
+    fun run(call: suspend () -> ZillitResult<Answer>, after: () -> Unit) {
+        ui.busy = true
         ctx.scope.launch {
             val answer = ctx.write(call)
-            busy = false
+            ui.busy = false
             if (answer != null) {
                 after()
                 reload()
             }
         }
-        Unit
     }
-    val setItem = { costumeId: String, patch: JsonObject, after: () -> Unit ->
+
+    fun setItem(costumeId: String, patch: JsonObject, after: () -> Unit) {
         run({ ctx.api.patch("/fittings/$fittingId/items/$costumeId", patch) }, after)
     }
-    val setStatus = { status: String -> run({ ctx.api.patch("/fittings/$fittingId", body("status" to status)) }, {}) }
 
-    val items = fitting.recs("items")
+    fun setStatus(status: String) {
+        run({ ctx.api.patch("/fittings/$fittingId", body("status" to status)) }, {})
+    }
+}
+
+@Composable
+private fun FittingBody(fitting: Rec, fittingId: String, reload: () -> Unit) {
+    val ctx = LocalSync.current
+    val ui = remember { FittingDetailState() }
+    val writes = FittingWrites(ctx, fittingId, ui, reload)
     val character = fitting.rec("character") ?: Rec.Empty
-    val actor = character.rec("actor") ?: fitting.rec("actor")
+    FittingHeader(fitting, writes)
+    fitting.str("notes").takeIf { it.isNotBlank() }?.let {
+        WfNotice(it, Modifier.padding(bottom = ZillitTheme.spacing.md), info = true)
+    }
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        FittingChecklist(fitting, writes, Modifier.weight(1.4f))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            val actor = character.rec("actor") ?: fitting.rec("actor")
+            MeasurementsCard(character.rec("actor"), actor?.str("name").orEmpty())
+            ReferenceGrid(
+                entityType = "FITTING",
+                entityId = fittingId,
+                title = t("csync_fitting_photos"),
+                kinds = listOf("FRONT", "SIDE", "BACK", "DETAIL"),
+            )
+        }
+    }
+    FittingDialogs(fitting, writes)
+}
+
+@Composable
+private fun FittingHeader(fitting: Rec, writes: FittingWrites) {
+    val character = fitting.rec("character") ?: Rec.Empty
     val who = fittingWho(fitting)
     val sub = listOf(
         fmtDateTimeLong(fitting.long("scheduled_at")),
         fitting.str("location"),
-        fittedLine(fittedCount(fitting), items.size),
+        fittedLine(fittedCount(fitting), fitting.recs("items").size),
     ).filter { it.isNotBlank() }.joinToString(" · ")
-    val status = fitting.str("status")
-    val open = status !in FITTING_CLOSED
-    val projectName = ctx.project.name.ifBlank { t("csync_production") }
-
     PageHead(
         title = who,
         sub = sub,
         crumbs = "${t("csync_fittings_title")} / ${character.str("name")}",
-        titleContent = {
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                WfLargeAvatar(wfInitials(character.str("name")))
-                ZillitText(who, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), maxLines = 2)
-                StatusBadge(status, large = true)
-            }
-        },
-        actions = {
-            val summary = "${t("csync_fitting")}: ${character.str("name")}" +
-                (fitting.rec("actor")?.str("name")?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()) + "\n$sub"
-            RecordActions("FITTING", fittingId, "${t("csync_fitting")} · ${character.str("name")}", summary, count = rememberCommentCounts("FITTING")[fittingId] ?: 0)
-            if (ctx.canPost) {
-                WfSendRequestButton {
-                    request = recordRequestDraft(
-                        fittingId,
-                        "${t("csync_fitting")} · ${character.str("name")}",
-                        summary,
-                        t("csync_ask_fitting"),
-                        projectName,
-                    )
-                }
-                if (status == "SCHEDULED") {
-                    ZillitButton(t("csync_start_fitting"), onClick = { setStatus("IN_PROGRESS") }, variant = ButtonVariant.Secondary, enabled = !busy)
-                }
-                if (open) {
-                    ZillitButton(t("csync_complete"), onClick = { setStatus("COMPLETED") }, leadingIcon = ZillitIcons.Check, enabled = !busy)
-                    ZillitButton(t("csync_cancel"), onClick = { setStatus("CANCELLED") }, variant = ButtonVariant.Tertiary, enabled = !busy)
-                }
-            }
-        },
+        titleContent = { FittingTitle(who, character.str("name"), fitting.str("status")) },
+        actions = { FittingHeaderActions(fitting, sub, writes) },
     )
-    fitting.str("notes").takeIf { it.isNotBlank() }?.let { WfNotice(it, Modifier.padding(bottom = ZillitTheme.spacing.md), info = true) }
+}
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-        SectionCard(
-            modifier = Modifier.weight(1.4f),
-            title = t("csync_fitting_checklist"),
-            actions = {
-                if (ctx.canPost) ZillitButton(t("csync_piece"), onClick = { pickerOpen = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
-            },
-        ) {
-            if (items.isEmpty()) MutedText(t("csync_fitting_no_items"), maxLines = 2)
-            items.forEachIndexed { index, item ->
-                val costumeId = item.str("costume_id").ifBlank { item.rec("costume")?.id.orEmpty() }
-                FittingItem(
-                    item = item,
-                    costumeId = costumeId,
-                    busy = busy,
-                    note = note?.takeIf { it.costumeId == costumeId },
-                    onNote = { note = it },
-                    onSaveNote = { text -> setItem(costumeId, body("notes" to text)) { note = null } },
-                    onCancelNote = { savedNote -> if (note?.text == savedNote) note = null else discard = true },
-                    onStatus = { s -> setItem(costumeId, body("status" to s)) {} },
-                    onAlteration = { alt = AlterationDraft(costumeId) },
-                    onRemove = { run({ ctx.api.delete("/fittings/$fittingId/items/$costumeId") }, {}) },
-                    first = index == 0,
-                )
-            }
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            MeasurementsCard(character.rec("actor"), actor?.str("name").orEmpty())
-            ReferenceGrid(entityType = "FITTING", entityId = fittingId, title = t("csync_fitting_photos"), kinds = listOf("FRONT", "SIDE", "BACK", "DETAIL"))
+@Composable
+private fun FittingTitle(who: String, characterName: String, status: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        WfLargeAvatar(wfInitials(characterName))
+        ZillitText(
+            who,
+            Modifier.weight(1f, fill = false),
+            style = ZillitTheme.typography.titleLarge.copy(
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Bold,
+            ),
+            maxLines = 2,
+        )
+        StatusBadge(status, large = true)
+    }
+}
+
+@Composable
+private fun FittingHeaderActions(fitting: Rec, sub: String, writes: FittingWrites) {
+    val ctx = writes.ctx
+    val fittingId = writes.fittingId
+    val characterName = fitting.rec("character")?.str("name").orEmpty()
+    val summary = "${t("csync_fitting")}: $characterName" +
+        (fitting.rec("actor")?.str("name")?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()) + "\n$sub"
+    RecordActions(
+        "FITTING",
+        fittingId,
+        "${t("csync_fitting")} · $characterName",
+        summary,
+        count = rememberCommentCounts("FITTING")[fittingId] ?: 0,
+    )
+    if (!ctx.canPost) return
+    WfSendRequestButton {
+        writes.ui.request = recordRequestDraft(
+            fittingId,
+            "${t("csync_fitting")} · $characterName",
+            summary,
+            t("csync_ask_fitting"),
+            ctx.project.name.ifBlank { t("csync_production") },
+        )
+    }
+    FittingStatusButtons(fitting.str("status"), writes)
+}
+
+@Composable
+private fun FittingStatusButtons(status: String, writes: FittingWrites) {
+    val busy = writes.ui.busy
+    if (status == "SCHEDULED") {
+        ZillitButton(
+            t("csync_start_fitting"),
+            onClick = { writes.setStatus("IN_PROGRESS") },
+            variant = ButtonVariant.Secondary,
+            enabled = !busy,
+        )
+    }
+    if (status !in FITTING_CLOSED) {
+        ZillitButton(
+            t("csync_complete"),
+            onClick = { writes.setStatus("COMPLETED") },
+            leadingIcon = ZillitIcons.Check,
+            enabled = !busy,
+        )
+        ZillitButton(
+            t("csync_cancel"),
+            onClick = { writes.setStatus("CANCELLED") },
+            variant = ButtonVariant.Tertiary,
+            enabled = !busy,
+        )
+    }
+}
+
+@Composable
+private fun FittingChecklist(fitting: Rec, writes: FittingWrites, modifier: Modifier) {
+    val ctx = writes.ctx
+    val ui = writes.ui
+    val items = fitting.recs("items")
+    SectionCard(
+        modifier = modifier,
+        title = t("csync_fitting_checklist"),
+        actions = {
+            if (ctx.canPost) ZillitButton(
+                t("csync_piece"),
+                onClick = { ui.pickerOpen = true },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Add,
+            )
+        },
+    ) {
+        if (items.isEmpty()) MutedText(t("csync_fitting_no_items"), maxLines = 2)
+        items.forEachIndexed { index, item ->
+            val costumeId = item.str("costume_id").ifBlank { item.rec("costume")?.id.orEmpty() }
+            FittingItem(
+                item = item,
+                costumeId = costumeId,
+                busy = ui.busy,
+                note = ui.note?.takeIf { it.costumeId == costumeId },
+                onNote = { ui.note = it },
+                onSaveNote = { text -> writes.setItem(costumeId, body("notes" to text)) { ui.note = null } },
+                onCancelNote = { savedNote -> if (ui.note?.text == savedNote) ui.note = null else ui.discard = true },
+                onStatus = { s -> writes.setItem(costumeId, body("status" to s)) {} },
+                onAlteration = { ui.alt = AlterationDraft(costumeId) },
+                onRemove = { writes.run({ ctx.api.delete("/fittings/${writes.fittingId}/items/$costumeId") }, {}) },
+                first = index == 0,
+            )
         }
     }
+}
 
+@Composable
+private fun FittingDialogs(fitting: Rec, writes: FittingWrites) {
+    val ctx = writes.ctx
+    val ui = writes.ui
+    val items = fitting.recs("items")
     WfCostumePicker(
-        open = pickerOpen,
-        onClose = { pickerOpen = false },
+        open = ui.pickerOpen,
+        onClose = { ui.pickerOpen = false },
         characterId = fitting.str("character_id"),
         exclude = { c -> items.any { (it.str("costume_id").ifBlank { it.rec("costume")?.id.orEmpty() }) == c.id } },
-        onPick = { c -> run({ ctx.api.post("/fittings/$fittingId/items", body("costume_id" to c.id)) }, {}) },
+        onPick = { c ->
+            writes.run({ ctx.api.post("/fittings/${writes.fittingId}/items", body("costume_id" to c.id)) }, {})
+        },
     )
-    AlterationDialog(alt, { alt = it }, busy) { draft ->
-        setItem(draft.costumeId, alterationPatch(draft)) { alt = null }
+    AlterationDialog(ui.alt, { ui.alt = it }, ui.busy) { draft ->
+        writes.setItem(draft.costumeId, alterationPatch(draft)) { ui.alt = null }
     }
     WfConfirm(
-        open = discard,
+        open = ui.discard,
         title = t("csync_discard_changes_title"),
         body = t("csync_discard_changes_body"),
         confirmLabel = t("csync_discard"),
-        onConfirm = { discard = false; note = null },
-        onDismiss = { discard = false },
+        onConfirm = { ui.discard = false; ui.note = null },
+        onDismiss = { ui.discard = false },
     )
-    WfDraftRequestDialog(request, "FITTING", t("csync_send_request_this_fitting")) { request = null }
+    WfDraftRequestDialog(ui.request, "FITTING", t("csync_send_request_this_fitting")) { ui.request = null }
 }
 
 /** The patch the web sends: the item goes to ALTERATION_REQUIRED and carries the ticket to raise. */
@@ -256,7 +364,6 @@ private fun alterationPatch(draft: AlterationDraft): JsonObject {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FittingItem(
     item: Rec,
@@ -277,41 +384,139 @@ private fun FittingItem(
     val colors = ZillitTheme.colors
     if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.clickable { ctx.nav.go("costumes/$costumeId") }, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                ZillitText(c.str("asset_number"), style = ZillitTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp), color = colors.textMuted)
-                ZillitText(c.str("name"), style = ZillitTheme.typography.bodyMedium, color = colors.info)
-            }
-            StatusBadge(itemStatus)
+        FittingItemHead(c, itemStatus) { ctx.nav.go("costumes/$costumeId") }
+        FittingItemNote(item, costumeId, busy, note, onNote, onSaveNote, onCancelNote)
+        if (ctx.canPost) {
+            FittingItemButtons(itemStatus, busy, onStatus, onAlteration, onRemove)
         }
-        ZillitText(
-            listOfNotNull(c.str("size").ifBlank { null }?.let { "${t("csync_size")} $it" }, tEnum(c.str("status")).ifBlank { null }).joinToString(" · "),
-            style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
-            color = colors.textMuted,
-        )
-        when {
-            note != null -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextInput(note.text, { onNote(note.copy(text = it)) }, t("csync_field_notes"), Modifier.weight(1f), placeholder = t("csync_fitting_note_placeholder"))
-                ZillitButton(t("csync_save"), onClick = { onSaveNote(note.text) }, size = ButtonSize.Small, enabled = !busy, loading = busy)
-                ZillitButton(t("csync_cancel"), onClick = { onCancelNote(item.str("notes")) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-            }
-            ctx.canPost -> ZillitText(
-                if (item.str("notes").isNotBlank()) "✎ ${item.str("notes")}" else "+ ${t("csync_notes_lower")}",
-                Modifier.clickable { onNote(NoteEdit(costumeId, item.str("notes"))) },
-                style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+    }
+}
+
+@Composable
+private fun FittingItemHead(c: Rec, itemStatus: String, onOpen: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        Modifier.clickable(onClick = onOpen),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            ZillitText(
+                c.str("asset_number"),
+                style = ZillitTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
                 color = colors.textMuted,
             )
-            item.str("notes").isNotBlank() -> MutedText(item.str("notes"), maxLines = 3)
+            ZillitText(c.str("name"), style = ZillitTheme.typography.bodyMedium, color = colors.info)
         }
-        if (ctx.canPost) {
-            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                WfInkButton(t("csync_fitted"), { onStatus("FITTED") }, on = itemStatus == "FITTED", icon = ZillitIcons.Check, enabled = !busy)
-                WfInkButton(tEnum("PENDING"), { onStatus("PENDING") }, on = itemStatus == "PENDING", icon = ZillitIcons.Clock, enabled = !busy)
-                ZillitButton(t("csync_alteration"), onAlteration, variant = ButtonVariant.Secondary, size = ButtonSize.Small, enabled = !busy)
-                ZillitButton(t("csync_reject"), { onStatus("REJECTED") }, variant = if (itemStatus == "REJECTED") ButtonVariant.Danger else ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Close, enabled = !busy)
-                ZillitButton(t("csync_remove_lower"), onRemove, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, enabled = !busy)
-            }
+        StatusBadge(itemStatus)
+    }
+    ZillitText(
+        listOfNotNull(
+            c.str("size").ifBlank { null }?.let { "${t("csync_size")} $it" },
+            tEnum(c.str("status")).ifBlank { null },
+        ).joinToString(" · "),
+        style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+        color = colors.textMuted,
+    )
+}
+
+@Composable
+private fun FittingItemNote(
+    item: Rec,
+    costumeId: String,
+    busy: Boolean,
+    note: NoteEdit?,
+    onNote: (NoteEdit?) -> Unit,
+    onSaveNote: (String) -> Unit,
+    onCancelNote: (String) -> Unit,
+) {
+    val ctx = LocalSync.current
+    when {
+        note != null -> Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextInput(
+                note.text,
+                { onNote(note.copy(text = it)) },
+                t("csync_field_notes"),
+                Modifier.weight(1f),
+                placeholder = t("csync_fitting_note_placeholder"),
+            )
+            ZillitButton(
+                t("csync_save"),
+                onClick = { onSaveNote(note.text) },
+                size = ButtonSize.Small,
+                enabled = !busy,
+                loading = busy,
+            )
+            ZillitButton(
+                t("csync_cancel"),
+                onClick = { onCancelNote(item.str("notes")) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
         }
+        ctx.canPost -> ZillitText(
+            if (item.str("notes").isNotBlank()) "✎ ${item.str("notes")}" else "+ ${t("csync_notes_lower")}",
+            Modifier.clickable { onNote(NoteEdit(costumeId, item.str("notes"))) },
+            style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = ZillitTheme.colors.textMuted,
+        )
+        item.str("notes").isNotBlank() -> MutedText(item.str("notes"), maxLines = 3)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FittingItemButtons(
+    itemStatus: String,
+    busy: Boolean,
+    onStatus: (String) -> Unit,
+    onAlteration: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    FlowRow(
+        Modifier.padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        WfInkButton(
+            t("csync_fitted"),
+            { onStatus("FITTED") },
+            on = itemStatus == "FITTED",
+            icon = ZillitIcons.Check,
+            enabled = !busy,
+        )
+        WfInkButton(
+            tEnum("PENDING"),
+            { onStatus("PENDING") },
+            on = itemStatus == "PENDING",
+            icon = ZillitIcons.Clock,
+            enabled = !busy,
+        )
+        ZillitButton(
+            t("csync_alteration"),
+            onAlteration,
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = !busy,
+        )
+        ZillitButton(
+            t("csync_reject"),
+            { onStatus("REJECTED") },
+            variant = if (itemStatus == "REJECTED") ButtonVariant.Danger else ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Close,
+            enabled = !busy,
+        )
+        ZillitButton(
+            t("csync_remove_lower"),
+            onRemove,
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            enabled = !busy,
+        )
     }
 }
 
@@ -320,7 +525,10 @@ private fun MeasurementsCard(actor: Rec?, actorName: String) {
     val measures = measurementsOf(actor)
     SectionCard(title = t("csync_field_measurements")) {
         if (measures.isEmpty()) {
-            MutedText(fill(t("csync_no_measurements_for"), "name" to actorName.ifBlank { t("csync_this_actor") }), maxLines = 3)
+            MutedText(
+                fill(t("csync_no_measurements_for"), "name" to actorName.ifBlank { t("csync_this_actor") }),
+                maxLines = 3,
+            )
         } else {
             measures.forEach { (k, v) -> FieldRow(humanize(k), v) }
         }
@@ -329,7 +537,12 @@ private fun MeasurementsCard(actor: Rec?, actorName: String) {
 }
 
 @Composable
-private fun AlterationDialog(alt: AlterationDraft?, onChange: (AlterationDraft?) -> Unit, busy: Boolean, onRaise: (AlterationDraft) -> Unit) {
+private fun AlterationDialog(
+    alt: AlterationDraft?,
+    onChange: (AlterationDraft?) -> Unit,
+    busy: Boolean,
+    onRaise: (AlterationDraft) -> Unit,
+) {
     var last by remember { mutableStateOf(alt) }
     if (alt != null) last = alt
     val draft = alt ?: last ?: return
@@ -339,13 +552,25 @@ private fun AlterationDialog(alt: AlterationDraft?, onChange: (AlterationDraft?)
         onDismiss = { onChange(null) },
         actions = {
             ZillitButton(t("csync_cancel"), onClick = { onChange(null) }, variant = ButtonVariant.Secondary)
-            ZillitButton(t("csync_raise_alteration"), onClick = { onRaise(draft) }, enabled = draft.valid && !busy, loading = busy)
+            ZillitButton(
+                t("csync_raise_alteration"),
+                onClick = { onRaise(draft) },
+                enabled = draft.valid && !busy,
+                loading = busy,
+            )
         },
     ) {
         FormGrid {
             TextInput(draft.issue, { onChange(draft.copy(issue = it)) }, t("csync_field_issue"), FormWide)
             TextInput(draft.required, { onChange(draft.copy(required = it)) }, t("csync_field_required"), FormWide)
-            DateTimeInput(draft.date, draft.time, { onChange(draft.copy(date = it)) }, { onChange(draft.copy(time = it)) }, t("csync_field_deadline"), FormWide)
+            DateTimeInput(
+                draft.date,
+                draft.time,
+                { onChange(draft.copy(date = it)) },
+                { onChange(draft.copy(time = it)) },
+                t("csync_field_deadline"),
+                FormWide,
+            )
         }
         MutedText(t("csync_alteration_sends_to_tailor"), maxLines = 3)
     }

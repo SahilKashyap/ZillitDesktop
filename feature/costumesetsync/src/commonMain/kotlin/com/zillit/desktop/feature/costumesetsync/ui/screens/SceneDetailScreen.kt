@@ -50,9 +50,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 
-/** One scene: the record (null when the service does not know it), its readiness read, and the characters for the add dialog. */
-internal class SceneDetailData(val scene: Rec?, val readiness: Rec?, val characters: List<Rec>)
-
 /** The reference re-reads a scene's readiness this often (a piece's status changes on other screens and devices). */
 private const val READINESS_POLL_MS = 30_000L
 
@@ -86,13 +83,22 @@ fun SceneDetailScreen(id: String) {
         }
     }
     // The scene and its cues narrow to this scene; pieces, looks, cleaning and takes move readiness from anywhere.
-    SocketRefresh(SyncEvents.Scene + SyncEvents.Cue, predicate = { f -> f.str("entity_id") == id || f.rec("data")?.str("scene_id") == id }) {
+    SocketRefresh(
+        SyncEvents.Scene + SyncEvents.Cue,
+        predicate = { f -> f.str("entity_id") == id || f.rec("data")?.str("scene_id") == id },
+    ) {
         data.reload(silent = true)
     }
-    SocketRefresh(SyncEvents.Costume + SyncEvents.Change + SyncEvents.Cleaning + SyncEvents.Continuity) { data.reload(silent = true) }
+    SocketRefresh(
+        SyncEvents.Costume + SyncEvents.Change + SyncEvents.Cleaning + SyncEvents.Continuity,
+    ) { data.reload(silent = true) }
     Await(data) { loaded ->
         val scene = loaded.scene
-        if (scene == null) EmptyState(t("csync_scene_not_found")) else SceneDetailBody(ctx, scene, loaded) { data.reload(silent = true) }
+        if (scene == null) EmptyState(t("csync_scene_not_found")) else SceneDetailBody(
+            ctx,
+            scene,
+            loaded,
+        ) { data.reload(silent = true) }
     }
 }
 
@@ -102,37 +108,35 @@ private fun SceneDetailBody(ctx: SyncCtx, scene: Rec, data: SceneDetailData, rel
     val readiness = data.readiness
     val episodes = ctx.project.rec?.str("type") == "EPISODIC" || scene.str("episode").trim().isNotEmpty()
     val overall = readiness?.str("overall").orEmpty()
+    val sceneTitle = "${t("csync_sc")} ${scene.str("number")}" +
+        scene.str("name").takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
     PageHead(
-        title = "${t("csync_sc")} ${scene.str("number")}${scene.str("name").takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()}",
+        title = sceneTitle,
         crumbs = "${t("csync_scenes_title")} / ${t("csync_sc")} ${scene.str("number")}",
-        titleContent = {
-            val title = "${t("csync_sc")} ${scene.str("number")}${scene.str("name").takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()}"
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                ZillitText(title, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), maxLines = 2)
-                if (overall.isNotEmpty()) StatusBadge(overall, if (overall == "READY") t("csync_costume_ready") else tEnum(overall))
-            }
-        },
-        sub = listOfNotNull(
-            scene.str("episode").takeIf { episodes && it.isNotEmpty() }?.let { "${t("csync_field_episode")} $it" },
-            scene.str("int_ext").ifEmpty { null },
-            scene.str("location").ifEmpty { null },
-            scene.str("time_of_day").takeIf { it.isNotEmpty() }?.let { tEnum(it) },
-            scene.str("script_day").ifEmpty { null },
-            scene.str("pages").takeIf { it.isNotEmpty() }?.let { "$it ${t("csync_pgs")}" },
-            scene.str("revision").takeIf { it.isNotEmpty() }?.let { "${t("csync_rev")} $it" },
-            if (scene.long("shoot_date") != 0L) fmtDate(scene.long("shoot_date")) else t("csync_unscheduled"),
-        ).joinToString(" · "),
+        titleContent = { SceneTitle(sceneTitle, overall) },
+        sub = sceneSub(scene, episodes),
         actions = {
             ZillitButton(
                 t("csync_nav_continuity"), onClick = { ctx.nav.go("continuity?sceneId=${scene.id}") },
                 variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Draft,
             )
-            if (ctx.canPost) ZillitButton(t("csync_edit"), onClick = { editOpen = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Edit)
+            if (ctx.canPost) ZillitButton(
+                t("csync_edit"),
+                onClick = { editOpen = true },
+                variant = ButtonVariant.Secondary,
+                leadingIcon = ZillitIcons.Edit,
+            )
         },
     )
-    scene.str("synopsis").takeIf { it.isNotEmpty() }?.let { ZillitNotice(it, Modifier.padding(bottom = ZillitTheme.spacing.md), tone = StatusTone.Progress) }
+    scene.str("synopsis")
+        .takeIf { it.isNotEmpty() }
+        ?.let { ZillitNotice(it, Modifier.padding(bottom = ZillitTheme.spacing.md), tone = StatusTone.Progress) }
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
         Column(Modifier.weight(1.4f)) { ReadinessCard(scene, readiness, data.characters, reload) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             TakesCard(scene)
@@ -142,6 +146,37 @@ private fun SceneDetailBody(ctx: SyncCtx, scene: Rec, data: SceneDetailData, rel
     }
     SceneEditDialog(editOpen, scene, episodes, { editOpen = false }, reload)
 }
+
+@Composable
+private fun SceneTitle(title: String, overall: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        ZillitText(
+            title,
+            Modifier.weight(1f, fill = false),
+            style = ZillitTheme.typography.titleLarge.copy(
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Bold,
+            ),
+            maxLines = 2,
+        )
+        if (overall.isNotEmpty()) {
+            StatusBadge(overall, if (overall == "READY") t("csync_costume_ready") else tEnum(overall))
+        }
+    }
+}
+
+/** "Episode · INT/EXT · location · time · day · pages · revision · shoot date". */
+private fun sceneSub(scene: Rec, episodes: Boolean): String = listOfNotNull(
+    scene.str("episode").takeIf { episodes && it.isNotEmpty() }?.let { "${t("csync_field_episode")} $it" },
+    scene.str("int_ext").ifEmpty { null },
+    scene.str("location").ifEmpty { null },
+    scene.str("time_of_day").takeIf { it.isNotEmpty() }?.let { tEnum(it) },
+    scene.str("script_day").ifEmpty { null },
+    scene.str("pages").takeIf { it.isNotEmpty() }?.let { "$it ${t("csync_pgs")}" },
+    scene.str("revision").takeIf { it.isNotEmpty() }?.let { "${t("csync_rev")} $it" },
+    if (scene.long("shoot_date") != 0L) fmtDate(scene.long("shoot_date")) else t("csync_unscheduled"),
+).joinToString(" · ")
 
 @Composable
 private fun TakesCard(scene: Rec) {
@@ -183,7 +218,10 @@ private fun CleaningCard(scene: Rec) {
         }
         tickets.forEach { c ->
             Row(
-                Modifier.fillMaxWidth().clickable { ctx.nav.go("cleaning/${c.id}") }.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+                Modifier.fillMaxWidth().clickable { ctx.nav.go("cleaning/${c.id}") }.padding(
+                    horizontal = ZillitTheme.spacing.lg,
+                    vertical = ZillitTheme.spacing.md,
+                ),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

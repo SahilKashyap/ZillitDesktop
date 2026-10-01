@@ -77,7 +77,9 @@ class ContinuityModelTest {
 
     @Test
     fun `a new take starts from the last one`() {
-        val last = rec("""{"take_number":3,"details":{"Shirt":"Blue"},"accessories":[{"name":"Watch","present":false}]}""")
+        val last = rec(
+            """{"take_number":3,"details":{"Shirt":"Blue"},"accessories":[{"name":"Watch","present":false}]}""",
+        )
         val fill = ContinuityModel.fill(last, null)
         assertEquals("4", fill.takeNumber)
         assertEquals(listOf("Shirt" to "Blue"), fill.details)
@@ -86,7 +88,10 @@ class ContinuityModelTest {
 
     @Test
     fun `a first take seeds the defaults and the accessory pieces`() {
-        val sc = rec("""{"change":{"items":[{"costume":{"name":"Ring","category":"JEWELLERY"}},{"costume":{"name":"Coat","category":"OUTERWEAR"}}]}}""")
+        val sc = rec(
+            """{"change":{"items":[{"costume":{"name":"Ring","category":"JEWELLERY"}},""" +
+                """{"costume":{"name":"Coat","category":"OUTERWEAR"}}]}}""",
+        )
         val fill = ContinuityModel.fill(null, sc)
         assertEquals("1", fill.takeNumber)
         assertEquals(ContinuityModel.DEFAULT_DETAILS, fill.details.map { it.first })

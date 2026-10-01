@@ -73,11 +73,15 @@ internal object Col {
     val shootDate = 160.dp
     val tail = 48.dp
 
-    /** Width of the Save + Cancel pair an edited row carries in its edge column (the web's table widens to its widest cell). */
+    /**
+     * Width of the Save + Cancel pair an edited row carries in its edge column (the web's table widens to its widest
+     * cell).
+     */
     val saveCancel = 136.dp
 }
 
 /** What the table shows. */
+@Suppress("LongParameterList")
 internal class TableInput(
     val view: String,
     val episodes: Boolean,
@@ -108,7 +112,10 @@ private val LocalColScale = compositionLocalOf { 1f }
 
 @Composable
 internal fun TCell(width: Dp, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.width(width * LocalColScale.current).padding(horizontal = CELL_PAD_X, vertical = CELL_PAD_Y), content = content)
+    Column(
+        modifier.width(width * LocalColScale.current).padding(horizontal = CELL_PAD_X, vertical = CELL_PAD_Y),
+        content = content
+    )
 }
 
 /** The body text of the web's `.csync-table`: 13px; `.csync-muted` cells stay 12px (MutedText). */
@@ -116,15 +123,29 @@ private val CellStyle @Composable get() = ZillitTheme.typography.bodyMedium
 
 @Composable
 private fun CellText(text: String, modifier: Modifier = Modifier, maxLines: Int = 1, bold: Boolean = false) {
-    ZillitText(text, modifier, style = if (bold) CellStyle.copy(fontWeight = FontWeight.Bold) else CellStyle, maxLines = maxLines)
+    ZillitText(
+        text,
+        modifier,
+        style = if (bold) CellStyle.copy(fontWeight = FontWeight.Bold) else CellStyle,
+        maxLines = maxLines
+    )
 }
 
-/** True while an edited row carries its own Save / Cancel (Edit single, or a new row): the edge column then widens for the pair. */
+/**
+ * True while an edited row carries its own Save / Cancel (Edit single, or a new row): the edge column then widens for
+ * the pair.
+ */
 internal val LocalRowButtons = compositionLocalOf { false }
 
-private fun actionsWidthOf(expanded: Boolean, rowButtons: Boolean): Dp = if (rowButtons && expanded) Col.saveCancel else Col.actions
+private fun actionsWidthOf(
+    expanded: Boolean,
+    rowButtons: Boolean
+): Dp = if (rowButtons && expanded) Col.saveCancel else Col.actions
 
-private fun tailWidthOf(expanded: Boolean, rowButtons: Boolean): Dp = if (rowButtons && !expanded) Col.saveCancel else Col.tail
+private fun tailWidthOf(
+    expanded: Boolean,
+    rowButtons: Boolean
+): Dp = if (rowButtons && !expanded) Col.saveCancel else Col.tail
 
 @Composable
 internal fun actionsWidth(expanded: Boolean): Dp = actionsWidthOf(expanded, LocalRowButtons.current)
@@ -134,8 +155,8 @@ internal fun tailWidth(expanded: Boolean): Dp = tailWidthOf(expanded, LocalRowBu
 
 /** Width of every column the table shows, for stretching it to the window like the web's `width: 100%` table. */
 private fun naturalWidth(input: TableInput, rowButtons: Boolean): Dp {
-    var total = Col.dot + Col.scene + Col.day + Col.location + Col.description + Col.character + Col.castNumber + Col.castName +
-        Col.change + Col.shootDate + tailWidthOf(input.expanded, rowButtons)
+    var total = Col.dot + Col.scene + Col.day + Col.location + Col.description + Col.character +
+        Col.castNumber + Col.castName + Col.change + Col.shootDate + tailWidthOf(input.expanded, rowButtons)
     if (input.expanded) total += actionsWidthOf(true, rowButtons)
     if (input.episodes) total += Col.episode
     return total
@@ -151,7 +172,8 @@ internal fun ScenesTable(input: TableInput, editor: SceneEditor, actions: TableA
     val rowButtons = !editor.editAll && editor.drafts.isNotEmpty()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val natural = naturalWidth(input, rowButtons)
-        // A wide window stretches the columns (header band included) instead of leaving the table short of the card's edge.
+        // A wide window stretches the columns (header band included) instead of leaving the table short of the card's
+        // edge.
         val scale = if (maxWidth > natural) maxWidth / natural else 1f
         CompositionLocalProvider(LocalColScale provides scale, LocalRowButtons provides rowButtons) {
             Column(Modifier.horizontalScroll(scroll)) {
@@ -163,7 +185,11 @@ internal fun ScenesTable(input: TableInput, editor: SceneEditor, actions: TableA
                 }
                 input.scenes.forEach { scene ->
                     val draft = editor.drafts[scene.id]
-                    if (draft != null) SceneEditRow(draftRowOf(scene.id, draft, scene, input, editor, actions)) else SceneRows(scene, input, editor, actions)
+                    if (draft != null) {
+                        SceneEditRow(draftRowOf(scene.id, draft, scene, input, editor, actions))
+                    } else {
+                        SceneRows(scene, input, editor, actions)
+                    }
                     ZillitDivider()
                 }
             }
@@ -196,7 +222,11 @@ private fun HeadCell(width: Dp, label: String, hidden: Boolean = false) {
         if (!hidden) {
             ZillitText(
                 label.uppercase(),
-                style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.44.sp),
+                style = ZillitTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.44.sp
+                ),
                 color = ZillitTheme.colors.textMuted,
                 maxLines = 1,
             )
@@ -212,7 +242,13 @@ private fun SceneRows(scene: Rec, input: TableInput, editor: SceneEditor, action
         input.lines[scene.id].orEmpty().forEach { line ->
             val key = line?.sc?.id ?: "scene:${scene.id}"
             ReadRow(scene, key, editor) {
-                if (line == null) EmptyLineCells(scene, input, actions, key, editor) else LineCells(scene, line, input, actions, key, editor)
+                if (line == null) EmptyLineCells(
+                    scene,
+                    input,
+                    actions,
+                    key,
+                    editor
+                ) else LineCells(scene, line, input, actions, key, editor)
             }
         }
         return
@@ -231,7 +267,10 @@ private fun ReadRow(scene: Rec, key: String, editor: SceneEditor, content: @Comp
         .hoverable(hover)
         // `tbody tr:hover` is the soft band; the picked row of Edit single is the accent tint with a 2px edge.
         .background(if (picked) colors.accentSoft else if (hovered) colors.surfaceSunken else Color.Transparent)
-        .then(if (picked) Modifier.drawBehind { drawRect(colors.accent, size = Size(2.dp.toPx(), size.height)) } else Modifier)
+        .then(if (picked) Modifier.drawBehind { drawRect(
+            colors.accent,
+            size = Size(2.dp.toPx(), size.height)
+        ) } else Modifier)
         .then(if (editor.picking) Modifier.clickable { editor.single = key } else Modifier)
     Row(rowModifier, verticalAlignment = Alignment.Top) { content() }
 }
@@ -277,7 +316,14 @@ private fun EmptyLineCells(scene: Rec, input: TableInput, actions: TableActions,
 }
 
 @Composable
-private fun LineCells(scene: Rec, line: SceneLine, input: TableInput, actions: TableActions, key: String, editor: SceneEditor) {
+private fun LineCells(
+    scene: Rec,
+    line: SceneLine,
+    input: TableInput,
+    actions: TableActions,
+    key: String,
+    editor: SceneEditor
+) {
     val sc = line.sc
     val full = input.charById[sc.str("character_id")]
     TCell(actionsWidth(true)) {

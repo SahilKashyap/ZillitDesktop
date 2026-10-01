@@ -57,9 +57,6 @@ import com.zillit.desktop.feature.costumesetsync.ui.t
 import com.zillit.desktop.feature.costumesetsync.ui.tEnum
 import kotlinx.coroutines.launch
 
-/** Which of the three ticket boards: the web's `TicketsScreen kind`. */
-enum class TicketKind { Alterations, Damages, Missing }
-
 private fun TicketKind.board(): TicketBoard = when (this) {
     TicketKind.Alterations -> TicketBoard.Alterations
     TicketKind.Damages -> TicketBoard.Damages
@@ -91,13 +88,8 @@ fun TicketsScreen(kind: TicketKind) {
     val ctx = LocalSync.current
     val board = kind.board()
     val tab = board.route
-    val events = when (board) {
-        TicketBoard.Alterations -> SyncEvents.Alteration
-        TicketBoard.Damages -> SyncEvents.Damage
-        TicketBoard.Missing -> SyncEvents.Missing
-    }
     val data = rememberResource(board) { api.get("/$tab") }
-    SocketRefresh(events) { data.reload(silent = true) }
+    SocketRefresh(board.socketEvent()) { data.reload(silent = true) }
 
     var q by remember { mutableStateOf("") }
     var onlyOpen by remember { mutableStateOf(true) }
@@ -127,74 +119,130 @@ fun TicketsScreen(kind: TicketKind) {
     }
     val actions = TicketActions(board, busyId, projectName, act, { ask = it }, { chase = it })
 
-    PageHead(
-        title = t("csync_page_title_$tab"),
-        sub = if (board == TicketBoard.Damages) null else t("csync_page_sub_$tab"),
-        actions = {
-            if (ctx.canPost) {
-                ZillitButton(
-                    t("csync_send_reminder_request"),
-                    onClick = {
-                        val open = rows.filter { it.str("status") !in board.closed }
-                        chase = ticketChase(board, open, projectName, wfSay, ::tEnum)
-                    },
-                    variant = ButtonVariant.Secondary,
-                    leadingIcon = ZillitIcons.Send,
-                )
-                ZillitButton(t("csync_new_${board.kind}"), onClick = { formOpen = true }, leadingIcon = ZillitIcons.Add)
-            }
+    TicketsHead(
+        board,
+        onChase = {
+            val open = rows.filter { it.str("status") !in board.closed }
+            chase = ticketChase(board, open, projectName, wfSay, ::tEnum)
         },
+        onNew = { formOpen = true },
     )
-    Row(Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        SearchWithButton(q, { q = it }, t("csync_tickets_search_$tab"), Modifier.weight(1f))
-        // Open first, then All — the reference's two chips.
-        InkChip(t("csync_filter_open"), active = onlyOpen, onClick = { onlyOpen = true })
-        InkChip(t("csync_filter_all"), active = !onlyOpen, onClick = { onlyOpen = false })
-    }
+    TicketFilters(q, { q = it }, tab, onlyOpen) { onlyOpen = it }
 
     Await(data) {
         val shown = rows.filter { (!onlyOpen || it.str("status") !in board.closed) && ticketMatches(board, q, it) }
-        if (shown.isEmpty()) {
-            SectionCard(modifier = Modifier.fillMaxWidth()) {
-                EmptyState(
-                    if (q.isNotBlank()) t("csync_${tab}_no_match") else t("csync_${tab}_empty_title"),
-                    hint = if (q.isBlank() && board == TicketBoard.Missing) t("csync_missing_empty_hint") else null,
-                )
-            }
-        } else {
-            androidx.compose.runtime.CompositionLocalProvider(LocalRecordCounts provides rememberCommentCounts(board.entity)) {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                    shown.forEach { r ->
-                        when (board) {
-                            TicketBoard.Alterations -> AlterationCard(r, pipeline, actions)
-                            TicketBoard.Damages -> DamageCard(r, actions)
-                            TicketBoard.Missing -> MissingCard(r, actions, foundAt, { foundAt = it })
-                        }
-                    }
-                }
-            }
-        }
+        TicketList(shown, board, q, pipeline, actions, foundAt) { foundAt = it }
     }
 
     WfDraftRequestDialog(
         draft = chase,
         entityType = board.entity,
-        title = if (chase?.entityId != null) t("csync_send_request_this_${board.kind}") else t("csync_send_reminder_title_$tab"),
+        title = if (chase?.entityId != null) {
+            t("csync_send_request_this_${board.kind}")
+        } else {
+            t("csync_send_reminder_title_$tab")
+        },
         onClose = { chase = null },
     )
     TicketFormDialog(board, formOpen, { formOpen = false }) { sent ->
         data.reload(silent = true)
         if (sent != null) chase = sent
     }
-    val pending = ask
+    TicketConfirm(ask) { ask = null }
+}
+
+/** The confirmation a card's action asked for; [onDone] clears it, whether it was confirmed or dismissed. */
+@Composable
+private fun TicketConfirm(pending: Ask?, onDone: () -> Unit) {
     WfConfirm(
         open = pending != null,
         title = pending?.title.orEmpty(),
         body = pending?.body.orEmpty(),
         confirmLabel = pending?.label.orEmpty(),
-        onConfirm = { pending?.action?.invoke(); ask = null },
-        onDismiss = { ask = null },
+        onConfirm = { pending?.action?.invoke(); onDone() },
+        onDismiss = onDone,
     )
+}
+
+/** The search box and the Open / All chips (the reference's two). */
+@Composable
+private fun TicketFilters(
+    q: String,
+    onQ: (String) -> Unit,
+    tab: String,
+    onlyOpen: Boolean,
+    onOnlyOpen: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SearchWithButton(q, onQ, t("csync_tickets_search_$tab"), Modifier.weight(1f))
+        // Open first, then All — the reference's two chips.
+        InkChip(t("csync_filter_open"), active = onlyOpen, onClick = { onOnlyOpen(true) })
+        InkChip(t("csync_filter_all"), active = !onlyOpen, onClick = { onOnlyOpen(false) })
+    }
+}
+
+private fun TicketBoard.socketEvent() = when (this) {
+    TicketBoard.Alterations -> SyncEvents.Alteration
+    TicketBoard.Damages -> SyncEvents.Damage
+    TicketBoard.Missing -> SyncEvents.Missing
+}
+
+@Composable
+private fun TicketsHead(board: TicketBoard, onChase: () -> Unit, onNew: () -> Unit) {
+    val ctx = LocalSync.current
+    PageHead(
+        title = t("csync_page_title_${board.route}"),
+        sub = if (board == TicketBoard.Damages) null else t("csync_page_sub_${board.route}"),
+        actions = {
+            if (ctx.canPost) {
+                ZillitButton(
+                    t("csync_send_reminder_request"),
+                    onClick = onChase,
+                    variant = ButtonVariant.Secondary,
+                    leadingIcon = ZillitIcons.Send,
+                )
+                ZillitButton(t("csync_new_${board.kind}"), onClick = onNew, leadingIcon = ZillitIcons.Add)
+            }
+        },
+    )
+}
+
+@Composable
+private fun TicketList(
+    shown: List<Rec>,
+    board: TicketBoard,
+    q: String,
+    pipeline: List<String>,
+    actions: TicketActions,
+    foundAt: FoundAt?,
+    onFoundAt: (FoundAt?) -> Unit,
+) {
+    if (shown.isEmpty()) {
+        SectionCard(modifier = Modifier.fillMaxWidth()) {
+            EmptyState(
+                if (q.isNotBlank()) t("csync_${board.route}_no_match") else t("csync_${board.route}_empty_title"),
+                hint = if (q.isBlank() && board == TicketBoard.Missing) t("csync_missing_empty_hint") else null,
+            )
+        }
+        return
+    }
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalRecordCounts provides rememberCommentCounts(board.entity),
+    ) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            shown.forEach { r ->
+                when (board) {
+                    TicketBoard.Alterations -> AlterationCard(r, pipeline, actions)
+                    TicketBoard.Damages -> DamageCard(r, actions)
+                    TicketBoard.Missing -> MissingCard(r, actions, foundAt, onFoundAt)
+                }
+            }
+        }
+    }
 }
 
 /** What a ticket card can do: write against its record, ask a confirmation, or start a request about it. */
@@ -220,21 +268,61 @@ private fun ticketMatches(board: TicketBoard, q: String, r: Rec): Boolean {
     val name = costume?.str("name")
     return when (board) {
         TicketBoard.Alterations -> matches(
-            q, asset, name, r.str("issue"), r.str("required_work"), r.str("tailor_name"), r.rec("character")?.str("name"),
-            r.rec("character")?.rec("actor")?.str("name"), tEnum(r.str("status")), tEnum(r.str("priority")),
+            q,
+            asset,
+            name,
+            r.str("issue"),
+            r.str("required_work"),
+            r.str("tailor_name"),
+            r.rec("character")?.str("name"),
+            r.rec("character")?.rec("actor")?.str("name"),
+            tEnum(r.str("status")),
+            tEnum(r.str("priority")),
         )
-        TicketBoard.Damages -> matches(q, asset, name, r.str("description"), r.rec("scene")?.str("number"), tEnum(r.str("responsible")), tEnum(r.str("status")))
-        TicketBoard.Missing -> matches(q, asset, name, costume?.rec("character")?.str("name"), r.str("last_seen_location"), r.str("last_assigned_to"), r.str("notes"))
+        TicketBoard.Damages -> matches(
+            q,
+            asset,
+            name,
+            r.str("description"),
+            r.rec("scene")?.str("number"),
+            tEnum(r.str("responsible")),
+            tEnum(r.str("status")),
+        )
+        TicketBoard.Missing -> matches(
+            q,
+            asset,
+            name,
+            costume?.rec("character")?.str("name"),
+            r.str("last_seen_location"),
+            r.str("last_assigned_to"),
+            r.str("notes"),
+        )
     }
 }
 
-/** The piece opens its own page, as the reference's card title does: asset in mono, then the name, both in the text colour. */
+/**
+ * The piece opens its own page, as the reference's card title does: asset in mono, then the name, both in the text
+ * colour.
+ */
 @Composable
 private fun CostumeLink(c: Rec?) {
     val ctx = LocalSync.current
-    Row(Modifier.clickable { c?.id?.takeIf { it.isNotBlank() }?.let { ctx.nav.go("costumes/$it") } }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        ZillitText(c?.str("asset_number").orEmpty(), style = ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, fontSize = 12.9.sp))
-        ZillitText(c?.str("name").orEmpty(), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+    Row(
+        Modifier.clickable { c?.id?.takeIf { it.isNotBlank() }?.let { ctx.nav.go("costumes/$it") } },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ZillitText(
+            c?.str("asset_number").orEmpty(),
+            style = ZillitTheme.typography.bodyMedium.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.9.sp,
+            ),
+        )
+        ZillitText(
+            c?.str("name").orEmpty(),
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+        )
     }
 }
 
@@ -257,7 +345,12 @@ private fun KvRows(rows: List<Pair<String, String>>) {
     Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         rows.forEach { (k, v) ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ZillitText(k, Modifier.width(120.dp), style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textMuted)
+                ZillitText(
+                    k,
+                    Modifier.width(120.dp),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = ZillitTheme.colors.textMuted,
+                )
                 ZillitText(v.ifBlank { "\u2014" }, style = ZillitTheme.typography.bodyMedium)
             }
         }
@@ -271,13 +364,25 @@ private fun AlterationCard(a: Rec, pipeline: List<String>, actions: TicketAction
     val next = nextStage(pipeline, status)
     val late = isOverdue(a.long("deadline"), status, TicketBoard.Alterations.closed, ctx.now())
     val character = a.rec("character")
-    val who = character?.let { it.str("name") + (it.rec("actor")?.str("name")?.takeIf { n -> n.isNotBlank() }?.let { n -> " ($n)" }.orEmpty()) }.orEmpty()
-    val due = if (a.long("deadline") != 0L) fill(t("csync_due_n"), "date" to fmtDateTime(a.long("deadline"))) else t("csync_no_deadline")
+    val actorName = character?.rec("actor")?.str("name")?.takeIf { n -> n.isNotBlank() }?.let { n -> " ($n)" }.orEmpty()
+    val who = character?.let { it.str("name") + actorName }.orEmpty()
+    val due = if (a.long("deadline") != 0L) {
+        fill(t("csync_due_n"), "date" to fmtDateTime(a.long("deadline")))
+    } else {
+        t("csync_no_deadline")
+    }
     val costume = a.rec("costume")
     SectionCard(modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.Top) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            verticalAlignment = Alignment.Top,
+        ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     CostumeLink(costume)
                     StatusBadge(a.str("priority"))
                     StatusBadge(status)
@@ -297,7 +402,14 @@ private fun AlterationCard(a: Rec, pipeline: List<String>, actions: TicketAction
             AlterationButtons(a, status, next, actions)
         }
         if (status !in TicketBoard.Alterations.closed) WfPipeline(pipeline, status, Modifier.padding(top = 10.dp))
-        ReferenceGrid(entityType = "ALTERATION", entityId = a.id, kinds = ALTERATION_PHOTO_KINDS, compact = true, bare = true, attachments = false)
+        ReferenceGrid(
+            entityType = "ALTERATION",
+            entityId = a.id,
+            kinds = ALTERATION_PHOTO_KINDS,
+            compact = true,
+            bare = true,
+            attachments = false,
+        )
     }
 }
 
@@ -306,8 +418,12 @@ private fun AlterationButtons(a: Rec, status: String, next: String?, actions: Ti
     val ctx = LocalSync.current
     val costume = a.rec("costume")
     val piece = "${costume?.str("asset_number").orEmpty()} ${costume?.str("name").orEmpty()}"
-    val due = if (a.long("deadline") != 0L) " · ${fill(t("csync_due_n"), "date" to fmtDateTime(a.long("deadline")))}" else ""
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+    val dueText = fill(t("csync_due_n"), "date" to fmtDateTime(a.long("deadline")))
+    val due = if (a.long("deadline") != 0L) " · $dueText" else ""
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         val summary = "${t("csync_share_alteration")}: $piece\n${a.str("issue")} → ${a.str("required_work")}\n" +
             fill(t("csync_status_n"), "s" to tEnum(status)) + due
         WfSendRequestButton { actions.send(a, piece.trim(), summary, "csync_ask_alteration") }
@@ -325,7 +441,10 @@ private fun AlterationButtons(a: Rec, status: String, next: String?, actions: Ti
                 onClick = {
                     actions.ask(
                         Ask(t("csync_cancel_q"), t("csync_cancel_q"), t("csync_cancel")) {
-                            actions.act(a.id) { ctx.api.post("/alterations/${a.id}/advance", body("to_status" to "CANCELLED")) }
+                            actions.act(a.id) { ctx.api.post(
+                                "/alterations/${a.id}/advance",
+                                body("to_status" to "CANCELLED"),
+                            ) }
                         },
                     )
                 },
@@ -346,23 +465,46 @@ private fun DamageCard(d: Rec, actions: TicketActions) {
     val scene = d.rec("scene")
     val detail = listOfNotNull(
         fmtDateTime(d.long("created")).ifBlank { null },
-        scene?.let { "${t("csync_sc")} ${it.str("number")}" + (if (d.long("take_number") > 0) " T${d.long("take_number")}" else "") },
+        scene?.let {
+            val take = if (d.long("take_number") > 0) " T${d.long("take_number")}" else ""
+            "${t("csync_sc")} ${it.str("number")}" + take
+        },
         d.str("responsible").takeIf { it.isNotBlank() }?.let { fill(t("csync_responsible_n"), "x" to tEnum(it)) },
-        if (ctx.isFinance && d.has("estimated_repair_cost")) fill(t("csync_est_repair_n"), "x" to fmtMoney(d.double("estimated_repair_cost"), ctx.currency)) else null,
+        if (ctx.isFinance && d.has("estimated_repair_cost")) fill(
+            t("csync_est_repair_n"),
+            "x" to fmtMoney(d.double("estimated_repair_cost"), ctx.currency),
+        ) else null,
     ).joinToString(" · ")
     SectionCard(modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.Top) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            verticalAlignment = Alignment.Top,
+        ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     CostumeLink(costume)
                     StatusBadge(status)
                 }
-                ZillitText(d.str("description"), Modifier.padding(top = 10.dp), style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                ZillitText(
+                    d.str("description"),
+                    Modifier.padding(top = 10.dp),
+                    style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                )
                 MutedText(detail, maxLines = 2)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 val summary = "${t("csync_share_damage")}: $piece\n${d.str("description")}\n" +
-                    fill(t("csync_status_n"), "s" to tEnum(status)) + " · " + fill(t("csync_reported_lower_n"), "date" to fmtDateTime(d.long("created")))
+                    fill(t("csync_status_n"), "s" to tEnum(status)) + " · " + fill(
+                        t("csync_reported_lower_n"),
+                        "date" to fmtDateTime(d.long("created")),
+                    )
                 WfSendRequestButton { actions.send(d, piece.trim(), summary, "csync_ask_damage") }
                 RecordActions("DAMAGE", d.id, piece.trim(), summary)
                 if (ctx.canPost && status !in TicketBoard.Damages.closed) DamageButtons(d, status, actions)
@@ -377,9 +519,21 @@ private fun DamageButtons(d: Rec, status: String, actions: TicketActions) {
     val ctx = LocalSync.current
     val set = { to: String -> actions.act(d.id) { ctx.api.patch("/damages/${d.id}", body("status" to to)) } }
     val busy = actions.busy(d.id)
-    if (status == "OPEN") ZillitButton(t("csync_repairing"), onClick = { set("REPAIRING") }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, enabled = !busy)
+    if (status == "OPEN") ZillitButton(
+        t("csync_repairing"),
+        onClick = { set("REPAIRING") },
+        variant = ButtonVariant.Secondary,
+        size = ButtonSize.Small,
+        enabled = !busy,
+    )
     ZillitButton(t("csync_repaired"), onClick = { set("REPAIRED") }, size = ButtonSize.Small, enabled = !busy)
-    ZillitButton(t("csync_write_off"), onClick = { set("WRITTEN_OFF") }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, enabled = !busy)
+    ZillitButton(
+        t("csync_write_off"),
+        onClick = { set("WRITTEN_OFF") },
+        variant = ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+        enabled = !busy,
+    )
 }
 
 @Composable
@@ -389,9 +543,16 @@ private fun MissingCard(m: Rec, actions: TicketActions, foundAt: FoundAt?, onFou
     val piece = "${costume?.str("asset_number").orEmpty()} ${costume?.str("name").orEmpty()}"
     val status = m.str("status")
     SectionCard(modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.Top) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            verticalAlignment = Alignment.Top,
+        ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     CostumeLink(costume)
                     StatusBadge(status)
                     costume?.rec("character")?.str("name")?.takeIf { it.isNotBlank() }?.let { MutedText(it) }
@@ -403,13 +564,25 @@ private fun MissingCard(m: Rec, actions: TicketActions, foundAt: FoundAt?, onFou
                         t("csync_field_last_assigned_short") to m.str("last_assigned_to"),
                         t("csync_field_last_scan") to fmtDateTime(m.long("last_scan_at")),
                         t("csync_field_reported") to fmtDateTime(m.long("created")),
-                        if (m.long("resolved_at") != 0L) t("csync_field_resolved") to fmtDateTime(m.long("resolved_at")) else null,
+                        if (m.long("resolved_at") != 0L) t("csync_field_resolved") to fmtDateTime(
+                            m.long("resolved_at"),
+                        ) else null,
                     ),
                 )
                 if (m.str("notes").isNotBlank()) MutedText(m.str("notes"), Modifier.padding(top = 10.dp), maxLines = 6)
-                ReferenceGrid(entityType = "MISSING", entityId = m.id, kinds = MISSING_PHOTO_KINDS, compact = true, bare = true, attachments = false)
+                ReferenceGrid(
+                    entityType = "MISSING",
+                    entityId = m.id,
+                    kinds = MISSING_PHOTO_KINDS,
+                    compact = true,
+                    bare = true,
+                    attachments = false,
+                )
             }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
                 val summary = "${t("csync_share_missing")}: $piece\n" +
                     fill(t("csync_last_seen_n"), "x" to m.str("last_seen_location").ifBlank { "—" }) + " · " +
                     fill(t("csync_last_assigned_lower_n"), "x" to m.str("last_assigned_to").ifBlank { "—" }) + "\n" +
@@ -428,13 +601,25 @@ private fun MissingButtons(m: Rec, actions: TicketActions, foundAt: FoundAt?, on
     val busy = actions.busy(m.id)
     val here = foundAt?.takeIf { it.id == m.id }
     if (here != null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            TextInput(here.location, { onFoundAt(FoundAt(m.id, it)) }, t("csync_field_found_at"), Modifier.width(FOUND_FIELD), placeholder = t("csync_field_found_at"))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextInput(
+                here.location,
+                { onFoundAt(FoundAt(m.id, it)) },
+                t("csync_field_found_at"),
+                Modifier.width(FOUND_FIELD),
+                placeholder = t("csync_field_found_at"),
+            )
             ZillitButton(
                 t("csync_save"),
                 onClick = {
                     actions.act(m.id) {
-                        ctx.api.patch("/missing/${m.id}", body("status" to "FOUND", "found_location" to here.location.ifBlank { DEFAULT_FOUND_AT }))
+                        ctx.api.patch(
+                            "/missing/${m.id}",
+                            body("status" to "FOUND", "found_location" to here.location.ifBlank { DEFAULT_FOUND_AT }),
+                        )
                     }
                 },
                 size = ButtonSize.Small,
@@ -442,7 +627,12 @@ private fun MissingButtons(m: Rec, actions: TicketActions, foundAt: FoundAt?, on
             )
         }
     } else {
-        ZillitButton(t("csync_found"), onClick = { onFoundAt(FoundAt(m.id, DEFAULT_FOUND_AT)) }, size = ButtonSize.Small, leadingIcon = ZillitIcons.Check)
+        ZillitButton(
+            t("csync_found"),
+            onClick = { onFoundAt(FoundAt(m.id, DEFAULT_FOUND_AT)) },
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Check,
+        )
     }
     ZillitButton(
         t("csync_write_off"),

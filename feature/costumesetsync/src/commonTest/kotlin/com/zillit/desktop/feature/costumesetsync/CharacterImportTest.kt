@@ -12,7 +12,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CharacterImportTest {
-    private val detected = listOf(sceneRec("""{"name":"MEERA","scenes":4,"lines":12}"""), sceneRec("""{"name":"RADIO VOICE","scenes":1,"lines":1}"""))
+    private val detected = listOf(
+        sceneRec("""{"name":"MEERA","scenes":4,"lines":12}"""),
+        sceneRec("""{"name":"RADIO VOICE","scenes":1,"lines":1}"""),
+    )
     private val existing = listOf(sceneRec("""{"_id":"e1","name":"Meera","cast_number":3}"""))
 
     @Test
@@ -54,12 +57,19 @@ class CharacterImportTest {
     @Test
     fun manualCharactersAreOnlyHandTypedPeopleNoSceneMentions() {
         val rows = listOf(ImportRow("MEERA"), ImportRow("Stunt double", "9", manual = true))
-        assertEquals(listOf("Stunt double" to 9L), manualCharacters(rows, existing, detected).map { it.name to it.castNumber })
+        assertEquals(
+            listOf("Stunt double" to 9L),
+            manualCharacters(rows, existing, detected).map { it.name to it.castNumber },
+        )
     }
 
     @Test
     fun manualCharactersSkipKnownAndDeletedNames() {
-        val known = listOf(ImportRow("MEERA", manual = true), ImportRow("RADIO VOICE", manual = true), ImportRow("Extra", deleted = true, manual = true))
+        val known = listOf(
+            ImportRow("MEERA", manual = true),
+            ImportRow("RADIO VOICE", manual = true),
+            ImportRow("Extra", deleted = true, manual = true),
+        )
         assertTrue(manualCharacters(known, existing, detected).isEmpty())
     }
 

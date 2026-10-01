@@ -44,7 +44,6 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
-private const val SEARCH_WIDTH = 320
 private const val NAME_COL = 150
 private const val CHAR_COL = 170
 private const val SHORT_COL = 80
@@ -58,12 +57,17 @@ private const val MENU_COL = 56
 @Composable
 private fun TalentRep(a: Rec) {
     val extra = a.recs("talent_rep_details")
-    if (a.str("talent_rep").isEmpty() && a.str("talent_rep_email").isEmpty() && a.str("talent_rep_phone").isEmpty() && extra.isEmpty()) {
+    val contact = listOf(a.str("talent_rep"), a.str("talent_rep_email"), a.str("talent_rep_phone"))
+    if (contact.all { it.isEmpty() } && extra.isEmpty()) {
         MutedText("—")
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-        if (a.str("talent_rep").isNotEmpty()) ZillitText(a.str("talent_rep"), style = ZillitTheme.typography.labelSmall, maxLines = 1)
+        if (a.str("talent_rep").isNotEmpty()) ZillitText(
+            a.str("talent_rep"),
+            style = ZillitTheme.typography.labelSmall,
+            maxLines = 1,
+        )
         if (a.str("talent_rep_email").isNotEmpty()) MutedText(a.str("talent_rep_email"))
         if (a.str("talent_rep_phone").isNotEmpty()) MutedText(a.str("talent_rep_phone"))
         extra.forEach { MutedText("${it.str("label")}: ${it.str("value")}") }
@@ -81,8 +85,16 @@ internal fun startWorkText(ms: Long, zone: TimeZone = TimeZone.currentSystemDefa
 internal fun actorMatches(a: Rec, needle: String): Boolean {
     val n = needle.trim().lowercase()
     if (n.isEmpty()) return true
-    val fields = listOf(a.str("name"), a.str("notes"), a.str("talent_rep"), a.str("talent_rep_email"), a.str("talent_rep_phone")) +
-        a.recs("characters").map { it.str("name") } + a.recs("talent_rep_details").map { "${it.str("label")} ${it.str("value")}" }
+    val fields = listOf(
+        a.str("name"),
+        a.str("notes"),
+        a.str("talent_rep"),
+        a.str("talent_rep_email"),
+        a.str("talent_rep_phone"),
+    ) +
+        a.recs("characters").map { it.str("name") } + a.recs("talent_rep_details").map {
+            "${it.str("label")} ${it.str("value")}"
+        }
     return fields.joinToString(" ").lowercase().contains(n)
 }
 
@@ -106,18 +118,17 @@ fun ActorsScreen() {
         title = "★ ${t("csync_nav_actors")}",
         sub = t("csync_actors_page_sub"),
         crumbs = "${t("csync_nav_characters")} / ${t("csync_nav_actors")}",
-        titleContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ZillitText("★", Modifier.padding(end = 8.dp), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), color = ZillitTheme.colors.accent)
-                ZillitText(t("csync_nav_actors"), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold))
-            }
-        },
+        titleContent = { ActorsTitle() },
         modifier = Modifier.padding(top = 12.dp),
     )
     SectionCard(
         title = t("csync_all_actors"),
         actions = {
-            if (ctx.canPost) ZillitButton(t("csync_add"), onClick = { editing = null; formOpen = true }, leadingIcon = ZillitIcons.Add)
+            if (ctx.canPost) ZillitButton(
+                t("csync_add"),
+                onClick = { editing = null; formOpen = true },
+                leadingIcon = ZillitIcons.Add,
+            )
         },
     ) {
         Await(actors) { all ->
@@ -130,17 +141,40 @@ fun ActorsScreen() {
             }
         }
     }
-    ActorFormDialog(open = formOpen, onClose = { formOpen = false }, editing = editing, onSaved = { actors.reload(silent = true) })
-    val doomed = deleting
+    ActorFormDialog(
+        open = formOpen,
+        onClose = { formOpen = false },
+        editing = editing,
+        onSaved = { actors.reload(silent = true) },
+    )
+    ActorDeleteDialog(deleting, onDismiss = { deleting = null }) { actors.reload(silent = true) }
+}
+
+@Composable
+private fun ActorsTitle() {
+    val titleStyle = ZillitTheme.typography.titleLarge.copy(
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
+        fontWeight = FontWeight.Bold,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ZillitText("★", Modifier.padding(end = 8.dp), style = titleStyle, color = ZillitTheme.colors.accent)
+        ZillitText(t("csync_nav_actors"), style = titleStyle)
+    }
+}
+
+@Composable
+private fun ActorDeleteDialog(doomed: Rec?, onDismiss: () -> Unit, onDeleted: () -> Unit) {
+    val ctx = LocalSync.current
     FormDialog(
         open = doomed != null,
         title = t("csync_delete_actor_confirm").replace("{name}", doomed?.str("name").orEmpty()),
-        onDismiss = { deleting = null },
+        onDismiss = onDismiss,
         confirmLabel = t("csync_delete"),
         onConfirm = {
             val id = doomed?.id.orEmpty()
-            deleting = null
-            ctx.launchWrite({ ctx.api.delete("/actors/$id") }) { actors.reload(silent = true) }
+            onDismiss()
+            ctx.launchWrite({ ctx.api.delete("/actors/$id") }) { onDeleted() }
         },
         danger = true,
         width = 480.dp,
@@ -152,7 +186,11 @@ private fun ActorTable(list: List<Rec>, onEdit: (Rec) -> Unit, onDelete: (Rec) -
     val ctx = LocalSync.current
     val columns = listOf(
         TableColumn<Rec>(t("csync_field_name"), ColumnWidth.Fixed(NAME_COL.dp)) { a ->
-            if (ctx.canPost) CastLink(a.str("name"), { onEdit(a) }, bold = true) else ZillitText(a.str("name"), maxLines = 1)
+            if (ctx.canPost) CastLink(
+                a.str("name"),
+                { onEdit(a) },
+                bold = true,
+            ) else ZillitText(a.str("name"), maxLines = 1)
         },
         TableColumn(t("csync_field_characters_plural"), ColumnWidth.Fixed(CHAR_COL.dp)) { a ->
             val chars = a.recs("characters")
@@ -162,15 +200,32 @@ private fun ActorTable(list: List<Rec>, onEdit: (Rec) -> Unit, onDelete: (Rec) -
                 Column { chars.forEach { c -> CastLink(charLabel(c), { ctx.nav.go("characters/${c.id}") }) } }
             }
         },
-        TableColumn(t("csync_field_gender"), ColumnWidth.Fixed(SHORT_COL.dp)) { a -> ZillitText(tEnum(a.str("gender")), maxLines = 1) },
-        TableColumn(t("csync_field_age"), ColumnWidth.Fixed((SHORT_COL / 2).dp)) { a -> ZillitText(a.str("age"), maxLines = 1) },
+        TableColumn(
+            t("csync_field_gender"),
+            ColumnWidth.Fixed(SHORT_COL.dp),
+        ) { a -> ZillitText(tEnum(a.str("gender")), maxLines = 1) },
+        TableColumn(
+            t("csync_field_age"),
+            ColumnWidth.Fixed((SHORT_COL / 2).dp),
+        ) { a -> ZillitText(a.str("age"), maxLines = 1) },
         TableColumn(t("csync_field_next_fitting_col"), ColumnWidth.Fixed(FITTING_COL.dp)) { a -> NextFittingCell(a) },
-        TableColumn(t("csync_field_start_work"), ColumnWidth.Fixed(DATE_COL.dp)) { a -> ZillitText(startWorkText(a.long("start_work_date")), maxLines = 1) },
+        TableColumn(
+            t("csync_field_start_work"),
+            ColumnWidth.Fixed(DATE_COL.dp),
+        ) { a -> ZillitText(startWorkText(a.long("start_work_date")), maxLines = 1) },
         TableColumn(t("csync_talent_rep_col"), ColumnWidth.Fixed(REP_COL.dp)) { a -> TalentRep(a) },
-        TableColumn(t("csync_field_notes"), ColumnWidth.Fixed(NOTES_COL.dp)) { a -> MutedText(a.str("notes"), maxLines = 2) },
+        TableColumn(
+            t("csync_field_notes"),
+            ColumnWidth.Fixed(NOTES_COL.dp),
+        ) { a -> MutedText(a.str("notes"), maxLines = 2) },
         TableColumn("", ColumnWidth.Fixed(MENU_COL.dp)) { a ->
             if (ctx.canPost) {
-                RowMenu(listOf(menuAction(t("csync_edit")) { onEdit(a) }, menuAction(t("csync_delete"), danger = true) { onDelete(a) }))
+                RowMenu(
+                    listOf(
+                        menuAction(t("csync_edit")) { onEdit(a) },
+                        menuAction(t("csync_delete"), danger = true) { onDelete(a) },
+                    ),
+                )
             }
         },
     )
@@ -183,7 +238,9 @@ private fun ActorTable(list: List<Rec>, onEdit: (Rec) -> Unit, onDelete: (Rec) -
     )
 }
 
-/** The fitting the service found wins (and links to it); the date typed on the form is only a note until one is booked. */
+/**
+ * The fitting the service found wins (and links to it); the date typed on the form is only a note until one is booked.
+ */
 @Composable
 private fun NextFittingCell(a: Rec) {
     val ctx = LocalSync.current

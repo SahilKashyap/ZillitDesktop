@@ -49,13 +49,17 @@ import org.jetbrains.skia.Image
 import java.io.File
 import kotlin.test.Test
 
-/** Opt-in (SYNC_SHOTS=1): the Costumes, Costume detail, Labels, Gallery and Dashboard screens against rich canned data. */
+/**
+ * Opt-in (SYNC_SHOTS=1): the Costumes, Costume detail, Labels, Gallery and Dashboard screens against rich canned
+ * data.
+ */
 @OptIn(ExperimentalTestApi::class)
 class ShotsCostumesTest {
 
     private fun costume(i: Int, name: String, status: String, category: String, extra: String = "") =
         """{"_id":"c$i","asset_number":"CST-00000$i","name":"$name","category":"$category","status":"$status","type":"Coat","color":"Red","size":"M",
-        "location":"Warehouse","source":"PURCHASED","quantity":${if (i == 2) 3 else 1},"character":{"_id":"ch1","name":"Anna Vandermeer"}$extra}"""
+        "location":"Warehouse","source":"PURCHASED","quantity":${if (i == 2) 3 else 1},"character":{"_id":"ch1",
+        "name":"Anna Vandermeer"}$extra}"""
 
     private val costumes = listOf(
         costume(1, "Red wool overcoat with a very long descriptive name to test truncation", "AVAILABLE", "CLOTHING"),
@@ -80,19 +84,25 @@ class ShotsCostumesTest {
         "missing":[{"_id":"m1","created":1772755200000,"last_seen_location":"Set 2","status":"OPEN"}],
         "fitting_items":[{"_id":"f1","fitting_id":"fit1","status":"SCHEDULED","notes":"hem","fitting":{"scheduled_at":1772755200000}}],
         "cleaning":[{"_id":"cl1","problem":"Mud","status":"IN_PROGRESS","expected_ready_at":1773755200000}],
-        "alterations":[{"_id":"al1","issue":"Hem","required_work":"Shorten","status":"IN_PROGRESS","deadline":1773755200000}]}"""
+        "alterations":[{"_id":"al1","issue":"Hem","required_work":"Shorten","status":"IN_PROGRESS",
+        "deadline":1773755200000}]}"""
 
     private val dashboard = """{"date":"2026-10-01","counts":{"costumes":142,"characters":82,"todays_scenes":2,"todays_costumes":9,"issued_today":3,"returned_today":1,
         "cleaning":4,"alteration":2,"missing":1,"damaged":0,"by_status":{"AVAILABLE":90,"ISSUED":30,"CLEANING":4,"MISSING":1},"emergencies_today":1,"fittings_today":2,"rentals_due":0},
         "todays_scenes":[{"_id":"s1","number":"12","name":"Opening chase","location":"Warehouse","time_of_day":"NIGHT","status":"PENDING","level":"MISSING",
         "characters":[{"character_id":"a","name":"Anna","level":"READY","change":"Change 1 - Muddy"},{"character_id":"b","name":"Bob","level":"MISSING","change":""}]},
         {"_id":"s2","number":"13","name":"Kitchen","location":"Set 2","time_of_day":"DAY","status":"READY","level":"READY","characters":[{"character_id":"c","name":"Cara","level":"PARTIAL","change":"Change 2"}]}],
-        "priorities":[{"text":"Anna's coat is dirty","severity":"WARNING","link":"cleaning"},{"text":"Bob has no costume for scene 12","severity":"CRITICAL","link":"scenes/s1"},{"text":"Rentals due Friday","severity":"INFO"}]}"""
+        "priorities":[{"text":"Anna's coat is dirty","severity":"WARNING","link":"cleaning"},
+        {"text":"Bob has no costume for scene 12","severity":"CRITICAL","link":"scenes/s1"},
+        {"text":"Rentals due Friday","severity":"INFO"}]}"""
 
     private val photos = """[{"_id":"p1","media_type":"IMAGE","kind":"FRONT","label":"Front","attachment":{"name":"front.jpg","media":"k1"}},
         {"_id":"p2","media_type":"FILE","kind":"DOCUMENT","attachment":{"name":"receipt.pdf","content_subtype":"pdf","file_size":120000}},
         {"_id":"p3","media_type":"LINK","kind":"OTHER","url":"https://example.com/ref","title":"Moodboard"},
         {"_id":"p4","media_type":"FILE","kind":"DETAIL","attachment":{"name":"clip.mov","content_subtype":"mov"}}]"""
+
+    private fun isProjectRoot(path: String, last: String): Boolean =
+        last == "projects" || path.substringAfter("/projects/").count { it == '/' } == 0
 
     private fun reply(url: String): String {
         val path = url.substringBefore('?')
@@ -106,7 +116,7 @@ class ShotsCostumesTest {
             path.endsWith("/scenes") -> """[{"_id":"s1","number":"1"},{"_id":"s2","number":"12"}]"""
             path.endsWith("/photos/gallery") -> photos
             path.endsWith("/photos") -> photos
-            last == "projects" || path.substringAfter("/projects/").count { it == '/' } == 0 -> """{"project_name":"Demo","counts":{"scenes":1}}"""
+            isProjectRoot(path, last) -> """{"project_name":"Demo","counts":{"scenes":1}}"""
             last.length == 2 || last == "book" -> "{}"
             else -> "[]"
         }
@@ -115,15 +125,34 @@ class ShotsCostumesTest {
 
     private fun ctx(route: String): SyncCtx {
         val engine = MockEngine { request ->
-            respond(reply(request.url.toString()), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(
+                reply(request.url.toString()),
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
         }
-        val client = ApiClient(httpClient = HttpClientFactory.create({ Factory(engine) }), headerProvider = { _, _, _, _ -> emptyMap() })
-        val config = AppConfig(Environment.Develop, ZillitService.entries.associateWith { "https://${it.name.lowercase()}.test" }, emptyMap())
+        val client = ApiClient(
+            httpClient = HttpClientFactory.create({ Factory(engine) }),
+            headerProvider = { _, _, _, _ -> emptyMap() },
+        )
+        val config = AppConfig(
+            Environment.Develop,
+            ZillitService.entries.associateWith { "https://${it.name.lowercase()}.test" },
+            emptyMap(),
+        )
         val meta = Rec(Json.parseToJsonElement(META) as JsonObject)
         return SyncCtx(
             api = SyncOnsetApi(client, config, projectId = { "p1" }),
             viewer = SyncViewer(resolved = true, enabled = true, canView = true, canPost = true, canDownload = true),
-            project = SyncProject(Rec(Json.parseToJsonElement("""{"project_name":"Demo Production","my_role":"ADMIN","currency":"GBP","shooting_day":4,"current_location":"London"}""") as JsonObject), setOf("ADMIN")),
+            project = SyncProject(
+                Rec(
+                    Json.parseToJsonElement(
+                        """{"project_name":"Demo Production","my_role":"ADMIN","currency":"GBP",
+                        "shooting_day":4,"current_location":"London"}""",
+                    ) as JsonObject,
+                ),
+                setOf("ADMIN"),
+            ),
             meta = meta,
             nav = SyncNav(SyncRoute.parse(route)),
             scope = CoroutineScope(Dispatchers.Unconfined),
@@ -132,7 +161,13 @@ class ShotsCostumesTest {
         )
     }
 
-    private fun shotOf(name: String, route: String, width: Int = 1240, height: Int = 800, content: (@Composable () -> Unit)? = null) {
+    private fun shotOf(
+        name: String,
+        route: String,
+        width: Int = 1240,
+        height: Int = 800,
+        content: (@Composable () -> Unit)? = null,
+    ) {
         if (System.getenv("SYNC_SHOTS") == null) return
         runSkikoComposeUiTest(size = Size(width.toFloat(), height.toFloat())) {
             val context = ctx(route)
@@ -140,7 +175,9 @@ class ShotsCostumesTest {
                 ZillitTheme(animateThemeChange = false) {
                     CompositionLocalProvider(LocalSync provides context) {
                         Column(Modifier.size(width.dp, height.dp)) {
-                            if (content == null) SyncFrame(null, 0, true, {}, {}) else Box(Modifier.size(width.dp, height.dp)) { content() }
+                            if (content == null) SyncFrame(null, 0, true, {}, {}) else Box(
+                                Modifier.size(width.dp, height.dp),
+                            ) { content() }
                         }
                     }
                 }
@@ -163,7 +200,11 @@ class ShotsCostumesTest {
         com.zillit.desktop.feature.costumesetsync.ui.screens.CostumeFormDialog(open = true, onClose = {})
     }
 
-    private fun dlg(name: String, route: String = "costumes/c1", content: @Composable () -> Unit) = shotOf(name, route, content = content)
+    private fun dlg(name: String, route: String = "costumes/c1", content: @Composable () -> Unit) = shotOf(
+        name,
+        route,
+        content = content,
+    )
 
     @Test fun dlgEmergency() = dlg("dlg_emergency") { CleaningDialog(costume, true, "", "", {}, { _, _ -> }) }
     @Test fun dlgCleaning() = dlg("dlg_cleaning") { CleaningDialog(costume, false, "", "", {}, { _, _ -> }) }
@@ -185,6 +226,7 @@ class ShotsCostumesTest {
     private companion object {
         const val META = """{"costume_statuses":["AVAILABLE","ISSUED","CLEANING"],"costume_categories":["CLOTHING","FOOTWEAR"],
             "costume_sources":["PURCHASED","RENTED"],"standard_locations":["Warehouse","Set 2"],"finance_roles":["ADMIN"],
-            "costume_types":{"CLOTHING":["Coat"]},"cleaning_types":["DRY_CLEANING"],"media_types":["IMAGE","FILE","LINK"]}"""
+            "costume_types":{"CLOTHING":["Coat"]},"cleaning_types":["DRY_CLEANING"],"media_types":["IMAGE","FILE",
+            "LINK"]}"""
     }
 }

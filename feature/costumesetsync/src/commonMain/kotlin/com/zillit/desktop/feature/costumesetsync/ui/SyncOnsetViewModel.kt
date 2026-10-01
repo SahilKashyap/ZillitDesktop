@@ -153,7 +153,9 @@ class SyncOnsetViewModel(
 
     private suspend fun fetchCounts() {
         val answer = api.get("/dashboard")
-        (answer as? ZillitResult.Success)?.data?.rec?.rec("counts")?.let { counts -> setState { copy(counts = counts) } }
+        (answer as? ZillitResult.Success)?.data?.rec?.rec("counts")?.let { counts ->
+            setState { copy(counts = counts) }
+        }
     }
 
     override fun onCleared() {

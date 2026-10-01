@@ -23,6 +23,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.costumesetsync.data.Answer
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.humanize
 import com.zillit.desktop.feature.costumesetsync.ui.DateInput
@@ -33,6 +34,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.mapRows
+import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.t
 import kotlinx.coroutines.launch
 
@@ -68,20 +70,24 @@ fun ActorFormDialog(
     allowAddAnother: Boolean = true,
 ) {
     val ctx = LocalSync.current
-    var form by remember(open, editing) { mutableStateOf(if (editing != null) toActorForm(editing) else newActorForm(forCharacter?.id)) }
+    var form by remember(open, editing) {
+        mutableStateOf(if (editing != null) toActorForm(editing) else newActorForm(forCharacter?.id))
+    }
     var characters by remember { mutableStateOf(emptyList<Rec>()) }
     var saving by remember { mutableStateOf(false) }
     var addCharacterOpen by remember { mutableStateOf(false) }
     val quickOnly = quick && editing == null
-    val loadCharacters = suspend { characters = (ctx.api.get("/characters").mapRows() as? ZillitResult.Success)?.data.orEmpty() }
-    LaunchedEffect(open) { if (open && forCharacter == null && !quickOnly) loadCharacters() }
+    val loadCharacters = suspend {
+        characters = (ctx.api.get("/characters").mapRows() as? ZillitResult.Success)?.data.orEmpty()
+    }
+    LaunchedEffect(open) { if (listsCharacters(open, forCharacter, quickOnly)) loadCharacters() }
 
     val canSave = form.first.isNotBlank() && !saving
     fun save(another: Boolean) {
         if (!canSave) return
         saving = true
         ctx.scope.launch {
-            val answer = ctx.write { if (editing != null) ctx.api.patch("/actors/${editing.id}", toActorBody(form)) else ctx.api.post("/actors", toActorBody(form)) }
+            val answer = submitActor(ctx, editing, form)
             saving = false
             if (answer == null) return@launch
             answer.rec?.let(onSaved)
@@ -95,38 +101,23 @@ fun ActorFormDialog(
     }
 
     if (quickOnly) {
-        FormDialog(
-            open = open,
-            title = t("csync_create_actor"),
-            onDismiss = onClose,
-            confirmLabel = saveLabel ?: t("csync_create"),
-            onConfirm = { save(false) },
-            confirmEnabled = canSave,
-            busy = saving,
-            width = QUICK_DIALOG_WIDTH.dp,
-        ) {
-            FormGrid {
-                TextInput(form.first, { form = form.copy(first = it) }, t("csync_first_name"), Modifier.width(220.dp))
-                TextInput(form.last, { form = form.copy(last = it) }, t("csync_last_name"), Modifier.width(220.dp))
-            }
-        }
+        QuickActorDialog(open, form, { form = it }, saveLabel, canSave, saving, onClose) { save(false) }
         return
     }
     SyncDialogShell(
-        title = if (editing != null) t("csync_edit_actor") else t("csync_create_actor"),
+        title = actorDialogTitle(editing),
         visible = open,
         onDismiss = onClose,
         width = ACTOR_DIALOG_WIDTH.dp,
         actions = {
-            ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary, enabled = !saving)
-            if (editing == null && allowAddAnother) {
-                ZillitButton(t("csync_create_plus"), onClick = { save(true) }, variant = ButtonVariant.Secondary, enabled = canSave)
-            }
-            ZillitButton(
-                if (editing != null) t("csync_save") else saveLabel ?: t("csync_create"),
-                onClick = { save(false) },
-                enabled = canSave,
-                loading = saving,
+            ActorDialogButtons(
+                isNew = editing == null,
+                allowAddAnother = allowAddAnother,
+                saveLabel = saveLabel,
+                canSave = canSave,
+                saving = saving,
+                onClose = onClose,
+                onSave = ::save,
             )
         },
     ) {
@@ -151,6 +142,75 @@ fun ActorFormDialog(
     )
 }
 
+private fun listsCharacters(open: Boolean, forCharacter: Rec?, quickOnly: Boolean) =
+    open && forCharacter == null && !quickOnly
+
+private fun actorDialogTitle(editing: Rec?) = if (editing != null) t("csync_edit_actor") else t("csync_create_actor")
+
+private suspend fun submitActor(ctx: SyncCtx, editing: Rec?, form: ActorFormState): Answer? = ctx.write {
+    if (editing != null) {
+        ctx.api.patch("/actors/${editing.id}", toActorBody(form))
+    } else {
+        ctx.api.post("/actors", toActorBody(form))
+    }
+}
+
+/** The breakdown's Cast name pickers ask only for the name. */
+@Composable
+private fun QuickActorDialog(
+    open: Boolean,
+    form: ActorFormState,
+    onChange: (ActorFormState) -> Unit,
+    saveLabel: String?,
+    canSave: Boolean,
+    saving: Boolean,
+    onClose: () -> Unit,
+    onSave: () -> Unit,
+) {
+    FormDialog(
+        open = open,
+        title = t("csync_create_actor"),
+        onDismiss = onClose,
+        confirmLabel = saveLabel ?: t("csync_create"),
+        onConfirm = onSave,
+        confirmEnabled = canSave,
+        busy = saving,
+        width = QUICK_DIALOG_WIDTH.dp,
+    ) {
+        FormGrid {
+            TextInput(form.first, { onChange(form.copy(first = it)) }, t("csync_first_name"), Modifier.width(220.dp))
+            TextInput(form.last, { onChange(form.copy(last = it)) }, t("csync_last_name"), Modifier.width(220.dp))
+        }
+    }
+}
+
+@Composable
+private fun ActorDialogButtons(
+    isNew: Boolean,
+    allowAddAnother: Boolean,
+    saveLabel: String?,
+    canSave: Boolean,
+    saving: Boolean,
+    onClose: () -> Unit,
+    onSave: (Boolean) -> Unit,
+) {
+    ZillitButton(t("csync_cancel"), onClick = onClose, variant = ButtonVariant.Secondary, enabled = !saving)
+    if (isNew && allowAddAnother) {
+        ZillitButton(
+            t("csync_create_plus"),
+            onClick = { onSave(true) },
+            variant = ButtonVariant.Secondary,
+            enabled = canSave,
+        )
+    }
+    ZillitButton(
+        if (!isNew) t("csync_save") else saveLabel ?: t("csync_create"),
+        onClick = { onSave(false) },
+        enabled = canSave,
+        loading = saving,
+    )
+}
+
 @Composable
 private fun ActorFormBody(
     form: ActorFormState,
@@ -160,30 +220,34 @@ private fun ActorFormBody(
     forCharacter: Rec?,
     onAddCharacter: () -> Unit,
 ) {
-    val ctx = LocalSync.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         FormGrid {
             Row(Cell, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                TextInput(form.first, { onChange(form.copy(first = it)) }, t("csync_first_name"), Modifier.width(200.dp))
+                TextInput(
+                    form.first,
+                    { onChange(form.copy(first = it)) },
+                    t("csync_first_name"),
+                    Modifier.width(200.dp),
+                )
                 TextInput(form.last, { onChange(form.copy(last = it)) }, t("csync_last_name"), Modifier.width(200.dp))
             }
             TextInput(form.phone, { onChange(form.copy(phone = it)) }, t("csync_field_phone"), Cell)
-            Row(Cell, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                EnumInput(
-                    form.gender,
-                    ctx.metaList("genders").ifEmpty { GenderFallback },
-                    { onChange(form.copy(gender = it)) },
-                    t("csync_field_gender_age"),
-                    Modifier.width(300.dp),
-                    t("csync_select"),
-                )
-                TextInput(form.age, { onChange(form.copy(age = it)) }, t("csync_field_age"), Modifier.width(AGE_WIDTH.dp), number = true)
-            }
+            GenderAgeRow(form, onChange)
             TextInput(form.phone2, { onChange(form.copy(phone2 = it)) }, t("csync_field_phone_2"), Cell)
             CharacterPicks(form, onChange, characters, editingId, forCharacter, onAddCharacter)
             Column(Cell, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-                TextInput(form.email, { onChange(form.copy(email = it)) }, t("csync_field_email"), Modifier.fillMaxWidth())
-                TextInput(form.email2, { onChange(form.copy(email2 = it)) }, t("csync_field_email_2"), Modifier.fillMaxWidth())
+                TextInput(
+                    form.email,
+                    { onChange(form.copy(email = it)) },
+                    t("csync_field_email"),
+                    Modifier.fillMaxWidth(),
+                )
+                TextInput(
+                    form.email2,
+                    { onChange(form.copy(email2 = it)) },
+                    t("csync_field_email_2"),
+                    Modifier.fillMaxWidth(),
+                )
             }
             TextInput(form.notes, { onChange(form.copy(notes = it)) }, t("csync_field_notes"), Cell, multiline = true)
             NextFitting(form, onChange)
@@ -197,6 +261,28 @@ private fun ActorFormBody(
             TextInput(form.agency, { onChange(form.copy(agency = it)) }, t("csync_field_agency"), Cell)
         }
         MeasurementsAndRep(form, onChange)
+    }
+}
+
+@Composable
+private fun GenderAgeRow(form: ActorFormState, onChange: (ActorFormState) -> Unit) {
+    val ctx = LocalSync.current
+    Row(Cell, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        EnumInput(
+            form.gender,
+            ctx.metaList("genders").ifEmpty { GenderFallback },
+            { onChange(form.copy(gender = it)) },
+            t("csync_field_gender_age"),
+            Modifier.width(300.dp),
+            t("csync_select"),
+        )
+        TextInput(
+            form.age,
+            { onChange(form.copy(age = it)) },
+            t("csync_field_age"),
+            Modifier.width(AGE_WIDTH.dp),
+            number = true,
+        )
     }
 }
 
@@ -248,22 +334,37 @@ private fun CharacterPicks(
                 label = label,
             )
         }
-        if (ctx.canPost) ZillitButton(t("csync_char_add"), onClick = onAddCharacter, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+        if (ctx.canPost) ZillitButton(
+            t("csync_char_add"),
+            onClick = onAddCharacter,
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Add,
+        )
         MutedText(t("csync_tick_every_character"), maxLines = 2)
     }
 }
 
 @Composable
 private fun MeasurementsAndRep(form: ActorFormState, onChange: (ActorFormState) -> Unit) {
-    SectionHeading(t("csync_field_measurements")) { onChange(form.copy(extraMeasures = form.extraMeasures + LabelValue())) }
+    SectionHeading(t("csync_field_measurements")) {
+        onChange(form.copy(extraMeasures = form.extraMeasures + LabelValue()))
+    }
     FormGrid {
         ActorMeasures.forEach { m ->
-            TextInput(form.measurements[m].orEmpty(), { onChange(form.copy(measurements = form.measurements + (m to it))) }, humanize(m), Cell)
+            TextInput(
+                form.measurements[m].orEmpty(),
+                { onChange(form.copy(measurements = form.measurements + (m to it))) },
+                humanize(m),
+                Cell,
+            )
         }
     }
     // Any other measurement the costume team takes (thigh, neck to waist…), named by the user.
     LabelValueRows(form.extraMeasures, t("csync_measurement_name")) { onChange(form.copy(extraMeasures = it)) }
-    SectionHeading(t("csync_talent_rep")) { onChange(form.copy(talentRepDetails = form.talentRepDetails + LabelValue())) }
+    SectionHeading(t("csync_talent_rep")) {
+        onChange(form.copy(talentRepDetails = form.talentRepDetails + LabelValue()))
+    }
     FormGrid {
         TextInput(form.talentRep, { onChange(form.copy(talentRep = it)) }, t("csync_field_name"), Cell)
         TextInput(form.talentRepEmail, { onChange(form.copy(talentRepEmail = it)) }, t("csync_field_email"), Cell)
@@ -275,19 +376,49 @@ private fun MeasurementsAndRep(form: ActorFormState, onChange: (ActorFormState) 
 
 @Composable
 private fun SectionHeading(title: String, onAdd: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
         ZillitText(title, style = ZillitTheme.typography.titleSmall)
-        ZillitButton(t("csync_add_more"), onClick = onAdd, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+        ZillitButton(
+            t("csync_add_more"),
+            onClick = onAdd,
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Add,
+        )
     }
 }
 
 @Composable
 private fun LabelValueRows(rows: List<LabelValue>, labelHint: String, onChange: (List<LabelValue>) -> Unit) {
     rows.forEachIndexed { i, row ->
-        Row(Wide, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            TextInput(row.label, { v -> onChange(rows.mapIndexed { j, x -> if (j == i) x.copy(label = v) else x }) }, labelHint, Modifier.width(300.dp))
-            TextInput(row.value, { v -> onChange(rows.mapIndexed { j, x -> if (j == i) x.copy(value = v) else x }) }, t("csync_value"), Modifier.width(380.dp))
-            ZillitButton(t("csync_remove"), onClick = { onChange(rows.filterIndexed { j, _ -> j != i }) }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Trash)
+        Row(
+            Wide,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextInput(
+                row.label,
+                { v -> onChange(rows.mapIndexed { j, x -> if (j == i) x.copy(label = v) else x }) },
+                labelHint,
+                Modifier.width(300.dp),
+            )
+            TextInput(
+                row.value,
+                { v -> onChange(rows.mapIndexed { j, x -> if (j == i) x.copy(value = v) else x }) },
+                t("csync_value"),
+                Modifier.width(380.dp),
+            )
+            ZillitButton(
+                t("csync_remove"),
+                onClick = { onChange(rows.filterIndexed { j, _ -> j != i }) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Trash,
+            )
         }
     }
 }

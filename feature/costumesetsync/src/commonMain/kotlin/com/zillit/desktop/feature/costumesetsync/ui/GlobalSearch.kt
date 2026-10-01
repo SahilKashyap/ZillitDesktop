@@ -80,7 +80,10 @@ fun GlobalSearch(modifier: Modifier = Modifier) {
         costumes = if (!open || debounced.length < COSTUME_MIN) {
             emptyList()
         } else {
-            (ctx.api.get("/costumes", mapOf("q" to debounced, "pageSize" to COSTUME_PAGE)) as? ZillitResult.Success)?.data?.rows.orEmpty()
+            (ctx.api.get(
+                "/costumes",
+                mapOf("q" to debounced, "pageSize" to COSTUME_PAGE),
+            ) as? ZillitResult.Success)?.data?.rows.orEmpty()
         }
     }
     val hits = if (debounced.isEmpty()) {
@@ -124,14 +127,24 @@ fun GlobalSearch(modifier: Modifier = Modifier) {
 private fun SearchMenu(hits: List<NotificationsModel.Hit>, onPick: (NotificationsModel.Hit) -> Unit) {
     val colors = ZillitTheme.colors
     Column(
-        Modifier.width(MENU_WIDTH).background(colors.surfaceRaised, RoundedCornerShape(MENU_RADIUS)).border(1.dp, colors.border, RoundedCornerShape(MENU_RADIUS)).padding(vertical = ZillitTheme.spacing.xs),
+        Modifier.width(MENU_WIDTH).background(
+            colors.surfaceRaised,
+            RoundedCornerShape(MENU_RADIUS),
+        ).border(1.dp, colors.border, RoundedCornerShape(MENU_RADIUS)).padding(vertical = ZillitTheme.spacing.xs),
     ) {
         if (hits.isEmpty()) {
-            ZillitText(t("csync_gsearch_no_matches"), Modifier.padding(ZillitTheme.spacing.md), color = colors.textSecondary)
+            ZillitText(
+                t("csync_gsearch_no_matches"),
+                Modifier.padding(ZillitTheme.spacing.md),
+                color = colors.textSecondary,
+            )
         }
         hits.forEach { h ->
             Row(
-                Modifier.fillMaxWidth().clickable { onPick(h) }.padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+                Modifier.fillMaxWidth().clickable { onPick(h) }.padding(
+                    horizontal = ZillitTheme.spacing.md,
+                    vertical = ZillitTheme.spacing.sm,
+                ),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -155,13 +168,22 @@ private fun HeaderSearchBox(value: String, onChange: (String) -> Unit, placehold
     val focused by interaction.collectIsFocusedAsState()
     val shape = RoundedCornerShape(8.dp)
     Row(
-        Modifier.fillMaxWidth().height(32.dp).background(colors.surface, shape).border(1.dp, if (focused) colors.accent else colors.border, shape).padding(horizontal = 11.dp),
+        Modifier.fillMaxWidth().height(32.dp).background(colors.surface, shape).border(
+            1.dp,
+            if (focused) colors.accent else colors.border,
+            shape,
+        ).padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         ZillitIcon(ZillitIcons.Search, tint = colors.textPrimary, size = 15.dp)
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (value.isEmpty()) ZillitText(placeholder, style = ZillitTheme.typography.bodyMedium, color = colors.textMuted, maxLines = 1)
+            if (value.isEmpty()) ZillitText(
+                placeholder,
+                style = ZillitTheme.typography.bodyMedium,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
             BasicTextField(
                 value = value,
                 onValueChange = onChange,

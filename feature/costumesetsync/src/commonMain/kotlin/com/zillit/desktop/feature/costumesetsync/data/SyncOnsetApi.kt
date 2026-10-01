@@ -29,7 +29,13 @@ data class Answer(val data: JsonElement?, val message: String?) {
  * the headers/bearer. The answer is the usual envelope, already folded to an [Answer].
  */
 fun interface MultipartSender {
-    suspend fun send(url: String, fileName: String, bytes: ByteArray, mime: String, fields: Map<String, String>): ZillitResult<Answer>
+    suspend fun send(
+        url: String,
+        fileName: String,
+        bytes: ByteArray,
+        mime: String,
+        fields: Map<String, String>,
+    ): ZillitResult<Answer>
 }
 
 /**
@@ -62,7 +68,11 @@ class SyncOnsetApi(
 
     suspend fun get(path: String, query: Map<String, Any?> = emptyMap()) = call(HttpVerb.Get, scoped(path), null, query)
 
-    suspend fun post(path: String, body: JsonObject? = null) = call(HttpVerb.Post, scoped(path), body ?: buildJsonObject { })
+    suspend fun post(path: String, body: JsonObject? = null) = call(
+        HttpVerb.Post,
+        scoped(path),
+        body ?: buildJsonObject { },
+    )
 
     suspend fun patch(path: String, body: JsonObject) = call(HttpVerb.Patch, scoped(path), body)
 
@@ -74,8 +84,16 @@ class SyncOnsetApi(
      * A multipart upload: one `file` part plus text [fields] (`kind`). The web's
      * `UPLOAD(...)` for `parseScript` / `parseSchedule`.
      */
-    suspend fun upload(path: String, fileName: String, bytes: ByteArray, mime: String, fields: Map<String, String> = emptyMap()): ZillitResult<Answer> {
-        val url = scoped(path) ?: return ZillitResult.Failure(ZillitError.Http(status = OK, serverMessage = "libs_something_went_wrong"))
+    suspend fun upload(
+        path: String,
+        fileName: String,
+        bytes: ByteArray,
+        mime: String,
+        fields: Map<String, String> = emptyMap(),
+    ): ZillitResult<Answer> {
+        val url = scoped(path) ?: return ZillitResult.Failure(
+            ZillitError.Http(status = OK, serverMessage = "libs_something_went_wrong"),
+        )
         val sender = multipart ?: return ZillitResult.Failure(ZillitError.Unknown("no multipart sender is wired"))
         return sender.send(url, fileName, bytes, mime, fields)
     }
@@ -83,7 +101,9 @@ class SyncOnsetApi(
     /** `GET /v2/meta` — every enum the service knows. Not project-scoped. */
     suspend fun meta() = call(HttpVerb.Get, "$root/meta", null, emptyMap())
 
-    private fun scoped(path: String): String? = projectId()?.takeIf { it.isNotBlank() }?.let { "$root/projects/$it$path" }
+    private fun scoped(path: String): String? = projectId()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { "$root/projects/$it$path" }
 
     private suspend fun call(
         verb: HttpVerb,
@@ -92,7 +112,9 @@ class SyncOnsetApi(
         query: Map<String, Any?> = emptyMap(),
     ): ZillitResult<Answer> {
         // No project means no URL: say so rather than send one with "null" in it.
-        if (url == null) return ZillitResult.Failure(ZillitError.Http(status = OK, serverMessage = "libs_something_went_wrong"))
+        if (url == null) return ZillitResult.Failure(
+            ZillitError.Http(status = OK, serverMessage = "libs_something_went_wrong"),
+        )
         val cleaned = query.filterValues { it != null && it.toString().isNotEmpty() }
         return when (
             val answer = apiClient.envelope(verb, url, RequestModule.ProjectUser, body, cleaned)

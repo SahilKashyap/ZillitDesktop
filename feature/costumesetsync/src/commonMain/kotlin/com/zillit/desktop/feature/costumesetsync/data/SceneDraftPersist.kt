@@ -30,7 +30,9 @@ class ApiSceneWrites(private val api: SyncOnsetApi) : SceneWrites {
     override suspend fun setSceneCharacter(sceneId: String, characterId: String, body: JsonObject) =
         api.put("/scenes/$sceneId/characters/$characterId", body)
 
-    override suspend fun removeSceneCharacter(sceneId: String, characterId: String) = api.delete("/scenes/$sceneId/characters/$characterId")
+    override suspend fun removeSceneCharacter(sceneId: String, characterId: String) = api.delete(
+        "/scenes/$sceneId/characters/$characterId",
+    )
     override suspend fun updateCharacter(id: String, body: JsonObject) = api.patch("/characters/$id", body)
 }
 
@@ -67,7 +69,11 @@ fun Map<String, Any>.toJsonBody(): JsonObject = buildJsonObject {
  *
  * [problemText] turns a [CastProblem] into the words the user reads.
  */
-@Suppress("LongMethod", "CyclomaticComplexMethod", "ReturnCount") // One linear chain whose first failure stops it, as the web writes it.
+@Suppress(
+    "LongMethod",
+    "CyclomaticComplexMethod",
+    "ReturnCount",
+) // One linear chain whose first failure stops it, as the web writes it.
 suspend fun persistDraft(
     writes: SceneWrites,
     draft: SceneDraft,
@@ -90,7 +96,10 @@ suspend fun persistDraft(
         if (id == null) return failed(res, null)
         last = res
     } else {
-        val body = if (original != null) diffBody(sceneBody(draft, original), sceneBody(toDraft(original), original)) else sceneBody(draft, null)
+        val body = if (original != null) diffBody(
+            sceneBody(draft, original),
+            sceneBody(toDraft(original), original),
+        ) else sceneBody(draft, null)
         if (body.isNotEmpty()) {
             val res = writes.updateScene(id, body.toJsonBody())
             if (res !is ZillitResult.Success) return failed(res, id)
@@ -115,7 +124,10 @@ suspend fun persistDraft(
         val body = LinkedHashMap<String, kotlinx.serialization.json.JsonElement>()
         edit.castNumber?.let { typed ->
             val raw = typed.trim()
-            castNumberProblem(raw)?.let { return failed(ZillitResult.Failure(ZillitError.Validation(problemText(it))), id) }
+            castNumberProblem(raw)?.let { return failed(
+                ZillitResult.Failure(ZillitError.Validation(problemText(it))),
+                id,
+            ) }
             body["cast_number"] = if (raw.isEmpty()) JsonNull else JsonPrimitive(raw.toLong())
         }
         edit.actorId?.let { body["actor_id"] = if (it.isEmpty()) JsonNull else JsonPrimitive(it) }

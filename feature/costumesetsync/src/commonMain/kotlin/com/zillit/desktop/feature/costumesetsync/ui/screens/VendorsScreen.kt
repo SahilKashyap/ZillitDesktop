@@ -92,24 +92,30 @@ fun VendorsScreen() {
     val reload = { data.reload(silent = true) }
 
     Await(data) { book ->
-        PageHead(
-            title = t("csync_vendors_rentals"),
-            sub = t("csync_vendors_rentals_sub"),
-            actions = {
-                if (ctx.canPost) {
-                    if (tab == "rentals") {
-                        ZillitButton(t("csync_send_return_reminders"), onClick = { remindOpen = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Bell)
-                        ZillitButton(t("csync_rental"), onClick = { rentalOpen = true }, leadingIcon = ZillitIcons.Add)
-                    } else {
-                        ZillitButton(t("csync_vendor"), onClick = { vendorOpen = true }, leadingIcon = ZillitIcons.Add)
-                    }
-                }
-            },
+        VendorsHead(
+            rentalsTab = tab == "rentals",
+            onRemind = { remindOpen = true },
+            onRental = { rentalOpen = true },
+            onVendor = { vendorOpen = true },
         )
-        KitTabs(listOf("rentals" to "${t("csync_rentals")} (${book.rentals.size})", "vendors" to "${t("csync_vendors")} (${book.vendors.size})"), tab) { tab = it }
-        Column(Modifier.padding(top = ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        KitTabs(
+            listOf(
+                "rentals" to "${t("csync_rentals")} (${book.rentals.size})",
+                "vendors" to "${t("csync_vendors")} (${book.vendors.size})",
+            ),
+            tab,
+        ) { tab = it }
+        Column(
+            Modifier.padding(top = ZillitTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
             if ((if (tab == "rentals") book.rentals else book.vendors).isNotEmpty()) {
-                ZillitSearchField(q, { q = it }, Modifier.width(SEARCH_WIDTH), placeholder = t(if (tab == "rentals") "csync_rentals_search" else "csync_vendors_search"))
+                ZillitSearchField(
+                    q,
+                    { q = it },
+                    Modifier.width(SEARCH_WIDTH),
+                    placeholder = t(if (tab == "rentals") "csync_rentals_search" else "csync_vendors_search"),
+                )
             }
             if (tab == "rentals") RentalsTab(ctx, book.rentals, q, reload) else VendorsTab(book.vendors, q)
         }
@@ -120,8 +126,38 @@ fun VendorsScreen() {
 }
 
 @Composable
+private fun VendorsHead(rentalsTab: Boolean, onRemind: () -> Unit, onRental: () -> Unit, onVendor: () -> Unit) {
+    val ctx = LocalSync.current
+    PageHead(
+        title = t("csync_vendors_rentals"),
+        sub = t("csync_vendors_rentals_sub"),
+        actions = {
+            if (ctx.canPost) {
+                if (rentalsTab) {
+                    ZillitButton(
+                        t("csync_send_return_reminders"),
+                        onClick = onRemind,
+                        variant = ButtonVariant.Secondary,
+                        leadingIcon = ZillitIcons.Bell,
+                    )
+                    ZillitButton(t("csync_rental"), onClick = onRental, leadingIcon = ZillitIcons.Add)
+                } else {
+                    ZillitButton(t("csync_vendor"), onClick = onVendor, leadingIcon = ZillitIcons.Add)
+                }
+            }
+        },
+    )
+}
+
+@Composable
 private fun RentalsTab(ctx: SyncCtx, rentals: List<Rec>, q: String, reload: () -> Unit) {
-    val shown = rentals.filter { matches(q, it.rec("costume")?.str("asset_number"), it.rec("costume")?.str("name"), it.rec("vendor")?.str("name"), tEnum(it.str("status"))) }
+    val shown = rentals.filter { matches(
+        q,
+        it.rec("costume")?.str("asset_number"),
+        it.rec("costume")?.str("name"),
+        it.rec("vendor")?.str("name"),
+        tEnum(it.str("status")),
+    ) }
     SectionCard(flush = true) {
         if (rentals.isEmpty()) {
             EmptyState(t("csync_rentals_none"))
@@ -134,14 +170,18 @@ private fun RentalsTab(ctx: SyncCtx, rentals: List<Rec>, q: String, reload: () -
         val weights = if (ctx.isFinance) ROW_WEIGHTS else ROW_WEIGHTS_NO_RATE
         KitHeader(
             listOf(t("csync_field_costume"), t("csync_field_vendor"), t("csync_pickup"), t("csync_return")) +
-                (if (ctx.isFinance) listOf(t("csync_rate_per_day")) else emptyList()) + listOf(t("csync_field_status"), t("csync_actions")),
+                (if (ctx.isFinance) listOf(t("csync_rate_per_day")) else emptyList()) + listOf(
+                    t("csync_field_status"),
+                    t("csync_actions"),
+                ),
             weights,
         )
         shown.forEach { r ->
             val cells = buildList<@Composable () -> Unit> {
                 add {
                     ZillitButton(
-                        (r.rec("costume")?.str("asset_number").orEmpty() + " " + r.rec("costume")?.str("name").orEmpty()).trim(),
+                        "${r.rec("costume")?.str("asset_number").orEmpty()} ${r.rec("costume")?.str("name").orEmpty()}"
+                            .trim(),
                         onClick = { ctx.nav.go("costumes/${r.rec("costume")?.id.orEmpty()}") },
                         variant = ButtonVariant.Tertiary,
                         size = ButtonSize.Small,
@@ -150,7 +190,10 @@ private fun RentalsTab(ctx: SyncCtx, rentals: List<Rec>, q: String, reload: () -
                 add { KitText(r.rec("vendor")?.str("name").orEmpty()) }
                 add { KitText(fmtDate(r.long("pickup_date")), maxLines = 1) }
                 add { ReturnCell(r) }
-                if (ctx.isFinance) add { KitText(if (r.has("rate_per_day")) fmtMoney(r.double("rate_per_day"), ctx.currency) else "—", maxLines = 1) }
+                if (ctx.isFinance) add { KitText(
+                    if (r.has("rate_per_day")) fmtMoney(r.double("rate_per_day"), ctx.currency) else "—",
+                    maxLines = 1,
+                ) }
                 add { StatusBadge(r.str("status"), tEnum(r.str("status"))) }
                 add { RentalActions(ctx, r, reload) }
             }
@@ -164,34 +207,64 @@ private fun ReturnCell(r: Rec) {
     Column {
         KitText(fmtDate(r.long("return_date")), maxLines = 1)
         // The service computes these — an overdue rental is the one thing here somebody has to act on today.
-        if (r.bool("is_overdue")) StatusBadge("OVERDUE", t("csync_rental_overdue")) else if (r.bool("due_soon")) StatusBadge("DUE", t("csync_rental_due_soon"))
+        if (r.bool("is_overdue")) {
+            StatusBadge("OVERDUE", t("csync_rental_overdue"))
+        } else if (r.bool("due_soon")) {
+            StatusBadge("DUE", t("csync_rental_due_soon"))
+        }
     }
 }
 
 @Composable
 private fun RentalActions(ctx: SyncCtx, r: Rec, reload: () -> Unit) {
     if (!ctx.canPost || r.str("status") == "RETURNED") return
-    fun move(status: String) = ctx.launchWrite({ ctx.api.patch("/rentals/${r.id}", body("status" to status)) }, onDone = { reload() })
+    fun move(status: String) = ctx.launchWrite(
+        { ctx.api.patch("/rentals/${r.id}", body("status" to status)) },
+        onDone = { reload() },
+    )
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        if (r.str("status") == "BOOKED") ZillitButton(t("csync_picked_up"), onClick = { move("PICKED_UP") }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+        if (r.str("status") == "BOOKED") ZillitButton(
+            t("csync_picked_up"),
+            onClick = { move("PICKED_UP") },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        )
         ZillitButton(t("csync_returned"), onClick = { move("RETURNED") }, size = ButtonSize.Small)
     }
 }
 
 @Composable
 private fun VendorsTab(vendors: List<Rec>, q: String) {
-    val shown = vendors.filter { matches(q, it.str("name"), it.str("contact_name"), it.str("phone"), it.str("email"), it.str("address")) }
+    val shown = vendors.filter { matches(
+        q,
+        it.str("name"),
+        it.str("contact_name"),
+        it.str("phone"),
+        it.str("email"),
+        it.str("address"),
+    ) }
     when {
         vendors.isEmpty() -> SectionCard { EmptyState(t("csync_vendors_none")) }
         shown.isEmpty() -> SectionCard { EmptyState(t("csync_vendors_no_match")) }
-        else -> FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        else -> FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
             shown.forEach { v ->
                 SectionCard(title = v.str("name"), modifier = Modifier.width(CARD_WIDTH)) {
                     FieldRow(t("csync_field_contact"), v.str("contact_name"))
                     FieldRow(t("csync_field_phone"), v.str("phone"))
                     FieldRow(t("csync_field_email"), v.str("email"))
                     FieldRow(t("csync_field_address"), v.str("address"))
-                    FieldRow(t("csync_items"), t("csync_vendor_counts", "c" to (v.rec("counts")?.long("costumes") ?: 0L), "r" to (v.rec("counts")?.long("rentals") ?: 0L)))
+                    FieldRow(
+                        t("csync_items"),
+                        t(
+                            "csync_vendor_counts",
+                            "c" to (v.rec("counts")?.long("costumes") ?: 0L),
+                            "r" to (v.rec("counts")?.long("rentals") ?: 0L),
+                        ),
+                    )
                     if (v.str("notes").isNotBlank()) MutedText(v.str("notes"), maxLines = 4)
                 }
             }
@@ -218,7 +291,17 @@ private fun VendorDialog(open: Boolean, onClose: () -> Unit, reload: () -> Unit)
             saving = true
             ctx.scope.launch {
                 val done = ctx.write {
-                    ctx.api.post("/vendors", body("name" to name.trim(), "contact_name" to contact, "phone" to phone, "email" to email, "address" to address, "notes" to notes))
+                    ctx.api.post(
+                        "/vendors",
+                        body(
+                            "name" to name.trim(),
+                            "contact_name" to contact,
+                            "phone" to phone,
+                            "email" to email,
+                            "address" to address,
+                            "notes" to notes,
+                        ),
+                    )
                 }
                 saving = false
                 if (done != null) {
@@ -246,6 +329,36 @@ private val VENDOR_DIALOG = 640.dp
 private val FORM_WIDE = FormWide
 
 @Composable
+private fun ChosenCostume(costume: Rec?, onPick: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        if (costume != null) {
+            CostumeRow(costume, onClick = onPick, end = { MutedText(t("csync_change_lower")) })
+        } else {
+            Row {
+                ZillitButton(t("csync_choose_costume"), onClick = onPick, variant = ButtonVariant.Secondary)
+            }
+        }
+    }
+}
+
+/** The service takes ISO dates here (it rejects epoch ms on rentals). */
+private fun rentalBody(
+    costume: Rec?,
+    vendorId: String,
+    rate: String,
+    pickup: String,
+    returnDate: String,
+    notes: String,
+) = body(
+    "costume_id" to costume?.id.orEmpty(),
+    "vendor_id" to vendorId,
+    "rate_per_day" to (rate.trim().toDoubleOrNull() ?: 0.0),
+    "pickup_date" to pickup,
+    "return_date" to returnDate,
+    "notes" to notes.trim(),
+)
+
+@Composable
 private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit, reload: () -> Unit) {
     val ctx = LocalSync.current
     var costume by remember(open) { mutableStateOf<Rec?>(null) }
@@ -265,11 +378,7 @@ private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit,
             saving = true
             ctx.scope.launch {
                 val done = ctx.write {
-                    ctx.api.post(
-                        "/rentals",
-                        // The service takes ISO dates here (it rejects epoch ms on rentals).
-                        body("costume_id" to costume?.id.orEmpty(), "vendor_id" to vendorId, "rate_per_day" to (rate.trim().toDoubleOrNull() ?: 0.0), "pickup_date" to pickup, "return_date" to ret, "notes" to notes.trim()),
-                    )
+                    ctx.api.post("/rentals", rentalBody(costume, vendorId, rate, pickup, ret, notes))
                 }
                 saving = false
                 if (done != null) {
@@ -282,17 +391,15 @@ private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit,
         busy = saving,
         width = VENDOR_DIALOG,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            val c = costume
-            if (c != null) {
-                CostumeRow(c, onClick = { pick = true }, end = { MutedText(t("csync_change_lower")) })
-            } else {
-                Row { ZillitButton(t("csync_choose_costume"), onClick = { pick = true }, variant = ButtonVariant.Secondary) }
-            }
-        }
+        ChosenCostume(costume) { pick = true }
         FormGrid {
             VendorSelect(vendorId, { vendorId = it }, t("csync_field_vendor"), rows = vendors)
-            TextInput(rate, { rate = it }, t("csync_rate_per_day_field") + if (ctx.currency.isNotEmpty()) " (${ctx.currency})" else "", number = true)
+            TextInput(
+                rate,
+                { rate = it },
+                t("csync_rate_per_day_field") + if (ctx.currency.isNotEmpty()) " (${ctx.currency})" else "",
+                number = true,
+            )
             DateInput(pickup, { pickup = it }, t("csync_pickup"))
             DateInput(ret, { ret = it }, t("csync_return_by"))
             TextInput(notes, { notes = it }, t("csync_field_notes"), FORM_WIDE, multiline = true)
@@ -312,13 +419,18 @@ private fun RentalDialog(open: Boolean, vendors: List<Rec>, onClose: () -> Unit,
 /** Everything due back within the next day — what a return reminder is about. */
 @Composable
 private fun ReminderDialog(ctx: SyncCtx, open: Boolean, rentals: List<Rec>, onClose: () -> Unit) {
-    val due = rentals.filter { it.str("status") in OUT && it.long("return_date") != 0L && it.long("return_date") <= ctx.now() + DAY_MS }
+    val due = rentals.filter {
+        it.str("status") in OUT && it.long("return_date") != 0L && it.long("return_date") <= ctx.now() + DAY_MS
+    }
     val name = ctx.project.name.ifEmpty { t("csync_production") }
     val text = if (due.isEmpty()) {
         t("csync_rentals_nothing_due")
     } else {
         t("csync_rentals_due_back") + "\n" + due.joinToString("\n") {
-            "· ${it.rec("costume")?.str("asset_number").orEmpty()} ${it.rec("costume")?.str("name").orEmpty()} (${it.rec("vendor")?.str("name").orEmpty()}) — " + t("csync_due_lower_n", "date" to fmtDate(it.long("return_date")))
+            val costume = it.rec("costume")
+            val vendorName = it.rec("vendor")?.str("name").orEmpty()
+            "· ${costume?.str("asset_number").orEmpty()} ${costume?.str("name").orEmpty()} ($vendorName) — " +
+                t("csync_due_lower_n", "date" to fmtDate(it.long("return_date")))
         }
     }
     SendRequestDialog(

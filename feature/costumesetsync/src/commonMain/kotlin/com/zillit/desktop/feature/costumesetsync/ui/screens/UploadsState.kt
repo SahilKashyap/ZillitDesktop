@@ -3,7 +3,10 @@ package com.zillit.desktop.feature.costumesetsync.ui.screens
 import androidx.compose.runtime.Composable
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 
-/** Which upload / viewer dialogs the Scene Breakdown has open. [readDoc] is a version picked in the viewer to read into its importer. */
+/**
+ * Which upload / viewer dialogs the Scene Breakdown has open. [readDoc] is a version picked in the viewer to read into
+ * its importer.
+ */
 internal data class UploadsState(
     val script: Boolean = false,
     val schedule: Boolean = false,
@@ -53,10 +56,14 @@ internal fun UploadsHost(
     )
     // Opened from the viewer's "Read this": start straight on that document, once per opening.
     SeedFromDocument(state.script, state.readDoc?.takeIf { it.str("kind") == "SCRIPT" }) { scriptUpload.pickDoc(it) }
-    SeedFromDocument(state.schedule, state.readDoc?.takeIf { it.str("kind") == "SCHEDULE" }) { scheduleUpload.pickDoc(it) }
+    SeedFromDocument(state.schedule, state.readDoc?.takeIf { it.str("kind") == "SCHEDULE" }) {
+        scheduleUpload.pickDoc(it)
+    }
 
     ScriptUploadDialog(state.script, scriptUpload, docs.script) { onState(state.copy(script = false, readDoc = null)) }
-    ScheduleUploadDialog(state.schedule, scheduleUpload, docs.schedule) { onState(state.copy(schedule = false, readDoc = null)) }
+    ScheduleUploadDialog(state.schedule, scheduleUpload, docs.schedule) {
+        onState(state.copy(schedule = false, readDoc = null))
+    }
     state.viewing?.let { kind ->
         DocumentViewerDialog(
             open = true,
@@ -65,7 +72,9 @@ internal fun UploadsHost(
             scenes = scenes,
             onClose = { onState(state.copy(viewing = null)) },
             onRead = { d ->
-                onState(state.copy(viewing = null, readDoc = d, script = kind == "SCRIPT", schedule = kind == "SCHEDULE"))
+                onState(
+                    state.copy(viewing = null, readDoc = d, script = kind == "SCRIPT", schedule = kind == "SCHEDULE"),
+                )
             },
         )
     }

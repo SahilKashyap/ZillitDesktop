@@ -66,7 +66,10 @@ private const val MAIN_PANE_WEIGHT = 1f
 internal data class CharacterView(val sceneId: String, val all: Boolean, val viaRow: Boolean)
 
 /** One scene opens the page on details, several open on "Pick a scene" — unless `…/all` or a scene was chosen. */
-internal fun shouldPickScene(view: CharacterView, sceneCount: Int): Boolean = view.sceneId.isEmpty() && !view.all && sceneCount > 1
+internal fun shouldPickScene(
+    view: CharacterView,
+    sceneCount: Int
+): Boolean = view.sceneId.isEmpty() && !view.all && sceneCount > 1
 
 /** Arriving from a breakdown row, that one scene is the point of the visit, so the others are left out. */
 internal fun hidesOtherScenes(view: CharacterView, sceneFound: Boolean): Boolean = sceneFound && view.viaRow
@@ -87,7 +90,9 @@ fun CharacterDetailScreen(id: String) {
     )
     val character = rememberResource(id) { api.get("/characters/$id") }
     val actors = rememberResource { api.get("/actors").mapRows() }
-    SocketRefresh(SyncEvents.Character + SyncEvents.Change + SyncEvents.Costume + SyncEvents.Fitting) { character.reload(silent = true) }
+    SocketRefresh(SyncEvents.Character + SyncEvents.Change + SyncEvents.Costume + SyncEvents.Fitting) {
+        character.reload(silent = true)
+    }
     Await(character) { answer ->
         val ch = answer.rec ?: return@Await EmptyState(t("csync_character_not_found"))
         if (shouldPickScene(view, ch.recs("scenes").size)) {
@@ -105,12 +110,17 @@ private fun PlayedBy(ch: Rec): String {
     return (if (actor.isNullOrEmpty()) t("csync_no_actor_assigned") else "${t("csync_played_by")} $actor") + age
 }
 
-private fun titleOf(ch: Rec): String = (if (ch.has("cast_number")) "${ch.str("cast_number")}. " else "") + ch.str("name")
+private fun titleOf(ch: Rec): String = (
+    if (ch.has("cast_number")) "${ch.str("cast_number")}. " else ""
+) + ch.str("name")
 
 @Composable
 private fun Crumbs(ch: Rec, tail: String? = null, onName: (() -> Unit)? = null) {
     val ctx = LocalSync.current
-    Row(Modifier.padding(bottom = ZillitTheme.spacing.sm), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    Row(
+        Modifier.padding(bottom = ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)
+    ) {
         CastLink(t("csync_nav_characters"), { ctx.nav.go("characters") })
         ZillitText("/", color = ZillitTheme.colors.textMuted)
         if (onName != null) CastLink(ch.str("name"), onName) else ZillitText(ch.str("name"), maxLines = 1)
@@ -134,7 +144,11 @@ private fun SceneRow(entry: Rec, selected: Boolean, characterId: String) {
     ) {
         RowTitle(scene?.str("name").orEmpty().ifEmpty { "${t("csync_scene")} ${scene?.str("number").orEmpty()}" })
         MutedText(
-            if (change != null) "${t("csync_change")} #${change.str("change_number")} ${change.str("name")}" else t("csync_no_change_assigned"),
+            if (change != null) {
+                "${t("csync_change")} #${change.str("change_number")} ${change.str("name")}"
+            } else {
+                t("csync_no_change_assigned")
+            },
         )
     }
 }
@@ -162,7 +176,11 @@ private fun CharacterBody(ch: Rec, view: CharacterView, actors: List<Rec>, reloa
     PageHeader(ch, scenes, viaScene) { editOpen = true }
     viaScene?.let { SceneNote(it) }
     val hideScenes = hidesOtherScenes(view, viaScene != null)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
         if (!hideScenes) {
             Column(Modifier.weight(SCENE_PANE_WEIGHT)) {
                 SectionCard(title = t("csync_list_of_scenes"), flush = true) {
@@ -176,12 +194,19 @@ private fun CharacterBody(ch: Rec, view: CharacterView, actors: List<Rec>, reloa
         }
         Column(Modifier.weight(MAIN_PANE_WEIGHT), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ActorCard(ch, reload)
-            ReferenceGrid(entityType = "CHARACTER", entityId = ch.id, title = t("csync_references"), kinds = ReferenceKinds)
+            ReferenceGrid(
+                entityType = "CHARACTER",
+                entityId = ch.id,
+                title = t("csync_references"),
+                kinds = ReferenceKinds
+            )
             FittingsCard(ch, reload)
             ChangesCard(ch, reload)
             PiecesCard(ch, reload)
             MoreDetailsCard(ch, reload)
-            if (ch.str("notes").isNotEmpty()) SectionCard(title = t("csync_field_notes")) { ZillitText(ch.str("notes")) }
+            if (ch.str("notes").isNotEmpty()) SectionCard(title = t("csync_field_notes")) {
+                ZillitText(ch.str("notes"))
+            }
         }
     }
     if (ctx.canPost) EditCharacterDialog(editOpen, { editOpen = false }, ch, actors, reload)
@@ -206,10 +231,17 @@ private fun PageHeader(ch: Rec, scenes: List<Rec>, viaScene: Rec?, onEdit: () ->
         actions = {
             if (ctx.canPost) {
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ZillitButton(t("csync_edit"), onClick = onEdit, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Edit)
+                    ZillitButton(
+                        t("csync_edit"),
+                        onClick = onEdit,
+                        variant = ButtonVariant.Secondary,
+                        leadingIcon = ZillitIcons.Edit
+                    )
                     ZillitText(
                         t("csync_edit_character_hint"), Modifier.widthIn(max = 240.dp),
-                        style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = ZillitTheme.colors.textMuted, textAlign = TextAlign.End,
+                        style = ZillitTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp
+                        ), color = ZillitTheme.colors.textMuted, textAlign = TextAlign.End,
                     )
                 }
             }
@@ -223,11 +255,31 @@ private fun CharacterTitle(ch: Rec) {
     val colors = ZillitTheme.colors
     val shape = RoundedCornerShape(14.dp)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(56.dp).clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape), contentAlignment = Alignment.Center) {
-            ZillitText(nameInitials(ch.str("name")), style = ZillitTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold), color = colors.textMuted)
+        Box(
+            Modifier.size(56.dp).clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape),
+            contentAlignment = Alignment.Center
+        ) {
+            ZillitText(
+                nameInitials(ch.str("name")),
+                style = ZillitTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                color = colors.textMuted
+            )
         }
-        Row(Modifier.padding(start = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(titleOf(ch), Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+        Row(
+            Modifier.padding(start = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ZillitText(
+                titleOf(ch),
+                Modifier.weight(1f, fill = false),
+                style = ZillitTheme.typography.titleLarge.copy(
+                    fontSize = 24.sp,
+                    lineHeight = 30.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                maxLines = 2
+            )
             StatusBadge(ch.str("type"), tEnum(ch.str("type")))
         }
     }
@@ -238,7 +290,8 @@ private fun SceneNote(entry: Rec) {
     val scene = entry.rec("scene")
     val change = entry.rec("change")
     SectionCard(modifier = Modifier.padding(bottom = ZillitTheme.spacing.md)) {
-        ZillitText("${t("csync_scene")} ${scene?.str("number").orEmpty()} · ${scene?.str("name").orEmpty().ifEmpty { t("csync_untitled") }}")
+        val sceneName = scene?.str("name").orEmpty().ifEmpty { t("csync_untitled") }
+        ZillitText("${t("csync_scene")} ${scene?.str("number").orEmpty()} · $sceneName")
         MutedText(
             if (change != null) {
                 t("csync_wears_change", "n" to change.str("change_number"), "name" to change.str("name"))
@@ -269,13 +322,23 @@ private fun ActorCard(ch: Rec, reload: () -> Unit) {
             if (actor.str("notes").isNotEmpty()) {
                 ZillitText(
                     actor.str("notes"),
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ZillitTheme.colors.warningSoft).padding(ZillitTheme.spacing.sm),
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ZillitTheme.colors.warningSoft)
+                        .padding(ZillitTheme.spacing.sm),
                 )
             }
         } else {
             MutedText(t("csync_no_actor_assigned"))
             if (ctx.canPost) {
-                ZillitButton(t("csync_add_actor"), onClick = { actorOpen = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+                ZillitButton(
+                    t("csync_add_actor"),
+                    onClick = { actorOpen = true },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add
+                )
             }
         }
     }
@@ -304,10 +367,19 @@ private fun FittingsCard(ch: Rec, reload: () -> Unit) {
     val fittings = ch.recs("fittings")
     SectionCard(title = t("csync_nav_fittings"), flush = true) {
         if (fittings.isEmpty()) {
-            Column(Modifier.padding(ZillitTheme.spacing.lg), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            Column(
+                Modifier.padding(ZillitTheme.spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)
+            ) {
                 MutedText(t("csync_no_fittings"))
                 if (ctx.canPost) {
-                    ZillitButton(t("csync_schedule_fitting"), onClick = { open = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+                    ZillitButton(
+                        t("csync_schedule_fitting"),
+                        onClick = { open = true },
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Small,
+                        leadingIcon = ZillitIcons.Add
+                    )
                 }
             }
         } else {
@@ -336,7 +408,13 @@ private fun ChangesCard(ch: Rec, reload: () -> Unit) {
         title = "${t("csync_costume_changes")} (${changes.size})",
         actions = {
             if (ctx.canPost) {
-                ZillitButton(t("csync_add_change"), onClick = { open = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+                ZillitButton(
+                    t("csync_add_change"),
+                    onClick = { open = true },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add
+                )
             }
         },
         flush = changes.isNotEmpty(),
@@ -347,13 +425,18 @@ private fun ChangesCard(ch: Rec, reload: () -> Unit) {
         changes.forEach { c ->
             val scenes = c.rec("counts")?.long("scene_characters") ?: 0L
             val items = c.recs("items")
-            ListRow(onClick = { ctx.nav.go("changes/${c.id}") }, end = { MutedText(t(if (scenes == 1L) "csync_n_scenes_one" else "csync_n_scenes", "n" to scenes)) }) {
+            ListRow(
+                onClick = { ctx.nav.go("changes/${c.id}") },
+                end = { MutedText(t(if (scenes == 1L) "csync_n_scenes_one" else "csync_n_scenes", "n" to scenes)) }
+            ) {
                 RowTitle("${t("csync_change")} #${c.str("change_number")} · ${c.str("name")}")
                 if (c.str("description").isNotEmpty()) MutedText(c.str("description"), maxLines = 2)
                 ChipRow {
-                    items.forEach { it ->
+                    items.forEach {
                         val costume = it.rec("costume")
-                        val name = costume?.str("name").orEmpty().ifEmpty { costumes.firstOrNull { x -> x.id == it.str("costume_id") }?.str("name").orEmpty() }
+                        val name = costume?.str("name").orEmpty().ifEmpty {
+                            costumes.firstOrNull { x -> x.id == it.str("costume_id") }?.str("name").orEmpty()
+                        }
                         StatusBadge(costume?.str("status"), "${costume?.str("asset_number").orEmpty()} $name".trim())
                     }
                     if (items.isEmpty()) MutedText(t("csync_no_pieces_attached"))
@@ -364,6 +447,7 @@ private fun ChangesCard(ch: Rec, reload: () -> Unit) {
     if (ctx.canPost) NewChangeDialog(open, { open = false }, ch, reload)
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun PiecesCard(ch: Rec, reload: () -> Unit) {
     val ctx = LocalSync.current
@@ -383,8 +467,19 @@ private fun PiecesCard(ch: Rec, reload: () -> Unit) {
         title = "${t("csync_all_pieces")} (${costumes.size})",
         actions = {
             if (ctx.canPost) {
-                ZillitButton(t("csync_pick_existing"), onClick = { picking = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-                ZillitButton(t("csync_add_piece"), onClick = { creating = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+                ZillitButton(
+                    t("csync_pick_existing"),
+                    onClick = { picking = true },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small
+                )
+                ZillitButton(
+                    t("csync_add_piece"),
+                    onClick = { creating = true },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add
+                )
             }
         },
         flush = true,
@@ -401,7 +496,12 @@ private fun PiecesCard(ch: Rec, reload: () -> Unit) {
             title = t("csync_pick_piece_for", "name" to ch.str("name")),
             exclude = { it.str("character_id") == ch.id },
         )
-        CostumeFormDialog(open = creating, onClose = { creating = false }, defaultCharacterId = ch.id, onCreated = { reload() })
+        CostumeFormDialog(
+            open = creating,
+            onClose = { creating = false },
+            defaultCharacterId = ch.id,
+            onCreated = { reload() }
+        )
     }
     val piece = moving
     CastConfirm(
@@ -421,6 +521,7 @@ private fun PiecesCard(ch: Rec, reload: () -> Unit) {
     )
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun MoreDetailsCard(ch: Rec, reload: () -> Unit) {
     val ctx = LocalSync.current
@@ -432,7 +533,10 @@ private fun MoreDetailsCard(ch: Rec, reload: () -> Unit) {
     val save = { next: List<Pair<String, String>>, done: () -> Unit ->
         busy = true
         ctx.scope.launch {
-            val list = JsonArray(next.map { (l, v) -> buildJsonObject { put("label", JsonPrimitive(l)); put("value", JsonPrimitive(v)) } })
+            val list = JsonArray(next.map { (
+                l,
+                v
+            ) -> buildJsonObject { put("label", JsonPrimitive(l)); put("value", JsonPrimitive(v)) } })
             val answer = ctx.write { ctx.api.patch("/characters/${ch.id}", buildJsonObject { put("details", list) }) }
             busy = false
             if (answer != null) {
@@ -447,7 +551,13 @@ private fun MoreDetailsCard(ch: Rec, reload: () -> Unit) {
         title = t("csync_more_details"),
         actions = {
             if (ctx.canPost) {
-                ZillitButton(t("csync_add_more"), onClick = { at = ADD_DETAIL }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+                ZillitButton(
+                    t("csync_add_more"),
+                    onClick = { at = ADD_DETAIL },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add
+                )
             }
         },
         flush = true,
@@ -460,8 +570,20 @@ private fun MoreDetailsCard(ch: Rec, reload: () -> Unit) {
                 onClick = null,
                 end = {
                     if (ctx.canPost) {
-                        ZillitButton(t("csync_edit"), onClick = { at = i }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Edit)
-                        ZillitButton(t("csync_delete"), onClick = { deleting = i }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Trash)
+                        ZillitButton(
+                            t("csync_edit"),
+                            onClick = { at = i },
+                            variant = ButtonVariant.Tertiary,
+                            size = ButtonSize.Small,
+                            leadingIcon = ZillitIcons.Edit
+                        )
+                        ZillitButton(
+                            t("csync_delete"),
+                            onClick = { deleting = i },
+                            variant = ButtonVariant.Tertiary,
+                            size = ButtonSize.Small,
+                            leadingIcon = ZillitIcons.Trash
+                        )
                     }
                 },
             ) {
@@ -477,7 +599,9 @@ private fun MoreDetailsCard(ch: Rec, reload: () -> Unit) {
         busy = busy,
         onSave = { label, value ->
             val row = label to value
-            save(if (at == ADD_DETAIL) pairs + row else pairs.mapIndexed { i, p -> if (i == at) row else p }) { at = NO_DETAIL }
+            save(if (at == ADD_DETAIL) pairs + row else pairs.mapIndexed { i, p -> if (i == at) row else p }) {
+                at = NO_DETAIL
+            }
         },
     )
     CastConfirm(

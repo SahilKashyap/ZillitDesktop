@@ -100,8 +100,14 @@ class ActorFormModelTest {
 
     @Test
     fun charLabelPrefixesCastNumber() {
-        assertEquals("(2) Priya", charLabel(Rec(Json.parseToJsonElement("""{"name":"Priya","cast_number":2}""").jsonObject)))
-        assertEquals("Extra", charLabel(Rec(Json.parseToJsonElement("""{"name":"Extra","cast_number":null}""").jsonObject)))
+        assertEquals(
+            "(2) Priya",
+            charLabel(Rec(Json.parseToJsonElement("""{"name":"Priya","cast_number":2}""").jsonObject)),
+        )
+        assertEquals(
+            "Extra",
+            charLabel(Rec(Json.parseToJsonElement("""{"name":"Extra","cast_number":null}""").jsonObject)),
+        )
     }
 
     @Test

@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package com.zillit.desktop.feature.costumesetsync.domain
 
 import kotlinx.datetime.DayOfWeek
@@ -40,14 +42,19 @@ private const val MAX_LINE = 160
 private const val MAX_CHASE_LINES = 20
 private const val MS_PER_DAY = 86_400_000L
 
-/** Keeps every non-blank line and a blank only after a non-blank one — the web's `.filter((line, i, all) => line || all[i-1])`. */
+/**
+ * Keeps every non-blank line and a blank only after a non-blank one — the web's `.filter((line, i, all) => line ||
+ * all[i-1])`.
+ */
 fun tidyLines(lines: List<String>): List<String> =
     lines.filterIndexed { i, line -> line.isNotEmpty() || (i > 0 && lines[i - 1].isNotEmpty()) }
 
 /** The subject of a request, clipped to the service's limit. */
 fun clipTitle(title: String): String = title.take(MAX_TITLE)
 
-/** `2026-03-05` + `14:05` → epoch ms in [zone]; null when the date is not a date. A blank or odd time reads as midnight. */
+/**
+ * `2026-03-05` + `14:05` → epoch ms in [zone]; null when the date is not a date. A blank or odd time reads as midnight.
+ */
 fun dateTimeMs(date: String, time: String, zone: TimeZone = TimeZone.currentSystemDefault()): Long? {
     val day = runCatching { LocalDate.parse(date.trim()) }.getOrNull() ?: return null
     val clock = runCatching { LocalTime.parse(time.trim().padStart(TIME_PAD, '0')) }.getOrNull() ?: LocalTime(0, 0)
@@ -99,7 +106,9 @@ fun nextStage(pipeline: List<String>, status: String): String? {
 
 /** The actor being called in: the fitting's own, else the character's cast actor. */
 fun fittingActorName(fitting: Rec): String =
-    fitting.rec("actor")?.str("name").orEmpty().ifBlank { fitting.rec("character")?.rec("actor")?.str("name").orEmpty() }
+    fitting.rec("actor")?.str("name").orEmpty().ifBlank {
+        fitting.rec("character")?.rec("actor")?.str("name").orEmpty()
+    }
 
 /** Items of a fitting already ticked off. */
 fun fittedCount(fitting: Rec): Int = fitting.recs("items").count { it.str("status") == "FITTED" }
@@ -120,17 +129,28 @@ fun fittingChase(fittings: List<Rec>, today: Long, projectName: String, t: Say):
         val who = fittingActorName(x).ifBlank { t("csync_actor_not_cast") }
         val place = x.str("location").takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
         val gone = if (x.long("scheduled_at") < today) " · ${t("csync_missed")}" else ""
-        "· ${"${fmtDateTime(x.long("scheduled_at"))} — $who ${t("csync_as")} ${x.rec("character")?.str("name").orEmpty()}$place$gone".take(MAX_LINE)}"
+        val character = x.rec("character")?.str("name").orEmpty()
+        val line = "${fmtDateTime(x.long("scheduled_at"))} — $who ${t("csync_as")} $character$place$gone"
+        "· ${line.take(MAX_LINE)}"
     }
     val title = clipTitle("${t("csync_fitting_chase_title")} · $projectName")
     if (upcoming.isEmpty()) return RequestDraft(title, t("csync_fitting_chase_empty"))
-    val lead = fill(t(if (upcoming.size == 1) "csync_fitting_chase_lead_one" else "csync_fitting_chase_lead_many"), "n" to upcoming.size)
+    val lead = fill(
+        t(if (upcoming.size == 1) "csync_fitting_chase_lead_one" else "csync_fitting_chase_lead_many"),
+        "n" to upcoming.size
+    )
     val tail = if (missed > 0) fill(t("csync_fitting_chase_missed"), "n" to missed) else ""
-    val more = if (lines.size > MAX_CHASE_LINES) "\n· ${fill(t("csync_and_n_more"), "n" to lines.size - MAX_CHASE_LINES)}" else ""
-    return RequestDraft(title, "$lead$tail:\n${lines.take(MAX_CHASE_LINES).joinToString("\n")}$more\n\n${t("csync_fitting_chase_ask")}")
+    val more = if (
+        lines.size > MAX_CHASE_LINES
+    ) "\n· ${fill(t("csync_and_n_more"), "n" to lines.size - MAX_CHASE_LINES)}" else ""
+    return RequestDraft(
+        title,
+        "$lead$tail:\n${lines.take(MAX_CHASE_LINES).joinToString("\n")}$more\n\n${t("csync_fitting_chase_ask")}"
+    )
 }
 
 /** "Schedule & send": the request about the fitting just booked. */
+@Suppress("LongParameterList")
 fun fittingSendDraft(
     fittingId: String,
     characterName: String,
@@ -142,7 +162,12 @@ fun fittingSendDraft(
     t: Say,
 ): RequestDraft {
     val who = characterName + if (actorName.isNotBlank()) " ($actorName)" else ""
-    val head = fill(t("csync_fitting_send_body"), "character" to who, "date" to fmtDate(whenMs), "time" to fmtTime(whenMs)) +
+    val head = fill(
+        t("csync_fitting_send_body"),
+        "character" to who,
+        "date" to fmtDate(whenMs),
+        "time" to fmtTime(whenMs)
+    ) +
         (if (location.isNotBlank()) ", $location" else "") + "."
     val lines = listOf(
         head,
@@ -151,7 +176,11 @@ fun fittingSendDraft(
         "",
         t("csync_fitting_send_ask"),
     )
-    return RequestDraft(clipTitle("${t("csync_fitting")} · $characterName"), tidyLines(lines).joinToString("\n"), fittingId)
+    return RequestDraft(
+        clipTitle("${t("csync_fitting")} · $characterName"),
+        tidyLines(lines).joinToString("\n"),
+        fittingId
+    )
 }
 
 // -- cleaning -----------------------------------------------------------------
@@ -160,7 +189,15 @@ fun fittingSendDraft(
 val CLEANING_CLOSED = setOf("READY", "CANCELLED")
 
 /** The stages the web falls back to when the ticket carries none. */
-val DEFAULT_CLEANING_PIPELINE = listOf("REQUESTED", "RECEIVED", "CLEANING", "DRYING", "IRONING", "QUALITY_CHECK", "READY")
+val DEFAULT_CLEANING_PIPELINE = listOf(
+    "REQUESTED",
+    "RECEIVED",
+    "CLEANING",
+    "DRYING",
+    "IRONING",
+    "QUALITY_CHECK",
+    "READY"
+)
 
 /** "Send reminder request" for the whole sink, emergencies first. */
 fun cleaningChase(tickets: List<Rec>, projectName: String, t: Say, e: EnumSay): RequestDraft {
@@ -168,17 +205,32 @@ fun cleaningChase(tickets: List<Rec>, projectName: String, t: Say, e: EnumSay): 
     val lines = open.map { i ->
         val costume = i.rec("costume")
         val siren = if (i.bool("is_emergency")) "🚨 " else ""
-        val by = i.long("expected_ready_at").takeIf { it != 0L }?.let { " · ${t("csync_needed_by_lower")} ${fmtDateTime(it)}" }.orEmpty()
-        "· ${"$siren${costume?.str("asset_number").orEmpty()} ${costume?.str("name").orEmpty()} — ${i.str("problem")} · ${e(i.str("status"))}$by".take(MAX_LINE)}"
+        val by = i
+            .long("expected_ready_at").takeIf { it != 0L }?.let {
+                " · ${t("csync_needed_by_lower")} ${fmtDateTime(it)}"
+            }
+            .orEmpty()
+        val asset = costume?.str("asset_number").orEmpty()
+        val line = "$siren$asset ${costume?.str("name").orEmpty()} — ${i.str("problem")} · ${e(i.str("status"))}$by"
+        "· ${line.take(MAX_LINE)}"
     }
     val title = clipTitle("${t("csync_cleaning_chase_title")} · $projectName")
     if (open.isEmpty()) return RequestDraft(title, t("csync_cleaning_chase_empty"))
-    val lead = fill(t(if (open.size == 1) "csync_cleaning_chase_lead_one" else "csync_cleaning_chase_lead_many"), "n" to open.size)
-    val more = if (lines.size > MAX_CHASE_LINES) "\n· ${fill(t("csync_and_n_more"), "n" to lines.size - MAX_CHASE_LINES)}" else ""
-    return RequestDraft(title, "$lead\n${lines.take(MAX_CHASE_LINES).joinToString("\n")}$more\n\n${t("csync_cleaning_chase_ask")}")
+    val lead = fill(
+        t(if (open.size == 1) "csync_cleaning_chase_lead_one" else "csync_cleaning_chase_lead_many"),
+        "n" to open.size
+    )
+    val more = if (
+        lines.size > MAX_CHASE_LINES
+    ) "\n· ${fill(t("csync_and_n_more"), "n" to lines.size - MAX_CHASE_LINES)}" else ""
+    return RequestDraft(
+        title,
+        "$lead\n${lines.take(MAX_CHASE_LINES).joinToString("\n")}$more\n\n${t("csync_cleaning_chase_ask")}"
+    )
 }
 
 /** "Request & send": the request about the ticket just filed. */
+@Suppress("LongParameterList")
 fun cleaningSendDraft(
     ticketId: String,
     piece: String,
@@ -217,8 +269,14 @@ fun ticketChaseLine(board: TicketBoard, r: Rec, t: Say, e: EnumSay): String {
     return when (board) {
         TicketBoard.Alterations -> {
             val who = r.rec("character")?.let { " (${it.str("name")})" }.orEmpty()
-            val tailor = r.str("tailor_name").takeIf { it.isNotBlank() }?.let { " · ${fill(t("csync_with_n"), "n" to it)}" }.orEmpty()
-            val due = r.long("deadline").takeIf { it != 0L }?.let { " · ${fill(t("csync_due_lower_n"), "date" to fmtDateTime(it))}" }.orEmpty()
+            val tailor = r
+                .str("tailor_name").takeIf { it.isNotBlank() }?.let { " · ${fill(t("csync_with_n"), "n" to it)}" }
+                .orEmpty()
+            val due = r
+                .long("deadline").takeIf { it != 0L }?.let {
+                    " · ${fill(t("csync_due_lower_n"), "date" to fmtDateTime(it))}"
+                }
+                .orEmpty()
             "$piece$who — ${r.str("issue")} → ${r.str("required_work")} · ${e(r.str("status"))}$tailor$due"
         }
         TicketBoard.Damages -> {
@@ -227,8 +285,13 @@ fun ticketChaseLine(board: TicketBoard, r: Rec, t: Say, e: EnumSay): String {
         }
         TicketBoard.Missing -> {
             val who = costume?.rec("character")?.let { " (${it.str("name")})" }.orEmpty()
-            val seen = fill(t("csync_last_seen_lower_n"), "x" to r.str("last_seen_location").ifBlank { t("csync_nobody_knows_where") })
-            val with = r.str("last_assigned_to").takeIf { it.isNotBlank() }?.let { " · ${fill(t("csync_with_n"), "n" to it)}" }.orEmpty()
+            val seen = fill(
+                t("csync_last_seen_lower_n"),
+                "x" to r.str("last_seen_location").ifBlank { t("csync_nobody_knows_where") }
+            )
+            val with = r
+                .str("last_assigned_to").takeIf { it.isNotBlank() }?.let { " · ${fill(t("csync_with_n"), "n" to it)}" }
+                .orEmpty()
             "$piece$who — $seen$with"
         }
     }
@@ -240,9 +303,14 @@ fun ticketChase(board: TicketBoard, open: List<Rec>, projectName: String, t: Say
     val lines = open.map { ticketChaseLine(board, it, t, e) }
     val title = clipTitle("${t("csync_chase_title_$tab")} · $projectName")
     if (lines.isEmpty()) return RequestDraft(title, t("csync_chase_empty_$tab"))
-    val lead = fill(t(if (lines.size == 1) "csync_chase_lead_${tab}_one" else "csync_chase_lead_$tab"), "n" to lines.size)
+    val lead = fill(
+        t(if (lines.size == 1) "csync_chase_lead_${tab}_one" else "csync_chase_lead_$tab"),
+        "n" to lines.size
+    )
     val shown = lines.take(MAX_CHASE_LINES).joinToString("\n") { "· ${it.take(MAX_LINE)}" }
-    val more = if (lines.size > MAX_CHASE_LINES) "\n· ${fill(t("csync_and_n_more"), "n" to lines.size - MAX_CHASE_LINES)}" else ""
+    val more = if (
+        lines.size > MAX_CHASE_LINES
+    ) "\n· ${fill(t("csync_and_n_more"), "n" to lines.size - MAX_CHASE_LINES)}" else ""
     return RequestDraft(title, "$lead\n$shown$more\n\n${t("csync_chase_ask_$tab")}")
 }
 
@@ -284,14 +352,16 @@ fun ticketSendDraft(board: TicketBoard, id: String, piece: String, v: TicketForm
 
 /** A relative time (`5 minutes ago`, `in 2 hours`) from the web's `relativeTime`, using the same message keys. */
 fun relativeTime(ms: Long, now: Long, t: Say): String {
-    if (ms == 0L) return ""
     val mins = ((now - ms) / MS_PER_MIN.toDouble()).let { kotlin.math.round(it).toLong() }
-    fun say(past: String, future: String, n: Long) = fill(t(if (n > 0) past else future), "n" to kotlin.math.abs(n))
-    if (kotlin.math.abs(mins) < 1) return t("csync_just_now")
-    if (kotlin.math.abs(mins) < MIN_PER_HOUR) return say("csync_minutes_ago", "csync_in_minutes", mins)
     val hours = kotlin.math.round(mins / MIN_PER_HOUR.toDouble()).toLong()
-    if (kotlin.math.abs(hours) < HOUR_PER_DAY) return say("csync_hours_ago", "csync_in_hours", hours)
-    return say("csync_days_ago", "csync_in_days", kotlin.math.round(hours / HOUR_PER_DAY.toDouble()).toLong())
+    fun say(past: String, future: String, n: Long) = fill(t(if (n > 0) past else future), "n" to kotlin.math.abs(n))
+    return when {
+        ms == 0L -> ""
+        kotlin.math.abs(mins) < 1 -> t("csync_just_now")
+        kotlin.math.abs(mins) < MIN_PER_HOUR -> say("csync_minutes_ago", "csync_in_minutes", mins)
+        kotlin.math.abs(hours) < HOUR_PER_DAY -> say("csync_hours_ago", "csync_in_hours", hours)
+        else -> say("csync_days_ago", "csync_in_days", kotlin.math.round(hours / HOUR_PER_DAY.toDouble()).toLong())
+    }
 }
 
 private const val MS_PER_MIN = 60_000L
@@ -303,7 +373,9 @@ fun urlEncode(text: String): String = buildString {
     text.encodeToByteArray().forEach { b ->
         val c = b.toInt() and BYTE_MASK
         val ch = c.toChar()
-        if (ch.isLetterOrDigit() && c < ASCII_LIMIT || ch in "-_.~") append(ch) else append('%').append(HEX[c shr NIBBLE]).append(HEX[c and NIBBLE_MASK])
+        if (ch.isLetterOrDigit() && c < ASCII_LIMIT || ch in "-_.~") append(ch) else append('%')
+            .append(HEX[c shr NIBBLE])
+            .append(HEX[c and NIBBLE_MASK])
     }
 }
 
@@ -321,7 +393,13 @@ fun digitsOnly(text: String): String = text.filter { it.isDigit() }
  * record's title plus the production (added once), the body its summary and then what is being asked.
  * The web adds a link to the record; the desktop has no web address to link to, so it leaves it out.
  */
-fun recordRequestDraft(entityId: String, title: String, summary: String, ask: String, projectName: String): RequestDraft {
+fun recordRequestDraft(
+    entityId: String,
+    title: String,
+    summary: String,
+    ask: String,
+    projectName: String
+): RequestDraft {
     val subject = title + if (projectName.isNotBlank() && !title.contains(projectName)) " · $projectName" else ""
     return RequestDraft(clipTitle(subject), "$summary\n\n$ask", entityId)
 }
@@ -343,5 +421,8 @@ fun measurementsOf(actor: Rec?): List<Pair<String, String>> {
     }
 }
 
-/** An epoch-ms deadline as the ISO instant the alteration endpoints take (alterations are not epoch ms, unlike scenes and fittings). */
+/**
+ * An epoch-ms deadline as the ISO instant the alteration endpoints take (alterations are not epoch ms, unlike scenes
+ * and fittings).
+ */
 fun isoInstant(ms: Long): String = Instant.fromEpochMilliseconds(ms).toString()

@@ -41,16 +41,32 @@ private val Half = Modifier.width(290.dp)
 
 /** A short yes/no question in a dialog. */
 @Composable
-internal fun CastConfirm(open: Boolean, title: String, text: String, confirmLabel: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    FormDialog(open, title, onDismiss, confirmLabel, onConfirm, danger = true, width = 440.dp) { MutedText(text, maxLines = 5) }
+internal fun CastConfirm(
+    open: Boolean,
+    title: String,
+    text: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    FormDialog(open, title, onDismiss, confirmLabel, onConfirm, danger = true, width = 440.dp) {
+        MutedText(text, maxLines = 5)
+    }
 }
 
 /**
  * Edit character: the fields that apply to every scene (the web's edit modal). Clearing the actor, age or
  * cast number sends an explicit null, and the text fields go as typed so an emptied description is cleared.
  */
+@Suppress("LongMethod")
 @Composable
-internal fun EditCharacterDialog(open: Boolean, onClose: () -> Unit, character: Rec, actors: List<Rec>, onSaved: () -> Unit) {
+internal fun EditCharacterDialog(
+    open: Boolean,
+    onClose: () -> Unit,
+    character: Rec,
+    actors: List<Rec>,
+    onSaved: () -> Unit
+) {
     val ctx = LocalSync.current
     var name by remember(open) { mutableStateOf(character.str("name")) }
     var type by remember(open) { mutableStateOf(character.str("type")) }
@@ -98,7 +114,13 @@ internal fun EditCharacterDialog(open: Boolean, onClose: () -> Unit, character: 
             EnumInput(type, ctx.metaList("character_types"), { type = it }, t("csync_field_type"), Half)
             TextInput(age, { age = it }, t("csync_field_age"), Half, number = true)
             TextInput(cast, { cast = it }, t("csync_field_cast_number"), Half, number = true)
-            ActorSelect(actorId, { actorId = it }, t("csync_field_actor"), actors.map { it.id to it.str("name") }, FormWide)
+            ActorSelect(
+                actorId,
+                { actorId = it },
+                t("csync_field_actor"),
+                actors.map { it.id to it.str("name") },
+                FormWide
+            )
             TextInput(description, { description = it }, t("csync_field_description"), FormWide, multiline = true)
             TextInput(notes, { notes = it }, t("csync_field_notes"), FormWide, multiline = true)
         }
@@ -107,7 +129,13 @@ internal fun EditCharacterDialog(open: Boolean, onClose: () -> Unit, character: 
 
 /** One "More details" row: a title and free text. [index] −1 adds; otherwise the row being edited. */
 @Composable
-internal fun DetailRowDialog(open: Boolean, onClose: () -> Unit, initial: Rec?, onSave: (label: String, value: String) -> Unit, busy: Boolean) {
+internal fun DetailRowDialog(
+    open: Boolean,
+    onClose: () -> Unit,
+    initial: Rec?,
+    onSave: (label: String, value: String) -> Unit,
+    busy: Boolean
+) {
     var label by remember(open) { mutableStateOf(initial?.str("label").orEmpty()) }
     var value by remember(open) { mutableStateOf(initial?.str("value").orEmpty()) }
     FormDialog(
@@ -129,6 +157,7 @@ internal fun DetailRowDialog(open: Boolean, onClose: () -> Unit, initial: Rec?, 
  * created once, so a failed upload or a refused piece is retried from the same open dialog without booking
  * a second one; what did not attach stays listed. Closing drops the pick and the half-made record.
  */
+@Suppress("LongMethod")
 @Composable
 internal fun CharacterFittingDialog(open: Boolean, onClose: () -> Unit, character: Rec, onDone: () -> Unit) {
     val ctx = LocalSync.current
@@ -173,7 +202,9 @@ internal fun CharacterFittingDialog(open: Boolean, onClose: () -> Unit, characte
                 }
                 createdId = id
             }
-            val left = pieces.toList().filterNot { c -> ctx.quietWrite { ctx.api.post("/fittings/$id/items", body("costume_id" to c.id)) } }
+            val left = pieces.toList().filterNot { c ->
+                ctx.quietWrite { ctx.api.post("/fittings/$id/items", body("costume_id" to c.id)) }
+            }
             pieces.clear()
             pieces.addAll(left)
             val failed = ctx.attachMedia(media, "FITTING", id, "REFERENCE", keep = { media = it })
@@ -203,16 +234,35 @@ internal fun CharacterFittingDialog(open: Boolean, onClose: () -> Unit, characte
             DateTimeInput(date, time, { date = it }, { time = it }, t("csync_when"))
             TextInput(location, { location = it }, t("csync_where"), FormWide)
             Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ZillitText(t("csync_pieces_to_try"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-                pieces.toList().forEach { c -> CostumeRow(c, onClick = { pieces.remove(c) }, end = { MutedText(t("csync_remove_lower")) }) }
-                if (stuck && pieces.isNotEmpty()) MutedText(t("csync_fitting_pieces_failed", "n" to pieces.size), maxLines = 2)
+                ZillitText(
+                    t("csync_pieces_to_try"),
+                    style = ZillitTheme.typography.label,
+                    color = ZillitTheme.colors.textSecondary
+                )
+                pieces.toList().forEach { c ->
+                    CostumeRow(c, onClick = { pieces.remove(c) }, end = { MutedText(t("csync_remove_lower")) })
+                }
+                if (stuck && pieces.isNotEmpty()) MutedText(
+                    t("csync_fitting_pieces_failed", "n" to pieces.size),
+                    maxLines = 2
+                )
                 Row {
-                    ZillitButton(t("csync_add_piece"), onClick = { picking = true }, variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Add)
+                    ZillitButton(
+                        t("csync_add_piece"),
+                        onClick = { picking = true },
+                        variant = ButtonVariant.Secondary,
+                        size = ButtonSize.Small,
+                        leadingIcon = ZillitIcons.Add
+                    )
                 }
             }
             TextInput(notes, { notes = it }, t("csync_field_notes"), FormWide, multiline = true)
             Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+                ZillitText(
+                    t("csync_photos_and_video"),
+                    style = ZillitTheme.typography.label,
+                    color = ZillitTheme.colors.textSecondary
+                )
                 MediaPicker(media, { media = it }, enabled = !saving)
             }
         }

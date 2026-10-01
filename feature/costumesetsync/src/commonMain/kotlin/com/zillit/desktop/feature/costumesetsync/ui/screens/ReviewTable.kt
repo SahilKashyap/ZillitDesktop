@@ -51,13 +51,34 @@ internal class ReviewStyle(
 )
 
 /** `.csync-scripttable`: 14px rows, 10/12 padding, white 12px headers. */
-internal val ScriptTableStyle = ReviewStyle(8.dp, 12.dp, 10.dp, 12f, 0.6f, 420.dp, lightBorder = false, headSunken = false)
+internal val ScriptTableStyle = ReviewStyle(
+    8.dp,
+    12.dp,
+    10.dp,
+    12f,
+    0.6f,
+    420.dp,
+    lightBorder = false,
+    headSunken = false,
+)
 
 /** `.csync-table` inside `.csync-charconfirm__table`: 13px rows, 8/10 padding, tinted 11px headers. */
-internal val PlainTableStyle = ReviewStyle(10.dp, 10.dp, 8.dp, 11f, 0.44f, 440.dp, lightBorder = true, headSunken = true)
+internal val PlainTableStyle = ReviewStyle(
+    10.dp,
+    10.dp,
+    8.dp,
+    11f,
+    0.44f,
+    440.dp,
+    lightBorder = true,
+    headSunken = true,
+)
 
 /** The text of a review table's body: 14px in the script/schedule reviews. */
-internal val ReviewText: TextStyle @Composable get() = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 21.sp)
+internal val ReviewText: TextStyle @Composable get() = ZillitTheme.typography.bodyMedium.copy(
+    fontSize = 14.sp,
+    lineHeight = 21.sp,
+)
 
 internal class ReviewRowScope(private val row: RowScope, private val cols: List<Dp?>, private val style: ReviewStyle) {
     /** The [i]th cell of this row. */
@@ -66,7 +87,10 @@ internal class ReviewRowScope(private val row: RowScope, private val cols: List<
         val w = cols[i]
         row.run {
             Column(
-                (if (w == null) Modifier.weight(1f) else Modifier.width(w)).padding(horizontal = style.padX, vertical = style.padY),
+                (if (w == null) Modifier.weight(1f) else Modifier.width(w)).padding(
+                    horizontal = style.padX,
+                    vertical = style.padY,
+                ),
                 content = content,
             )
         }
@@ -83,8 +107,17 @@ internal fun ReviewTable(
 ) {
     val colors = ZillitTheme.colors
     val shape = RoundedCornerShape(style.radius)
-    Column(modifier.fillMaxWidth().clip(shape).border(1.dp, if (style.lightBorder) colors.divider else colors.border, shape)) {
-        Row(Modifier.fillMaxWidth().background(if (style.headSunken) colors.surfaceSunken else colors.surface), verticalAlignment = Alignment.CenterVertically) {
+    Column(
+        modifier.fillMaxWidth().clip(shape).border(
+            1.dp,
+            if (style.lightBorder) colors.divider else colors.border,
+            shape,
+        ),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().background(if (style.headSunken) colors.surfaceSunken else colors.surface),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             val scope = ReviewRowScope(this, cols, style)
             heads.forEachIndexed { i, head -> scope.cell(i) { head() } }
         }
@@ -95,7 +128,11 @@ internal fun ReviewTable(
     }
 }
 
-internal class ReviewBodyScope(private val column: ColumnScope, private val cols: List<Dp?>, private val style: ReviewStyle) {
+internal class ReviewBodyScope(
+    private val column: ColumnScope,
+    private val cols: List<Dp?>,
+    private val style: ReviewStyle,
+) {
     /** One row; a rule under it unless it is [last]. */
     @Composable
     fun row(last: Boolean, modifier: Modifier = Modifier, content: @Composable ReviewRowScope.() -> Unit) {
@@ -111,7 +148,13 @@ internal class ReviewBodyScope(private val column: ColumnScope, private val cols
     @Composable
     fun wide(content: @Composable ColumnScope.() -> Unit) {
         column.run {
-            Column(Modifier.fillMaxWidth().background(ZillitTheme.colors.surfaceSunken).padding(horizontal = style.padX, vertical = style.padY), content = content)
+            Column(
+                Modifier.fillMaxWidth().background(ZillitTheme.colors.surfaceSunken).padding(
+                    horizontal = style.padX,
+                    vertical = style.padY,
+                ),
+                content = content,
+            )
             ZillitDivider()
         }
     }
@@ -122,7 +165,11 @@ internal class ReviewBodyScope(private val column: ColumnScope, private val cols
 internal fun ReviewHead(text: String, style: ReviewStyle = ScriptTableStyle) {
     ZillitText(
         text.uppercase(),
-        style = ZillitTheme.typography.labelSmall.copy(fontSize = style.headSize.sp, fontWeight = FontWeight.SemiBold, letterSpacing = style.headTrack.sp),
+        style = ZillitTheme.typography.labelSmall.copy(
+            fontSize = style.headSize.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = style.headTrack.sp,
+        ),
         color = ZillitTheme.colors.textMuted,
         maxLines = 1,
     )
@@ -135,7 +182,10 @@ internal fun ChipPill(text: String, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(999.dp)
     ZillitText(
         text,
-        modifier.clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape).padding(horizontal = 7.dp, vertical = 1.dp),
+        modifier.clip(shape).background(colors.surfaceSunken).border(1.dp, colors.border, shape).padding(
+            horizontal = 7.dp,
+            vertical = 1.dp,
+        ),
         style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
         maxLines = 1,
     )
@@ -162,9 +212,17 @@ internal fun OutlineDangerButton(text: String, onClick: () -> Unit, enabled: Boo
     }
 }
 
-/** The `.csync-sched`/`.csync-docview`/`.csync-picklist` checkbox: 18px, 4px radius, ink when checked (not the brand orange). */
+/**
+ * The `.csync-sched`/`.csync-docview`/`.csync-picklist` checkbox: 18px, 4px radius, ink when checked (not the brand
+ * orange).
+ */
 @Composable
-internal fun InkCheckbox(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true, label: String? = null) {
+internal fun InkCheckbox(
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    label: String? = null,
+) {
     val colors = ZillitTheme.colors
     val shape = RoundedCornerShape(4.dp)
     Row(

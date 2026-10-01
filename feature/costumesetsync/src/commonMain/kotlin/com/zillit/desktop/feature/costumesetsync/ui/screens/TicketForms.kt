@@ -24,6 +24,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormWide
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MediaEntry
 import com.zillit.desktop.feature.costumesetsync.ui.MediaPicker
+import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.attachMedia
 import com.zillit.desktop.feature.costumesetsync.ui.body
@@ -80,6 +81,78 @@ private data class TicketDraftState(
     )
 }
 
+/** What the open ticket form holds; it outlives a close so a Cancel loses nothing. */
+private class TicketFormState {
+    var costume by mutableStateOf<Rec?>(null)
+    var f by mutableStateOf(TicketDraftState())
+    var media by mutableStateOf(emptyList<MediaEntry>())
+    var saving by mutableStateOf(false)
+    var createdId by mutableStateOf<String?>(null)
+}
+
+/** Files the report (once), attaches the photos, and hands [onDone] the request to open when [send] is set. */
+private suspend fun TicketFormState.submit(
+    ctx: SyncCtx,
+    board: TicketBoard,
+    send: Boolean,
+    onDone: (RequestDraft?) -> Unit,
+    onClose: () -> Unit,
+) {
+    val chosen = costume
+    var id = createdId
+    if (id == null && chosen != null) {
+        id = ctx.write { ctx.api.post("/${board.route}", createBody(board, chosen, f, ctx.isFinance)) }
+            ?.rec?.id?.takeIf { it.isNotBlank() }
+        createdId = id
+    }
+    if (id == null || chosen == null) {
+        saving = false
+        return
+    }
+    val failed = ctx.attachMedia(media, board.entity, id, mediaKind(board), keep = { media = it })
+    saving = false
+    if (failed > 0) {
+        ctx.toast(t("csync_saved_media_failed", "n" to failed), false)
+        return
+    }
+    createdId = null
+    val draft = if (send) {
+        ticketSendDraft(board, id, "${chosen.str("asset_number")} ${chosen.str("name")}", f.values(), wfSay)
+    } else {
+        null
+    }
+    f = TicketDraftState()
+    costume = null
+    onDone(draft)
+    onClose()
+}
+
+private fun TicketBoard.titleKey(): String = when (this) {
+    TicketBoard.Alterations -> "csync_alteration_request_title"
+    TicketBoard.Damages -> "csync_new_damage"
+    TicketBoard.Missing -> "csync_new_missing"
+}
+
+@Composable
+private fun TicketFormBody(s: TicketFormState, board: TicketBoard, onPick: () -> Unit) {
+    FormGrid {
+        WfCostumeField(s.costume, onOpen = onPick, locked = s.createdId != null)
+        when (board) {
+            TicketBoard.Alterations -> AlterationFields(s.f) { s.f = it }
+            TicketBoard.Damages -> DamageFields(s.f) { s.f = it }
+            TicketBoard.Missing -> MissingFields(s.f) { s.f = it }
+        }
+        Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitText(
+                t("csync_photos_and_video"),
+                style = ZillitTheme.typography.label,
+                color = ZillitTheme.colors.textSecondary,
+            )
+            MediaPicker(s.media, { s.media = it }, enabled = !s.saving)
+        }
+    }
+}
+
 /**
  * Raise an alteration, a damage report or a missing report (the web's `TicketFormModal`).
  *
@@ -93,60 +166,25 @@ private data class TicketDraftState(
 fun TicketFormDialog(board: TicketBoard, open: Boolean, onClose: () -> Unit, onDone: (RequestDraft?) -> Unit) {
     val ctx = LocalSync.current
     if (!ctx.canPost) return
-    var costume by remember { mutableStateOf<Rec?>(null) }
-    var f by remember { mutableStateOf(TicketDraftState()) }
-    var media by remember { mutableStateOf(emptyList<MediaEntry>()) }
-    var saving by remember { mutableStateOf(false) }
+    val s = remember { TicketFormState() }
     var pick by remember { mutableStateOf(false) }
-    var createdId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(open) {
         if (open) {
-            media = emptyList()
-            createdId = null
+            s.media = emptyList()
+            s.createdId = null
         }
     }
-    val chosen = costume
-    val ready = chosen != null && f.filled(board) && !saving
+    val ready = s.costume != null && s.f.filled(board) && !s.saving
     val verb = if (board == TicketBoard.Alterations) "csync_request" else "csync_report"
-
     val submit = { send: Boolean ->
-        saving = true
-        ctx.scope.launch {
-            var id = createdId
-            if (id == null && chosen != null) {
-                id = ctx.write { ctx.api.post("/${board.route}", createBody(board, chosen, f, ctx.isFinance)) }
-                    ?.rec?.id?.takeIf { it.isNotBlank() }
-                createdId = id
-            }
-            if (id == null || chosen == null) {
-                saving = false
-                return@launch
-            }
-            val failed = ctx.attachMedia(media, board.entity, id, mediaKind(board), keep = { media = it })
-            saving = false
-            if (failed > 0) {
-                ctx.toast(t("csync_saved_media_failed", "n" to failed), false)
-                return@launch
-            }
-            createdId = null
-            val draft = if (send) ticketSendDraft(board, id, "${chosen.str("asset_number")} ${chosen.str("name")}", f.values(), wfSay) else null
-            f = TicketDraftState()
-            costume = null
-            onDone(draft)
-            onClose()
-        }
+        s.saving = true
+        ctx.scope.launch { s.submit(ctx, board, send, onDone, onClose) }
     }
 
     WfFormDialog(
         open = open,
-        title = t(
-            when (board) {
-                TicketBoard.Alterations -> "csync_alteration_request_title"
-                TicketBoard.Damages -> "csync_new_damage"
-                TicketBoard.Missing -> "csync_new_missing"
-            },
-        ),
+        title = t(board.titleKey()),
         onDismiss = onClose,
         actions = {
             WfSaveActions(
@@ -156,32 +194,19 @@ fun TicketFormDialog(board: TicketBoard, open: Boolean, onClose: () -> Unit, onD
                 saveLabel = t(verb),
                 onSave = { submit(false) },
                 canSave = ready,
-                busy = saving,
+                busy = s.saving,
                 danger = board != TicketBoard.Alterations,
             )
         },
-    ) {
-        FormGrid {
-            WfCostumeField(costume, onOpen = { pick = true }, locked = createdId != null)
-            when (board) {
-                TicketBoard.Alterations -> AlterationFields(f) { f = it }
-                TicketBoard.Damages -> DamageFields(f) { f = it }
-                TicketBoard.Missing -> MissingFields(f) { f = it }
-            }
-            Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-                MediaPicker(media, { media = it }, enabled = !saving)
-            }
-        }
-    }
+    ) { TicketFormBody(s, board) { pick = true } }
     WfCostumePicker(
         open = open && pick,
         onClose = { pick = false },
         exclude = { excluded(board, it) },
         onPick = { c ->
-            costume = c
+            s.costume = c
             // Reporting something missing, its current location is the best guess at where it was last seen.
-            if (board == TicketBoard.Missing) f = f.copy(lastSeen = c.str("location"))
+            if (board == TicketBoard.Missing) s.f = s.f.copy(lastSeen = c.str("location"))
         },
     )
 }
@@ -222,7 +247,13 @@ private fun AlterationFields(f: TicketDraftState, onChange: (TicketDraftState) -
     TextInput(f.required, { onChange(f.copy(required = it)) }, t("csync_field_required"), FormWide)
     TextInput(f.tailor, { onChange(f.copy(tailor = it)) }, t("csync_field_tailor"))
     EnumInput(f.priority, ctx.metaList("priorities"), { onChange(f.copy(priority = it)) }, t("csync_field_priority"))
-    DateTimeInput(f.date, f.time, { onChange(f.copy(date = it)) }, { onChange(f.copy(time = it)) }, t("csync_field_deadline"))
+    DateTimeInput(
+        f.date,
+        f.time,
+        { onChange(f.copy(date = it)) },
+        { onChange(f.copy(time = it)) },
+        t("csync_field_deadline"),
+    )
 }
 
 @Composable
@@ -235,7 +266,12 @@ private fun DamageFields(f: TicketDraftState, onChange: (TicketDraftState) -> Un
         val currency = ctx.currency.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
         TextInput(f.cost, { onChange(f.copy(cost = it)) }, t("csync_field_est_repair_short") + currency, number = true)
     }
-    EnumInput(f.responsible, ctx.metaList("damage_responsible"), { onChange(f.copy(responsible = it)) }, t("csync_field_responsible"))
+    EnumInput(
+        f.responsible,
+        ctx.metaList("damage_responsible"),
+        { onChange(f.copy(responsible = it)) },
+        t("csync_field_responsible"),
+    )
 }
 
 @Composable

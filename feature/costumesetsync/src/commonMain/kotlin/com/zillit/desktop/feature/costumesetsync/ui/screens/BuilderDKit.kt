@@ -45,12 +45,16 @@ internal fun KitTabs(tabs: List<Pair<String, String>>, value: String, onChange: 
                 val on = id == value
                 Box(
                     Modifier.clickable { onChange(id) }
-                        .drawBehind { if (on) drawRect(ink, Offset(0f, size.height - 2.dp.toPx()), Size(size.width, 2.dp.toPx())) }
+                        .drawBehind {
+                            if (on) drawRect(ink, Offset(0f, size.height - 2.dp.toPx()), Size(size.width, 2.dp.toPx()))
+                        }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     ZillitText(
                         label,
-                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
+                        style = ZillitTheme.typography.bodyMedium.copy(
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        ),
                         color = if (on) colors.textPrimary else colors.textSecondary,
                         maxLines = 1,
                     )
@@ -74,7 +78,15 @@ internal fun KitConfirm(
     onDismiss: () -> Unit,
     danger: Boolean = true,
 ) {
-    FormDialog(open = open, title = title, onDismiss = onDismiss, confirmLabel = confirmLabel, onConfirm = onConfirm, danger = danger, width = CONFIRM_WIDTH) {
+    FormDialog(
+        open = open,
+        title = title,
+        onDismiss = onDismiss,
+        confirmLabel = confirmLabel,
+        onConfirm = onConfirm,
+        danger = danger,
+        width = CONFIRM_WIDTH,
+    ) {
         ZillitText(body)
     }
 }
@@ -87,7 +99,13 @@ internal fun KitHeader(headers: List<String>, weights: List<Float>) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         headers.forEachIndexed { i, h ->
-            ZillitText(h.uppercase(), Modifier.weight(weights[i]), style = ZillitTheme.typography.labelSmall, color = ZillitTheme.colors.textMuted, maxLines = 1)
+            ZillitText(
+                h.uppercase(),
+                Modifier.weight(weights[i]),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
         }
     }
     ZillitDivider()
@@ -136,11 +154,13 @@ internal fun kitRelativeTime(ms: Long, now: Long): String {
     if (ms == 0L) return ""
     val mins = ((now - ms) / MS_PER_MINUTE.toDouble()).let { kotlin.math.round(it).toLong() }
     fun say(past: String, future: String, n: Long) = t(if (n > 0) past else future, "n" to kotlin.math.abs(n))
-    if (kotlin.math.abs(mins) < 1) return t("csync_just_now")
-    if (kotlin.math.abs(mins) < MINUTES_PER_HOUR) return say("csync_minutes_ago", "csync_in_minutes", mins)
     val hours = kotlin.math.round(mins / MINUTES_PER_HOUR.toDouble()).toLong()
-    if (kotlin.math.abs(hours) < HOURS_PER_DAY) return say("csync_hours_ago", "csync_in_hours", hours)
-    return say("csync_days_ago", "csync_in_days", kotlin.math.round(hours / HOURS_PER_DAY.toDouble()).toLong())
+    return when {
+        kotlin.math.abs(mins) < 1 -> t("csync_just_now")
+        kotlin.math.abs(mins) < MINUTES_PER_HOUR -> say("csync_minutes_ago", "csync_in_minutes", mins)
+        kotlin.math.abs(hours) < HOURS_PER_DAY -> say("csync_hours_ago", "csync_in_hours", hours)
+        else -> say("csync_days_ago", "csync_in_days", kotlin.math.round(hours / HOURS_PER_DAY.toDouble()).toLong())
+    }
 }
 
 private const val MS_PER_MINUTE = 60_000L

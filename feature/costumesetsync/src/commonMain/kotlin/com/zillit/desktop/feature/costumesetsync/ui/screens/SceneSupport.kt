@@ -150,11 +150,16 @@ data class CueProgress(
 private const val CUE_CHUNK = 6
 
 /** The engine the project reads cues with: the service's choice, else AI when it is switched on. */
-internal fun cueEngineOf(meta: Rec?): String = meta?.str("cue_engine")?.ifEmpty { null } ?: if (meta?.bool("ai_enabled") == true) "ai" else "rules"
+internal fun cueEngineOf(meta: Rec?): String = meta?.str("cue_engine")?.ifEmpty { null } ?: if (meta?.bool(
+    "ai_enabled",
+) == true) "ai" else "rules"
 
 /** "Built-in reader" or "AI · <model>", for the checkbox and the progress line. */
 internal fun engineLabel(meta: Rec?): String =
-    if (cueEngineOf(meta) == "ai") t("csync_engine_ai", "model" to (meta?.str("ai_model")?.ifEmpty { null } ?: "model")) else t("csync_engine_rules")
+    if (cueEngineOf(meta) == "ai") t(
+        "csync_engine_ai",
+        "model" to (meta?.str("ai_model")?.ifEmpty { null } ?: "model"),
+    ) else t("csync_engine_rules")
 
 /**
  * Reads costume cues out of the script text of a list of scenes, a few at a time,

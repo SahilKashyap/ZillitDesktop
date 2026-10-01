@@ -49,6 +49,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.FilterSelect
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.Page
 import com.zillit.desktop.feature.costumesetsync.ui.PageHead
+import com.zillit.desktop.feature.costumesetsync.ui.Resource
 import com.zillit.desktop.feature.costumesetsync.ui.SectionCard
 import com.zillit.desktop.feature.costumesetsync.ui.enumOptions
 import com.zillit.desktop.feature.costumesetsync.ui.mapRows
@@ -61,6 +62,28 @@ import kotlinx.coroutines.launch
 private const val LABEL_PAGE_SIZE = 200
 private const val SEARCH_DEBOUNCE_MS = 250L
 private val QR_PREVIEW = 84.dp
+
+/** The costume page for the filters, searched after the typing settles. */
+@Composable
+private fun rememberLabelRows(q: String, characterId: String, status: String): Resource<List<Rec>> {
+    var debouncedQ by remember { mutableStateOf("") }
+    LaunchedEffect(q) {
+        delay(SEARCH_DEBOUNCE_MS)
+        debouncedQ = q
+    }
+    return rememberRows(debouncedQ, characterId, status) {
+        api.get(
+            "/costumes",
+            mapOf(
+                "pageSize" to LABEL_PAGE_SIZE,
+                "q" to debouncedQ,
+                "characterId" to characterId,
+                "status" to status,
+                "includeRetired" to true,
+            ),
+        )
+    }
+}
 
 /**
  * QR labels: pick costumes, then print garment tags and wrap-box labels. Each label carries the
@@ -75,24 +98,13 @@ fun LabelsScreen() {
     val route = ctx.nav.current
     val scope = rememberCoroutineScope()
     var q by remember { mutableStateOf("") }
-    var debouncedQ by remember { mutableStateOf("") }
     var characterId by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(route.arg("ids").split(',').filter { it.isNotBlank() }.toSet()) }
     // Every costume seen, so a selection survives a narrower search.
     var known by remember { mutableStateOf(emptyMap<String, Rec>()) }
-    var printedOnce by remember { mutableStateOf(false) }
-    LaunchedEffect(q) {
-        delay(SEARCH_DEBOUNCE_MS)
-        debouncedQ = q
-    }
     val characters = rememberResource { api.get("/characters").mapRows() }
-    val items = rememberRows(debouncedQ, characterId, status) {
-        api.get(
-            "/costumes",
-            mapOf("pageSize" to LABEL_PAGE_SIZE, "q" to debouncedQ, "characterId" to characterId, "status" to status, "includeRetired" to true),
-        )
-    }
+    val items = rememberLabelRows(q, characterId, status)
     val listed = items.value.orEmpty()
     LaunchedEffect(listed) { known = known + listed.associateBy { it.id } }
     // A costume page's pre-selection may sit beyond the first 200: fetch what the list did not carry.
@@ -104,67 +116,171 @@ fun LabelsScreen() {
     val printable = selected.mapNotNull { known[it] }
     val print: () -> Unit = {
         ctx.whenDownload {
-            scope.launch { ctx.host.open("qr-labels.html", labelSheetHtml(t("csync_qr_labels"), printable).encodeToByteArray()) }
-        }
-    }
-    // Arriving with ?print=1: print once the labels are known, and only with download rights.
-    LaunchedEffect(printable.size, ctx.canDownload) {
-        if (ctx.canDownload && route.arg("print") == "1" && !printedOnce && printable.isNotEmpty() && printable.size == selected.size) {
-            printedOnce = true
-            print()
-        }
-    }
-
-    Page {
-        PageHead(
-            title = t("csync_qr_labels"),
-            sub = t("csync_qr_labels_sub"),
-            actions = {
-                val label = if (printable.size == 1) t("csync_print_one_label") else t("csync_print_n_labels", "n" to printable.size)
-                ZillitButton(label, onClick = print, enabled = printable.isNotEmpty(), leadingIcon = ZillitIcons.Print)
-            },
-            bottomPadding = 0.dp,
-        )
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-            SearchWithButton(q, { q = it }, t("csync_search"), Modifier.width(340.dp))
-            FilterSelect(characterId, characters.value.orEmpty().map { it.id to it.str("name") }, t("csync_any_character"), { characterId = it }, Modifier.width(170.dp))
-            FilterSelect(status, enumOptions(ctx.metaList("costume_statuses")), t("csync_any_status"), { status = it }, Modifier.width(150.dp))
-            ZillitButton(
-                t("csync_select_all_n", "n" to listed.size),
-                onClick = { selected = selected + listed.map { it.id } },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-            )
-            ZillitButton(t("csync_clear"), onClick = { selected = emptySet() }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-        }
-        SectionCard(Modifier.fillMaxWidth(), flush = true) {
-            Await(items) { rows ->
-                // `.csync-labelpick`: rows of 8/12 padding with a hairline under each, scrolling after 320.
-                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                    rows.forEach { c ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            ZillitCheckbox(c.id in selected, { on -> selected = if (on) selected + c.id else selected - c.id })
-                            ZillitText(c.str("asset_number"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 12.9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold), maxLines = 1)
-                            ZillitText(c.str("name"), Modifier.weight(1f, fill = false), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
-                            ZillitText(c.rec("character")?.str("name").orEmpty(), style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = ZillitTheme.colors.textMuted, maxLines = 1)
-                            Spacer(Modifier.weight(1f))
-                        }
-                        ZillitDivider()
-                    }
-                }
+            scope.launch {
+                ctx.host.open("qr-labels.html", labelSheetHtml(t("csync_qr_labels"), printable).encodeToByteArray())
             }
         }
-        ZillitText(t("csync_preview_n", "n" to printable.size), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold))
+    }
+    AutoPrintOnArrival(printable.size, selected.size, print)
+
+    Page {
+        LabelsHeader(printable.size, print)
+        LabelFilters(
+            q,
+            { q = it },
+            characterId,
+            { characterId = it },
+            status,
+            { status = it },
+            characters.value.orEmpty(),
+            listed.size,
+            onSelectAll = { selected = selected + listed.map { it.id } },
+            onClear = { selected = emptySet() },
+        )
+        LabelPickList(items, selected) { id, on -> selected = if (on) selected + id else selected - id }
+        ZillitText(
+            t("csync_preview_n", "n" to printable.size),
+            style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+        )
         // `.csync-labelsheet`: auto-fill columns of at least 200, 12 apart.
         AutoFillGrid(printable.size, 200.dp, 12.dp, stretch = false) { i, cell -> LabelPreview(printable[i], cell) }
     }
 }
 
-/** `.csync-qrlabel`: a dashed 6dp-cornered tag, always black on white (it is a printed label), the QR beside its text. */
+/** Arriving with ?print=1: print once the labels are known, and only with download rights. */
+@Composable
+private fun AutoPrintOnArrival(printableCount: Int, selectedCount: Int, print: () -> Unit) {
+    val ctx = LocalSync.current
+    val route = ctx.nav.current
+    var printedOnce by remember { mutableStateOf(false) }
+    LaunchedEffect(printableCount, ctx.canDownload) {
+        val arrivedToPrint = route.arg("print") == "1" && !printedOnce
+        val labelsKnown = printableCount > 0 && printableCount == selectedCount
+        if (ctx.canDownload && arrivedToPrint && labelsKnown) {
+            printedOnce = true
+            print()
+        }
+    }
+}
+
+@Composable
+private fun LabelsHeader(printableCount: Int, print: () -> Unit) {
+    PageHead(
+        title = t("csync_qr_labels"),
+        sub = t("csync_qr_labels_sub"),
+        actions = {
+            val label = if (printableCount == 1) t("csync_print_one_label") else t(
+                "csync_print_n_labels",
+                "n" to printableCount,
+            )
+            ZillitButton(label, onClick = print, enabled = printableCount > 0, leadingIcon = ZillitIcons.Print)
+        },
+        bottomPadding = 0.dp,
+    )
+}
+
+@Composable
+private fun LabelFilters(
+    q: String,
+    onQ: (String) -> Unit,
+    characterId: String,
+    onCharacter: (String) -> Unit,
+    status: String,
+    onStatus: (String) -> Unit,
+    characters: List<Rec>,
+    listedCount: Int,
+    onSelectAll: () -> Unit,
+    onClear: () -> Unit,
+) {
+    val ctx = LocalSync.current
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        SearchWithButton(q, onQ, t("csync_search"), Modifier.width(340.dp))
+        FilterSelect(
+            characterId,
+            characters.map { it.id to it.str("name") },
+            t("csync_any_character"),
+            onCharacter,
+            Modifier.width(170.dp),
+        )
+        FilterSelect(
+            status,
+            enumOptions(ctx.metaList("costume_statuses")),
+            t("csync_any_status"),
+            onStatus,
+            Modifier.width(150.dp),
+        )
+        ZillitButton(
+            t("csync_select_all_n", "n" to listedCount),
+            onClick = onSelectAll,
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        )
+        ZillitButton(
+            t("csync_clear"),
+            onClick = onClear,
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        )
+    }
+}
+
+@Composable
+private fun LabelPickList(items: Resource<List<Rec>>, selected: Set<String>, onToggle: (String, Boolean) -> Unit) {
+    SectionCard(Modifier.fillMaxWidth(), flush = true) {
+        Await(items) { rows ->
+            // `.csync-labelpick`: rows of 8/12 padding with a hairline under each, scrolling after 320.
+            Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                rows.forEach { c ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        ZillitCheckbox(
+                            c.id in selected,
+                            { on -> onToggle(c.id, on) },
+                        )
+                        ZillitText(
+                            c.str("asset_number"),
+                            style = ZillitTheme.typography.bodyLarge.copy(
+                                fontSize = 12.9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            maxLines = 1,
+                        )
+                        ZillitText(
+                            c.str("name"),
+                            Modifier.weight(1f, fill = false),
+                            style = ZillitTheme.typography.bodyLarge.copy(
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            maxLines = 1,
+                        )
+                        ZillitText(
+                            c.rec("character")?.str("name").orEmpty(),
+                            style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                            color = ZillitTheme.colors.textMuted,
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.weight(1f))
+                    }
+                    ZillitDivider()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * `.csync-qrlabel`: a dashed 6dp-cornered tag, always black on white (it is a printed label), the QR beside its text.
+ */
 @Composable
 private fun LabelPreview(c: Rec, cell: Modifier) {
     val shape = RoundedCornerShape(6.dp)
@@ -176,12 +292,34 @@ private fun LabelPreview(c: Rec, cell: Modifier) {
         ZillitQrCode(qrPayload(c), size = QR_PREVIEW)
         Column(Modifier.weight(1f)) {
             val lines = labelLines(c).filter { it.isNotBlank() }
-            ZillitText(c.str("asset_number"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 15.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.ExtraBold), color = Color.Black, maxLines = 1)
+            ZillitText(
+                c.str("asset_number"),
+                style = ZillitTheme.typography.bodyLarge.copy(
+                    fontSize = 15.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.ExtraBold,
+                ),
+                color = Color.Black,
+                maxLines = 1,
+            )
             lines.forEachIndexed { i, line ->
                 if (i == 0) {
-                    ZillitText(line, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold), color = Color.Black, maxLines = 3)
+                    ZillitText(
+                        line,
+                        style = ZillitTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        color = Color.Black,
+                        maxLines = 3,
+                    )
                 } else {
-                    ZillitText(line, style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp), color = Color.DarkGray, maxLines = 3)
+                    ZillitText(
+                        line,
+                        style = ZillitTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = Color.DarkGray,
+                        maxLines = 3,
+                    )
                 }
             }
         }

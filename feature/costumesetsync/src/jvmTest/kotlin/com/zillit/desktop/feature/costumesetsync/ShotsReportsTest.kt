@@ -45,33 +45,56 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class ShotsReportsTest {
     private val costume = """{"_id":"c1","asset_number":"CST-000001","name":"Red wool overcoat","status":"AVAILABLE"}"""
-    private val vendor = """{"_id":"v1","name":"Angels Costumiers","contact_name":"Pat Doyle","phone":"+44 20 7000 1111","email":"hire@angels.test","address":"1 Shaftesbury Ave"}"""
+    private val vendor =
+        """{"_id":"v1","name":"Angels Costumiers","contact_name":"Pat Doyle","phone":"+44 20 7000 1111",
+        "email":"hire@angels.test","address":"1 Shaftesbury Ave"}"""
     private fun rental(i: Int, status: String, extra: String = "") =
-        """{"_id":"r$i","costume":$costume,"vendor":$vendor,"pickup_date":1772755200000,"return_date":1773000000000,"rate_per_day":12.5,"status":"$status"$extra}"""
+        """{"_id":"r$i","costume":$costume,"vendor":$vendor,"pickup_date":1772755200000,"return_date":1773000000000,
+        "rate_per_day":12.5,"status":"$status"$extra}"""
 
     private fun expense(i: Int, cat: String, amount: Int) =
-        """{"_id":"e$i","description":"Line $i","category":"$cat","amount":$amount,"currency":"GBP","account_code":"3${i}00","account_name":"Wardrobe $i","payee":"Shop $i","date":1772755200000}"""
+        """{"_id":"e$i","description":"Line $i","category":"$cat","amount":$amount,"currency":"GBP",
+        "account_code":"3${i}00","account_name":"Wardrobe $i","payee":"Shop $i","date":1772755200000}"""
 
     private fun reply(url: String): String {
         val path = url.substringBefore('?')
         val data = when {
             path.endsWith("/meta") -> META
             path.endsWith("/vendors") -> "[$vendor]"
-            path.endsWith("/rentals") -> "[${rental(1, "BOOKED", ""","is_overdue":true""")},${rental(2, "PICKED_UP", ""","due_soon":true""")},${rental(3, "RETURNED")}]"
+            path.endsWith("/rentals") ->
+                "[${rental(1, "BOOKED", ""","is_overdue":true""")}," +
+                    "${rental(2, "PICKED_UP", ""","due_soon":true""")},${rental(3, "RETURNED")}]"
             path.endsWith("/notifications") -> """{"unread":2,"items":[
-                {"_id":"n1","title":"Anna's coat needs cleaning","body":"Marked dirty after scene 4","severity":"WARNING","read":false,"created":1772755000000},
-                {"_id":"n2","title":"Fitting tomorrow","body":"","severity":"INFO","read":true,"created":1772700000000}]}"""
-            path.endsWith("/reports/budget") -> """{"inventory_value":1200,"rental_committed":300,"by_category":{"PURCHASE":400},
-                "expenses":[${expense(1, "PURCHASE", 400)},${expense(2, "LAUNDRY", 120)},${expense(3, "RENTAL", 300)}]}"""
-            path.endsWith("/reports/daily") -> """{"project":{"name":"Demo","shooting_day":3},"summary":{"scenes":2,"returned":1,"cleaning":3,"cleaning_completed":1,"alteration":1,"damaged":0,"missing":1,"spend":55},
-                "scenes":[{"_id":"s1","number":"4","name":"Kitchen","location":"Set A","status":"SHOT","characters":[{"name":"Anna"},{"name":"Ben"}]}],
-                "cleaning":[{"_id":"cl1","costume":$costume,"problem":"Wine stain","cleaning_type":"DRY_CLEANING","status":"IN_PROGRESS","is_emergency":true},
-                            {"_id":"cl2","costume":$costume,"problem":"Mud","cleaning_type":"DRY_CLEANING","status":"COMPLETED"}],
-                "alterations":[{"_id":"a1","costume":$costume,"issue":"Hem","required_work":"Take up 2cm","status":"PENDING"}],
+                {"_id":"n1","title":"Anna's coat needs cleaning","body":"Marked dirty after scene 4",
+                "severity":"WARNING","read":false,"created":1772755000000},
+                {"_id":"n2","title":"Fitting tomorrow","body":"","severity":"INFO","read":true,
+                "created":1772700000000}]}"""
+            path.endsWith("/reports/budget") ->
+                """{"inventory_value":1200,"rental_committed":300,"by_category":{"PURCHASE":400},
+                "expenses":[${expense(1, "PURCHASE", 400)},${expense(2, "LAUNDRY", 120)},
+                ${expense(3, "RENTAL", 300)}]}"""
+            path.endsWith("/reports/daily") ->
+                """{"project":{"name":"Demo","shooting_day":3},"summary":{"scenes":2,"returned":1,"cleaning":3,
+                "cleaning_completed":1,"alteration":1,"damaged":0,"missing":1,"spend":55},
+                "scenes":[{"_id":"s1","number":"4","name":"Kitchen","location":"Set A","status":"SHOT",
+                "characters":[{"name":"Anna"},{"name":"Ben"}]}],
+                "cleaning":[{"_id":"cl1","costume":$costume,"problem":"Wine stain","cleaning_type":"DRY_CLEANING",
+                "status":"IN_PROGRESS","is_emergency":true},
+                            {"_id":"cl2","costume":$costume,"problem":"Mud","cleaning_type":"DRY_CLEANING",
+                            "status":"COMPLETED"}],
+                "alterations":[{"_id":"a1","costume":$costume,"issue":"Hem","required_work":"Take up 2cm",
+                "status":"PENDING"}],
                 "missing":[{"_id":"m1","costume":$costume,"last_seen_location":"Truck 2"}]}"""
-            path.endsWith("/reports/inventory") -> """[{"asset":"CST-000001","name":"Red wool overcoat","category":"CLOTHING","type":"Coat","size":"M","character":"Anna","source":"PURCHASED","vendor":"","purchase_cost":90,"status":"AVAILABLE","location":"Warehouse","quantity":1}]"""
-            path.endsWith("/scenes") -> """[{"_id":"s1","number":"4","name":"Kitchen","int_ext":"INT","location":"Set A","time_of_day":"DAY","shoot_date":1772755200000,"status":"PENDING",
-                "characters":[{"_id":"sc1","character_id":"ch1","character":{"name":"Anna","actor":{"name":"Zoe"}},"readiness":"READY","change":{"_id":"cg1","change_number":1,"name":"Look 1","items":[{"costume":{"name":"Red coat","status":"AVAILABLE"}}]}},
+            path.endsWith("/reports/inventory") ->
+                """[{"asset":"CST-000001","name":"Red wool overcoat","category":"CLOTHING","type":"Coat","size":"M",
+                "character":"Anna","source":"PURCHASED","vendor":"","purchase_cost":90,"status":"AVAILABLE",
+                "location":"Warehouse","quantity":1}]"""
+            path.endsWith("/scenes") ->
+                """[{"_id":"s1","number":"4","name":"Kitchen","int_ext":"INT","location":"Set A","time_of_day":"DAY",
+                "shoot_date":1772755200000,"status":"PENDING",
+                "characters":[{"_id":"sc1","character_id":"ch1","character":{"name":"Anna","actor":{"name":"Zoe"}},
+                "readiness":"READY","change":{"_id":"cg1","change_number":1,"name":"Look 1",
+                "items":[{"costume":{"name":"Red coat","status":"AVAILABLE"}}]}},
                               {"_id":"sc2","character_id":"ch2","character":{"name":"Ben"},"readiness":"MISSING"}]}]"""
             path.endsWith("/characters") -> "[]"
             else -> "{}"
@@ -81,14 +104,34 @@ class ShotsReportsTest {
 
     private fun ctx(route: String, fresh: Boolean = false): SyncCtx {
         val engine = MockEngine { request ->
-            respond(reply(request.url.toString()), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(
+                reply(request.url.toString()),
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
         }
-        val client = ApiClient(httpClient = HttpClientFactory.create({ Factory(engine) }), headerProvider = { _, _, _, _ -> emptyMap() })
-        val config = AppConfig(Environment.Develop, ZillitService.entries.associateWith { "https://${it.name.lowercase()}.test" }, emptyMap())
+        val client = ApiClient(
+            httpClient = HttpClientFactory.create({ Factory(engine) }),
+            headerProvider = { _, _, _, _ -> emptyMap() },
+        )
+        val config = AppConfig(
+            Environment.Develop,
+            ZillitService.entries.associateWith { "https://${it.name.lowercase()}.test" },
+            emptyMap(),
+        )
         return SyncCtx(
             api = SyncOnsetApi(client, config, projectId = { "p1" }),
             viewer = SyncViewer(resolved = true, enabled = true, canView = true, canPost = true, canDownload = true),
-            project = SyncProject(Rec(Json.parseToJsonElement(if (fresh) """{"project_name":"Demo","my_role":"ADMIN","currency":"GBP","type":"FEATURE","counts":{"scenes":0,"characters":0,"costumes":0,"actors":0}}""" else """{"project_name":"Demo","my_role":"ADMIN","currency":"GBP"}""") as JsonObject), setOf("ADMIN")),
+            project = SyncProject(
+                Rec(
+                    Json.parseToJsonElement(
+                        if (fresh) """{"project_name":"Demo","my_role":"ADMIN","currency":"GBP","type":"FEATURE",
+                        "counts":{"scenes":0,"characters":0,"costumes":0,"actors":0}}""" else """{"project_name":"Demo",
+                        "my_role":"ADMIN","currency":"GBP"}""",
+                    ) as JsonObject,
+                ),
+                setOf("ADMIN"),
+            ),
             meta = Rec(Json.parseToJsonElement(META) as JsonObject),
             nav = SyncNav(SyncRoute.parse(route)),
             scope = CoroutineScope(Dispatchers.Unconfined),
@@ -130,8 +173,11 @@ class ShotsReportsTest {
     @Test fun notifications() = shot("notifications")
 
     private companion object {
-        const val META = """{"costume_statuses":["AVAILABLE","ISSUED"],"costume_categories":["CLOTHING","FOOTWEAR"],"costume_sources":["PURCHASED","RENTED"],
-            "standard_locations":["Warehouse"],"finance_roles":["ADMIN"],"costume_types":{"CLOTHING":["Coat"]},"cleaning_types":["DRY_CLEANING"],
+        const val META =
+            """{"costume_statuses":["AVAILABLE","ISSUED"],"costume_categories":["CLOTHING","FOOTWEAR"],
+            "costume_sources":["PURCHASED","RENTED"],
+            "standard_locations":["Warehouse"],"finance_roles":["ADMIN"],"costume_types":{"CLOTHING":["Coat"]},
+            "cleaning_types":["DRY_CLEANING"],
             "media_types":["IMAGE","FILE","LINK"],"expense_categories":["PURCHASE","LAUNDRY","RENTAL"]}"""
     }
 }

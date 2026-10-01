@@ -71,7 +71,10 @@ private val QR_SIZE = 110.dp
 fun CostumeDetailScreen(id: String) {
     val resource = rememberResource(id) { api.get("/costumes/$id") }
     // The frame's `entity_id` narrows a refresh to this piece (a frame without one refreshes everything).
-    SocketRefresh(SyncEvents.Costume, predicate = { it.str("entity_id").let { entity -> entity.isBlank() || entity == id } }) {
+    SocketRefresh(
+        SyncEvents.Costume,
+        predicate = { it.str("entity_id").let { entity -> entity.isBlank() || entity == id } },
+    ) {
         resource.reload(silent = true)
     }
     Await(resource) { answer ->
@@ -98,78 +101,149 @@ private fun CostumeDetail(c: Rec, onChanged: () -> Unit) {
         c.str("brand").ifBlank { null },
     ).joinToString(" · ")
     val character = c.rec("character")
-    val colors = ZillitTheme.colors
-    val subStyle = ZillitTheme.typography.bodyMedium
 
     Page {
         PageHead(
             title = "",
-            titleContent = {
-                Column {
-                    // `crumbs`: "Costumes / CST-000001", the first a link.
-                    Row(Modifier.padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        LinkText(t("csync_nav_costumes"), { ctx.nav.go("costumes") }, style = subStyle.copy(fontSize = 12.sp))
-                        ZillitText(" / ${c.str("asset_number")}", style = subStyle.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                        val title = ZillitTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
-                        ZillitText(c.str("asset_number"), style = title.copy(fontFamily = FontFamily.Monospace, fontSize = 22.sp), maxLines = 1)
-                        ZillitText(c.str("name"), style = title, maxLines = 2)
-                        StatusBadge(c.str("status"), large = true)
-                    }
-                    FlowRow(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
-                        val sub = subStyle.copy(fontSize = 13.sp)
-                        ZillitText(if (traits.isBlank()) "" else "$traits · ", style = sub, color = colors.textMuted)
-                        ZillitText("${t("csync_at")} ", style = sub, color = colors.textMuted)
-                        ZillitText(c.str("location"), style = sub.copy(fontWeight = FontWeight.Bold), color = colors.textMuted)
-                        if (character != null) {
-                            ZillitText(" · ${t("csync_for")} ", style = sub, color = colors.textMuted)
-                            LinkText(character.str("name"), { ctx.nav.go("characters/${character.id}") }, bold = true, style = sub)
-                        }
-                    }
-                }
-            },
+            titleContent = { CostumeTitle(c, traits, character) },
             actions = {
-                if (ctx.canPost) ZillitButton(t("csync_edit"), onClick = { edit = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Edit)
-                ZillitButton(t("csync_label"), onClick = { ctx.nav.go("labels?ids=${c.id}") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Print)
+                if (ctx.canPost) ZillitButton(
+                    t("csync_edit"),
+                    onClick = { edit = true },
+                    variant = ButtonVariant.Secondary,
+                    leadingIcon = ZillitIcons.Edit,
+                )
+                ZillitButton(
+                    t("csync_label"),
+                    onClick = { ctx.nav.go("labels?ids=${c.id}") },
+                    variant = ButtonVariant.Secondary,
+                    leadingIcon = ZillitIcons.Print,
+                )
             },
             bottomPadding = 0.dp,
         )
         SectionCard(Modifier.fillMaxWidth()) {
-            CostumeActions(c, onChanged = onChanged, go = ctx.nav::go, openCleaningId = openCleaning?.id.orEmpty(), openAlterationId = openAlteration?.id.orEmpty())
+            CostumeActions(
+                c,
+                onChanged = onChanged,
+                go = ctx.nav::go,
+                openCleaningId = openCleaning?.id.orEmpty(),
+                openAlterationId = openAlteration?.id.orEmpty(),
+            )
         }
         openCleaning?.let { OpenCleaningNotice(it) { ctx.nav.go("cleaning/${it.id}") } }
-        openAlteration?.let { alteration ->
-            val due = fmtDateTime(alteration.long("deadline")).takeIf { it.isNotBlank() }?.let { " · ${t("csync_due")} $it" }.orEmpty()
-            Notice(Modifier.padding(top = 10.dp)) {
-                ZillitText(
-                    buildAnnotatedString {
-                        append("${t("csync_with_tailor")}: ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(alteration.str("issue")) }
-                        append(" → ${alteration.str("required_work")} · ${tEnum(alteration.str("status"))}$due")
-                    },
-                    style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
-                )
-            }
-        }
-        // `.csync-take-grid--even`: 1fr beside 1.2fr, 12 apart.
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                DetailsCard(c)
-                UsedInCard(c)
-                ReferenceGrid("COSTUME", c.id, title = t("csync_photos_documents"), kinds = PHOTO_KINDS)
-                RecordsCard(c)
-            }
-            SectionCard(Modifier.weight(TIMELINE_WEIGHT), title = t("csync_costume_timeline")) {
-                val timeline = c.recs("timeline")
-                if (timeline.isEmpty()) MutedText(t("csync_costume_timeline_empty"), maxLines = 2) else Timeline(timeline)
-            }
-        }
+        openAlteration?.let { AlterationNotice(it) }
+        CostumeBody(c)
     }
     CostumeFormDialog(open = edit, onClose = { edit = false }, initial = c, onSaved = onChanged)
 }
 
 private const val TIMELINE_WEIGHT = 1.2f
+
+@Composable
+private fun CostumeBody(c: Rec) {
+    // `.csync-take-grid--even`: 1fr beside 1.2fr, 12 apart.
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            DetailsCard(c)
+            UsedInCard(c)
+            ReferenceGrid("COSTUME", c.id, title = t("csync_photos_documents"), kinds = PHOTO_KINDS)
+            RecordsCard(c)
+        }
+        SectionCard(Modifier.weight(TIMELINE_WEIGHT), title = t("csync_costume_timeline")) {
+            val timeline = c.recs("timeline")
+            if (timeline.isEmpty()) {
+                MutedText(t("csync_costume_timeline_empty"), maxLines = 2)
+            } else {
+                Timeline(timeline)
+            }
+        }
+    }
+}
+
+/** `crumbs`: "Costumes / CST-000001", the first a link. */
+@Composable
+private fun CostumeCrumbs(assetNumber: String) {
+    val ctx = LocalSync.current
+    val small = ZillitTheme.typography.bodyMedium.copy(fontSize = 12.sp)
+    Row(Modifier.padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        LinkText(t("csync_nav_costumes"), { ctx.nav.go("costumes") }, style = small)
+        ZillitText(" / $assetNumber", style = small, color = ZillitTheme.colors.textMuted, maxLines = 1)
+    }
+}
+
+@Composable
+private fun CostumeTitle(c: Rec, traits: String, character: Rec?) {
+    val ctx = LocalSync.current
+    val colors = ZillitTheme.colors
+    val subStyle = ZillitTheme.typography.bodyMedium
+    Column {
+        CostumeCrumbs(c.str("asset_number"))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            val title = ZillitTheme.typography.titleLarge.copy(
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            ZillitText(
+                c.str("asset_number"),
+                style = title.copy(fontFamily = FontFamily.Monospace, fontSize = 22.sp),
+                maxLines = 1,
+            )
+            ZillitText(c.str("name"), style = title, maxLines = 2)
+            StatusBadge(c.str("status"), large = true)
+        }
+        FlowRow(
+            Modifier.padding(top = 4.dp),
+            verticalArrangement = Arrangement.Center,
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            val sub = subStyle.copy(fontSize = 13.sp)
+            ZillitText(if (traits.isBlank()) "" else "$traits · ", style = sub, color = colors.textMuted)
+            ZillitText("${t("csync_at")} ", style = sub, color = colors.textMuted)
+            ZillitText(
+                c.str("location"),
+                style = sub.copy(fontWeight = FontWeight.Bold),
+                color = colors.textMuted,
+            )
+            if (character != null) {
+                ZillitText(" · ${t("csync_for")} ", style = sub, color = colors.textMuted)
+                LinkText(
+                    character.str("name"),
+                    { ctx.nav.go("characters/${character.id}") },
+                    bold = true,
+                    style = sub,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlterationNotice(alteration: Rec) {
+    val due = fmtDateTime(alteration.long("deadline"))
+        .takeIf { it.isNotBlank() }
+        ?.let { " · ${t("csync_due")} $it" }
+        .orEmpty()
+    Notice(Modifier.padding(top = 10.dp)) {
+        ZillitText(
+            buildAnnotatedString {
+                append("${t("csync_with_tailor")}: ")
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(alteration.str("issue")) }
+                append(" → ${alteration.str("required_work")} · ${tEnum(alteration.str("status"))}$due")
+            },
+            style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+        )
+    }
+}
 
 @Composable
 private fun OpenCleaningNotice(ticket: Rec, open: () -> Unit) {
@@ -195,13 +269,28 @@ private fun DetailsCard(c: Rec) {
     val ctx = LocalSync.current
     SectionCard(Modifier.fillMaxWidth(), title = t("csync_costume_details")) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-            Box(Modifier.size(QR_SIZE).clip(RoundedCornerShape(8.dp)).border(1.dp, ZillitTheme.colors.border, RoundedCornerShape(8.dp))) {
+            Box(
+                Modifier.size(QR_SIZE).clip(RoundedCornerShape(8.dp)).border(
+                    1.dp,
+                    ZillitTheme.colors.border,
+                    RoundedCornerShape(8.dp),
+                ),
+            ) {
                 ZillitQrCode(c.str("asset_number"), size = QR_SIZE)
             }
             val rows = buildList {
-                add(t("csync_field_source") to listOfNotNull(tEnum(c.str("source")), c.rec("vendor")?.str("name")?.ifBlank { null }).joinToString(" · "))
-                if (ctx.isFinance && c.has("purchase_cost")) add(t("csync_field_purchase_cost") to fmtMoney(c.double("purchase_cost"), ctx.currency))
-                if (ctx.isFinance && c.has("rental_cost_per_day")) add(t("csync_rental_per_day") to fmtMoney(c.double("rental_cost_per_day"), ctx.currency))
+                add(
+                    t("csync_field_source") to listOfNotNull(
+                        tEnum(c.str("source")),
+                        c.rec("vendor")?.str("name")?.ifBlank { null },
+                    ).joinToString(" · "),
+                )
+                if (ctx.isFinance && c.has("purchase_cost")) add(
+                    t("csync_field_purchase_cost") to fmtMoney(c.double("purchase_cost"), ctx.currency),
+                )
+                if (ctx.isFinance && c.has("rental_cost_per_day")) add(
+                    t("csync_rental_per_day") to fmtMoney(c.double("rental_cost_per_day"), ctx.currency),
+                )
                 add(t("csync_field_quantity") to c.str("quantity"))
                 if (c.str("fabric").isNotBlank()) add(t("csync_field_fabric") to c.str("fabric"))
                 if (c.str("care_instructions").isNotBlank()) add(t("csync_care") to c.str("care_instructions"))
@@ -209,7 +298,9 @@ private fun DetailsCard(c: Rec) {
             }
             KvList(rows, Modifier.weight(1f))
         }
-        if (c.str("notes").isNotBlank()) Notice(Modifier.padding(top = 10.dp)) { ZillitText(c.str("notes"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp)) }
+        if (c.str("notes").isNotBlank()) Notice(Modifier.padding(top = 10.dp)) {
+            ZillitText(c.str("notes"), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp))
+        }
     }
 }
 
@@ -228,7 +319,9 @@ private fun UsedInCard(c: Rec) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items.forEach { item ->
                 val change = item.rec("change")
-                val label = "${change?.rec("character")?.str("name").orEmpty()} · ${t("csync_change")} #${change?.str("change_number").orEmpty()} ${change?.str("name").orEmpty()}"
+                val label =
+                    "${change?.rec("character")?.str("name").orEmpty()} · ${t("csync_change")} " +
+                    "#${change?.str("change_number").orEmpty()} ${change?.str("name").orEmpty()}"
                 Column {
                     LinkText(label, { ctx.nav.go("changes/${item.str("change_id")}") }, bold = true)
                     if (item.str("wear_notes").isNotBlank()) MutedText("✎ ${item.str("wear_notes")}", maxLines = 3)
@@ -237,8 +330,15 @@ private fun UsedInCard(c: Rec) {
             if (scenes.isNotEmpty()) {
                 ChipRow {
                     scenes.forEach { scene ->
-                        val shoot = fmtDate(scene.long("shoot_date")).takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
-                        InkChip("${t("csync_sc")} ${scene.str("number")}$shoot", active = false, onClick = { ctx.nav.go("scenes/${scene.id}") })
+                        val shoot = fmtDate(scene.long("shoot_date"))
+                            .takeIf { it.isNotBlank() }
+                            ?.let { " · $it" }
+                            .orEmpty()
+                        InkChip(
+                            "${t("csync_sc")} ${scene.str("number")}$shoot",
+                            active = false,
+                            onClick = { ctx.nav.go("scenes/${scene.id}") },
+                        )
                     }
                 }
             }
@@ -253,26 +353,46 @@ private fun RecordsCard(c: Rec) {
     val damages = c.recs("damages")
     val missing = c.recs("missing")
     val fittings = c.recs("fitting_items")
-    if (rentals.isEmpty() && damages.isEmpty() && missing.isEmpty() && fittings.isEmpty()) return
+    if (listOf(rentals, damages, missing, fittings).all { it.isEmpty() }) return
     SectionCard(Modifier.fillMaxWidth(), title = t("csync_records")) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             rentals.forEach { r ->
                 RecordLine(
                     buildAnnotatedString {
                         append("🏷 ${t("csync_rental_from")} ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(r.rec("vendor")?.str("name").orEmpty()) }
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(r.rec("vendor")?.str("name").orEmpty())
+                        }
                         append(" ${fmtDate(r.long("pickup_date"))} → ${fmtDate(r.long("return_date"))}")
                     },
                     r.str("status"),
                 )
             }
-            damages.forEach { d -> RecordLine(AnnotatedString("⚠️ ${fmtDate(d.long("created"))} ${d.str("description")}"), d.str("status")) }
+            damages.forEach { d ->
+                RecordLine(
+                    AnnotatedString("⚠️ ${fmtDate(d.long("created"))} ${d.str("description")}"),
+                    d.str("status"),
+                )
+            }
             missing.forEach { m ->
-                RecordLine(AnnotatedString("🔎 ${t("csync_missing_since")} ${fmtDateTime(m.long("created"))} · ${t("csync_last_seen")} ${m.str("last_seen_location")}"), m.str("status"))
+                RecordLine(
+                    AnnotatedString(
+                        "🔎 ${t("csync_missing_since")} ${fmtDateTime(m.long("created"))} · " +
+                        "${t("csync_last_seen")} ${m.str("last_seen_location")}",
+                    ),
+                    m.str("status"),
+                )
             }
             fittings.forEach { f ->
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    LinkText("📏 ${t("csync_fitting")} ${fmtDate(f.rec("fitting")?.long("scheduled_at"))}", { ctx.nav.go("fittings/${f.str("fitting_id")}") }, style = recordStyle())
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LinkText(
+                        "📏 ${t("csync_fitting")} ${fmtDate(f.rec("fitting")?.long("scheduled_at"))}",
+                        { ctx.nav.go("fittings/${f.str("fitting_id")}") },
+                        style = recordStyle(),
+                    )
                     StatusBadge(f.str("status"))
                     if (f.str("notes").isNotBlank()) ZillitText(" · ${f.str("notes")}", style = recordStyle())
                 }

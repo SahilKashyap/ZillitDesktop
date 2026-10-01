@@ -49,7 +49,9 @@ internal fun CastLink(text: String, onClick: () -> Unit, modifier: Modifier = Mo
     ZillitText(
         text,
         modifier.clickable(onClick = onClick),
-        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal),
+        style = ZillitTheme.typography.bodyMedium.copy(
+            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal
+        ),
         color = ZillitTheme.colors.info,
         maxLines = 1,
     )
@@ -76,7 +78,13 @@ internal fun RowBadge(text: String, modifier: Modifier = Modifier) {
 internal fun RowMenu(entries: List<ZillitMenuEntry>) {
     var open by remember { mutableStateOf(false) }
     Box {
-        ZillitButton("", onClick = { open = true }, variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.MoreVertical)
+        ZillitButton(
+            "",
+            onClick = { open = true },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.MoreVertical
+        )
         ZillitActionMenu(
             expanded = open,
             onDismissRequest = { open = false },
@@ -89,7 +97,11 @@ internal fun RowMenu(entries: List<ZillitMenuEntry>) {
 
 /** A menu row, shorthand. */
 internal fun menuAction(label: String, danger: Boolean = false, onClick: () -> Unit): ZillitMenuEntry =
-    ZillitMenuEntry.Action(label, tone = if (danger) ZillitMenuTone.Danger else ZillitMenuTone.Neutral, onClick = onClick)
+    ZillitMenuEntry.Action(
+        label,
+        tone = if (danger) ZillitMenuTone.Danger else ZillitMenuTone.Neutral,
+        onClick = onClick
+    )
 
 /**
  * A JSON body that keeps what [com.zillit.desktop.feature.costumesetsync.ui.body] drops: a blank string is sent

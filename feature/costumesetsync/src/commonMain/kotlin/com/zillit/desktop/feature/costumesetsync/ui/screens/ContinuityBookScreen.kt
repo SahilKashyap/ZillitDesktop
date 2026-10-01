@@ -92,14 +92,7 @@ fun ContinuityBookScreen() {
         val asked = route.arg("day")
         val shotDay = (days.firstOrNull { it.day == asked } ?: days.firstOrNull())?.day ?: asked.ifEmpty { today }
         val day = if (tab == "prep") prepDay else shotDay
-        PageHead(
-            title = t("csync_continuity_book"),
-            sub = t("csync_continuity_book_sub"),
-            actions = {
-                ZillitButton(t("csync_print_pdf"), onClick = { ctx.whenDownload { printBook(ctx, tab, day, book) } }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Print)
-                if (ctx.canPost) ZillitButton(t("csync_record_take"), onClick = { ctx.nav.go("continuity") }, leadingIcon = ZillitIcons.Add)
-            },
-        )
+        BookHeader(ctx) { ctx.whenDownload { printBook(ctx, tab, day, book) } }
         KitTabs(
             listOf("prep" to t("csync_continuity_of_prep"), "shot" to t("csync_history_of_shoot")),
             tab,
@@ -117,13 +110,42 @@ fun ContinuityBookScreen() {
     }
 }
 
+@Composable
+private fun BookHeader(ctx: SyncCtx, onPrint: () -> Unit) {
+    PageHead(
+        title = t("csync_continuity_book"),
+        sub = t("csync_continuity_book_sub"),
+        actions = {
+            ZillitButton(
+                t("csync_print_pdf"),
+                onClick = onPrint,
+                variant = ButtonVariant.Secondary,
+                leadingIcon = ZillitIcons.Print,
+            )
+            if (ctx.canPost) ZillitButton(
+                t("csync_record_take"),
+                onClick = { ctx.nav.go("continuity") },
+                leadingIcon = ZillitIcons.Add,
+            )
+        },
+    )
+}
+
 /** Saves the open tab's document; a cancelled dialog does nothing. */
 private fun printBook(ctx: SyncCtx, tab: String, day: String, book: BookData) {
     val project = ctx.project.rec
-    val html = if (tab == "prep") prepHtml(day, book.scenes, project) else bookHtml(day, book.records, book.scenes, project)
+    val html = if (tab == "prep") prepHtml(day, book.scenes, project) else bookHtml(
+        day,
+        book.records,
+        book.scenes,
+        project,
+    )
     val title = t(if (tab == "prep") "csync_continuity_of_prep" else "csync_continuity_book")
     ctx.scope.launch {
-        ctx.host.save("${PrintHtml.slug("$title $day")}.html", PrintHtml.page("$title · $day", html).encodeToByteArray())
+        ctx.host.save(
+            "${PrintHtml.slug("$title $day")}.html",
+            PrintHtml.page("$title · $day", html).encodeToByteArray(),
+        )
     }
 }
 
@@ -131,10 +153,13 @@ private fun printBook(ctx: SyncCtx, tab: String, day: String, book: BookData) {
 private fun PrepTab(ctx: SyncCtx, book: BookData, prepDay: String, onDay: (String) -> Unit) {
     val prepScenes = ContinuityModel.onDay(book.scenes, prepDay)
     val rows = ContinuityModel.rowsOf(prepScenes)
-    val notReady = rows.count { it.second.level != "READY" }
     SectionCard(
         title = "${t("csync_prep")} · ${DayKeys.medium(prepDay)}",
-        actions = { com.zillit.desktop.core.designsystem.component.ZillitDateField(prepDay, onDay, Modifier.width(KIT_DATE_WIDTH)) },
+        actions = { com.zillit.desktop.core.designsystem.component.ZillitDateField(
+            prepDay,
+            onDay,
+            Modifier.width(KIT_DATE_WIDTH),
+        ) },
     ) {
         if (prepScenes.isEmpty()) {
             EmptyState(t("csync_nothing_scheduled_day"), t("csync_nothing_scheduled_prep_hint"))
@@ -152,11 +177,22 @@ private fun PrepScene(ctx: SyncCtx, s: Rec, records: List<Rec>) {
     // The web's `.csync-scenecard`: a bordered 10dp box.
     val box = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
     Column(
-        Modifier.fillMaxWidth().background(ZillitTheme.colors.surface, box).border(1.dp, ZillitTheme.colors.border, box).padding(12.dp),
+        Modifier.fillMaxWidth().background(ZillitTheme.colors.surface, box).border(
+            1.dp,
+            ZillitTheme.colors.border,
+            box,
+        ).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            ZillitButton("${t("csync_sc")} ${s.str("number")}" + s.str("name").let { if (it.isBlank()) "" else " · $it" }, onClick = { ctx.nav.go("scenes/${s.id}") }, variant = ButtonVariant.Tertiary)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            ZillitButton(
+                "${t("csync_sc")} ${s.str("number")}" + s.str("name").let { if (it.isBlank()) "" else " · $it" },
+                onClick = { ctx.nav.go("scenes/${s.id}") },
+                variant = ButtonVariant.Tertiary,
+            )
             MutedText(sceneLine(s))
         }
         val chars = s.recs("characters")
@@ -172,8 +208,14 @@ private fun PrepScene(ctx: SyncCtx, s: Rec, records: List<Rec>) {
 private fun PrepCharacter(ctx: SyncCtx, s: Rec, c: Rec, taken: Int) {
     val r = ContinuityModel.readiness(c)
     val change = c.rec("change")
-    Column(Modifier.fillMaxWidth().padding(start = ZillitTheme.spacing.lg), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    Column(
+        Modifier.fillMaxWidth().padding(start = ZillitTheme.spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
             ReadinessDot(r.level)
             RowTitle(c.rec("character")?.str("name").orEmpty())
             c.rec("character")?.rec("actor")?.str("name")?.takeIf { it.isNotBlank() }?.let { MutedText(it) }
@@ -192,11 +234,18 @@ private fun PrepCharacter(ctx: SyncCtx, s: Rec, c: Rec, taken: Int) {
         }
         val items = change?.recs("items").orEmpty()
         if (items.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
                 items.forEach { i ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    ) {
                         ReadinessDot(ContinuityModel.itemLevel(i.rec("costume")?.str("status")))
-                        MutedText(i.rec("costume")?.str("name").orEmpty() + i.str("wear_notes").let { if (it.isBlank()) "" else " · $it" })
+                        val wear = i.str("wear_notes").let { if (it.isBlank()) "" else " · $it" }
+                        MutedText(i.rec("costume")?.str("name").orEmpty() + wear)
                     }
                 }
             }
@@ -218,10 +267,24 @@ private fun ChangeBadge(ctx: SyncCtx, change: Rec) {
 }
 
 @Composable
-private fun ShotTab(ctx: SyncCtx, book: BookData, days: List<ContinuityModel.ShootDay>, shotDay: String, onChanged: () -> Unit) {
+private fun ShotTab(
+    ctx: SyncCtx,
+    book: BookData,
+    days: List<ContinuityModel.ShootDay>,
+    shotDay: String,
+    onChanged: () -> Unit,
+) {
     val selected = days.firstOrNull { it.day == shotDay }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg), verticalAlignment = Alignment.Top) {
-        SectionCard(title = "${t("csync_shoot_days")} (${days.size})", flush = true, modifier = Modifier.width(SIDE_WIDTH)) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+        verticalAlignment = Alignment.Top,
+    ) {
+        SectionCard(
+            title = "${t("csync_shoot_days")} (${days.size})",
+            flush = true,
+            modifier = Modifier.width(SIDE_WIDTH),
+        ) {
             days.forEach { d ->
                 ListRow(
                     onClick = { ctx.nav.setQuery("day", d.day) },
@@ -229,7 +292,10 @@ private fun ShotTab(ctx: SyncCtx, book: BookData, days: List<ContinuityModel.Sho
                 ) {
                     RowTitle(DayKeys.medium(d.day) + if (d.day == shotDay) " ●" else "")
                     MutedText(
-                        t(if (d.scenes.size == 1) "csync_n_scene_one" else "csync_n_scenes", "n" to d.scenes.size) + " · " +
+                        t(
+                            if (d.scenes.size == 1) "csync_n_scene_one" else "csync_n_scenes",
+                            "n" to d.scenes.size,
+                        ) + " · " +
                             t(if (d.takes == 1) "csync_n_take_one" else "csync_n_takes", "n" to d.takes),
                     )
                 }
@@ -247,7 +313,12 @@ private fun ShotScene(ctx: SyncCtx, s: Rec, records: List<Rec>, onChanged: () ->
     val ids = rows.map { it.str("character_id") }.distinct()
     SectionCard(
         title = "${t("csync_sc")} ${s.str("number")}" + s.str("name").let { if (it.isBlank()) "" else " · $it" },
-        actions = { ZillitButton(t("csync_open_scene"), onClick = { ctx.nav.go("scenes/${s.id}") }, variant = ButtonVariant.Secondary, size = ButtonSize.Small) },
+        actions = { ZillitButton(
+            t("csync_open_scene"),
+            onClick = { ctx.nav.go("scenes/${s.id}") },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        ) },
     ) {
         MutedText(sceneLine(s).ifBlank { "—" })
         if (ids.isEmpty()) {
@@ -260,8 +331,14 @@ private fun ShotScene(ctx: SyncCtx, s: Rec, records: List<Rec>, onChanged: () ->
             val name = first.rec("character")?.str("name")?.ifBlank { null }
                 ?: s.recs("characters").firstOrNull { it.str("character_id") == cid }?.rec("character")?.str("name")
                 ?: t("csync_character")
-            Column(Modifier.padding(top = ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            Column(
+                Modifier.padding(top = ZillitTheme.spacing.md),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                ) {
                     RowTitle(name)
                     first.rec("character")?.rec("actor")?.str("name")?.takeIf { it.isNotBlank() }?.let { MutedText(it) }
                     first.rec("change")?.let { ChangeBadge(ctx, it) }
@@ -274,15 +351,27 @@ private fun ShotScene(ctx: SyncCtx, s: Rec, records: List<Rec>, onChanged: () ->
 
 @Composable
 private fun TakeCard(ctx: SyncCtx, r: Rec, onChanged: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(start = ZillitTheme.spacing.md), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    Column(
+        Modifier.fillMaxWidth().padding(start = ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
             RowTitle("${t("csync_take")} ${r.long("take_number")}")
-            MutedText(fmtDateTime(r.long("created")) + r.str("recorded_by_name").let { if (it.isBlank()) "" else " · $it" }, Modifier.weight(1f))
+            MutedText(
+                fmtDateTime(r.long("created")) + r.str("recorded_by_name").let { if (it.isBlank()) "" else " · $it" },
+                Modifier.weight(1f),
+            )
             // Deleted at once, as the web's take card does.
             if (ctx.canPost) {
                 ZillitButton(
                     t("csync_delete_take_title"),
-                    onClick = { ctx.launchWrite({ ctx.api.delete("/continuity/${r.id}") }, onDone = { _: Answer -> onChanged() }) },
+                    onClick = { ctx.launchWrite(
+                        { ctx.api.delete("/continuity/${r.id}") },
+                        onDone = { _: Answer -> onChanged() },
+                    ) },
                     variant = ButtonVariant.Tertiary,
                     size = ButtonSize.Small,
                     leadingIcon = ZillitIcons.Trash,
@@ -290,12 +379,22 @@ private fun TakeCard(ctx: SyncCtx, r: Rec, onChanged: () -> Unit) {
             }
         }
         r.rec("details")?.let { d ->
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl)) { d.keys.forEach { k -> FieldRow(k, d.str(k)) } }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl)) {
+                d.keys.forEach { k -> FieldRow(k, d.str(k)) }
+            }
         }
         val acc = r.recs("accessories")
         if (acc.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                acc.forEach { a -> StatusBadge(if (a.bool("present")) "OK" else "FAIL", (if (a.bool("present")) "✓ " else "✗ ") + a.str("name")) }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                acc.forEach { a ->
+                    StatusBadge(
+                        if (a.bool("present")) "OK" else "FAIL",
+                        (if (a.bool("present")) "✓ " else "✗ ") + a.str("name"),
+                    )
+                }
             }
         }
         r.str("notes").takeIf { it.isNotBlank() }?.let { ZillitNotice(it, tone = StatusTone.Pending) }

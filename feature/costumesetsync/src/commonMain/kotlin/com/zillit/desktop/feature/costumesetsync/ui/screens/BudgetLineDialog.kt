@@ -56,6 +56,7 @@ internal class BudgetLineContext(
  * payee, scene, character, category and currency stay for the next line. [remembered] carries the form
  * across opens, so an Add starts from whatever the form last held.
  */
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 @Composable
 internal fun BudgetLineDialog(
     open: Boolean,
@@ -73,7 +74,9 @@ internal fun BudgetLineDialog(
 
     LaunchedEffect(open, editing?.id) {
         if (!open) return@LaunchedEffect
-        f = if (editing != null) BudgetModel.toForm(editing, context.currency) else BudgetModel.reopenForAdd(remembered.form ?: f, context.currency)
+        f = if (editing != null) BudgetModel
+            .toForm(editing, context.currency) else BudgetModel
+            .reopenForAdd(remembered.form ?: f, context.currency)
     }
     val accounts = remember(context.knownAccounts) {
         (BudgetModel.WARDROBE_ACCOUNTS + context.knownAccounts).distinctBy { it.code }.filter { it.code.isNotEmpty() }
@@ -86,7 +89,12 @@ internal fun BudgetLineDialog(
     fun setCode(code: String) {
         val hit = accounts.firstOrNull { it.code == code.trim() }
         val oldName = accounts.firstOrNull { it.code == f.accountCode.trim() }?.name
-        f = f.copy(accountCode = code, accountName = if (hit != null && (f.accountName.isEmpty() || f.accountName == oldName)) hit.name else f.accountName)
+        f = f.copy(
+            accountCode = code,
+            accountName = if (
+                hit != null && (f.accountName.isEmpty() || f.accountName == oldName)
+            ) hit.name else f.accountName
+        )
     }
 
     FormDialog(
@@ -98,7 +106,11 @@ internal fun BudgetLineDialog(
             saving = true
             scope.launch {
                 val body = BudgetModel.toExpenseBody(f, context.currency)
-                val saved = ctx.write { if (editing != null) ctx.api.patch("/expenses/${editing.id}", body) else ctx.api.post("/expenses", body) }
+                val saved = ctx.write {
+                    if (editing != null) ctx.api
+                        .patch("/expenses/${editing.id}", body) else ctx.api
+                        .post("/expenses", body)
+                }
                 saving = false
                 if (saved != null) {
                     if (editing == null) f = BudgetModel.formAfterAdd(f, context.currency, today)
@@ -115,15 +127,46 @@ internal fun BudgetLineDialog(
         // `.csync-form-grid`: two equal columns across the 900-wide body.
         val half = Modifier.width(HALF)
         FormGrid {
-            TextInput(f.accountCode, { setCode(it) }, t("csync_budget_account_code"), half, help = t("csync_budget_account_code_hint"))
+            TextInput(
+                f.accountCode,
+                { setCode(it) },
+                t("csync_budget_account_code"),
+                half,
+                help = t("csync_budget_account_code_hint")
+            )
             TextInput(f.accountName, { f = f.copy(accountName = it) }, t("csync_budget_account_name"), half)
-            AccountSuggestions(f.accountCode, accounts) { setCode(it.code); f = f.copy(accountCode = it.code, accountName = it.name) }
-            TextInput(f.description, { f = f.copy(description = it) }, t("csync_field_description"), Modifier.width(FULL))
-            CharacterSelect(f.characterId, { f = f.copy(characterId = it) }, t("csync_field_character"), half, rows = context.characters)
-            TextInput(f.payee, { f = f.copy(payee = it) }, t("csync_budget_pay_to"), half, help = t("csync_budget_pay_to_hint"))
+            AccountSuggestions(f.accountCode, accounts) {
+                setCode(it.code); f = f.copy(accountCode = it.code, accountName = it.name)
+            }
+            TextInput(
+                f.description,
+                { f = f.copy(description = it) },
+                t("csync_field_description"),
+                Modifier.width(FULL)
+            )
+            CharacterSelect(
+                f.characterId,
+                { f = f.copy(characterId = it) },
+                t("csync_field_character"),
+                half,
+                rows = context.characters
+            )
+            TextInput(
+                f.payee,
+                { f = f.copy(payee = it) },
+                t("csync_budget_pay_to"),
+                half,
+                help = t("csync_budget_pay_to_hint")
+            )
             // The category picker, and under it (same field) the box that names a production's own.
             Column(half, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                EnumInput(if (ownCategory) BudgetModel.OTHER else f.category, context.cats, { f = f.copy(category = it) }, t("csync_field_category"), Modifier.fillMaxWidth())
+                EnumInput(
+                    if (ownCategory) BudgetModel.OTHER else f.category,
+                    context.cats,
+                    { f = f.copy(category = it) },
+                    t("csync_field_category"),
+                    Modifier.fillMaxWidth()
+                )
                 if (ownCategory) {
                     TextInput(
                         if (f.category == BudgetModel.OTHER) "" else humanize(f.category),
@@ -135,18 +178,62 @@ internal fun BudgetLineDialog(
                 }
             }
         }
-        // `.csync-budget-calc`: Amt 90 · Unit 110 · X 70 · Rate 120 · Currency 110, then the subtotal / amount taking the rest.
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            TextInput(f.quantity, { f = f.copy(quantity = it) }, t("csync_budget_amt"), Modifier.width(AMT_W), number = true)
-            TextInput(f.unit, { f = f.copy(unit = it) }, t("csync_budget_unit"), Modifier.width(UNIT_W), help = BudgetModel.BUDGET_UNITS.take(UNIT_HINTS).joinToString(" · "))
+        // `.csync-budget-calc`: Amt 90 · Unit 110 · X 70 · Rate 120 · Currency 110, then the subtotal / amount taking
+        // the rest.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)
+        ) {
+            TextInput(
+                f.quantity,
+                { f = f.copy(quantity = it) },
+                t("csync_budget_amt"),
+                Modifier.width(AMT_W),
+                number = true
+            )
+            TextInput(
+                f.unit,
+                { f = f.copy(unit = it) },
+                t("csync_budget_unit"),
+                Modifier.width(UNIT_W),
+                help = BudgetModel.BUDGET_UNITS.take(UNIT_HINTS).joinToString(" · ")
+            )
             TextInput(f.multiplier, { f = f.copy(multiplier = it) }, "X", Modifier.width(X_W), number = true)
             TextInput(f.rate, { f = f.copy(rate = it) }, t("csync_budget_rate"), Modifier.width(RATE_W), number = true)
-            val currencies = (listOf("" to t("csync_budget_currency_none")) + (listOfNotNull(context.currency.ifEmpty { null }) + BudgetModel.CURRENCIES + listOfNotNull(f.currency.ifEmpty { null })).distinct().map { it to it })
-            PickInput(f.currency, currencies, { f = f.copy(currency = it) }, t("csync_budget_currency"), Modifier.width(UNIT_W), "")
+            val currencies = (
+                listOf(
+                    "" to t("csync_budget_currency_none")
+                ) + (
+                    listOfNotNull(context.currency.ifEmpty { null }) +
+                        BudgetModel.CURRENCIES +
+                        listOfNotNull(f.currency.ifEmpty { null })
+                    ).distinct().map {
+                    it to it
+                }
+            )
+            PickInput(
+                f.currency,
+                currencies,
+                { f = f.copy(currency = it) },
+                t("csync_budget_currency"),
+                Modifier.width(UNIT_W),
+                ""
+            )
             if (subtotal != null) {
                 Column(Modifier.width(REST_W)) {
-                    ZillitText(t("csync_budget_subtotal"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-                    ZillitText(BudgetModel.fmtAmount(subtotal, f.currency), Modifier.padding(vertical = 5.dp), style = ZillitTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
+                    ZillitText(
+                        t("csync_budget_subtotal"),
+                        style = ZillitTheme.typography.label,
+                        color = ZillitTheme.colors.textSecondary
+                    )
+                    ZillitText(
+                        BudgetModel.fmtAmount(subtotal, f.currency),
+                        Modifier.padding(vertical = 5.dp),
+                        style = ZillitTheme.typography.bodyMedium.copy(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                    )
                     MutedText(t("csync_budget_subtotal_hint"), maxLines = 2)
                 }
             } else {
@@ -162,7 +249,13 @@ internal fun BudgetLineDialog(
         }
         FormGrid {
             SceneSelect(f.sceneId, { f = f.copy(sceneId = it) }, t("csync_field_scene"), half, rows = context.scenes)
-            VendorSelect(f.vendorId, { f = f.copy(vendorId = it) }, t("csync_field_vendor"), half, rows = context.vendors)
+            VendorSelect(
+                f.vendorId,
+                { f = f.copy(vendorId = it) },
+                t("csync_field_vendor"),
+                half,
+                rows = context.vendors
+            )
             DateInput(f.date, { f = f.copy(date = it) }, t("csync_field_date"), half)
         }
     }
@@ -188,9 +281,15 @@ internal class BudgetFormHolder {
 private fun AccountSuggestions(typed: String, accounts: List<BudgetAccount>, onPick: (BudgetAccount) -> Unit) {
     val needle = typed.trim().lowercase()
     if (needle.isEmpty() || accounts.any { it.code == typed.trim() }) return
-    val matches = accounts.filter { it.code.lowercase().contains(needle) || it.name.lowercase().contains(needle) }.take(SUGGESTIONS)
+    val matches = accounts
+        .filter { it.code.lowercase().contains(needle) || it.name.lowercase().contains(needle) }
+        .take(SUGGESTIONS)
     if (matches.isEmpty()) return
-    FlowRow(FormWide, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    FlowRow(
+        FormWide,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)
+    ) {
         matches.forEach { ZillitChoiceChip("${it.code} ${it.name}", false, onClick = { onPick(it) }) }
     }
 }

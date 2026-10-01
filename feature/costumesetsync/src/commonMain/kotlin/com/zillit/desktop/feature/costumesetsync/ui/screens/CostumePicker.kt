@@ -77,10 +77,22 @@ fun CostumePickerDialog(
         modifier = modifier,
         width = 640.dp,
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             SearchWithButton(q, { q = it }, t("csync_picker_search"), Modifier.weight(1f))
-            if (characterId.isNotBlank()) ZillitCheckbox(onlyCharacter, { onlyCharacter = it }, label = t("csync_this_character_only"))
-            if (ctx.canPost) ZillitButton(t("csync_new_costume"), onClick = { newOpen = true }, leadingIcon = ZillitIcons.Add)
+            if (characterId.isNotBlank()) ZillitCheckbox(
+                onlyCharacter,
+                { onlyCharacter = it },
+                label = t("csync_this_character_only")
+            )
+            if (ctx.canPost) ZillitButton(
+                t("csync_new_costume"),
+                onClick = { newOpen = true },
+                leadingIcon = ZillitIcons.Add
+            )
         }
         // Only mounted while open, so a closed picker never searches.
         if (open) PickerList(debouncedQ, characterId.takeIf { onlyCharacter }.orEmpty(), exclude, pick)
@@ -106,9 +118,19 @@ private fun PickerList(q: String, characterId: String, exclude: (Rec) -> Boolean
         } else {
             // `.csync-picker`: the list scrolls inside the dialog, capped at 46% of the window.
             val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
-            Column(Modifier.fillMaxWidth().heightIn(max = (windowHeight * 0.46f).coerceAtLeast(200.dp)).verticalScroll(rememberScrollState())) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = (windowHeight * 0.46f).coerceAtLeast(200.dp))
+                    .verticalScroll(rememberScrollState())
+            ) {
                 shown.forEachIndexed { i, piece ->
-                    CostumeRow(piece, onClick = { onPick(piece) }, end = { ZillitIcon(ZillitIcons.Add, size = 16.dp) }, last = i == shown.lastIndex)
+                    CostumeRow(
+                        piece,
+                        onClick = { onPick(piece) },
+                        end = { ZillitIcon(ZillitIcons.Add, size = 16.dp) },
+                        last = i == shown.lastIndex
+                    )
                 }
             }
         }

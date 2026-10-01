@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.FormWide
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MediaEntry
 import com.zillit.desktop.feature.costumesetsync.ui.MediaPicker
+import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.attachMedia
 import com.zillit.desktop.feature.costumesetsync.ui.body
@@ -40,87 +41,122 @@ private const val DEFAULT_PRIORITY = "NORMAL"
  * Closing keeps the fields (a Cancel loses nothing); after a save only the costume and problem clear for
  * the next piece.
  */
+/** What the open cleaning form holds; it outlives a close so a Cancel loses nothing. */
+private class CleaningState {
+    var costume by mutableStateOf<Rec?>(null)
+    var problem by mutableStateOf("")
+    var type by mutableStateOf(DEFAULT_CLEANING_TYPE)
+    var priority by mutableStateOf(DEFAULT_PRIORITY)
+    var sceneId by mutableStateOf("")
+    var take by mutableStateOf("")
+    var date by mutableStateOf("")
+    var time by mutableStateOf("")
+    var notes by mutableStateOf("")
+    var media by mutableStateOf(emptyList<MediaEntry>())
+    var saving by mutableStateOf(false)
+    var createdId by mutableStateOf<String?>(null)
+}
+
+/** Files the ticket (once), attaches the photos, and hands [onDone] the request to open when [send] is set. */
+private suspend fun CleaningState.submit(
+    ctx: SyncCtx,
+    send: Boolean,
+    onDone: (RequestDraft?) -> Unit,
+    onClose: () -> Unit,
+) {
+    val chosen = costume
+    saving = true
+    var id = createdId
+    val neededBy = dateTimeMs(date, time)
+    if (id == null && chosen != null) {
+        val answer = ctx.write {
+            ctx.api.post(
+                "/cleaning",
+                body(
+                    "costume_id" to chosen.id,
+                    "problem" to problem.trim(),
+                    "cleaning_type" to type,
+                    "priority" to priority,
+                    "scene_id" to sceneId,
+                    "take_number" to numOrNull(take)?.toLong(),
+                    "expected_ready_at" to neededBy,
+                    "notes" to notes.trim(),
+                ),
+            )
+        }
+        id = answer?.rec?.id?.takeIf { it.isNotBlank() }
+        createdId = id
+    }
+    if (id == null || chosen == null) {
+        saving = false
+        return
+    }
+    val failed = ctx.attachMedia(media, "CLEANING", id, "STAIN", keep = { media = it })
+    saving = false
+    if (failed > 0) {
+        ctx.toast(t("csync_cleaning_media_failed", "n" to failed), false)
+        return
+    }
+    createdId = null
+    val draft = if (send) {
+        cleaningSendDraft(
+            id,
+            "${chosen.str("asset_number")} ${chosen.str("name")}",
+            problem.trim(),
+            type,
+            priority,
+            neededBy,
+            notes,
+            wfSay,
+            ::tEnum,
+        )
+    } else {
+        null
+    }
+    costume = null
+    problem = ""
+    onDone(draft)
+    onClose()
+}
+
+@Composable
+private fun CleaningFields(s: CleaningState, ctx: SyncCtx, onPick: () -> Unit) {
+    FormGrid {
+        WfCostumeField(s.costume, onOpen = onPick, locked = s.createdId != null)
+        TextInput(s.problem, { s.problem = it }, t("csync_field_problem"), FormWide)
+        EnumInput(s.type, ctx.metaList("cleaning_types"), { s.type = it }, t("csync_field_cleaning_type"))
+        EnumInput(s.priority, ctx.metaList("priorities"), { s.priority = it }, t("csync_field_priority"))
+        SceneSelect(s.sceneId, { s.sceneId = it }, t("csync_field_scene"))
+        TextInput(s.take, { s.take = it.filter(Char::isDigit) }, t("csync_field_take"), number = true)
+        DateTimeInput(s.date, s.time, { s.date = it }, { s.time = it }, t("csync_field_needed_by"))
+        Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitText(
+                t("csync_photos_and_video"),
+                style = ZillitTheme.typography.label,
+                color = ZillitTheme.colors.textSecondary,
+            )
+            MediaPicker(s.media, { s.media = it }, enabled = !s.saving, help = t("csync_shoot_stain_hint"))
+        }
+        TextInput(s.notes, { s.notes = it }, t("csync_field_notes"), FormWide, multiline = true)
+    }
+}
+
 @Composable
 fun CleaningRequestDialog(open: Boolean, onClose: () -> Unit, onDone: (RequestDraft?) -> Unit) {
     val ctx = LocalSync.current
-    var costume by remember { mutableStateOf<Rec?>(null) }
-    var problem by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(DEFAULT_CLEANING_TYPE) }
-    var priority by remember { mutableStateOf(DEFAULT_PRIORITY) }
-    var sceneId by remember { mutableStateOf("") }
-    var take by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf("") }
-    var time by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var media by remember { mutableStateOf(emptyList<MediaEntry>()) }
-    var saving by remember { mutableStateOf(false) }
+    val s = remember { CleaningState() }
     var pick by remember { mutableStateOf(false) }
-    var createdId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(open) {
         if (open) {
-            media = emptyList()
-            createdId = null
+            s.media = emptyList()
+            s.createdId = null
         }
     }
-    val chosen = costume
-    val canSave = chosen != null && problem.isNotBlank() && !saving
-
+    val canSave = s.costume != null && s.problem.isNotBlank() && !s.saving
     val submit = { send: Boolean ->
-        saving = true
-        ctx.scope.launch {
-            var id = createdId
-            val neededBy = dateTimeMs(date, time)
-            if (id == null && chosen != null) {
-                val answer = ctx.write {
-                    ctx.api.post(
-                        "/cleaning",
-                        body(
-                            "costume_id" to chosen.id,
-                            "problem" to problem.trim(),
-                            "cleaning_type" to type,
-                            "priority" to priority,
-                            "scene_id" to sceneId,
-                            "take_number" to numOrNull(take)?.toLong(),
-                            "expected_ready_at" to neededBy,
-                            "notes" to notes.trim(),
-                        ),
-                    )
-                }
-                id = answer?.rec?.id?.takeIf { it.isNotBlank() }
-                createdId = id
-            }
-            if (id == null || chosen == null) {
-                saving = false
-                return@launch
-            }
-            val failed = ctx.attachMedia(media, "CLEANING", id, "STAIN", keep = { media = it })
-            saving = false
-            if (failed > 0) {
-                ctx.toast(t("csync_cleaning_media_failed", "n" to failed), false)
-                return@launch
-            }
-            createdId = null
-            val draft = if (send) {
-                cleaningSendDraft(
-                    id,
-                    "${chosen.str("asset_number")} ${chosen.str("name")}",
-                    problem.trim(),
-                    type,
-                    priority,
-                    neededBy,
-                    notes,
-                    wfSay,
-                    ::tEnum,
-                )
-            } else {
-                null
-            }
-            costume = null
-            problem = ""
-            onDone(draft)
-            onClose()
-        }
+        s.saving = true
+        ctx.scope.launch { s.submit(ctx, send, onDone, onClose) }
     }
 
     WfFormDialog(
@@ -135,29 +171,14 @@ fun CleaningRequestDialog(open: Boolean, onClose: () -> Unit, onDone: (RequestDr
                 saveLabel = t("csync_request"),
                 onSave = { submit(false) },
                 canSave = canSave,
-                busy = saving,
+                busy = s.saving,
             )
         },
-    ) {
-        FormGrid {
-            WfCostumeField(costume, onOpen = { pick = true }, locked = createdId != null)
-            TextInput(problem, { problem = it }, t("csync_field_problem"), FormWide)
-            EnumInput(type, ctx.metaList("cleaning_types"), { type = it }, t("csync_field_cleaning_type"))
-            EnumInput(priority, ctx.metaList("priorities"), { priority = it }, t("csync_field_priority"))
-            SceneSelect(sceneId, { sceneId = it }, t("csync_field_scene"))
-            TextInput(take, { take = it.filter(Char::isDigit) }, t("csync_field_take"), number = true)
-            DateTimeInput(date, time, { date = it }, { time = it }, t("csync_field_needed_by"))
-            Column(FormWide, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-                MediaPicker(media, { media = it }, enabled = !saving, help = t("csync_shoot_stain_hint"))
-            }
-            TextInput(notes, { notes = it }, t("csync_field_notes"), FormWide, multiline = true)
-        }
-    }
+    ) { CleaningFields(s, ctx) { pick = true } }
     WfCostumePicker(
         open = open && pick,
         onClose = { pick = false },
         exclude = { it.str("status") == "CLEANING" },
-        onPick = { costume = it },
+        onPick = { s.costume = it },
     )
 }

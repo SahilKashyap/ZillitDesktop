@@ -67,7 +67,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
-private const val SEARCH_WIDTH = 420
 private const val CAST_BOX_WIDTH = 78
 private const val CHARACTERS_TAB = "characters"
 private const val ACTORS_TAB = "actors"
@@ -79,7 +78,13 @@ private val FullCell = Modifier.width(592.dp)
 internal fun characterMatches(c: Rec, needle: String): Boolean {
     val n = needle.trim().lowercase()
     if (n.isEmpty()) return true
-    return listOf(c.str("name"), c.rec("actor")?.str("name").orEmpty(), tEnum(c.str("type")), c.str("cast_number"), c.str("description"))
+    return listOf(
+        c.str("name"),
+        c.rec("actor")?.str("name").orEmpty(),
+        tEnum(c.str("type")),
+        c.str("cast_number"),
+        c.str("description"),
+    )
         .any { it.isNotEmpty() && it.lowercase().contains(n) }
 }
 
@@ -95,7 +100,6 @@ fun CharactersScreen() {
     val characters = rememberResource { api.get("/characters").mapRows() }
     val actors = rememberResource { api.get("/actors").mapRows() }
     var tab by remember { mutableStateOf(CHARACTERS_TAB) }
-    var q by remember { mutableStateOf("") }
     var charOpen by remember { mutableStateOf(false) }
     var actorOpen by remember { mutableStateOf(false) }
     var numbering by remember { mutableStateOf(false) }
@@ -110,8 +114,6 @@ fun CharactersScreen() {
     SocketRefresh(SyncEvents.Character + SyncEvents.Actor) { if (!numbering) reload() }
 
     val isCharacters = tab == CHARACTERS_TAB
-    val charRows = characters.value
-    val actorRows = actors.value
     Column(verticalArrangement = Arrangement.spacedBy(PAGE_GAP.dp)) {
         PageHead(
             title = t("csync_list_of_characters"),
@@ -119,60 +121,103 @@ fun CharactersScreen() {
             note = t("csync_characters_order_note"),
             modifier = Modifier.padding(top = 12.dp),
             actions = {
-                ZillitButton(t("csync_nav_actors"), onClick = { ctx.nav.go("actors") }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.StarFilled)
-                if (ctx.canPost && isCharacters) {
-                    if (numbering) {
-                        ZillitButton(
-                            t("csync_save"),
-                            onClick = {
-                                ctx.scope.launch {
-                                    savingNumbers = true
-                                    val saved = saveCastNumbers(ctx, charRows.orEmpty(), draft)
-                                    savingNumbers = false
-                                    if (saved) {
-                                        numbering = false
-                                        draft.clear()
-                                        reload()
-                                    }
-                                }
-                            },
-                            variant = ButtonVariant.Secondary,
-                            loading = savingNumbers,
-                        )
-                    } else {
-                        ZillitButton("# ${t("csync_cast_numbers")}", onClick = { numbering = true }, variant = ButtonVariant.Secondary)
-                    }
-                }
-                if (ctx.canPost) {
-                    ZillitButton(
-                        t(if (isCharacters) "csync_character" else "csync_actor"),
-                        onClick = { if (isCharacters) charOpen = true else actorOpen = true },
-                        leadingIcon = ZillitIcons.Add,
-                    )
-                }
+                CharacterActions(
+                    isCharacters = isCharacters,
+                    numbering = numbering,
+                    savingNumbers = savingNumbers,
+                    onSave = {
+                        ctx.scope.launch {
+                            savingNumbers = true
+                            val saved = saveCastNumbers(ctx, characters.value.orEmpty(), draft)
+                            savingNumbers = false
+                            if (saved) {
+                                numbering = false
+                                draft.clear()
+                                reload()
+                            }
+                        }
+                    },
+                    onNumber = { numbering = true },
+                    onAdd = { if (isCharacters) charOpen = true else actorOpen = true },
+                )
             },
         )
+        val charRows = characters.value
+        val actorRows = actors.value
         if (charRows == null || actorRows == null) {
             Await(if (charRows == null) characters else actors) { }
         } else {
-            InkTabs(
-                listOf(
-                    CHARACTERS_TAB to "${t("csync_characters_title")} (${charRows.size})",
-                    ACTORS_TAB to "${t("csync_actors_title")} (${actorRows.size})",
-                ),
-                tab,
-            ) { tab = it }
-            if ((if (isCharacters) charRows else actorRows).isNotEmpty()) {
-                SearchWithButton(q, { q = it }, t(if (isCharacters) "csync_characters_search" else "csync_actors_search"), Modifier.fillMaxWidth())
-            }
-            if (isCharacters && charRows.isNotEmpty() && q.isBlank()) CastOrderNote(charRows, numbering)
-            SectionCard(flush = true) {
-                if (isCharacters) CharacterRows(charRows, q, numbering, draft) else ActorRows(actorRows, q)
-            }
+            CharactersTabs(charRows, actorRows, tab, numbering, draft) { tab = it }
         }
     }
     NewCharacterFull(charOpen, { charOpen = false }, actors.value.orEmpty(), ::reload)
     QuickActorDialog(actorOpen, { actorOpen = false }, ::reload)
+}
+
+/** The header's buttons: the actors link, the cast-number editor (save or start) and "+ Character"/"+ Actor". */
+@Composable
+private fun CharacterActions(
+    isCharacters: Boolean,
+    numbering: Boolean,
+    savingNumbers: Boolean,
+    onSave: () -> Unit,
+    onNumber: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    val ctx = LocalSync.current
+    ZillitButton(
+        t("csync_nav_actors"),
+        onClick = { ctx.nav.go("actors") },
+        variant = ButtonVariant.Secondary,
+        leadingIcon = ZillitIcons.StarFilled,
+    )
+    if (ctx.canPost && isCharacters) {
+        if (numbering) {
+            ZillitButton(t("csync_save"), onClick = onSave, variant = ButtonVariant.Secondary, loading = savingNumbers)
+        } else {
+            ZillitButton("# ${t("csync_cast_numbers")}", onClick = onNumber, variant = ButtonVariant.Secondary)
+        }
+    }
+    if (ctx.canPost) {
+        ZillitButton(
+            t(if (isCharacters) "csync_character" else "csync_actor"),
+            onClick = onAdd,
+            leadingIcon = ZillitIcons.Add,
+        )
+    }
+}
+
+/** The Characters / Actors tabs, the search box and the list under them. */
+@Composable
+private fun CharactersTabs(
+    charRows: List<Rec>,
+    actorRows: List<Rec>,
+    tab: String,
+    numbering: Boolean,
+    draft: MutableMap<String, String>,
+    onTab: (String) -> Unit,
+) {
+    var q by remember { mutableStateOf("") }
+    val isCharacters = tab == CHARACTERS_TAB
+    InkTabs(
+        listOf(
+            CHARACTERS_TAB to "${t("csync_characters_title")} (${charRows.size})",
+            ACTORS_TAB to "${t("csync_actors_title")} (${actorRows.size})",
+        ),
+        tab,
+    ) { onTab(it) }
+    if ((if (isCharacters) charRows else actorRows).isNotEmpty()) {
+        SearchWithButton(
+            q,
+            { q = it },
+            t(if (isCharacters) "csync_characters_search" else "csync_actors_search"),
+            Modifier.fillMaxWidth(),
+        )
+    }
+    if (isCharacters && charRows.isNotEmpty() && q.isBlank()) CastOrderNote(charRows, numbering)
+    SectionCard(flush = true) {
+        if (isCharacters) CharacterRows(charRows, q, numbering, draft) else ActorRows(actorRows, q)
+    }
 }
 
 /** The list scrolls inside its card (the web's `.csync-rows { max-height: 62vh }`). */
@@ -203,7 +248,8 @@ private fun CharacterRows(characters: List<Rec>, q: String, numbering: Boolean, 
         EmptyState(t("csync_characters_empty_title"))
         return
     }
-    // Rows stay where they are while numbering (re-read only once Save lands), so a row never jumps out from under the box being typed in.
+    // Rows stay where they are while numbering (re-read only once Save lands), so a row never jumps out from under the
+    // box being typed in.
     val shown = castOrder(characters).filter { characterMatches(it, q) }
     if (shown.isEmpty()) {
         EmptyState(t("csync_characters_no_match"), t("csync_characters_no_match_hint"))
@@ -213,14 +259,19 @@ private fun CharacterRows(characters: List<Rec>, q: String, numbering: Boolean, 
         shown.forEachIndexed { index, c ->
             val counts = c.rec("counts")
             val actorName = c.rec("actor")?.str("name").orEmpty().ifEmpty { t("csync_no_actor_assigned") }
-            val age = c.str("age").takeIf { it.isNotEmpty() && it != "0" }?.let { " · ${t("csync_age_lower")} $it" }.orEmpty()
+            val age = c.str("age")
+                .takeIf { it.isNotEmpty() && it != "0" }
+                ?.let { " · ${t("csync_age_lower")} $it" }
+                .orEmpty()
             val n = { key: String -> (counts?.long(key) ?: 0L).toString() }
             CharListRow(
                 onClick = if (numbering) null else ({ ctx.nav.go("characters/${c.id}") }),
                 leading = { if (numbering) CastBox(c, draft) else SquareAvatar(c.str("cast_number")) },
                 title = c.str("name"),
                 sub = actorName + age,
-                end = "${n("scenes")} ${t("csync_count_scenes")} · ${n("changes")} ${t("csync_count_changes")} · ${n("costumes")} ${t("csync_count_pieces")}",
+                end = "${n("scenes")} ${t("csync_count_scenes")} · " +
+                    "${n("changes")} ${t("csync_count_changes")} · " +
+                    "${n("costumes")} ${t("csync_count_pieces")}",
                 last = index == shown.lastIndex,
             )
         }
@@ -236,7 +287,10 @@ private fun ActorRows(actors: List<Rec>, q: String) {
     val needle = q.trim().lowercase()
     val shown = actors.filter { a ->
         needle.isEmpty() ||
-            (listOf(a.str("name"), a.str("agency"), a.str("phone"), a.str("email")) + a.recs("characters").map { it.str("name") })
+            (
+                listOf(a.str("name"), a.str("agency"), a.str("phone"), a.str("email")) +
+                    a.recs("characters").map { it.str("name") }
+            )
                 .any { it.lowercase().contains(needle) }
     }
     if (shown.isEmpty()) {
@@ -250,8 +304,11 @@ private fun ActorRows(actors: List<Rec>, q: String) {
                 onClick = null,
                 leading = { SquareAvatar(nameInitials(a.str("name"))) },
                 title = a.str("name"),
-                sub = a.recs("characters").joinToString(", ") { it.str("name") }.ifEmpty { t("csync_no_character") } + phone,
-                extra = (a.rec("measurements")?.let { m -> m.keys.joinToString(" · ") { "$it ${m.str(it)}" } }).orEmpty(),
+                sub = a.recs("characters")
+                    .joinToString(", ") { it.str("name") }
+                    .ifEmpty { t("csync_no_character") } + phone,
+                extra = (a.rec("measurements")?.let { m -> m.keys.joinToString(" · ") { "$it ${m.str(it)}" } })
+                    .orEmpty(),
                 last = index == shown.lastIndex,
             )
         }
@@ -294,7 +351,12 @@ private suspend fun commitCast(ctx: SyncCtx, c: Rec, typed: String?) {
     when (val change = typedCastNumber(typed, currentCast(c))) {
         CastChange.Unchanged -> Unit
         CastChange.Invalid -> ctx.toast(t("csync_cast_number_invalid"), false)
-        is CastChange.To -> (ctx.api.patch("/characters/${c.id}", body("cast_number" to (change.number ?: Clear))) as? ZillitResult.Failure)
+        is CastChange.To -> (
+            ctx.api.patch(
+                "/characters/${c.id}",
+                body("cast_number" to (change.number ?: Clear)),
+            ) as? ZillitResult.Failure
+        )
             ?.let { ctx.toast(it.error.localised(), false) }
     }
 }
@@ -336,6 +398,33 @@ private suspend fun saveCastNumbers(
     return true
 }
 
+private class NewCharacterForm(
+    val name: String,
+    val type: String,
+    val age: String,
+    val cast: String,
+    val actorId: String,
+    val description: String,
+)
+
+/** POSTs the new-character form. */
+private suspend fun createCharacter(ctx: SyncCtx, form: NewCharacterForm): Boolean {
+    val answer = ctx.write {
+        ctx.api.post(
+            "/characters",
+            body(
+                "name" to form.name.trim(),
+                "type" to form.type,
+                "age" to form.age.trim().toLongOrNull(),
+                "cast_number" to castNumberOrNull(form.cast),
+                "actor_id" to form.actorId,
+                "description" to form.description,
+            ),
+        )
+    }
+    return answer != null
+}
+
 /** The characters list's own "+ Character": the full new-character fields, with an actor picker. */
 @Composable
 private fun NewCharacterFull(open: Boolean, onClose: () -> Unit, actors: List<Rec>, onDone: () -> Unit) {
@@ -356,21 +445,9 @@ private fun NewCharacterFull(open: Boolean, onClose: () -> Unit, actors: List<Re
         onConfirm = {
             saving = true
             ctx.scope.launch {
-                val answer = ctx.write {
-                    ctx.api.post(
-                        "/characters",
-                        body(
-                            "name" to name.trim(),
-                            "type" to type,
-                            "age" to age.trim().toLongOrNull(),
-                            "cast_number" to castNumberOrNull(cast),
-                            "actor_id" to actorId,
-                            "description" to description,
-                        ),
-                    )
-                }
+                val created = createCharacter(ctx, NewCharacterForm(name, type, age, cast, actorId, description))
                 saving = false
-                if (answer != null) {
+                if (created) {
                     onDone()
                     onClose()
                 }
@@ -383,8 +460,21 @@ private fun NewCharacterFull(open: Boolean, onClose: () -> Unit, actors: List<Re
             TextInput(name, { name = it }, t("csync_field_name"), FullCell)
             EnumInput(type, ctx.metaList("character_types"), { type = it }, t("csync_field_type"), HalfCell)
             TextInput(age, { age = it }, t("csync_field_age"), HalfCell, number = true)
-            TextInput(cast, { cast = it }, t("csync_field_cast_number"), HalfCell, help = t("csync_field_cast_number_hint"), error = if (badCast) t("csync_cast_number_invalid") else null)
-            ActorSelect(actorId, { actorId = it }, t("csync_field_actor"), actors.map { it.id to it.str("name") }, FullCell)
+            TextInput(
+                cast,
+                { cast = it },
+                t("csync_field_cast_number"),
+                HalfCell,
+                help = t("csync_field_cast_number_hint"),
+                error = if (badCast) t("csync_cast_number_invalid") else null,
+            )
+            ActorSelect(
+                actorId,
+                { actorId = it },
+                t("csync_field_actor"),
+                actors.map { it.id to it.str("name") },
+                FullCell,
+            )
             TextInput(description, { description = it }, t("csync_field_description"), FullCell, multiline = true)
         }
     }
@@ -410,11 +500,20 @@ private fun QuickActorDialog(open: Boolean, onClose: () -> Unit, onDone: () -> U
             saving = true
             ctx.scope.launch {
                 // Empty boxes would otherwise be stored as "" against every measurement.
-                val measurements = buildJsonObject { measures.filterValues { it.isNotBlank() }.forEach { (k, v) -> put(k, JsonPrimitive(v)) } }
+                val measurements = buildJsonObject {
+                    measures.filterValues { it.isNotBlank() }.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+                }
                 val answer = ctx.write {
                     ctx.api.post(
                         "/actors",
-                        body("name" to name.trim(), "phone" to phone, "email" to email, "agency" to agency, "measurements" to measurements, "notes" to notes),
+                        body(
+                            "name" to name.trim(),
+                            "phone" to phone,
+                            "email" to email,
+                            "agency" to agency,
+                            "measurements" to measurements,
+                            "notes" to notes,
+                        ),
                     )
                 }
                 saving = false
@@ -435,7 +534,9 @@ private fun QuickActorDialog(open: Boolean, onClose: () -> Unit, onDone: () -> U
         }
         ZillitText(t("csync_field_measurements"), style = ZillitTheme.typography.titleSmall)
         FormGrid {
-            ActorMeasures.forEach { m -> TextInput(measures[m].orEmpty(), { measures[m] = it }, humanize(m), Modifier.width(180.dp)) }
+            ActorMeasures.forEach { m ->
+                TextInput(measures[m].orEmpty(), { measures[m] = it }, humanize(m), Modifier.width(180.dp))
+            }
         }
         TextInput(notes, { notes = it }, t("csync_field_notes"), FullCell, multiline = true)
     }

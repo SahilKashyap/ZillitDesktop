@@ -192,7 +192,9 @@ internal class ScriptUpload(
     /** The scene as it will be imported: its fields, with any hand correction laid over them. */
     fun importedScene(s: Rec): Rec {
         val edit = edits[s.str("number")]
-        return if (actionOf(s) == "edit" && edit != null) Rec(JsonObject(s.json + edit.mapValues { JsonPrimitive(it.value) })) else s
+        return if (actionOf(s) == "edit" && edit != null) Rec(
+            JsonObject(s.json + edit.mapValues { JsonPrimitive(it.value) }),
+        ) else s
     }
 
     fun runImport(meta: Rec?) {
@@ -233,10 +235,14 @@ internal class ScriptUpload(
     private fun importBody(plan: CharacterImport, sent: List<Rec>): JsonObject = buildJsonObject {
         put("scenes", JsonArray(sent.map(::sceneBody)))
         put("revision", revision.ifEmpty { null }?.let { JsonPrimitive(it) } ?: JsonNull)
-        put("character_map", JsonObject(plan.characterMap.mapValues { (_, v) -> v?.let { JsonPrimitive(it) } ?: JsonNull }))
+        put(
+            "character_map",
+            JsonObject(plan.characterMap.mapValues { (_, v) -> v?.let { JsonPrimitive(it) } ?: JsonNull }),
+        )
         put("cast_numbers", JsonObject(plan.castNumbers.mapValues { JsonPrimitive(it.value) }))
         put("replace", JsonPrimitive(wipes))
-        // Handing back the parse's token keeps this script in the documents list, so "View script" shows what was imported.
+        // Handing back the parse's token keeps this script in the documents list, so "View script" shows what was
+        // imported.
         result?.str("file_token")?.takeIf { it.isNotEmpty() }?.let {
             put("file_token", JsonPrimitive(it))
             put("file_name", JsonPrimitive(result?.str("file")?.ifEmpty { null } ?: pickedName))

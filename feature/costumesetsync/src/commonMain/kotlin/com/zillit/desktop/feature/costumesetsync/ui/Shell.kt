@@ -100,7 +100,8 @@ private fun tabOf(head: String): String? = when (head) {
     else -> null
 }
 
-private fun itemOf(route: SyncRoute): String = if (route.head == "continuity" && route.segments.getOrNull(1) == "book") "continuity/book" else route.head
+private fun itemOf(route: SyncRoute): String =
+    if (route.head == "continuity" && route.segments.getOrNull(1) == "book") "continuity/book" else route.head
 
 /**
  * The tool's frame: header, the two tab strips, the page. A primary strip picks
@@ -120,7 +121,8 @@ fun SyncOnsetShell(viewModel: SyncOnsetViewModel, onTitle: (String) -> Unit = {}
     // Bumped by every successful write, so the header bell re-reads its count just after it.
     var bellTick by remember { mutableStateOf(0) }
     val projectId = viewModel.projectId()
-    // Setup finished in this visit: open the tool even though the counts are still 0 (a setup without a script adds no scenes).
+    // Setup finished in this visit: open the tool even though the counts are still 0 (a setup without a script adds no
+    // scenes).
     var setUpHere by remember(projectId) { mutableStateOf(false) }
 
     LaunchedEffect(viewModel, projectId) { viewModel.onEvent(SyncHostEvent.Load) }
@@ -153,7 +155,10 @@ fun SyncOnsetShell(viewModel: SyncOnsetViewModel, onTitle: (String) -> Unit = {}
             when {
                 !state.viewer.resolved -> Gate(str(S.desktop_csync_loading), null)
                 !state.viewer.enabled -> Gate(str(S.desktop_csync_gate_off_title), str(S.desktop_csync_gate_off_hint))
-                !state.viewer.canView -> Gate(str(S.desktop_csync_gate_noview_title), str(S.desktop_csync_gate_noview_hint))
+                !state.viewer.canView -> Gate(
+                    str(S.desktop_csync_gate_noview_title),
+                    str(S.desktop_csync_gate_noview_hint),
+                )
                 !state.projectReady || state.meta == null -> Gate(str(S.desktop_csync_loading), null)
                 else -> CompositionLocalProvider(LocalSync provides ctx) {
                     SyncFrame(
@@ -180,12 +185,21 @@ private fun Gate(title: String, hint: String?) {
 }
 
 @Composable
-internal fun SyncFrame(counts: Rec?, bellTick: Int, setUpHere: Boolean, onSetUp: () -> Unit, onReloadProject: () -> Unit) {
+internal fun SyncFrame(
+    counts: Rec?,
+    bellTick: Int,
+    setUpHere: Boolean,
+    onSetUp: () -> Unit,
+    onReloadProject: () -> Unit,
+) {
     val ctx = LocalSync.current
     // A production with nothing in it opens to the first-run landing instead of the tabs (the web's `FirstRun`).
     if (ctx.project.notSetUp && !setUpHere) {
         TopBar(bellTick, search = false)
-        ZillitScrollColumn(modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(ZillitTheme.spacing.xl)) {
+        ZillitScrollColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(ZillitTheme.spacing.xl),
+        ) {
             FirstRun(onChanged = onReloadProject, onDone = onSetUp)
         }
         return
@@ -241,21 +255,39 @@ private fun TopBar(bellTick: Int, search: Boolean) {
     // The web's `.csync-topbar`: a 60px bar on the surface with a bottom rule, 18px bold title, then the
     // search, the bell and (on the web) a theme toggle — omitted here, the desktop has no per-tool theme.
     Row(
-        Modifier.fillMaxWidth().height(60.dp).background(ZillitTheme.colors.surface).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().height(60.dp).background(ZillitTheme.colors.surface).padding(
+            horizontal = 16.dp,
+            vertical = 10.dp,
+        ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ZillitText(
             str(S.desktop_csync_tool_name),
-            style = ZillitTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 22.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = (-0.18).sp),
+            style = ZillitTheme.typography.titleLarge.copy(
+                fontSize = 18.sp,
+                lineHeight = 22.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                letterSpacing = (-0.18).sp,
+            ),
             modifier = Modifier.weight(1f),
             maxLines = 1,
         )
         if (!ctx.canPost) {
-            ZillitButton(t("csync_request_posting_access"), onClick = { ctx.askRights(RightsKind.Post) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            ZillitButton(
+                t("csync_request_posting_access"),
+                onClick = { ctx.askRights(RightsKind.Post) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
         }
         if (!ctx.canDownload) {
-            ZillitButton(t("csync_request_download_access"), onClick = { ctx.askRights(RightsKind.Download) }, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+            ZillitButton(
+                t("csync_request_download_access"),
+                onClick = { ctx.askRights(RightsKind.Download) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
         }
         if (search) GlobalSearch(Modifier.width(SEARCH_WIDTH))
         NotificationBell(bellTick)

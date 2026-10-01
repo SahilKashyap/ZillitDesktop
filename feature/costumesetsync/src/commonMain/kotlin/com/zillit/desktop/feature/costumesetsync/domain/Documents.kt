@@ -26,7 +26,10 @@ fun docSourceKey(doc: Rec): String = when {
 fun latestOf(docs: List<Rec>): Rec? = docs.firstOrNull { it.bool("latest") } ?: docs.firstOrNull()
 
 /** A listed document's display name. */
-fun docName(doc: Rec?): String = doc?.str("file_name")?.ifEmpty { null } ?: doc?.rec("attachment")?.str("name").orEmpty()
+fun docName(doc: Rec?): String = doc?.str("file_name")
+    ?.ifEmpty { null } ?: doc?.rec("attachment")
+    ?.str("name")
+    .orEmpty()
 
 private val ISO_DAY = Regex("^\\d{4}-\\d{2}-\\d{2}")
 
@@ -70,7 +73,8 @@ fun docSceneRows(kind: String, scenes: List<Rec>, day: String = ""): DocScenes {
             DocScenes(dated.map { DocSceneRow(it.first, it.third) }, live.size - dated.size)
         }
         else -> DocScenes(
-            live.filter { day.isNotEmpty() && dateKey(it.long("shoot_date")) == day }.map { DocSceneRow(it, sceneNote(it)) },
+            live.filter { day.isNotEmpty() && dateKey(it.long("shoot_date")) == day }
+                .map { DocSceneRow(it, sceneNote(it)) },
             0,
         )
     }

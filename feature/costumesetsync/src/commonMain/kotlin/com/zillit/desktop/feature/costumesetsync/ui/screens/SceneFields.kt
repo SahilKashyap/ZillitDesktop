@@ -37,7 +37,17 @@ internal fun CellPick(
     newLabel: String? = null,
     onNew: () -> Unit = {},
 ) {
-    CompactSelect(value, options, onChange, modifier.cellWidth(width), enabled, placeholder, searchable, newLabel, onNew)
+    CompactSelect(
+        value,
+        options,
+        onChange,
+        modifier.cellWidth(width),
+        enabled,
+        placeholder,
+        searchable,
+        newLabel,
+        onNew,
+    )
 }
 
 /** A closed small list (Day / Night): no search box. */
@@ -66,11 +76,29 @@ internal fun CellField(
     modifier: Modifier = Modifier,
     height: Dp = 24.dp,
 ) {
-    CompactField(value, onChange, modifier.cellWidth(width), enabled, error != null, placeholder, numeric, autoFocus, onEnter, height)
+    CompactField(
+        value,
+        onChange,
+        modifier.cellWidth(width),
+        enabled,
+        error != null,
+        placeholder,
+        numeric,
+        autoFocus,
+        onEnter,
+        height,
+    )
 }
 
 @Composable
-internal fun CellDate(value: String, onChange: (String) -> Unit, width: Dp, enabled: Boolean = true, height: Dp = 24.dp, dmy: Boolean = false) {
+internal fun CellDate(
+    value: String,
+    onChange: (String) -> Unit,
+    width: Dp,
+    enabled: Boolean = true,
+    height: Dp = 24.dp,
+    dmy: Boolean = false,
+) {
     CompactDate(value, onChange, Modifier.cellWidth(width), enabled, height, dmy)
 }
 
@@ -79,7 +107,12 @@ internal fun CellDate(value: String, onChange: (String) -> Unit, width: Dp, enab
 internal fun RadioDot(selected: Boolean, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
     Box(
-        Modifier.size(RADIO).clip(CircleShape).border(1.dp, if (selected) colors.accent else colors.borderStrong, CircleShape).clickable(onClick = onClick),
+        Modifier.size(RADIO)
+            .clip(CircleShape)
+            .border(1.dp, if (selected) colors.accent else colors.borderStrong, CircleShape)
+            .clickable(
+            onClick = onClick,
+        ),
     ) {
         if (selected) Box(Modifier.fillMaxSize().padding(RADIO_INSET).clip(CircleShape).background(colors.accent))
     }

@@ -21,6 +21,7 @@ import com.zillit.desktop.feature.costumesetsync.ui.PickInput
 import com.zillit.desktop.feature.costumesetsync.ui.TextInput
 import com.zillit.desktop.feature.costumesetsync.ui.body
 import com.zillit.desktop.feature.costumesetsync.ui.mapRows
+import com.zillit.desktop.feature.costumesetsync.ui.SyncCtx
 import com.zillit.desktop.feature.costumesetsync.ui.t
 import kotlinx.coroutines.launch
 
@@ -85,11 +86,38 @@ fun SceneSelect(
 ) {
     val (list, addCreated) = rememberPickRows("/scenes", rows)
     var open by remember { mutableStateOf(false) }
-    QuickPick(value, list.filter(filter).map { it.id to sceneOptionLabel(it) }, onChange, label, modifier, t("csync_new_scene"), "—") { open = true }
+    QuickPick(
+        value,
+        list.filter(filter).map { it.id to sceneOptionLabel(it) },
+        onChange,
+        label,
+        modifier,
+        t("csync_new_scene"),
+        "—",
+    ) {
+        open = true
+    }
     NewSceneDialog(open, { open = false }) { scene ->
         addCreated(scene)
         onChange(scene.id)
         onCreated(scene)
+    }
+}
+
+private fun createScene(
+    ctx: SyncCtx,
+    payload: kotlinx.serialization.json.JsonObject,
+    done: () -> Unit,
+    onCreated: (Rec) -> Unit,
+    onClose: () -> Unit,
+) {
+    ctx.scope.launch {
+        val answer = ctx.write { ctx.api.post("/scenes", payload) }
+        done()
+        if (answer != null) {
+            answer.rec?.takeIf { it.id.isNotEmpty() }?.let(onCreated)
+            onClose()
+        }
     }
 }
 
@@ -113,25 +141,19 @@ fun NewSceneDialog(open: Boolean, onClose: () -> Unit, onCreated: (Rec) -> Unit)
         confirmLabel = t("csync_add"),
         onConfirm = {
             saving = true
-            ctx.scope.launch {
-                val answer = ctx.write {
-                    ctx.api.post(
-                        "/scenes",
-                        body(
-                            "number" to number.trim(),
-                            "int_ext" to intExt,
-                            "location" to location.trim(),
-                            "time_of_day" to timeOfDay,
-                            "synopsis" to synopsis.trim(),
-                        ),
-                    )
-                }
-                saving = false
-                if (answer != null) {
-                    answer.rec?.takeIf { it.id.isNotEmpty() }?.let(onCreated)
-                    onClose()
-                }
-            }
+            createScene(
+                ctx,
+                body(
+                    "number" to number.trim(),
+                    "int_ext" to intExt,
+                    "location" to location.trim(),
+                    "time_of_day" to timeOfDay,
+                    "synopsis" to synopsis.trim(),
+                ),
+                done = { saving = false },
+                onCreated = onCreated,
+                onClose = onClose,
+            )
         },
         confirmEnabled = number.isNotBlank(),
         busy = saving,
@@ -139,9 +161,23 @@ fun NewSceneDialog(open: Boolean, onClose: () -> Unit, onCreated: (Rec) -> Unit)
     ) {
         FormGrid {
             TextInput(number, { number = it }, t("csync_field_scene_hash"), Half)
-            EnumInput(intExt, ctx.metaList("int_ext").ifEmpty { listOf("INT", "EXT", "INT/EXT") }, { intExt = it }, t("csync_field_int_ext"), Half, "—")
+            EnumInput(
+                intExt,
+                ctx.metaList("int_ext").ifEmpty { listOf("INT", "EXT", "INT/EXT") },
+                { intExt = it },
+                t("csync_field_int_ext"),
+                Half,
+                "—",
+            )
             TextInput(location, { location = it }, t("csync_field_location"), Half)
-            EnumInput(timeOfDay, ctx.metaList("times_of_day"), { timeOfDay = it }, t("csync_field_time_of_day"), Half, "—")
+            EnumInput(
+                timeOfDay,
+                ctx.metaList("times_of_day"),
+                { timeOfDay = it },
+                t("csync_field_time_of_day"),
+                Half,
+                "—",
+            )
             TextInput(synopsis, { synopsis = it }, t("csync_field_description"), Full, multiline = true)
         }
     }
@@ -159,7 +195,9 @@ fun CharacterSelect(
 ) {
     val (list, addCreated) = rememberPickRows("/characters", rows)
     var open by remember { mutableStateOf(false) }
-    val options = list.filter(filter).map { c -> c.id to (if (c.has("cast_number")) "${c.str("cast_number")}. " else "") + c.str("name") }
+    val options = list.filter(filter).map { c ->
+        c.id to (if (c.has("cast_number")) "${c.str("cast_number")}. " else "") + c.str("name")
+    }
     QuickPick(value, options, onChange, label, modifier, t("csync_new_character"), "—") { open = true }
     NewCharacterDialog(open, { open = false }) { character ->
         if (character.id.isEmpty()) return@NewCharacterDialog
@@ -180,7 +218,9 @@ fun VendorSelect(
 ) {
     val (list, addCreated) = rememberPickRows("/vendors", rows)
     var open by remember { mutableStateOf(false) }
-    QuickPick(value, list.map { it.id to it.str("name") }, onChange, label, modifier, t("csync_new_vendor"), "—") { open = true }
+    QuickPick(value, list.map { it.id to it.str("name") }, onChange, label, modifier, t("csync_new_vendor"), "—") {
+        open = true
+    }
     NewVendorDialog(open, { open = false }) { vendor ->
         addCreated(vendor)
         onChange(vendor.id)
@@ -206,7 +246,15 @@ fun NewVendorDialog(open: Boolean, onClose: () -> Unit, onCreated: (Rec) -> Unit
             saving = true
             ctx.scope.launch {
                 val answer = ctx.write {
-                    ctx.api.post("/vendors", body("name" to name.trim(), "contact_name" to contact.trim(), "phone" to phone.trim(), "email" to email.trim()))
+                    ctx.api.post(
+                        "/vendors",
+                        body(
+                            "name" to name.trim(),
+                            "contact_name" to contact.trim(),
+                            "phone" to phone.trim(),
+                            "email" to email.trim(),
+                        ),
+                    )
                 }
                 saving = false
                 if (answer != null) {
@@ -249,7 +297,17 @@ fun ActorSelect(
     var open by remember { mutableStateOf(false) }
     var created by remember { mutableStateOf(emptyList<Pair<String, String>>()) }
     val seen = options.map { it.first }.toSet()
-    QuickPick(value, options + created.filter { it.first !in seen }, onChange, label, modifier, t("csync_new_actor"), placeholder) { open = true }
+    QuickPick(
+        value,
+        options + created.filter { it.first !in seen },
+        onChange,
+        label,
+        modifier,
+        t("csync_new_actor"),
+        placeholder,
+    ) {
+        open = true
+    }
     ActorFormDialog(
         open = open,
         onClose = { open = false },
@@ -271,7 +329,12 @@ fun ActorSelect(
  * dropdown opening with "+ New actor" (the quick, name-only form), the picked actor assigned straight back.
  */
 @Composable
-internal fun CellActorPick(value: String, options: List<Pair<String, String>>, onChange: (String) -> Unit, enabled: Boolean = true) {
+internal fun CellActorPick(
+    value: String,
+    options: List<Pair<String, String>>,
+    onChange: (String) -> Unit,
+    enabled: Boolean = true,
+) {
     val ctx = LocalSync.current
     var open by remember { mutableStateOf(false) }
     var created by remember { mutableStateOf(emptyList<Pair<String, String>>()) }

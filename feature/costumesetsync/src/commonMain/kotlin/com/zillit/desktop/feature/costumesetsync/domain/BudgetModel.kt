@@ -43,6 +43,7 @@ data class BudgetForm(
  * groupings the sheet and the printed top sheet read in — the web's `lib/budget.js`
  * (itself a port of the reference's `budgetAccounts.ts`, `BudgetSheet.tsx`, `BudgetDocument.tsx`).
  */
+@Suppress("TooManyFunctions") // The budget's pure rules in one namespace; the screens call them as one vocabulary.
 object BudgetModel {
     /** The wardrobe accounts of a UK feature budget (Movie Magic chart, 30-000 WARDROBE). */
     val WARDROBE_ACCOUNTS = listOf(
@@ -56,18 +57,68 @@ object BudgetModel {
 
     /** Department heads of a UK feature chart of accounts ("30-000 - WARDROBE"). */
     val DEPARTMENTS: Map<String, String> = mapOf(
-        "11" to "STORY RIGHTS & CONTINUITY", "12" to "PRODUCERS", "13" to "DIRECTOR", "14" to "CAST", "15" to "ATL TRAVEL & LIVING",
-        "19" to "ATL - FRINGES", "20" to "PRODUCTION STAFF", "21" to "SUPPORTING ARTISTS", "22" to "SET DESIGN", "23" to "SET CONSTRUCTION",
-        "25" to "SET OPERATIONS", "26" to "SPECIAL EFFECTS", "27" to "SET DRESSING", "28" to "PROPERTY", "29" to "ACTION VEHICLES/ANIMALS",
-        "30" to "WARDROBE", "31" to "HAIR & MAKEUP", "32" to "LIGHTING", "33" to "CAMERA", "34" to "PRODUCTION SOUND", "35" to "TRANSPORTATION",
-        "36" to "LOCATIONS", "37" to "DAILIES & DATA MANAGEMENT", "38" to "BTL TRAVEL & LIVING", "39" to "OVERTIME", "40" to "OVERSEAS UNIT",
-        "42" to "STAGES / OFFICES / STORES", "43" to "SECOND UNIT", "44" to "VISUAL EFFECTS PRODUCTION", "50" to "POST PRODUCTION MANAGEMENT",
-        "51" to "EDITING", "52" to "PICTURE POST PRODUCTION", "53" to "SOUND POST PRODUCTION", "54" to "VFX", "55" to "MUSIC",
-        "56" to "CLIPS & CLEARANCES", "57" to "DELIVERABLES", "64" to "GENERAL EXPENSES", "65" to "PUBLICITY", "66" to "FINANCE & LEGAL",
-        "67" to "INSURANCE", "70" to "RESIDUALS", "71" to "FINANCE FEE", "73" to "BRIDGE FEE", "74" to "BOND FEE", "75" to "CONTINGENCY",
+        "11" to "STORY RIGHTS & CONTINUITY",
+        "12" to "PRODUCERS",
+        "13" to "DIRECTOR",
+        "14" to "CAST",
+        "15" to "ATL TRAVEL & LIVING",
+        "19" to "ATL - FRINGES",
+        "20" to "PRODUCTION STAFF",
+        "21" to "SUPPORTING ARTISTS",
+        "22" to "SET DESIGN",
+        "23" to "SET CONSTRUCTION",
+        "25" to "SET OPERATIONS",
+        "26" to "SPECIAL EFFECTS",
+        "27" to "SET DRESSING",
+        "28" to "PROPERTY",
+        "29" to "ACTION VEHICLES/ANIMALS",
+        "30" to "WARDROBE",
+        "31" to "HAIR & MAKEUP",
+        "32" to "LIGHTING",
+        "33" to "CAMERA",
+        "34" to "PRODUCTION SOUND",
+        "35" to "TRANSPORTATION",
+        "36" to "LOCATIONS",
+        "37" to "DAILIES & DATA MANAGEMENT",
+        "38" to "BTL TRAVEL & LIVING",
+        "39" to "OVERTIME",
+        "40" to "OVERSEAS UNIT",
+        "42" to "STAGES / OFFICES / STORES",
+        "43" to "SECOND UNIT",
+        "44" to "VISUAL EFFECTS PRODUCTION",
+        "50" to "POST PRODUCTION MANAGEMENT",
+        "51" to "EDITING",
+        "52" to "PICTURE POST PRODUCTION",
+        "53" to "SOUND POST PRODUCTION",
+        "54" to "VFX",
+        "55" to "MUSIC",
+        "56" to "CLIPS & CLEARANCES",
+        "57" to "DELIVERABLES",
+        "64" to "GENERAL EXPENSES",
+        "65" to "PUBLICITY",
+        "66" to "FINANCE & LEGAL",
+        "67" to "INSURANCE",
+        "70" to "RESIDUALS",
+        "71" to "FINANCE FEE",
+        "73" to "BRIDGE FEE",
+        "74" to "BOND FEE",
+        "75" to "CONTINGENCY",
     )
 
-    val BUDGET_UNITS = listOf("Weeks", "Week", "Days", "Day", "Hours", "Allow", "Fee", "Flat", "CAP", "Each", "Set", "%")
+    val BUDGET_UNITS = listOf(
+        "Weeks",
+        "Week",
+        "Days",
+        "Day",
+        "Hours",
+        "Allow",
+        "Fee",
+        "Flat",
+        "CAP",
+        "Each",
+        "Set",
+        "%",
+    )
     val CURRENCIES = listOf("GBP", "USD", "EUR", "INR", "BGN", "AED", "CAD", "AUD")
     const val OTHER = "OTHER"
 
@@ -78,11 +129,21 @@ object BudgetModel {
     val BUDGET_TABS = listOf("all", "scenes", "characters", "accounts", "full")
 
     /** The categories a sheet upload offers when `/meta` has none. */
-    val EXPENSE_CATEGORY_FALLBACK = listOf("PURCHASE", "RENTAL", "LAUNDRY", "TAILORING", "ACCESSORIES", "DAMAGE", "OTHER")
+    val EXPENSE_CATEGORY_FALLBACK = listOf(
+        "PURCHASE",
+        "RENTAL",
+        "LAUNDRY",
+        "TAILORING",
+        "ACCESSORIES",
+        "DAMAGE",
+        "OTHER",
+    )
 
     private val CODE_SPLIT = Regex("[-.\\s]")
 
-    /** `"30-001"` → head `30`, title `30-000 - WARDROBE`; null for no code. A code off the chart is its own department. */
+    /**
+     * `"30-001"` → head `30`, title `30-000 - WARDROBE`; null for no code. A code off the chart is its own department.
+     */
     fun departmentOf(code: String?): Pair<String, String>? {
         val c = code.orEmpty().trim()
         if (c.isEmpty()) return null
@@ -101,7 +162,9 @@ object BudgetModel {
     /** Lines summed per currency, so pounds and rupees are never added together: "£58,450 + ₹2,000". */
     fun sumByCurrency(lines: List<Rec>, fallback: String): String {
         val by = LinkedHashMap<String, Double>()
-        lines.forEach { l -> by[lineCurrency(l, fallback)] = (by[lineCurrency(l, fallback)] ?: 0.0) + l.double("amount") }
+        lines.forEach { l ->
+            by[lineCurrency(l, fallback)] = (by[lineCurrency(l, fallback)] ?: 0.0) + l.double("amount")
+        }
         if (by.isEmpty()) return fmtAmount(0.0, fallback)
         return by.entries.joinToString(" + ") { fmtAmount(it.value, it.key) }
     }
@@ -109,7 +172,9 @@ object BudgetModel {
     /** A line's name: its description, else its account, payee or category. */
     fun lineTitle(e: Rec, fallback: String): String =
         e.str("description").trim().ifEmpty {
-            e.first("account_name", "payee", "account_code").ifEmpty { humanize(e.str("category")).ifEmpty { fallback } }
+            e.first("account_name", "payee", "account_code").ifEmpty {
+                humanize(e.str("category")).ifEmpty { fallback }
+            }
         }
 
     // -- the form ------------------------------------------------------------------------------
@@ -136,7 +201,14 @@ object BudgetModel {
 
     /** The form an Add opens on: whatever it last held, with only the line's own figures cleared. */
     fun reopenForAdd(prev: BudgetForm, currency: String): BudgetForm =
-        prev.copy(amount = "", description = "", quantity = "", rate = "", multiplier = "1", currency = prev.currency.ifEmpty { currency })
+        prev.copy(
+            amount = "",
+            description = "",
+            quantity = "",
+            rate = "",
+            multiplier = "1",
+            currency = prev.currency.ifEmpty { currency },
+        )
 
     /** After an add, the next line usually sits in the same account for the same person: those stay. */
     fun formAfterAdd(f: BudgetForm, currency: String, today: String): BudgetForm = blankForm(currency, today).copy(
@@ -241,11 +313,17 @@ object BudgetModel {
         lines.forEach { l ->
             val code = l.str("account_code").trim()
             val key = code.ifEmpty { "cat:${l.str("category")}" }
-            val cur = acc[key] ?: AccountBlock(code, l.str("account_name").ifEmpty { if (code.isEmpty()) humanize(l.str("category")) else "" }, emptyList())
+            val cur = acc[key] ?: AccountBlock(
+                code,
+                l.str("account_name").ifEmpty { if (code.isEmpty()) humanize(l.str("category")) else "" },
+                emptyList(),
+            )
             val name = cur.name.ifEmpty { l.str("account_name") }
             acc[key] = cur.copy(name = name, lines = cur.lines + l)
         }
-        return acc.values.sortedWith { a, b -> byCode(a.code, b.code).takeIf { it != 0 } ?: a.name.compareTo(b.name, ignoreCase = true) }
+        return acc.values.sortedWith { a, b ->
+            byCode(a.code, b.code).takeIf { it != 0 } ?: a.name.compareTo(b.name, ignoreCase = true)
+        }
     }
 
     /** Within an account, lines in the order they were entered, grouped under "Name:" per payee (no payee first). */
@@ -280,7 +358,10 @@ object BudgetModel {
     data class Section(val key: String, val from: Int, val to: Int, val atl: Boolean = false)
 
     val SECTIONS = listOf(
-        Section("atl", 11, 19, atl = true), Section("production", 20, 49), Section("post", 50, 63), Section("other", 64, 69),
+        Section("atl", 11, 19, atl = true),
+        Section("production", 20, 49),
+        Section("post", 50, 63),
+        Section("other", 64, 69),
     )
 
     /** One row per department, in chart order; uncoded spend comes last, by category. */
@@ -291,7 +372,8 @@ object BudgetModel {
             val key = head.ifEmpty { "cat:${e.str("category")}" }
             val row = by[key] ?: TopRow(
                 key, if (head.isNotEmpty()) "$head-000" else "",
-                if (head.isNotEmpty()) DEPARTMENTS[head] ?: "OTHER" else humanize(e.str("category")).uppercase(), emptyList(),
+                if (head.isNotEmpty()) DEPARTMENTS[head] ?: "OTHER" else humanize(e.str("category")).uppercase(),
+                emptyList(),
             )
             by[key] = row.copy(lines = row.lines + e)
         }
@@ -327,7 +409,9 @@ object BudgetModel {
             out.add(line(sectionTitle(s.key), inS.flatMap { it.lines }))
             out.add("")
         }
-        rows.filter { r -> SECTIONS.none { inSection(r, it) } }.forEach { out.add(line(if (it.code.isNotEmpty()) "${it.code} ${it.title}" else it.title, it.lines)) }
+        rows.filter { r -> SECTIONS.none { inSection(r, it) } }.forEach {
+            out.add(line(if (it.code.isNotEmpty()) "${it.code} ${it.title}" else it.title, it.lines))
+        }
         out.add("")
         out.add(line(grandTotal.ifEmpty { "GRAND TOTAL" }.uppercase(), expenses))
         return out.joinToString("\n")
@@ -336,6 +420,7 @@ object BudgetModel {
     // -- numbers -------------------------------------------------------------------------------
 
     private const val HUNDRED = 100.0
+    private const val DIGIT_GROUP = 3
 
     /** A number as the form shows it: whole numbers without ".0". */
     fun numText(d: Double): String = if (d == d.roundToLong().toDouble()) d.roundToLong().toString() else d.toString()
@@ -346,7 +431,7 @@ object BudgetModel {
         val cents = (abs(d) * HUNDRED).roundToLong()
         val whole = cents / HUNDRED.toLong()
         val frac = (cents % HUNDRED.toLong()).toString().padStart(2, '0').trimEnd('0')
-        val grouped = whole.toString().reversed().chunked(3).joinToString(",").reversed()
+        val grouped = whole.toString().reversed().chunked(DIGIT_GROUP).joinToString(",").reversed()
         return (if (d < 0 && cents > 0) "-" else "") + grouped + if (frac.isNotEmpty()) ".$frac" else ""
     }
 }

@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,11 +55,20 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 
-/** One page inside a tab group. [danger] turns its figure red, as the web's menu does for Damage, Missing and Rentals due. */
+/**
+ * One page inside a tab group. [danger] turns its figure red, as the web's menu does for Damage, Missing and Rentals
+ * due.
+ */
 data class SyncTabItem(val to: String, val label: String, val count: Int = 0, val danger: Boolean = false)
 
 /** A top-level tab; one with [items] opens a menu of pages (the web's `TabGroup`). */
-data class SyncTabModel(val id: String, val label: String, val icon: ImageVector, val start: String, val items: List<SyncTabItem> = emptyList())
+data class SyncTabModel(
+    val id: String,
+    val label: String,
+    val icon: ImageVector,
+    val start: String,
+    val items: List<SyncTabItem> = emptyList(),
+)
 
 /**
  * The tool's tab strip as the web draws it: the strip sits on the page colour, each tab an icon and a 15px
@@ -78,22 +89,14 @@ fun SyncTabBar(
 ) {
     val colors = ZillitTheme.colors
     val scroll = rememberScrollState()
-    val scope = rememberCoroutineScope()
     val canLeft = scroll.value > 1
     val canRight = scroll.value < scroll.maxValue - 1
     var viewport by remember { mutableStateOf(0) }
-    // Each tab's span inside the scrolled row, so the lit tab is brought clear of the 48px fades (never the hidden one).
+    // Each tab's span inside the scrolled row, so the lit tab is brought clear of the 48px fades (never the hidden
+    // one).
     val spans = remember { mutableMapOf<String, IntRange>() }
     var measured by remember { mutableStateOf(0) }
-    val fadePx = with(androidx.compose.ui.platform.LocalDensity.current) { FADE.roundToPx() }
-    LaunchedEffect(activeId, viewport, measured, scroll.maxValue) {
-        val span = spans[activeId] ?: return@LaunchedEffect
-        if (viewport == 0) return@LaunchedEffect
-        when {
-            span.first < scroll.value + fadePx -> scroll.scrollTo((span.first - fadePx).coerceAtLeast(0))
-            span.last > scroll.value + viewport - fadePx -> scroll.scrollTo((span.last - viewport + fadePx).coerceAtMost(scroll.maxValue))
-        }
-    }
+    KeepActiveTabInView(activeId, spans, viewport, measured, scroll)
     Box(modifier.fillMaxWidth().background(colors.canvas).onSizeChanged { viewport = it.width }) {
         Row(
             Modifier
@@ -104,21 +107,64 @@ fun SyncTabBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            tabs.forEach { tab -> TabCell(tab, active = tab.id == activeId, activeItem = activeItem, onGo = onGo, modifier = Modifier.onGloballyPositioned { spans[tab.id] = it.positionInParent().x.toInt()..(it.positionInParent().x + it.size.width).toInt(); measured = spans.size }) }
+            tabs.forEach { tab ->
+                TabCell(
+                    tab,
+                    active = tab.id == activeId,
+                    activeItem = activeItem,
+                    onGo = onGo,
+                    modifier = Modifier.onGloballyPositioned {
+                        val left = it.positionInParent().x
+                        spans[tab.id] = left.toInt()..(left + it.size.width).toInt()
+                        measured = spans.size
+                    },
+                )
+            }
             trailing?.let { TabCell(it, active = false, activeItem = activeItem, onGo = { onTrailing() }) }
         }
-        if (canLeft) {
-            ArrowButton(ZillitIcons.ChevronLeft, Modifier.align(Alignment.CenterStart).padding(start = 8.dp)) {
-                scope.launch { scroll.animateScrollTo((scroll.value - viewport * PAGE).toInt().coerceAtLeast(0)) }
-            }
+        TabArrows(canLeft, canRight, scroll, viewport)
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+}
+
+/** Brings the lit tab clear of the edge fades whenever it, the viewport or the row's size changes. */
+@Composable
+private fun KeepActiveTabInView(
+    activeId: String?,
+    spans: Map<String, IntRange>,
+    viewport: Int,
+    measured: Int,
+    scroll: ScrollState,
+) {
+    val fadePx = with(androidx.compose.ui.platform.LocalDensity.current) { FADE.roundToPx() }
+    LaunchedEffect(activeId, viewport, measured, scroll.maxValue) {
+        val span = spans[activeId] ?: return@LaunchedEffect
+        if (viewport == 0) return@LaunchedEffect
+        when {
+            span.first < scroll.value + fadePx -> scroll.scrollTo((span.first - fadePx).coerceAtLeast(0))
+            span.last > scroll.value + viewport - fadePx -> scroll.scrollTo(
+                (span.last - viewport + fadePx).coerceAtMost(scroll.maxValue),
+            )
         }
-        if (canRight) {
-            ArrowButton(ZillitIcons.ChevronRight, Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
-                scope.launch { scroll.animateScrollTo((scroll.value + viewport * PAGE).toInt().coerceAtMost(scroll.maxValue)) }
+    }
+}
+
+/** The round arrows on an edge with more tabs past it; each pages the row by [PAGE] of the viewport. */
+@Composable
+private fun BoxScope.TabArrows(canLeft: Boolean, canRight: Boolean, scroll: ScrollState, viewport: Int) {
+    val scope = rememberCoroutineScope()
+    if (canLeft) {
+        ArrowButton(ZillitIcons.ChevronLeft, Modifier.align(Alignment.CenterStart).padding(start = 8.dp)) {
+            scope.launch { scroll.animateScrollTo((scroll.value - viewport * PAGE).toInt().coerceAtLeast(0)) }
+        }
+    }
+    if (canRight) {
+        ArrowButton(ZillitIcons.ChevronRight, Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
+            scope.launch {
+                scroll.animateScrollTo((scroll.value + viewport * PAGE).toInt().coerceAtMost(scroll.maxValue))
             }
         }
     }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
 }
 
 /** The web's 48px mask on an edge with more tabs past it. */
@@ -128,10 +174,23 @@ private fun Modifier.fadeEdges(left: Boolean, right: Boolean): Modifier = this
         drawContent()
         val fade = FADE.toPx().coerceAtMost(size.width / 2)
         if (left) {
-            drawRect(Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = 0f, endX = fade), size = size, blendMode = BlendMode.DstIn)
+            drawRect(
+                Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = 0f, endX = fade),
+                size = size,
+                blendMode = BlendMode.DstIn,
+            )
         }
         if (right) {
-            drawRect(Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = size.width - fade, endX = size.width), size = size, blendMode = BlendMode.DstIn)
+            drawRect(
+                Brush.horizontalGradient(
+                    0f to Color.Black,
+                    1f to Color.Transparent,
+                    startX = size.width - fade,
+                    endX = size.width,
+                ),
+                size = size,
+                blendMode = BlendMode.DstIn,
+            )
         }
     }
 
@@ -165,7 +224,11 @@ private fun CountPill(n: Int, danger: Boolean) {
     ) {
         ZillitText(
             n.toString(),
-            style = ZillitTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold, lineHeight = 14.sp),
+            style = ZillitTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 14.sp,
+            ),
             color = if (danger) Color.White else PILL_INK,
             maxLines = 1,
         )
@@ -173,7 +236,26 @@ private fun CountPill(n: Int, danger: Boolean) {
 }
 
 @Composable
-private fun TabCell(tab: SyncTabModel, active: Boolean, activeItem: String, onGo: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun tabBackground(active: Boolean, hovered: Boolean): Color = when {
+    active -> ZillitTheme.colors.surface
+    hovered -> ZillitTheme.colors.surfaceHover
+    else -> Color.Transparent
+}
+
+private fun menuTone(item: SyncTabItem, activeItem: String): ZillitMenuTone = when {
+    item.to == activeItem -> ZillitMenuTone.Primary
+    item.danger && item.count > 0 -> ZillitMenuTone.Danger
+    else -> ZillitMenuTone.Neutral
+}
+
+@Composable
+private fun TabCell(
+    tab: SyncTabModel,
+    active: Boolean,
+    activeItem: String,
+    onGo: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = ZillitTheme.colors
     var open by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
@@ -183,8 +265,14 @@ private fun TabCell(tab: SyncTabModel, active: Boolean, activeItem: String, onGo
     Box(modifier) {
         Row(
             Modifier
-                .background(if (active) colors.surface else if (hovered) colors.surfaceHover else Color.Transparent)
-                .drawBehind { if (active) drawRect(colors.accent, Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) }
+                .background(tabBackground(active, hovered))
+                .drawBehind {
+                    if (active) drawRect(
+                        colors.accent,
+                        Offset(0f, size.height - 3.dp.toPx()),
+                        Size(size.width, 3.dp.toPx()),
+                    )
+                }
                 .hoverable(interaction)
                 .clickable { if (tab.items.isEmpty()) onGo(tab.start) else open = true }
                 .padding(horizontal = TAB_PAD_X, vertical = TAB_PAD_Y),
@@ -195,7 +283,10 @@ private fun TabCell(tab: SyncTabModel, active: Boolean, activeItem: String, onGo
             ZillitIcon(tab.icon, tint = ink, size = ICON)
             ZillitText(
                 tab.label,
-                style = ZillitTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium),
+                style = ZillitTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                ),
                 color = ink,
                 maxLines = 1,
             )
@@ -208,11 +299,7 @@ private fun TabCell(tab: SyncTabModel, active: Boolean, activeItem: String, onGo
             entries = tab.items.map { item ->
                 ZillitMenuEntry.Action(
                     label = item.label,
-                    tone = when {
-                        item.to == activeItem -> ZillitMenuTone.Primary
-                        item.danger && item.count > 0 -> ZillitMenuTone.Danger
-                        else -> ZillitMenuTone.Neutral
-                    },
+                    tone = menuTone(item, activeItem),
                     badge = item.count,
                     onClick = { onGo(item.to) },
                 )

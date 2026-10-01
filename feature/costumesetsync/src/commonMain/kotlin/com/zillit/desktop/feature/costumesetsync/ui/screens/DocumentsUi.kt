@@ -31,6 +31,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -76,7 +77,14 @@ import kotlinx.coroutines.launch
  * newest is marked Latest, which is the one the user almost always wants.
  */
 @Composable
-internal fun DocumentPickList(docs: List<Rec>, loading: Boolean, onPick: (Rec) -> Unit, busyId: String?, actionLabel: String, emptyText: String) {
+internal fun DocumentPickList(
+    docs: List<Rec>,
+    loading: Boolean,
+    onPick: (Rec) -> Unit,
+    busyId: String?,
+    actionLabel: String,
+    emptyText: String,
+) {
     val colors = ZillitTheme.colors
     // `.csync-doclist`: a 10px-radius bordered list, scrolling past 220px.
     val shape = RoundedCornerShape(10.dp)
@@ -92,43 +100,61 @@ internal fun DocumentPickList(docs: List<Rec>, loading: Boolean, onPick: (Rec) -
     }
     Column(box.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
         docs.forEachIndexed { i, d ->
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                ZillitIcon(ZillitIcons.File, tint = colors.danger, size = 20.dp)
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ZillitText(docName(d), Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleSmall.copy(fontSize = 13.sp), maxLines = 1)
-                        if (d.bool("latest")) {
-                            ZillitText(
-                                t("csync_doc_latest"),
-                                Modifier.padding(start = 6.dp).clip(RoundedCornerShape(999.dp)).background(colors.accentSoft).padding(horizontal = 8.dp, vertical = 2.dp),
-                                style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = colors.accentText,
-                                maxLines = 1,
-                            )
-                        }
-                    }
+            DocPickRow(d, actionLabel, busyId, onPick)
+            if (i < docs.lastIndex) ZillitDivider()
+        }
+    }
+}
+
+/** One kept document: its icon, name (Latest when it is), source, date and revision, and the pick button. */
+@Composable
+private fun DocPickRow(d: Rec, actionLabel: String, busyId: String?, onPick: (Rec) -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ZillitIcon(ZillitIcons.File, tint = colors.danger, size = 20.dp)
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ZillitText(
+                    docName(d),
+                    Modifier.weight(1f, fill = false),
+                    style = ZillitTheme.typography.titleSmall.copy(fontSize = 13.sp),
+                    maxLines = 1,
+                )
+                if (d.bool("latest")) {
                     ZillitText(
-                        listOf(t(docSourceKey(d)), fmtDate(d.long("created")), d.str("revision")).filter { it.isNotEmpty() }.joinToString(" · "),
-                        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
-                        color = colors.textMuted,
+                        t("csync_doc_latest"),
+                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(999.dp)).background(
+                            colors.accentSoft,
+                        ).padding(horizontal = 8.dp, vertical = 2.dp),
+                        style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = colors.accentText,
                         maxLines = 1,
                     )
                 }
-                ZillitButton(
-                    actionLabel,
-                    onClick = { onPick(d) },
-                    size = ButtonSize.Small,
-                    variant = if (d.bool("latest")) ButtonVariant.Primary else ButtonVariant.Secondary,
-                    loading = busyId == d.id,
-                    enabled = busyId == null || busyId == d.id,
-                )
             }
-            if (i < docs.lastIndex) ZillitDivider()
+            ZillitText(
+                listOf(
+                    t(docSourceKey(d)),
+                    fmtDate(d.long("created")),
+                    d.str("revision"),
+                ).filter { it.isNotEmpty() }.joinToString(" · "),
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
+                color = colors.textMuted,
+                maxLines = 1,
+            )
         }
+        ZillitButton(
+            actionLabel,
+            onClick = { onPick(d) },
+            size = ButtonSize.Small,
+            variant = if (d.bool("latest")) ButtonVariant.Primary else ButtonVariant.Secondary,
+            loading = busyId == d.id,
+            enabled = busyId == null || busyId == d.id,
+        )
     }
 }
 
@@ -165,7 +191,6 @@ internal fun DocumentViewerDialog(
     onRead: (Rec) -> Unit,
 ) {
     val ctx = LocalSync.current
-    val colors = ZillitTheme.colors
     val lower = KIND_LOWER[kind] ?: "script"
     var docId by remember(open) { mutableStateOf<String?>(null) }
     var ticked by remember(open) { mutableStateOf(emptySet<String>()) }
@@ -174,7 +199,7 @@ internal fun DocumentViewerDialog(
     val doc = list.firstOrNull { it.id == docId } ?: latest
     val day = docDayKey(doc)
     val rows = docSceneRows(kind, scenes, day)
-    val meta = { d: Rec -> listOf(t(docSourceKey(d)), d.str("revision"), fmtDateTime(d.long("created"))).filter { it.isNotEmpty() }.joinToString(" · ") }
+    val meta = ::docMeta
     // As big as the window allows (the file is read beside the scenes): up to 1360 wide, 24dp from each edge.
     val window = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current
@@ -204,15 +229,39 @@ internal fun DocumentViewerDialog(
         )
         if (latest != null && doc.id != latest.id) OlderNotice(latest, meta) { docId = latest.id }
         Row(Modifier.fillMaxWidth().height(paneH), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            // The file pane: the web's `.csync-docview__file` showing its "can't be shown here" state.
-            Box(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(colors.surfaceSunken).border(1.dp, colors.border, RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                CantShow(ctx.canDownload)
-            }
-            ScenePane(kind, lower, day, rows.rows, rows.undated, ticked, { id -> ticked = if (id in ticked) ticked - id else ticked + id })
+            FilePane(ctx.canDownload)
+            ScenePane(
+                kind,
+                lower,
+                day,
+                rows.rows,
+                rows.undated,
+                ticked,
+                { id -> ticked = if (id in ticked) ticked - id else ticked + id },
+            )
         }
+    }
+}
+
+/** `Source · revision · uploaded`: what names a version of a kept document. */
+private fun docMeta(d: Rec): String =
+    listOf(t(docSourceKey(d)), d.str("revision"), fmtDateTime(d.long("created")))
+        .filter { it.isNotEmpty() }
+        .joinToString(" · ")
+
+/** The file pane: the web's `.csync-docview__file` showing its "can't be shown here" state. */
+@Composable
+private fun RowScope.FilePane(canDownload: Boolean) {
+    val colors = ZillitTheme.colors
+    Box(
+        Modifier.weight(1f)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.surfaceSunken)
+            .border(1.dp, colors.border, RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        CantShow(canDownload)
     }
 }
 
@@ -234,41 +283,92 @@ private class VersionBarState(
 
 /** The version label (with its count), the older / newer / picker, Read this, and Open in new tab at the end. */
 @Composable
-private fun VersionBar(state: VersionBarState, onPick: (String) -> Unit, onRead: () -> Unit, onOpen: () -> Unit, canDownload: Boolean) {
+private fun VersionBar(
+    state: VersionBarState,
+    onPick: (String) -> Unit,
+    onRead: () -> Unit,
+    onOpen: () -> Unit,
+    canDownload: Boolean,
+) {
     val colors = ZillitTheme.colors
     val list = state.list
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitIcon(ZillitIcons.Copy, tint = colors.textMuted, size = 14.dp)
                 ZillitText(
                     t("csync_doc_version").uppercase(),
-                    style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.48.sp),
+                    style = ZillitTheme.typography.label.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.48.sp,
+                    ),
                     color = colors.textMuted,
                 )
-                if (list.size > 1) ZillitStatusPill(t("csync_doc_n_versions", "n" to list.size), tone = StatusTone.Progress)
+                if (list.size > 1) ZillitStatusPill(
+                    t("csync_doc_n_versions", "n" to list.size),
+                    tone = StatusTone.Progress,
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (list.size > 1) {
-                    ZillitIconButton(ZillitIcons.ChevronLeft, t("csync_doc_older"), onClick = { onPick(list[state.at + 1].id) }, enabled = state.at < list.lastIndex)
-                    ZillitSelect(
-                        value = state.doc.id,
-                        options = list.map { it.id },
-                        onSelect = onPick,
-                        label = { id -> list.firstOrNull { it.id == id }?.let { "${docName(it)} · ${fmtDateTime(it.long("created"))}" }.orEmpty() },
-                        modifier = Modifier.width(VERSION_W),
-                    )
-                    ZillitIconButton(ZillitIcons.ChevronRight, t("csync_doc_newer"), onClick = { onPick(list[state.at - 1].id) }, enabled = state.at > 0)
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        ZillitText(docName(state.doc), style = ZillitTheme.typography.titleSmall.copy(fontSize = 15.sp), maxLines = 1)
-                        MutedText(state.meta(state.doc))
-                    }
-                }
-                if (state.canPost) ZillitButton(t("csync_doc_read_this"), onClick = onRead, leadingIcon = ZillitIcons.File, modifier = Modifier.defaultMinSize(minHeight = 40.dp))
+                VersionPicker(state, onPick)
+                if (state.canPost) ZillitButton(
+                    t("csync_doc_read_this"),
+                    onClick = onRead,
+                    leadingIcon = ZillitIcons.File,
+                    modifier = Modifier.defaultMinSize(minHeight = 40.dp),
+                )
             }
         }
-        if (canDownload) ZillitButton(t("csync_open_new_tab"), onClick = onOpen, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Download)
+        if (canDownload) ZillitButton(
+            t("csync_open_new_tab"),
+            onClick = onOpen,
+            variant = ButtonVariant.Secondary,
+            leadingIcon = ZillitIcons.Download,
+        )
+    }
+}
+
+/** Older / the version picker / newer when there are several versions; the one version's name and meta otherwise. */
+@Composable
+private fun VersionPicker(state: VersionBarState, onPick: (String) -> Unit) {
+    val list = state.list
+    if (list.size > 1) {
+        ZillitIconButton(
+            ZillitIcons.ChevronLeft,
+            t("csync_doc_older"),
+            onClick = { onPick(list[state.at + 1].id) },
+            enabled = state.at < list.lastIndex,
+        )
+        ZillitSelect(
+            value = state.doc.id,
+            options = list.map { it.id },
+            onSelect = onPick,
+            label = { id ->
+                list.firstOrNull { it.id == id }
+                    ?.let { "${docName(it)} · ${fmtDateTime(it.long("created"))}" }
+                    .orEmpty()
+            },
+            modifier = Modifier.width(VERSION_W),
+        )
+        ZillitIconButton(
+            ZillitIcons.ChevronRight,
+            t("csync_doc_newer"),
+            onClick = { onPick(list[state.at - 1].id) },
+            enabled = state.at > 0,
+        )
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            ZillitText(
+                docName(state.doc),
+                style = ZillitTheme.typography.titleSmall.copy(fontSize = 15.sp),
+                maxLines = 1,
+            )
+            MutedText(state.meta(state.doc))
+        }
     }
 }
 
@@ -281,7 +381,12 @@ private fun OlderNotice(latest: Rec, meta: (Rec) -> String, onShow: () -> Unit) 
         t("csync_doc_viewing_older", "name" to docName(latest), "meta" to meta(latest)),
         tone = StatusTone.Pending,
         icon = ZillitIcons.Clock,
-        action = { ZillitButton(t("csync_doc_show_latest"), onClick = onShow, size = ButtonSize.Small, variant = ButtonVariant.Secondary) },
+        action = { ZillitButton(
+            t("csync_doc_show_latest"),
+            onClick = onShow,
+            size = ButtonSize.Small,
+            variant = ButtonVariant.Secondary,
+        ) },
     )
 }
 
@@ -291,7 +396,13 @@ private fun CantShow(canDownload: Boolean) {
     val colors = ZillitTheme.colors
     val style = ZillitTheme.typography.bodySmall.copy(fontSize = 13.sp)
     if (!canDownload) {
-        ZillitText(t("csync_doc_cant_show"), Modifier.padding(16.dp), style = style, color = colors.textMuted, textAlign = TextAlign.Center)
+        ZillitText(
+            t("csync_doc_cant_show"),
+            Modifier.padding(16.dp),
+            style = style,
+            color = colors.textMuted,
+            textAlign = TextAlign.Center,
+        )
         return
     }
     val parts = t("csync_doc_cant_show_open").split("{open}")
@@ -307,7 +418,15 @@ private fun CantShow(canDownload: Boolean) {
 
 /** The 340dp list of scenes the app holds for this file, ticked off while reading down it. */
 @Composable
-private fun ScenePane(kind: String, lower: String, day: String, rows: List<DocSceneRow>, undated: Int, ticked: Set<String>, onToggle: (String) -> Unit) {
+private fun ScenePane(
+    kind: String,
+    lower: String,
+    day: String,
+    rows: List<DocSceneRow>,
+    undated: Int,
+    ticked: Set<String>,
+    onToggle: (String) -> Unit,
+) {
     val colors = ZillitTheme.colors
     val title = when {
         kind != "CALLSHEET" -> t("csync_doc_list_$lower")
@@ -315,37 +434,68 @@ private fun ScenePane(kind: String, lower: String, day: String, rows: List<DocSc
         else -> t("csync_doc_list_callsheet_day")
     }
     Column(Modifier.width(SCENE_PANE_W).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(title, Modifier.weight(1f, fill = false), style = ZillitTheme.typography.titleSmall.copy(fontSize = 13.sp), maxLines = 1)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitText(
+                title,
+                Modifier.weight(1f, fill = false),
+                style = ZillitTheme.typography.titleSmall.copy(fontSize = 13.sp),
+                maxLines = 1,
+            )
             ZillitText(
                 t("csync_doc_ticked", "n" to ticked.size, "total" to rows.size),
-                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal), color = colors.textMuted, maxLines = 1,
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
+                color = colors.textMuted,
+                maxLines = 1,
             )
         }
-        ZillitText(t("csync_doc_tick_hint"), style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal), color = colors.textMuted)
+        ZillitText(
+            t("csync_doc_tick_hint"),
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
+            color = colors.textMuted,
+        )
         if (rows.isEmpty()) MutedText(t("csync_doc_none_yet"), maxLines = 3)
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            rows.forEach { (scene, note) ->
-                val text = if (kind == "SCHEDULE") dayLabel(note) else note
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    InkCheckbox(scene.id in ticked, { onToggle(scene.id) })
-                    ZillitText(
-                        scene.str("number"),
-                        Modifier.widthIn(min = 28.dp),
-                        style = ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
-                        maxLines = 1,
-                    )
-                    MutedText(text, Modifier.weight(1f))
-                }
-            }
+        Column(
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            rows.forEach { (scene, note) -> SceneTickRow(scene, note, kind, scene.id in ticked) { onToggle(scene.id) } }
         }
         if (undated > 0) {
             ZillitText(
                 plural("csync_doc_undated", undated, "n" to undated),
-                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal), color = colors.textMuted,
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
+                color = colors.textMuted,
             )
         }
     }
+}
+
+/** One scene to tick off: the checkbox, its number in mono, and the note the file gave (a day, for a schedule). */
+@Composable
+private fun SceneTickRow(scene: Rec, note: String, kind: String, ticked: Boolean, onToggle: () -> Unit) {
+        val text = if (kind == "SCHEDULE") dayLabel(note) else note
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            InkCheckbox(ticked, { onToggle() })
+            ZillitText(
+                scene.str("number"),
+                Modifier.widthIn(min = 28.dp),
+                style = ZillitTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                ),
+                maxLines = 1,
+            )
+            MutedText(text, Modifier.weight(1f))
+        }
 }
 
 /** Opens a kept file in the system viewer: its own URL, else the stored key resolved against project storage. */

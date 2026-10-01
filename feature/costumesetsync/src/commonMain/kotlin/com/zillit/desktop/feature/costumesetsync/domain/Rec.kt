@@ -31,7 +31,9 @@ value class Rec(val json: JsonObject) {
     /** A string; numbers and booleans read as their text. Blank when absent. */
     fun str(key: String): String = (json[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull.orEmpty()
 
-    fun long(key: String): Long = (json[key] as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() } ?: 0L
+    fun long(key: String): Long = (json[key] as? JsonPrimitive)?.let {
+        it.longOrNull ?: it.doubleOrNull?.toLong()
+    } ?: 0L
 
     fun int(key: String): Int = long(key).toInt()
 
@@ -42,10 +44,13 @@ value class Rec(val json: JsonObject) {
 
     fun bool(key: String): Boolean = (json[key] as? JsonPrimitive)?.booleanOrNull ?: (str(key) == "true")
 
+    @Suppress("MemberNameEqualsClassName") // The accessor every screen reads nested objects with.
     fun rec(key: String): Rec? = (json[key] as? JsonObject)?.let(::Rec)
 
     /** An array of objects; empty when absent or not an array. */
-    fun recs(key: String): List<Rec> = (json[key] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::Rec) }
+    fun recs(key: String): List<Rec> = (json[key] as? JsonArray).orEmpty().mapNotNull {
+        (it as? JsonObject)?.let(::Rec)
+    }
 
     /** An array of strings (numbers read as text). */
     fun strings(key: String): List<String> = (json[key] as? JsonArray).orEmpty().mapNotNull {

@@ -84,7 +84,11 @@ internal fun TonePill(label: String, tone: Tone, modifier: Modifier = Modifier, 
     ) {
         ZillitText(
             label,
-            style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+            style = ZillitTheme.typography.bodySmall.copy(
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+            ),
             color = colors.fg,
             maxLines = 1,
         )
@@ -120,7 +124,10 @@ internal fun ToneDot(tone: Tone, modifier: Modifier = Modifier, pulse: Boolean =
             .then(
                 if (pulse) {
                     Modifier.drawBehind {
-                        drawCircle(ring.copy(alpha = PULSE_ALPHA * (1f - spread)), radius = size.minDimension / 2 + 8.dp.toPx() * spread)
+                        drawCircle(
+                            ring.copy(alpha = PULSE_ALPHA * (1f - spread)),
+                            radius = size.minDimension / 2 + 8.dp.toPx() * spread,
+                        )
                     }
                 } else {
                     Modifier
@@ -155,7 +162,13 @@ fun InkButton(
         modifier
             .defaultMinSize(minHeight = if (small) ZillitDimens.controlHeightSmall else ZillitDimens.controlHeight)
             .clip(ZillitTheme.shapes.medium)
-            .background(if (enabled) colors.textPrimary.copy(alpha = if (hovered) INK_HOVER_ALPHA else 1f) else colors.surfaceHover)
+            .background(
+                if (enabled) {
+                    colors.textPrimary.copy(alpha = if (hovered) INK_HOVER_ALPHA else 1f)
+                } else {
+                    colors.surfaceHover
+                },
+            )
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = if (small) ZillitTheme.spacing.sm else INK_PADDING),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.CenterHorizontally),
@@ -175,7 +188,11 @@ internal enum class NoticeTone { Plain, Info, Ok, Warn, Danger }
 
 /** The web's `.csync-notice`: a 10/14 padded, 10dp rounded box with a thin edge, 14sp text. */
 @Composable
-internal fun Notice(modifier: Modifier = Modifier, tone: NoticeTone = NoticeTone.Plain, content: @Composable ColumnScope.() -> Unit) {
+internal fun Notice(
+    modifier: Modifier = Modifier,
+    tone: NoticeTone = NoticeTone.Plain,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val c = ZillitTheme.colors
     val (bg, edge) = when (tone) {
         NoticeTone.Plain -> c.surfaceHover to Color.Transparent
@@ -186,7 +203,10 @@ internal fun Notice(modifier: Modifier = Modifier, tone: NoticeTone = NoticeTone
     }
     val shape = RoundedCornerShape(10.dp)
     Column(
-        modifier.fillMaxWidth().clip(shape).background(bg).border(1.dp, edge, shape).padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier.fillMaxWidth().clip(shape).background(bg).border(1.dp, edge, shape).padding(
+            horizontal = 14.dp,
+            vertical = 10.dp,
+        ),
         content = content,
     )
 }
@@ -195,14 +215,23 @@ private const val NOTICE_EDGE_ALPHA = 0.25f
 
 /** Blue link text (`.csync-linkbtn`): inherits the size, underlines on hover. */
 @Composable
-internal fun LinkText(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, bold: Boolean = false, style: TextStyle? = null) {
+internal fun LinkText(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    bold: Boolean = false,
+    style: TextStyle? = null,
+) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val base = style ?: ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp)
     ZillitText(
         text,
         modifier.clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        style = base.copy(fontWeight = if (bold) FontWeight.SemiBold else base.fontWeight, textDecoration = if (hovered) TextDecoration.Underline else null),
+        style = base.copy(
+            fontWeight = if (bold) FontWeight.SemiBold else base.fontWeight,
+            textDecoration = if (hovered) TextDecoration.Underline else null,
+        ),
         color = ZillitTheme.colors.info,
         maxLines = 2,
     )
@@ -214,8 +243,18 @@ internal fun KvList(rows: List<Pair<String, String>>, modifier: Modifier = Modif
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         rows.forEach { (label, value) ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ZillitText(label, Modifier.width(labelWidth), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp), color = ZillitTheme.colors.textMuted)
-                ZillitText(value, Modifier.weight(1f), style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp), maxLines = 4)
+                ZillitText(
+                    label,
+                    Modifier.width(labelWidth),
+                    style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+                    color = ZillitTheme.colors.textMuted,
+                )
+                ZillitText(
+                    value,
+                    Modifier.weight(1f),
+                    style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+                    maxLines = 4,
+                )
             }
         }
     }
@@ -226,8 +265,16 @@ internal fun KvList(rows: List<Pair<String, String>>, modifier: Modifier = Modif
 internal fun GlyphAvatar(glyph: String, modifier: Modifier = Modifier) {
     val c = ZillitTheme.colors
     val shape = RoundedCornerShape(10.dp)
-    Box(modifier.size(38.dp).clip(shape).background(c.surfaceHover).border(1.dp, c.border, shape), contentAlignment = Alignment.Center) {
-        ZillitText(glyph, style = ZillitTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold), color = c.textMuted, maxLines = 1)
+    Box(
+        modifier.size(38.dp).clip(shape).background(c.surfaceHover).border(1.dp, c.border, shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitText(
+            glyph,
+            style = ZillitTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+            color = c.textMuted,
+            maxLines = 1,
+        )
     }
 }
 
@@ -282,9 +329,14 @@ internal fun AutoFillGrid(
         val columns = maxOf(1, ((maxWidth + gap) / (min + gap)).toInt())
         val cell = (maxWidth - gap * (columns - 1)) / columns
         Column(verticalArrangement = Arrangement.spacedBy(rowGap)) {
-            (0 until count).chunked(columns).forEach { rowItems ->
-                Row(if (stretch) Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min) else Modifier, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    rowItems.forEach { i -> item(i, if (stretch) Modifier.width(cell).fillMaxHeight() else Modifier.width(cell)) }
+            for (rowItems in (0 until count).chunked(columns)) {
+                Row(
+                    if (stretch) Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min) else Modifier,
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    rowItems.forEach { i ->
+                        item(i, if (stretch) Modifier.width(cell).fillMaxHeight() else Modifier.width(cell))
+                    }
                 }
             }
         }

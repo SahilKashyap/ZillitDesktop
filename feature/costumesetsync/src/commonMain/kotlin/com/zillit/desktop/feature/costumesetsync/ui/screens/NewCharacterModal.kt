@@ -69,7 +69,14 @@ fun NewCharacterDialog(open: Boolean, onClose: () -> Unit, onCreated: (Rec) -> U
         FormGrid {
             TextInput(name, { name = it }, t("csync_field_name"), Full)
             EnumInput(type, ctx.metaList("character_types"), { type = it }, t("csync_field_type"), Half)
-            TextInput(cast, { cast = it }, t("csync_field_cast_number"), Half, help = t("csync_field_cast_number_hint"), error = if (bad) t("csync_field_cast_number_hint") else null)
+            TextInput(
+                cast,
+                { cast = it },
+                t("csync_field_cast_number"),
+                Half,
+                help = t("csync_field_cast_number_hint"),
+                error = if (bad) t("csync_field_cast_number_hint") else null,
+            )
         }
     }
 }

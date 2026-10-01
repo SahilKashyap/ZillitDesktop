@@ -69,7 +69,11 @@ private fun ScriptActions(upload: ScriptUpload, meta: Rec?, onClose: () -> Unit)
             enabled = !upload.cues.progress.running,
         )
         upload.confirmReplace -> {
-            ZillitButton(t("csync_replace_keep_current"), onClick = upload::keepCurrent, variant = ButtonVariant.Secondary)
+            ZillitButton(
+                t("csync_replace_keep_current"),
+                onClick = upload::keepCurrent,
+                variant = ButtonVariant.Secondary
+            )
             ZillitButton(t("csync_replace_go"), onClick = upload::replaceGo, variant = ButtonVariant.Danger)
         }
         else -> {
@@ -79,7 +83,11 @@ private fun ScriptActions(upload: ScriptUpload, meta: Rec?, onClose: () -> Unit)
                 val label = when {
                     upload.importing -> t(if (upload.wipes) "csync_replacing" else "csync_importing")
                     else -> plural(
-                        if (upload.wipes) "csync_import_replace_n" else if (upload.withCues) "csync_import_n_cues" else "csync_import_n",
+                        when {
+                            upload.wipes -> "csync_import_replace_n"
+                            upload.withCues -> "csync_import_n_cues"
+                            else -> "csync_import_n"
+                        },
                         n, "n" to n,
                     )
                 }
@@ -99,36 +107,66 @@ private fun ScriptActions(upload: ScriptUpload, meta: Rec?, onClose: () -> Unit)
 private fun CuesPhase(upload: ScriptUpload) {
     ZillitNotice(t("csync_cues_imported_reading"), tone = StatusTone.Ready)
     CueProgressView(upload.cues.progress)
-    if (!upload.cues.progress.running && !upload.cues.progress.failure) MutedText(t("csync_cues_review_hint"), maxLines = 3)
+    if (!upload.cues.progress.running && !upload.cues.progress.failure) MutedText(
+        t("csync_cues_review_hint"),
+        maxLines = 3
+    )
 }
 
 @Composable
 private fun ReplaceConfirm(upload: ScriptUpload) {
-    val body = plural("csync_replace_body", upload.existingScenes, "count" to upload.existingScenes, "file" to upload.pickedName)
+    val body = plural(
+        "csync_replace_body",
+        upload.existingScenes,
+        "count" to upload.existingScenes,
+        "file" to upload.pickedName
+    )
     ZillitNotice(body, tone = StatusTone.Pending)
     MutedText(t("csync_replace_kept"), maxLines = 3)
 }
 
 @Composable
 private fun PickPhase(upload: ScriptUpload, docs: ProjectDocuments) {
-    ZillitNotice(t(if (upload.existingScenes > 0) "csync_upload_script_intro" else "csync_upload_script_intro_first"), tone = StatusTone.Progress)
+    ZillitNotice(
+        t(if (upload.existingScenes > 0) "csync_upload_script_intro" else "csync_upload_script_intro_first"),
+        tone = StatusTone.Progress
+    )
     // No file needed for the usual case: the project's latest script is already in Zillit.
     // Reading one is only a preview — nothing is imported until the review is confirmed.
-    ZillitText(t("csync_doc_from_zillit_script"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+    ZillitText(
+        t("csync_doc_from_zillit_script"),
+        style = ZillitTheme.typography.label,
+        color = ZillitTheme.colors.textSecondary
+    )
     DocumentPickList(
         docs.docs, docs.loading, upload::pickDoc, if (upload.parsing && upload.doc != null) upload.doc?.id else null,
         t("csync_doc_read_this"), t("csync_doc_none_script"),
     )
     ZillitText(t("csync_doc_or_upload"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
-    DropZone(t("csync_upload_drop"), t("csync_upload_formats"), upload.parsing, t("csync_upload_reading", "file" to upload.pickedName), upload::chooseFile)
+    DropZone(
+        t("csync_upload_drop"),
+        t("csync_upload_formats"),
+        upload.parsing,
+        t("csync_upload_reading", "file" to upload.pickedName),
+        upload::chooseFile
+    )
     MutedText(t("csync_upload_reupload_note"), maxLines = 3)
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun ReviewPhase(upload: ScriptUpload, result: Rec, meta: Rec?) {
     val scenes = upload.scenes
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-        ZillitText(result.str("file"), style = ZillitTheme.typography.titleSmall, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ZillitText(
+            result.str("file"),
+            style = ZillitTheme.typography.titleSmall,
+            maxLines = 1,
+            modifier = Modifier.weight(1f, fill = false)
+        )
         ZillitStatusPill(result.str("format").uppercase(), tone = StatusTone.Progress)
         MutedText(
             t(
@@ -136,7 +174,12 @@ private fun ReviewPhase(upload: ScriptUpload, result: Rec, meta: Rec?) {
                 "cues" to (result.rec("stats")?.long("cues") ?: 0L),
             ),
         )
-        ZillitButton(t("csync_upload_choose_another"), onClick = upload::reset, size = ButtonSize.Small, variant = ButtonVariant.Secondary)
+        ZillitButton(
+            t("csync_upload_choose_another"),
+            onClick = upload::reset,
+            size = ButtonSize.Small,
+            variant = ButtonVariant.Secondary
+        )
     }
     if (upload.replacing) {
         ZillitNotice(
@@ -148,20 +191,33 @@ private fun ReviewPhase(upload: ScriptUpload, result: Rec, meta: Rec?) {
     result.strings("warnings").forEach { ZillitNotice(it, tone = StatusTone.Pending) }
     // `.csync-upload-meta`: the revision name beside the summary, equal halves.
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        TextInput(upload.revision, { upload.revision = it }, t("csync_field_revision"), Modifier.weight(1f), help = t("csync_field_revision_hint"))
+        TextInput(
+            upload.revision,
+            { upload.revision = it },
+            t("csync_field_revision"),
+            Modifier.weight(1f),
+            help = t("csync_field_revision_hint")
+        )
         ZillitNotice(summaryText(upload), Modifier.weight(1f).fillMaxHeight(), tone = StatusTone.Ready)
     }
     InkTabs(
-        listOf("scenes" to "${t("csync_tab_scenes")} (${scenes.size})", "characters" to "${t("csync_tab_characters")} (${upload.detected.size})"),
+        listOf(
+            "scenes" to "${t("csync_tab_scenes")} (${scenes.size})",
+            "characters" to "${t("csync_tab_characters")} (${upload.detected.size})"
+        ),
         upload.tab,
-        badges = if (upload.newCharacters > 0) mapOf("characters" to t("csync_char_n_new", "n" to upload.newCharacters)) else emptyMap(),
+        badges = if (upload.newCharacters > 0) mapOf("characters" to t(
+            "csync_char_n_new",
+            "n" to upload.newCharacters
+        )) else emptyMap(),
         onSelect = { upload.tab = it },
     )
     if (upload.tab == "scenes") ScriptScenesTable(upload, meta) else CharacterConfirm(upload)
+    val costNote = if (cueEngineOf(meta) == "ai") t("csync_cues_cost_note") else ""
     ZillitCheckbox(
         checked = upload.withCues,
         onCheckedChange = { upload.withCues = it },
-        label = "${t("csync_also_extract_cues")} (${engineLabel(meta)}${if (cueEngineOf(meta) == "ai") t("csync_cues_cost_note") else ""})",
+        label = "${t("csync_also_extract_cues")} (${engineLabel(meta)}$costNote)",
     )
 }
 

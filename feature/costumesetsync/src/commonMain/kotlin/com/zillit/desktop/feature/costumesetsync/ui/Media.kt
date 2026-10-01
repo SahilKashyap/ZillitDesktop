@@ -74,14 +74,6 @@ import kotlinx.serialization.json.put
  * upload; here it uploads as picked and its preview falls back to a file tile).
  */
 
-/** What a form collected for a record that does not exist yet: a picked file, or a link from Add link. */
-sealed interface MediaEntry {
-    /** [kind] overrides the form's kind for this file (the web's `csyncKind`). */
-    class Local(val file: PickedFile, val kind: String? = null) : MediaEntry
-
-    class Link(val url: String, val title: String) : MediaEntry
-}
-
 private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
 private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "m4v", "webm", "avi", "mkv", "3gp")
 
@@ -89,13 +81,24 @@ private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "m4v", "webm", "avi", "mkv", 
 const val MAX_UPLOAD_BYTES: Long = 250L * 1024 * 1024
 
 private const val DEFAULT_KIND = "REFERENCE"
-private val DEFAULT_KINDS = listOf("FRONT", "SIDE", "BACK", "CLOSEUP", "DETAIL", "STAIN", "REFERENCE", "DOCUMENT", "OTHER")
+private val DEFAULT_KINDS = listOf(
+    "FRONT",
+    "SIDE",
+    "BACK",
+    "CLOSEUP",
+    "DETAIL",
+    "STAIN",
+    "REFERENCE",
+    "DOCUMENT",
+    "OTHER",
+)
 private val TILE_SIZE = 88.dp
 private val KIND_WIDTH = 130.dp
 private val GRID_MIN = 132.dp
 private val COMPACT_MIN = 96.dp
 private const val IMAGE_CACHE_LIMIT = 200
 private const val BYTES_PER_KB = 1024
+private const val ONE_DECIMAL_BELOW = 10
 
 // -- the upload (lib/upload.js) ---------------------------------------------
 
@@ -115,8 +118,17 @@ private fun StoredFile.toJson() = buildJsonObject {
     put("file_size", fileSize)
 }
 
-/** One file up to storage and its descriptor to the service. False on any failure — counted by the caller, never thrown. */
-private suspend fun SyncCtx.attachFile(file: PickedFile, entityType: String, entityId: String, kind: String, caption: String = ""): Boolean {
+/**
+ * One file up to storage and its descriptor to the service. False on any failure — counted by the caller, never
+ * thrown.
+ */
+private suspend fun SyncCtx.attachFile(
+    file: PickedFile,
+    entityType: String,
+    entityId: String,
+    kind: String,
+    caption: String = "",
+): Boolean {
     val stored = host.store(file) as? ZillitResult.Success ?: return false
     // The service has no VIDEO media type (IMAGE, FILE, LINK) unless meta ever grows one.
     val videoType = if ("VIDEO" in metaList("media_types")) "VIDEO" else "FILE"
@@ -134,10 +146,22 @@ private suspend fun SyncCtx.attachFile(file: PickedFile, entityType: String, ent
     return answer is ZillitResult.Success
 }
 
-private suspend fun SyncCtx.attachLink(entityType: String, entityId: String, kind: String, url: String, title: String): Boolean =
+private suspend fun SyncCtx.attachLink(
+    entityType: String,
+    entityId: String,
+    kind: String,
+    url: String,
+    title: String,
+): Boolean =
     api.post(
         "/photos/link",
-        body("entity_type" to entityType, "entity_id" to entityId, "kind" to kind, "url" to url, "title" to title.ifBlank { url }),
+        body(
+            "entity_type" to entityType,
+            "entity_id" to entityId,
+            "kind" to kind,
+            "url" to url,
+            "title" to title.ifBlank { url },
+        ),
     ) is ZillitResult.Success
 
 /**
@@ -187,7 +211,7 @@ internal fun fileSize(bytes: Long): String {
         n /= BYTES_PER_KB
         u += 1
     }
-    val text = if (n < 10 && u > 0) "%.1f".format(n) else n.toLong().toString()
+    val text = if (n < ONE_DECIMAL_BELOW && u > 0) "%.1f".format(n) else n.toLong().toString()
     return "$text ${units[u]}"
 }
 
@@ -222,7 +246,10 @@ private fun cacheImage(key: String, bitmap: ImageBitmap) {
     decodedCache[key] = bitmap
 }
 
-/** A stored picture, decoded; null while loading or when it will not decode. Kept by storage key so a re-list does not refetch. */
+/**
+ * A stored picture, decoded; null while loading or when it will not decode. Kept by storage key so a re-list does not
+ * refetch.
+ */
 @Composable
 internal fun rememberStoredImage(reference: Rec): ImageBitmap? {
     val ctx = LocalSync.current
@@ -236,7 +263,10 @@ internal fun rememberStoredImage(reference: Rec): ImageBitmap? {
     return bitmap
 }
 
-/** One tile: a picture filling it, or [placeholder] while there is none; the web's bordered, 8dp-cornered `.csync-ref__thumb`. */
+/**
+ * One tile: a picture filling it, or [placeholder] while there is none; the web's bordered, 8dp-cornered `.csync-
+ * ref__thumb`.
+ */
 @Composable
 private fun PictureTile(bitmap: ImageBitmap?, modifier: Modifier = Modifier, placeholder: @Composable () -> Unit) {
     val colors = ZillitTheme.colors
@@ -246,7 +276,12 @@ private fun PictureTile(bitmap: ImageBitmap?, modifier: Modifier = Modifier, pla
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
-            Image(bitmap, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Image(
+                bitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         } else {
             placeholder()
         }
@@ -276,17 +311,27 @@ private fun PlayPlate(modifier: Modifier = Modifier) {
 private fun GlyphLabel(glyph: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(6.dp)) {
         ZillitText(glyph, style = ZillitTheme.typography.titleMedium)
-        ZillitText(label, style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp), color = ZillitTheme.colors.textMuted, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        ZillitText(
+            label,
+            style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = ZillitTheme.colors.textMuted,
+            maxLines = 2,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
     }
 }
 
 // -- the button row (MediaButtons.jsx) ---------------------------------------
 
 /**
- * Photo · Video · Gallery · Add file · Add link: the module's one media row, as two groups (take it, attach it) with a divider
- * between. On a desktop Photo and Video are file choosers filtered to pictures / clips; Gallery takes either. [files] = false
- * drops Add file; Add link shows only when [onAddLink] is given (a form whose record does not exist yet has nothing to link to).
- * In a card narrower than 560dp, as the web's container query does, [leading] takes a full row and each group becomes an even
+ * Photo · Video · Gallery · Add file · Add link: the module's one media row, as two groups (take it, attach it) with
+ * a divider
+ * between. On a desktop Photo and Video are file choosers filtered to pictures / clips; Gallery takes either. [files]
+ * = false
+ * drops Add file; Add link shows only when [onAddLink] is given (a form whose record does not exist yet has nothing
+ * to link to).
+ * In a card narrower than 560dp, as the web's container query does, [leading] takes a full row and each group becomes
+ * an even
  * two-column grid (capture first, then attach) instead of a ragged wrap.
  */
 @Composable
@@ -308,7 +353,9 @@ fun MediaButtons(
         }
     }
     val capture = listOf<MediaButton>(
-        MediaButton(if (busy) t("csync_uploading") else t("csync_take_photo"), AhIcons.Camera) { choose(IMAGE_EXTENSIONS) },
+        MediaButton(if (busy) t("csync_uploading") else t("csync_take_photo"), AhIcons.Camera) { choose(
+            IMAGE_EXTENSIONS,
+        ) },
         MediaButton(t("csync_take_video"), AhIcons.Video) { choose(VIDEO_EXTENSIONS) },
         MediaButton(t("csync_nav_gallery"), ZillitIcons.Photo) { choose(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS) },
     )
@@ -334,7 +381,11 @@ fun MediaButtons(
                 leading?.invoke(false)
                 capture.forEach { MediaButtonView(it, enabled) }
                 if (attach.isNotEmpty()) {
-                    Box(Modifier.padding(horizontal = 2.dp).width(1.dp).height(24.dp).background(ZillitTheme.colors.border))
+                    Box(
+                        Modifier.padding(horizontal = 2.dp).width(1.dp).height(24.dp).background(
+                            ZillitTheme.colors.border,
+                        ),
+                    )
                     attach.forEach { MediaButtonView(it, enabled) }
                 }
             }
@@ -348,7 +399,14 @@ private class MediaButton(val label: String, val icon: ImageVector, val onClick:
 
 @Composable
 private fun MediaButtonView(button: MediaButton, enabled: Boolean, modifier: Modifier = Modifier) {
-    ZillitButton(button.label, onClick = button.onClick, modifier = modifier, variant = ButtonVariant.Secondary, leadingIcon = button.icon, enabled = enabled)
+    ZillitButton(
+        button.label,
+        onClick = button.onClick,
+        modifier = modifier,
+        variant = ButtonVariant.Secondary,
+        leadingIcon = button.icon,
+        enabled = enabled,
+    )
 }
 
 /** Two even columns of buttons: `grid-template-columns: repeat(2, minmax(0, 1fr))`, 8dp apart. */
@@ -366,7 +424,12 @@ private fun MediaGrid(buttons: List<MediaButton>, enabled: Boolean) {
 
 /** The "Add a link" dialog: an address and an optional title. [onAdd] gets the address with its scheme and a title. */
 @Composable
-fun AddLinkDialog(open: Boolean, onClose: () -> Unit, onAdd: (url: String, title: String) -> Unit, busy: Boolean = false) {
+fun AddLinkDialog(
+    open: Boolean,
+    onClose: () -> Unit,
+    onAdd: (url: String, title: String) -> Unit,
+    busy: Boolean = false,
+) {
     var url by remember(open) { mutableStateOf("") }
     var title by remember(open) { mutableStateOf("") }
     FormDialog(
@@ -382,8 +445,20 @@ fun AddLinkDialog(open: Boolean, onClose: () -> Unit, onAdd: (url: String, title
         busy = busy,
         width = 480.dp,
     ) {
-        TextInput(url, { url = it }, t("csync_link_address"), FormWide.width(432.dp), help = t("csync_link_address_hint"))
-        TextInput(title, { title = it }, t("csync_field_title"), FormWide.width(432.dp), help = t("csync_link_title_hint"))
+        TextInput(
+            url,
+            { url = it },
+            t("csync_link_address"),
+            FormWide.width(432.dp),
+            help = t("csync_link_address_hint"),
+        )
+        TextInput(
+            title,
+            { title = it },
+            t("csync_field_title"),
+            FormWide.width(432.dp),
+            help = t("csync_link_title_hint"),
+        )
     }
 }
 
@@ -411,7 +486,13 @@ fun MediaPicker(
                 // Too big is said now, while it can still be trimmed — not after save.
                 val (over, fits) = picked.partition { it.bytes.size > MAX_UPLOAD_BYTES }
                 if (over.isNotEmpty()) {
-                    ctx.toast(t("csync_files_too_big", "names" to over.joinToString(", ") { it.name.ifBlank { t("csync_that_file") } }), false)
+                    ctx.toast(
+                        t(
+                            "csync_files_too_big",
+                            "names" to over.joinToString(", ") { it.name.ifBlank { t("csync_that_file") } },
+                        ),
+                        false,
+                    )
                 }
                 if (fits.isNotEmpty()) onChange(entries + fits.map { MediaEntry.Local(it) })
             },
@@ -448,7 +529,8 @@ private fun EntryTile(entry: MediaEntry, enabled: Boolean, onRemove: () -> Unit)
                 val bitmap by produceState<ImageBitmap?>(null, file) {
                     if (file.isImage) value = withContext(Dispatchers.Default) { decodeImage(file.bytes) }
                 }
-                PictureTile(bitmap, Modifier.size(TILE_SIZE)) { GlyphLabel(if (file.isVideo) "🎬" else "📄", file.name) }
+                val glyph = if (file.isVideo) "🎬" else "📄"
+                PictureTile(bitmap, Modifier.size(TILE_SIZE)) { GlyphLabel(glyph, file.name) }
                 if (file.isVideo) PlayPlate(Modifier.align(Alignment.BottomStart).padding(4.dp))
             }
         }
@@ -457,6 +539,17 @@ private fun EntryTile(entry: MediaEntry, enabled: Boolean, onRemove: () -> Unit)
 }
 
 // -- a saved record's photos (ReferenceGrid.jsx) -------------------------------
+
+@Composable
+private fun KindSelect(kind: String, kinds: List<String>, narrow: Boolean, onSelect: (String) -> Unit) {
+    ZillitSelect(
+        value = kind,
+        options = kinds,
+        onSelect = onSelect,
+        label = { tEnum(it) },
+        modifier = if (narrow) Modifier.fillMaxWidth() else Modifier.width(KIND_WIDTH),
+    )
+}
 
 /**
  * Photos, videos, files and links attached to one record — the reference's PhotoGrid.
@@ -482,7 +575,8 @@ fun ReferenceGrid(
     var uploading by remember { mutableStateOf(false) }
     var linkOpen by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<Rec?>(null) }
-    val photos = rememberRows(entityType, entityId) { api.get("/photos", mapOf("entityType" to entityType, "entityId" to entityId)) }
+    val query = mapOf("entityType" to entityType, "entityId" to entityId)
+    val photos = rememberRows(entityType, entityId) { api.get("/photos", query) }
     SocketRefresh(SyncEvents.Photo) { photos.reload(silent = true) }
 
     val upload = { files: List<PickedFile>, kindOf: String ->
@@ -510,18 +604,16 @@ fun ReferenceGrid(
                     enabled = !uploading,
                     busy = uploading,
                     files = attachments,
-                    leading = { narrow ->
-                        ZillitSelect(
-                            value = kind,
-                            options = kindList,
-                            onSelect = { kind = it },
-                            label = { tEnum(it) },
-                            modifier = if (narrow) Modifier.fillMaxWidth() else Modifier.width(KIND_WIDTH),
-                        )
-                    },
+                    leading = { narrow -> KindSelect(kind, kindList, narrow) { kind = it } },
                 )
             }
-            Await(photos) { items -> ReferenceBody(items, compact, attachments, onOpen = { preview = it }, onRemoved = { photos.reload(silent = true) }) }
+            Await(photos) { items -> ReferenceBody(
+                items,
+                compact,
+                attachments,
+                onOpen = { preview = it },
+                onRemoved = { photos.reload(silent = true) },
+            ) }
         }
     }
     if (bare) content() else SectionCard(title = title ?: t("csync_references")) { content() }
@@ -540,7 +632,13 @@ fun ReferenceGrid(
 }
 
 @Composable
-private fun ReferenceBody(items: List<Rec>, compact: Boolean, attachments: Boolean, onOpen: (Rec) -> Unit, onRemoved: () -> Unit) {
+private fun ReferenceBody(
+    items: List<Rec>,
+    compact: Boolean,
+    attachments: Boolean,
+    onOpen: (Rec) -> Unit,
+    onRemoved: () -> Unit,
+) {
     val ctx = LocalSync.current
     if (items.isEmpty()) {
         MutedText(t(if (attachments) "csync_references_empty" else "csync_no_photos_videos"), maxLines = 2)
@@ -550,7 +648,12 @@ private fun ReferenceBody(items: List<Rec>, compact: Boolean, attachments: Boole
     val remove: (Rec) -> Unit = { ref -> ctx.launchWrite({ ctx.api.delete("/photos/${ref.id}") }, { onRemoved() }) }
     if (pictures.isNotEmpty()) {
         // `.csync-refgrid`: auto-fill columns of at least 132 (96 compact), 12 apart, 4:3 tiles.
-        AutoFillGrid(pictures.size, if (compact) COMPACT_MIN else GRID_MIN, ZillitTheme.spacing.md, stretch = false) { i, cell ->
+        AutoFillGrid(
+            pictures.size,
+            if (compact) COMPACT_MIN else GRID_MIN,
+            ZillitTheme.spacing.md,
+            stretch = false,
+        ) { i, cell ->
             ReferenceTile(pictures[i], cell, { onOpen(pictures[i]) }, { remove(pictures[i]) })
         }
     }
@@ -571,14 +674,24 @@ private fun ReferenceTile(ref: Rec, cell: Modifier, onOpen: () -> Unit, onRemove
     val ctx = LocalSync.current
     val bitmap = rememberStoredImage(ref)
     Box(cell.aspectRatio(THUMB_RATIO)) {
-        PictureTile(bitmap, Modifier.fillMaxSize().clickable(onClick = onOpen)) { GlyphLabel(if (ref.isVideo()) "🎬" else "🖼", tEnum(ref.str("kind"))) }
+        PictureTile(bitmap, Modifier.fillMaxSize().clickable(onClick = onOpen)) { GlyphLabel(
+            if (ref.isVideo()) "🎬" else "🖼",
+            tEnum(ref.str("kind")),
+        ) }
         if (ref.isVideo()) PlayPlate(Modifier.align(Alignment.Center))
         if (ref.str("kind").isNotBlank()) {
             // `.csync-ref__kind`: bottom-left, 10 bold upper-case on a dark chip.
             ZillitText(
                 tEnum(ref.str("kind")).uppercase(),
-                Modifier.align(Alignment.BottomStart).padding(6.dp).clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 2.dp),
-                style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.06.em),
+                Modifier.align(Alignment.BottomStart).padding(6.dp).clip(RoundedCornerShape(4.dp)).background(
+                    Color.Black.copy(alpha = 0.6f),
+                ).padding(horizontal = 6.dp, vertical = 2.dp),
+                style = ZillitTheme.typography.labelSmall.copy(
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.06.em,
+                ),
                 color = Color.White,
                 maxLines = 1,
             )
@@ -589,7 +702,9 @@ private fun ReferenceTile(ref: Rec, cell: Modifier, onOpen: () -> Unit, onRemove
 
 private const val THUMB_RATIO = 4f / 3f
 
-/** A file or a link (`.csync-plain-row`): its icon, name over "kind · size · caption", a go-there mark and a remove ✕. */
+/**
+ * A file or a link (`.csync-plain-row`): its icon, name over "kind · size · caption", a go-there mark and a remove ✕.
+ */
 @Composable
 private fun ReferenceRow(ref: Rec, onRemove: () -> Unit) {
     val ctx = LocalSync.current
@@ -597,7 +712,11 @@ private fun ReferenceRow(ref: Rec, onRemove: () -> Unit) {
     val scope = rememberCoroutineScope()
     val link = ref.str("media_type") == "LINK"
     val attachment = ref.rec("attachment")
-    val detail = listOf(tEnum(ref.str("kind")), if (link) t("csync_link") else fileSize(attachment?.long("file_size") ?: 0L), ref.str("caption"))
+    val detail = listOf(
+        tEnum(ref.str("kind")),
+        if (link) t("csync_link") else fileSize(attachment?.long("file_size") ?: 0L),
+        ref.str("caption"),
+    )
         .filter { it.isNotBlank() }.joinToString(" · ")
     // A link is only an address; an attached file is a download, which needs download rights.
     val open = {
@@ -611,7 +730,10 @@ private fun ReferenceRow(ref: Rec, onRemove: () -> Unit) {
     val hovered by interaction.collectIsHoveredAsState()
     Row(
         Modifier.fillMaxWidth().background(if (hovered) colors.surfaceHover else Color.Transparent)
-            .clickable(interactionSource = interaction, indication = null) { if (link) open() else ctx.whenDownload { open() } }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+            ) { if (link) open() else ctx.whenDownload { open() } }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -623,7 +745,12 @@ private fun ReferenceRow(ref: Rec, onRemove: () -> Unit) {
                 style = ZillitTheme.typography.bodyLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
             )
-            if (detail.isNotBlank()) ZillitText(detail, style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp), color = colors.textMuted, maxLines = 1)
+            if (detail.isNotBlank()) ZillitText(
+                detail,
+                style = ZillitTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = colors.textMuted,
+                maxLines = 1,
+            )
         }
         ZillitIcon(if (link) AhIcons.ExternalLink else ZillitIcons.Download, tint = colors.textPrimary, size = 14.dp)
         if (ctx.canPost) {
@@ -648,7 +775,9 @@ internal fun PreviewDialog(ref: Rec?, onClose: () -> Unit, onOpenRecord: ((Strin
             if (onOpenRecord != null) {
                 it.str("label").ifBlank { tEnum(it.str("entity_type")) }
             } else {
-                listOf(tEnum(it.str("kind")), fmtDateTime(it.long("created"))).filter { part -> part.isNotBlank() }.joinToString(" · ")
+                listOf(tEnum(it.str("kind")), fmtDateTime(it.long("created")))
+                    .filter { part -> part.isNotBlank() }
+                    .joinToString(" · ")
             }
         }.orEmpty(),
         onDismiss = onClose,
@@ -657,7 +786,9 @@ internal fun PreviewDialog(ref: Rec?, onClose: () -> Unit, onOpenRecord: ((Strin
         actions = {
             if (shown != null && shown.isVideo()) {
                 ZillitButton(t("csync_open_link"), onClick = {
-                    ctx.whenDownload { scope.launch { ctx.referenceUrl(shown).takeIf { it.isNotBlank() }?.let(ctx.host::openUrl) } }
+                    ctx.whenDownload { scope.launch { ctx.referenceUrl(shown).takeIf { it.isNotBlank() }?.let(
+                        ctx.host::openUrl,
+                    ) } }
                 })
             }
             val link = shown?.str("link").orEmpty()
@@ -671,11 +802,21 @@ internal fun PreviewDialog(ref: Rec?, onClose: () -> Unit, onOpenRecord: ((Strin
     ) {
         val bitmap = shown?.let { rememberStoredImage(it) }
         if (bitmap != null) {
-            Image(bitmap, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color.Black))
+            Image(
+                bitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color.Black),
+            )
         }
         val caption = shown?.let {
             val parts = if (onOpenRecord != null) {
-                listOf(tEnum(it.str("entity_type")), tEnum(it.str("kind")), fmtDateTime(it.long("created")), it.str("caption"))
+                listOf(
+                    tEnum(it.str("entity_type")),
+                    tEnum(it.str("kind")),
+                    fmtDateTime(it.long("created")),
+                    it.str("caption"),
+                )
             } else {
                 listOf(it.str("caption"))
             }

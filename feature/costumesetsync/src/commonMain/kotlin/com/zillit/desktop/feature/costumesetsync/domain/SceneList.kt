@@ -27,23 +27,37 @@ fun filterScenes(
     var items = scenes
     if (filters.revision.isNotEmpty()) items = items.filter { pinned(it) || it.str("revision") == filters.revision }
     if (filters.episode.isNotEmpty()) items = items.filter { pinned(it) || it.str("episode").trim() == filters.episode }
-    when (filters.shoot) {
-        "today" -> items = items.filter { pinned(it) || dateKey(it.long("shoot_date")) == today }
-        "upcoming" -> items = items.filter { pinned(it) || (it.long("shoot_date") != 0L && dateKey(it.long("shoot_date")) >= today) }
-        // "Scheduled" means the scene has a shoot date at all, past or future.
-        "scheduled" -> items = items.filter { pinned(it) || it.long("shoot_date") != 0L }
-    }
+    items = filterByShoot(items, filters.shoot, today, pinned)
     if (filters.characterId.isNotEmpty()) {
-        items = items.filter { s -> pinned(s) || s.recs("characters").any { it.str("character_id") == filters.characterId } }
+        items = items.filter { s ->
+            pinned(s) || s.recs("characters").any { it.str("character_id") == filters.characterId }
+        }
     }
     val needle = filters.query.trim().lowercase()
     if (needle.isNotEmpty()) items = items.filter { pinned(it) || sceneMatches(it, needle, charById) }
     return items
 }
 
+private fun filterByShoot(items: List<Rec>, shoot: String, today: String, pinned: (Rec) -> Boolean): List<Rec> =
+    when (shoot) {
+        "today" -> items.filter { pinned(it) || dateKey(it.long("shoot_date")) == today }
+        "upcoming" -> items.filter {
+            pinned(it) || (it.long("shoot_date") != 0L && dateKey(it.long("shoot_date")) >= today)
+        }
+        // "Scheduled" means the scene has a shoot date at all, past or future.
+        "scheduled" -> items.filter { pinned(it) || it.long("shoot_date") != 0L }
+        else -> items
+    }
+
 private fun sceneMatches(s: Rec, needle: String, charById: Map<String, Rec>): Boolean {
     val fields = mutableListOf(
-        s.str("number"), s.str("episode"), s.str("name"), s.str("location"), s.str("synopsis"), s.str("script_day"), s.str("int_ext"),
+        s.str("number"),
+        s.str("episode"),
+        s.str("name"),
+        s.str("location"),
+        s.str("synopsis"),
+        s.str("script_day"),
+        s.str("int_ext"),
     )
     s.recs("characters").forEach { c ->
         val full = charById[c.str("character_id")]
@@ -73,7 +87,9 @@ fun sceneLines(scene: Rec, charById: Map<String, Rec>, characterId: String): Lis
             SceneLine(
                 sc,
                 embedded?.str("name")?.ifEmpty { null } ?: full?.str("name").orEmpty(),
-                (embedded?.takeIf { it.has("cast_number") } ?: full?.takeIf { it.has("cast_number") })?.long("cast_number"),
+                (embedded?.takeIf { it.has("cast_number") } ?: full?.takeIf { it.has("cast_number") })?.long(
+                    "cast_number",
+                ),
             )
         },
         { it.castNumber },
@@ -85,16 +101,26 @@ fun sceneLines(scene: Rec, charById: Map<String, Rec>, characterId: String): Lis
 /** Every character that is in at least one scene, for the character filter: (id, name) by name. */
 fun castOptions(scenes: List<Rec>): List<Pair<String, String>> {
     val byId = LinkedHashMap<String, String>()
-    scenes.forEach { s -> s.recs("characters").forEach { c -> byId.getOrPut(c.str("character_id")) { c.rec("character")?.str("name").orEmpty() } } }
+    scenes.forEach { s ->
+        s.recs("characters").forEach { c ->
+            byId.getOrPut(c.str("character_id")) { c.rec("character")?.str("name").orEmpty() }
+        }
+    }
     return byId.entries.map { it.key to it.value }.sortedBy { it.second.lowercase() }
 }
 
-fun revisionsOf(scenes: List<Rec>): List<String> = scenes.map { it.str("revision") }.filter { it.isNotEmpty() }.distinct().sorted()
+fun revisionsOf(scenes: List<Rec>): List<String> = scenes.map { it.str("revision") }
+    .filter { it.isNotEmpty() }
+    .distinct()
+    .sorted()
 
 fun latestRevisionOf(scenes: List<Rec>): String =
     scenes.filter { it.str("revision").isNotEmpty() }.maxByOrNull { it.long("revised_at") }?.str("revision").orEmpty()
 
-fun locationsOf(scenes: List<Rec>): List<String> = scenes.map { it.str("location").trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+fun locationsOf(scenes: List<Rec>): List<String> = scenes.map { it.str("location").trim() }
+    .filter { it.isNotEmpty() }
+    .distinct()
+    .sorted()
 
 /** Episodes, sorted as numbers where they are ("2" before "10"). */
 fun episodesOf(scenes: List<Rec>): List<String> =

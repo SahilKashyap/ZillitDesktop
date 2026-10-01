@@ -71,10 +71,13 @@ fun ChangeDetailScreen(id: String) {
     }
     SocketRefresh(SyncEvents.Change, predicate = { it.str("entity_id") == id }) { data.reload(silent = true) }
     Await(data) { change ->
-        if (change == null) EmptyState(t("csync_change_not_found")) else ChangeBody(change) { data.reload(silent = true) }
+        if (change == null) EmptyState(t("csync_change_not_found")) else ChangeBody(change) {
+            data.reload(silent = true)
+        }
     }
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun ChangeBody(ch: Rec, reload: () -> Unit) {
     val ctx = LocalSync.current
@@ -85,8 +88,11 @@ private fun ChangeBody(ch: Rec, reload: () -> Unit) {
     val items = ch.recs("items")
     val character = ch.rec("character")
 
-    // Wear notes typed and not saved hold a move to another page, as the reference: the guard asks, discarding lets the next click through.
-    val unsaved = wear?.let { w -> w.text != items.firstOrNull { it.str("costume_id") == w.costumeId }?.str("wear_notes").orEmpty() } == true
+    // Wear notes typed and not saved hold a move to another page, as the reference: the guard asks, discarding lets the
+    // next click through.
+    val unsaved = wear?.let { w ->
+        w.text != items.firstOrNull { it.str("costume_id") == w.costumeId }?.str("wear_notes").orEmpty()
+    } == true
     var leaveAsk by remember { mutableStateOf(false) }
     DisposableEffect(unsaved) {
         if (unsaved) {
@@ -100,23 +106,45 @@ private fun ChangeBody(ch: Rec, reload: () -> Unit) {
 
     PageHead(
         title = "${t("csync_change")} #${ch.str("change_number")} · ${ch.str("name")}",
-        crumbs = "${t("csync_nav_characters")} / ${character?.str("name").orEmpty()} / ${t("csync_change")} #${ch.str("change_number")}",
+        crumbs = "${t("csync_nav_characters")} / ${character?.str("name").orEmpty()} / " +
+            "${t("csync_change")} #${ch.str("change_number")}",
         sub = listOf(
-            character?.str("name").orEmpty() + character?.rec("actor")?.str("name")?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty(),
+            character
+                ?.str("name")
+                .orEmpty() + character
+                ?.rec("actor")
+                ?.str("name")?.takeIf { it.isNotEmpty() }?.let { " ($it)" }
+                .orEmpty(),
             ch.str("description"),
         ).filter { it.isNotEmpty() }.joinToString(" · "),
         actions = {
-            if (ctx.canPost) ZillitButton(t("csync_edit"), onClick = { editOpen = true }, variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.Edit)
+            if (ctx.canPost) ZillitButton(
+                t("csync_edit"),
+                onClick = { editOpen = true },
+                variant = ButtonVariant.Secondary,
+                leadingIcon = ZillitIcons.Edit
+            )
         },
     )
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
         Column(Modifier.weight(1.4f)) {
             PiecesCard(ch, items, wear, { wear = it }, { discard = it }, { pickOpen = true }, reload)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ReferenceGrid(entityType = "CHANGE", entityId = ch.id, title = t("csync_look_photos"), kinds = LOOK_PHOTO_KINDS)
+            ReferenceGrid(
+                entityType = "CHANGE",
+                entityId = ch.id,
+                title = t("csync_look_photos"),
+                kinds = LOOK_PHOTO_KINDS
+            )
             UsedInScenes(ch)
-            ch.str("notes").takeIf { it.isNotEmpty() }?.let { SectionCard(title = t("csync_field_notes")) { ZillitText(it) } }
+            ch.str("notes").takeIf { it.isNotEmpty() }?.let {
+                SectionCard(title = t("csync_field_notes")) { ZillitText(it) }
+            }
         }
     }
     // Opens on this character's own pieces, as the reference.
@@ -125,12 +153,20 @@ private fun ChangeBody(ch: Rec, reload: () -> Unit) {
         onClose = { pickOpen = false },
         characterId = ch.str("character_id"),
         exclude = { c -> items.any { it.str("costume_id") == c.id } },
-        onPick = { c -> ctx.launchWrite({ ctx.api.post("/changes/${ch.id}/items", body("costume_id" to c.id)) }) { reload() } },
+        onPick = { c -> ctx.launchWrite({ ctx.api.post(
+            "/changes/${ch.id}/items",
+            body("costume_id" to c.id)
+        ) }) { reload() } },
     )
     ChangeEditDialog(editOpen, ch, ctx, { editOpen = false }, reload)
     ConfirmDialog(discard) { discard = null }
     ConfirmDialog(
-        if (leaveAsk) Confirm(t("csync_discard_changes_title"), t("csync_leave_unsaved_body"), t("csync_discard"), danger = true) { wear = null } else null,
+        if (leaveAsk) Confirm(
+            t("csync_discard_changes_title"),
+            t("csync_leave_unsaved_body"),
+            t("csync_discard"),
+            danger = true
+        ) { wear = null } else null,
     ) { leaveAsk = false }
 }
 
@@ -149,7 +185,12 @@ private fun PiecesCard(
         title = "${t("csync_pieces")} (${items.size})",
         flush = items.isNotEmpty(),
         actions = {
-            if (ctx.canPost) ZillitButton("+ ${t("csync_add_piece")}", onClick = openPicker, size = ButtonSize.Small, variant = ButtonVariant.Secondary)
+            if (ctx.canPost) ZillitButton(
+                "+ ${t("csync_add_piece")}",
+                onClick = openPicker,
+                size = ButtonSize.Small,
+                variant = ButtonVariant.Secondary
+            )
         },
     ) {
         if (items.isEmpty()) EmptyState(t("csync_no_pieces_yet"), t("csync_no_pieces_yet_hint"))
@@ -157,18 +198,32 @@ private fun PiecesCard(
     }
 }
 
+@Suppress("LongMethod")
 @Composable
-private fun PieceRow(ch: Rec, piece: Rec, wear: WearEdit?, setWear: (WearEdit?) -> Unit, ask: (Confirm?) -> Unit, reload: () -> Unit) {
+private fun PieceRow(
+    ch: Rec,
+    piece: Rec,
+    wear: WearEdit?,
+    setWear: (WearEdit?) -> Unit,
+    ask: (Confirm?) -> Unit,
+    reload: () -> Unit
+) {
     val ctx = LocalSync.current
     val costume = piece.rec("costume") ?: Rec.Empty
     val costumeId = piece.str("costume_id")
     val editing = wear?.takeIf { w -> w.costumeId == costumeId }
     val detail = listOf(
         costume.str("type"), costume.str("color"),
-        costume.str("size").takeIf { s -> s.isNotEmpty() }?.let { s -> "${t("csync_size")} $s" }.orEmpty(), costume.str("location"),
+        costume
+            .str("size").takeIf { s -> s.isNotEmpty() }?.let { s -> "${t("csync_size")} $s" }
+            .orEmpty(), costume
+            .str("location"),
     ).filter { s -> s.isNotEmpty() }.joinToString(" · ")
     val saveWear = { text: String ->
-        ctx.launchWrite({ ctx.api.post("/changes/${ch.id}/items", body("costume_id" to costumeId, "wear_notes" to text)) }) {
+        ctx.launchWrite({ ctx.api.post(
+            "/changes/${ch.id}/items",
+            body("costume_id" to costumeId, "wear_notes" to text)
+        ) }) {
             setWear(null)
             reload()
         }
@@ -180,7 +235,10 @@ private fun PieceRow(ch: Rec, piece: Rec, wear: WearEdit?, setWear: (WearEdit?) 
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(Modifier.clickable { ctx.nav.go("costumes/$costumeId") }, horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                Row(
+                    Modifier.clickable { ctx.nav.go("costumes/$costumeId") },
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)
+                ) {
                     MonoText(costume.str("asset_number"))
                     RowTitle(costume.str("name"), Modifier.weight(1f, fill = false))
                 }
@@ -188,7 +246,9 @@ private fun PieceRow(ch: Rec, piece: Rec, wear: WearEdit?, setWear: (WearEdit?) 
                 when {
                     editing != null -> WearEditor(editing, piece, setWear, ask, saveWear)
                     ctx.canPost -> ZillitText(
-                        if (piece.str("wear_notes").isNotEmpty()) "✎ ${piece.str("wear_notes")}" else "+ ${t("csync_add_wear_notes")}",
+                        if (
+                            piece.str("wear_notes").isNotEmpty()
+                        ) "✎ ${piece.str("wear_notes")}" else "+ ${t("csync_add_wear_notes")}",
                         Modifier.clickable { setWear(WearEdit(costumeId, piece.str("wear_notes"))) },
                         style = ZillitTheme.typography.bodySmall,
                         color = ZillitTheme.colors.textSecondary,
@@ -199,7 +259,9 @@ private fun PieceRow(ch: Rec, piece: Rec, wear: WearEdit?, setWear: (WearEdit?) 
             StatusBadge(costume.str("status"), tEnum(costume.str("status")))
             if (ctx.canPost) {
                 ZillitButton(
-                    "", onClick = { ctx.launchWrite({ ctx.api.delete("/changes/${ch.id}/items/$costumeId") }) { reload() } },
+                    "", onClick = { ctx.launchWrite(
+                        { ctx.api.delete("/changes/${ch.id}/items/$costumeId") }
+                    ) { reload() } },
                     variant = ButtonVariant.Tertiary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Close,
                 )
             }
@@ -210,8 +272,17 @@ private fun PieceRow(ch: Rec, piece: Rec, wear: WearEdit?, setWear: (WearEdit?) 
 
 
 @Composable
-private fun WearEditor(editing: WearEdit, piece: Rec, setWear: (WearEdit?) -> Unit, ask: (Confirm?) -> Unit, save: (String) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+private fun WearEditor(
+    editing: WearEdit,
+    piece: Rec,
+    setWear: (WearEdit?) -> Unit,
+    ask: (Confirm?) -> Unit,
+    save: (String) -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         ZillitTextField(
             value = editing.text,
             onValueChange = { setWear(editing.copy(text = it)) },
@@ -227,7 +298,12 @@ private fun WearEditor(editing: WearEdit, piece: Rec, setWear: (WearEdit?) -> Un
                 if (editing.text == piece.str("wear_notes")) {
                     setWear(null)
                 } else {
-                    ask(Confirm(t("csync_discard_changes_title"), t("csync_discard_changes_body"), t("csync_discard"), danger = true) { setWear(null) })
+                    ask(Confirm(
+                        t("csync_discard_changes_title"),
+                        t("csync_discard_changes_body"),
+                        t("csync_discard"),
+                        danger = true
+                    ) { setWear(null) })
                 }
             },
             size = ButtonSize.Small,

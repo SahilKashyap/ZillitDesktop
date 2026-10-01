@@ -73,6 +73,12 @@ private fun Rec.toDraft() = CostumeDraft(
     notes = str("notes"),
 )
 
+/** A blank optional text is "not set": an explicit null so clearing it on Edit clears it. */
+private fun String.orClear(): Any = ifBlank { null } ?: Clear
+
+/** A money field: finance roles send the number (or a clear), everyone else sends nothing. */
+private fun moneyBody(isFinance: Boolean, text: String): Any? = if (isFinance) numOrNull(text) ?: Clear else null
+
 /**
  * The request body, as the web builds it: a blank optional field is "not set", sent as an
  * explicit null so clearing one on Edit clears it rather than storing an empty string. Money
@@ -82,20 +88,20 @@ private fun CostumeDraft.toBody(isFinance: Boolean) = body(
     "asset_number" to assetNumber.trim(),
     "name" to name,
     "category" to category,
-    "type" to (type.trim().ifBlank { null } ?: Clear),
-    "color" to (color.trim().ifBlank { null } ?: Clear),
-    "brand" to (brand.trim().ifBlank { null } ?: Clear),
-    "size" to (size.trim().ifBlank { null } ?: Clear),
-    "fabric" to (fabric.trim().ifBlank { null } ?: Clear),
+    "type" to type.trim().orClear(),
+    "color" to color.trim().orClear(),
+    "brand" to brand.trim().orClear(),
+    "size" to size.trim().orClear(),
+    "fabric" to fabric.trim().orClear(),
     "quantity" to (numOrNull(quantity)?.toLong()?.takeIf { it != 0L } ?: 1L),
     "source" to source,
-    "purchase_cost" to if (isFinance) numOrNull(purchaseCost) ?: Clear else null,
-    "rental_cost_per_day" to if (isFinance) numOrNull(rentalPerDay) ?: Clear else null,
-    "vendor_id" to (vendorId.ifBlank { null } ?: Clear),
-    "character_id" to (characterId.ifBlank { null } ?: Clear),
+    "purchase_cost" to moneyBody(isFinance, purchaseCost),
+    "rental_cost_per_day" to moneyBody(isFinance, rentalPerDay),
+    "vendor_id" to vendorId.orClear(),
+    "character_id" to characterId.orClear(),
     "location" to location,
-    "care_instructions" to (care.trim().ifBlank { null } ?: Clear),
-    "notes" to (notes.trim().ifBlank { null } ?: Clear),
+    "care_instructions" to care.trim().orClear(),
+    "notes" to notes.trim().orClear(),
 )
 
 /**
@@ -123,7 +129,13 @@ fun CostumeFormDialog(
 }
 
 @Composable
-private fun CostumeFormContent(onClose: () -> Unit, initial: Rec?, defaultCharacterId: String, onSaved: () -> Unit, onCreated: (Rec) -> Unit) {
+private fun CostumeFormContent(
+    onClose: () -> Unit,
+    initial: Rec?,
+    defaultCharacterId: String,
+    onSaved: () -> Unit,
+    onCreated: (Rec) -> Unit,
+) {
     val ctx = LocalSync.current
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf(initial?.toDraft() ?: CostumeDraft(characterId = defaultCharacterId)) }
@@ -138,7 +150,9 @@ private fun CostumeFormContent(onClose: () -> Unit, initial: Rec?, defaultCharac
             saving = true
             val id = initial?.id ?: createdId
             val request = draft.toBody(ctx.isFinance)
-            val answer = ctx.write { if (id.isNotBlank()) ctx.api.patch("/costumes/$id", request) else ctx.api.post("/costumes", request) }
+            val answer = ctx.write {
+                if (id.isNotBlank()) ctx.api.patch("/costumes/$id", request) else ctx.api.post("/costumes", request)
+            }
             if (answer == null) {
                 saving = false
                 return@launch
@@ -161,7 +175,8 @@ private fun CostumeFormContent(onClose: () -> Unit, initial: Rec?, defaultCharac
 
     FormDialog(
         open = true,
-        title = if (initial != null) "${t("csync_edit")} ${initial.str("asset_number")}" else t("csync_new_costume_piece"),
+        title =
+            if (initial != null) "${t("csync_edit")} ${initial.str("asset_number")}" else t("csync_new_costume_piece"),
         onDismiss = onClose,
         confirmLabel = if (initial != null) t("csync_save") else t("csync_add_to_inventory"),
         onConfirm = save,
@@ -170,54 +185,133 @@ private fun CostumeFormContent(onClose: () -> Unit, initial: Rec?, defaultCharac
         width = FORM_WIDTH.dp,
     ) {
         CostumeFields(draft, { draft = it }, initial != null, characters.value.orEmpty(), vendors.value.orEmpty())
-        ZillitText(t("csync_photos_and_video"), style = ZillitTheme.typography.label, color = ZillitTheme.colors.textSecondary)
+        ZillitText(
+            t("csync_photos_and_video"),
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
         MediaPicker(media, { media = it }, enabled = !saving)
     }
 }
 
-// The web's modal is 900 wide with two columns: 16 of padding each side leaves 868, so two 428 cells and the 12 between.
+// The web's modal is 900 wide with two columns: 16 of padding each side leaves 868, so two 428 cells and the 12
+// between.
 private val CELL = Modifier.width(428.dp)
 private val WIDE = Modifier.width(868.dp)
 private const val FORM_WIDTH = 900
 
 @Composable
-private fun CostumeFields(draft: CostumeDraft, onChange: (CostumeDraft) -> Unit, editing: Boolean, characters: List<Rec>, vendors: List<Rec>) {
+private fun CostumeFields(
+    draft: CostumeDraft,
+    onChange: (CostumeDraft) -> Unit,
+    editing: Boolean,
+    characters: List<Rec>,
+    vendors: List<Rec>,
+) {
+    FormGrid {
+        CostumeIdentityFields(draft, onChange, editing)
+        CostumeStockFields(draft, onChange, characters, vendors)
+        CostumeMoneyFields(draft, onChange)
+    }
+}
+
+@Composable
+private fun CostumeIdentityFields(draft: CostumeDraft, onChange: (CostumeDraft) -> Unit, editing: Boolean) {
     val ctx = LocalSync.current
     val types = ctx.meta?.rec("costume_types")?.strings(draft.category).orEmpty()
+    TextInput(
+        draft.assetNumber,
+        { onChange(draft.copy(assetNumber = it.uppercase())) },
+        t("csync_asset_number"),
+        CELL,
+        help = if (editing) null else t("csync_asset_number_hint"),
+    )
+    TextInput(draft.name, { onChange(draft.copy(name = it)) }, t("csync_field_name"), CELL)
+    EnumInput(
+        draft.category,
+        ctx.metaList("costume_categories"),
+        { onChange(draft.copy(category = it.ifBlank { draft.category }, type = "")) },
+        t("csync_field_category"),
+        CELL,
+    )
+    // Type offers the service's list; anything not on it is typed in the box beneath, inside the same field.
+    StackedPick(
+        draft.type.takeIf { it in types }.orEmpty(), types.map { it to it }, { onChange(draft.copy(type = it)) },
+        draft.type, { onChange(draft.copy(type = it)) }, t("csync_field_type"), CELL, placeholder = "—",
+    )
+    TextInput(draft.color, { onChange(draft.copy(color = it)) }, t("csync_field_colour"), CELL)
+    TextInput(draft.size, { onChange(draft.copy(size = it)) }, t("csync_field_size"), CELL)
+    TextInput(draft.brand, { onChange(draft.copy(brand = it)) }, t("csync_field_brand"), CELL)
+    TextInput(draft.fabric, { onChange(draft.copy(fabric = it)) }, t("csync_field_fabric"), CELL)
+}
+
+@Composable
+private fun CostumeStockFields(
+    draft: CostumeDraft,
+    onChange: (CostumeDraft) -> Unit,
+    characters: List<Rec>,
+    vendors: List<Rec>,
+) {
+    val ctx = LocalSync.current
     val locations = ctx.metaList("standard_locations")
+    RecInput(
+        draft.characterId,
+        characters,
+        { onChange(draft.copy(characterId = it)) },
+        t("csync_field_character"),
+        CELL,
+        placeholder = t("csync_unassigned_dash"),
+    )
+    StackedPick(
+        draft.location.takeIf { it in locations }.orEmpty(),
+        locations.map { it to it },
+        { onChange(draft.copy(location = it.ifBlank { draft.location })) },
+        draft.location, { onChange(draft.copy(location = it)) }, t("csync_field_location"), CELL,
+    )
+    EnumInput(
+        draft.source,
+        ctx.metaList("costume_sources"),
+        { onChange(draft.copy(source = it.ifBlank { draft.source })) },
+        t("csync_field_source"),
+        CELL,
+    )
+    RecInput(
+        draft.vendorId,
+        vendors,
+        { onChange(draft.copy(vendorId = it)) },
+        t("csync_field_vendor"),
+        CELL,
+        placeholder = "—",
+    )
+}
+
+@Composable
+private fun CostumeMoneyFields(draft: CostumeDraft, onChange: (CostumeDraft) -> Unit) {
+    val ctx = LocalSync.current
     val inCurrency = ctx.currency.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
-    FormGrid {
+    if (ctx.isFinance) {
         TextInput(
-            draft.assetNumber,
-            { onChange(draft.copy(assetNumber = it.uppercase())) },
-            t("csync_asset_number"),
+            draft.purchaseCost,
+            { onChange(draft.copy(purchaseCost = it)) },
+            "${t("csync_field_purchase_cost")}$inCurrency",
             CELL,
-            help = if (editing) null else t("csync_asset_number_hint"),
+            number = true,
         )
-        TextInput(draft.name, { onChange(draft.copy(name = it)) }, t("csync_field_name"), CELL)
-        EnumInput(draft.category, ctx.metaList("costume_categories"), { onChange(draft.copy(category = it.ifBlank { draft.category }, type = "")) }, t("csync_field_category"), CELL)
-        // Type offers the service's list; anything not on it is typed in the box beneath, inside the same field.
-        StackedPick(
-            draft.type.takeIf { it in types }.orEmpty(), types.map { it to it }, { onChange(draft.copy(type = it)) },
-            draft.type, { onChange(draft.copy(type = it)) }, t("csync_field_type"), CELL, placeholder = "—",
+        TextInput(
+            draft.rentalPerDay,
+            { onChange(draft.copy(rentalPerDay = it)) },
+            "${t("csync_rental_per_day")}$inCurrency",
+            CELL,
+            number = true,
         )
-        TextInput(draft.color, { onChange(draft.copy(color = it)) }, t("csync_field_colour"), CELL)
-        TextInput(draft.size, { onChange(draft.copy(size = it)) }, t("csync_field_size"), CELL)
-        TextInput(draft.brand, { onChange(draft.copy(brand = it)) }, t("csync_field_brand"), CELL)
-        TextInput(draft.fabric, { onChange(draft.copy(fabric = it)) }, t("csync_field_fabric"), CELL)
-        RecInput(draft.characterId, characters, { onChange(draft.copy(characterId = it)) }, t("csync_field_character"), CELL, placeholder = t("csync_unassigned_dash"))
-        StackedPick(
-            draft.location.takeIf { it in locations }.orEmpty(), locations.map { it to it }, { onChange(draft.copy(location = it.ifBlank { draft.location })) },
-            draft.location, { onChange(draft.copy(location = it)) }, t("csync_field_location"), CELL,
-        )
-        EnumInput(draft.source, ctx.metaList("costume_sources"), { onChange(draft.copy(source = it.ifBlank { draft.source })) }, t("csync_field_source"), CELL)
-        RecInput(draft.vendorId, vendors, { onChange(draft.copy(vendorId = it)) }, t("csync_field_vendor"), CELL, placeholder = "—")
-        if (ctx.isFinance) {
-            TextInput(draft.purchaseCost, { onChange(draft.copy(purchaseCost = it)) }, "${t("csync_field_purchase_cost")}$inCurrency", CELL, number = true)
-            TextInput(draft.rentalPerDay, { onChange(draft.copy(rentalPerDay = it)) }, "${t("csync_rental_per_day")}$inCurrency", CELL, number = true)
-        }
-        TextInput(draft.quantity, { onChange(draft.copy(quantity = it)) }, t("csync_field_quantity"), CELL, number = true)
-        TextInput(draft.care, { onChange(draft.copy(care = it)) }, t("csync_field_care"), CELL)
-        TextInput(draft.notes, { onChange(draft.copy(notes = it)) }, t("csync_field_notes"), WIDE, multiline = true)
     }
+    TextInput(
+        draft.quantity,
+        { onChange(draft.copy(quantity = it)) },
+        t("csync_field_quantity"),
+        CELL,
+        number = true,
+    )
+    TextInput(draft.care, { onChange(draft.copy(care = it)) }, t("csync_field_care"), CELL)
+    TextInput(draft.notes, { onChange(draft.copy(notes = it)) }, t("csync_field_notes"), WIDE, multiline = true)
 }

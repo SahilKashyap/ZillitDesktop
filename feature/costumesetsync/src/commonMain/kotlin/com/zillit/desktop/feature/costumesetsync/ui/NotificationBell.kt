@@ -55,7 +55,8 @@ fun NotificationBell(refreshTick: Int = 0) {
         // A write just landed: give the service a beat, as the web debounces `csync:changed`.
         if (refreshTick > 0) delay(WRITE_SETTLE_MS)
         while (true) {
-            (ctx.api.get("/notifications", mapOf("unread" to "true")) as? ZillitResult.Success)?.let { unread = it.data.rec?.long("unread")?.toInt() ?: 0 }
+            (ctx.api.get("/notifications", mapOf("unread" to "true")) as? ZillitResult.Success)
+                ?.let { unread = it.data.rec?.long("unread")?.toInt() ?: 0 }
             delay(POLL_MS)
         }
     }
@@ -88,7 +89,16 @@ fun NotificationBell(refreshTick: Int = 0) {
                     .padding(horizontal = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                ZillitText(NotificationsModel.badge(unread), style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold, lineHeight = 14.sp), color = Color.White, maxLines = 1)
+                ZillitText(
+                    NotificationsModel.badge(unread),
+                    style = ZillitTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 14.sp,
+                    ),
+                    color = Color.White,
+                    maxLines = 1,
+                )
             }
         }
     }

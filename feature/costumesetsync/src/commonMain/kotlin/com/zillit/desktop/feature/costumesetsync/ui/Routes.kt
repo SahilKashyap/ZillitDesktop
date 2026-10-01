@@ -41,6 +41,13 @@ internal fun SyncRoutes(route: SyncRoute) {
         "characters" -> if (id.isEmpty()) CharactersScreen() else CharacterDetailScreen(id)
         "actors" -> ActorsScreen()
         "costumes" -> if (id.isEmpty()) CostumesScreen() else CostumeDetailScreen(id)
+        else -> SyncWorkflowRoutes(route, id)
+    }
+}
+
+@Composable
+private fun SyncWorkflowRoutes(route: SyncRoute, id: String) {
+    when (route.head) {
         "cleaning" -> if (id.isEmpty()) CleaningScreen() else CleaningDetailScreen(id)
         "fittings" -> if (id.isEmpty()) FittingsScreen() else FittingDetailScreen(id)
         "alterations" -> TicketsScreen(TicketKind.Alterations)
@@ -48,6 +55,13 @@ internal fun SyncRoutes(route: SyncRoute) {
         "missing" -> TicketsScreen(TicketKind.Missing)
         "labels" -> LabelsScreen()
         "vendors" -> VendorsScreen()
+        else -> SyncReportRoutes(route, id)
+    }
+}
+
+@Composable
+private fun SyncReportRoutes(route: SyncRoute, id: String) {
+    when (route.head) {
         "continuity" -> if (id == "book") ContinuityBookScreen() else ContinuityOnSetScreen()
         "reports" -> ReportsScreen()
         "budget" -> BudgetScreen()
