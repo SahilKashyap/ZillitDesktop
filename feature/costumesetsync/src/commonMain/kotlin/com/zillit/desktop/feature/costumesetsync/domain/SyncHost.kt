@@ -64,6 +64,42 @@ interface SyncHost {
      * (the label sheet opens in the browser, where it prints). False when it could not be opened.
      */
     suspend fun open(fileName: String, bytes: ByteArray): Boolean = false
+
+    /**
+     * Opens the app's Email composer with [subject] and [bodyHtml] filled in (the web's `shareMessagesAsEmail`).
+     * False when it could not: the user has no Zillit mailbox, or no mail window is wired.
+     */
+    fun composeEmail(subject: String, bodyHtml: String): Boolean = false
+
+    /**
+     * The bytes behind one of this service's own addresses (`SyncOnsetApi.url`), fetched with the project
+     * Bearer — the raw GET `ApiClient`'s JSON envelopes cannot make (the budget sheet template).
+     */
+    suspend fun downloadBytes(url: String): ZillitResult<ByteArray> =
+        ZillitResult.Failure(ZillitError.Unknown("no download host is wired"))
+
+    /**
+     * Whether [capturePhoto] can open a camera. The document scanner offers "Capture page" only when it can; either
+     * way "Add pages from files" does the same job from pictures on disk.
+     */
+    val hasCamera: Boolean get() = false
+
+    /**
+     * Opens the computer's camera, lets the user take one picture, and returns it (a JPEG); null when they closed the
+     * window, there is no camera, or the system refused it. The desktop has no capture API in the shared modules, so
+     * only the host can supply this.
+     */
+    suspend fun capturePhoto(): PickedFile? = null
+}
+
+/**
+ * The one seam between the tool and the app's mail window. The app's wiring sets [open] once the mail view model
+ * and the window it opens from exist (neither does when the tool's view model is built); the host's
+ * [SyncHost.composeEmail] calls it. Null until then, so a share before that reports "unavailable" instead of dropping.
+ */
+class MailBridge {
+    @Volatile
+    var open: ((subject: String, bodyHtml: String) -> Boolean)? = null
 }
 
 /** The host of a build that wires none: picks nothing, stores nothing. */

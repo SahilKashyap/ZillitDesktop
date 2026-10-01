@@ -69,12 +69,12 @@ import kotlinx.serialization.json.put
  * then the service is told its `attachment` details (`POST /photos`) — it
  * never takes the file. A link goes straight to `POST /photos/link`.
  *
- * Not ported: the page Scanner (it needs a camera, which the desktop does not
- * drive) and HEIC conversion (the web turns an iPhone photo into a JPEG before
+ * The page Scanner is [DocumentScannerDialog]; its pages come from the host's camera window or from picture files.
+ * Not ported: HEIC conversion (the web turns an iPhone photo into a JPEG before
  * upload; here it uploads as picked and its preview falls back to a file tile).
  */
 
-private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
+internal val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
 private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "m4v", "webm", "avi", "mkv", "3gp")
 
 /** The largest photo or clip a form accepts — anything bigger is refused at pick time. */
@@ -290,7 +290,7 @@ private fun PictureTile(bitmap: ImageBitmap?, modifier: Modifier = Modifier, pla
 
 /** The round ✕ on a tile (`.csync-ref__del`, 24dp; `.csync-take-media__remove` is the same dark disc, smaller). */
 @Composable
-private fun RemoveMark(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 24.dp) {
+internal fun RemoveMark(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 24.dp) {
     Box(
         modifier.size(size).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -324,9 +324,8 @@ private fun GlyphLabel(glyph: String, label: String) {
 // -- the button row (MediaButtons.jsx) ---------------------------------------
 
 /**
- * Photo · Video · Gallery · Add file · Add link: the module's one media row, as two groups (take it, attach it) with
- * a divider
- * between. On a desktop Photo and Video are file choosers filtered to pictures / clips; Gallery takes either. [files]
+ * Photo · Video · Gallery · Scan · Add file · Add link: the module's one media row, as two groups (take it, attach it)
+ * with a divider between. On a desktop Photo and Video are file choosers filtered to pictures / clips; Gallery takes either. [files]
  * = false
  * drops Add file; Add link shows only when [onAddLink] is given (a form whose record does not exist yet has nothing
  * to link to).
@@ -338,6 +337,8 @@ private fun GlyphLabel(glyph: String, label: String) {
 fun MediaButtons(
     onFiles: (List<PickedFile>) -> Unit,
     modifier: Modifier = Modifier,
+    /** Gets the scanned pages (cleaned-up JPEGs); [onFiles] when null. */
+    onScans: ((List<PickedFile>) -> Unit)? = null,
     onAddLink: (() -> Unit)? = null,
     enabled: Boolean = true,
     busy: Boolean = false,
@@ -346,6 +347,7 @@ fun MediaButtons(
 ) {
     val ctx = LocalSync.current
     val scope = rememberCoroutineScope()
+    var scanOpen by remember { mutableStateOf(false) }
     fun choose(extensions: Set<String>) {
         scope.launch {
             val picked = ctx.host.pick(extensions, true)
@@ -358,6 +360,7 @@ fun MediaButtons(
         ) },
         MediaButton(t("csync_take_video"), AhIcons.Video) { choose(VIDEO_EXTENSIONS) },
         MediaButton(t("csync_nav_gallery"), ZillitIcons.Photo) { choose(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS) },
+        MediaButton(t("csync_scan"), AhIcons.Document) { scanOpen = true },
     )
     val attach = buildList {
         if (files) add(MediaButton(t("csync_add_file"), ZillitIcons.Paperclip) { choose(emptySet()) })
@@ -391,6 +394,7 @@ fun MediaButtons(
             }
         }
     }
+    DocumentScannerDialog(scanOpen, { scanOpen = false }, onScans ?: onFiles)
 }
 
 private val NARROW_CARD = 560.dp
@@ -555,7 +559,8 @@ private fun KindSelect(kind: String, kinds: List<String>, narrow: Boolean, onSel
  * Photos, videos, files and links attached to one record — the reference's PhotoGrid.
  * A kind picker and the media row, then the pictures as tiles with their kind, and files
  * and links as a list. [kinds] narrows the Kind picker (a cleaning ticket offers STAIN);
- * `attachments = false` leaves out Add file / Add link; [bare] drops the card around it.
+ * `attachments = false` leaves out Add file / Add link; [bare] drops the card around it. Scanned pages are always filed
+ * as DOCUMENT, whatever Kind is picked.
  */
 @Composable
 fun ReferenceGrid(
@@ -599,7 +604,7 @@ fun ReferenceGrid(
         Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             if (ctx.canPost) {
                 MediaButtons(
-                    onFiles = { upload(it, kind) },
+                    onFiles = { upload(it, kind) }, onScans = { upload(it, "DOCUMENT") },
                     onAddLink = if (attachments) ({ linkOpen = true }) else null,
                     enabled = !uploading,
                     busy = uploading,

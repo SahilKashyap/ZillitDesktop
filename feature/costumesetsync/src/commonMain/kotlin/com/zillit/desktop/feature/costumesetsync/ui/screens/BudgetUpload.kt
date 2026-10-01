@@ -44,6 +44,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costumesetsync.domain.BudgetModel
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.fmtDate
@@ -82,8 +84,8 @@ private fun noteKeyOf(l: Rec): String? = when {
  * Upload a whole budget sheet (.xlsx, .csv or a budget PDF): every line is previewed with a tick box,
  * matched to this production's scenes, characters and vendors by name, and only the ticked lines are
  * written — nothing is saved until Import. The file is sent to `/expenses/import/preview` (multipart, only
- * for the preview); the import itself is JSON `{ lines }`. The sheet-template download is not ported
- * (a raw file the desktop api client does not fetch).
+ * for the preview); the import itself is JSON `{ lines }`. Download template saves the blank sheet
+ * (`GET /expenses/import/template`, an xlsx) through the host's raw GET and save dialog.
  */
 @Composable
 internal fun BudgetUpload(open: Boolean, onClose: () -> Unit, onImported: () -> Unit, currency: String) {
@@ -93,6 +95,7 @@ internal fun BudgetUpload(open: Boolean, onClose: () -> Unit, onImported: () -> 
     var rows by remember(open) { mutableStateOf(listOf<SheetRow>()) }
     var dept by remember(open) { mutableStateOf("") }
     var reading by remember(open) { mutableStateOf(false) }
+    var templating by remember(open) { mutableStateOf(false) }
     var saving by remember(open) { mutableStateOf(false) }
     val cats = ctx.metaList("expense_categories").ifEmpty { BudgetModel.EXPENSE_CATEGORY_FALLBACK }
 
@@ -111,10 +114,7 @@ internal fun BudgetUpload(open: Boolean, onClose: () -> Unit, onImported: () -> 
     val bad = picked.firstOrNull { !it.rec.has("amount") || it.rec.double("amount") < 0 || it.description.isBlank() }
     val total = picked.sumOf { it.rec.double("amount") }
     val importCurrency = picked.firstOrNull { it.rec.str("currency").isNotEmpty() }?.rec?.str("currency") ?: currency
-    val label = if (saving) t("csync_importing") else kitCount("csync_budget_import_n", picked.size).replace(
-        "{total}",
-        BudgetModel.fmtAmount(total, importCurrency),
-    )
+    val label = importLabel(saving, picked.size, total, importCurrency)
 
     val ready = preview != null && picked.isNotEmpty() && bad == null && !saving
     val importNow: () -> Unit = {
@@ -140,7 +140,9 @@ internal fun BudgetUpload(open: Boolean, onClose: () -> Unit, onImported: () -> 
         val current = preview
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             if (current == null) {
-                UploadLanding(reading, ::read)
+                UploadLanding(reading, templating, ::read) {
+                    scope.launch { downloadTemplate(ctx) { templating = it } }
+                }
             } else {
                 PreviewBody(
                     current,
@@ -216,7 +218,7 @@ private fun ImportActions(
 
 /** `.csync-budget-upload`: centred, 10 apart, 24 of air; the sheet icon over the formats line. */
 @Composable
-private fun UploadLanding(reading: Boolean, onRead: () -> Unit) {
+private fun UploadLanding(reading: Boolean, templating: Boolean, onRead: () -> Unit, onTemplate: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -234,14 +236,43 @@ private fun UploadLanding(reading: Boolean, onRead: () -> Unit) {
             color = ZillitTheme.colors.textMuted,
             textAlign = TextAlign.Center,
         )
-        ZillitButton(
-            if (reading) t("csync_reading") else t("csync_choose_file"),
-            onClick = onRead,
-            enabled = !reading,
-            loading = reading,
-        )
+        // `.csync-inline-pair`: Download template beside Choose file.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            ZillitButton(
+                t("csync_budget_download_template"),
+                onClick = onTemplate,
+                variant = ButtonVariant.Secondary,
+                enabled = !templating,
+                loading = templating,
+                leadingIcon = ZillitIcons.Download,
+            )
+            ZillitButton(
+                if (reading) t("csync_reading") else t("csync_choose_file"),
+                onClick = onRead,
+                enabled = !reading,
+                loading = reading,
+            )
+        }
     }
 }
+
+/** The blank import sheet, saved where the user says; a refusal is toasted in the server's words. */
+private suspend fun downloadTemplate(ctx: SyncCtx, onBusy: (Boolean) -> Unit) {
+    onBusy(true)
+    fetchTemplate(ctx)
+    onBusy(false)
+}
+
+private suspend fun fetchTemplate(ctx: SyncCtx) {
+    val url = ctx.api.url("/expenses/import/template") ?: return ctx.toast(str(S.something_went_wrong), false)
+    when (val res = ctx.host.downloadBytes(url)) {
+        is ZillitResult.Failure -> ctx.toast(res.error.localised(), false)
+        is ZillitResult.Success -> ctx.host.save(TEMPLATE_FILE, res.data)
+    }
+}
+
+private const val TEMPLATE_FILE = "Budget sheet template.xlsx"
+
 
 @Composable
 private fun PreviewBody(
@@ -444,3 +475,11 @@ private val DATE_COL = 80.dp
 private val PREVIEW_MAX = 420.dp
 private const val MATCH_WEIGHT = 1f
 private const val UNTICKED_ALPHA = 0.55f
+
+/** The Import button's text: the count and total of what is ticked, or "Importing" while it saves. */
+private fun importLabel(saving: Boolean, count: Int, total: Double, currency: String): String =
+    if (saving) {
+        t("csync_importing")
+    } else {
+        kitCount("csync_budget_import_n", count).replace("{total}", BudgetModel.fmtAmount(total, currency))
+    }

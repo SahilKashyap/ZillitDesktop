@@ -24,7 +24,13 @@ kotlin {
             implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)
         }
+        jvmMain.dependencies {
+            implementation(libs.pdfbox)
+            // QR reading: the scan screen decodes a label from a picture the camera (or a file) gave it.
+            implementation(libs.zxing.core)
+        }
         jvmTest.dependencies {
+            implementation(libs.pdfbox)
             implementation(compose.desktop.currentOs)
             @OptIn(ExperimentalComposeLibrary::class)
             implementation(compose.uiTest)

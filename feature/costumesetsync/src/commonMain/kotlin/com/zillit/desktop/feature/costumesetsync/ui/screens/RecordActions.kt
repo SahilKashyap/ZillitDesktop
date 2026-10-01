@@ -34,11 +34,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.costumesetsync.domain.PrintHtml
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.relativeTime
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
@@ -81,8 +85,9 @@ val LocalRecordCounts = androidx.compose.runtime.compositionLocalOf<Map<String, 
 /**
  * The web's `RecordActions` minus the megaphone (each screen already opens its own Send a request):
  * Share and Chat for one record, with the chat's comment count beside the bubble. [summary] is what a
- * share carries. Share copies it to the clipboard — the desktop has no email-compose seam that this
- * tool can reach without host wiring.
+ * share carries. Share opens the Email composer with it, as the web's `RecordShareMenu` does
+ * (`shareMessagesAsEmail`); Copy beside it puts the same text on the clipboard. The web's other entry,
+ * Forward In App (the chat forward picker), is not ported.
  */
 @Composable
 fun RecordActions(
@@ -93,21 +98,11 @@ fun RecordActions(
     modifier: Modifier = Modifier,
     count: Int? = null,
 ) {
-    val ctx = LocalSync.current
     var chatOpen by remember { mutableStateOf(false) }
     val listed = count ?: LocalRecordCounts.current[entityId] ?: 0
     var live by remember(listed) { mutableStateOf(listed) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        ZillitIconButton(
-            com.zillit.desktop.core.designsystem.icon.AhIcons.Share,
-            "${t("csync_share")} — $title",
-            onClick = {
-                copyTextToClipboard(summary)
-                ctx.toast(t("csync_copied"), true)
-            },
-            tint = ZillitTheme.colors.textSecondary,
-            size = 28.dp,
-        )
+        ShareMenu(title, summary)
         ZillitIconButton(
             ZillitIcons.Chat,
             "${t("csync_chat")} — $title",
@@ -125,6 +120,38 @@ fun RecordActions(
         }
     }
     if (chatOpen) RecordChatDialog(entityType, entityId, title, onClose = { chatOpen = false }, onCount = { live = it })
+}
+
+/** The share button and its two entries: Share (the Email composer) and Copy (the clipboard). */
+@Composable
+private fun ShareMenu(title: String, summary: String) {
+    val ctx = LocalSync.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ZillitIconButton(
+            com.zillit.desktop.core.designsystem.icon.AhIcons.Share,
+            "${t("csync_share")} — $title",
+            onClick = { open = true },
+            tint = ZillitTheme.colors.textSecondary,
+            size = 28.dp,
+        )
+        ZillitActionMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            entries = listOf(
+                menuAction(t("csync_share")) {
+                    open = false
+                    val html = PrintHtml.esc(summary).replace("\n", "<br>")
+                    if (!ctx.host.composeEmail(title, html)) ctx.toast(str(S.desktop_email_id_not_available), false)
+                },
+                menuAction(t("csync_copy")) {
+                    open = false
+                    copyTextToClipboard(summary)
+                    ctx.toast(t("csync_copied"), true)
+                },
+            ),
+        )
+    }
 }
 
 @Composable

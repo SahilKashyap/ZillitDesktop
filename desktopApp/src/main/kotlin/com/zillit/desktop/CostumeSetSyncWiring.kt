@@ -4,11 +4,17 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.network.HttpClientFactory
+import com.zillit.desktop.core.strings.S
+import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.ZillitHeaders
 import com.zillit.desktop.feature.costumesetsync.data.Answer
 import com.zillit.desktop.feature.costumesetsync.data.MultipartSender
+import com.zillit.desktop.core.workspace.WindowNavigator
+import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.costumesetsync.domain.CrewMember
+import com.zillit.desktop.feature.costumesetsync.domain.MailBridge
+import com.zillit.desktop.feature.email.ui.EmailViewModel
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.post
@@ -48,6 +54,7 @@ import java.io.File
  */
 internal fun AppGraph.Ready.buildCostumeSetSync(permissions: () -> ProjectPermissions): SyncOnsetViewModel {
     val projectId = { projectContext?.context?.value?.project?.projectId }
+    val mailBridge = MailBridge()
     return SyncOnsetViewModel(
         api = SyncOnsetApi(apiClient, config, projectId, multipart = costumeSetSyncMultipart()),
         viewer = { SyncViewer.from(permissions()) },
@@ -55,7 +62,8 @@ internal fun AppGraph.Ready.buildCostumeSetSync(permissions: () -> ProjectPermis
         events = socketEvents,
         projectId = projectId,
         userId = { projectContext?.context?.value?.profile?.userId.orEmpty() },
-        host = costumeSetSyncHost(),
+        host = costumeSetSyncHost(mailBridge),
+        mailBridge = mailBridge,
     )
 }
 
@@ -65,7 +73,7 @@ internal fun AppGraph.Ready.buildCostumeSetSync(permissions: () -> ProjectPermis
  * `attachment` details. Stored files come back as presigned URLs, fetched on
  * the bare client (a presigned URL must NOT carry the API's encrypted headers).
  */
-internal fun AppGraph.Ready.costumeSetSyncHost(): SyncHost = object : SyncHost {
+internal fun AppGraph.Ready.costumeSetSyncHost(mailBridge: MailBridge = MailBridge()): SyncHost = object : SyncHost {
 
     private val presigner = S3Presigner(credentials = { awsKeyPair(remoteConfigRepository) })
 
@@ -147,6 +155,25 @@ internal fun AppGraph.Ready.costumeSetSyncHost(): SyncHost = object : SyncHost {
 
     override fun openUrl(url: String) = openInBrowser(url)
 
+    /** The scanner's camera is the embedded Chromium's (see [KcefCameraCapture]); it is there unless JCEF failed. */
+    override val hasCamera: Boolean get() = KcefRuntime.failure == null
+
+    override suspend fun capturePhoto(): PickedFile? =
+        KcefCameraCapture.capture(str(S.desktop_csync_scan_document))?.let { jpeg ->
+            PickedFile(name = "Scan ${System.currentTimeMillis()}.jpg", bytes = jpeg, mime = "image/jpeg")
+        }
+
+    /**
+     * The web's `shareMessagesAsEmail`: refused when the user has no Zillit mailbox, otherwise the composer is
+     * queued on the mail view model and its window opened ([costumeSetSyncProvider] fills the bridge).
+     */
+    override fun composeEmail(subject: String, bodyHtml: String): Boolean {
+        val mailbox = projectContext?.context?.value?.profile?.mailboxAddress
+        return !mailbox.isNullOrBlank() && mailBridge.open?.invoke(subject, bodyHtml) == true
+    }
+
+    override suspend fun downloadBytes(url: String): ZillitResult<ByteArray> = getForBytes(url)
+
     override suspend fun save(suggestedName: String, bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
         val dialog = FileDialog(null as Frame?, suggestedName, FileDialog.SAVE)
         dialog.file = suggestedName
@@ -214,4 +241,36 @@ private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "m4v", "webm", "avi", "mkv", 
 /** The web's own ceiling on one photo or clip. */
 private const val COSTUME_MAX_BYTES: Long = 250L * 1024 * 1024
 
-internal fun costumeSetSyncProvider(viewModel: SyncOnsetViewModel) = SyncOnsetToolProvider(viewModel)
+/**
+ * The tool, with the one thing it borrows from the shell: Share raises the mail composer. The mail view model and
+ * the window the tool sits in exist only here, so the bridge the host calls is filled in as the tool's window comes
+ * up (and emptied when it goes, unless another window has taken over).
+ */
+internal fun costumeSetSyncProvider(
+    viewModel: SyncOnsetViewModel,
+    mail: EmailViewModel? = null,
+): SyncOnsetToolProvider {
+    var current: WindowNavigator? = null
+    return SyncOnsetToolProvider(
+        viewModel,
+        onWindow = { navigator ->
+            current = navigator
+            viewModel.mailBridge.open = mail?.let { mailbox ->
+                { subject, bodyHtml ->
+                    mailbox.composeRequests.post(addressedTo = "", about = subject, bodyHtml = bodyHtml)
+                    navigator.openInNewWindow(WorkspaceRoute.Tool(COSTUME_MAIL_ROUTE))
+                    true
+                }
+            }
+        },
+        onWindowClosed = { navigator ->
+            if (current === navigator) {
+                current = null
+                viewModel.mailBridge.open = null
+            }
+        },
+    )
+}
+
+private const val COSTUME_MAIL_ROUTE = "/email"
+

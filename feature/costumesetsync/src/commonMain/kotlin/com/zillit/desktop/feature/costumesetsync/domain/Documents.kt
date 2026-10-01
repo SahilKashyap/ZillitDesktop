@@ -48,6 +48,48 @@ private val TEXT_DOC = Regex("\\.(fountain|txt|text|csv|tsv|fdx)$", RegexOption.
 /** Read as text beside the scenes: Final Draft, Fountain and plain-text files. */
 fun isTextDoc(name: String): Boolean = TEXT_DOC.containsMatchIn(name)
 
+private val FDX_PARAGRAPH = Regex("<Paragraph(?:\\s[^>]*)?>(.*?)</Paragraph>", RegexOption.DOT_MATCHES_ALL)
+private val FDX_TEXT = Regex("<Text(?:\\s[^>]*)?>(.*?)</Text>", RegexOption.DOT_MATCHES_ALL)
+private val FDX_SELF_CLOSED = Regex("<(?:Paragraph|Text)(?:\\s[^>]*)?/>")
+private val FDX_TYPE = Regex("^<Paragraph(?:\\s[^>]*?)?\\sType=\"([^\"]*)\"")
+private val XML_ENTITY = Regex("&(#x[0-9a-fA-F]+|#\\d+|amp|lt|gt|quot|apos);")
+private const val CHARACTER_INDENT = 12
+private const val SPEECH_INDENT = 6
+private const val HEX = 16
+
+private fun xmlDecode(raw: String): String = XML_ENTITY.replace(raw) { m ->
+    when (val name = m.groupValues[1]) {
+        "amp" -> "&"
+        "lt" -> "<"
+        "gt" -> ">"
+        "quot" -> "\""
+        "apos" -> "'"
+        else -> {
+            val code = if (name.startsWith("#x")) name.drop(2).toIntOrNull(HEX) else name.drop(1).toIntOrNull()
+            code?.takeIf { it in 1..Char.MAX_VALUE.code }?.toChar()?.toString() ?: m.value
+        }
+    }
+}
+
+/**
+ * A Final Draft file is XML: read it as the script reads — one line per paragraph, scene headings in capitals
+ * (the web's `fdxText`). A file with no paragraphs comes back as it is.
+ */
+fun fdxText(xml: String): String {
+    val clean = FDX_SELF_CLOSED.replace(xml, "")
+    val paragraphs = FDX_PARAGRAPH.findAll(clean).toList()
+    if (paragraphs.isEmpty()) return xml
+    return paragraphs.joinToString("\n") { p ->
+        val text = xmlDecode(FDX_TEXT.findAll(p.groupValues[1]).joinToString("") { it.groupValues[1] }).trim()
+        when (FDX_TYPE.find(p.value)?.groupValues?.get(1).orEmpty()) {
+            "Scene Heading" -> "\n" + text.uppercase()
+            "Character" -> "\n" + " ".repeat(CHARACTER_INDENT) + text.uppercase()
+            "Dialogue", "Parenthetical" -> " ".repeat(SPEECH_INDENT) + text
+            else -> text
+        }
+    }.trim()
+}
+
 private fun sceneNote(s: Rec): String =
     listOf(s.str("int_ext"), s.str("location")).filter { it.isNotEmpty() }.joinToString(". ").ifEmpty { s.str("name") }
 

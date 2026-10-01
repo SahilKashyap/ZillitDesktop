@@ -21244,4 +21244,13 @@ object S {
     const val zillit_mailing_address: String = "zillit_mailing_address"
     const val zillit_notice: String = "zillit_notice"
     const val zip_code_txt: String = "zip_code_txt"
+    const val desktop_csync_doc_fit_width: String = "desktop_csync_doc_fit_width"
+    const val desktop_csync_doc_page_of: String = "desktop_csync_doc_page_of"
+    const val desktop_csync_doc_show_more_pages: String = "desktop_csync_doc_show_more_pages"
+    const val desktop_csync_doc_zoom_in: String = "desktop_csync_doc_zoom_in"
+    const val desktop_csync_doc_zoom_out: String = "desktop_csync_doc_zoom_out"
+    const val desktop_csync_scan_add_files: String = "desktop_csync_scan_add_files"
+    const val desktop_csync_scan_from_picture: String = "desktop_csync_scan_from_picture"
+    const val desktop_csync_scan_no_camera_here: String = "desktop_csync_scan_no_camera_here"
+    const val desktop_csync_scan_no_code: String = "desktop_csync_scan_no_code"
 }

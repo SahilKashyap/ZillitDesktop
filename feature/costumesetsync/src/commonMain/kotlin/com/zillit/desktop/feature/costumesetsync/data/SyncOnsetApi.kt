@@ -101,6 +101,9 @@ class SyncOnsetApi(
     /** `GET /v2/meta` — every enum the service knows. Not project-scoped. */
     suspend fun meta() = call(HttpVerb.Get, "$root/meta", null, emptyMap())
 
+    /** The full address of project-scoped [path], for a raw file the JSON client cannot fetch; null with no project. */
+    fun url(path: String): String? = scoped(path)
+
     private fun scoped(path: String): String? = projectId()
         ?.takeIf { it.isNotBlank() }
         ?.let { "$root/projects/$it$path" }

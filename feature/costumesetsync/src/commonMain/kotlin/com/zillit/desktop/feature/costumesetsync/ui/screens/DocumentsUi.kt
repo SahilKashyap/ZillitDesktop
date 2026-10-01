@@ -177,9 +177,10 @@ private const val SHORT = 3
  * The ticks are only for this look and are not saved.
  *
  * Laid out as the web's: a version bar over the file pane (left) and the 340dp tick-off list (right).
- * Not ported: the in-app PDF / text rendering — the file pane shows the web's "can't be shown here" panel
- * and the file opens in the system viewer ("Open in new tab", download rights); "Read this" opens the
- * importer on the version on screen (posting rights only, since an import writes).
+ * The file pane renders a PDF page by page (zoom, fit to width) and shows Final Draft / Fountain / plain text as
+ * text (see DocView.kt); anything else shows the web's "can't be shown here" panel, and the file always
+ * opens in the system viewer ("Open in new tab", download rights). "Read this" opens the importer on the
+ * version on screen (posting rights only, since an import writes).
  */
 @Composable
 internal fun DocumentViewerDialog(
@@ -229,7 +230,7 @@ internal fun DocumentViewerDialog(
         )
         if (latest != null && doc.id != latest.id) OlderNotice(latest, meta) { docId = latest.id }
         Row(Modifier.fillMaxWidth().height(paneH), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FilePane(ctx.canDownload)
+            FilePane(doc, ctx.canDownload)
             ScenePane(
                 kind,
                 lower,
@@ -248,22 +249,6 @@ private fun docMeta(d: Rec): String =
     listOf(t(docSourceKey(d)), d.str("revision"), fmtDateTime(d.long("created")))
         .filter { it.isNotEmpty() }
         .joinToString(" · ")
-
-/** The file pane: the web's `.csync-docview__file` showing its "can't be shown here" state. */
-@Composable
-private fun RowScope.FilePane(canDownload: Boolean) {
-    val colors = ZillitTheme.colors
-    Box(
-        Modifier.weight(1f)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.surfaceSunken)
-            .border(1.dp, colors.border, RoundedCornerShape(8.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        CantShow(canDownload)
-    }
-}
 
 private val VIEWER_MIN = 640.dp
 private val VIEWER_MAX = 1360.dp
@@ -392,7 +377,7 @@ private fun OlderNotice(latest: Rec, meta: (Rec) -> String, onShow: () -> Unit) 
 
 /** The web's "{open}" sentence with Open in new tab in bold — or the plain one when download is not allowed. */
 @Composable
-private fun CantShow(canDownload: Boolean) {
+internal fun CantShow(canDownload: Boolean) {
     val colors = ZillitTheme.colors
     val style = ZillitTheme.typography.bodySmall.copy(fontSize = 13.sp)
     if (!canDownload) {
@@ -500,10 +485,6 @@ private fun SceneTickRow(scene: Rec, note: String, kind: String, ticked: Boolean
 
 /** Opens a kept file in the system viewer: its own URL, else the stored key resolved against project storage. */
 private suspend fun openDocument(ctx: com.zillit.desktop.feature.costumesetsync.ui.SyncCtx, doc: Rec) {
-    val attachment = doc.rec("attachment")
-    val url = doc.str("url").ifEmpty { null }
-        ?: attachment?.str("signed_url")?.ifEmpty { null }
-        ?: attachment?.str("public_url")?.ifEmpty { null }
-        ?: attachment?.let { ctx.host.resolveUrl(it.str("media"), it.str("bucket"), it.str("region")) }
+    val url = docUrl(ctx, doc)
     if (url.isNullOrEmpty()) ctx.toast(t("csync_doc_preview_failed"), false) else ctx.host.openUrl(url)
 }

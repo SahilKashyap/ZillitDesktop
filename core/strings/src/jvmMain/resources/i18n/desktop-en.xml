@@ -11897,4 +11897,13 @@
     <string name="desktop_tasks_no_date_pick">No due date</string>
     <string name="desktop_tasks_sub_board">Project + self tasks</string>
     <string name="desktop_tasks_prio_med">Med</string>
+    <string name="desktop_csync_doc_page_of">Page {page} of {pages}</string>
+    <string name="desktop_csync_doc_zoom_in">Zoom in</string>
+    <string name="desktop_csync_doc_zoom_out">Zoom out</string>
+    <string name="desktop_csync_doc_fit_width">Fit to width</string>
+    <string name="desktop_csync_doc_show_more_pages">Show {n} more pages</string>
+    <string name="desktop_csync_scan_add_files">Add pages from files</string>
+    <string name="desktop_csync_scan_no_camera_here">The camera can\'t be opened from here. Add the pages from picture files instead.</string>
+    <string name="desktop_csync_scan_no_code">No QR code could be read from that picture. Try another, or type the asset number.</string>
+    <string name="desktop_csync_scan_from_picture">Read from a picture</string>
 </resources>

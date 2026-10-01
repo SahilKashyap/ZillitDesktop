@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Camera</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101010; color: #f2f2f2;
+    font: 14px -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #stage { position: absolute; inset: 0 0 64px 0; display: flex; align-items: center; justify-content: center; }
+  video { max-width: 100%; max-height: 100%; background: #000; }
+  /* A page-shaped guide so the paper is framed square-on and fills the shot. */
+  #guide { position: absolute; inset: 6% 18%; border: 2px dashed rgba(255,255,255,.55); border-radius: 6px; pointer-events: none; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .12s; }
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; display: flex; gap: 12px;
+    align-items: center; justify-content: center; background: #1b1b1b; }
+  button { font: inherit; font-weight: 600; padding: 9px 20px; border-radius: 8px; border: 1px solid #555;
+    background: #2a2a2a; color: #f2f2f2; cursor: pointer; }
+  button#shoot { background: #f97316; border-color: #f97316; color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  #msg { position: absolute; left: 0; right: 0; top: 40%; text-align: center; padding: 0 24px; color: #ddd; }
+</style>
+</head>
+<body>
+<div id="stage"><video id="v" autoplay playsinline muted></video><span id="guide"></span><span id="flash"></span></div>
+<div id="msg"></div>
+<div id="bar"><button id="shoot" disabled></button><button id="cancel"></button></div>
+<script>
+(function () {
+  var v = document.getElementById('v');
+  var shoot = document.getElementById('shoot');
+  var cancel = document.getElementById('cancel');
+  var msg = document.getElementById('msg');
+  var flash = document.getElementById('flash');
+  var labels = {};
+  var stream = null;
+
+  function send(text) { if (window.cefQuery) window.cefQuery({ request: text }); }
+
+  function stop() {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null;
+    v.srcObject = null;
+  }
+
+  function start() {
+    msg.textContent = labels.starting || '';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      msg.textContent = labels.none || '';
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false
+    }).then(function (s) {
+      stream = s;
+      v.srcObject = s;
+      v.play().catch(function () {});
+    }).catch(function (e) {
+      msg.textContent = (e && e.name === 'NotAllowedError') ? (labels.denied || '') : (labels.none || '');
+      send('error:' + (e && e.name));
+    });
+  }
+
+  v.addEventListener('loadedmetadata', function () { msg.textContent = ''; shoot.disabled = false; });
+
+  shoot.addEventListener('click', function () {
+    if (!v.videoWidth) return;
+    var c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    flash.style.opacity = '.8';
+    setTimeout(function () { flash.style.opacity = '0'; }, 120);
+    var url = c.toDataURL('image/jpeg', 0.92);
+    stop();
+    send('shot:' + url.substring(url.indexOf(',') + 1));
+  });
+  cancel.addEventListener('click', function () { stop(); send('cancel'); });
+
+  // Kotlin answers `ready` with the words, in the app's language; the camera starts once it has them.
+  window.zcam = {
+    boot: function (l) {
+      labels = l || {};
+      shoot.textContent = labels.shoot || '';
+      cancel.textContent = labels.cancel || '';
+      start();
+    },
+    stop: stop
+  };
+  send('ready');
+})();
+</script>
+</body>
+</html>

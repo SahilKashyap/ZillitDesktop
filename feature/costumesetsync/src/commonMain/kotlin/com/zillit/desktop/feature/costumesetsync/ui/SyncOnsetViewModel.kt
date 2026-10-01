@@ -10,6 +10,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
 import com.zillit.desktop.feature.costumesetsync.data.SyncOnsetApi
+import com.zillit.desktop.feature.costumesetsync.domain.MailBridge
 import com.zillit.desktop.feature.costumesetsync.domain.NoHost
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
 import com.zillit.desktop.feature.costumesetsync.domain.SyncHost
@@ -62,6 +63,8 @@ class SyncOnsetViewModel(
     val projectId: () -> String?,
     val userId: () -> String = { "" },
     val host: SyncHost = NoHost,
+    /** Filled in by the app's wiring once the mail window exists; the real [host] opens the composer through it. */
+    val mailBridge: MailBridge = MailBridge(),
 ) : ZillitViewModel<SyncHostState, SyncHostEvent, Nothing>(SyncHostState()) {
 
     private var rightsPoll: Job? = null

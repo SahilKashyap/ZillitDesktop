@@ -38,7 +38,9 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.SCAN_ENABLED
 import com.zillit.desktop.feature.costumesetsync.ui.screens.FirstRun
 import com.zillit.desktop.feature.costumesetsync.ui.screens.ProductionSetupWizard
 import kotlin.time.Clock
@@ -56,6 +58,8 @@ private data class NavTab(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val items: List<NavItem> = emptyList(),
     val financeOnly: Boolean = false,
+    /** Shown only while `SCAN_ENABLED` is on (the web's `scan: true`). */
+    val scanOnly: Boolean = false,
 )
 
 private val TABS = listOf(
@@ -85,6 +89,8 @@ private val TABS = listOf(
     NavTab("reports", "csync_nav_reports", "reports", ZillitIcons.BarChart),
     NavTab("budget", "csync_nav_budget", "budget", ZillitIcons.Wallet, financeOnly = true),
     NavTab("gallery", "csync_nav_gallery", "gallery", ZillitIcons.Photo),
+    // Hidden, as on the web: see SCAN_ENABLED.
+    NavTab("scan", "csync_nav_scan", "scan", AhIcons.QrCode, scanOnly = true),
 )
 
 /** Which primary tab lights for a route head — a record's own page lights its list's tab. */
@@ -97,6 +103,7 @@ private fun tabOf(head: String): String? = when (head) {
     "reports" -> "reports"
     "budget" -> "budget"
     "gallery" -> "gallery"
+    "scan" -> "scan"
     else -> null
 }
 
@@ -207,7 +214,7 @@ internal fun SyncFrame(
     var setupOpen by remember { mutableStateOf(false) }
     val route = ctx.nav.current
     val activeTab = tabOf(route.head)
-    val tabs = TABS.filter { !it.financeOnly || ctx.isFinance }
+    val tabs = TABS.filter { (!it.financeOnly || ctx.isFinance) && (!it.scanOnly || SCAN_ENABLED) }
     fun countOf(item: NavItem): Int = item.count?.let { counts?.long(it)?.toInt() } ?: 0
 
     TopBar(bellTick, search = true)

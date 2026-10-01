@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.costumesetsync.domain.docDayKey
 import com.zillit.desktop.feature.costumesetsync.domain.docName
 import com.zillit.desktop.feature.costumesetsync.domain.docSceneRows
 import com.zillit.desktop.feature.costumesetsync.domain.docSourceKey
+import com.zillit.desktop.feature.costumesetsync.domain.fdxText
 import com.zillit.desktop.feature.costumesetsync.domain.isTextDoc
 import com.zillit.desktop.feature.costumesetsync.domain.latestOf
 import kotlin.test.Test
@@ -98,5 +99,21 @@ class DocumentsTest {
             docSceneRows("CALLSHEET", scenes, "2026-10-01").rows.map { it.scene.str("number") },
         )
         assertTrue(docSceneRows("CALLSHEET", scenes, "").rows.isEmpty())
+    }
+
+    @Test
+    fun finalDraftReadsAsAScriptNotAsXml() {
+        val xml = """<?xml version="1.0"?><FinalDraft><Content>
+            <Paragraph Type="Scene Heading"><Text>int. kitchen - night</Text></Paragraph>
+            <Paragraph Type="Action"><Text Style="Bold">Anna &amp; Bob </Text><Text>enter.</Text></Paragraph>
+            <Paragraph Type="General"><Text/></Paragraph>
+            <Paragraph Type="Character"><Text>Anna</Text></Paragraph>
+            <Paragraph Type="Dialogue"><Text>It&#39;s &quot;late&quot;.</Text></Paragraph>
+            </Content></FinalDraft>"""
+        assertEquals(
+            "INT. KITCHEN - NIGHT\nAnna & Bob enter.\n\n\n            ANNA\n      It's \"late\".",
+            fdxText(xml),
+        )
+        assertEquals("<a>not a script</a>", fdxText("<a>not a script</a>"))
     }
 }

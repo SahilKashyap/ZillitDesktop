@@ -3613,7 +3613,7 @@ private fun buildRegistry(
     val saPortal = viewModels.saPortal?.let { vm -> saPortalProviders(vm) }.orEmpty()
     val adDashboard = viewModels.adDashboard?.let { vm -> adDashboardProvider(vm) }
     val weather = viewModels.weather?.let { vm -> (graph as? AppGraph.Ready)?.weatherProvider(vm) }
-    val costumeSetSync = viewModels.costumeSetSync?.let(::costumeSetSyncProvider)
+    val costumeSetSync = viewModels.costumeSetSync?.let { costumeSetSyncProvider(it, emailViewModel) }
     // Three casting tiles, one board: whichever tile is clicked, the lists
     // this viewer's rights allow are what open.
     val castingTools = viewModels.casting?.let { vm ->

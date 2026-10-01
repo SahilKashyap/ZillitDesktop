@@ -38,13 +38,16 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.costumesetsync.data.SyncEvents
+import com.zillit.desktop.core.designsystem.icon.AhIcons
 import com.zillit.desktop.feature.costumesetsync.domain.Rec
+import com.zillit.desktop.feature.costumesetsync.domain.SCAN_ENABLED
 import com.zillit.desktop.feature.costumesetsync.domain.Tone
 import com.zillit.desktop.feature.costumesetsync.domain.longDay
 import com.zillit.desktop.feature.costumesetsync.domain.todayParam
 import com.zillit.desktop.feature.costumesetsync.ui.AutoFillGrid
 import com.zillit.desktop.feature.costumesetsync.ui.Await
 import com.zillit.desktop.feature.costumesetsync.ui.EmptyState
+import com.zillit.desktop.feature.costumesetsync.ui.InkButton
 import com.zillit.desktop.feature.costumesetsync.ui.LocalSync
 import com.zillit.desktop.feature.costumesetsync.ui.MutedText
 import com.zillit.desktop.feature.costumesetsync.ui.Page
@@ -101,6 +104,10 @@ fun DashboardScreen() {
                 )
                     .filter { it.isNotBlank() }.joinToString(" · "),
                 actions = {
+                    // Hidden, as on the web: see SCAN_ENABLED.
+                    if (SCAN_ENABLED) {
+                        InkButton(t("csync_nav_scan"), onClick = { ctx.nav.go("scan") }, icon = AhIcons.QrCode)
+                    }
                     if (ctx.canPost) {
                         ZillitButton(
                             t("csync_emergency"),
