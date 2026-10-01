@@ -187,6 +187,8 @@ object ToolCatalogue {
             (ZillitToolIcons.AdDashboard to WorkspaceRoute.Tool("/film-tools/supporting-artistes")),
         "costume_set_sync_tool" to
             (ZillitToolIcons.Wardrobe to WorkspaceRoute.Tool("/film-tools/costume-set-sync")),
+        "tasks_tool" to
+            (ZillitToolIcons.Tasks to WorkspaceRoute.Tool("/film-tools/tasks")),
         "timecard_tool" to
             (ZillitToolIcons.Timecard to WorkspaceRoute.Tool("/film-tools/timecard")),
         "transportation_tool" to

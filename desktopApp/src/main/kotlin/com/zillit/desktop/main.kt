@@ -234,6 +234,7 @@ import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.bankrec.ui.BankRecViewModel
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
+import com.zillit.desktop.feature.tasks.ui.TasksViewModel
 import com.zillit.desktop.feature.costumesetsync.ui.SyncOnsetViewModel
 import com.zillit.desktop.feature.weather.ui.WeatherViewModel
 import com.zillit.desktop.feature.budget.ui.DEPARTMENT_BUDGET_PATH
@@ -3056,6 +3057,8 @@ internal class AppViewModels(
 /**
  * Whether Zillit Draft appears on the tools grid.
  *
+    /** The board, My tasks and Self tasks. */
+    val tasks: TasksViewModel?,
  * Off for now, and **hidden rather than removed**: the module, its route, its
  * view model and its provider all stay wired, so a workspace tab already open
  * on it keeps working and turning the tile back on is this one flag. The
@@ -3452,6 +3455,7 @@ private fun rememberAppViewModels(
                 )
             },
             drive = ready?.let { graph ->
+            tasks = ready?.buildTasks(permissions),
                 DriveViewModel(
                     repository = graph.driveRepository,
                     viewer = { graph.driveViewer(permissions()) },
@@ -3634,6 +3638,7 @@ private fun buildRegistry(
         (graph as? AppGraph.Ready)?.budgetProvider(vms.department, DEPARTMENT_BUDGET_PATH, scope, audioPlayer)
     }
     val invoices = viewModels.invoices?.let { invoicesProvider(it) }
+    val tasks = viewModels.tasks?.let(::tasksProvider)
     // Schedule Full & One Line, Script & Pages, Schedule D.O.D — the same
     // PDF-distribution engine at the web's three paths.
     val ready = graph as? AppGraph.Ready
@@ -4010,7 +4015,7 @@ private fun buildRegistry(
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
         assetRegister, transport, location, continuity, costReport, costReportWorksheet, costReportAnalytics,
         invoices, draft,
-        mainBudget, departmentBudget, weather, costumeSetSync, adDashboard,
+        mainBudget, departmentBudget, weather, tasks, costumeSetSync, adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()

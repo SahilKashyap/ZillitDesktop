@@ -420,6 +420,24 @@ object ZillitToolIcons {
         )
     }
 
+    /**
+     * The Tasks tool — a card of ticked lines. Neither phone has a Tasks tool,
+     * so there is no drawable to port; drawn in the stroke style of [IcCalendar].
+     */
+    val Tasks: ImageVector by lazy {
+        toolIcon(
+            name = "Tasks",
+            viewport = 24.0f,
+            paths = listOf(
+                "M5,3L19,3A2,2 0,0 1,21 5L21,19A2,2 0,0 1,19 21L5,21A2,2 0,0 1,3 19L3,5A2,2 0,0 1,5 3z",
+                "M7,8.5L8.8,10.3L11.8,7",
+                "M14,9L17,9",
+                "M7,15.5L8.8,17.3L11.8,14",
+                "M14,16L17,16",
+            ),
+        )
+    }
+
     /** Android: `tool_timecard.xml`. */
     val Timecard: ImageVector by lazy {
         toolIcon(

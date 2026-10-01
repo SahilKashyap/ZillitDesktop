@@ -141,6 +141,16 @@ enum class ZillitService(val configKey: String) {
     Transportation("TRANSPORTATION_BASE_URL"),
 
     /**
+     * The Tasks service (`zillit_tasks`) — the board, My Tasks and Self Tasks.
+     *
+     * A brand-new service with no pre-merge host: `tasksapi-dev` / `-qa` /
+     * unsuffixed for production (probed 2026-10-01: dev 401, qa 406, prod 503
+     * — not deployed there yet). The web's `VITE_TASKS_BASE_URL` ends at `/api`
+     * and appends `/v2/tasks`, the same split [AppConfig.apiV2] makes.
+     */
+    Tasks("TASKS_BASE_URL"),
+
+    /**
      * Costumes & Set Sync (`synconsetapi`), a brand-new service live in all
      * three environments (`synconsetapi-dev` / `-qa` / unsuffixed, probed
      * 2026-10-01: every `/api/v2/health` answers 200). The web's
